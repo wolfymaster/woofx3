@@ -64,6 +64,7 @@ v0.1.0):
 | `ctx.http` | `request(url, method, opts?)` |
 | `ctx.env` | `get(key)` |
 | `ctx.resources` | `create(kind, instanceId, displayName?)`, `delete(canonicalId)`, `list(kind)` |
+| `ctx.schedule` | `at(deadlineId, key, whenMs, params?)`, `cancel(deadlineId, key)` — one-shot invocations of a function the manifest declares under `deadlines`; see below |
 | `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip(args?)`, `timeout(args)`, `updateStream(args)`, `addModerator(args)` |
@@ -78,6 +79,34 @@ the same as the stream going offline, since a session spans brief dropouts and a
 reconnect keeps the value. Everything else persists until a module overwrites
 it. A module never clears storage itself; it declares, and the engine acts. See
 [Stream sessions](../services/stream-sessions.md).
+
+`ctx.schedule` arms work for a specific moment instead of polling for it. The
+manifest declares each deadline (`id`, the `function` it invokes, `maxPending`);
+a function arms an entry under a key and cancels it when the state it tracks
+changes:
+
+```js
+/** @param {import("@woofx3/module-sdk/function-ctx").Ctx} ctx */
+function timerStart(ctx) {
+  const target = ctx.event.parameters.target;
+  const endsAt = Date.now() + 60_000;
+  // ...write { running: true, endsAt } to storage...
+  ctx.schedule.at("timer_end", target, endsAt, { target });
+}
+
+/** @param {import("@woofx3/module-sdk/function-ctx").Ctx} ctx */
+function timerExpire(ctx) {
+  /** @type {import("@woofx3/module-sdk/function-ctx").DeadlineFiring} */
+  const firing = ctx.event.deadline;
+  // Re-check storage before acting: entries are kept in memory only, and a
+  // stale or repeated firing must be harmless.
+}
+```
+
+Entries do not survive a restart or a module reload. A background task with
+`runOnLoad: true` re-arms them from the module's storage. See
+[Module format → Deadlines](./modules.md#deadlines-deadlines) for the limits and
+the full contract.
 
 The engine's runtime registration is the source of truth (see
 `barkloader/lib_sandbox/src/runtime/quickjs.rs:185-517`). The SDK ships

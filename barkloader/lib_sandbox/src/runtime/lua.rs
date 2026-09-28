@@ -261,10 +261,9 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         )?;
         resources.set("create", create_fn)?;
 
-        let client = invocation.host.resources.clone();
+        let host = invocation.host.clone();
         let delete_fn = lua.create_function(move |_lua, canonical_id: String| {
-            client
-                .delete(&canonical_id)
+            super::host_bindings::resources_delete(&host, &canonical_id)
                 .map_err(mlua::Error::RuntimeError)?;
             Ok(())
         })?;
@@ -290,6 +289,48 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         resources.set("list", list_fn)?;
     }
     ctx.set("resources", resources)?;
+
+    // schedule namespace -- one-shot invocations of a function the module
+    // declared under `deadlines`. See `host_bindings::schedule_at`.
+    let schedule = lua.create_table()?;
+    {
+        let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let at_fn =
+            lua.create_function(
+                move |_,
+                      (deadline_id, key, when_ms, params): (
+                    String,
+                    String,
+                    f64,
+                    Option<LuaValue>,
+                )| {
+                    let json_params: Option<Value> = params
+                        .map(|p| serde_json::to_value(&p))
+                        .transpose()
+                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    super::host_bindings::schedule_at(
+                        &host,
+                        &module_id,
+                        &deadline_id,
+                        &key,
+                        when_ms,
+                        json_params,
+                    )
+                    .map_err(mlua::Error::RuntimeError)
+                },
+            )?;
+        schedule.set("at", at_fn)?;
+
+        let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let cancel_fn = lua.create_function(move |_, (deadline_id, key): (String, String)| {
+            super::host_bindings::schedule_cancel(&host, &module_id, &deadline_id, &key)
+                .map_err(mlua::Error::RuntimeError)
+        })?;
+        schedule.set("cancel", cancel_fn)?;
+    }
+    ctx.set("schedule", schedule)?;
 
     // module namespace
     {
@@ -459,6 +500,49 @@ mod tests {
     use super::*;
     use crate::host::{InvocationContext, noop::noop_host_context};
     use crate::runtime::RuntimeAdapter;
+
+    #[test]
+    fn lua_ctx_schedule_reaches_the_scheduler_and_throws_a_refusal() {
+        let schedule = std::sync::Arc::new(crate::host::recording::RecordingSchedule::default());
+        let mut host = noop_host_context();
+        host.schedule = schedule.clone();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "1.0.0".to_string(),
+        };
+        let adapter = LuaAdapter::new().unwrap();
+        let code = r#"
+            function run(ctx)
+                ctx.schedule.at("timer_end", "t1", 2000, { target = "t1" })
+                ctx.schedule.cancel("timer_end", "t2")
+                return { ok = true }
+            end
+        "#;
+        adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(
+            *schedule.calls.lock().unwrap(),
+            vec!["at mymod/timer_end/t1@2000", "cancel mymod/timer_end/t2"]
+        );
+        assert_eq!(
+            schedule.params.lock().unwrap()[0],
+            serde_json::json!({ "target": "t1" })
+        );
+
+        *schedule.refusal.lock().unwrap() = Some("deadline not declared".to_string());
+        let err = adapter
+            .execute(
+                r#"function run(ctx) ctx.schedule.at("nope", "t1", 0) return {} end"#,
+                "run",
+                &invocation,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("deadline not declared"), "{err}");
+    }
 
     #[test]
     fn lua_ctx_log_accepts_strings_and_objects() {
