@@ -8,7 +8,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, { isTwitchApiCommand } from "./lib/twitch";
+import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
@@ -274,7 +274,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       const message = err instanceof Error ? err.message : String(err);
       ctx.logger.error("twitchapi: handler failed", { command: request.command, err: message });
       if (isRequest) {
-        this.respondError(msg, message);
+        this.respondError(msg, message, twitchApiErrorCodeOf(err));
       }
     }
   }
@@ -290,13 +290,13 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
   }
 
-  private respondError(msg: Msg, error: string) {
+  private respondError(msg: Msg, error: string, code?: string) {
     const envelope = {
       id: crypto.randomUUID(),
       type: "twitchapi.error",
       source: "twitchapi",
       time: new Date().toISOString(),
-      data: { error },
+      data: code ? { error, code } : { error },
     };
     msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
   }

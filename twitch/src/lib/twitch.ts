@@ -164,6 +164,28 @@ export function isTwitchApiCommand(command: string): command is TwitchApiCommand
   return (TWITCH_API_COMMANDS as readonly string[]).includes(command);
 }
 
+/**
+ * A refusal a caller can act on without parsing the message: the dispatcher
+ * sends `code` alongside the message in the `twitchapi.error` reply. Codes
+ * are part of the `twitchapi` contract (docs/services/twitch-channel.md).
+ */
+export class TwitchApiError extends Error {
+  constructor(
+    readonly code: TwitchApiErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = "TwitchApiError";
+  }
+}
+
+export type TwitchApiErrorCode = "rate_limited";
+
+/** The contract code a thrown error carries, if it is a TwitchApiError. */
+export function twitchApiErrorCodeOf(err: unknown): TwitchApiErrorCode | undefined {
+  return err instanceof TwitchApiError ? err.code : undefined;
+}
+
 /** Twurple's HttpStatusCodeError, matched by shape so this file needs no import of its package. */
 function httpStatusOf(err: unknown): number | undefined {
   if (err && typeof err === "object" && "statusCode" in err && typeof err.statusCode === "number") {
@@ -219,12 +241,23 @@ export default class TwitchApi {
    * id, a chat command carries what someone typed.
    *
    * Twitch rate-limits shoutouts (one every 2 minutes, and one per target per
-   * 60 minutes) and answers a refusal with a 429, which surfaces through the
-   * dispatcher's error path like any other failure.
+   * 60 minutes) and answers a refusal with a 429. That refusal is routine on
+   * a busy raid night, so it carries the `rate_limited` code: a workflow can
+   * skip the shoutout instead of failing the run.
    */
   async shoutout(args: { userId?: string; userName?: string }): Promise<{ ok: true; userId: string }> {
     const target = await this.resolveUserId("shoutout", args);
-    await this.apiClient.chat.shoutoutUser(this.broadcaster, target);
+    try {
+      await this.apiClient.chat.shoutoutUser(this.broadcaster, target);
+    } catch (err) {
+      if (httpStatusOf(err) === 429) {
+        throw new TwitchApiError(
+          "rate_limited",
+          "shoutout: Twitch allows one shoutout every 2 minutes, and one per channel every 60 minutes; try again later"
+        );
+      }
+      throw err;
+    }
     return { ok: true, userId: target };
   }
 

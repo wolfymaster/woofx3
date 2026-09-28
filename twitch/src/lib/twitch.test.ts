@@ -1,6 +1,13 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ApiClient, HelixUser } from "@twurple/api";
-import TwitchApi, { isTwitchApiCommand, TWITCH_API_COMMANDS, validateTags, validateTitle } from "./twitch";
+import TwitchApi, {
+  isTwitchApiCommand,
+  TWITCH_API_COMMANDS,
+  TwitchApiError,
+  twitchApiErrorCodeOf,
+  validateTags,
+  validateTitle,
+} from "./twitch";
 
 const BROADCASTER = { id: "broadcaster-1" } as HelixUser;
 
@@ -41,6 +48,37 @@ describe("shoutout", () => {
     const api = new TwitchApi(client, BROADCASTER);
 
     await expect(api.shoutout({ userName: "ghost" })).rejects.toThrow('no Twitch user named "ghost"');
+  });
+
+  test("reports Twitch's rate limit with the rate_limited code", async () => {
+    const limited = Object.assign(new Error("Encountered HTTP status code 429: Too Many Requests"), {
+      statusCode: 429,
+    });
+    const { client } = apiClientWith({
+      shoutoutUser: mock(async (..._args: unknown[]) => {
+        throw limited;
+      }),
+    });
+    const api = new TwitchApi(client, BROADCASTER);
+
+    const err = await api.shoutout({ userId: "target-1" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TwitchApiError);
+    expect(twitchApiErrorCodeOf(err)).toBe("rate_limited");
+    expect((err as Error).message).toContain("one shoutout every 2 minutes");
+  });
+
+  test("passes any other Twitch refusal through uncoded", async () => {
+    const denied = Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    const { client } = apiClientWith({
+      shoutoutUser: mock(async (..._args: unknown[]) => {
+        throw denied;
+      }),
+    });
+    const api = new TwitchApi(client, BROADCASTER);
+
+    const err = await api.shoutout({ userId: "target-1" }).catch((e: unknown) => e);
+    expect(err).toBe(denied);
+    expect(twitchApiErrorCodeOf(err)).toBeUndefined();
   });
 
   test("refuses a shoutout that names nobody", async () => {
