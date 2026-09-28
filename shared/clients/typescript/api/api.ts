@@ -1,5 +1,12 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type {
+  ConfigBundle,
+  ConfigExportOptions,
+  ConfigImportOptions,
+  ConfigImportPlan,
+  ConfigImportResult,
+} from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
@@ -1616,6 +1623,33 @@ export interface Woofx3EngineApi {
     triggerId?: string,
     triggeredBy?: string
   ): Promise<{ success: boolean; message: string }>;
+
+  // ==================== Config bundles ====================
+  // Backup, move and share a creator's configuration. Format and import rules:
+  // docs/services/config-bundles.md.
+
+  /**
+   * The creator's workflows, chat commands, command groups and module
+   * resource instances as a versioned bundle. Secrets, tokens, module
+   * settings and live resource values are never included; group members and
+   * per-user command grants only with `includeMembers`.
+   */
+  exportConfig(options?: ConfigExportOptions): Promise<ConfigBundle>;
+
+  /**
+   * What `importConfig` would do with `bundle` under the same options,
+   * without writing anything. Throws when the bundle is malformed, too large,
+   * or of an unsupported version.
+   */
+  previewImport(bundle: ConfigBundle, options?: ConfigImportOptions): Promise<ConfigImportPlan>;
+
+  /**
+   * Apply `bundle` through the same paths a save in the UI takes, so every
+   * item is validated and announced by the usual webhooks. Re-plans against
+   * the engine's current state rather than trusting an earlier preview.
+   * Best-effort per item: the result reports each item's outcome.
+   */
+  importConfig(bundle: ConfigBundle, options?: ConfigImportOptions): Promise<ConfigImportResult>;
 }
 
 // ==================== Widgets ====================

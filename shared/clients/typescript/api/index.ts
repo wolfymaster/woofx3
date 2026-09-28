@@ -1,5 +1,6 @@
 export * from "./api";
 export * from "./client";
+export * from "./config-bundle";
 export * from "./overlay-events";
 export * from "./rpc";
 export * from "./stream-events";
