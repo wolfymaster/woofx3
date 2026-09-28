@@ -177,8 +177,8 @@ a condition on the trigger decides whether an edge exists at all — so the grap
 save-time check could see is both missing edges and full of ones that never fire.
 The chain is the path actually taken.
 
-A repeating timer is not a loop: each `timer.ended` comes from the expiry check, a
-background task, so every repetition starts a fresh chain.
+A repeating timer is not a loop: each `timer.ended` comes from the timer's deadline
+firing, not from the workflow that started it, so every repetition starts a fresh chain.
 
 ## Workflow CRUD Events
 

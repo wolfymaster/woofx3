@@ -1079,7 +1079,7 @@ workflow to one instance.
 | `counter.changed` | Any counter action moves the number. |
 | `timer.started` | A timer goes from standing still to counting down. |
 | `timer.paused` | Pause stops a timer that was counting down. |
-| `timer.ended` | A running timer reaches zero. Nothing runs at that moment, so the module's `timer_expiry` background task checks once a second, stops each timer that has run out and announces it. Starting a timer from its ended workflow makes it repeat. |
+| `timer.ended` | A running timer reaches zero. Every change that leaves a timer running arms the module's `timer_end` [deadline](#deadlines-deadlines) for its `endsAt`, and the firing stops the timer and announces it. The `timer_reconcile` task (on load, then once a minute) ends any timer that ran out while the engine was down or whose deadline was not armed. Starting a timer from its ended workflow makes it repeat. |
 | `queue.added` | An entry joins a queue. |
 | `queue.next` | The entry at the front of a queue is taken. |
 | `goal.reached` | A change carries a counter from below one of its goals to at or above it. Climbing further past that goal announces nothing more, and one change crossing several goals announces each. Reaching a goal again after dropping below it announces again only when the counter's `announceEveryTime` setting is on; `first` on the event says which crossing this was, and `goalName` carries the goal's name, or `""` when it has none. A counter with no goals announces none. |
