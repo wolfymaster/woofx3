@@ -52,13 +52,9 @@ describe("obs.* action parameters", () => {
     expect(errorPaths(def)).toEqual(["tasks[0].parameters.sceneName"]);
   });
 
-  test("refuses a mute step with no input or state", () => {
-    expect(
-      errorPaths({
-        ...withStep("obs.set_input_mute", {}),
-        tasks: [{ id: "t1", type: "action", action: "obs.set_input_mute" }],
-      })
-    ).toEqual(["tasks[0].parameters.inputName", "tasks[0].parameters.muted"]);
+  test("refuses a mute step with no input, and leaves the state to its default", () => {
+    expect(errorPaths(withStep("obs.set_input_mute", {}))).toEqual(["tasks[0].parameters.inputName"]);
+    expect(errorPaths(withStep("obs.set_input_mute", { inputName: "Mic/Aux" }))).toEqual([]);
   });
 
   test("leaves other actions' parameters alone", () => {

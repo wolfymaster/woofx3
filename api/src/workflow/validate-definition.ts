@@ -147,21 +147,22 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
   return { ok: true, value: input as WorkflowDefinition };
 }
 
-type ObsParamRule = "requiredString" | "optionalString" | "requiredBoolean";
+type ObsParamRule = "requiredString" | "optionalString" | "optionalBoolean";
 
 /**
- * Parameters of the engine's native `obs.*` actions. Mirrors the parsers in
+ * Parameters of the engine's native `obs.*` actions. Mirrors `obsActions` in
  * workflow/obs_actions.go, so a step the engine would refuse at run time is
- * refused when it is saved, with the path the editor can point at.
+ * refused when it is saved, with the path the editor can point at. The
+ * booleans are optional: the engine defaults an absent one to true.
  */
 const OBS_ACTION_PARAMS: Record<string, Record<string, ObsParamRule>> = {
   "obs.switch_scene": { sceneName: "requiredString" },
   "obs.set_source_visibility": {
     sceneName: "optionalString",
     sourceName: "requiredString",
-    visible: "requiredBoolean",
+    visible: "optionalBoolean",
   },
-  "obs.set_input_mute": { inputName: "requiredString", muted: "requiredBoolean" },
+  "obs.set_input_mute": { inputName: "requiredString", muted: "optionalBoolean" },
 };
 
 // A value built from an expression is only known once the run resolves it,
@@ -187,13 +188,15 @@ function validateObsActionParams(
       errors.push({ path, message: "must be a string when set" });
     }
     if (
-      rule === "requiredBoolean" &&
+      rule === "optionalBoolean" &&
+      value !== undefined &&
+      value !== null &&
       typeof value !== "boolean" &&
       value !== "true" &&
       value !== "false" &&
       !isExpression(value)
     ) {
-      errors.push({ path, message: "required: true or false" });
+      errors.push({ path, message: "must be true or false" });
     }
   }
 }

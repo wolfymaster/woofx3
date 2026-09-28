@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,32 +47,85 @@ type obsCommandReply struct {
 	Error string `json:"error"`
 }
 
-// NewObsSwitchSceneAction is the engine handler registered as
-// `obs.switch_scene`: make `sceneName` the program scene.
+// obsAction is one engine-native OBS action: its step name, its handler, and a
+// check of its stored step parameters.
 //
-// Canonical id of the corresponding action declaration row:
-// `woofx3:action:obs.switch_scene`.
-func NewObsSwitchSceneAction() tasks.ActionFunc[AppServices] {
-	return newObsAction(parseSwitchSceneParams, messageBusRequester)
+// `validate` runs on parameters as saved, before expressions resolve, so it
+// accepts a `${...}` string wherever a boolean belongs; `parse` inside the
+// handler checks the resolved values. The pair is shaped for registration
+// with parameter validation (`RegisterValidatedAction(name, action,
+// validate)`), which the engine does not offer yet; until it does, the api's
+// validate-definition.ts applies the same rules when a workflow is saved.
+type obsAction struct {
+	name     string
+	action   tasks.ActionFunc[AppServices]
+	validate func(params map[string]any) error
 }
 
-// NewObsSetSourceVisibilityAction is the engine handler registered as
-// `obs.set_source_visibility`: show or hide `sourceName` in `sceneName`, or in
-// the current program scene when `sceneName` is blank.
-//
-// Canonical id of the corresponding action declaration row:
-// `woofx3:action:obs.set_source_visibility`.
-func NewObsSetSourceVisibilityAction() tasks.ActionFunc[AppServices] {
-	return newObsAction(parseSetSourceVisibilityParams, messageBusRequester)
+func obsActions() []obsAction {
+	return []obsAction{
+		{
+			// Canonical id: `woofx3:action:obs.switch_scene`.
+			name:     "obs.switch_scene",
+			action:   newObsAction(parseSwitchSceneParams, messageBusRequester),
+			validate: obsParamsValidator(map[string]obsParamRule{"sceneName": obsRequiredString}),
+		},
+		{
+			// Canonical id: `woofx3:action:obs.set_source_visibility`.
+			name:   "obs.set_source_visibility",
+			action: newObsAction(parseSetSourceVisibilityParams, messageBusRequester),
+			validate: obsParamsValidator(map[string]obsParamRule{
+				"sourceName": obsRequiredString,
+				"sceneName":  obsOptionalString,
+				"visible":    obsOptionalBool,
+			}),
+		},
+		{
+			// Canonical id: `woofx3:action:obs.set_input_mute`.
+			name:   "obs.set_input_mute",
+			action: newObsAction(parseSetInputMuteParams, messageBusRequester),
+			validate: obsParamsValidator(map[string]obsParamRule{
+				"inputName": obsRequiredString,
+				"muted":     obsOptionalBool,
+			}),
+		},
+	}
 }
 
-// NewObsSetInputMuteAction is the engine handler registered as
-// `obs.set_input_mute`: mute or unmute the audio input `inputName`.
-//
-// Canonical id of the corresponding action declaration row:
-// `woofx3:action:obs.set_input_mute`.
-func NewObsSetInputMuteAction() tasks.ActionFunc[AppServices] {
-	return newObsAction(parseSetInputMuteParams, messageBusRequester)
+type obsParamRule int
+
+const (
+	obsRequiredString obsParamRule = iota
+	obsOptionalString
+	obsOptionalBool
+)
+
+// obsParamsValidator checks stored parameters against rules. Mirrors
+// OBS_ACTION_PARAMS in api/src/workflow/validate-definition.ts.
+func obsParamsValidator(rules map[string]obsParamRule) func(map[string]any) error {
+	return func(params map[string]any) error {
+		for key, rule := range rules {
+			raw, present := params[key]
+			switch rule {
+			case obsRequiredString:
+				if _, err := requiredStringParam(params, key); err != nil {
+					return err
+				}
+			case obsOptionalString:
+				if _, err := optionalStringParam(params, key); err != nil {
+					return err
+				}
+			case obsOptionalBool:
+				if s, ok := raw.(string); present && ok && strings.Contains(s, "${") {
+					continue
+				}
+				if _, err := optionalBoolParam(params, key, true); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
 }
 
 // messageBusRequester returns nil rather than a nil *natsclient.Client
@@ -175,7 +229,7 @@ func parseSetSourceVisibilityParams(params map[string]any) (obsCommand, error) {
 	if err != nil {
 		return obsCommand{}, err
 	}
-	visible, err := requiredBoolParam(params, "visible")
+	visible, err := optionalBoolParam(params, "visible", true)
 	if err != nil {
 		return obsCommand{}, err
 	}
@@ -192,7 +246,7 @@ func parseSetInputMuteParams(params map[string]any) (obsCommand, error) {
 	if err != nil {
 		return obsCommand{}, err
 	}
-	muted, err := requiredBoolParam(params, "muted")
+	muted, err := optionalBoolParam(params, "muted", true)
 	if err != nil {
 		return obsCommand{}, err
 	}
@@ -219,11 +273,17 @@ func optionalStringParam(params map[string]any, key string) (string, error) {
 	return value, nil
 }
 
-// requiredBoolParam accepts the strings "true" and "false" as well as JSON
-// booleans. A toggle can be stored either way, and a step that reads the value
-// from an expression embedded in text resolves to a string.
-func requiredBoolParam(params map[string]any, key string) (bool, error) {
+// optionalBoolParam reads a boolean that defaults to `fallback` when absent.
+//
+// Absent is allowed, not refused, because a form may leave an untouched toggle
+// out of the saved step rather than store its default, and the default is the
+// value the author saw on screen. The strings "true" and "false" are accepted
+// as well as JSON booleans: a toggle can be stored either way, and an
+// expression embedded in text resolves to a string.
+func optionalBoolParam(params map[string]any, key string, fallback bool) (bool, error) {
 	switch v := params[key].(type) {
+	case nil:
+		return fallback, nil
 	case bool:
 		return v, nil
 	case string:

@@ -370,7 +370,6 @@
           "id": "visible",
           "label": "Visible",
           "type": "toggle",
-          "required": true,
           "defaultValue": true,
           "description": "On shows the source; off hides it."
         },
@@ -414,7 +413,6 @@
           "id": "muted",
           "label": "Muted",
           "type": "toggle",
-          "required": true,
           "defaultValue": true,
           "description": "On mutes the input; off unmutes it."
         }

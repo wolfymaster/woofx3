@@ -229,9 +229,9 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	a.engine.RegisterAction("function", WithServices(appServices, NewBarkloaderAction()))
 	a.engine.RegisterAction("alert", WithServices(appServices, NewAlertAction()))
 	a.engine.RegisterAction("chat.reply", WithServices(appServices, NewChatReplyAction()))
-	a.engine.RegisterAction("obs.switch_scene", WithServices(appServices, NewObsSwitchSceneAction()))
-	a.engine.RegisterAction("obs.set_source_visibility", WithServices(appServices, NewObsSetSourceVisibilityAction()))
-	a.engine.RegisterAction("obs.set_input_mute", WithServices(appServices, NewObsSetInputMuteAction()))
+	for _, obs := range obsActions() {
+		a.engine.RegisterAction(obs.name, WithServices(appServices, obs.action))
+	}
 	a.engine.RegisterAction("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 		a.logger.Info("Action: print", "params", params)
 		return params, nil

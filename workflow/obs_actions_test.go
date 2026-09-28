@@ -132,7 +132,7 @@ func TestObsSetSourceVisibility_AcceptsAToggleStoredAsAString(t *testing.T) {
 }
 
 func TestObsSetSourceVisibility_RefusesAnUnreadableVisible(t *testing.T) {
-	for _, visible := range []any{nil, "yes", 1.0} {
+	for _, visible := range []any{"yes", 1.0} {
 		bus := &fakeObsBus{reply: []byte(`{"ok":true}`)}
 		_, err := runObsAction(t, parseSetSourceVisibilityParams, bus, map[string]any{
 			"sourceName": "Confetti",
@@ -211,5 +211,91 @@ func TestObsAction_RefusesAnUnreadableReply(t *testing.T) {
 func TestMessageBusRequester_IsNilWithoutABus(t *testing.T) {
 	if messageBusRequester(AppServices{}) != nil {
 		t.Fatal("want a nil requester for a nil message bus")
+	}
+}
+
+func TestObsSetSourceVisibility_DefaultsToShowingWhenVisibleIsAbsent(t *testing.T) {
+	bus := &fakeObsBus{reply: []byte(`{"ok":true}`)}
+
+	_, err := runObsAction(t, parseSetSourceVisibilityParams, bus, map[string]any{"sourceName": "Confetti"})
+	if err != nil {
+		t.Fatalf("action: %v", err)
+	}
+	_, data := sentCommand(t, bus)
+	if data["visible"] != true {
+		t.Errorf("visible = %v, want the default true", data["visible"])
+	}
+}
+
+func TestObsSetInputMute_DefaultsToMutingWhenMutedIsAbsent(t *testing.T) {
+	bus := &fakeObsBus{reply: []byte(`{"ok":true}`)}
+
+	_, err := runObsAction(t, parseSetInputMuteParams, bus, map[string]any{"inputName": "Mic/Aux"})
+	if err != nil {
+		t.Fatalf("action: %v", err)
+	}
+	_, data := sentCommand(t, bus)
+	if data["muted"] != true {
+		t.Errorf("muted = %v, want the default true", data["muted"])
+	}
+}
+
+func obsValidator(t *testing.T, name string) func(map[string]any) error {
+	t.Helper()
+	for _, action := range obsActions() {
+		if action.name == name {
+			return action.validate
+		}
+	}
+	t.Fatalf("no obs action %q", name)
+	return nil
+}
+
+func TestObsActions_AreTheThreeDeclaredInTheManifest(t *testing.T) {
+	var names []string
+	for _, action := range obsActions() {
+		names = append(names, action.name)
+	}
+	want := "obs.switch_scene,obs.set_source_visibility,obs.set_input_mute"
+	if strings.Join(names, ",") != want {
+		t.Errorf("actions = %v, want %s", names, want)
+	}
+}
+
+func TestObsValidators_AcceptStoredStepsIncludingExpressions(t *testing.T) {
+	cases := []struct {
+		action string
+		params map[string]any
+	}{
+		{"obs.switch_scene", map[string]any{"sceneName": "${trigger.data.scene}"}},
+		{"obs.set_source_visibility", map[string]any{"sourceName": "Confetti"}},
+		{"obs.set_source_visibility", map[string]any{"sourceName": "Confetti", "visible": "${trigger.data.show}"}},
+		{"obs.set_source_visibility", map[string]any{"sourceName": "Confetti", "sceneName": "Main", "visible": false}},
+		{"obs.set_input_mute", map[string]any{"inputName": "Mic/Aux", "muted": "false"}},
+	}
+	for _, c := range cases {
+		if err := obsValidator(t, c.action)(c.params); err != nil {
+			t.Errorf("%s %v: %v", c.action, c.params, err)
+		}
+	}
+}
+
+func TestObsValidators_RefuseMissingOrMistypedParameters(t *testing.T) {
+	cases := []struct {
+		action string
+		params map[string]any
+		want   string
+	}{
+		{"obs.switch_scene", map[string]any{}, "sceneName"},
+		{"obs.set_source_visibility", map[string]any{"visible": true}, "sourceName"},
+		{"obs.set_source_visibility", map[string]any{"sourceName": "Confetti", "visible": "yes"}, "visible"},
+		{"obs.set_source_visibility", map[string]any{"sourceName": "Confetti", "sceneName": 3.0}, "sceneName"},
+		{"obs.set_input_mute", map[string]any{"muted": true}, "inputName"},
+	}
+	for _, c := range cases {
+		err := obsValidator(t, c.action)(c.params)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s %v: err = %v, want one naming %s", c.action, c.params, err, c.want)
+		}
 	}
 }
