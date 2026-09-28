@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -199,10 +200,16 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// lifecycle above and decoded differently: this subject carries an ordinary
 	// CloudEvent naming one workflow, not a registry change, so it cannot share
 	// handleWorkflowEvent.
-	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowExecute), func(msg natsclient.Msg) {
-		a.handleWorkflowExecuteEvent(msg)
-	}); err != nil {
+	//
+	// Subscribed with a reply handler: a caller that sends a request, rather
+	// than publishing, is told whether the run started and with which id. A
+	// plain publish has no reply subject, so the answer is simply dropped.
+	if _, err := natsClient.SubscribeWithReply(string(cloudevents.SubjectWorkflowExecute), a.handleWorkflowExecuteEvent); err != nil {
 		a.logger.Error("Failed to subscribe to workflow execute events", "error", err)
+	}
+
+	if _, err := natsClient.SubscribeWithReply(string(cloudevents.SubjectWorkflowCancel), a.handleWorkflowCancelRequest); err != nil {
+		a.logger.Error("Failed to subscribe to workflow cancel requests", "error", err)
 	}
 
 	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowReplay), func(msg natsclient.Msg) {
@@ -291,45 +298,154 @@ func (a *WorkflowApp) handleWorkflowEvent(msg natsclient.Msg) {
 	}
 }
 
-// handleWorkflowExecuteEvent runs one workflow on request.
+// executeRequestOptions are the optional fields of a workflow.execute event's
+// data, beyond the workflow it names.
+type executeRequestOptions struct {
+	// TriggerData is the sample payload the run resolves `${trigger.data...}`
+	// against. Absent, the run starts from the execute event itself.
+	TriggerData    map[string]any `json:"triggerData"`
+	Platform       string         `json:"platform"`
+	SkipConditions bool           `json:"skipConditions"`
+}
+
+// executeReply answers a workflow.execute request.
+//
+// Outcome is "started", "conditions_not_met" or "refused". The api decodes it
+// in api/src/routes/workflows-execution.ts, so a field renamed here must be
+// renamed there.
+type executeReply struct {
+	Outcome     string                  `json:"outcome"`
+	ExecutionID string                  `json:"executionId,omitempty"`
+	EventType   string                  `json:"eventType,omitempty"`
+	Unmet       []engine.UnmetCondition `json:"unmet,omitempty"`
+	Error       string                  `json:"error,omitempty"`
+}
+
+// handleWorkflowExecuteEvent runs one workflow on request, and returns the
+// reply for a caller that asked for one.
 //
 // Distinct from handleWorkflowEvent, which decodes a registry change: this
 // subject carries an ordinary CloudEvent whose data names the workflow to run.
 //
-// The event is handed to the engine unchanged rather than synthesized afresh,
-// so its correlation attributes reach the execution -- that is what lets the
-// caller who asked for this run be told how it ended, since the run happens
-// here long after their request returned.
-func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) {
+// Without sample trigger data the event is handed to the engine unchanged
+// rather than synthesized afresh, so its correlation attributes reach the
+// execution -- that is what lets the caller who asked for this run be told how
+// it ended, since the run happens here long after their request returned.
+func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) []byte {
 	event, err := a.validateCloudEvent(msg.Data())
 	if err != nil {
 		a.logger.Error("Invalid workflow execute event",
 			"error", err,
 			"subject", msg.Subject())
-		return
+		return encodeExecuteReply(executeReply{Outcome: "refused", Error: err.Error()})
 	}
 
 	workflowID, _ := event.Data["workflowId"].(string)
 	if workflowID == "" {
 		a.logger.Error("Workflow execute event names no workflow", "event_id", event.ID)
-		return
+		return encodeExecuteReply(executeReply{Outcome: "refused", Error: "no workflowId"})
+	}
+
+	var options executeRequestOptions
+	if err := decodeEventData(event.Data, &options); err != nil {
+		a.logger.Error("Workflow execute event options unreadable", "event_id", event.ID, "error", err)
+		return encodeExecuteReply(executeReply{Outcome: "refused", Error: err.Error()})
 	}
 
 	a.logger.Info("Running workflow on request",
 		"workflow_id", workflowID,
 		"trigger_id", event.TriggerID,
-		"triggered_by", event.TriggeredBy)
+		"triggered_by", event.TriggeredBy,
+		"sample_data", options.TriggerData != nil)
 
 	// A workflow absent from the registry is the common failure here -- it was
-	// deleted, disabled, or never reached this engine. The run simply does not
-	// happen, and the caller learns that from the silence rather than from a
-	// failed run, because there is no run to fail.
-	if err := a.engine.FireByWorkflowID(workflowID, event); err != nil {
+	// deleted, disabled, or never reached this engine. A caller that published
+	// learns that from the silence, because there is no run to fail; one that
+	// sent a request is told.
+	result, err := a.engine.RunManual(engine.ManualRun{
+		WorkflowID:     workflowID,
+		Request:        event,
+		TriggerData:    options.TriggerData,
+		Platform:       options.Platform,
+		SkipConditions: options.SkipConditions,
+	})
+	if err != nil {
 		a.logger.Error("Failed to run requested workflow",
 			"workflow_id", workflowID,
 			"trigger_id", event.TriggerID,
 			"error", err)
+		return encodeExecuteReply(executeReply{Outcome: "refused", Error: err.Error()})
 	}
+
+	return encodeExecuteReply(executeReply{
+		Outcome:     string(result.Outcome),
+		ExecutionID: result.ExecutionID,
+		EventType:   result.EventType,
+		Unmet:       result.Unmet,
+	})
+}
+
+// decodeEventData reads an event's data map into a typed shape.
+func decodeEventData(data map[string]any, into any) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, into)
+}
+
+func encodeExecuteReply(reply executeReply) []byte {
+	raw, err := json.Marshal(reply)
+	if err != nil {
+		// Only reachable with an unmarshalable condition value, which came
+		// from a definition that was itself decoded from JSON.
+		raw, _ = json.Marshal(executeReply{Outcome: "refused", Error: err.Error()})
+	}
+	return raw
+}
+
+// cancelRequest asks for a run to stop.
+type cancelRequest struct {
+	ExecutionID string `json:"executionId"`
+	Reason      string `json:"reason"`
+}
+
+// cancelReply answers a workflow.cancel request.
+//
+// Outcome is "cancelled", "already_finished", "not_found" or "refused"; Status
+// is the run's status after the request. Decoded in
+// api/src/routes/workflows-execution.ts.
+type cancelReply struct {
+	Outcome string `json:"outcome"`
+	Status  string `json:"status,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// handleWorkflowCancelRequest stops a run and replies with what that did.
+//
+// A plain JSON body rather than a CloudEvent: this is a command to one
+// service with an answer, not an event anything else reacts to.
+func (a *WorkflowApp) handleWorkflowCancelRequest(msg natsclient.Msg) []byte {
+	var req cancelRequest
+	if err := json.Unmarshal(msg.Data(), &req); err != nil || req.ExecutionID == "" {
+		a.logger.Error("Invalid workflow cancel request", "subject", msg.Subject(), "error", err)
+		return encodeCancelReply(cancelReply{Outcome: "refused", Error: "executionId is required"})
+	}
+
+	result, err := a.engine.Cancel(req.ExecutionID, req.Reason)
+	if errors.Is(err, engine.ErrExecutionNotFound) {
+		return encodeCancelReply(cancelReply{Outcome: "not_found"})
+	}
+	if err != nil {
+		a.logger.Error("Workflow cancel failed", "execution", req.ExecutionID, "error", err)
+		return encodeCancelReply(cancelReply{Outcome: "refused", Error: err.Error()})
+	}
+	return encodeCancelReply(cancelReply{Outcome: string(result.Outcome), Status: string(result.Status)})
+}
+
+func encodeCancelReply(reply cancelReply) []byte {
+	raw, _ := json.Marshal(reply)
+	return raw
 }
 
 // actionExecuteMessage asks for a list of actions to run.

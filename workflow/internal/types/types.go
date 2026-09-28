@@ -225,6 +225,10 @@ const (
 	TaskStatusSuccess TaskStatus = "success"
 	TaskStatusFailed  TaskStatus = "failed"
 	TaskStatusSkipped TaskStatus = "skipped"
+	// TaskStatusCancelled marks a task the run was cancelled during: a wait
+	// that was pending, or an action whose result the engine stopped waiting
+	// for. An abandoned action is not undone; whatever it already did stands.
+	TaskStatusCancelled TaskStatus = "cancelled"
 )
 
 type TaskResult struct {
@@ -241,6 +245,7 @@ const (
 	ExecutionStatusWaiting   ExecutionStatus = "waiting"
 	ExecutionStatusCompleted ExecutionStatus = "completed"
 	ExecutionStatusFailed    ExecutionStatus = "failed"
+	ExecutionStatusCancelled ExecutionStatus = "cancelled"
 )
 
 type WorkflowExecution struct {
