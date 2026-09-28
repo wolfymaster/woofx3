@@ -32,6 +32,9 @@ type ReplayRequest struct {
 	// it, replacing whatever the original event carried.
 	TriggerID   string
 	TriggeredBy string
+	// DryRun replays without side effects. The caller decides; a replay of a
+	// recorded dry run should normally be one too.
+	DryRun bool
 }
 
 // Replay runs a recorded run again, whole or from one of its steps.
@@ -71,7 +74,7 @@ func (e *Engine[TServices]) Replay(req ReplayRequest) error {
 	}
 
 	go func() {
-		execution := e.beginExecution(def, event)
+		execution := e.beginExecutionAs(def, event, req.DryRun)
 		e.logger.Info("Replaying workflow run",
 			"workflow", def.ID,
 			"execution", execution.ID,

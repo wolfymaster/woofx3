@@ -58,6 +58,7 @@ func (r *dbRunRecorder) RunStarted(execution *types.WorkflowExecution) {
 		TriggeredBy:      triggeredBy(execution),
 		TriggerEventJson: r.triggerEventJSON(execution),
 		StartedAt:        timestamppb.New(execution.StartedAt),
+		DryRun:           execution.DryRun,
 	})
 	if err != nil {
 		r.logger.Warn("workflow run not recorded",

@@ -16,7 +16,10 @@ type Task interface {
 type TaskContext struct {
 	// Context is done when the run is cancelled. A task that blocks should
 	// return once it is; the engine stops waiting for it either way.
-	Context    context.Context
+	Context context.Context
+	// DryRun is set for a run whose side-effecting actions describe what
+	// they would do instead of doing it (see ActionSpec).
+	DryRun     bool
 	WorkflowID string
 	// ExecutionID identifies this run, as distinct from WorkflowID which
 	// identifies the definition. A side effect attributed only to the
@@ -113,18 +116,44 @@ type ActionContext[TServices any] struct {
 
 type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)
 
+// ActionSpec is what the engine knows about an action beyond how to run it.
+type ActionSpec struct {
+	// SideEffect marks an action that changes something outside the run:
+	// chat, an overlay, the bus, a service, or a module's code. In a dry run
+	// such an action is not called; its step records what it would have done.
+	SideEffect bool
+	// DryRun describes, as one sentence, what the action would do with these
+	// parameters. It may refuse parameters the real action would refuse, so
+	// a dry run fails where the real run would. Optional: without it the
+	// sentence is "would run <action> with <params>".
+	DryRun func(params map[string]any) (string, error)
+}
+
+type registeredAction[TServices any] struct {
+	fn   ActionFunc[TServices]
+	spec ActionSpec
+}
+
 type ActionRegistry[TServices any] struct {
 	mu      sync.RWMutex
-	actions map[string]ActionFunc[TServices]
+	actions map[string]registeredAction[TServices]
 }
 
 func NewActionRegistry[TServices any]() *ActionRegistry[TServices] {
 	return &ActionRegistry[TServices]{
-		actions: make(map[string]ActionFunc[TServices]),
+		actions: make(map[string]registeredAction[TServices]),
 	}
 }
 
+// Register adds an action that is treated as having side effects. That is
+// the safe reading of an action nobody described: a dry run skips it rather
+// than risk doing something real. Use RegisterWithSpec for one that is safe
+// to run in a dry run.
 func (r *ActionRegistry[TServices]) Register(name string, action ActionFunc[TServices]) error {
+	return r.RegisterWithSpec(name, action, ActionSpec{SideEffect: true})
+}
+
+func (r *ActionRegistry[TServices]) RegisterWithSpec(name string, action ActionFunc[TServices], spec ActionSpec) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -132,17 +161,29 @@ func (r *ActionRegistry[TServices]) Register(name string, action ActionFunc[TSer
 		return fmt.Errorf("action already registered: %s", name)
 	}
 
-	r.actions[name] = action
+	r.actions[name] = registeredAction[TServices]{fn: action, spec: spec}
 	return nil
+}
+
+// Spec returns what was declared about an action.
+func (r *ActionRegistry[TServices]) Spec(name string) (ActionSpec, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	registered, ok := r.actions[name]
+	if !ok {
+		return ActionSpec{}, fmt.Errorf("action not found: %s", name)
+	}
+	return registered.spec, nil
 }
 
 func (r *ActionRegistry[TServices]) Get(name string) (ActionFunc[TServices], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	action, ok := r.actions[name]
+	registered, ok := r.actions[name]
 	if !ok {
 		return nil, fmt.Errorf("action not found: %s", name)
 	}
-	return action, nil
+	return registered.fn, nil
 }

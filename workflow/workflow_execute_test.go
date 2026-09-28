@@ -191,3 +191,46 @@ func TestCloudEventCarriesCorrelationAttributes(t *testing.T) {
 		t.Errorf("TriggeredBy = %q, want dashboard", event.TriggeredBy)
 	}
 }
+
+func TestWorkflowExecuteCarriesDryRun(t *testing.T) {
+	app := conditionalWorkflowApp(t)
+	reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
+		subject: "workflow.execute",
+		data: []byte(`{"id":"e1","type":"workflow.execute","source":"api",` +
+			`"data":{"workflowId":"wf-raid","triggerData":{"viewers":25},"dryRun":true}}`),
+	}))
+	if reply.Outcome != "started" {
+		t.Fatalf("reply = %+v", reply)
+	}
+	execution, err := app.engine.GetExecution(reply.ExecutionID)
+	if err != nil {
+		t.Fatalf("GetExecution: %v", err)
+	}
+	if !execution.DryRun {
+		t.Error("the run was not a dry run")
+	}
+}
+
+func TestNativeActionDryRunSentences(t *testing.T) {
+	if got, err := functionActionSpec.DryRun(map[string]any{"function": "shoutout:function:greet"}); err != nil || got != "would call module function shoutout:function:greet" {
+		t.Errorf("function: %q, %v", got, err)
+	}
+	if _, err := functionActionSpec.DryRun(map[string]any{}); err == nil {
+		t.Error("function: accepted a step naming no function")
+	}
+	if got, err := chatReplyActionSpec.DryRun(map[string]any{"message": "welcome raiders"}); err != nil || got != `would send "welcome raiders" to twitch chat` {
+		t.Errorf("chat.reply: %q, %v", got, err)
+	}
+	if _, err := alertActionSpec.DryRun(map[string]any{}); err == nil {
+		t.Error("alert: accepted parameters the real action refuses")
+	}
+	for name, spec := range map[string]bool{
+		"function":   functionActionSpec.SideEffect,
+		"alert":      alertActionSpec.SideEffect,
+		"chat.reply": chatReplyActionSpec.SideEffect,
+	} {
+		if !spec {
+			t.Errorf("%s is not marked side-effecting", name)
+		}
+	}
+}

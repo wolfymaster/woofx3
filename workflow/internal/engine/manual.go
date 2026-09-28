@@ -34,6 +34,9 @@ type ManualRun struct {
 	// SkipConditions runs the workflow even when TriggerData does not satisfy
 	// its trigger conditions.
 	SkipConditions bool
+	// DryRun runs the workflow without its side effects: each side-effecting
+	// action records what it would do, and waits complete at once.
+	DryRun bool
 }
 
 // ManualRunOutcome is what a manual run request did.
@@ -87,7 +90,7 @@ func (e *Engine[TServices]) RunManual(req ManualRun) (ManualRunResult, error) {
 		}
 	}
 
-	execution := e.beginExecution(def, event)
+	execution := e.beginExecutionAs(def, event, req.DryRun)
 	go e.runExecution(def, execution, event)
 	return ManualRunResult{Outcome: ManualRunStarted, ExecutionID: execution.ID, EventType: event.Type}, nil
 }

@@ -156,8 +156,16 @@ func (e *Engine[TServices]) GetWorkflow(id string) (*types.WorkflowDefinition, e
 	return e.workflowRegistry.Get(id)
 }
 
+// RegisterAction adds an action treated as having side effects; see
+// tasks.ActionRegistry.Register.
 func (e *Engine[TServices]) RegisterAction(name string, action tasks.ActionFunc[TServices]) error {
 	return e.actionRegistry.Register(name, action)
+}
+
+// RegisterActionWithSpec adds an action with what the engine should know
+// about it, such as whether a dry run may call it.
+func (e *Engine[TServices]) RegisterActionWithSpec(name string, action tasks.ActionFunc[TServices], spec tasks.ActionSpec) error {
+	return e.actionRegistry.RegisterWithSpec(name, action, spec)
 }
 
 func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
@@ -241,7 +249,7 @@ func (e *Engine[TServices]) SetAssetURLResolver(resolver AssetURLResolver) {
 }
 
 func (e *Engine[TServices]) registerPublishAction() {
-	e.actionRegistry.Register("publish_event", func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
+	e.actionRegistry.RegisterWithSpec("publish_event", func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
 		if e.publisher == nil {
 			return nil, fmt.Errorf("no event publisher configured")
 		}
@@ -279,6 +287,15 @@ func (e *Engine[TServices]) registerPublishAction() {
 			"eventType": eventType,
 			"published": true,
 		}, nil
+	}, tasks.ActionSpec{
+		SideEffect: true,
+		DryRun: func(params map[string]any) (string, error) {
+			eventType, ok := params["eventType"].(string)
+			if !ok || eventType == "" {
+				return "", fmt.Errorf("eventType parameter is required")
+			}
+			return fmt.Sprintf("would publish a %s event", eventType), nil
+		},
 	})
 }
 
@@ -497,7 +514,15 @@ func (e *Engine[TServices]) workflowName(id string) string {
 }
 
 func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *types.Event) *types.WorkflowExecution {
+	return e.beginExecutionAs(wf, event, false)
+}
+
+// beginExecutionAs is beginExecution for a run that may be a dry run. The mark
+// is set before the run is announced or recorded, so the history never holds
+// a dry run that reads as a real one.
+func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event *types.Event, dryRun bool) *types.WorkflowExecution {
 	execution := &types.WorkflowExecution{
+		DryRun:       dryRun,
 		ID:           uuid.New().String(),
 		WorkflowID:   wf.ID,
 		Status:       types.ExecutionStatusRunning,
@@ -694,6 +719,11 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			}
 
 			e.settleCondition(execution, taskDef, taskExec, i, result, false, taskExports, skippedTasks)
+			continue
+		}
+
+		if taskDef.Type == "wait" && taskDef.Wait != nil && execution.DryRun {
+			e.completeDryRunWait(execution, taskDef, taskExec, i, taskExports)
 			continue
 		}
 
@@ -1381,7 +1411,7 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		}
 
 		// Execute the sub-workflow
-		subExecutionID := e.executeWorkflowSync(wf, subEvent)
+		subExecutionID := e.executeWorkflowSync(wf, subEvent, execution.DryRun)
 		if subExecutionID == "" {
 			e.logger.Error("Failed to execute sub-workflow", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID)
 			return "failed"
@@ -1470,10 +1500,11 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 	return "waiting"
 }
 
-func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, event *types.Event) string {
+func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, event *types.Event, dryRun bool) string {
 	executionID := uuid.New().String()
 
 	execution := &types.WorkflowExecution{
+		DryRun:       dryRun,
 		ID:           executionID,
 		WorkflowID:   wf.ID,
 		Status:       types.ExecutionStatusRunning,
@@ -1682,6 +1713,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	taskCtx := &tasks.TaskContext{
 		Context:      e.runContext(execution.ID),
+		DryRun:       execution.DryRun,
 		WorkflowID:   execution.WorkflowID,
 		ExecutionID:  execution.ID,
 		TaskID:       taskDef.ID,
