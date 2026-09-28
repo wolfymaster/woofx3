@@ -12,7 +12,7 @@ name: format checks
 
 on:
   push:
-    branches: [main, master, release]
+    branches: [main, master, unstable, release]
   pull_request:
   workflow_dispatch:
 

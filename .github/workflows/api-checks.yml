@@ -16,7 +16,7 @@ name: api checks
 
 on:
   push:
-    branches: [main, master, release]
+    branches: [main, master, unstable, release]
     paths:
       - "api/**"
       - "shared/clients/typescript/**"

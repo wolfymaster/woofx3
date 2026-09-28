@@ -1,8 +1,8 @@
 name: Release
 
-# Every push to master that semantic-release finds a release in (a feat, fix,
-# perf or breaking commit since the last v* tag) publishes:
-#   - the image, ghcr.io/wolfymaster/woofx3:<tag> (+ :latest)
+# Every push to master or unstable that semantic-release finds a release in (a
+# feat, fix, perf or breaking commit since the last v* tag) publishes:
+#   - the image, ghcr.io/wolfymaster/woofx3:<tag> (+ :latest, from master only)
 #   - woofx3-<tag>-linux-amd64.zip, extracted from the image
 #   - woofx3-<tag>-windows-amd64.zip, cross-compiled by build/main.sh
 #   - a GitHub release of the tag, carrying both archives and the image digest
@@ -11,11 +11,15 @@ name: Release
 # (WOOFX3_VERSION), and nothing is tagged until every artifact exists: the
 # image is pushed by digest alone, and the git tag, the release and the
 # image's tags are all created in the last job.
+#
+# master cuts releases (v0.3.0); unstable cuts pre-releases of the next one
+# (v0.3.0-unstable.1), which GitHub marks as pre-releases.
 
 on:
   push:
     branches:
       - master
+      - unstable
 
 # Releases are cut one at a time, in push order. A run that is still building
 # when the next push lands finishes; the next run then finds its tag.
@@ -251,12 +255,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A pre-release tag carries a suffix (v0.3.0-unstable.1); latest names
+      # the newest release, never a pre-release.
       - name: Tag the image
         run: |
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAME}:${TAG}" \
-            --tag "${IMAGE_NAME}:latest" \
-            "${IMAGE_NAME}@${DIGEST}"
+          set -euo pipefail
+          tags=(--tag "${IMAGE_NAME}:${TAG}")
+          if [[ "$TAG" != *-* ]]; then
+            tags+=(--tag "${IMAGE_NAME}:latest")
+          fi
+          docker buildx imagetools create "${tags[@]}" "${IMAGE_NAME}@${DIGEST}"
 
       - name: Add the image to the release notes
         env:
@@ -266,6 +274,11 @@ jobs:
           gh release view "$TAG" --json body --jq .body > notes.md
           if grep -qF '## Container image' notes.md; then
             exit 0
+          fi
+          if [[ "$TAG" != *-* ]]; then
+            latest_note="Also tagged as \`${IMAGE_NAME}:latest\`, which moves with every release; never deploy it."
+          else
+            latest_note="A pre-release: not tagged as \`${IMAGE_NAME}:latest\`."
           fi
           cat >> notes.md <<EOF
 
@@ -283,7 +296,7 @@ jobs:
           ${IMAGE_NAME}@${DIGEST}
           \`\`\`
 
-          Also tagged as \`${IMAGE_NAME}:latest\`, which moves with every release; never deploy it.
+          ${latest_note}
 
           ## Binary packages
 
