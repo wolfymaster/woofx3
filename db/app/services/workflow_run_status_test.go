@@ -26,6 +26,7 @@ func newRunStatusSvc(t *testing.T) (client.WorkflowService, *gorm.DB) {
 		error TEXT,
 		trigger_event TEXT,
 		triggered_by TEXT,
+		dry_run BOOLEAN NOT NULL DEFAULT 0,
 		started_at DATETIME,
 		completed_at DATETIME,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -141,5 +142,29 @@ func TestUpdateWorkflowRunStatus_UnknownRun(t *testing.T) {
 	_, err := setRunStatus(svc, uuid.New().String(), "cancelled", "")
 	if twerr, ok := err.(twirp.Error); !ok || twerr.Code() != twirp.NotFound {
 		t.Fatalf("err = %v, want NotFound", err)
+	}
+}
+
+func TestRecordWorkflowRun_KeepsTheDryRunMark(t *testing.T) {
+	svc, db := newRunStatusSvc(t)
+	id := uuid.New().String()
+	resp, err := svc.RecordWorkflowRun(context.Background(), &client.RecordWorkflowRunRequest{
+		Id:          id,
+		WorkflowId:  uuid.New().String(),
+		TriggeredBy: "test",
+		DryRun:      true,
+	})
+	if err != nil {
+		t.Fatalf("RecordWorkflowRun: %v", err)
+	}
+	if !resp.Execution.DryRun {
+		t.Error("response lost the dry-run mark")
+	}
+	exec, err := models.GetWorkflowExecutionByID(db, uuid.MustParse(id))
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if !exec.DryRun {
+		t.Error("stored run lost the dry-run mark")
 	}
 }
