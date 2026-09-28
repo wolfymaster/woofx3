@@ -12,7 +12,7 @@ import * as protoscript from "protoscript";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
 import type { WorkflowItem } from "./types";
 import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
-import { parseWorkflowHealth, SUBJECT_WORKFLOW_HEALTH_GET } from "../workflow-health-emitter";
+import { requestWorkflowHealth } from "../workflow-health-emitter";
 
 export const workflowsRoutes = routeModule({
   async getWorkflows(query?: { enabled?: boolean; page?: number; pageSize?: number }): Promise<{
@@ -224,21 +224,11 @@ export const workflowsRoutes = routeModule({
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    const reply = await this.nats.request(SUBJECT_WORKFLOW_HEALTH_GET, new TextEncoder().encode("{}"));
-    const body = JSON.parse(new TextDecoder().decode(reply.data)) as { workflows?: unknown };
-    if (!Array.isArray(body.workflows)) {
-      throw new Error("workflow service answered a health request without a workflow list");
+    const report = await requestWorkflowHealth(this.nats, this.logger);
+    if (!report.loaded) {
+      throw new Error("the workflow engine is still loading workflows; health is not known yet");
     }
-    const health: WorkflowHealth[] = [];
-    for (const raw of body.workflows) {
-      const entry = parseWorkflowHealth(raw);
-      if (entry) {
-        health.push(entry);
-      } else {
-        this.logger.warn("getWorkflowHealth: dropping malformed entry", { entry: raw });
-      }
-    }
-    return health;
+    return report.workflows;
   },
 
   async getWorkflowRuns(query?: { workflowId?: string; limit?: number }): Promise<

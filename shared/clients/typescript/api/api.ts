@@ -205,11 +205,11 @@ export type WorkflowHealthStatus = "ok" | "error";
 
 /**
  * One workflow's health, as returned by getWorkflowHealth and carried by the
- * `workflow.health.changed` webhook.
+ * `workflow.health.changed` and `workflow.health.snapshot` webhooks.
  *
- * Only enabled workflows the engine has tried to load are listed; a disabled
- * or deleted workflow has no entry, and neither does one the engine has not
- * reached yet.
+ * A workflow with no entry is ok as far as the engine knows: disabled,
+ * deleted, and healthy workflows all look the same here. Only an `"error"`
+ * entry needs showing.
  */
 export interface WorkflowHealth {
   workflowId: string;
@@ -1219,9 +1219,12 @@ export interface Woofx3EngineApi {
   ): Promise<{ id: string; isEnabled: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
   /**
-   * Health of every enabled workflow the engine has tried to load. Answered
-   * live by the workflow service, so it reflects the engine now rather than
-   * the last webhook a client happened to receive.
+   * Health of every enabled workflow the engine has loaded. Authoritative:
+   * a client replaces its whole view with the answer, and any workflow not
+   * listed with `"error"` is ok. Answered live by the workflow service, so it
+   * reflects the engine now rather than the last webhook received. Rejects
+   * while the engine is still loading its workflows, when the list would be
+   * partial.
    */
   getWorkflowHealth(): Promise<WorkflowHealth[]>;
 

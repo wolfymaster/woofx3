@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -33,7 +35,17 @@ func (l *countingLogger) Error(message string, _ ...any) { l.errors = append(l.e
 func (l *countingLogger) Debug(string, ...any)           {}
 func (l *countingLogger) Warn(string, ...any)            {}
 
+// newTestTracker returns a tracker past its start-up snapshot, which is when
+// per-workflow changes are published.
 func newTestTracker() (*WorkflowHealthTracker, *capturingPublisher, *countingLogger) {
+	tracker, publisher, logger := newBootingTracker()
+	tracker.AnnounceSnapshot()
+	publisher.events = nil
+	return tracker, publisher, logger
+}
+
+// newBootingTracker returns a tracker that has not yet finished its first load.
+func newBootingTracker() (*WorkflowHealthTracker, *capturingPublisher, *countingLogger) {
 	logger := &countingLogger{}
 	publisher := &capturingPublisher{}
 	tracker := NewWorkflowHealthTracker(logger)
@@ -52,6 +64,41 @@ func eventData(t *testing.T, event *types.Event) map[string]any {
 		t.Fatalf("event type = %q, want workflow.health.changed", event.Type)
 	}
 	return event.Data
+}
+
+func TestHealth_BootPublishesOneErrorsOnlySnapshot(t *testing.T) {
+	tracker, publisher, logger := newBootingTracker()
+	tracker.Record("a", nil)
+	tracker.Record("b", errors.New("broken"))
+	tracker.Record("c", nil)
+
+	if len(publisher.events) != 0 {
+		t.Fatalf("published %d per-workflow events before the snapshot", len(publisher.events))
+	}
+	if len(logger.errors) != 1 {
+		t.Errorf("error logs = %d, want 1: failures are logged even before the snapshot", len(logger.errors))
+	}
+
+	tracker.AnnounceSnapshot()
+	tracker.AnnounceSnapshot()
+
+	if len(publisher.events) != 1 {
+		t.Fatalf("published = %d, want one snapshot", len(publisher.events))
+	}
+	event := publisher.events[0]
+	if event.Type != "workflow.health.snapshot" {
+		t.Fatalf("type = %q", event.Type)
+	}
+	workflows, ok := event.Data["workflows"].([]map[string]any)
+	if !ok || len(workflows) != 1 {
+		t.Fatalf("workflows = %#v, want only b", event.Data["workflows"])
+	}
+	if workflows[0]["workflowId"] != "b" || workflows[0]["status"] != "error" || workflows[0]["reason"] != "broken" {
+		t.Errorf("entry = %v", workflows[0])
+	}
+	if _, ok := event.Data["at"].(string); !ok {
+		t.Errorf("at missing: %v", event.Data)
+	}
 }
 
 func TestHealth_RepeatedFailureIsLoggedAndPublishedOnce(t *testing.T) {
@@ -124,13 +171,13 @@ func TestHealth_RecoveryPublishesOK(t *testing.T) {
 	}
 }
 
-func TestHealth_FirstSuccessfulLoadIsPublishedButNotLogged(t *testing.T) {
+func TestHealth_FirstSuccessfulLoadIsNeitherPublishedNorLogged(t *testing.T) {
 	tracker, publisher, logger := newTestTracker()
 
 	tracker.Record("wf-1", nil)
 
-	if len(publisher.events) != 1 {
-		t.Fatalf("published = %d, want 1", len(publisher.events))
+	if len(publisher.events) != 0 {
+		t.Fatalf("published = %d, want 0", len(publisher.events))
 	}
 	if len(logger.infos) != 0 || len(logger.errors) != 0 {
 		t.Errorf("logs = %v / %v, want none", logger.infos, logger.errors)
@@ -173,25 +220,37 @@ func TestHealth_RetainForgetsWorkflowsNoLongerEnabled(t *testing.T) {
 }
 
 func TestHealth_RequestReplyShape(t *testing.T) {
-	tracker, _, _ := newTestTracker()
+	tracker, _, _ := newBootingTracker()
 	tracker.Record("b", nil)
 	tracker.Record("a", errors.New("broken"))
 
-	var reply struct {
+	type reply struct {
+		Loaded    bool             `json:"loaded"`
+		At        string           `json:"at"`
 		Workflows []map[string]any `json:"workflows"`
 	}
-	if err := json.Unmarshal(tracker.HandleHealthRequest(), &reply); err != nil {
+	var before reply
+	if err := json.Unmarshal(tracker.HandleHealthRequest(), &before); err != nil {
 		t.Fatal(err)
 	}
-	if len(reply.Workflows) != 2 {
-		t.Fatalf("workflows = %v", reply.Workflows)
+	if before.Loaded {
+		t.Error("loaded before the first complete load")
 	}
-	first := reply.Workflows[0]
+
+	tracker.AnnounceSnapshot()
+	var after reply
+	if err := json.Unmarshal(tracker.HandleHealthRequest(), &after); err != nil {
+		t.Fatal(err)
+	}
+	if !after.Loaded || after.At == "" || len(after.Workflows) != 2 {
+		t.Fatalf("reply = %+v", after)
+	}
+	first := after.Workflows[0]
 	if first["workflowId"] != "a" || first["status"] != "error" || first["reason"] != "broken" || first["since"] == nil {
 		t.Errorf("first = %v", first)
 	}
-	if _, has := reply.Workflows[1]["reason"]; has {
-		t.Errorf("ok entry carries a reason: %v", reply.Workflows[1])
+	if _, has := after.Workflows[1]["reason"]; has {
+		t.Errorf("ok entry carries a reason: %v", after.Workflows[1])
 	}
 }
 
@@ -217,13 +276,23 @@ func (f *fakeWorkflowDB) ListWorkflows(context.Context, *dbv1.ListWorkflowsReque
 }
 
 // refusingRegistry refuses workflows named in refuse, as registration
-// validation would for a step naming a missing action.
+// validation would for a step naming a missing action. With storeRefused it
+// keeps the definition while refusing, as the real registry does when a
+// trigger cannot be registered.
 type refusingRegistry struct {
-	registered map[string]*types.WorkflowDefinition
-	refuse     map[string]error
+	mu           sync.Mutex
+	registered   map[string]*types.WorkflowDefinition
+	refuse       map[string]error
+	storeRefused bool
+}
+
+func newRefusingRegistry() *refusingRegistry {
+	return &refusingRegistry{registered: map[string]*types.WorkflowDefinition{}, refuse: map[string]error{}}
 }
 
 func (r *refusingRegistry) List() []*types.WorkflowDefinition {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := make([]*types.WorkflowDefinition, 0, len(r.registered))
 	for _, def := range r.registered {
 		out = append(out, def)
@@ -232,16 +301,35 @@ func (r *refusingRegistry) List() []*types.WorkflowDefinition {
 }
 
 func (r *refusingRegistry) Register(def *types.WorkflowDefinition) error {
-	if err, ok := r.refuse[def.ID]; ok {
-		return err
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	err, refused := r.refuse[def.ID]
+	if !refused || r.storeRefused {
+		r.registered[def.ID] = def
 	}
-	r.registered[def.ID] = def
-	return nil
+	return err
 }
 
 func (r *refusingRegistry) Remove(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.registered, id)
 	return nil
+}
+
+func (r *refusingRegistry) RegisterWorkflow(def *types.WorkflowDefinition) error {
+	return r.Register(def)
+}
+func (r *refusingRegistry) UnregisterWorkflow(id string) error { return r.Remove(id) }
+
+func (r *refusingRegistry) setRefusal(id string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err == nil {
+		delete(r.refuse, id)
+		return
+	}
+	r.refuse[id] = err
 }
 
 func storedWorkflow(id string) *dbv1.Workflow {
@@ -261,10 +349,8 @@ func TestReconcile_RetryingAFailingWorkflowLogsOnce(t *testing.T) {
 	manager.Health().SetPublisher(publisher)
 
 	db := &fakeWorkflowDB{workflows: []*dbv1.Workflow{storedWorkflow("good"), storedWorkflow("bad")}}
-	registry := &refusingRegistry{
-		registered: map[string]*types.WorkflowDefinition{},
-		refuse:     map[string]error{"bad": errors.New(`task "t1": unknown action "print"`)},
-	}
+	registry := newRefusingRegistry()
+	registry.setRefusal("bad", errors.New(`task "t1": unknown action "print"`))
 	reconciler := newReconciler(manager, registry, db, logger, time.Minute)
 
 	for i := 0; i < 3; i++ {
@@ -277,12 +363,13 @@ func TestReconcile_RetryingAFailingWorkflowLogsOnce(t *testing.T) {
 	if _, ok := registry.registered["good"]; !ok || len(registry.registered) != 1 {
 		t.Errorf("registered = %v, want only good", registry.registered)
 	}
-	// One "ok" for good, one "error" for bad; the two retries of bad are silent.
-	if len(publisher.events) != 2 {
-		t.Fatalf("published = %d, want 2", len(publisher.events))
+	// The first pass is the first complete load, so it ends in the snapshot;
+	// the two retries of bad are silent.
+	if len(publisher.events) != 1 || publisher.events[0].Type != "workflow.health.snapshot" {
+		t.Fatalf("published = %+v, want one snapshot", publisher.events)
 	}
 
-	delete(registry.refuse, "bad")
+	registry.setRefusal("bad", nil)
 	reconciler.reconcileOnce(context.Background())
 
 	last := eventData(t, publisher.events[len(publisher.events)-1])
@@ -297,8 +384,7 @@ func TestReconcile_UnreadableDefinitionIsReportedAndDisabledOneForgotten(t *test
 	broken := storedWorkflow("broken")
 	broken.StepsJson = "not json"
 	db := &fakeWorkflowDB{workflows: []*dbv1.Workflow{broken}}
-	registry := &refusingRegistry{registered: map[string]*types.WorkflowDefinition{}, refuse: map[string]error{}}
-	reconciler := newReconciler(manager, registry, db, logger, time.Minute)
+	reconciler := newReconciler(manager, newRefusingRegistry(), db, logger, time.Minute)
 
 	reconciler.reconcileOnce(context.Background())
 
@@ -358,7 +444,113 @@ func TestReconcile_UnregistrableTriggerIsReportedWithTheRegistrarsReason(t *test
 	if got.Status != WorkflowHealthError || !strings.HasPrefix(got.Reason, `schedule "* * *" is not a valid cron expression`) {
 		t.Errorf("bad-cron = %+v", got)
 	}
-	if len(publisher.events) != 2 || len(logger.errors) != 1 {
-		t.Errorf("published = %d, error logs = %d; want 2 and 1", len(publisher.events), len(logger.errors))
+	// The second pass retries bad-cron, which fails the same way: silent.
+	if len(publisher.events) != 1 || len(logger.errors) != 1 {
+		t.Errorf("published = %d, error logs = %d; want 1 (the snapshot) and 1", len(publisher.events), len(logger.errors))
+	}
+}
+
+func TestReconcile_RetriesAStoredWorkflowWhoseTriggerWasRefused(t *testing.T) {
+	logger := &countingLogger{}
+	publisher := &capturingPublisher{}
+	manager := NewWorkflowManager(logger, nil, nil)
+	manager.Health().SetPublisher(publisher)
+	registry := newRefusingRegistry()
+	registry.storeRefused = true
+	registry.setRefusal("wf-1", errors.New(`cannot subscribe to event "channel.follow": nats: connection closed`))
+	db := &fakeWorkflowDB{workflows: []*dbv1.Workflow{storedWorkflow("wf-1")}}
+	reconciler := newReconciler(manager, registry, db, logger, time.Minute)
+
+	reconciler.reconcileOnce(context.Background())
+	if got, _ := manager.Health().Status("wf-1"); got.Status != WorkflowHealthError {
+		t.Fatalf("health = %+v, want error", got)
+	}
+
+	registry.setRefusal("wf-1", nil)
+	reconciler.reconcileOnce(context.Background())
+
+	if got, _ := manager.Health().Status("wf-1"); got.Status != WorkflowHealthOK {
+		t.Errorf("health = %+v, want ok once the subscribe succeeds", got)
+	}
+	last := eventData(t, publisher.events[len(publisher.events)-1])
+	if last["workflowId"] != "wf-1" || last["status"] != "ok" {
+		t.Errorf("last event = %v", last)
+	}
+}
+
+// gatedWorkflowDB serves a stale list, held until release is closed, and a
+// fresh row from GetWorkflow: a reconcile pass that read the database just
+// before a save, and the lifecycle event for that save.
+type gatedWorkflowDB struct {
+	dbv1.WorkflowService
+	stale     *dbv1.Workflow
+	fresh     *dbv1.Workflow
+	listing   chan struct{}
+	release   chan struct{}
+	fetchedMu sync.Mutex
+	fetched   bool
+}
+
+func (g *gatedWorkflowDB) ListWorkflows(context.Context, *dbv1.ListWorkflowsRequest) (*dbv1.ListWorkflowsResponse, error) {
+	close(g.listing)
+	<-g.release
+	return &dbv1.ListWorkflowsResponse{Workflows: []*dbv1.Workflow{g.stale}}, nil
+}
+
+func (g *gatedWorkflowDB) GetWorkflow(context.Context, *dbv1.GetWorkflowRequest) (*dbv1.WorkflowResponse, error) {
+	g.fetchedMu.Lock()
+	g.fetched = true
+	g.fetchedMu.Unlock()
+	return &dbv1.WorkflowResponse{Workflow: g.fresh}, nil
+}
+
+func TestReconcile_AStaleListCannotOverwriteAFresherLifecycleLoad(t *testing.T) {
+	logger := &countingLogger{}
+	registry := newRefusingRegistry()
+	stale := storedWorkflow("wf-1")
+	stale.StepsJson = "not json"
+	db := &gatedWorkflowDB{
+		stale:   stale,
+		fresh:   storedWorkflow("wf-1"),
+		listing: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	manager := NewWorkflowManager(logger, registry, db)
+	reconciler := newReconciler(manager, registry, db, logger, time.Minute)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		reconciler.reconcileOnce(context.Background())
+	}()
+	<-db.listing
+
+	evt, err := cloudevents.WorkflowEvent.WorkflowChangeEvent(cloudevents.OperationUpdated, "wf-1", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer wg.Done()
+		manager.HandleWorkflowCreateOrUpdate(evt)
+	}()
+
+	// Unserialized, the lifecycle load would finish here and the stale pass
+	// would then overwrite its ok with the stale row's error.
+	time.Sleep(50 * time.Millisecond)
+	db.fetchedMu.Lock()
+	fetchedDuringPass := db.fetched
+	db.fetchedMu.Unlock()
+	if fetchedDuringPass {
+		t.Error("the lifecycle event read the database while a reconcile pass was applying")
+	}
+	close(db.release)
+	wg.Wait()
+
+	if got, _ := manager.Health().Status("wf-1"); got.Status != WorkflowHealthOK {
+		t.Errorf("health = %+v, want ok from the fresher lifecycle load", got)
+	}
+	if len(registry.List()) != 1 {
+		t.Errorf("registered = %v, want the fresh wf-1", registry.List())
 	}
 }

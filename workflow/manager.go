@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
@@ -24,6 +25,14 @@ type WorkflowManager struct {
 	registry WorkflowRegistry
 	dbClient dbv1.WorkflowService
 	health   *WorkflowHealthTracker
+
+	// loadMu serializes every read-from-db-then-apply sequence: the start-up
+	// load, each lifecycle event, and each reconcile pass. Without it a
+	// reconcile pass holding a list read before a save could apply that stale
+	// row after the lifecycle event applied the fresh one, overwriting both
+	// the registered definition and its health. Serialized, whichever runs
+	// second also read the database second, so it holds the fresher row.
+	loadMu sync.Mutex
 }
 
 func (m *WorkflowManager) SetDbClient(client dbv1.WorkflowService) {
@@ -67,6 +76,9 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 		return nil
 	}
 
+	m.loadMu.Lock()
+	defer m.loadMu.Unlock()
+
 	// Fetch all enabled workflows
 	req := &dbv1.ListWorkflowsRequest{
 		IncludeDisabled: false,
@@ -98,6 +110,7 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 	}
 
 	m.logger.Info("Loaded workflows from database", "count", loadedCount)
+	m.health.AnnounceSnapshot()
 	return nil
 }
 
@@ -116,6 +129,9 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		m.logger.Warn("Database client not configured, cannot fetch workflow data", "workflow_id", changeData.WorkflowID)
 		return
 	}
+
+	m.loadMu.Lock()
+	defer m.loadMu.Unlock()
 
 	req := &dbv1.GetWorkflowRequest{
 		Id: changeData.WorkflowID,
@@ -165,6 +181,8 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 		m.logger.Error("Missing entity_id for workflow delete")
 		return
 	}
+	m.loadMu.Lock()
+	defer m.loadMu.Unlock()
 	m.health.Forget(entityID)
 
 	if m.registry != nil {

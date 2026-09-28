@@ -366,8 +366,9 @@ const (
     SubjectWorkflowDelete  Subject = "workflow.change.delete"
     SubjectWorkflowExecute Subject = "workflow.execute"
 
-    SubjectWorkflowHealthChanged Subject = "workflow.health.changed"
-    SubjectWorkflowHealthGet     Subject = "workflow.health.get"
+    SubjectWorkflowHealthSnapshot Subject = "workflow.health.snapshot"
+    SubjectWorkflowHealthChanged  Subject = "workflow.health.changed"
+    SubjectWorkflowHealthGet      Subject = "workflow.health.get"
 )
 ```
 
@@ -378,32 +379,47 @@ const (
 | `workflow.change.update` | An existing workflow was updated |
 | `workflow.change.delete` | A workflow was deleted |
 | `workflow.execute` | A workflow execution was triggered |
-| `workflow.health.changed` | The engine started or stopped being able to load a workflow |
+| `workflow.health.snapshot` | Every workflow in error, once the engine's first complete load finishes |
+| `workflow.health.changed` | One workflow's health changed after the snapshot |
 | `workflow.health.get` | Request/reply: the health of every workflow the engine has tried to load |
 
 ### Workflow health
 
-Published by the workflow service with `source: "workflow"`, only when a
-workflow's health changes (see [Execution Model](../workflow/execution.md#workflow-health)).
-The CloudEvent `data`:
+Published by the workflow service with `source: "workflow"` (see
+[Execution Model](../workflow/execution.md#workflow-health)). Every message is built from
+one entry shape:
 
 ```json
 { "workflowId": "wf-1", "status": "error", "reason": "task \"t1\": unknown action \"gone\"", "since": "2026-09-28T12:00:00Z" }
 ```
 
-`status` is `"ok"` or `"error"`; `reason` is present only on an error; `since`
-is RFC 3339 and marks when the current status and reason began.
+`status` is `"ok"` or `"error"`; `reason` is present only on an error; `since` is
+RFC 3339 and marks when the current status and reason began.
 
-A request on `workflow.health.get` (any body) is answered with the same entry
-shape for every tracked workflow:
+`workflow.health.snapshot`, once per engine start, is authoritative: replace everything
+with it; any workflow not listed is ok. Its `data`:
 
 ```json
-{ "workflows": [ { "workflowId": "wf-1", "status": "error", "reason": "...", "since": "..." } ] }
+{ "workflows": [ { "workflowId": "wf-1", "status": "error", "reason": "...", "since": "..." } ], "at": "2026-09-28T12:00:00Z" }
 ```
 
-The api forwards each change to registered clients as the
-`workflow.health.changed` webhook (`WorkflowHealthChangedEvent`, the entry
-plus `type`), and serves the request as the `getWorkflowHealth()` RPC.
+`workflow.health.changed` carries one entry as its `data`, for each change after the
+snapshot. Apply it on top of the snapshot; for one workflow, keep the later `since`.
+
+A request on `workflow.health.get` (any body) is answered with every tracked entry, ok
+included. `loaded` is false until the first complete load, when the list is partial and
+must not replace anything:
+
+```json
+{ "loaded": true, "at": "2026-09-28T12:00:00Z", "workflows": [ { "workflowId": "wf-1", "status": "ok", "since": "..." } ] }
+```
+
+The api forwards both events to registered clients as webhooks:
+`workflow.health.snapshot` (`WorkflowHealthSnapshotEvent`: `{ type, workflows, at }`,
+errors only) and `workflow.health.changed` (`WorkflowHealthChangedEvent`: the entry plus
+`type`). It also sends a snapshot webhook of its own, built from `workflow.health.get`,
+when it starts and whenever its bus connection comes back. It serves the request as the
+`getWorkflowHealth()` RPC.
 
 ---
 

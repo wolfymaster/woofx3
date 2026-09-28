@@ -64,15 +64,20 @@ const (
 	SubjectWorkflowRunCompleted Subject = "workflow.run.completed"
 	SubjectWorkflowRunFailed    Subject = "workflow.run.failed"
 
-	// Whether the engine could load a stored workflow. Published by the
-	// workflow service only when a workflow's health changes, never on every
-	// reconcile pass, so a consumer can treat each message as news. Data:
+	// Whether the engine could load its stored workflows. The workflow
+	// service publishes one snapshot when its first complete load finishes,
+	// listing every workflow in error; a consumer replaces its whole view with
+	// it (anything unlisted is ok). Data: { workflows: [entry...], at }.
+	SubjectWorkflowHealthSnapshot Subject = "workflow.health.snapshot"
+
+	// One workflow's health changed after the snapshot. Published only on a
+	// change, never on every reconcile pass. Data (an entry):
 	//   { workflowId, status: "ok" | "error", reason?, since }
 	SubjectWorkflowHealthChanged Subject = "workflow.health.changed"
 
-	// Request/reply: the workflow service answers with the health of every
-	// workflow it has tried to load, as { workflows: [...] } in the same
-	// entry shape as SubjectWorkflowHealthChanged's data.
+	// Request/reply: the workflow service answers with every workflow it has
+	// tried to load, as { loaded, at, workflows: [entry...] }. `loaded` is
+	// false until its first complete load, when the list is still partial.
 	SubjectWorkflowHealthGet Subject = "workflow.health.get"
 
 	// Unified widget event channel (R2 of the widget refactor).
