@@ -1,5 +1,5 @@
 {
-  "branches": ["master"],
+  "branches": ["master", { "name": "unstable", "prerelease": true }],
   "tagFormat": "v${version}",
   "plugins": [
     [
