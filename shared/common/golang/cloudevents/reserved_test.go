@@ -1,6 +1,7 @@
 package cloudevents
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -96,6 +97,8 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"db.workflow.created.x", "db."},
 		{"widget.queue.clear", "widget.queue."},
 		{"engine.obs.command", "engine."},
+		{"workflow.cancel", "workflow.cancel"},
+		{"workflow.run.cancelled", "workflow.run."},
 		{"message.send", "message.send"},
 		{"stream.online", "stream.online"},
 		{"channel.cheer", "channel."},
@@ -106,6 +109,10 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"stream.started.notification", ""},
 		{"widget.custom", ""},
 		{"custom.event", ""},
+		{"reward", "reward"},
+		{"rewards.granted", ""},
+		{"reward.granted", ""},
+		{"slobsx", ""},
 	}
 	for _, tc := range cases {
 		match, reserved := ReservedSubjectMatch(tc.subject)
@@ -132,6 +139,9 @@ func TestBarkloaderRefusesTheSameCommandSubjects(t *testing.T) {
 	}
 	list := rustReservedList.FindSubmatch(source)
 	if list == nil {
+		if bytes.Contains(source, []byte("USER_RESERVED_EVENT_PREFIXES")) {
+			t.Fatalf("%s declares USER_RESERVED_EVENT_PREFIXES in a form this test cannot read; update rustReservedList", barkloaderManifestValidate)
+		}
 		t.Skipf("%s declares no USER_RESERVED_EVENT_PREFIXES yet", barkloaderManifestValidate)
 	}
 

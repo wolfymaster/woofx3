@@ -23,8 +23,14 @@ describe("reserved subjects", () => {
   });
 
   test("name the prefix a subject falls under", () => {
-    expect(publishedEventTypeProblem("widget.queue.clear")).toBe('is reserved for the engine (prefix "widget.queue.")');
+    expect(publishedEventTypeProblem("widget.queue.clear")).toBe('is reserved for the engine ("widget.queue.")');
+    expect(publishedEventTypeProblem("workflow.cancel")).toBe('is reserved for the engine ("workflow.cancel")');
+    expect(publishedEventTypeProblem("channel.cheer")).toContain("simulateTwitchEvent");
     expect(publishedEventTypeProblem("custom.*")).toContain("wildcard");
+    expect(publishedEventTypeProblem("custom.\u00a0event")).toContain("whitespace");
+    expect(publishedEventTypeProblem("custom.\u0007event")).toContain("control character");
+    expect(publishedEventTypeProblem("reward")).not.toBeNull();
+    expect(publishedEventTypeProblem("rewards.granted")).toBeNull();
     expect(publishedEventTypeProblem("badge.awarded")).toBeNull();
     expect(publishedEventTypeProblem("stream.started.notification")).toBeNull();
   });
@@ -47,7 +53,7 @@ describe("validateWorkflowDefinition publish_event", () => {
       expect(r.errors).toEqual([
         {
           path: "tasks[0].parameters.eventType",
-          message: '"ui.notify.alert" is reserved for the engine (prefix "ui.notify.")',
+          message: '"ui.notify.alert" is reserved for the engine ("ui.notify.")',
         },
       ]);
     }

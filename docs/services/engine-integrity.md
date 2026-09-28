@@ -42,9 +42,9 @@ When designing anything module code can reach (a sandbox binding, a manifest fie
 
 ## Reserved subjects
 
-Workflows are user- and module-authored too, and a `publish_event` step publishes on the subject its `eventType` names. The reserved prefixes live in one place, `shared/common/golang/cloudevents/reserved.go`:
+Workflows are user- and module-authored too, and a `publish_event` step publishes on the subject its `eventType` names. The reserved names live in one place, `shared/common/golang/cloudevents/reserved.go`:
 
 - `CommandSubjectPrefixes`: subjects the engine treats as commands. Barkloader refuses an uploaded module that declares one of these as an event (`USER_RESERVED_EVENT_PREFIXES` in `barkloader/lib_module/src/manifest_validate.rs` must match; a test compares them).
 - `EngineEventSubjectPrefixes`: facts engine services assert (platform events, sessions, module and run lifecycle). A workflow may not publish these either. Modules are not held to this tier, since a platform module declares the platform events it brings.
 
-The workflow engine refuses a workflow that publishes under either tier when it registers it, and refuses the publish at run time when the event type came from an expression. The api repeats the check when a workflow is saved (`api/src/workflow/reserved-subjects.ts`, compared against the Go list by a test).
+An entry ending in `.` reserves a namespace, any other exactly that name. The workflow engine refuses a workflow that publishes under either tier when it registers it (and unregisters the version a refused update would replace), and refuses the publish at run time when the event type came from an expression. The api repeats the check when a workflow is saved (`api/src/workflow/reserved-subjects.ts`, compared against the Go list by a test).

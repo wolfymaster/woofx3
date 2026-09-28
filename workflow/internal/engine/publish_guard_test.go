@@ -27,13 +27,17 @@ func publishingWorkflow(eventType string) *types.WorkflowDefinition {
 // the engine commands itself with or the events it acts on.
 func TestRegisteringAWorkflowThatPublishesAReservedSubjectFails(t *testing.T) {
 	cases := map[string]string{
-		"widget.queue.clear":    `reserved for the engine (prefix "widget.queue.")`,
-		"ui.notify.alert":       `reserved for the engine (prefix "ui.notify.")`,
-		"db.workflow.deleted.x": `reserved for the engine (prefix "db.")`,
-		"engine.obs.command":    `reserved for the engine (prefix "engine.")`,
-		"message.send":          `reserved for the engine (prefix "message.send")`,
-		"channel.cheer":         `reserved for the engine (prefix "channel.")`,
-		"custom.*":              "wildcards and whitespace",
+		"widget.queue.clear":    `reserved for the engine ("widget.queue."); choose a name`,
+		"ui.notify.alert":       `reserved for the engine ("ui.notify.")`,
+		"db.workflow.deleted.x": `reserved for the engine ("db.")`,
+		"engine.obs.command":    `reserved for the engine ("engine.")`,
+		"workflow.cancel":       `reserved for the engine ("workflow.cancel")`,
+		"message.send":          `reserved for the engine ("message.send")`,
+		"channel.cheer":         `reserved for the engine ("channel."); to test a workflow against a platform event, fire it with the api's simulateTwitchEvent`,
+		"stream.online":         "simulateTwitchEvent",
+		"custom.*":              "wildcards, whitespace and control characters",
+		"custom.\u00a0event":    "wildcards, whitespace and control characters",
+		"custom.\x07event":      "wildcards, whitespace and control characters",
 	}
 	for eventType, want := range cases {
 		engine := newExecEngine(t)
@@ -48,7 +52,7 @@ func TestRegisteringAWorkflowThatPublishesAReservedSubjectFails(t *testing.T) {
 }
 
 func TestRegisteringAWorkflowThatPublishesItsOwnEventSucceeds(t *testing.T) {
-	for _, eventType := range []string{"badge.awarded", "stream.started.notification", "${trigger.data.kind}"} {
+	for _, eventType := range []string{"badge.awarded", "stream.started.notification", "rewards.granted", "slobs.fan", "${trigger.data.kind}"} {
 		if err := newExecEngine(t).RegisterWorkflow(publishingWorkflow(eventType)); err != nil {
 			t.Errorf("%s: %v", eventType, err)
 		}
@@ -75,5 +79,23 @@ func TestPublishingAReservedSubjectFailsAtRunTime(t *testing.T) {
 	}
 	if len(publisher.published) != 0 {
 		t.Fatalf("published %d events, want none", len(publisher.published))
+	}
+}
+
+// The db holds the refused version, so the one it replaced must stop firing
+// rather than run on unseen.
+func TestARefusedReplacementUnregistersTheWorkflow(t *testing.T) {
+	engine := newExecEngine(t)
+	if err := engine.RegisterWorkflow(publishingWorkflow("badge.awarded")); err != nil {
+		t.Fatalf("RegisterWorkflow: %v", err)
+	}
+	if err := engine.RegisterWorkflow(publishingWorkflow("widget.queue.clear")); err == nil {
+		t.Fatal("the reserved replacement was accepted")
+	}
+	if _, err := engine.GetWorkflow("wf-publish"); err == nil {
+		t.Fatal("the replaced workflow is still registered")
+	}
+	if got := engine.Registry().GetByEvent("thing.happened"); len(got) != 0 {
+		t.Fatalf("%d workflows still fire on the trigger, want none", len(got))
 	}
 }
