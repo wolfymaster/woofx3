@@ -42,14 +42,35 @@ export interface AggregationConfig {
   timeWindow?: Duration;
 }
 
-export interface WaitConfig {
+/** Pauses the run until a matching event arrives, or until `timeout` passes. */
+export interface EventWaitConfig {
   type: "event" | "aggregation";
   event: string;
   conditions?: ConditionConfig[];
   aggregation?: AggregationConfig;
   timeout?: Duration;
+  /** Defaults to "fail". */
   onTimeout?: "continue" | "fail";
 }
+
+/**
+ * Bounds of `DelayWaitConfig.durationMs`, inclusive. Must match MinDelayMs and
+ * MaxDelayMs in workflow/internal/tasks/wait.go, which refuses a workflow
+ * outside them.
+ */
+export const WAIT_DELAY_MIN_MS = 1;
+export const WAIT_DELAY_MAX_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Pauses the run for a fixed time, then continues. Takes no event, conditions,
+ * timeout or onTimeout: the engine refuses a delay that carries them.
+ */
+export interface DelayWaitConfig {
+  type: "delay";
+  durationMs: number;
+}
+
+export type WaitConfig = EventWaitConfig | DelayWaitConfig;
 
 export interface SubWorkflowConfig {
   workflowId: string;

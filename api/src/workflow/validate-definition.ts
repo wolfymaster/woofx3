@@ -1,4 +1,7 @@
 import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefinition } from "@woofx3/api";
+// The module itself rather than the package index: the index also loads the
+// RPC client and its dependencies, which a value import would pull in.
+import { WAIT_DELAY_MAX_MS, WAIT_DELAY_MIN_MS } from "@woofx3/api/workflow-definition";
 
 export interface ValidationError {
   path: string;
@@ -51,6 +54,52 @@ function validateConditions(cs: ConditionConfig[] | undefined, prefix: string, e
       errors.push({ path: `${base}.operator`, message: `unknown operator: ${String(c.operator)}` });
     }
   });
+}
+
+// Mirrors ValidateWaitConfig in workflow/internal/tasks/wait.go, so a wait the
+// engine would refuse to register is refused here with a path the editor can
+// point at. A missing `type` reads as "event", as it does in the engine.
+function validateWait(wait: unknown, prefix: string, errors: ValidationError[]): void {
+  if (!wait || typeof wait !== "object") {
+    errors.push({ path: prefix, message: "required object for wait tasks" });
+    return;
+  }
+  const w = wait as Record<string, unknown>;
+  const type = w.type ?? "event";
+
+  if (type === "delay") {
+    const ms = w.durationMs;
+    if (typeof ms !== "number" || !Number.isInteger(ms) || ms < WAIT_DELAY_MIN_MS || ms > WAIT_DELAY_MAX_MS) {
+      errors.push({
+        path: `${prefix}.durationMs`,
+        message: `required integer between ${WAIT_DELAY_MIN_MS} and ${WAIT_DELAY_MAX_MS}`,
+      });
+    }
+    for (const field of ["event", "conditions", "aggregation", "timeout", "onTimeout"]) {
+      if (w[field] !== undefined) {
+        errors.push({ path: `${prefix}.${field}`, message: "not allowed on a delay wait" });
+      }
+    }
+    return;
+  }
+
+  if (type !== "event" && type !== "aggregation") {
+    errors.push({ path: `${prefix}.type`, message: 'must be "event", "aggregation" or "delay"' });
+    return;
+  }
+  if (typeof w.event !== "string" || w.event.length === 0) {
+    errors.push({ path: `${prefix}.event`, message: "required string" });
+  }
+  if (type === "aggregation" && (!w.aggregation || typeof w.aggregation !== "object")) {
+    errors.push({ path: `${prefix}.aggregation`, message: "required object for aggregation waits" });
+  }
+  if (w.durationMs !== undefined) {
+    errors.push({ path: `${prefix}.durationMs`, message: "only allowed on a delay wait" });
+  }
+  if (w.onTimeout !== undefined && w.onTimeout !== "continue" && w.onTimeout !== "fail") {
+    errors.push({ path: `${prefix}.onTimeout`, message: 'must be "continue" or "fail"' });
+  }
+  validateConditions(w.conditions as ConditionConfig[] | undefined, `${prefix}.conditions`, errors);
 }
 
 export function validateWorkflowDefinition(input: unknown): ValidationResult {
@@ -114,6 +163,9 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
       }
       if (t.type === "action" && (typeof t.action !== "string" || t.action.length === 0)) {
         errors.push({ path: `${p}.action`, message: "required non-empty string for action tasks" });
+      }
+      if (t.type === "wait") {
+        validateWait(t.wait, `${p}.wait`, errors);
       }
       validateConditions(t.conditions, `${p}.conditions`, errors);
       if (t.condition) {

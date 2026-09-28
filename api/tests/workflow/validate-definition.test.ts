@@ -134,4 +134,46 @@ describe("schedule triggers", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  describe("wait tasks", () => {
+    const withWait = (wait: unknown) =>
+      validateWorkflowDefinition({
+        id: "x",
+        name: "X",
+        trigger: { type: "event", event: "channel.raid" },
+        tasks: [{ id: "pause", type: "wait", wait }],
+      });
+    const paths = (r: ReturnType<typeof validateWorkflowDefinition>) => (r.ok ? [] : r.errors.map((e) => e.path));
+
+    test("accepts a delay", () => {
+      expect(withWait({ type: "delay", durationMs: 10_000 }).ok).toBe(true);
+    });
+
+    test("accepts an event wait with a timeout", () => {
+      expect(withWait({ type: "event", event: "channel.follow", timeout: "30s", onTimeout: "continue" }).ok).toBe(true);
+    });
+
+    test("rejects a delay out of bounds", () => {
+      expect(paths(withWait({ type: "delay", durationMs: 0 }))).toEqual(["tasks[0].wait.durationMs"]);
+      expect(paths(withWait({ type: "delay", durationMs: 24 * 60 * 60 * 1000 + 1 }))).toEqual([
+        "tasks[0].wait.durationMs",
+      ]);
+      expect(paths(withWait({ type: "delay", durationMs: 1.5 }))).toEqual(["tasks[0].wait.durationMs"]);
+    });
+
+    test("rejects event fields on a delay", () => {
+      expect(paths(withWait({ type: "delay", durationMs: 100, event: "e", timeout: "1s" }))).toEqual([
+        "tasks[0].wait.event",
+        "tasks[0].wait.timeout",
+      ]);
+    });
+
+    test("rejects an event wait without an event", () => {
+      expect(paths(withWait({ type: "event" }))).toEqual(["tasks[0].wait.event"]);
+    });
+
+    test("rejects a wait task without a wait config", () => {
+      expect(paths(withWait(undefined))).toEqual(["tasks[0].wait"]);
+    });
+  });
 });
