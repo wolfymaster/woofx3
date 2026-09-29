@@ -91,7 +91,7 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 | `streamOnline` | `stream.online` | The stream went online |
 | `subscribe` | `channel.subscribe` | A viewer subscribed |
 | `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
-| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the api; see [Twitch ad breaks](/services/twitch-channel)) |
+| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the twitch service; see [Twitch ad breaks](/services/twitch-channel)) |
 | `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
 | `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
 

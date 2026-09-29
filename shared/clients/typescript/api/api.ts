@@ -681,34 +681,6 @@ export interface EngineModuleSummary {
 
 // ==================== Stream / workflow response types ====================
 
-/**
- * The broadcaster's Twitch ad schedule. Times are ISO-8601, or null when
- * Twitch has none (no ad scheduled, no ad run yet this stream, snoozes not
- * refreshing). Whatever form Helix sent a time in, it arrives here as ISO.
- */
-export interface AdSchedule {
-  nextAdAt: string | null;
-  lastAdAt: string | null;
-  /** Length of the next scheduled break. */
-  durationSeconds: number;
-  /** Pre-roll-free time remaining, earned by running mid-rolls. */
-  prerollFreeSeconds: number;
-  /** Snoozes available now. */
-  snoozeCount: number;
-  /** When the next snooze is granted. */
-  snoozeRefreshAt: string | null;
-  /** The engine's clock when it answered (ISO-8601), for correcting skew. */
-  serverNow: string;
-}
-
-export interface AdSnoozeResult {
-  snoozeCount: number;
-  snoozeRefreshAt: string | null;
-  nextAdAt: string | null;
-  /** The engine's clock when it answered (ISO-8601), for correcting skew. */
-  serverNow: string;
-}
-
 export interface StreamStatus {
   isLive: boolean;
   uptime: string;
@@ -1356,20 +1328,6 @@ export interface Woofx3EngineApi {
    *  this takes no scope -- the parameter it used to accept was documented
    *  as unused and ignored. */
   getStreamStatus(): Promise<StreamStatus>;
-
-  // Twitch ads
-  /**
-   * The broadcaster's ad schedule from Twitch. Needs the `channel:read:ads`
-   * scope; without it this rejects with a message telling the streamer to
-   * reconnect Twitch, as it does when Twitch is not linked at all.
-   */
-  getAdSchedule(): Promise<AdSchedule>;
-  /**
-   * Push the next ad back by five minutes, spending one snooze. Needs
-   * `channel:manage:ads`. Rejects with Twitch's reason when no snooze is
-   * available or no ad is scheduled.
-   */
-  snoozeNextAd(): Promise<AdSnoozeResult>;
 
   // Stream sessions
   /** Past and current stream sessions with their segments, newest first. */

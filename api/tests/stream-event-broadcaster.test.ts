@@ -40,7 +40,7 @@ describe("StreamEventBroadcaster", () => {
     deliver("channel.ad_break.upcoming", {
       id: "evt-1",
       type: "channel.ad_break.upcoming",
-      source: "api",
+      source: "twitch",
       time: "2026-09-28T18:00:00.000Z",
       platform: "twitch",
       data: { nextAdAt: "2026-09-28T18:01:00.000Z", secondsUntil: 60, durationSeconds: 90 },
@@ -52,7 +52,7 @@ describe("StreamEventBroadcaster", () => {
       {
         id: "evt-1",
         type: "channel.ad_break.upcoming",
-        source: "api",
+        source: "twitch",
         time: "2026-09-28T18:00:00.000Z",
         platform: "twitch",
         data: { nextAdAt: "2026-09-28T18:01:00.000Z", secondsUntil: 60, durationSeconds: 90 },
