@@ -11,11 +11,11 @@ import (
 )
 
 // UserEventRoutes registers the UserEventService Twirp handler. Casbin is not
-// applied: the log is written by the engine, never on behalf of a user, and is
-// gated by the proxy's existing auth surface like stream sessions.
+// applied: the log is written and read by the engine, never on behalf of a
+// user, and is gated by the proxy's existing auth surface like stream sessions.
 func UserEventRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
 	userEventRepository := repo.NewUserEventRepository(app.Db)
-	userEventService := svc.NewUserEventService(userEventRepository)
+	userEventService := svc.NewUserEventService(userEventRepository, repo.NewStreamSessionRepository(app.Db))
 	userEventHandler := client.NewUserEventServiceServer(userEventService)
 	mux.Handle(userEventHandler.PathPrefix(), userEventHandler)
 }

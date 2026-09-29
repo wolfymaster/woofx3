@@ -29,7 +29,7 @@ func newUserEventSvc(t *testing.T) (client.UserEventService, *gorm.DB) {
 	if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return NewUserEventService(repo.NewUserEventRepository(db)), db
+	return NewUserEventService(repo.NewUserEventRepository(db), repo.NewStreamSessionRepository(db)), db
 }
 
 func strPtr(s string) *string {

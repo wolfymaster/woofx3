@@ -743,6 +743,110 @@ export interface PaginatedStreamSessions {
   offset: number;
 }
 
+/**
+ * What a stream session added up to. Events count toward the session that
+ * owns the time they occurred in -- from the session's start until the one
+ * that replaced it began -- so a split or merge after the fact is reflected
+ * on the next read. Anonymous cheers and gifts are included.
+ */
+export interface StreamSessionTotals {
+  sessionId: string;
+  /** Bits cheered. */
+  bits: number;
+  cheers: number;
+  /**
+   * Subscriptions viewers took out or renewed themselves: new subs that were
+   * not gifted, plus resubs. Gifted subs are only in `giftedSubs`, so the two
+   * add up without counting a gift twice.
+   */
+  subs: number;
+  /** Subs gifted, counted from the gifter's side. */
+  giftedSubs: number;
+  follows: number;
+  raids: number;
+  /** Viewers brought by those raids. */
+  raiders: number;
+  /**
+   * Highest per-minute viewer count while live. Null when no minute of the
+   * session was sampled with a viewer count.
+   */
+  peakViewers: number | null;
+  /** Mean of the sampled per-minute viewer counts, rounded. Null as above. */
+  averageViewers: number | null;
+  /** Minutes sampled with a viewer count; what the two figures above cover. */
+  viewerSampleMinutes: number;
+}
+
+export interface ViewerTotalsQuery {
+  /** e.g. `twitch`. */
+  platform: string;
+  /** The viewer's id on `platform`. */
+  platformUserId: string;
+  /** Totals for one session. Omit for the viewer's lifetime totals. */
+  sessionId?: string;
+}
+
+/** What one viewer gave. Anonymous cheers and gifts are never attributed. */
+export interface ViewerTotals {
+  platform: string;
+  platformUserId: string;
+  /** The name on the viewer's most recent event; null when none carried one. */
+  userName: string | null;
+  /** The session the totals cover; null for lifetime. */
+  sessionId: string | null;
+  bits: number;
+  cheers: number;
+  giftedSubs: number;
+  /** Gift events: one community gift of five subs is one gift. */
+  gifts: number;
+}
+
+export type LeaderboardMetric = "bits" | "giftedSubs";
+
+export interface LeaderboardQuery {
+  metric: LeaderboardMetric;
+  /** Rank one session. Omit for a lifetime leaderboard. */
+  sessionId?: string;
+  /** Keep viewers whose total is at least this, e.g. "gifted 5 or more". Integer >= 1; defaults to 1. */
+  minTotal?: number;
+  /** 1-100. Defaults to 10. */
+  limit?: number;
+}
+
+export interface LeaderboardEntry {
+  platform: string;
+  platformUserId: string;
+  /** The name on the viewer's most recent event; null when none carried one. */
+  userName: string | null;
+  /** Bits, or subs gifted. */
+  total: number;
+  /** The events behind `total`: cheers, or gifts. */
+  events: number;
+}
+
+export interface Leaderboard {
+  metric: LeaderboardMetric;
+  /** The session ranked; null for lifetime. */
+  sessionId: string | null;
+  minTotal: number;
+  /** Highest total first; ties by platform, then platform user id. */
+  entries: LeaderboardEntry[];
+}
+
+/**
+ * One sampled minute of a live segment. A minute with no entry was not
+ * sampled, which is not the same as zero; a null metric is one whose read
+ * failed that minute.
+ */
+export interface StreamGaugeSample {
+  /** ISO 8601, truncated to the minute. */
+  sampledAt: string;
+  viewerCount: number | null;
+  followerTotal: number | null;
+  subscriberTotal: number | null;
+  subscriberPoints: number | null;
+}
+
 export interface TriggerWorkflowResponse {
   /**
    * Empty. A run is started asynchronously by the engine, which mints the
@@ -1213,6 +1317,16 @@ export interface Woofx3EngineApi {
   listStreamSessions(query?: StreamSessionsQuery): Promise<PaginatedStreamSessions>;
   /** One session with its segments, or null when no session has that id. */
   getStreamSession(id: string): Promise<StreamSession | null>;
+
+  // Analytics
+  /** A session's channel totals and viewer figures, or null when no session has that id. */
+  getStreamSessionTotals(sessionId: string): Promise<StreamSessionTotals | null>;
+  /** One viewer's totals for a session or lifetime, or null when the session does not exist. */
+  getViewerTotals(query: ViewerTotalsQuery): Promise<ViewerTotals | null>;
+  /** Top cheerers or gifters for a session or lifetime, or null when the session does not exist. */
+  getLeaderboard(query: LeaderboardQuery): Promise<Leaderboard | null>;
+  /** A session's per-minute gauge samples, oldest first, or null when no session has that id. */
+  getStreamSessionGauges(sessionId: string): Promise<StreamGaugeSample[] | null>;
 
   /**
    * Publish a CloudEvent on the engine's NATS bus. The `eventType` becomes
