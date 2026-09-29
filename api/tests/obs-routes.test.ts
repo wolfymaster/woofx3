@@ -24,7 +24,10 @@ function setup(answer: (() => unknown) | null) {
 describe("listObsScenes", () => {
   test("asks the scene manager for a scene listing and returns its scenes", async () => {
     const scenes = [
-      { name: "Main", sources: [{ name: "Camera", sceneItemId: 1, inputKind: "v4l2_input", enabled: true, group: null }] },
+      {
+        name: "Main",
+        sources: [{ name: "Camera", sceneItemId: 1, inputKind: "v4l2_input", enabled: true, group: null }],
+      },
     ];
     const { requests, list } = setup(() => ({ ok: true, scenes }));
 
