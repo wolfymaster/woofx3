@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
@@ -144,8 +145,63 @@ func (e *Engine[TServices]) Registry() *WorkflowRegistry {
 	return e.workflowRegistry
 }
 
+// RegisterWorkflow refuses a definition the engine would refuse to run, so the
+// author hears about it when the workflow is saved or loaded rather than the
+// first time it fires.
+//
+// A refused definition also unregisters whatever was registered under its id.
+// The db already holds the refused version, so keeping the old one firing
+// would run a workflow nobody can see or edit any more; failing closed leaves
+// the workflow off until a definition the engine accepts is saved.
 func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) error {
-	return e.workflowRegistry.Register(def)
+	err := validatePublishSteps(def)
+	if err == nil {
+		err = e.workflowRegistry.Register(def)
+	}
+	if err != nil {
+		if def.ID != "" {
+			_ = e.workflowRegistry.Remove(def.ID)
+		}
+		return fmt.Errorf("workflow %q: %w", def.ID, err)
+	}
+	return nil
+}
+
+// validatePublishSteps checks every publish_event step whose eventType is
+// written out. One built from an expression can only be checked once it has
+// resolved, which the action does before it publishes.
+func validatePublishSteps(def *types.WorkflowDefinition) error {
+	for _, task := range def.Tasks {
+		if task.Type != "action" || task.Action != publishEventAction {
+			continue
+		}
+		eventType, ok := task.Parameters["eventType"].(string)
+		if !ok || strings.Contains(eventType, "${") {
+			continue
+		}
+		if err := validatePublishedEventType(eventType); err != nil {
+			return fmt.Errorf("task %q: %w", task.ID, err)
+		}
+	}
+	return nil
+}
+
+// validatePublishedEventType refuses an event type a workflow may not publish.
+// The event type is the NATS subject it goes out on, so a reserved one would
+// let any workflow — a creator's or one a module installed — command the
+// engine or forge the events it acts on (docs/services/engine-integrity.md).
+func validatePublishedEventType(eventType string) error {
+	if strings.ContainsAny(eventType, "*>") || strings.ContainsFunc(eventType, isSpaceOrControl) {
+		return fmt.Errorf("eventType %q cannot be published: wildcards, whitespace and control characters are not allowed in a subject", eventType)
+	}
+	match, reserved := cloudevents.ReservedSubjectMatch(eventType)
+	if !reserved {
+		return nil
+	}
+	if cloudevents.IsPlatformEventReservation(match) {
+		return fmt.Errorf("eventType %q is reserved for the engine (%q); to test a workflow against a platform event, fire it with the api's simulateTwitchEvent", eventType, match)
+	}
+	return fmt.Errorf("eventType %q is reserved for the engine (%q); choose a name outside it", eventType, match)
 }
 
 func (e *Engine[TServices]) UnregisterWorkflow(id string) error {
@@ -248,8 +304,17 @@ func (e *Engine[TServices]) SetAssetURLResolver(resolver AssetURLResolver) {
 	e.assetURLResolver = resolver
 }
 
+const publishEventAction = "publish_event"
+
+// isSpaceOrControl matches what JavaScript's /\s/ and Unicode control
+// characters match, so the api's save-time check (reserved-subjects.ts) and
+// this one refuse the same names.
+func isSpaceOrControl(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\uFEFF'
+}
+
 func (e *Engine[TServices]) registerPublishAction() {
-	e.actionRegistry.RegisterWithSpec("publish_event", func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
+	e.actionRegistry.RegisterWithSpec(publishEventAction, func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
 		if e.publisher == nil {
 			return nil, fmt.Errorf("no event publisher configured")
 		}
@@ -257,6 +322,9 @@ func (e *Engine[TServices]) registerPublishAction() {
 		eventType, ok := params["eventType"].(string)
 		if !ok || eventType == "" {
 			return nil, fmt.Errorf("eventType parameter is required")
+		}
+		if err := validatePublishedEventType(eventType); err != nil {
+			return nil, err
 		}
 
 		event := &types.Event{
@@ -293,6 +361,9 @@ func (e *Engine[TServices]) registerPublishAction() {
 			eventType, ok := params["eventType"].(string)
 			if !ok || eventType == "" {
 				return "", fmt.Errorf("eventType parameter is required")
+			}
+			if err := validatePublishedEventType(eventType); err != nil {
+				return "", err
 			}
 			return fmt.Sprintf("would publish a %s event", eventType), nil
 		},
