@@ -522,12 +522,14 @@ async fn validate_theme_dependencies(
 /// drive the engine directly: forge outbox events (`db.`), change OBS
 /// (`engine.obs.command`, `slobs`), call the Twitch API (`twitchapi`), speak in
 /// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
-/// `widget.queue.`), or run workflows and actions (`workflow.execute`,
-/// `workflow.replay`, `action.execute`). See docs/services/engine-integrity.md.
+/// `widget.queue.`), or run, replay or stop workflows and actions
+/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`).
+/// Must match the command prefixes in api/src/workflow/reserved-subjects.ts.
+/// See docs/services/engine-integrity.md.
 ///
 /// The outbox stays open to the system module, which owns the `db.workflow.*`
 /// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 12] = [
+const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
     WEBHOOK_EVENT_PREFIX,
     "db.",
     "engine.",
@@ -539,6 +541,7 @@ const USER_RESERVED_EVENT_PREFIXES: [&str; 12] = [
     "widget.queue.",
     "workflow.execute",
     "workflow.replay",
+    "workflow.cancel",
     "action.execute",
 ];
 
@@ -2415,6 +2418,7 @@ mod tests {
             "widget.queue.skip",
             "workflow.execute",
             "workflow.replay",
+            "workflow.cancel",
             "action.execute",
         ] {
             let trigger = format!(
