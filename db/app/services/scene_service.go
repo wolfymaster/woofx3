@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -29,18 +31,42 @@ type sceneService struct {
 	// Deleting a scene has to revoke the tokens that address it; without this
 	// they keep resolving to an id nothing answers for.
 	overlayTokenRepo *repo.OverlayTokenRepository
-	publisher        *workers.EventPublisher
+	// Records the themes a scene's widgets select, which is what keeps an
+	// on-screen theme from being uninstalled. Optional, as for workflows.
+	refRepo   *repo.ResourceReferenceRepository
+	publisher *workers.EventPublisher
 }
 
 func NewSceneService(
 	sceneRepo *repo.SceneRepository,
 	overlayTokenRepo *repo.OverlayTokenRepository,
+	refRepo *repo.ResourceReferenceRepository,
 	publisher *workers.EventPublisher,
 ) client.SceneService {
 	return &sceneService{
 		repo:             sceneRepo,
 		overlayTokenRepo: overlayTokenRepo,
+		refRepo:          refRepo,
 		publisher:        publisher,
+	}
+}
+
+// syncSceneEdges recomputes the resource_references edges for a scene.
+// Failures are logged but do not fail the parent request: the edges are a
+// secondary index and the scene row is already written.
+func (s *sceneService) syncSceneEdges(scene *models.Scene) {
+	if s.refRepo == nil {
+		return
+	}
+	src := refsvc.SceneSource{
+		ID:                  scene.ID,
+		Name:                scene.Name,
+		SourceCreatedByType: scene.CreatedByType,
+		SourceCreatedByRef:  scene.CreatedByRef,
+	}
+	edges := refsvc.ExtractSceneEdges(src, scene.WidgetsJSON)
+	if err := s.refRepo.ReplaceEdgesForSource("scene", scene.ID, edges); err != nil {
+		log.Printf("scene_service: ReplaceEdgesForSource failed for scene %s: %v", scene.ID, err)
 	}
 }
 
@@ -74,6 +100,7 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 	if err := s.repo.Create(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create scene: %w", err))
 	}
+	s.syncSceneEdges(scene)
 
 	s.publishChange(scene, "created")
 
@@ -135,6 +162,7 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	if err := s.repo.Update(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
 	}
+	s.syncSceneEdges(scene)
 
 	s.publishChange(scene, "updated")
 
@@ -174,6 +202,11 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 
 	if err := s.repo.Delete(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete scene: %w", err))
+	}
+	if s.refRepo != nil {
+		if err := s.refRepo.DeleteEdgesBySource("scene", scene.ID); err != nil {
+			log.Printf("scene_service: DeleteEdgesBySource failed for scene %s: %v", scene.ID, err)
+		}
 	}
 
 	s.publishChange(scene, "deleted")

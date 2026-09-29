@@ -21,6 +21,7 @@ import type {
   WidgetEventHandler,
   WidgetHost,
   WidgetHostStorage,
+  WidgetTheme,
 } from "./widget-host";
 import {
   PROTOCOL_VERSION,
@@ -341,6 +342,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   const host: WidgetHost = {
     settings: Object.freeze({ ...boot.settings }),
     surface: boot.surface,
+    theme: freezeTheme(boot.theme ?? null),
     moduleId: boot.moduleId,
     instanceId: boot.instanceId,
     storage,
@@ -394,4 +396,18 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }, HELLO_RETRY_INTERVAL_MS);
 
   return host;
+}
+
+function freezeTheme(theme: WidgetTheme | null): WidgetTheme | null {
+  if (theme === null) {
+    return null;
+  }
+  return Object.freeze({
+    id: theme.id,
+    contractVersion: theme.contractVersion,
+    variables: Object.freeze({ ...theme.variables }),
+    assets: Object.freeze({ ...theme.assets }),
+    defaultAssets: Object.freeze({ ...theme.defaultAssets }),
+    fallback: theme.fallback,
+  });
 }

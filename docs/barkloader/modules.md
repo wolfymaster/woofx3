@@ -126,7 +126,7 @@ Every resource a module contributes — triggers, actions, functions, commands, 
 | Segment | Source | Notes |
 |---------|--------|-------|
 | `moduleId` | the manifest's top-level `id` field | **Required.** Namespace-claimed: planned to become globally unique across all modules ever published, like an npm package name (once a moduleId is taken, it stays taken). Install fails if missing or empty. |
-| `kind` | reserved keyword identifying the resource type | One of `trigger`, `action`, `function`, `command`, `workflow`, `widget`, `overlay`. Not author-supplied. |
+| `kind` | reserved keyword identifying the resource type | One of `trigger`, `action`, `function`, `command`, `workflow`, `widget`, `overlay`, `asset`, `theme`. Not author-supplied. |
 | `resourceId` | the resource's `id` field from the manifest | **Required.** Every trigger / action / function / command / workflow / widget / overlay must declare its own `id`. Install fails if missing or empty. The author still supplies a `name` for display, but downstream lookups never use it. |
 
 **Examples** for a module whose top-level `id` is `twitch_platform`:
@@ -194,6 +194,9 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
 | `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Same `ConfigField[]` shape as every other declaration — see [Field declarations](#field-declarations) — but unlike a widget's `settingsSchema` the *values* are stored engine-side; see [Module-level settings](#module-level-settings-settings). |
 | `backgroundTasks` (alias: `background_tasks`) | array | no | Cron-scheduled functions barkloader fires for the lifetime of the module. See [Background tasks](#background-tasks-backgroundtasks). |
+| `deadlines` | array | no | One-shot, point-in-time invocations the module's own functions may schedule with `ctx.schedule.at`. See [Deadlines](#deadlines-deadlines). |
+| `requires` | object | no | Other modules this one needs installed: module id to a semver range, e.g. `{ "timerpro": "^1.2.0" }`. See [Themes](#themes). |
+| `themes` | array | no | Data-only appearance variants for widgets that declare a `theme` contract. See [Themes](#themes). |
 
 ### Trigger entry (`triggers[]`)
 
@@ -298,7 +301,9 @@ The info icon next to a field's label appears if and only if `hint` or `exampleP
 
 #### Field types
 
-`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`, `list`.
+`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`, `list`, `theme`.
+
+`theme` is never declared by a manifest; declaring one fails the install. The engine adds it, as the field `theme`, to the settings of a widget that declares a [theme contract](#themes). Its value is a theme canonical id (`{moduleId}:theme:{id}`), or absent for the widget's own look. The list is mirrored in `shared/clients/typescript/api/ui-schema.ts`, and a barkloader test fails when the two differ.
 
 The set is closed — an unrecognised token fails the install rather than falling back to a text input, because a silent fallback is indistinguishable from a working field.
 
@@ -696,6 +701,7 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values flow back to the widget at render time as `widgetHost.settings`. |
 | `surfaces` | string[] | no | Where the widget may be placed: `"scene"`, `"alert"` (inside an alert layout), or both. Defaults to `["scene"]`. |
 | `hostsSurface` | string | no | Bundled system module only. Marks a widget whose placements host a surface: the `"alert"` widget is the area of a scene where alert layouts play. The scene manager draws it, so it declares no `entry`, and it cannot be placed on the surface it hosts. |
+| `theme` | object | no | Opts the widget into themes by declaring a theme contract. Absent means the widget cannot be themed and nothing about it changes. See [Themes](#themes). |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
 
@@ -709,6 +715,7 @@ interface WidgetHost {
   readonly instanceId: string;            // stable per-placement id
   readonly settings: Readonly<Record<string, unknown>>; // resolved from settingsSchema
   readonly surface: "scene" | "alert";    // placed on a scene, or playing in an alert
+  readonly theme: WidgetTheme | null;     // null unless the widget declares a theme contract
   readonly storage: WidgetHostStorage;    // get / subscribe over module storage
 
   onEvent(handler: (event: WidgetEvent) => void): () => void;
@@ -731,6 +738,106 @@ interface WidgetEvent {
 `widgetHost.storage` reads the latest module-storage value for `(moduleId, key)` from the local cache populated by `module.storage.changed` events, delivered over the P2 `storage` frame.
 
 The contract definition lives at `shared/clients/typescript/module-sdk/src/widget-host.ts`; the shim that implements it inside the iframe is `shared/clients/typescript/module-sdk/src/widget-host-shim.ts`.
+
+### Themes
+
+A widget author can let others sell (or give away) looks for a widget without each look re-implementing it. The widget opts in with a **theme contract**; a **theme** is data only — CSS variables, one stylesheet, asset files — aimed at one widget's contract. The widget keeps all behavior, so a fix to it reaches every theme. Everything here is opt-in: a module with no `theme`, `themes` or `requires` behaves exactly as before.
+
+A look that needs its own HTML or script is not a theme; ship it as its own widget.
+
+#### The contract (`widgets[].theme`)
+
+```json
+"widgets": [{
+  "id": "countdown",
+  "entry": "widgets/countdown/index.html",
+  "assets": "widgets/countdown",
+  "theme": {
+    "contractVersion": 1,
+    "variables": [
+      { "id": "accent", "type": "color", "default": "#7ad7ff" },
+      { "id": "font",   "type": "text",  "default": "Inter" }
+    ],
+    "assetSlots": [
+      { "id": "background", "kinds": ["image", "video"], "default": "widgets/countdown/bg.png" },
+      { "id": "endSound",   "kinds": ["audio"] }
+    ]
+  }
+}]
+```
+
+| Field | Description |
+|---|---|
+| `contractVersion` | Integer from 1. The compatibility key for themes, independent of the module version: bump it only when a variable or slot changes incompatibly. |
+| `variables[]` | `id`, `type` (`color`, `text` or `number`) and `default`. Each reaches the widget as the CSS custom property `--theme-{id}`. |
+| `assetSlots[]` | `id`, `kinds` (`image`, `video`, `audio`, `font`, told apart by file extension) and an optional `default`: a file inside the widget's own `assets` directory. A filled slot reaches the widget as `--theme-asset-{id}: url(...)`. |
+
+Declare the defaults as the widget's current look, and write the widget's CSS with the same values as `var()` fallbacks (`text-shadow: var(--theme-shadow, 0 2px 8px #000)`). Adding a contract to a widget already on screen then changes nothing. The bundled Timer widget (`modules/woofx3`) is the reference.
+
+A widget with a contract gets a `theme` field appended to its settings (see [Field types](#field-types)); a widget without one never shows it, and may not use `theme` as one of its own field ids.
+
+#### Theme entries (`themes[]`) and `requires`
+
+```json
+{
+  "id": "neonpack",
+  "name": "Neon",
+  "version": "1.0.0",
+  "requires": { "timerpro": "^1.2.0" },
+  "themes": [{
+    "id": "neon",
+    "name": "Neon",
+    "target": "timerpro:widget:countdown",
+    "contractVersion": 1,
+    "variables": { "accent": "#ff2bd6", "font": "Orbitron" },
+    "assets": { "background": "assets/grid.webm", "endSound": "assets/zap.mp3" },
+    "stylesheet": "themes/neon.css",
+    "preview": "assets/preview.png"
+  }]
+}
+```
+
+| Field | Description |
+|---|---|
+| `id`, `name`, `description` | Canonical id `{moduleId}:theme:{id}`. |
+| `target` | The widget, as `{moduleId}:widget:{id}`. |
+| `contractVersion` | Must equal the target contract's. |
+| `variables` | Contract variable id to value. Unset variables keep their default. |
+| `assets` | Contract slot id to a file in this zip. |
+| `stylesheet` | A `.css` file linked after the widget's own styles. Refer to files through `var(--theme-asset-*)`; a `url()` to anything else will not load (see [Rendering](#rendering-and-fallback)). |
+| `preview` | An image the settings picker shows. |
+
+A theme entry carries nothing else: any other property fails the install, so there is nowhere for code to go. Any module may declare `themes` — a widget's own module can ship free themes for it — and a package whose manifest has only `themes` (plus metadata and `requires`) is a **theme pack**. `examples/theme-packs/timer-neon` is a sample pack for the bundled Timer widget.
+
+`requires` maps module id to a semver range. A theme for another module's widget must name that module in `requires`.
+
+#### Install-time validation
+
+The install fails, naming the offending field, when:
+
+- `requires` names a module that is not installed, or whose installed version is outside the range
+- `target` names no installed widget, or a widget with no `theme` contract
+- `contractVersion` differs from the target's
+- a theme sets a variable or asset slot the contract does not declare, or a value does not fit the variable's type (a value may not contain `;`, braces, `<`, `>`, `\`, line breaks, unbalanced quotes, or anything that loads a file such as `url(`)
+- an asset's kind is not one of its slot's `kinds`, or a file a theme or slot default names is missing from the zip
+- a theme entry carries anything beyond the fields above
+- a contract declares an unknown variable type or slot kind, a default that does not fit, or a slot default outside the widget's `assets` directory
+
+#### Rendering and fallback
+
+When the scene manager assembles a themeable widget's frame it passes the placement's `theme` setting to barkloader (`GET /widgets/{moduleId}/{widgetId}/frame?theme=...`), which resolves it against the installed modules. The frame then gets, before any widget code runs: a `:root` block setting every `--theme-*` property (theme values over defaults), the theme stylesheet, and `widgetHost.theme` (see [the SDK](./sdk.md#themes)). Theme files are stored under `modules/{moduleId}/{hash}/themes/{themeId}/…` and served by barkloader itself.
+
+Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles, fonts, images and media to the engine's own origins, so a stylesheet's `url()` or `@import` cannot reach another host. Scripts and connections are not restricted by it.
+
+A widget always renders. When the selected theme is uninstalled, is for another contract version, or no longer fits the contract, the frame uses the contract defaults and `widgetHost.theme.fallback` says why (`missing` or `incompatible`); a theme asset file missing from storage falls back to that slot's default.
+
+#### Listing themes for a picker
+
+`GET /themes?widget={moduleId}:widget:{id}` on barkloader (and `listWidgetThemes` on the API) returns the widget's `contractVersion` and every installed theme targeting it, each with `compatible` false when it no longer fits the current contract. Themes live in installed manifests, so the list changes only when a module is installed or removed.
+
+#### Uninstalling
+
+Saving a scene records an edge from the scene to every theme its widgets select, so uninstalling a module whose theme is on screen is refused like any other in-use resource. Uninstalling a module that another installed module `requires` is refused too; the in-use list carries a `resource_type: "module"` entry naming each dependent and the range it requires.
 
 ### Resource entry (`resources[]`)
 
@@ -883,8 +990,9 @@ now-playing poll is the canonical example).
 |-------|------|----------|-------------|
 | `id` | string | yes | Manifest-local task id, e.g. `poll_now_playing`. Persisted as `manifest_id` on the `background_tasks` row and used as the scheduler's in-process key together with the module id. |
 | `function` | string | yes | Manifest-local function id to invoke on each fire. Resolved to the canonical function id (`{moduleId}:function:{function}`) at fire time. |
-| `schedule` | string | yes | A 6-field, seconds-first cron expression (parsed with the `cron` crate), e.g. `"*/30 * * * * *"` for every 30 seconds. An invalid expression is logged and that task is skipped — it does not fail the install. |
+| `schedule` | string | yes | A cron expression: the five-field POSIX form (`"*/5 * * * *"`) or a six-field, seconds-first form (`"*/30 * * * * *"`). An expression that does not parse fails the install. |
 | `description` | string | no | Defaults to `""`. |
+| `runOnLoad` (alias: `run_on_load`) | boolean | no | Defaults to `false`. When `true` the task also fires once each time the module is registered: boot, install, upgrade, reload and enable. Cron never fires at startup on its own; this is how a module re-arms its [deadlines](#deadlines-deadlines) and catches up on whatever came due while barkloader was down. A failed load firing is retried with backoff (1s, 2s, 4s, ... capped at a minute, 8 attempts) rather than waiting for the next cron fire. |
 
 Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** repository):
 
@@ -908,25 +1016,120 @@ process start, barkloader hydrates the in-process scheduler by listing all persi
 tasks from db-proxy and registering each with the scheduler — no manifest parsing is
 involved at boot.
 
+`runOnLoad` and the module's `deadlines` are read from the stored manifest when
+the module is registered, alongside the persisted task rows.
+
 Registration into the in-process scheduler happens on install, on the module's
-`/functions/{name}/register` route, and on upgrade/reload. Unregistration happens on
-module delete, keyed by the task's **manifest-local module id** (not the module's
-database-row UUID) — the scheduler's in-memory map is keyed the same way the sandbox
-registry is, so using the wrong identifier here silently no-ops the unregister and
-leaves the task firing after deletion.
+`/functions/{name}/register` route, and on upgrade/reload. Registering replaces
+everything the module had scheduled, deadlines included. Disabling a module drops
+its entries and enabling it arms them again (and fires its `runOnLoad` tasks).
+Unregistration happens on module delete, keyed by the task's **manifest-local module
+id** (not the module's database-row UUID) — the scheduler's in-memory map is keyed
+the same way the sandbox registry is, so using the wrong identifier here silently
+no-ops the unregister and leaves the task firing after deletion.
 
 #### Scheduler mechanics
 
-Each registered task runs as an independent loop: compute the next fire time from the
-cron schedule, sleep until then, invoke the target function via the same
-`Sandbox::invoke` entrypoint used for every other function call in barkloader (chat
-commands, workflow steps, the field-options NATS responder), then repeat. A fired
-task always invokes with an empty event and empty parameters — background tasks
-receive no per-invocation context beyond what `ctx.module`/`ctx.resources`/etc.
+One scheduler owns every cron task, `runOnLoad` firing and deadline in the
+process: a min-heap of entries ordered by fire time, and one loop that sleeps until
+the earliest entry or until an entry is armed, replaced or cancelled, whichever
+comes first. Nothing runs while nothing is due. Replacing or cancelling an entry
+never searches the heap: each arm carries a generation, and a heap item whose
+generation no longer matches its entry is discarded when it surfaces.
+
+A cron task re-arms itself from its schedule after each firing completes, so a slow
+invocation is never overlapped by the next one. At most one invocation per entry
+runs at a time; an entry that comes due while its previous invocation is still
+running fires as soon as that one finishes. Every firing goes through the same
+`SandboxFactory::invoke_blocking` entrypoint used for every other function call in
+barkloader (chat commands, workflow steps, the field-options NATS responder).
+
+A fired cron task invokes with an empty event and empty parameters — background
+tasks receive no per-invocation context beyond what `ctx.module`/`ctx.resources`/etc.
 already expose; if a task needs input, it has to fetch it itself (e.g. from module
-storage or an external API). Each fire logs its scheduled time, its start, and its
-outcome (success with elapsed ms, or an error) so a stuck or failing poller is
-visible in the barkloader logs without instrumenting the module itself.
+storage or an external API). Each firing and its outcome are logged at `debug`; a
+failure is logged at `error` and is not retried (a `runOnLoad` firing excepted).
+
+### Deadlines (`deadlines[]`)
+
+A deadline lets a module's functions schedule one-shot work at a specific moment —
+end a timer when it reaches zero, close a window, lift a cooldown — instead of
+polling for it from a high-frequency background task. The manifest declares which
+function a deadline invokes and how many entries it may hold; functions then arm
+and cancel entries with [`ctx.schedule`](#ctx-schedule-surface).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Manifest-local deadline id, unique within `deadlines`. The first argument to `ctx.schedule.at`/`cancel`. |
+| `function` | string | yes | Manifest-local id of a function declared in the same manifest's `functions`. Only functions declared here can be scheduled. |
+| `maxPending` (alias: `max_pending`) | number | yes | Most entries this deadline may hold at once, `1` to `1024`. |
+| `description` | string | no | Defaults to `""`. |
+
+All of it is checked at install: a duplicate id, an undeclared function, or a
+missing or out-of-range `maxPending` fails the install.
+
+```json
+"deadlines": [
+  {
+    "id": "timer_end",
+    "function": "timer.expire",
+    "maxPending": 256,
+    "description": "Ends a running timer the moment it reaches zero."
+  }
+],
+"backgroundTasks": [
+  {
+    "id": "timer_reconcile",
+    "function": "timer.reconcile",
+    "schedule": "* * * * *",
+    "runOnLoad": true,
+    "description": "Re-arms timer deadlines from storage and ends any that ran out."
+  }
+]
+```
+
+#### `ctx.schedule` surface
+
+Available in both QuickJS and Lua function runtimes. The module is implied: an entry
+is identified by `(module, deadlineId, key)`, and a function can only arm or cancel
+its own module's entries.
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `ctx.schedule.at(deadlineId, key, whenMs, params?)` | `void` | Arms `key` to fire at `whenMs` (Unix epoch milliseconds), replacing an existing entry under the same key. A time in the past is valid and fires as soon as possible. `params` defaults to `{}`. |
+| `ctx.schedule.cancel(deadlineId, key)` | `void` | Drops the entry. Cancelling one that does not exist is not an error. |
+
+`at` throws for an undeclared `deadlineId`, a non-finite `whenMs`, a `whenMs` more
+than 30 days out, `params` over 4 KiB serialized, a key over 512 bytes, or a
+deadline already holding its `maxPending` entries (replacing an existing key does
+not count against it). `cancel` throws for an undeclared `deadlineId`.
+
+Keys are free-form strings; keying entries by a resource instance's canonical id is
+the usual choice, and deleting that instance with `ctx.resources.delete` cancels
+every entry whose key is its canonical id.
+
+When an entry comes due, its function runs with:
+
+- `ctx.event.parameters` — the `params` given to `at`
+- `ctx.event.deadline` — `{ id, key, dueAt, firedAt }`: the deadline id, the key,
+  the epoch ms the entry was armed for, and the epoch ms it actually fired
+
+A failed firing is logged and not retried.
+
+#### Durability: in memory by design
+
+Entries are not persisted. A deadline is a cache of state the module already keeps
+durably in its own storage, so barkloader holds entries in memory only, and drops a
+module's entries whenever the module is registered again (upgrade, reload), disabled
+or uninstalled. The module's `runOnLoad` reconcile task is what rebuilds them: it
+reads its state, handles anything that came due while the process was down, and arms
+the rest. That same task, on its cron schedule, is the safety net for any `at` or
+`cancel` a function missed.
+
+The contract that follows: **a stale or duplicate firing must be harmless.** A
+deadline's function checks its own state before acting (the timer is still running,
+its end time has passed) and writes with `ctx.storage.compareAndSet`, so a firing
+for a timer that was paused, extended or deleted in the meantime does nothing.
 
 ## Runtime resource instances
 
@@ -958,7 +1161,7 @@ Available in both QuickJS and Lua function runtimes:
 |------|---------|-------|
 | `ctx.resources.create(kind, instanceId, displayName?, settings?)` | `{ canonical_id, module_name, kind, instance_id, display_name, settings }` | The owning module is implicit (taken from the function's canonical path). `settings` must be an object. |
 | `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
-| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. |
+| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
 
 **Where an instance's value lives:** at `state:<canonicalId>` in the owning module's storage (e.g. `state:woofx3:counter:death_count`). This is the contract, not a suggestion: the engine's `getResourceValues` reads it, and the dashboard's value mirror keys on it, so a kind that stores its value anywhere else shows nothing on its first-party page.
@@ -982,7 +1185,7 @@ workflow to one instance.
 | `counter.changed` | Any counter action moves the number. |
 | `timer.started` | A timer goes from standing still to counting down. |
 | `timer.paused` | Pause stops a timer that was counting down. |
-| `timer.ended` | A running timer reaches zero. Nothing runs at that moment, so the module's `timer_expiry` background task checks once a second, stops each timer that has run out and announces it. Starting a timer from its ended workflow makes it repeat. |
+| `timer.ended` | A running timer reaches zero. Every change that leaves a timer running arms the module's `timer_end` [deadline](#deadlines-deadlines) for its `endsAt`, and the firing stops the timer and announces it. The `timer_reconcile` task (on load, then once a minute) ends any timer that ran out while the engine was down or whose deadline was not armed. Starting a timer from its ended workflow makes it repeat. |
 | `queue.added` | An entry joins a queue. |
 | `queue.next` | The entry at the front of a queue is taken. |
 | `goal.reached` | A change carries a counter from below one of its goals to at or above it. Climbing further past that goal announces nothing more, and one change crossing several goals announces each. Reaching a goal again after dropping below it announces again only when the counter's `announceEveryTime` setting is on; `first` on the event says which crossing this was, and `goalName` carries the goal's name, or `""` when it has none. A counter with no goals announces none. |

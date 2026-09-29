@@ -92,13 +92,13 @@ func newerThanStored(txn *badger.Txn, target []byte, value []byte) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	var stored storedItem
+	var stored badgerItem
 	if err := existing.Value(func(val []byte) error {
 		return json.Unmarshal(val, &stored)
 	}); err != nil {
 		return false, err
 	}
-	var incoming storedItem
+	var incoming badgerItem
 	if err := json.Unmarshal(value, &incoming); err != nil {
 		return false, err
 	}

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Development base image — built once, shared across all services via docker-compose.dev.yml.
-# Toolchains: Go 1.24.0, Bun 1.1.34, Rust stable.
+# Toolchains: Go 1.25.0, Bun 1.1.34, Rust stable.
 # Source directories are bind-mounted at runtime; rebuilding this image is only needed
 # when toolchain versions change.
 #
@@ -9,7 +9,7 @@
 
 FROM debian:bookworm
 
-ARG GO_VERSION=1.24.0
+ARG GO_VERSION=1.25.0
 ARG BUN_VERSION=1.1.34
 
 ENV DEBIAN_FRONTEND=noninteractive

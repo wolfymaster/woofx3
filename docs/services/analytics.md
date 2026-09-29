@@ -28,7 +28,7 @@ a fact table. The distinction is the whole design, so it comes first.
 
 ## Why counters are not the answer
 
-A counter's value is one key in BadgerDB at `state:<canonicalId>`
+A counter's value is one key in module storage at `state:<canonicalId>`
 (`modules/woofx3/functions/counter.js:87`), holding `{ value, reached }`. That
 shape is right for what a counter is for — a number workflows and chat commands
 read and write, and that `goal.reached` fires on. It is wrong for analytics for
@@ -42,9 +42,9 @@ goal, and `counterReset` wipes even those (`counter.js:65-68`).
 **No entity axis.** "Users who gifted five subs" needs a number *per viewer*.
 Expressed in counters that is one key per viewer per metric — unbounded
 cardinality in a key/value store with no query API. `ClearSessionScoped` and
-its siblings already do a full Badger scan
-(`db/app/services/storage_service.go:246-247`, acceptable only because they are
-not hot-path); a per-viewer key space is how that stops being true.
+its siblings already delete across the whole `module_storage` table
+(`db/app/services/storage_service.go`, acceptable only because they are not
+hot-path); a per-viewer key space is how that stops being true.
 
 **Increments are destructive.** A counter cannot be recomputed. The stream
 event fan-out is explicitly not gapless — core NATS, no JetStream, no replay
