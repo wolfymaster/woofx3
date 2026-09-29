@@ -1,4 +1,5 @@
 export * from "./api";
+export * from "./capabilities";
 export * from "./client";
 export * from "./overlay-events";
 export * from "./rpc";

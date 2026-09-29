@@ -1,5 +1,11 @@
+import {
+  ENGINE_CAPABILITIES_SCHEMA,
+  type EngineCapabilities,
+  type PingResponse,
+  type StorageConfig,
+  supportedEngineCapabilities,
+} from "@woofx3/api";
 import { routeModule } from "./context";
-import type { PingResponse, StorageConfig } from "@woofx3/api";
 import { resolveSceneManagerUrl } from "./helpers";
 
 export const engineRoutes = routeModule({
@@ -34,6 +40,14 @@ export const engineRoutes = routeModule({
       overlayPublicUrl,
       version: this.version,
     };
+  },
+
+  /**
+   * The feature ids this build supports, so the UI can gate newer features
+   * without probing methods or comparing image tags.
+   */
+  async getEngineCapabilities(): Promise<EngineCapabilities> {
+    return { schema: ENGINE_CAPABILITIES_SCHEMA, capabilities: supportedEngineCapabilities() };
   },
 
   /**

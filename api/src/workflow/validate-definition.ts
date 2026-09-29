@@ -1,4 +1,5 @@
 import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefinition } from "@woofx3/api";
+import { publishedEventTypeProblem } from "./reserved-subjects";
 
 export interface ValidationError {
   path: string;
@@ -114,6 +115,16 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
       }
       if (t.type === "action" && (typeof t.action !== "string" || t.action.length === 0)) {
         errors.push({ path: `${p}.action`, message: "required non-empty string for action tasks" });
+      }
+      if (t.type === "action" && t.action === "publish_event") {
+        const eventType = (t.parameters as Record<string, unknown> | undefined)?.eventType;
+        // One built from an expression is checked by the engine once it resolves.
+        if (typeof eventType === "string" && !eventType.includes("${")) {
+          const problem = publishedEventTypeProblem(eventType);
+          if (problem) {
+            errors.push({ path: `${p}.parameters.eventType`, message: `${JSON.stringify(eventType)} ${problem}` });
+          }
+        }
       }
       validateConditions(t.conditions, `${p}.conditions`, errors);
       if (t.condition) {
