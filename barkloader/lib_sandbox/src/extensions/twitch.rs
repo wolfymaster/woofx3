@@ -11,10 +11,11 @@
 //! is bounded three ways: by what is left of the invocation's deadline, by a
 //! per-invocation call count, and by a limit on requests in flight at once.
 
+use super::in_flight::InFlight;
 use crate::host::{CallScope, HostError, HostExtension, HostFunction, NatsRequester, RequestError};
 use crate::permissions::{TWITCH_CHANNEL, TWITCH_MODERATION};
 use serde_json::{Value, json};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 const SUBJECT: &str = "twitchapi";
@@ -81,56 +82,6 @@ impl Default for Limits {
             max_in_flight: MAX_IN_FLIGHT,
             in_flight_wait: IN_FLIGHT_WAIT,
         }
-    }
-}
-
-/// A counting semaphore for blocking threads. The in-flight limit is one per
-/// extension, and the engine builds one `TwitchExtension` per process
-/// (barkloader/app/src/main.rs), so it bounds the whole process.
-struct InFlight {
-    count: Mutex<usize>,
-    released: Condvar,
-    max: usize,
-}
-
-struct InFlightSlot<'a>(&'a InFlight);
-
-impl InFlight {
-    fn new(max: usize) -> Self {
-        assert!(
-            max > 0,
-            "the in-flight limit must allow at least one request"
-        );
-        Self {
-            count: Mutex::new(0),
-            released: Condvar::new(),
-            max,
-        }
-    }
-
-    fn acquire(&self, wait: Duration) -> Option<InFlightSlot<'_>> {
-        let count = self.count.lock().expect("in-flight mutex poisoned");
-        let (mut count, _) = self
-            .released
-            .wait_timeout_while(count, wait, |count| *count >= self.max)
-            .expect("in-flight mutex poisoned");
-        if *count >= self.max {
-            return None;
-        }
-        *count += 1;
-        Some(InFlightSlot(self))
-    }
-}
-
-impl Drop for InFlightSlot<'_> {
-    fn drop(&mut self) {
-        let mut count = self.0.count.lock().expect("in-flight mutex poisoned");
-        assert!(
-            *count > 0,
-            "released an in-flight slot that was never taken"
-        );
-        *count -= 1;
-        self.0.released.notify_one();
     }
 }
 
@@ -264,6 +215,7 @@ fn read_reply(command: &str, reply: Value) -> Result<Value, HostError> {
 mod tests {
     use super::*;
     use crate::host::PERMISSION_DENIED;
+    use std::sync::Mutex;
     use std::time::Instant;
 
     /// Answers every request with `reply` and records what was asked.
@@ -514,15 +466,6 @@ mod tests {
         function(&ext, "clip")
             .call("twitch", &granted(&[]), Value::Null)
             .expect("the limit is per invocation");
-    }
-
-    #[test]
-    fn an_in_flight_slot_is_refused_while_all_are_taken_and_returned_on_drop() {
-        let in_flight = InFlight::new(1);
-        let held = in_flight.acquire(Duration::ZERO).expect("a free slot");
-        assert!(in_flight.acquire(Duration::from_millis(10)).is_none());
-        drop(held);
-        assert!(in_flight.acquire(Duration::ZERO).is_some());
     }
 
     /// Holds every request until released, so a test can keep one in flight.
