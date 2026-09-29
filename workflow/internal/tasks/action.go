@@ -57,6 +57,7 @@ func (t *ActionTask[TServices]) Execute(ctx *TaskContext) (*types.TaskResult, er
 		TaskID:       ctx.TaskID,
 		TriggerEvent: ctx.TriggerEvent,
 		Logger:       ctx.Logger,
+		Context:      ctx.Context,
 	}, t.parameters)
 	if err != nil {
 		return &types.TaskResult{

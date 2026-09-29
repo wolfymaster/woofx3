@@ -78,6 +78,7 @@ func WithServices[TServices any](services TServices, action tasks.ActionFunc[TSe
 			TaskID:       incoming.TaskID,
 			TriggerEvent: incoming.TriggerEvent,
 			Logger:       incoming.Logger,
+			Context:      incoming.Context,
 		}
 		return action(ctx, params)
 	}

@@ -63,6 +63,12 @@ const (
 	SubjectWorkflowRunStarted   Subject = "workflow.run.started"
 	SubjectWorkflowRunCompleted Subject = "workflow.run.completed"
 	SubjectWorkflowRunFailed    Subject = "workflow.run.failed"
+	// A run stopped by a cancel request rather than by its own outcome.
+	SubjectWorkflowRunCancelled Subject = "workflow.run.cancelled"
+
+	// Stop a run. A request/reply subject: the engine answers with what the
+	// cancel did, so the caller can tell a stopped run from a finished one.
+	SubjectWorkflowCancel Subject = "workflow.cancel"
 
 	// Unified widget event channel (R2 of the widget refactor).
 	// Single inbound subject for everything an overlay reports about a

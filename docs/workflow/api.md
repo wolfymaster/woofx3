@@ -400,25 +400,70 @@ Returns all enabled workflows with their most recent execution status.
 
 #### triggerWorkflowByName
 
-Triggers a workflow by its human-readable name rather than ID. Performs a case-insensitive lookup.
+Runs one workflow, matched by id first and then by case-insensitive name.
 
 **Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `workflowName` | string | yes | Name of the workflow to trigger |
-| `parameters` | Record\<string, string\> | no | Input parameters for the workflow |
-| `userId` | string | no | User ID of the person triggering |
+| `workflowNameOrId` | string | yes | Id or name of the workflow to run |
+| `parameters` | Record\<string, string\> | no | Inputs, visible as `${trigger.data.inputs}` when no sample data is given |
+| `userId` | string | no | Provenance only |
+| `triggerId` | string | no | Correlation id echoed onto the run's `workflow.run.*` events; minted when absent |
+| `triggeredBy` | string | no | What started the run (`"test"`, `"dashboard"`, ...). A run whose origin is exactly `"dashboard"` is not recorded |
+| `options` | `TriggerWorkflowOptions` | no | See below |
 
-**Response:**
+`TriggerWorkflowOptions`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `triggerData` | Record\<string, unknown\> | Sample payload. The run starts from an event of the workflow's trigger type with this as its data, and only this workflow runs. At most 16 KiB (`MAX_TRIGGER_DATA_BYTES`) as JSON |
+| `platform` | string | The sample event's platform, for `${trigger.platform}` conditions. Requires `triggerData` |
+| `skipConditions` | boolean | Run even when the sample fails the trigger conditions. Default `false`. Requires `triggerData` |
+| `origin` | string | Same as `triggeredBy`. Giving both with different values is an error |
+
+Without `triggerData` the request is published and the call returns at once:
+
+```json
+{ "executionId": "", "status": "requested", "message": "Requested a run of \"Raid shoutout\"", "triggerId": "5f0c..." }
+```
+
+With `triggerData` the call waits for the engine's answer (see
+[Manual Runs](./execution.md#manual-runs-and-sample-trigger-data)):
 
 ```json
 {
-  "executionId": "exec-002",
+  "executionId": "9b1c...",
   "status": "started",
-  "message": "Workflow 'Welcome New Follower' triggered successfully"
+  "message": "Started \"Raid shoutout\" with sample channel.raid data",
+  "triggerId": "5f0c...",
+  "eventType": "channel.raid"
 }
 ```
+
+```json
+{
+  "executionId": "",
+  "status": "conditions_not_met",
+  "message": "The sample does not match the trigger conditions of \"Raid shoutout\": ${trigger.data.viewers} gte 10",
+  "triggerId": "5f0c...",
+  "eventType": "channel.raid",
+  "unmetConditions": [{ "field": "${trigger.data.viewers}", "operator": "gte", "value": 10 }]
+}
+```
+
+The call throws for an unknown or disabled workflow, invalid options, an engine
+refusal, or no answer from the engine within 5 seconds.
+
+`triggerData`, `platform` and `skipConditions` are privileged. They let the
+caller choose the event a workflow runs from and bypass its trigger
+conditions. For that reason they are only accepted from engine API clients:
+the dashboard backend and other authenticated RPC sessions. They are never
+accepted from module code, which cannot start workflows at all.
+
+A run whose origin (`triggeredBy` / `origin`) is exactly `"dashboard"` is not
+written to the run history. Its outcome only reaches the caller watching its
+`triggerId`. Use `"test"` for a test run that should appear in the history.
 
 #### getWorkflowStatus
 
@@ -480,16 +525,32 @@ Returns paginated execution history with optional filtering.
 
 #### cancelWorkflow
 
-Cancels a running workflow execution.
+Stops a run. See [Cancelling a Run](./execution.md#cancelling-a-run) for what
+the engine does.
 
 **Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `executionId` | string | yes | ID of the execution to cancel |
-| `reason` | string | no | Reason for cancellation (defaults to "Cancelled by user") |
+| `executionId` | string | yes | The engine's run id (the run history's `engineRunId`) |
+| `reason` | string | no | Recorded as `cancelled: <reason>`; defaults to "Cancelled by user" |
 
-**Response:** void (throws on failure)
+**Response** (`CancelWorkflowResult`):
+
+```json
+{ "executionId": "9b1c...", "outcome": "cancelled", "status": "cancelled", "message": "The run was cancelled" }
+```
+
+```json
+{ "executionId": "9b1c...", "outcome": "already_finished", "status": "completed", "message": "The run had already completed; nothing was changed" }
+```
+
+Idempotent: cancelling a cancelled run answers `cancelled` again. When the
+engine does not know the run (it was in flight across an engine restart), the
+api settles its history row as `cancelled` instead, unless the row has already
+settled. The dashboard learns of the change through the `workflow.run.updated`
+webhook, and a caller watching the run's `triggerId` through
+`workflow.run.cancelled`. Throws for an id no run has.
 
 ## Event-Driven Updates
 
@@ -502,7 +563,9 @@ When workflows are created, updated, or deleted through the DB Proxy, CloudEvent
 | `workflow.change.add` | Workflow created | Engine registers the new workflow definition |
 | `workflow.change.update` | Workflow updated | Engine replaces the existing definition |
 | `workflow.change.delete` | Workflow deleted | Engine unregisters the workflow |
-| `workflow.execute` | Execution requested | Engine starts a new workflow execution |
+| `workflow.execute` | Execution requested | Engine starts a new workflow execution; answers a request with the outcome |
+| `workflow.cancel` | Cancel requested (request/reply) | Engine stops the run and answers with the outcome |
+| `workflow.run.cancelled` | A run was cancelled | Relayed to a caller watching the run's `triggerId` |
 
 The parent subject `workflow.change` can be used to subscribe to all CRUD events at once.
 

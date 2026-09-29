@@ -23,6 +23,21 @@ const (
 	WorkflowStatusCancelled WorkflowExecutionStatus = "cancelled"
 )
 
+// TerminalWorkflowStatuses are the statuses a run cannot leave.
+func TerminalWorkflowStatuses() []WorkflowExecutionStatus {
+	return []WorkflowExecutionStatus{WorkflowStatusCompleted, WorkflowStatusFailed, WorkflowStatusCancelled}
+}
+
+// IsTerminalWorkflowStatus reports whether a run in this status has settled.
+func IsTerminalWorkflowStatus(status WorkflowExecutionStatus) bool {
+	for _, terminal := range TerminalWorkflowStatuses() {
+		if status == terminal {
+			return true
+		}
+	}
+	return false
+}
+
 // WorkflowExecution represents an instance of a workflow execution
 type WorkflowExecution struct {
 	ID         uuid.UUID               `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`

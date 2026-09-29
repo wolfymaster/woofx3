@@ -492,10 +492,48 @@ func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.Rec
 }
 
 // UpdateWorkflowRunStatus advances a recorded run to its terminal state.
+//
+// A terminal status is final. A run cancelled by hand whose last step returns
+// afterwards, or a report delivered twice, must not move the row back out of
+// the outcome already recorded, so the write is conditional on the row not
+// being terminal yet, decided by the database rather than by a read that
+// another writer could overtake. Repeating the status the row already has is
+// accepted as a no-op; any other change to a settled row is refused with
+// FailedPrecondition.
 func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *client.UpdateWorkflowRunStatusRequest) (*client.WorkflowExecutionResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+	}
+	if req.Status == "" {
+		return nil, twirp.RequiredArgumentError("status")
+	}
+
+	status := models.WorkflowExecutionStatus(req.Status)
+	updates := map[string]any{"status": status}
+	if req.Error != "" {
+		updates["error"] = req.Error
+	}
+	if req.OutputJson != "" {
+		updates["output"] = req.OutputJson
+	}
+	// Only a terminal state carries a completion time. A run still reported as
+	// running has not finished, and stamping one would make it look as though
+	// it had to everything that reads these rows.
+	if models.IsTerminalWorkflowStatus(status) {
+		completedAt := time.Now()
+		if req.CompletedAt != nil {
+			completedAt = req.CompletedAt.AsTime()
+		}
+		updates["completed_at"] = completedAt
+	}
+	updates["updated_at"] = time.Now()
+
+	result := s.executionRepo.Model(&models.WorkflowExecution{}).
+		Where("id = ? AND status NOT IN ?", id, models.TerminalWorkflowStatuses()).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow run: %w", result.Error))
 	}
 
 	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
@@ -503,28 +541,18 @@ func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *clie
 		return nil, twirp.NotFoundError("workflow execution not found")
 	}
 
-	exec.Status = models.WorkflowExecutionStatus(req.Status)
-	if req.Error != "" {
-		exec.Error = req.Error
-	}
-	if req.OutputJson != "" {
-		exec.Output = req.OutputJson
-	}
-
-	// Only a terminal state carries a completion time. A run still reported as
-	// running has not finished, and stamping one would make it look as though
-	// it had to everything that reads these rows.
-	switch exec.Status {
-	case models.WorkflowStatusCompleted, models.WorkflowStatusFailed, models.WorkflowStatusCancelled:
-		completedAt := time.Now()
-		if req.CompletedAt != nil {
-			completedAt = req.CompletedAt.AsTime()
+	if result.RowsAffected == 0 {
+		if exec.Status != status {
+			return nil, twirp.NewError(twirp.FailedPrecondition,
+				fmt.Sprintf("workflow run already %s; cannot change it to %s", exec.Status, status))
 		}
-		exec.CompletedAt = &completedAt
-	}
-
-	if err := exec.Update(s.executionRepo); err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow run: %w", err))
+		return &client.WorkflowExecutionResponse{
+			Status: &client.ResponseStatus{
+				Code:    client.ResponseStatus_OK,
+				Message: "Workflow run already " + string(exec.Status),
+			},
+			Execution: s.executionToProto(exec),
+		}, nil
 	}
 
 	s.publishExecution(exec, "updated")

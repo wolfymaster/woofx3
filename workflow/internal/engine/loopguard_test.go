@@ -143,6 +143,9 @@ func TestAWorkflowThatTriggersItselfIsStoppedAtTheLimit(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("the loop was not stopped; %d runs settled", len(recorder.snapshot()))
 	}
+	// The refused run can settle before the run whose event it refused has
+	// finished returning from its last task.
+	waitUntil(t, func() bool { return len(recorder.snapshot()) == MaxWorkflowChain+1 })
 
 	var completed, failed []types.WorkflowExecution
 	for _, run := range recorder.snapshot() {

@@ -95,6 +95,11 @@ Circular dependencies are detected at graph construction time and cause the work
 | `waiting` | Workflow is paused (wait task or sub-workflow) |
 | `completed` | All tasks finished successfully |
 | `failed` | A task failed with `onError: "fail"` |
+| `cancelled` | Stopped by a cancel request (see [Cancelling a Run](#cancelling-a-run)) |
+
+`completed`, `failed` and `cancelled` are terminal. A run settles exactly once,
+and db-proxy refuses to move a recorded run out of a terminal status, so a late
+report cannot turn a cancelled run back into a completed one.
 
 ### Task Execution
 
@@ -106,6 +111,7 @@ Circular dependencies are detected at graph construction time and cause the work
 | `success` | Task completed successfully |
 | `failed` | Task execution failed |
 | `skipped` | Task was skipped (guard condition false or branch not taken) |
+| `cancelled` | The run was cancelled while this task was pending or in flight |
 
 ## Pausing and Resuming
 
@@ -144,6 +150,79 @@ When the sub-workflow completes:
 1. `checkSubWorkflowCompletion` finds all parent workflows waiting for it
 2. Sub-workflow results are copied to the parent task's exports
 3. Parent workflows resume from the next task
+
+## Manual Runs and Sample Trigger Data
+
+`workflow.execute` runs one named workflow on request. Without sample data the
+run starts from the request event itself, so `${trigger.data}` is the request's
+`{ workflowId, inputs, startedBy }` and trigger conditions are not consulted.
+
+With `triggerData` in the request's data, the engine instead builds the event a
+real trigger would deliver: its type is the workflow's own trigger event (for
+example `channel.raid`), its data is the sample, its `platform` is the request's
+`platform`, and its correlation attributes (`triggerId`, `triggeredBy`) are the
+request's. `${trigger.data...}` then resolves exactly as it would for a real
+event, and the recorded run stores this event, so a replay repeats the sample.
+
+Unlike publishing a simulated event, only the named workflow runs. Every other
+workflow listening for the same event, and its side effects, stays untouched.
+
+The workflow's trigger conditions are evaluated against the sample first.
+Every condition is evaluated, not just the first false one, and a sample that
+fails any of them starts no run: the reply is `conditions_not_met` with each
+unmet condition. `skipConditions: true` runs the workflow anyway. The sample
+is at most 16 KiB as JSON.
+
+The subject is subscribed with a reply handler. A caller that publishes gets no
+answer, as before; one that sends a request is told the outcome:
+
+```json
+{ "outcome": "started", "executionId": "9b1c...", "eventType": "channel.raid" }
+{ "outcome": "conditions_not_met", "eventType": "channel.raid",
+  "unmet": [{ "field": "${trigger.data.viewers}", "operator": "gte", "value": 10 }] }
+{ "outcome": "refused", "error": "workflow not found: wf-1" }
+```
+
+## Cancelling a Run
+
+`workflow.cancel` is a request/reply subject carrying
+`{ "executionId": "...", "reason": "..." }`. Each run has its own context, and
+cancelling it:
+
+- **Abandons the task in flight.** The engine stops waiting for it at once. The
+  task's context (`ActionContext.Context`) is done, so an action that honours it
+  can stop early. An action that already sent its request to a service is not
+  undone: whatever it did stands. The task is recorded `cancelled`, and no later
+  task starts.
+- **Claims a pending wait.** A run paused at a `wait` task, or waiting on a
+  sub-workflow, is removed from the waiting set under the same lock an arriving
+  event and the wait's timer use. Whichever gets there first owns the resume,
+  so a cancelled wait never resumes. This includes a `delay` and a wait with a
+  `timeout`: the timer is stopped, and the run settles at once rather than when
+  the timer would have fired. A run cancelled just before it reaches a wait
+  refuses to pause there. A sub-workflow the run was waiting on is cancelled too. A
+  sub-workflow started without `waitUntilCompletion` (fire-and-forget) is
+  independent of its parent. It keeps running when the parent is cancelled;
+  cancel it by its own execution id.
+- **Settles the run `cancelled`** through the same path as every other outcome.
+  The run recorder writes the status to db-proxy, whose `db.workflow_execution.updated`
+  outbox event reaches the dashboard as the `workflow.run.updated` webhook. The
+  engine also publishes `workflow.run.cancelled`, which the api relays to a
+  caller watching the run's `triggerId`. The run's error is `cancelled: <reason>`.
+
+Once a cancel is accepted, the run ends `cancelled` even if its last task
+finishes in the meantime. The caller has already been told it stopped.
+
+The reply is `{ "outcome": "cancelled", "status": "cancelled" }`. The same
+answer comes back for a run that is already cancelled, so the request is
+idempotent. A run that completed or failed first gets
+`{ "outcome": "already_finished", "status": "completed" }` and is unchanged. An
+id this engine does not know gets `{ "outcome": "not_found" }`. That covers a
+run that was in flight when the engine restarted, which nothing will ever
+finish. The api then settles that run's history row as `cancelled` itself.
+
+`Engine.Stop` is not a cancel. Runs in flight are not recorded as cancelled
+when the engine shuts down.
 
 ## Loops
 

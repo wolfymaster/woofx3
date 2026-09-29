@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -13,6 +14,9 @@ type Task interface {
 }
 
 type TaskContext struct {
+	// Context is done when the run is cancelled. A task that blocks should
+	// return once it is; the engine stops waiting for it either way.
+	Context    context.Context
 	WorkflowID string
 	// ExecutionID identifies this run, as distinct from WorkflowID which
 	// identifies the definition. A side effect attributed only to the
@@ -103,6 +107,8 @@ type ActionContext[TServices any] struct {
 	TaskID       string
 	TriggerEvent *types.Event
 	Logger       Logger
+	// Context is done when the run is cancelled; see TaskContext.Context.
+	Context context.Context
 }
 
 type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)

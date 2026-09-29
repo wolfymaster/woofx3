@@ -8,6 +8,8 @@ type TriggerResult = {
   status: string;
   message: string;
   triggerId: string;
+  eventType?: string;
+  unmetConditions?: Array<{ field: string; operator: string; value: unknown; error?: string }>;
 };
 
 type Published = {
@@ -16,12 +18,20 @@ type Published = {
   correlation?: { triggerId?: string; triggeredBy?: string };
 };
 
+type TriggerOptions = {
+  triggerData?: Record<string, unknown>;
+  platform?: string;
+  skipConditions?: boolean;
+  origin?: string;
+};
+
 /**
  * The route is a mixin over the api's route host. `triggerWorkflowByName`
  * touches only these three members, so the rest of the host is irrelevant here.
  */
-function setup(workflows: WorkflowRow[]) {
+function setup(workflows: WorkflowRow[], engineReply: Record<string, unknown> = { outcome: "started" }) {
   const published: Published[] = [];
+  const requested: Published[] = [];
   let executeWorkflowCalls = 0;
 
   const ctx = {
@@ -46,6 +56,14 @@ function setup(workflows: WorkflowRow[]) {
     ) {
       published.push({ eventType, data, correlation });
     },
+    async requestEvent(
+      eventType: string,
+      data: Record<string, unknown>,
+      correlation?: { triggerId?: string; triggeredBy?: string }
+    ) {
+      requested.push({ eventType, data, correlation });
+      return engineReply;
+    },
   };
 
   const route = workflowsExecutionRoutes.triggerWorkflowByName as unknown as (
@@ -53,11 +71,13 @@ function setup(workflows: WorkflowRow[]) {
     parameters?: Record<string, string>,
     userId?: string,
     triggerId?: string,
-    triggeredBy?: string
+    triggeredBy?: string,
+    options?: TriggerOptions
   ) => Promise<TriggerResult>;
 
   return {
     published,
+    requested,
     executeWorkflowCalls: () => executeWorkflowCalls,
     trigger: (...args: Parameters<typeof route>) => route.call(ctx, ...args),
   };
@@ -143,6 +163,197 @@ describe("triggerWorkflowByName", () => {
     const { trigger, published } = setup(ROWS);
     await trigger("wf-1", { user: "wolfy" });
     expect(published[0]?.data.inputs).toEqual({ user: "wolfy" });
+  });
+});
+
+describe("triggerWorkflowByName with sample trigger data", () => {
+  const RAID = { fromBroadcasterName: "wolfy", viewers: 42 };
+
+  // Sample data needs the engine's answer -- did the run start, and did the
+  // sample match -- so it is a request rather than a publish.
+  test("asks the engine and returns the run it started", async () => {
+    const { trigger, published, requested } = setup(ROWS, {
+      outcome: "started",
+      executionId: "exec-9",
+      eventType: "channel.raid",
+    });
+    const result = await trigger("wf-2", {}, undefined, "corr-1", undefined, {
+      triggerData: RAID,
+      platform: "twitch",
+      origin: "test",
+    });
+
+    expect(published).toHaveLength(0);
+    expect(requested).toHaveLength(1);
+    expect(requested[0]?.eventType).toBe("workflow.execute");
+    expect(requested[0]?.data).toMatchObject({ workflowId: "wf-2", triggerData: RAID, platform: "twitch" });
+    expect(requested[0]?.data.skipConditions).toBeUndefined();
+    expect(requested[0]?.correlation).toEqual({ triggerId: "corr-1", triggeredBy: "test" });
+    expect(result).toMatchObject({
+      executionId: "exec-9",
+      status: "started",
+      triggerId: "corr-1",
+      eventType: "channel.raid",
+    });
+  });
+
+  test("reports the conditions a sample failed instead of doing nothing", async () => {
+    const unmet = [{ field: "${trigger.data.viewers}", operator: "gte", value: 10 }];
+    const { trigger } = setup(ROWS, { outcome: "conditions_not_met", eventType: "channel.raid", unmet });
+    const result = await trigger("wf-2", {}, undefined, undefined, "test", { triggerData: { viewers: 2 } });
+
+    expect(result.status).toBe("conditions_not_met");
+    expect(result.executionId).toBe("");
+    expect(result.unmetConditions).toEqual(unmet);
+    expect(result.message).toContain("${trigger.data.viewers} gte 10");
+  });
+
+  test("passes skipConditions through", async () => {
+    const { trigger, requested } = setup(ROWS);
+    await trigger("wf-2", {}, undefined, undefined, undefined, { triggerData: {}, skipConditions: true });
+    expect(requested[0]?.data.skipConditions).toBe(true);
+  });
+
+  test("surfaces an engine refusal as an error", async () => {
+    const { trigger } = setup(ROWS, { outcome: "refused", error: "workflow not found: wf-2" });
+    expect(trigger("wf-2", {}, undefined, undefined, undefined, { triggerData: {} })).rejects.toThrow(
+      "workflow not found: wf-2"
+    );
+  });
+
+  test("refuses sample data over the size limit before sending it", async () => {
+    const { trigger, requested } = setup(ROWS);
+    const blob = "x".repeat(16 * 1024);
+    await expect(trigger("wf-2", {}, undefined, undefined, undefined, { triggerData: { blob } })).rejects.toThrow(
+      "byte limit"
+    );
+    expect(requested).toHaveLength(0);
+  });
+
+  test("refuses sample data that is not an object", async () => {
+    const { trigger } = setup(ROWS);
+    const notAnObject = [1, 2] as unknown as Record<string, unknown>;
+    await expect(trigger("wf-2", {}, undefined, undefined, undefined, { triggerData: notAnObject })).rejects.toThrow(
+      "must be a JSON object"
+    );
+  });
+
+  test("refuses sample-only options without sample data", async () => {
+    const { trigger } = setup(ROWS);
+    await expect(trigger("wf-2", {}, undefined, undefined, undefined, { skipConditions: true })).rejects.toThrow(
+      "only apply with options.triggerData"
+    );
+  });
+
+  test("refuses an origin that contradicts triggeredBy", async () => {
+    const { trigger } = setup(ROWS);
+    await expect(trigger("wf-2", {}, undefined, undefined, "dashboard", { origin: "test" })).rejects.toThrow(
+      "disagree"
+    );
+  });
+
+  // origin alone is only provenance; it needs no answer from the engine.
+  test("an origin without sample data still publishes", async () => {
+    const { trigger, published, requested } = setup(ROWS);
+    const result = await trigger("wf-2", {}, undefined, undefined, undefined, { origin: "test" });
+    expect(requested).toHaveLength(0);
+    expect(published[0]?.correlation?.triggeredBy).toBe("test");
+    expect(result.status).toBe("requested");
+  });
+});
+
+describe("cancelWorkflow", () => {
+  type Row = { id: string; status: string };
+
+  function setupCancel(reply: Record<string, unknown>, row?: Row, updateFails = false) {
+    const requests: Array<{ subject: string; body: unknown }> = [];
+    const updates: Array<{ id: string; status: string; error: string }> = [];
+    let current = row;
+    const ctx = {
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      db: {
+        async getWorkflowExecution(req: { id: string }) {
+          if (!current || current.id !== req.id) {
+            throw new Error("not found");
+          }
+          return current;
+        },
+        async updateWorkflowRunStatus(req: { id: string; status: string; error: string }) {
+          if (updateFails) {
+            current = { id: req.id, status: "completed" };
+            throw new Error("failed_precondition");
+          }
+          updates.push(req);
+          current = { id: req.id, status: req.status };
+          return current;
+        },
+      },
+      async requestJson(subject: string, body: unknown) {
+        requests.push({ subject, body });
+        return reply;
+      },
+    };
+    const route = workflowsExecutionRoutes.cancelWorkflow as unknown as (
+      executionId: string,
+      reason?: string
+    ) => Promise<{ executionId: string; outcome: string; status: string; message: string }>;
+    return { requests, updates, cancel: (id: string, reason?: string) => route.call(ctx, id, reason) };
+  }
+
+  test("asks the engine to stop the run", async () => {
+    const { cancel, requests, updates } = setupCancel({ outcome: "cancelled", status: "cancelled" });
+    const result = await cancel("run-1", "from the dashboard");
+    expect(requests).toEqual([
+      { subject: "workflow.cancel", body: { executionId: "run-1", reason: "from the dashboard" } },
+    ]);
+    expect(result).toMatchObject({ executionId: "run-1", outcome: "cancelled", status: "cancelled" });
+    // The engine settles the row itself, through its recorder.
+    expect(updates).toHaveLength(0);
+  });
+
+  test("reports a run that had already finished", async () => {
+    const { cancel } = setupCancel({ outcome: "already_finished", status: "completed" });
+    const result = await cancel("run-1");
+    expect(result).toMatchObject({ outcome: "already_finished", status: "completed" });
+  });
+
+  test("gives the engine a default reason", async () => {
+    const { cancel, requests } = setupCancel({ outcome: "cancelled", status: "cancelled" });
+    await cancel("run-1");
+    expect(requests[0]?.body).toEqual({ executionId: "run-1", reason: "Cancelled by user" });
+  });
+
+  // A run the engine lost to a restart reads as running forever unless its
+  // row is settled here.
+  test("settles a stranded run the engine does not know in the history", async () => {
+    const { cancel, updates } = setupCancel({ outcome: "not_found" }, { id: "run-1", status: "running" });
+    const result = await cancel("run-1", "stuck");
+    expect(updates).toEqual([expect.objectContaining({ id: "run-1", status: "cancelled", error: "cancelled: stuck" })]);
+    expect(result).toMatchObject({ outcome: "cancelled", status: "cancelled" });
+  });
+
+  test("leaves a settled row the engine does not know alone", async () => {
+    const { cancel, updates } = setupCancel({ outcome: "not_found" }, { id: "run-1", status: "failed" });
+    const result = await cancel("run-1");
+    expect(updates).toHaveLength(0);
+    expect(result).toMatchObject({ outcome: "already_finished", status: "failed" });
+  });
+
+  test("reports the row's own outcome when it settles during the cancel", async () => {
+    const { cancel } = setupCancel({ outcome: "not_found" }, { id: "run-1", status: "running" }, true);
+    const result = await cancel("run-1");
+    expect(result).toMatchObject({ outcome: "already_finished", status: "completed" });
+  });
+
+  test("refuses an id no run has", async () => {
+    const { cancel } = setupCancel({ outcome: "not_found" });
+    await expect(cancel("nope")).rejects.toThrow("not found");
+  });
+
+  test("refuses an empty id", async () => {
+    const { cancel, requests } = setupCancel({ outcome: "cancelled" });
+    await expect(cancel("")).rejects.toThrow("executionId is required");
+    expect(requests).toHaveLength(0);
   });
 });
 

@@ -63,10 +63,15 @@ type AssetURLResolver interface {
 }
 
 type Engine[TServices any] struct {
-	workflowRegistry     *WorkflowRegistry
-	taskRegistry         *tasks.TaskRegistry
-	actionRegistry       *tasks.ActionRegistry[TServices]
-	executions           map[string]*types.WorkflowExecution
+	workflowRegistry *WorkflowRegistry
+	taskRegistry     *tasks.TaskRegistry
+	actionRegistry   *tasks.ActionRegistry[TServices]
+	executions       map[string]*types.WorkflowExecution
+	// controls holds each run's cancellation state, keyed like executions and
+	// guarded by executionsMu. An entry must live exactly as long as the
+	// run's entry in executions; neither map is pruned today, so a pruning
+	// pass added later has to delete from both.
+	controls             map[string]*runControl
 	executionsMu         sync.RWMutex
 	waitingExecutions    map[string][]*WaitingExecution // eventType -> waiting executions
 	armedWaits           map[*WaitingExecution]struct{} // unsettled waits; see armWaitLocked
@@ -123,6 +128,7 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 		taskRegistry:       tasks.NewTaskRegistry(),
 		actionRegistry:     tasks.NewActionRegistry[TServices](),
 		executions:         make(map[string]*types.WorkflowExecution),
+		controls:           make(map[string]*runControl),
 		waitingExecutions:  make(map[string][]*WaitingExecution),
 		armedWaits:         make(map[*WaitingExecution]struct{}),
 		subWorkflowWaiters: make(map[string][]*SubWorkflowWaiter),
@@ -509,9 +515,12 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 
 // armWaitLocked registers a paused wait and starts the timer that ends it at
 // its deadline; a zero deadline arms no timer, and the wait lasts until its
-// event arrives. Caller holds waitingMu. Returns false, arming nothing, once
-// the engine has stopped: Stop has already disarmed every wait, and one armed
-// after it would pause its run with nothing left to settle it.
+// event arrives. Caller holds waitingMu. Returns "", or the wait result that
+// settles the run instead when it refuses to arm: "cancelled" once the run has
+// been cancelled, "stopped" once the engine has. Cancel and Stop both claim
+// every armed wait under waitingMu, so a wait armed after either would pause
+// its run with nothing left to settle it; checking here, under the same lock,
+// means a run reaching a wait concurrently is either claimed or refused.
 //
 // armedWaits holds every wait, event-driven or delay, whose outcome is still
 // undecided. Removing a wait from it under waitingMu is how an event, the
@@ -522,9 +531,12 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 // runtime already keeps timers in a heap, Stop cancels one without a goroutine
 // of its own, and the number of paused runs is small enough that a second
 // heap would only duplicate that bookkeeping.
-func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Time) bool {
+func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Time) string {
+	if e.runCancelled(w.ExecutionID) {
+		return "cancelled"
+	}
 	if e.ctx.Err() != nil {
-		return false
+		return "stopped"
 	}
 	e.armedWaits[w] = struct{}{}
 	if !tasks.IsDelay(w.TaskDef.Wait) {
@@ -536,7 +548,7 @@ func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Tim
 			e.expireWait(w)
 		})
 	}
-	return true
+	return ""
 }
 
 // disarmWaitLocked claims a wait: it stops the wait's timer and removes it
@@ -612,34 +624,64 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 		return fmt.Errorf("trigger event mismatch: pattern=%q event=%q", wf.Trigger.Event, event.Type)
 	}
 
-	// Evaluate trigger conditions against the matching event before
-	// the workflow starts. Same expression syntax as step conditions:
-	// `${trigger.data.X}` resolves against the event payload.
-	// Workflows whose trigger has no conditions short-circuit; an
-	// empty result from EvaluateMultiple is treated as success.
-	if len(wf.Trigger.Conditions) > 0 {
-		resolver := expression.NewResolver()
-		resolver.AddSource("trigger", event.TriggerFields())
-		exprConds := make([]expression.Condition, 0, len(wf.Trigger.Conditions))
-		for _, c := range wf.Trigger.Conditions {
-			exprConds = append(exprConds, expression.Condition{
-				Field:    c.Field,
-				Operator: c.Operator,
-				Value:    c.Value,
-			})
-		}
-		// Trigger conditions use AND logic — there's no
-		// `conditionLogic` field on TriggerConfig (yet).
-		ok, err := expression.EvaluateMultiple(exprConds, "and", resolver)
-		if err != nil {
-			return fmt.Errorf("trigger condition evaluation failed: %w", err)
-		}
-		if !ok {
-			return fmt.Errorf("trigger conditions not satisfied")
-		}
+	unmet := e.unmetTriggerConditions(wf, event)
+	if len(unmet) > 0 {
+		return fmt.Errorf("trigger conditions not satisfied: %s", describeUnmet(unmet))
 	}
 
 	return nil
+}
+
+// UnmetCondition is a trigger condition an event did not satisfy. Error is set
+// when the condition could not be evaluated at all, which rejects the event
+// the same way a false condition does.
+type UnmetCondition struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value"`
+	Error    string `json:"error,omitempty"`
+}
+
+// unmetTriggerConditions evaluates a workflow's trigger conditions against an
+// event, with `${trigger.data.X}` resolving against the event payload -- the
+// same syntax as step conditions. Conditions are ANDed; there is no
+// `conditionLogic` on TriggerConfig.
+//
+// Every condition is evaluated rather than stopping at the first false one, so
+// a caller testing a workflow is told all the reasons a sample did not match.
+// Nothing a condition reads can have a side effect, so evaluating the rest
+// changes only the explanation, never the decision.
+func (e *Engine[TServices]) unmetTriggerConditions(wf *types.WorkflowDefinition, event *types.Event) []UnmetCondition {
+	if wf.Trigger == nil || len(wf.Trigger.Conditions) == 0 {
+		return nil
+	}
+	resolver := expression.NewResolver()
+	resolver.AddSource("trigger", event.TriggerFields())
+
+	var unmet []UnmetCondition
+	for _, c := range wf.Trigger.Conditions {
+		ok, err := expression.Evaluate(&expression.Condition{Field: c.Field, Operator: c.Operator, Value: c.Value}, resolver)
+		if err != nil {
+			unmet = append(unmet, UnmetCondition{Field: c.Field, Operator: c.Operator, Value: c.Value, Error: err.Error()})
+			continue
+		}
+		if !ok {
+			unmet = append(unmet, UnmetCondition{Field: c.Field, Operator: c.Operator, Value: c.Value})
+		}
+	}
+	return unmet
+}
+
+func describeUnmet(unmet []UnmetCondition) string {
+	parts := make([]string, 0, len(unmet))
+	for _, u := range unmet {
+		if u.Error != "" {
+			parts = append(parts, fmt.Sprintf("%s %s %v (%s)", u.Field, u.Operator, u.Value, u.Error))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %s %v", u.Field, u.Operator, u.Value))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // beginExecution creates a run, registers it, and announces it.
@@ -685,6 +727,7 @@ func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *
 
 	e.executionsMu.Lock()
 	e.executions[execution.ID] = execution
+	e.registerRunLocked(execution.ID)
 	e.executionsMu.Unlock()
 
 	e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", execution.ID)
@@ -701,7 +744,13 @@ func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *
 }
 
 func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event) {
-	execution := e.beginExecution(wf, event)
+	e.runExecution(wf, e.beginExecution(wf, event), event)
+}
+
+// runExecution runs a begun execution from its first task. Separate from
+// executeWorkflow so a caller that needs the execution id before any task
+// runs can begin the execution itself.
+func (e *Engine[TServices]) runExecution(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) {
 	executionID := execution.ID
 	if e.refuseLoop(wf, execution, event) {
 		return
@@ -751,6 +800,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 // run tasks the original run skipped.
 func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, executionOrder []*types.TaskDefinition, startIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event, skippedTasks map[string]bool) {
 	for i := startIndex; i < len(executionOrder); i++ {
+		if e.stopIfCancelled(execution) {
+			return
+		}
+
 		// Independent adjacent tasks run together. `planConcurrentRun` returns
 		// a run of one whenever anything makes that unsafe, so the loop body
 		// below is unchanged for every workflow that was sequential before.
@@ -875,6 +928,10 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 				e.logger.Warn("Wait task refused: engine stopped", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
+			} else if waitResult == "cancelled" {
+				e.cancelPendingTask(execution, taskDef.ID, i)
+				e.settleCancelled(execution)
+				return
 			} else if waitResult == "timeout" {
 				// Read from the wait state, not the definition: the state holds
 				// the documented default of "fail" when the definition names none.
@@ -959,6 +1016,10 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			switch workflowResult {
 			case "waiting":
 				return
+			case "cancelled":
+				e.cancelPendingTask(execution, taskDef.ID, i)
+				e.settleCancelled(execution)
+				return
 			case "failed":
 				taskExec.Status = types.TaskStatusFailed
 				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
@@ -999,7 +1060,12 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			continue
 		}
 
-		result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+		result, params, err := e.executeTaskCancellable(taskDef, execution, triggerEvent, taskExports)
+		if errors.Is(err, errRunCancelled) {
+			e.cancelPendingTask(execution, taskDef.ID, i)
+			e.settleCancelled(execution)
+			return
+		}
 
 		now := time.Now()
 		taskExec.CompletedAt = &now
@@ -1205,21 +1271,40 @@ func (e *Engine[TServices]) executeConcurrentRun(
 		params map[string]any
 		err    error
 	}
+	type indexedOutcome struct {
+		idx int
+		out outcome
+	}
 	results := make([]outcome, len(toRun))
-	var wg sync.WaitGroup
+	finished := make([]bool, len(toRun))
+	// Buffered for every task so a goroutine whose result is abandoned by a
+	// cancel can still deliver it and exit.
+	done := make(chan indexedOutcome, len(toRun))
 	for idx, taskDef := range toRun {
-		wg.Add(1)
 		go func(idx int, taskDef *types.TaskDefinition) {
-			defer wg.Done()
 			// `taskExports` is only read here, and only for tasks that
 			// completed before this run began -- no member of the run is
 			// referenced by another (planConcurrentRun rejects the run
 			// otherwise), so there is nothing to synchronise on the read side.
 			result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
-			results[idx] = outcome{taskDef: taskDef, result: result, params: params, err: err}
+			done <- indexedOutcome{idx: idx, out: outcome{taskDef: taskDef, result: result, params: params, err: err}}
 		}(idx, taskDef)
 	}
-	wg.Wait()
+	runCtx := e.runContext(execution.ID)
+	cancelled := false
+collect:
+	for remaining := len(toRun); remaining > 0; remaining-- {
+		select {
+		case got := <-done:
+			results[got.idx] = got.out
+			finished[got.idx] = true
+		case <-runCtx.Done():
+			// Tasks that finished keep their outcome below; the rest are
+			// abandoned.
+			cancelled = true
+			break collect
+		}
+	}
 
 	e.logger.Info("Concurrent task run completed", "workflow", execution.WorkflowID, "execution", execution.ID, "tasks", len(toRun))
 
@@ -1227,16 +1312,21 @@ func (e *Engine[TServices]) executeConcurrentRun(
 	// the exports do not depend on which goroutine finished first.
 	var firstFailure *outcome
 	for i := range results {
+		// run.Start + i is the task's position in the execution order. The
+		// goroutines above finish in any order; this loop is where position is
+		// still known, which is why recording belongs here and not in them.
+		stepIndex := run.Start + i
+
+		if !finished[i] {
+			e.cancelPendingTask(execution, toRun[i].ID, stepIndex)
+			continue
+		}
+
 		out := results[i]
 		taskExec := execution.Tasks[out.taskDef.ID]
 		now := time.Now()
 		taskExec.CompletedAt = &now
 		taskExec.Result = out.result
-
-		// run.Start + i is the task's position in the execution order. The
-		// goroutines above finish in any order; this loop is where position is
-		// still known, which is why recording belongs here and not in them.
-		stepIndex := run.Start + i
 
 		if out.err != nil {
 			taskExec.Status = types.TaskStatusFailed
@@ -1255,6 +1345,10 @@ func (e *Engine[TServices]) executeConcurrentRun(
 		e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID)
 	}
 
+	if cancelled {
+		e.settleCancelled(execution)
+		return false
+	}
 	if firstFailure != nil {
 		e.setExecutionStatus(execution, types.ExecutionStatusFailed, firstFailure.err)
 		e.checkSubWorkflowCompletion(execution.ID)
@@ -1300,6 +1394,16 @@ func (e *Engine[TServices]) setExecutionStatus(
 	status types.ExecutionStatus,
 	err error,
 ) {
+	if isTerminalStatus(status) {
+		if ctl := e.control(execution.ID); ctl != nil {
+			var claimed bool
+			status, err, claimed = ctl.claimSettle(status, err)
+			if !claimed {
+				e.logger.Debug("Run already settled", "execution", execution.ID, "status", status)
+				return
+			}
+		}
+	}
 	execution.Status = status
 	if err != nil {
 		execution.Error = err.Error()
@@ -1307,7 +1411,7 @@ func (e *Engine[TServices]) setExecutionStatus(
 	// Only genuinely terminal states get a completion time. Waiting does not
 	// reach here today, but stamping CompletedAt on a paused run would make it
 	// look finished to everything that reads these rows.
-	if status == types.ExecutionStatusCompleted || status == types.ExecutionStatusFailed {
+	if isTerminalStatus(status) {
 		now := time.Now()
 		execution.CompletedAt = &now
 	}
@@ -1334,6 +1438,8 @@ func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution)
 		subject = cloudevents.SubjectWorkflowRunCompleted
 	case types.ExecutionStatusFailed:
 		subject = cloudevents.SubjectWorkflowRunFailed
+	case types.ExecutionStatusCancelled:
+		subject = cloudevents.SubjectWorkflowRunCancelled
 	default:
 		// A state with no lifecycle event of its own (waiting, and anything a
 		// later version adds). Silence is correct: a consumer keyed on the
@@ -1427,10 +1533,10 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 		}
 
 		e.waitingMu.Lock()
-		armed := e.armWaitLocked(waitingExec, deadline)
+		refused := e.armWaitLocked(waitingExec, deadline)
 		e.waitingMu.Unlock()
-		if !armed {
-			return "stopped"
+		if refused != "" {
+			return refused
 		}
 		return "waiting"
 	}
@@ -1554,6 +1660,15 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		execution.Status = types.ExecutionStatusWaiting
 
 		e.subWorkflowWaitersMu.Lock()
+		// Checked under the lock Cancel claims waiters with, as for waits.
+		// The sub-workflow has already started, so it is cancelled too.
+		if e.runCancelled(execution.ID) {
+			e.subWorkflowWaitersMu.Unlock()
+			if _, err := e.Cancel(subExecutionID, "parent run cancelled"); err != nil {
+				e.logger.Warn("Sub-workflow run not cancelled", "execution", subExecutionID, "error", err)
+			}
+			return "cancelled"
+		}
 		waiter := &SubWorkflowWaiter{
 			ParentExecutionID: execution.ID,
 			ParentWorkflowID:  execution.WorkflowID,
@@ -1618,6 +1733,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 
 	e.executionsMu.Lock()
 	e.executions[executionID] = execution
+	e.registerRunLocked(executionID)
 	e.executionsMu.Unlock()
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
@@ -1707,6 +1823,9 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 			// Sub-workflow failed, fail the parent task
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = fmt.Sprintf("sub-workflow execution failed: %s", subExecution.Error)
+		case types.ExecutionStatusCancelled:
+			taskExec.Status = types.TaskStatusFailed
+			taskExec.Error = fmt.Sprintf("sub-workflow run was cancelled: %s", subExecution.Error)
 		default:
 			// Shouldn't happen, but handle it
 			taskExec.Status = types.TaskStatusFailed
@@ -1805,6 +1924,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 	}
 
 	taskCtx := &tasks.TaskContext{
+		Context:      e.runContext(execution.ID),
 		WorkflowID:   execution.WorkflowID,
 		ExecutionID:  execution.ID,
 		TaskID:       taskDef.ID,
