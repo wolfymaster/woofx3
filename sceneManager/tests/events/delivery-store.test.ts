@@ -33,7 +33,6 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
         sceneEvent: {
           id: "evt-1",
           sceneId: "scene-1",
-          applicationId: "app-1",
           type: "widget.event",
           key: "count",
           value: "5",
@@ -48,7 +47,6 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
 
     const eventId = await store.recordEvent({
       sceneId: "scene-1",
-      applicationId: "app-1",
       type: "widget.event",
       key: "count",
       value: 5,
@@ -70,7 +68,6 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
         sceneEvent: {
           id: "evt-2",
           sceneId: "scene-1",
-          applicationId: "app-1",
           type: "widget.event",
           key: "count",
           value: "1",
@@ -83,7 +80,6 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     // No subscriber yet — event is still recorded and held open.
     await store.recordEvent({
       sceneId: "scene-1",
-      applicationId: "app-1",
       type: "widget.event",
       key: "count",
       value: 1,
@@ -101,7 +97,6 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     const store = new DeliveryStore({ recordSceneEvent } as any, fakeLogger());
     const eventId = await store.recordEvent({
       sceneId: "scene-1",
-      applicationId: "app-1",
       type: "widget.event",
       key: "count",
       value: 1,
@@ -120,7 +115,6 @@ describe("DeliveryStore.ackCompleted", () => {
         sceneEvent: {
           id: "evt-3",
           sceneId: "scene-1",
-          applicationId: "app-1",
           type: "widget.event",
           key: "count",
           value: "1",
@@ -133,7 +127,6 @@ describe("DeliveryStore.ackCompleted", () => {
     const store = new DeliveryStore(db, fakeLogger());
     await store.recordEvent({
       sceneId: "scene-1",
-      applicationId: "app-1",
       type: "widget.event",
       key: "count",
       value: 1,
@@ -161,7 +154,6 @@ describe("DeliveryStore.hydrate", () => {
         sceneEvent: {
           id: "evt-4",
           sceneId: "scene-1",
-          applicationId: "app-1",
           type: "widget.event",
           key: "count",
           value: "42",

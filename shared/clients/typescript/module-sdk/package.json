@@ -23,11 +23,12 @@
       "types": "./dist/preview/widget-preview.d.ts",
       "import": "./dist/preview/widget-preview.js"
     },
-    "./preview.html": "./src/preview/widget-preview.html"
+    "./preview.html": "./src/preview/widget-preview.html",
+    "./widget-host-shim.iife.js": "./dist/widget-host-shim.iife.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "build:shim": "bun build src/widget-host-shim.entry.ts --format=iife --target=browser --outfile=dist/widget-host-shim.js",
+    "build:shim": "bun build src/widget-host-shim.entry.ts --format=iife --target=browser --outfile=dist/widget-host-shim.iife.js",
     "test": "bun test",
     "publish:dry": "npm publish --dry-run --access public"
   },

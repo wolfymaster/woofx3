@@ -197,7 +197,6 @@ resolver and action handlers a workflow run uses.
 // subject: "action.execute"
 {
   "label": "command:hug",        // names the run in the engine's logs
-  "applicationId": "...",
   "actions": [                   // run in order; a step may declare dependsOn
     { "id": "action-1", "action": "chat.reply", "parameters": { "message": "hugs ${trigger.data.chatter}" } }
   ],
@@ -326,17 +325,17 @@ const (
 
 | Subject | Direction | Payload | Pattern |
 |---------|-----------|---------|---------|
-| `ui.notify.alert` | workflow → streamware | `AlertEnvelope` JSON: `{ id, applicationId?, parameters, event }` | publish/subscribe |
+| `ui.notify.alert` | workflow → streamware | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
 | `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
-| `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ applicationId, moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
-| `widget.queue.skip` | api → streamware | `{ applicationId? }` | NATS request/reply |
-| `widget.queue.clear` | api → streamware | `{ applicationId? }` | NATS request/reply |
+| `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
+| `widget.queue.skip` | api → streamware | `{}` | NATS request/reply |
+| `widget.queue.clear` | api → streamware | `{}` | NATS request/reply |
 | `widget.queue.replay` | api → streamware | `{ id }` (alert row id) | NATS request/reply |
 
 Routing rules for `widget.event` are handled in `streamware/src/events/handlers.ts`. Dispatch is keyed on `data.key`:
 
 - `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `EventQueueManager.handleStatus` (state transitions on the in-flight alert lease).
-- Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(applicationId, instanceId, key)`).
+- Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(instanceId, key)`).
 
 See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract.
 

@@ -73,8 +73,16 @@ async fn setup() -> Result<AppContext> {
     // there is no readiness to report and nothing can be gating on us.
     let mut heartbeat: Option<services::heartbeat::HeartbeatHandle> = None;
 
+    // Built before the host context because it is the context's
+    // `ScheduleClient`; its loop starts once the sandbox that runs the
+    // scheduled functions exists.
+    let scheduler = Arc::new(services::scheduler::ModuleScheduler::new(Arc::new(
+        services::scheduler::SystemClock,
+    )));
+
     let host_ctx = {
         let mut ctx = noop_host_context();
+        ctx.schedule = scheduler.clone();
 
         let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
 
@@ -119,15 +127,8 @@ async fn setup() -> Result<AppContext> {
         );
 
         // Resource-instance lifecycle (`ctx.resources.*`) and module storage
-        // (`ctx.storage.*`) — both backed by db-proxy via Twirp. Bound with
-        // the engine's own applicationId: today one barkloader process
-        // serves exactly one application, so a single startup-time value
-        // (rather than a per-invocation one) correctly scopes both.
+        // (`ctx.storage.*`) — both backed by db-proxy via Twirp.
         let resource_proxy_url = get_config_value("databaseProxyUrl", "");
-        let application_id = get_config_value("applicationId", "");
-        if application_id.is_empty() {
-            warn!("applicationId not configured; ctx.resources/ctx.storage calls will be unscoped");
-        }
         if !resource_proxy_url.is_empty() {
             info!(
                 "Wiring HttpResourceClient/HttpStorageClient against db-proxy {}",
@@ -137,7 +138,6 @@ async fn setup() -> Result<AppContext> {
                 HttpResourceClient::new(resource_proxy_url.clone()).with_request_context(
                     DbRequestContext {
                         client_id: String::new(),
-                        application_id: application_id.clone(),
                         module_key: String::new(),
                     },
                 ),
@@ -147,7 +147,7 @@ async fn setup() -> Result<AppContext> {
                     resource_proxy_url.clone(),
                 ),
             );
-            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url, application_id));
+            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url));
         } else {
             info!(
                 "databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients"
@@ -162,14 +162,13 @@ async fn setup() -> Result<AppContext> {
 
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
 
-    let scheduler =
-        Arc::new(services::background_scheduler::BackgroundTaskScheduler::new(sandbox.clone()));
+    scheduler.start(Arc::new(sandbox.clone()));
 
     // db-proxy is required: sandbox registry metadata comes from module_functions
     // rows, and the storage provider is resolved from the engine's settings table.
     // Establish the connection before reading either -- everything below this point
     // treats db-proxy as available, the same contract the Go and TypeScript runtimes
-    // give their applications by gating init behind the registered `db` service.
+    // give their services by gating init behind the registered `db` service.
     let db_proxy_url = get_config_value("databaseProxyUrl", "");
     if db_proxy_url.is_empty() {
         anyhow::bail!("databaseProxyUrl (WOOFX3_DATABASE_PROXY_URL) is required for barkloader");
@@ -270,7 +269,7 @@ async fn boot_modules(
     registry: &Arc<ModuleRegistry>,
     repository: &RepositoryImpl,
     db_proxy_url: &str,
-    scheduler: &Arc<services::background_scheduler::BackgroundTaskScheduler>,
+    scheduler: &Arc<services::scheduler::ModuleScheduler>,
 ) -> Result<()> {
     lib_module::registry_loader::hydrate_registry_from_db(
         registry,

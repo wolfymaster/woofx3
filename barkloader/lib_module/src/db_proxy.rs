@@ -27,7 +27,6 @@ fn parse_module_response(text: &str) -> Result<Option<ModuleRecord>> {
 #[derive(Debug, Clone, Serialize)]
 pub struct RequestContext {
     pub client_id: String,
-    pub application_id: String,
     pub module_key: String,
 }
 
@@ -115,8 +114,6 @@ pub struct RegisterTriggersJson {
     pub module_name: String,
     pub version: String,
     pub triggers: Vec<TriggerInputJson>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub application_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -137,8 +134,6 @@ pub struct RegisterActionsJson {
     pub created_by_type: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub created_by_ref: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub application_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -227,8 +222,6 @@ pub struct RegisterWidgetsJson {
     pub created_by_type: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub created_by_ref: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub application_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -252,8 +245,6 @@ pub struct RegisterBackgroundTasksJson {
     pub module_name: String,
     pub version: String,
     pub tasks: Vec<BackgroundTaskInputJson>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub application_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -283,7 +274,6 @@ pub async fn register_triggers(
     module_name: &str,
     version: &str,
     triggers: Vec<TriggerInputJson>,
-    application_id: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/twirp/module.ModuleService/RegisterTriggers",
@@ -295,7 +285,6 @@ pub async fn register_triggers(
         module_name: module_name.to_string(),
         version: version.to_string(),
         triggers,
-        application_id: application_id.to_string(),
     };
     let client = HTTP_CLIENT.clone();
     let response = client
@@ -322,7 +311,6 @@ pub async fn register_actions(
     module_name: &str,
     version: &str,
     actions: Vec<ActionInputJson>,
-    application_id: &str,
 ) -> Result<()> {
     register_actions_with(
         db_proxy_url,
@@ -333,7 +321,6 @@ pub async fn register_actions(
         actions,
         "",
         "",
-        application_id,
     )
     .await
 }
@@ -351,7 +338,6 @@ pub async fn register_actions_with(
     actions: Vec<ActionInputJson>,
     created_by_type: &str,
     created_by_ref: &str,
-    application_id: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/twirp/module.ModuleService/RegisterActions",
@@ -365,7 +351,6 @@ pub async fn register_actions_with(
         actions,
         created_by_type: created_by_type.to_string(),
         created_by_ref: created_by_ref.to_string(),
-        application_id: application_id.to_string(),
     };
     let client = HTTP_CLIENT.clone();
     let response = client
@@ -515,7 +500,6 @@ struct ListModulesResponseBody {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCommandJson {
-    pub application_id: String,
     pub command: String,
     pub enabled: bool,
     pub cooldown: i32,
@@ -600,7 +584,6 @@ pub async fn create_module(
 /// Twirp JSON for `command.CommandService/CreateCommand`.
 pub async fn create_command(
     db_proxy_url: &str,
-    application_id: &str,
     command: &str,
     actions_json: &str,
     module_name: &str,
@@ -610,7 +593,6 @@ pub async fn create_command(
         db_proxy_url
     );
     let body = CreateCommandJson {
-        application_id: application_id.to_string(),
         command: command.to_string(),
         enabled: true,
         cooldown: 0,
@@ -638,16 +620,25 @@ pub async fn create_command(
     Ok(())
 }
 
-/// Twirp JSON for finding commands by module and deleting them via pattern match.
-/// Module commands are instance-global; matches on `(created_by_type, created_by_ref)`.
-pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
+/// One command a module registered, as far as install bookkeeping needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleCommandRow {
+    pub id: String,
+    pub command: String,
+}
+
+/// Every command registered by `module_name`. Module commands are
+/// instance-global; they are matched on `(created_by_type, created_by_ref)`.
+pub async fn list_commands_by_module(
+    db_proxy_url: &str,
+    module_name: &str,
+) -> Result<Vec<ModuleCommandRow>> {
     let list_url = format!("{}/twirp/command.CommandService/ListCommands", db_proxy_url);
     let body = serde_json::json!({
         "include_disabled": true
     });
 
-    let client = HTTP_CLIENT.clone();
-    let response = client
+    let response = HTTP_CLIENT
         .post(&list_url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -656,77 +647,79 @@ pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) ->
         .map_err(|e| anyhow!("ListCommands request failed: {}", e))?;
 
     if !response.status().is_success() {
-        return Ok(());
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("ListCommands failed {}: {}", status, text));
     }
 
     let text = response.text().await.unwrap_or_default();
-    let value: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return Ok(()),
-    };
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| anyhow!("parse ListCommands response: {}", e))?;
 
-    let commands = value.get("commands").and_then(|c| c.as_array());
+    let rows = value
+        .get("commands")
+        .and_then(|c| c.as_array())
+        .map(|cmds| {
+            cmds.iter()
+                .filter(|cmd| {
+                    cmd.get("created_by_type").and_then(|v| v.as_str()) == Some("MODULE")
+                        && cmd.get("created_by_ref").and_then(|v| v.as_str()) == Some(module_name)
+                })
+                .filter_map(|cmd| {
+                    Some(ModuleCommandRow {
+                        id: cmd.get("id")?.as_str()?.to_string(),
+                        command: cmd.get("command")?.as_str()?.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-    if let Some(cmds) = commands {
-        for cmd in cmds {
-            let created_by_type = cmd
-                .get("created_by_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let created_by_ref = cmd
-                .get("created_by_ref")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if created_by_type != "MODULE" || created_by_ref != module_name {
-                continue;
-            }
-            let id = match cmd.get("id").and_then(|v| v.as_str()) {
-                Some(id) => id,
-                None => continue,
-            };
+    Ok(rows)
+}
 
-            let delete_url = format!(
-                "{}/twirp/command.CommandService/DeleteCommand",
-                db_proxy_url
-            );
-            let delete_body = serde_json::json!({ "id": id });
-            let delete_response = client
-                .post(&delete_url)
-                .header("Content-Type", "application/json")
-                .json(&delete_body)
-                .send()
-                .await
-                .map_err(|e| anyhow!("DeleteCommand request failed for {}: {}", id, e))?;
+/// Twirp JSON for `command.CommandService/DeleteCommand`.
+pub async fn delete_command(db_proxy_url: &str, id: &str) -> Result<()> {
+    let delete_url = format!(
+        "{}/twirp/command.CommandService/DeleteCommand",
+        db_proxy_url
+    );
+    let response = HTTP_CLIENT
+        .post(&delete_url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "id": id }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteCommand request failed for {}: {}", id, e))?;
 
-            if !delete_response.status().is_success() {
-                let status = delete_response.status();
-                let text = delete_response.text().await.unwrap_or_default();
-                return Err(anyhow!(
-                    "DeleteCommand failed for {} {}: {}",
-                    id,
-                    status,
-                    text
-                ));
-            }
-        }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "DeleteCommand failed for {} {}: {}",
+            id,
+            status,
+            text
+        ));
     }
+    Ok(())
+}
 
+/// Deletes every command registered by `module_name`.
+pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
+    for row in list_commands_by_module(db_proxy_url, module_name).await? {
+        delete_command(db_proxy_url, &row.id).await?;
+    }
     Ok(())
 }
 
 /// Twirp JSON for finding workflows by module and deleting them.
-pub async fn delete_workflows_by_module(
-    db_proxy_url: &str,
-    application_id: &str,
-    module_name: &str,
-) -> Result<()> {
+pub async fn delete_workflows_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
     let list_url = format!(
         "{}/twirp/workflow.WorkflowService/ListWorkflows",
         db_proxy_url
     );
-    let body = serde_json::json!({
-        "application_id": application_id
-    });
+    let body = serde_json::json!({});
 
     let client = HTTP_CLIENT.clone();
     let response = client
@@ -993,7 +986,6 @@ pub struct ResourceUsage {
 pub async fn check_module_resource_usage(
     db_proxy_url: &str,
     module_id: &str,
-    application_id: &str,
 ) -> Result<Vec<ResourceUsage>> {
     let url = format!(
         "{}/twirp/module.ModuleService/CheckModuleResourceUsage",
@@ -1001,7 +993,6 @@ pub async fn check_module_resource_usage(
     );
     let body = serde_json::json!({
         "module_id": module_id,
-        "application_id": application_id,
     });
 
     let client = HTTP_CLIENT.clone();
@@ -1060,7 +1051,6 @@ pub async fn complete_module_delete(
     if let Some(ctx) = request_context {
         body["request_context"] = serde_json::json!({
             "client_id": ctx.client_id,
-            "application_id": ctx.application_id,
             "module_key": ctx.module_key,
         });
     }
@@ -1131,7 +1121,6 @@ pub async fn complete_module_install(
     if let Some(ctx) = request_context {
         body["request_context"] = serde_json::json!({
             "client_id": ctx.client_id,
-            "application_id": ctx.application_id,
             "module_key": ctx.module_key,
         });
     }
@@ -1421,7 +1410,7 @@ pub async fn get_widget_entry(
         "{}/twirp/module.ModuleService/GetWidgetByCanonicalId",
         db_proxy_url
     );
-    let body = serde_json::json!({ "canonical_id": canonical_id, "application_id": "" });
+    let body = serde_json::json!({ "canonical_id": canonical_id });
 
     let client = HTTP_CLIENT.clone();
     let response = client
@@ -1495,7 +1484,6 @@ pub async fn register_widgets(
     module_name: &str,
     version: &str,
     widgets: Vec<WidgetInputJson>,
-    application_id: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/twirp/module.ModuleService/RegisterWidgets",
@@ -1509,7 +1497,6 @@ pub async fn register_widgets(
         widgets,
         created_by_type: String::new(),
         created_by_ref: String::new(),
-        application_id: application_id.to_string(),
     };
     let client = HTTP_CLIENT.clone();
     let response = client
@@ -1848,8 +1835,8 @@ pub async fn list_resource_instances_by_module(
 // Module storage (`ctx.storage.*`).
 //
 // Backs the CtxStorage sandbox host surface: a persistent KV store addressed
-// by (application_id, namespace, key), where the namespace is the owning
-// module's manifest id, so two modules using one key never share a value.
+// by (namespace, key), where the namespace is the owning module's manifest id,
+// so two modules using one key never share a value.
 // `value` here is always the JSON-encoded form of whatever the module stored;
 // encoding/decoding to/from serde_json::Value happens in the
 // HttpStorageClient bridge, not here.
@@ -1871,7 +1858,6 @@ struct GetStorageResponseJson {
 
 /// Where a stored value lives, and how it is kept.
 pub struct StorageAddress<'a> {
-    pub application_id: &'a str,
     pub namespace: &'a str,
     pub key: &'a str,
 }
@@ -1903,7 +1889,6 @@ pub async fn storage_get(
     let body = serde_json::json!({
         "key": address.key,
         "namespace": address.namespace,
-        "application_id": address.application_id,
     });
     let parsed: GetStorageResponseJson = post_storage(db_proxy_url, "Get", body)
         .await?
@@ -1925,7 +1910,6 @@ pub async fn storage_set(
             "key": address.key,
             "namespace": address.namespace,
             "value": value,
-            "application_id": address.application_id,
             "clear_on_session_end": clear_on_session_end,
         }
     });
@@ -1957,7 +1941,6 @@ pub async fn storage_compare_and_set(
             "key": address.key,
             "namespace": address.namespace,
             "value": value,
-            "application_id": address.application_id,
             "clear_on_session_end": clear_on_session_end,
         },
         "expected_value": expected.unwrap_or_default(),
@@ -1977,7 +1960,6 @@ pub async fn register_background_tasks(
     module_name: &str,
     version: &str,
     tasks: Vec<BackgroundTaskInputJson>,
-    application_id: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/twirp/module.ModuleService/RegisterBackgroundTasks",
@@ -1989,7 +1971,6 @@ pub async fn register_background_tasks(
         module_name: module_name.to_string(),
         version: version.to_string(),
         tasks,
-        application_id: application_id.to_string(),
     };
     let client = HTTP_CLIENT.clone();
     let response = client

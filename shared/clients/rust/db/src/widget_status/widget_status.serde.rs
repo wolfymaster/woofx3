@@ -7,9 +7,6 @@ impl serde::Serialize for DeleteWidgetStatusRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.instance_id.is_empty() {
             len += 1;
         }
@@ -17,9 +14,6 @@ impl serde::Serialize for DeleteWidgetStatusRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("widget_status.DeleteWidgetStatusRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.instance_id.is_empty() {
             struct_ser.serialize_field("instanceId", &self.instance_id)?;
         }
@@ -36,8 +30,6 @@ impl<'de> serde::Deserialize<'de> for DeleteWidgetStatusRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "instance_id",
             "instanceId",
             "key",
@@ -45,7 +37,6 @@ impl<'de> serde::Deserialize<'de> for DeleteWidgetStatusRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             InstanceId,
             Key,
         }
@@ -69,7 +60,6 @@ impl<'de> serde::Deserialize<'de> for DeleteWidgetStatusRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "instanceId" | "instance_id" => Ok(GeneratedField::InstanceId),
                             "key" => Ok(GeneratedField::Key),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -91,17 +81,10 @@ impl<'de> serde::Deserialize<'de> for DeleteWidgetStatusRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut instance_id__ = None;
                 let mut key__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::InstanceId => {
                             if instance_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("instanceId"));
@@ -117,7 +100,6 @@ impl<'de> serde::Deserialize<'de> for DeleteWidgetStatusRequest {
                     }
                 }
                 Ok(DeleteWidgetStatusRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     instance_id: instance_id__.unwrap_or_default(),
                     key: key__.unwrap_or_default(),
                 })
@@ -134,9 +116,6 @@ impl serde::Serialize for GetWidgetStatusRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.instance_id.is_empty() {
             len += 1;
         }
@@ -144,9 +123,6 @@ impl serde::Serialize for GetWidgetStatusRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("widget_status.GetWidgetStatusRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.instance_id.is_empty() {
             struct_ser.serialize_field("instanceId", &self.instance_id)?;
         }
@@ -163,8 +139,6 @@ impl<'de> serde::Deserialize<'de> for GetWidgetStatusRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "instance_id",
             "instanceId",
             "key",
@@ -172,7 +146,6 @@ impl<'de> serde::Deserialize<'de> for GetWidgetStatusRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             InstanceId,
             Key,
         }
@@ -196,7 +169,6 @@ impl<'de> serde::Deserialize<'de> for GetWidgetStatusRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "instanceId" | "instance_id" => Ok(GeneratedField::InstanceId),
                             "key" => Ok(GeneratedField::Key),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -218,17 +190,10 @@ impl<'de> serde::Deserialize<'de> for GetWidgetStatusRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut instance_id__ = None;
                 let mut key__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::InstanceId => {
                             if instance_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("instanceId"));
@@ -244,7 +209,6 @@ impl<'de> serde::Deserialize<'de> for GetWidgetStatusRequest {
                     }
                 }
                 Ok(GetWidgetStatusRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     instance_id: instance_id__.unwrap_or_default(),
                     key: key__.unwrap_or_default(),
                 })
@@ -261,9 +225,6 @@ impl serde::Serialize for ListWidgetStatusRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.module_id.is_empty() {
             len += 1;
         }
@@ -277,9 +238,6 @@ impl serde::Serialize for ListWidgetStatusRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("widget_status.ListWidgetStatusRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
         }
@@ -302,8 +260,6 @@ impl<'de> serde::Deserialize<'de> for ListWidgetStatusRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "module_id",
             "moduleId",
             "instance_id",
@@ -314,7 +270,6 @@ impl<'de> serde::Deserialize<'de> for ListWidgetStatusRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             ModuleId,
             InstanceId,
             Limit,
@@ -340,7 +295,6 @@ impl<'de> serde::Deserialize<'de> for ListWidgetStatusRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             "instanceId" | "instance_id" => Ok(GeneratedField::InstanceId),
                             "limit" => Ok(GeneratedField::Limit),
@@ -364,19 +318,12 @@ impl<'de> serde::Deserialize<'de> for ListWidgetStatusRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut module_id__ = None;
                 let mut instance_id__ = None;
                 let mut limit__ = None;
                 let mut offset__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::ModuleId => {
                             if module_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("moduleId"));
@@ -408,7 +355,6 @@ impl<'de> serde::Deserialize<'de> for ListWidgetStatusRequest {
                     }
                 }
                 Ok(ListWidgetStatusRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     module_id: module_id__.unwrap_or_default(),
                     instance_id: instance_id__.unwrap_or_default(),
                     limit: limit__.unwrap_or_default(),
@@ -595,9 +541,6 @@ impl serde::Serialize for UpsertWidgetStatusRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.module_id.is_empty() {
             len += 1;
         }
@@ -617,9 +560,6 @@ impl serde::Serialize for UpsertWidgetStatusRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("widget_status.UpsertWidgetStatusRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
         }
@@ -648,8 +588,6 @@ impl<'de> serde::Deserialize<'de> for UpsertWidgetStatusRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "module_id",
             "moduleId",
             "instance_id",
@@ -664,7 +602,6 @@ impl<'de> serde::Deserialize<'de> for UpsertWidgetStatusRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             ModuleId,
             InstanceId,
             WidgetCanonicalId,
@@ -692,7 +629,6 @@ impl<'de> serde::Deserialize<'de> for UpsertWidgetStatusRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             "instanceId" | "instance_id" => Ok(GeneratedField::InstanceId),
                             "widgetCanonicalId" | "widget_canonical_id" => Ok(GeneratedField::WidgetCanonicalId),
@@ -718,7 +654,6 @@ impl<'de> serde::Deserialize<'de> for UpsertWidgetStatusRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut module_id__ = None;
                 let mut instance_id__ = None;
                 let mut widget_canonical_id__ = None;
@@ -727,12 +662,6 @@ impl<'de> serde::Deserialize<'de> for UpsertWidgetStatusRequest {
                 let mut occurred_at__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::ModuleId => {
                             if module_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("moduleId"));
@@ -772,7 +701,6 @@ impl<'de> serde::Deserialize<'de> for UpsertWidgetStatusRequest {
                     }
                 }
                 Ok(UpsertWidgetStatusRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     module_id: module_id__.unwrap_or_default(),
                     instance_id: instance_id__.unwrap_or_default(),
                     widget_canonical_id: widget_canonical_id__.unwrap_or_default(),
@@ -794,9 +722,6 @@ impl serde::Serialize for WidgetStatus {
         use serde::ser::SerializeStruct;
         let mut len = 0;
         if !self.id.is_empty() {
-            len += 1;
-        }
-        if !self.application_id.is_empty() {
             len += 1;
         }
         if !self.module_id.is_empty() {
@@ -826,9 +751,6 @@ impl serde::Serialize for WidgetStatus {
         let mut struct_ser = serializer.serialize_struct("widget_status.WidgetStatus", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
@@ -865,8 +787,6 @@ impl<'de> serde::Deserialize<'de> for WidgetStatus {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "module_id",
             "moduleId",
             "instance_id",
@@ -886,7 +806,6 @@ impl<'de> serde::Deserialize<'de> for WidgetStatus {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             ModuleId,
             InstanceId,
             WidgetCanonicalId,
@@ -917,7 +836,6 @@ impl<'de> serde::Deserialize<'de> for WidgetStatus {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             "instanceId" | "instance_id" => Ok(GeneratedField::InstanceId),
                             "widgetCanonicalId" | "widget_canonical_id" => Ok(GeneratedField::WidgetCanonicalId),
@@ -946,7 +864,6 @@ impl<'de> serde::Deserialize<'de> for WidgetStatus {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut module_id__ = None;
                 let mut instance_id__ = None;
                 let mut widget_canonical_id__ = None;
@@ -962,12 +879,6 @@ impl<'de> serde::Deserialize<'de> for WidgetStatus {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::ModuleId => {
                             if module_id__.is_some() {
@@ -1021,7 +932,6 @@ impl<'de> serde::Deserialize<'de> for WidgetStatus {
                 }
                 Ok(WidgetStatus {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     module_id: module_id__.unwrap_or_default(),
                     instance_id: instance_id__.unwrap_or_default(),
                     widget_canonical_id: widget_canonical_id__.unwrap_or_default(),

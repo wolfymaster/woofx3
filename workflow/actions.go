@@ -184,7 +184,7 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		if err := validateAlertParams(params); err != nil {
 			return nil, fmt.Errorf("alert cannot be published: %w", err)
 		}
-		payload, envelopeID, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
+		payload, envelopeID, err := buildAlertEnvelope(params, ctx.TriggerEvent)
 		if err != nil {
 			return nil, err
 		}
@@ -199,13 +199,7 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 // buildAlertEnvelope constructs the ui.notify.alert payload. Pure for
 // testing — given the same args it always produces the same JSON bytes
 // (modulo Go's map iteration order, which json.Marshal sorts).
-//
-// `applicationId` is stamped on the envelope so subscribers can
-// attribute the dispatch without falling back to a singleton lookup.
-// Empty string is omitted from the JSON so envelopes from non-workflow
-// publishers (manual / debug / ad-hoc) round-trip cleanly without
-// stamping a misleading id.
-func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, string, error) {
+func buildAlertEnvelope(params map[string]any, event *types.Event) ([]byte, string, error) {
 	// Generate a stable envelope id at publish time so every consumer
 	// (api alert log, streamware broadcaster, overlay widget) keys on
 	// the same value. Honors a caller-supplied `parameters.id` so
@@ -222,9 +216,6 @@ func buildAlertEnvelope(applicationID string, params map[string]any, event *type
 		"id":         envelopeID,
 		"parameters": params,
 		"event":      event,
-	}
-	if applicationID != "" {
-		envelope["applicationId"] = applicationID
 	}
 	payload, err := json.Marshal(envelope)
 	if err != nil {
@@ -255,8 +246,7 @@ func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string
 	}
 
 	_, err := client.CreateAlert(context.Background(), &dbv1.CreateAlertRequest{
-		ApplicationId: ctx.ApplicationID,
-		Payload:       string(payload),
+		Payload: string(payload),
 		// Named for the workflow, but documented as the execution that fired
 		// the alert — and the run is the value that can answer "what produced
 		// this", which the definition id cannot.

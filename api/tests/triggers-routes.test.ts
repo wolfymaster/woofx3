@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { triggerProjectionKey, triggersRoutes } from "../src/routes/triggers";
+import { moduleProjectionKey, triggersRoutes } from "../src/routes/triggers";
 
 /** The route is a mixin over the api's route host; `listTriggers` is all it touches. */
 function getTriggers(rows: unknown[]): Promise<Record<string, unknown>[]> {
@@ -50,9 +50,44 @@ describe("getTriggers", () => {
   });
 });
 
-describe("triggerProjectionKey", () => {
+/** The route is a mixin over the api's route host; `listActions` is all it touches. */
+function getActions(rows: unknown[]): Promise<Record<string, unknown>[]> {
+  const ctx = {
+    db: {
+      async listActions() {
+        return rows;
+      },
+    },
+  };
+  const route = triggersRoutes.getActions as unknown as () => Promise<Record<string, unknown>[]>;
+  return route.call(ctx);
+}
+
+describe("getActions", () => {
+  // The UI finds a resource page's actions (a counter's +1) by this key. Without
+  // it, each sync erased the key the registration webhook had stored.
+  test("gives a module action the projectionKey the registration webhook gives it", async () => {
+    const [action] = await getActions([
+      {
+        id: "a1",
+        createdByType: "MODULE",
+        createdByRef: "woofx3",
+        manifestId: "counter.increment",
+        call: "woofx3:function:counter.increment",
+      },
+    ]);
+    expect(action?.projectionKey).toBe("woofx3:action:counter.increment");
+  });
+
+  test("gives an action no module owns no projectionKey", async () => {
+    const [action] = await getActions([{ id: "a2", createdByType: "USER", createdByRef: "", manifestId: "" }]);
+    expect(action).not.toHaveProperty("projectionKey");
+  });
+});
+
+describe("moduleProjectionKey", () => {
   test("is empty without a module owner or a manifest id", () => {
-    expect(triggerProjectionKey({ createdByType: "MODULE", createdByRef: "", manifestId: "x" })).toBe("");
-    expect(triggerProjectionKey({ createdByType: "MODULE", createdByRef: "m", manifestId: "" })).toBe("");
+    expect(moduleProjectionKey({ createdByType: "MODULE", createdByRef: "", manifestId: "x" }, "trigger")).toBe("");
+    expect(moduleProjectionKey({ createdByType: "MODULE", createdByRef: "m", manifestId: "" }, "action")).toBe("");
   });
 });

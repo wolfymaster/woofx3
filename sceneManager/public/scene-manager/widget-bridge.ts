@@ -9,13 +9,10 @@
 // `contentWindow` identity AND the per-frame CSPRNG nonce; messages
 // failing either check are silently dropped.
 //
-// Module storage (`storage.get`/`storage.subscribe`) is NOT wired to a
-// real backing store in this rewrite — `onStorageGet` always resolves
-// `null` and subscriptions never fire. That subsystem (module-state
-// sync over a dedicated transport) is out of scope for the
-// sceneManager cutover and can be added later without a protocol
-// change; the P1 messages still round-trip correctly, they just never
-// carry real data yet.
+// Module storage (`storage.get`/`storage.subscribe`) is answered by the
+// page's ModuleStateCache (module-state.ts) for scene placements. Alert
+// layout widgets are not given storage: `storage.get` answers `null`
+// and subscriptions never fire.
 
 import {
   WIDGET_PROTOCOL,
@@ -228,6 +225,13 @@ export class WidgetBridge {
       reason,
       supportedVersions: [PROTOCOL_VERSION],
     });
+  }
+
+  /** Deliver a value for `key` to this widget's subscriptions, under whichever module it named. */
+  sendStorageValue(key: string, value: unknown): void {
+    if (this.moduleId) {
+      this.sendStorageChanged(this.moduleId, key, value);
+    }
   }
 
   sendStorageChanged(moduleId: string, key: string, value: unknown): void {

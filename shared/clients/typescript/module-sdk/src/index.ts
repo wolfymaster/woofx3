@@ -20,6 +20,7 @@ export type {
   WidgetHostStorage,
   WidgetStatusReport,
   WidgetSurface,
+  WidgetTheme,
 } from "./widget-host";
 
 export type {
@@ -29,8 +30,8 @@ export type {
 export { createMockHost } from "./preview/widget-preview";
 
 // P1 — `woofx3.widget` v1 postMessage protocol (widget <-> scene
-// manager). Streamware's widget bridge consumes the parent-side
-// types; the child side ships pre-built as dist/widget-host-shim.js.
+// manager). sceneManager's widget bridge consumes the parent-side
+// types; the child side ships pre-built as dist/widget-host-shim.iife.js.
 export type {
   EventQueueConfig,
   HostToWidgetMessage,
@@ -63,6 +64,7 @@ export {
   WIDGET_PROTOCOL,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
+  isWidgetTheme,
 } from "./widget-protocol";
 
 export type {

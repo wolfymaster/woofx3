@@ -15,27 +15,21 @@ function fakeDb(clients: any[] = []) {
 }
 
 describe("WebhookClient", () => {
-  it("refreshCallbackUrls is a no-op when applicationId is null", async () => {
+  it("does not read clients until asked to refresh", () => {
     const db = fakeDb();
-    const wc = new WebhookClient(db, fakeLogger(), null);
-    await wc.refreshCallbackUrls();
+    new WebhookClient(db, fakeLogger());
     expect(db.listClients).not.toHaveBeenCalled();
   });
 
-  it("setApplicationId followed by refresh populates instances", async () => {
-    const db = fakeDb([{ clientId: "c1", description: "d", callbackUrl: "http://x", callbackToken: "" }]);
-    const wc = new WebhookClient(db, fakeLogger(), null);
-    wc.setApplicationId("app-1");
+  it("refreshCallbackUrls lists every client and sends only to those with a callback", async () => {
+    const db = fakeDb([
+      { clientId: "c1", description: "d", callbackUrl: "http://x", callbackToken: "" },
+      { clientId: "c2", description: "headless", callbackUrl: "", callbackToken: "" },
+    ]);
+    const logger = fakeLogger();
+    const wc = new WebhookClient(db, logger);
     await wc.refreshCallbackUrls();
-    expect(db.listClients).toHaveBeenCalledWith("app-1");
-  });
-
-  it("constructor with applicationId eagerly kicks off refresh", async () => {
-    const db = fakeDb([{ clientId: "c1", description: "d", callbackUrl: "http://x", callbackToken: "" }]);
-    const wc = new WebhookClient(db, fakeLogger(), "app-1");
-    // Allow the constructor's un-awaited refreshCallbackUrls to settle.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(db.listClients).toHaveBeenCalledWith("app-1");
-    void wc; // suppress unused warning
+    expect(db.listClients).toHaveBeenCalledWith();
+    expect(logger.info).toHaveBeenCalledWith("Webhook callback URLs refreshed", { count: 1 });
   });
 });

@@ -12,95 +12,81 @@ function fakeLogger() {
   } as any;
 }
 
+function newApi(
+  db: ConstructorParameters<typeof Api>[0]["db"],
+  logger: ConstructorParameters<typeof Api>[0]["logger"]
+) {
+  return new Api({
+    db,
+    nats: null,
+    functions: null,
+    barkloaderUrl: "http://b",
+    sceneManagerUrl: "http://scene.test",
+    apiUrl: "http://api.test",
+    logger,
+  });
+}
+
 describe("ApiGateway.registerClient", () => {
-  it("creates user + default application + client and returns applicationId", async () => {
-    const findOrCreate = mock(async () => ({ id: "engine-user-1" }));
-    const getDefault = mock(async () => null);
-    const createApp = mock(async () => ({ id: "app-1", name: "default" }));
+  it("creates a client with the callback and returns its credentials", async () => {
     const createClient = mock(async () => ({ client: { clientId: "c1", clientSecret: "s1" } }));
-    const listClients = mock(async () => ({ clients: [] }));
-    const db = {
-      findOrCreateByWoofx3UIUserId: findOrCreate,
-      getDefaultApplication: getDefault,
-      createApplication: createApp,
-      createClient,
-      listClients,
-    } as any;
+    const listClients = mock(async () => ({
+      clients: [{ clientId: "c1", description: "test-ui", callbackUrl: "http://cb", callbackToken: "tok" }],
+    }));
+    const db = { createClient, listClients } as any;
     const logger = fakeLogger();
-    const api = new Api({
-      db,
-      nats: null,
-      functions: null,
-      barkloaderUrl: "http://b",
-      sceneManagerUrl: "http://scene.test",
-      apiUrl: "http://api.test",
-      logger,
-    });
-    const webhook = new WebhookClient(db, logger, null);
+    const api = newApi(db, logger);
+    const webhook = new WebhookClient(db, logger);
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ valid: true })) } as any;
     const gateway = new ApiGateway(api, auth, db, logger, null);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
-      userId: "convex_user_42",
       callbackUrl: "http://cb",
       callbackToken: "tok",
     });
 
-    expect(res.applicationId).toBe("app-1");
-    expect(findOrCreate).toHaveBeenCalledWith("convex_user_42");
-    expect(createApp).toHaveBeenCalledWith({ name: "default", ownerId: "engine-user-1", isDefault: true });
-    expect(createClient).toHaveBeenCalledWith(expect.objectContaining({ applicationId: "app-1" }));
+    expect(res).toEqual({ clientId: "c1", clientSecret: "s1" });
+    expect(createClient).toHaveBeenCalledWith({
+      description: "test-ui",
+      callbackUrl: "http://cb",
+      callbackToken: "tok",
+    });
+    // The new callback is picked up without a restart.
+    expect(listClients).toHaveBeenCalledTimes(1);
   });
 
-  it("reuses the existing default application when present", async () => {
-    const getDefault = mock(async () => ({ id: "app-existing", name: "default" }));
-    const createApp = mock(async () => {
-      throw new Error("should not be called");
-    });
+  it("does not refresh callbacks for a client registered without one", async () => {
+    const listClients = mock(async () => ({ clients: [] }));
     const db = {
-      findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "u1" })),
-      getDefaultApplication: getDefault,
-      createApplication: createApp,
       createClient: mock(async () => ({ client: { clientId: "c2", clientSecret: "s2" } })),
-      listClients: mock(async () => ({ clients: [] })),
+      listClients,
     } as any;
     const logger = fakeLogger();
-    const api = new Api({
-      db,
-      nats: null,
-      functions: null,
-      barkloaderUrl: "http://b",
-      sceneManagerUrl: "http://scene.test",
-      apiUrl: "http://api.test",
-      logger,
-    });
-    const webhook = new WebhookClient(db, logger, null);
+    const api = newApi(db, logger);
+    const webhook = new WebhookClient(db, logger);
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, null);
     gateway.setWebhookClient(webhook);
 
-    const res = await gateway.registerClient("test", { userId: "convex_user_42" });
+    const res = await gateway.registerClient("test", {});
 
-    expect(res.applicationId).toBe("app-existing");
-    expect(createApp).not.toHaveBeenCalled();
+    expect(res).toEqual({ clientId: "c2", clientSecret: "s2" });
+    expect(listClients).not.toHaveBeenCalled();
   });
 
-  it("rejects empty userId", async () => {
-    const db = { findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "u1" })) } as any;
+  it("fails when db-proxy returns no client", async () => {
+    const db = { createClient: mock(async () => ({})) } as any;
     const logger = fakeLogger();
-    const api = new Api({
+    const gateway = new ApiGateway(
+      newApi(db, logger),
+      { validate: mock(async () => ({ valid: true })) } as any,
       db,
-      nats: null,
-      functions: null,
-      barkloaderUrl: "http://b",
-      sceneManagerUrl: "http://scene.test",
-      apiUrl: "http://api.test",
       logger,
-    });
-    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, null);
+      null
+    );
 
-    await expect(gateway.registerClient("test", { userId: "" })).rejects.toThrow();
+    await expect(gateway.registerClient("test", {})).rejects.toThrow("Failed to create client");
   });
 });

@@ -16,11 +16,6 @@ func NewWorkflowRepository(db *gorm.DB) *WorkflowRepository {
 	return &WorkflowRepository{db: db}
 }
 
-// DB exposes the underlying *gorm.DB for handler-level helpers.
-func (r *WorkflowRepository) DB() *gorm.DB {
-	return r.db
-}
-
 // Create creates a new WorkflowDefinition
 func (r *WorkflowRepository) Create(wf *models.WorkflowDefinition) error {
 	return r.db.Create(wf).Error
@@ -49,16 +44,15 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 		ID uuid.UUID `gorm:"column:id"`
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.workflow_definitions (id, application_id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO public.workflow_definitions (id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE manifest_id <> '' DO UPDATE SET
-			application_id = EXCLUDED.application_id,
 			name = EXCLUDED.name,
 			steps = EXCLUDED.steps,
 			trigger = EXCLUDED.trigger,
 			taxonomy = EXCLUDED.taxonomy
 		RETURNING id
-	`, wf.ID, wf.ApplicationID, wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled).Scan(&result).Error
+	`, wf.ID, wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -83,19 +77,11 @@ func (r *WorkflowRepository) GetByID(id uuid.UUID) (*models.WorkflowDefinition, 
 	return &wf, err
 }
 
-// GetByApplicationID retrieves all WorkflowDefinitions for an application
-func (r *WorkflowRepository) GetByApplicationID(applicationID uuid.UUID) ([]*models.WorkflowDefinition, error) {
+// GetByEnabled retrieves WorkflowDefinitions filtered by enabled status.
+// Backed by the `idx_workflow_definitions_enabled` index.
+func (r *WorkflowRepository) GetByEnabled(enabled bool) ([]*models.WorkflowDefinition, error) {
 	var wfs []*models.WorkflowDefinition
-	err := r.db.Where("application_id = ?", applicationID).Find(&wfs).Error
-	return wfs, err
-}
-
-// GetByApplicationIDAndEnabled retrieves WorkflowDefinitions for an
-// application filtered by enabled status. Backed by the
-// `(application_id, enabled)` composite index added in migration 0005.
-func (r *WorkflowRepository) GetByApplicationIDAndEnabled(applicationID uuid.UUID, enabled bool) ([]*models.WorkflowDefinition, error) {
-	var wfs []*models.WorkflowDefinition
-	err := r.db.Where("application_id = ? AND enabled = ?", applicationID, enabled).Find(&wfs).Error
+	err := r.db.Where("enabled = ?", enabled).Find(&wfs).Error
 	return wfs, err
 }
 
@@ -106,9 +92,9 @@ func (r *WorkflowRepository) GetAll() ([]*models.WorkflowDefinition, error) {
 	return wfs, err
 }
 
-// GetByName retrieves a WorkflowDefinition by name and application ID
-func (r *WorkflowRepository) GetByName(applicationID uuid.UUID, name string) (*models.WorkflowDefinition, error) {
+// GetByName retrieves a WorkflowDefinition by name
+func (r *WorkflowRepository) GetByName(name string) (*models.WorkflowDefinition, error) {
 	var wf models.WorkflowDefinition
-	err := r.db.Where("application_id = ? AND name = ?", applicationID, name).First(&wf).Error
+	err := r.db.Where("name = ?", name).First(&wf).Error
 	return &wf, err
 }

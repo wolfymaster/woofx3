@@ -45,9 +45,6 @@ export class Api extends ApiRouteHost {
 
   setWebhookClient(client: WebhookClient): void {
     this.webhookClient = client;
-    if (this.applicationId) {
-      client.setApplicationId(this.applicationId);
-    }
   }
 
   setAuthInvalidate(fn: () => void): void {
@@ -56,18 +53,6 @@ export class Api extends ApiRouteHost {
 
   setStreamEventBroadcaster(broadcaster: StreamEventBroadcaster): void {
     this.streamEventBroadcaster = broadcaster;
-  }
-
-  /** The cached application id, or null before anything has resolved one. */
-  applicationIdOrNull(): string | null {
-    return this.applicationId ?? null;
-  }
-
-  setApplicationId(applicationId: string): void {
-    this.applicationId = applicationId;
-    if (this.webhookClient) {
-      this.webhookClient.setApplicationId(applicationId);
-    }
   }
 }
 

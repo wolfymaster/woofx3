@@ -25,10 +25,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   }
 
   const config = await deps.host.buildConfig(token);
-  const sessionToken = await deps.sessionTokens.mint({
-    sceneId: state.sceneId,
-    applicationId: state.applicationId,
-  });
+  const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
 
   return new Response(renderSceneShell({ scene: (config as { scene: unknown }).scene }), {
     status: 200,

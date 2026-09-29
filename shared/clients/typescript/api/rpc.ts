@@ -17,10 +17,7 @@
 export interface ApiContract {}
 
 /**
- * Payload passed to `ApiGatewayContract.registerClient`. `userId` is the
- * identity of the caller registering the client — the engine stores it so
- * the resulting client record is attributable to a user (needed for
- * per-user authorization on subsequent RPC calls).
+ * Payload passed to `ApiGatewayContract.registerClient`.
  *
  * `callbackUrl` + `callbackToken` are the webhook target. They're optional
  * only for headless consumers (CLI tests, smoke checks) that don't need
@@ -32,7 +29,6 @@ export interface ApiContract {}
  * engine deployed without one ignores it.
  */
 export interface RegisterClientOptions {
-  userId: string;
   callbackUrl?: string;
   callbackToken?: string;
   registrationToken?: string;
@@ -57,18 +53,15 @@ export interface ApiGatewayContract {
   /**
    * Register a new client (one per UI instance / caller). The engine stores
    * `callbackUrl` + `callbackToken` and uses them for every webhook callback
-   * scoped to this client. `userId` attributes the registration to a known
-   * user so the engine can authorize subsequent operations.
+   * scoped to this client.
    *
-   * The returned `applicationId` is the engine-side application the client
-   * was scoped to (created during first-run onboarding or reused on
-   * subsequent calls). The UI persists it so later RPC calls can be
-   * attributed to the same application without re-resolving.
+   * `clientSecret` is returned only here; a caller that loses it must
+   * register again.
    */
   registerClient(
     description: string,
     options: RegisterClientOptions
-  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }>;
+  ): Promise<{ clientId: string; clientSecret: string }>;
 
   /**
    * Exchange client credentials for an authenticated API stub. The returned

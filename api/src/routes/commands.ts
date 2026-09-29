@@ -7,15 +7,24 @@ import type {
   UpdateCommandInput,
 } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import ActionEvents from "@woofx3/common/cloudevents/Action";
+import ChatCommandEvents from "@woofx3/common/cloudevents/Chat/commands";
 import CommandEvents from "@woofx3/common/cloudevents/Command";
-import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
+import { commandNameToSubjectSegment } from "@woofx3/common/cloudevents/slug";
+import {
+  extractCommandVariables,
+  invalidCommandVariableNames,
+  parseCommandVariables,
+} from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
 import { isPermissionDenied } from "../db-client";
-import { commandToSnapshot } from "./helpers";
+import { commandToSnapshot, parseActions } from "./helpers";
 
-// The factory holds nothing but the CloudEvent `source`, so one instance serves
-// every call in this module.
+// The factories hold nothing but the CloudEvent `source`, so one instance each
+// serves every call in this module.
 const commandEvents = new CommandEvents("api");
+const chatCommandEvents = new ChatCommandEvents("api");
+const actionEvents = new ActionEvents("api");
 
 /**
  * Serialize a command's actions for storage, refusing a list the engine could
@@ -62,9 +71,7 @@ function serializeActions(actions: ActionStep[] | undefined): string {
 
 export const commandsRoutes = routeModule({
   async listCommands(): Promise<CommandSnapshot[]> {
-    const applicationId = await this.ensureApplicationId();
     const commands = await this.db.listCommands({
-      applicationId,
       includeDisabled: true,
     });
     return commands.map((c) => commandToSnapshot(c));
@@ -81,9 +88,7 @@ export const commandsRoutes = routeModule({
     }>;
   }> {
     this.logger.info("Getting available commands", { username: _username });
-    const applicationId = await this.ensureApplicationId();
     const req: command.ListCommandsRequest = {
-      applicationId,
       includeDisabled: false,
     };
     const commands = await this.db.listCommands(req);
@@ -100,19 +105,26 @@ export const commandsRoutes = routeModule({
   },
 
   /**
-   * Execute a command by name.
-   * This would typically trigger the command execution via events.
+   * Run a chat command as though `username` had typed `!<commandName> <text>`
+   * in chat. `text` is everything after the command word; it is split into
+   * `args` and matched against the command's `argumentPattern` exactly as a
+   * chat message is, so the command's actions and any workflow triggered by it
+   * cannot tell the two apart.
+   *
+   * Mirrors woofwoofwoof's dispatch on a chat match: the `chat.command.<slug>`
+   * event always, and the command's own actions when it has any. Cooldown is
+   * not applied -- it throttles chat, and a caller of this API is already
+   * authorized by name.
    */
   async executeCommand(
     commandName: string,
     username: string,
-    args: Record<string, string> = {}
+    text = ""
   ): Promise<{
     success: boolean;
     message: string;
   }> {
-    this.logger.info("Executing command", { commandName, username, args: Object.keys(args) });
-    const applicationId = await this.ensureApplicationId();
+    this.logger.info("Executing command", { commandName, username });
     // Get the command. This doubles as the authorization gate: db-proxy runs
     // the command's group/user grants through Casbin inside GetCommand and
     // rejects the call outright when `username` is not permitted, so a denial
@@ -121,7 +133,6 @@ export const commandsRoutes = routeModule({
     // and duplicating the decision in this service would let the two drift.
     const cmdReq: command.GetCommandRequest = {
       command: commandName,
-      applicationId,
       username,
     };
 
@@ -140,15 +151,36 @@ export const commandsRoutes = routeModule({
       throw new Error("Command is disabled");
     }
 
-    // Publish an event to trigger the command execution
-    await this.publishEvent("command.execute", {
-      command: commandName,
-      username,
-      args,
-      applicationId,
-    });
+    const remainder = text.trim();
+    const eventData = {
+      args: remainder.length > 0 ? remainder.split(/\s+/) : [],
+      rawMessage: remainder.length > 0 ? `!${cmd.command} ${remainder}` : `!${cmd.command}`,
+      text: remainder,
+      variables: extractCommandVariables(parseCommandVariables(cmd.argumentPattern ?? ""), remainder),
+      chatter: username,
+      platform: "twitch" as const,
+    };
 
-    this.logger.info("Command executed", { commandName, username });
+    await this.publishEventTuple(chatCommandEvents.command(cmd.command, eventData));
+
+    const actions = parseActions(cmd.actionsJson);
+    if (actions.length > 0) {
+      await this.publishEventTuple(
+        actionEvents.execute({
+          label: `command:${cmd.command}`,
+          actions,
+          event: {
+            id: crypto.randomUUID(),
+            type: `chat.command.${commandNameToSubjectSegment(cmd.command)}`,
+            source: "api",
+            time: new Date().toISOString(),
+            data: { ...eventData, command: cmd.command },
+          },
+        })
+      );
+    }
+
+    this.logger.info("Command executed", { commandName, username, actions: actions.length });
     return {
       success: true,
       message: `Command "${commandName}" executed`,
@@ -172,10 +204,7 @@ export const commandsRoutes = routeModule({
       );
     }
 
-    const applicationId = await this.ensureApplicationId();
-
     const created = await this.db.createCommand({
-      applicationId,
       command: input.command,
       enabled: input.enabled,
       cooldown: input.cooldown,
@@ -192,7 +221,6 @@ export const commandsRoutes = routeModule({
     await this.publishEventTuple(commandEvents.created({ command: snapshot }));
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_CREATED,
-      applicationId,
       correlationKey: input.correlationKey,
       command: snapshot,
     });
@@ -231,7 +259,6 @@ export const commandsRoutes = routeModule({
     await this.publishEventTuple(commandEvents.updated({ command: snapshot }));
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_UPDATED,
-      applicationId: snapshot.applicationId,
       correlationKey: input.correlationKey,
       command: snapshot,
     });
@@ -245,16 +272,11 @@ export const commandsRoutes = routeModule({
    * `shared/clients/typescript/twitch/index.ts:88`).
    *
    * `convexUserId` (when supplied) is the Convex user that initiated the
-   * connect flow; we resolve it to the engine-side user UUID via the
-   * same `findOrCreateByWoofx3UIUserId` path registerClient uses, then
-   * write that UUID to `settings.user_id` so the row is scoped to the
-   * owning user. The Twitch broadcaster id stays inside the JSON value
+   * connect flow; we resolve it to the engine-side user UUID via
+   * `findOrCreateByWoofx3UIUserId`, then write that UUID to
+   * `settings.user_id` so the row is scoped to the owning user. The Twitch broadcaster id stays inside the JSON value
    * because that's what Twurple's `addUserForToken` parses out of
    * `AccessTokenWithUserId` on bootstrap.
-   *
-   * applicationId is intentionally `""` to match the existing bootstrap
-   * read; per-app scoping is the correct long-term shape but the
-   * bootstrap consumer hasn't been updated yet.
    */
   async setTwitchToken(
     token: {
@@ -272,7 +294,7 @@ export const commandsRoutes = routeModule({
       const engineUser = await this.db.findOrCreateByWoofx3UIUserId(convexUserId);
       engineUserId = engineUser.id;
     }
-    await this.db.setSetting("twitch_token", JSON.stringify(token), "", engineUserId);
+    await this.db.setSetting("twitch_token", JSON.stringify(token), engineUserId);
     this.logger.info("Twitch token written to settings", {
       twitchUserId: token.userId,
       engineUserId: engineUserId ?? "(unscoped)",
@@ -301,7 +323,7 @@ export const commandsRoutes = routeModule({
    * cleanly without needing to handle a missing row.
    */
   async deleteTwitchToken(): Promise<{ ok: true }> {
-    await this.db.setSetting("twitch_token", "", "");
+    await this.db.setSetting("twitch_token", "");
     this.logger.info("Twitch token cleared from settings");
 
     // Same notification as setTwitchToken — the row changed, downstream
@@ -361,18 +383,16 @@ export const commandsRoutes = routeModule({
    * Deleting an id that does not exist fails rather than reporting success.
    */
   async deleteCommand(id: string, correlationKey?: string): Promise<{ deleted: boolean }> {
-    const applicationId = await this.ensureApplicationId();
-    const existing = (await this.db.listCommands({ applicationId, includeDisabled: true })).find((c) => c.id === id);
+    const existing = (await this.db.listCommands({ includeDisabled: true })).find((c) => c.id === id);
     if (!existing) {
       throw new Error(`Command not found: ${id}`);
     }
 
     await this.db.deleteCommand({ id });
 
-    await this.publishEventTuple(commandEvents.deleted({ id, applicationId, command: existing.command }));
+    await this.publishEventTuple(commandEvents.deleted({ id, command: existing.command }));
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_DELETED,
-      applicationId,
       correlationKey,
       commandId: id,
     });

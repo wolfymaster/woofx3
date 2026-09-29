@@ -13,8 +13,8 @@ import (
 
 // AlertRoutes registers the AlertService Twirp handler. Symmetric
 // with `SceneRoutes` / `WorkflowRoutes`. Casbin middleware is
-// intentionally not applied yet — the alert log is application-
-// scoped and gated by the proxy's existing auth surface.
+// intentionally not applied yet — the alert log is gated by the
+// proxy's existing auth surface.
 func AlertRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
 	alertRepository := repo.NewAlertRepository(app.Db)
 	alertService := svc.NewAlertService(alertRepository, app.EventPublisher)

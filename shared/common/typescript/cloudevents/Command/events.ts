@@ -10,7 +10,6 @@ export enum EventType {
 
 export interface CommandSnapshot {
   id: string;
-  applicationId: string;
   command: string;
   /** The actions this command runs, in order. Shape: `ActionStep` in
    *  shared/clients/typescript/api/api.ts -- the same shape a workflow step has. */
@@ -41,6 +40,5 @@ export interface CommandUpdated {
 
 export interface CommandDeleted {
   id: string;
-  applicationId: string;
   command: string;
 }

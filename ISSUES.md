@@ -36,7 +36,7 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 - **Files:** `db/app/services/workflow_service.go:424`, `db/proto/v1/workflow.proto:227-238`
 - **Category:** bug
 - **Size:** medium
-- **Description:** The proto defines `workflow_id`, `application_id`, `status`, `started_by`, `from`, `to`, `sort_by`, `sort_desc`, `page`, `page_size`, but the handler just calls `GetRecentWorkflowExecutions(limit)` and ignores every filter. Any caller filtering by status or workflow silently gets unfiltered results.
+- **Description:** The proto defines `workflow_id`, `status`, `started_by`, `from`, `to`, `sort_by`, `sort_desc`, `page`, `page_size`, but the handler just calls `GetRecentWorkflowExecutions(limit)` and ignores every filter. Any caller filtering by status or workflow silently gets unfiltered results.
 
 ### `WorkflowExecution.Steps` is never populated
 

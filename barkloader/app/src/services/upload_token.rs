@@ -144,7 +144,7 @@ mod tests {
     fn issued_token_round_trips() {
         let (token, issued) = issue(
             SECRET,
-            "user/app-1/res-1/photo.png",
+            "user/res-1/photo.png",
             Some("image/png"),
             Duration::from_secs(300),
             NOW,
@@ -153,7 +153,7 @@ mod tests {
 
         let verified = verify(SECRET, &token, NOW).expect("verify");
         assert_eq!(verified, issued);
-        assert_eq!(verified.key, "user/app-1/res-1/photo.png");
+        assert_eq!(verified.key, "user/res-1/photo.png");
         assert_eq!(verified.content_type.as_deref(), Some("image/png"));
         assert_eq!(verified.expires_at, NOW + 300);
     }
@@ -162,7 +162,7 @@ mod tests {
     fn token_without_content_type_round_trips() {
         let (token, _) = issue(
             SECRET,
-            "user/app-1/res-1/blob.bin",
+            "user/res-1/blob.bin",
             None,
             Duration::from_secs(60),
             NOW,
@@ -176,7 +176,7 @@ mod tests {
     fn expired_token_is_rejected() {
         let (token, _) = issue(
             SECRET,
-            "user/app-1/res-1/photo.png",
+            "user/res-1/photo.png",
             Some("image/png"),
             Duration::from_secs(300),
             NOW,
@@ -198,7 +198,7 @@ mod tests {
     fn token_signed_with_another_secret_is_rejected() {
         let (token, _) = issue(
             SECRET,
-            "user/app-1/res-1/photo.png",
+            "user/res-1/photo.png",
             Some("image/png"),
             Duration::from_secs(300),
             NOW,
@@ -214,7 +214,7 @@ mod tests {
     fn tampering_with_the_key_is_rejected() {
         let (token, _) = issue(
             SECRET,
-            "user/app-1/res-1/photo.png",
+            "user/res-1/photo.png",
             Some("image/png"),
             Duration::from_secs(300),
             NOW,
@@ -222,10 +222,10 @@ mod tests {
         .expect("issue");
         let (_, signature) = token.split_once('.').expect("token shape");
 
-        // Re-point the grant at another application's key space and
-        // keep the original signature.
+        // Re-point the grant at another resource's key and keep the
+        // original signature.
         let forged_payload = serde_json::to_vec(&UploadGrant {
-            key: "user/app-2/res-1/photo.png".to_string(),
+            key: "user/res-2/photo.png".to_string(),
             content_type: Some("image/png".to_string()),
             expires_at: NOW + 300,
         })

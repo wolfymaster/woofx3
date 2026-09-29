@@ -12,6 +12,7 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
+import type { StreamSession, StreamSessionTotals } from "./api";
 import type { WorkflowDefinition } from "./workflow-definition";
 
 /**
@@ -67,6 +68,7 @@ export const EngineEventType = {
   STREAM_ONLINE: "stream.online",
   STREAM_OFFLINE: "stream.offline",
   SESSION_STARTED: "session.started",
+  SESSION_SUMMARY: "session.summary",
   OVERLAY_TOKEN_MINTED: "overlay.token.minted",
   OVERLAY_TOKEN_REVOKED: "overlay.token.revoked",
   COMMAND_CREATED: "command.created",
@@ -727,21 +729,18 @@ export interface WorkflowSnapshot {
 
 export interface WorkflowCreatedEvent {
   type: typeof EngineEventType.WORKFLOW_CREATED;
-  applicationId: string;
   correlationKey?: string;
   workflow: WorkflowSnapshot;
 }
 
 export interface WorkflowUpdatedEvent {
   type: typeof EngineEventType.WORKFLOW_UPDATED;
-  applicationId: string;
   correlationKey?: string;
   workflow: WorkflowSnapshot;
 }
 
 export interface WorkflowDeletedEvent {
   type: typeof EngineEventType.WORKFLOW_DELETED;
-  applicationId: string;
   correlationKey?: string;
   workflowId: string;
   /**
@@ -764,7 +763,6 @@ export interface WorkflowDeletedEvent {
  */
 export interface SceneSnapshot {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   /** JSON-encoded array of placed widget instances. Persisted in
@@ -782,21 +780,18 @@ export interface SceneSnapshot {
 
 export interface SceneCreatedEvent {
   type: typeof EngineEventType.SCENE_CREATED;
-  applicationId: string;
   correlationKey?: string;
   scene: SceneSnapshot;
 }
 
 export interface SceneUpdatedEvent {
   type: typeof EngineEventType.SCENE_UPDATED;
-  applicationId: string;
   correlationKey?: string;
   scene: SceneSnapshot;
 }
 
 export interface SceneDeletedEvent {
   type: typeof EngineEventType.SCENE_DELETED;
-  applicationId: string;
   correlationKey?: string;
   sceneId: string;
 }
@@ -813,7 +808,6 @@ export interface SceneDeletedEvent {
  */
 export interface CommandWebhookSnapshot {
   id: string;
-  applicationId: string;
   command: string;
   /** The actions this command runs, in order -- `ActionStep` in api.ts. */
   actions: Array<{
@@ -835,21 +829,18 @@ export interface CommandWebhookSnapshot {
 
 export interface CommandCreatedEvent {
   type: typeof EngineEventType.COMMAND_CREATED;
-  applicationId: string;
   correlationKey?: string;
   command: CommandWebhookSnapshot;
 }
 
 export interface CommandUpdatedEvent {
   type: typeof EngineEventType.COMMAND_UPDATED;
-  applicationId: string;
   correlationKey?: string;
   command: CommandWebhookSnapshot;
 }
 
 export interface CommandDeletedEvent {
   type: typeof EngineEventType.COMMAND_DELETED;
-  applicationId: string;
   correlationKey?: string;
   commandId: string;
 }
@@ -862,7 +853,6 @@ export interface CommandDeletedEvent {
  * `GroupSnapshot` in `./api` field-for-field. */
 export interface GroupWebhookSnapshot {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   createdAt: string;
@@ -873,21 +863,18 @@ export interface GroupWebhookSnapshot {
 
 export interface GroupCreatedEvent {
   type: typeof EngineEventType.GROUP_CREATED;
-  applicationId: string;
   correlationKey?: string;
   group: GroupWebhookSnapshot;
 }
 
 export interface GroupUpdatedEvent {
   type: typeof EngineEventType.GROUP_UPDATED;
-  applicationId: string;
   correlationKey?: string;
   group: GroupWebhookSnapshot;
 }
 
 export interface GroupDeletedEvent {
   type: typeof EngineEventType.GROUP_DELETED;
-  applicationId: string;
   correlationKey?: string;
   groupId: string;
 }
@@ -900,7 +887,6 @@ export interface GroupDeletedEvent {
  */
 export interface GroupMemberAddedEvent {
   type: typeof EngineEventType.GROUP_MEMBER_ADDED;
-  applicationId: string;
   correlationKey?: string;
   groupId: string;
   username: string;
@@ -909,7 +895,6 @@ export interface GroupMemberAddedEvent {
 /** Symmetric counterpart to `GroupMemberAddedEvent`. */
 export interface GroupMemberRemovedEvent {
   type: typeof EngineEventType.GROUP_MEMBER_REMOVED;
-  applicationId: string;
   correlationKey?: string;
   groupId: string;
   username: string;
@@ -928,7 +913,6 @@ export interface GroupMemberRemovedEvent {
  */
 export interface AlertSnapshot {
   id: string;
-  applicationId: string;
   /** Full AlertPayload envelope as a JSON string. The engine treats
    *  this as opaque on round-trip; callers parse into typed
    *  `parameters` (text / mediaUrl / audioUrl / duration / options /
@@ -980,7 +964,6 @@ export interface AlertSnapshot {
  */
 export interface WorkflowRunStartedEvent {
   type: typeof EngineEventType.WORKFLOW_RUN_STARTED;
-  applicationId: string;
   workflowId: string;
   executionId: string;
   triggerId?: string;
@@ -991,7 +974,6 @@ export interface WorkflowRunStartedEvent {
 /** Fired when a workflow run finishes with every task succeeding. */
 export interface WorkflowRunCompletedEvent {
   type: typeof EngineEventType.WORKFLOW_RUN_COMPLETED;
-  applicationId: string;
   workflowId: string;
   executionId: string;
   triggerId?: string;
@@ -1008,7 +990,6 @@ export interface WorkflowRunCompletedEvent {
  */
 export interface WorkflowRunFailedEvent {
   type: typeof EngineEventType.WORKFLOW_RUN_FAILED;
-  applicationId: string;
   workflowId: string;
   executionId: string;
   triggerId?: string;
@@ -1027,7 +1008,6 @@ export interface WorkflowRunFailedEvent {
 export interface WorkflowRunSnapshot {
   id: string;
   workflowId: string;
-  applicationId: string;
   status: string;
   /** What caused the run ("twitch", "chat", ...). Never "dashboard": those are not recorded. */
   triggeredBy?: string;
@@ -1052,7 +1032,6 @@ export interface WorkflowRunSnapshot {
 export interface WorkflowRunStepSnapshot {
   id: string;
   executionId: string;
-  applicationId: string;
   taskId: string;
   name?: string;
   status: string;
@@ -1071,21 +1050,18 @@ export interface WorkflowRunStepSnapshot {
 /** Fired when the engine records a run it has started. */
 export interface WorkflowRunRecordedEvent {
   type: typeof EngineEventType.WORKFLOW_RUN_RECORDED;
-  applicationId: string;
   run: WorkflowRunSnapshot;
 }
 
 /** Fired when a recorded run reaches its terminal state. */
 export interface WorkflowRunUpdatedEvent {
   type: typeof EngineEventType.WORKFLOW_RUN_UPDATED;
-  applicationId: string;
   run: WorkflowRunSnapshot;
 }
 
 /** Fired when a step within a recorded run settles. */
 export interface WorkflowRunStepRecordedEvent {
   type: typeof EngineEventType.WORKFLOW_RUN_STEP_RECORDED;
-  applicationId: string;
   step: WorkflowRunStepSnapshot;
 }
 
@@ -1096,7 +1072,6 @@ export interface WorkflowRunStepRecordedEvent {
  */
 export interface AlertRecordedEvent {
   type: typeof EngineEventType.ALERT_RECORDED;
-  applicationId: string;
   alert: AlertSnapshot;
 }
 
@@ -1107,7 +1082,6 @@ export interface AlertRecordedEvent {
  */
 export interface AlertReplayedEvent {
   type: typeof EngineEventType.ALERT_REPLAYED;
-  applicationId: string;
   alert: AlertSnapshot;
 }
 
@@ -1119,7 +1093,6 @@ export interface AlertReplayedEvent {
  */
 export interface AlertCompletedEvent {
   type: typeof EngineEventType.ALERT_COMPLETED;
-  applicationId: string;
   alert: AlertSnapshot;
 }
 
@@ -1130,7 +1103,6 @@ export interface AlertCompletedEvent {
  */
 export interface AlertFailedEvent {
   type: typeof EngineEventType.ALERT_FAILED;
-  applicationId: string;
   alert: AlertSnapshot;
 }
 
@@ -1144,7 +1116,6 @@ export interface AlertFailedEvent {
  */
 export interface AlertTimedOutEvent {
   type: typeof EngineEventType.ALERT_TIMED_OUT;
-  applicationId: string;
   alert: AlertSnapshot;
 }
 
@@ -1158,7 +1129,6 @@ export interface AlertTimedOutEvent {
  */
 export interface AlertSkippedEvent {
   type: typeof EngineEventType.ALERT_SKIPPED;
-  applicationId: string;
   alert: AlertSnapshot;
 }
 
@@ -1176,7 +1146,6 @@ export interface AlertSkippedEvent {
  */
 export interface WidgetStatusChangedEvent {
   type: typeof EngineEventType.WIDGET_STATUS_CHANGED;
-  applicationId: string;
   moduleId: string;
   instanceId: string;
   /** Canonical `{moduleId}:widget:{manifestId}`. Optional because
@@ -1202,7 +1171,6 @@ export interface OverlayTokenMintedEvent {
   type: typeof EngineEventType.OVERLAY_TOKEN_MINTED;
   tokenId: string;
   sceneId: string;
-  applicationId: string;
   /** Operator bookkeeping label; empty string when unset. */
   label: string;
   /** Short non-secret prefix of the token for display (`ovl_abcd`).
@@ -1220,7 +1188,6 @@ export interface OverlayTokenRevokedEvent {
   type: typeof EngineEventType.OVERLAY_TOKEN_REVOKED;
   tokenId: string;
   sceneId: string;
-  applicationId: string;
   /** Operator bookkeeping label; empty string when unset. */
   label: string;
   /** Short non-secret prefix of the token for display (`ovl_abcd`).
@@ -1238,9 +1205,8 @@ export interface OverlayTokenRevokedEvent {
  * context for the UI to flip its header pill to LIVE and start a
  * client-side uptime ticker.
  *
- * `applicationId` scopes the event to a single tenant; the UI uses it
- * to route to the right instance. `startedAt` is the absolute Twitch
- * start timestamp (ISO-8601), authoritative over local clocks.
+ * `startedAt` is the absolute Twitch start timestamp (ISO-8601),
+ * authoritative over local clocks.
  *
  * `viewerCount`, `streamTitle`, `gameName` are best-effort — the raw
  * `stream.online` EventSub payload doesn't include them, so the
@@ -1250,7 +1216,6 @@ export interface OverlayTokenRevokedEvent {
  */
 export interface StreamOnlineEvent {
   type: typeof EngineEventType.STREAM_ONLINE;
-  applicationId: string;
   twitchUserId: string;
   startedAt: string;
   streamTitle?: string;
@@ -1265,7 +1230,6 @@ export interface StreamOnlineEvent {
  */
 export interface StreamOfflineEvent {
   type: typeof EngineEventType.STREAM_OFFLINE;
-  applicationId: string;
   twitchUserId: string;
 }
 
@@ -1285,14 +1249,52 @@ export interface StreamOfflineEvent {
  *
  * A session *ending* is not delivered here. `instanceLiveState` is a
  * latest-value row, so a reader can see the session change but never that one
- * ended; anything that must react to an ending needs the bus event.
+ * ended; an ending arrives as `SessionSummaryEvent`.
  */
 export interface SessionStartedEvent {
   type: typeof EngineEventType.SESSION_STARTED;
-  applicationId: string;
   sessionId: string;
   /** ISO-8601. When the session began, which may predate the current stream. */
   startedAt: string;
+}
+
+/** What a session added up to: `StreamSessionTotals` without its id. */
+export type SessionSummaryTotals = Omit<StreamSessionTotals, "sessionId">;
+
+/** Bumped when a field of `SessionSummaryEvent` changes meaning or shape. */
+export const SESSION_SUMMARY_SCHEMA_VERSION = 1;
+
+/**
+ * A finished session and what it added up to, sent when the session ends.
+ *
+ * Summaries, never per-viewer detail: this is the copy of a stream's history
+ * that leaves the streamer's machine, so it carries channel figures only. Who
+ * gave what stays in the engine, readable over `getLeaderboard` and
+ * `getViewerTotals`.
+ *
+ * A session ends when the next broadcast past the grace window starts, not
+ * when its own stream goes offline, so this can arrive hours after the stream
+ * it describes. A session that was never live still ends; its summary has no
+ * segments, all-zero counts and null viewer figures, and that is a real
+ * answer.
+ *
+ * Every delivery is a whole snapshot, never a delta. Store it keyed on
+ * `sessionId`, replacing a stored summary whose `generatedAt` is older and
+ * ignoring one that is newer. The engine may send the same session more than
+ * once -- a redelivery, or a re-summary after its bounds moved -- and that
+ * rule makes every repeat harmless.
+ */
+export interface SessionSummaryEvent {
+  type: typeof EngineEventType.SESSION_SUMMARY;
+  /** The stable key. Equal to `session.id`. */
+  sessionId: string;
+  /** `SESSION_SUMMARY_SCHEMA_VERSION` at the time the engine built it. */
+  schemaVersion: number;
+  /** ISO 8601. When the engine computed this snapshot; orders repeats. */
+  generatedAt: string;
+  /** The session, closed, with its segments oldest first. */
+  session: StreamSession;
+  totals: SessionSummaryTotals;
 }
 
 /**
@@ -1342,6 +1344,7 @@ export type CallbackEvent =
   | StreamOnlineEvent
   | StreamOfflineEvent
   | SessionStartedEvent
+  | SessionSummaryEvent
   | OverlayTokenMintedEvent
   | OverlayTokenRevokedEvent
   | CommandCreatedEvent
@@ -1399,6 +1402,7 @@ export type CallbackEventByType = {
   [EngineEventType.STREAM_ONLINE]: StreamOnlineEvent;
   [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
   [EngineEventType.SESSION_STARTED]: SessionStartedEvent;
+  [EngineEventType.SESSION_SUMMARY]: SessionSummaryEvent;
   [EngineEventType.OVERLAY_TOKEN_MINTED]: OverlayTokenMintedEvent;
   [EngineEventType.OVERLAY_TOKEN_REVOKED]: OverlayTokenRevokedEvent;
   [EngineEventType.COMMAND_CREATED]: CommandCreatedEvent;

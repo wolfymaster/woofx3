@@ -33,8 +33,8 @@ import (
 //   - Revocation tombstones, never deletes.
 //
 // Outbox publishing is opt-in via `publisher`, same as sceneService:
-// `db.overlay_token.created.{applicationId}` on mint and on the new
-// half of rotate, `db.overlay_token.updated.{applicationId}` on revoke
+// `db.overlay_token.created.system` on mint and on the new
+// half of rotate, `db.overlay_token.updated.system` on revoke
 // and on the tombstoned half of rotate.
 type overlayTokenService struct {
 	repo      *repo.OverlayTokenRepository
@@ -111,20 +111,12 @@ func (s *overlayTokenService) MintOverlayToken(ctx context.Context, req *client.
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("scene_id", "invalid UUID format")
 	}
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 
-	if err := s.validateSceneOwnership(sceneID, applicationID); err != nil {
+	if err := s.validateSceneExists(sceneID); err != nil {
 		return nil, err
 	}
 
-	token, err := s.mintRow(s.repo, sceneID, applicationID, req.Label)
+	token, err := s.mintRow(s.repo, sceneID, req.Label)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +189,7 @@ func (s *overlayTokenService) RotateOverlayToken(ctx context.Context, req *clien
 		if oldToken.Status == models.OverlayTokenStatusRevoked {
 			return twirp.NewError(twirp.FailedPrecondition, "overlay token already revoked")
 		}
-		newToken, err = s.mintRow(txRepo, oldToken.SceneID, oldToken.ApplicationID, oldToken.Label)
+		newToken, err = s.mintRow(txRepo, oldToken.SceneID, oldToken.Label)
 		if err != nil {
 			return err
 		}
@@ -223,7 +215,7 @@ func (s *overlayTokenService) RotateOverlayToken(ctx context.Context, req *clien
 }
 
 func (s *overlayTokenService) ListOverlayTokens(ctx context.Context, req *client.ListOverlayTokensRequest) (*client.ListOverlayTokensResponse, error) {
-	var sceneID, applicationID *uuid.UUID
+	var sceneID *uuid.UUID
 	if req.SceneId != "" {
 		id, err := uuid.Parse(req.SceneId)
 		if err != nil {
@@ -231,15 +223,8 @@ func (s *overlayTokenService) ListOverlayTokens(ctx context.Context, req *client
 		}
 		sceneID = &id
 	}
-	if req.ApplicationId != "" {
-		id, err := uuid.Parse(req.ApplicationId)
-		if err != nil {
-			return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-		}
-		applicationID = &id
-	}
 
-	tokens, err := s.repo.List(sceneID, applicationID, req.IncludeRevoked)
+	tokens, err := s.repo.List(sceneID, req.IncludeRevoked)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list overlay tokens: %w", err))
 	}
@@ -289,8 +274,7 @@ func (s *overlayTokenService) ResolveOverlayToken(ctx context.Context, req *clie
 			Code:    client.ResponseStatus_OK,
 			Message: "Overlay token resolved successfully",
 		},
-		SceneId:       token.SceneID.String(),
-		ApplicationId: token.ApplicationID.String(),
+		SceneId: token.SceneID.String(),
 	}, nil
 }
 
@@ -305,15 +289,9 @@ func resolveNotFoundResponse() *client.ResolveOverlayTokenResponse {
 	}
 }
 
-// validateSceneOwnership confirms the scene exists and belongs to the
-// application. Both failure modes return NOT_FOUND — a caller holding
-// the wrong application id must not learn that the scene exists.
-func (s *overlayTokenService) validateSceneOwnership(sceneID, applicationID uuid.UUID) error {
-	scene, err := s.sceneRepo.GetByID(sceneID)
-	if err != nil {
-		return twirp.NotFoundError("scene not found")
-	}
-	if scene.ApplicationID != applicationID {
+// validateSceneExists confirms the scene a token will address exists.
+func (s *overlayTokenService) validateSceneExists(sceneID uuid.UUID) error {
+	if _, err := s.sceneRepo.GetByID(sceneID); err != nil {
 		return twirp.NotFoundError("scene not found")
 	}
 	return nil
@@ -321,18 +299,17 @@ func (s *overlayTokenService) validateSceneOwnership(sceneID, applicationID uuid
 
 // mintRow generates and persists a fresh active token row through the
 // given repository (which may be transactional, for rotate).
-func (s *overlayTokenService) mintRow(r *repo.OverlayTokenRepository, sceneID, applicationID uuid.UUID, label string) (*models.OverlayToken, error) {
+func (s *overlayTokenService) mintRow(r *repo.OverlayTokenRepository, sceneID uuid.UUID, label string) (*models.OverlayToken, error) {
 	tokenValue, err := generateOverlayToken()
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to generate overlay token: %w", err))
 	}
 	token := &models.OverlayToken{
-		ID:            uuid.New(),
-		Token:         tokenValue,
-		SceneID:       sceneID,
-		ApplicationID: applicationID,
-		Label:         label,
-		Status:        models.OverlayTokenStatusActive,
+		ID:      uuid.New(),
+		Token:   tokenValue,
+		SceneID: sceneID,
+		Label:   label,
+		Status:  models.OverlayTokenStatusActive,
 	}
 	if err := r.Create(token); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create overlay token: %w", err))
@@ -361,15 +338,14 @@ func (s *overlayTokenService) tokenToProto(t *models.OverlayToken) *client.Overl
 		lastUsedAt = timestamppb.New(*t.LastUsedAt)
 	}
 	return &client.OverlayToken{
-		Id:            t.ID.String(),
-		Token:         t.Token,
-		SceneId:       t.SceneID.String(),
-		ApplicationId: t.ApplicationID.String(),
-		Label:         t.Label,
-		Status:        t.Status,
-		CreatedAt:     createdAt,
-		RevokedAt:     revokedAt,
-		LastUsedAt:    lastUsedAt,
+		Id:         t.ID.String(),
+		Token:      t.Token,
+		SceneId:    t.SceneID.String(),
+		Label:      t.Label,
+		Status:     t.Status,
+		CreatedAt:  createdAt,
+		RevokedAt:  revokedAt,
+		LastUsedAt: lastUsedAt,
 	}
 }
 
@@ -378,7 +354,6 @@ func (s *overlayTokenService) publishChange(token *models.OverlayToken, op strin
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   token.ApplicationID.String(),
 		EntityType:      "overlay_token",
 		EntityID:        token.ID.String(),
 		Operation:       op,
@@ -392,11 +367,10 @@ func (s *overlayTokenService) publishChange(token *models.OverlayToken, op strin
 // off the id (and scene_id for cache poisoning), never the credential.
 func buildOverlayTokenChangeData(token *models.OverlayToken) map[string]interface{} {
 	data := map[string]interface{}{
-		"id":             token.ID.String(),
-		"scene_id":       token.SceneID.String(),
-		"application_id": token.ApplicationID.String(),
-		"label":          token.Label,
-		"status":         token.Status,
+		"id":       token.ID.String(),
+		"scene_id": token.SceneID.String(),
+		"label":    token.Label,
+		"status":   token.Status,
 	}
 	if token.RevokedAt != nil {
 		data["revoked_at"] = token.RevokedAt.UTC().Format(time.RFC3339)

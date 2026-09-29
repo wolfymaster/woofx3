@@ -159,7 +159,7 @@ else
 fi
 
 table_count="$(psql "$DATABASE_URL" --tuples-only --no-align --command \
-  "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('applications', 'clients', 'scenes', 'resources')" 2>/dev/null || echo 0)"
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('settings', 'clients', 'scenes', 'resources')" 2>/dev/null || echo 0)"
 if [ "$table_count" = "4" ]; then
   pass "the migrations created the engine's tables"
 else

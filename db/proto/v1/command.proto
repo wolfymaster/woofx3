@@ -26,7 +26,8 @@ service CommandService {
 // Command represents a chat command that can be executed
 message Command {
     string id = 1;                  // Unique identifier for the command
-    string application_id = 2;      // ID of the application this command belongs to
+    reserved 2;
+    reserved "application_id";
     string command = 3;             // Name of the command (without the prefix)
     reserved 4, 5;                  // was: string type, string type_value - a command runs actions now
     reserved "type", "type_value";
@@ -69,7 +70,8 @@ message Command {
 // Request to get a single command by ID
 message GetCommandRequest {
     string command = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     optional string username = 3;
 }
 
@@ -81,7 +83,8 @@ message CommandResponse {
 
 // Request to list commands with optional filters
 message ListCommandsRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     bool include_disabled = 2;
 }
 
@@ -93,7 +96,8 @@ message ListCommandsResponse {
 
 // Request to create a new command
 message CreateCommandRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string command = 2;
     bool enabled = 3;
     int32 cooldown = 4;

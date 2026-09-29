@@ -4,6 +4,7 @@ import type {
   ModuleSettingsResponse,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
+  WidgetThemes,
 } from "@woofx3/api";
 import { type EngineModule, listEngineModules } from "../engine-modules";
 import { routeModule } from "./context";
@@ -100,10 +101,6 @@ export const modulesRoutes = routeModule({
     if (moduleKey) {
       formData.append("module_key", moduleKey);
     }
-    // Resolved rather than read: omitting the field installed the module
-    // with no application scope at all, which is worse than refusing to
-    // install before onboarding has produced one.
-    formData.append("application_id", await this.ensureApplicationId());
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",
@@ -209,10 +206,6 @@ export const modulesRoutes = routeModule({
     formData.append("file", new File([archiveBytes as Uint8Array<ArrayBuffer>], fileName, { type: "application/zip" }));
     formData.append("client_id", clientId);
     formData.append("module_key", moduleKey);
-    // Resolved rather than read: omitting the field installed the module
-    // with no application scope at all, which is worse than refusing to
-    // install before onboarding has produced one.
-    formData.append("application_id", await this.ensureApplicationId());
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",
@@ -349,12 +342,11 @@ export const modulesRoutes = routeModule({
     if (!moduleKey) {
       throw new Error("checkModuleResourceUsage: moduleKey is required");
     }
-    const applicationId = await this.ensureApplicationId();
     const found = await this.db.getModuleByModuleKey(moduleKey);
     if (!found) {
       throw new Error(`checkModuleResourceUsage: no module found for moduleKey "${moduleKey}"`);
     }
-    return this.db.checkModuleResourceUsage(found.id, applicationId);
+    return this.db.checkModuleResourceUsage(found.id);
   },
 
   /**
@@ -406,6 +398,14 @@ export const modulesRoutes = routeModule({
     }
   },
 
+  async listWidgetThemes(widgetCanonicalId: string): Promise<WidgetThemes> {
+    if (typeof widgetCanonicalId !== "string" || widgetCanonicalId.split(":")[1] !== "widget") {
+      throw new Error("listWidgetThemes: widgetCanonicalId must be `{moduleId}:widget:{id}`");
+    }
+    const response = await this.barkloaderRequest(`/themes?widget=${encodeURIComponent(widgetCanonicalId)}`);
+    return (await response.json()) as WidgetThemes;
+  },
+
   /**
    * Creates a runtime instance of a module-declared resource kind (e.g. a
    * user-defined counter). `moduleName` is the manifest-local module id,
@@ -425,7 +425,6 @@ export const modulesRoutes = routeModule({
     settings: Record<string, unknown>,
     context: { clientId: string }
   ): Promise<ResourceInstanceDefinition> {
-    const applicationId = await this.ensureApplicationId();
     if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
       throw new Error("createResourceInstance: settings must be an object");
     }
@@ -438,7 +437,7 @@ export const modulesRoutes = routeModule({
       connectionKind: "",
       connectionConfig: "",
       settingsJson: JSON.stringify(settings),
-      requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
+      requestContext: { clientId: context.clientId, moduleKey: "" },
     });
     return {
       id: result.instance.id,
@@ -466,7 +465,6 @@ export const modulesRoutes = routeModule({
     if (!Array.isArray(canonicalIds)) {
       throw new Error("getResourceValues: canonicalIds must be an array");
     }
-    const applicationId = await this.ensureApplicationId();
     const values: Record<string, unknown> = {};
     await Promise.all(
       canonicalIds.map(async (canonicalId) => {
@@ -474,7 +472,7 @@ export const modulesRoutes = routeModule({
         if (!moduleName) {
           throw new Error(`getResourceValues: "${canonicalId}" is not a canonical id`);
         }
-        const value = await this.db.getModuleStorageValue(applicationId, moduleName, `state:${canonicalId}`);
+        const value = await this.db.getModuleStorageValue(moduleName, `state:${canonicalId}`);
         values[canonicalId] = value ?? null;
       })
     );
@@ -492,7 +490,6 @@ export const modulesRoutes = routeModule({
     settings: Record<string, unknown>,
     context: { clientId: string }
   ): Promise<ResourceInstanceDefinition> {
-    const applicationId = await this.ensureApplicationId();
     if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
       throw new Error("updateResourceInstance: settings must be an object");
     }
@@ -500,7 +497,7 @@ export const modulesRoutes = routeModule({
       canonicalId,
       displayName,
       settingsJson: JSON.stringify(settings),
-      requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
+      requestContext: { clientId: context.clientId, moduleKey: "" },
     });
     return {
       id: result.instance.id,
@@ -521,10 +518,9 @@ export const modulesRoutes = routeModule({
    * automatically by the authenticated ApiSession.
    */
   async deleteResourceInstance(canonicalId: string, context: { clientId: string }): Promise<void> {
-    const applicationId = await this.ensureApplicationId();
     await this.db.deleteResourceInstance({
       canonicalId,
-      requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
+      requestContext: { clientId: context.clientId, moduleKey: "" },
     });
   },
 

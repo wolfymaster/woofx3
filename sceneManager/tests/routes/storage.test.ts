@@ -29,7 +29,7 @@ function upstream(response: Response) {
 describe("isStorageAssetPath", () => {
   it("claims repository keys and leaves sceneManager's own files alone", () => {
     expect(isStorageAssetPath("/assets/modules/m1/abc123/assets/bell.mp3")).toBe(true);
-    expect(isStorageAssetPath("/assets/user/app-1/res-1/photo.png")).toBe(true);
+    expect(isStorageAssetPath("/assets/user/res-1/photo.png")).toBe(true);
     expect(isStorageAssetPath("/assets/vendor/datastar.js")).toBe(false);
     expect(isStorageAssetPath("/assets/widget-host-shim.js")).toBe(false);
     expect(isStorageAssetPath("/assets/modulesx/m1/a.png")).toBe(false);
@@ -69,17 +69,17 @@ describe("handleStorageAssetRoute", () => {
 
   it("forwards the path still percent-encoded, for barkloader to sanitize", async () => {
     const fetchFn = upstream(new Response(null, { status: 404 }));
-    const { req, url } = get("/assets/user/app-1/res-1/my%20file.png");
+    const { req, url } = get("/assets/user/res-1/my%20file.png");
 
     const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
 
     expect(resp.status).toBe(404);
-    expect(fetchFn.mock.calls[0]![0]).toBe("http://barkloader.test/assets/user/app-1/res-1/my%20file.png");
+    expect(fetchFn.mock.calls[0]![0]).toBe("http://barkloader.test/assets/user/res-1/my%20file.png");
   });
 
   it("404s a non-GET request without reaching barkloader", async () => {
     const fetchFn = upstream(new Response("unreachable"));
-    const url = new URL("http://scene.test/assets/user/app-1/res-1/photo.png");
+    const url = new URL("http://scene.test/assets/user/res-1/photo.png");
 
     const resp = await handleStorageAssetRoute(
       new Request(url, { method: "POST" }),
@@ -97,7 +97,7 @@ describe("handleStorageAssetRoute", () => {
     const fetchFn = mock(async (_input: string | URL | Request, _init?: RequestInit): Promise<Response> => {
       throw new Error("connection refused");
     });
-    const { req, url } = get("/assets/user/app-1/res-1/photo.png");
+    const { req, url } = get("/assets/user/res-1/photo.png");
 
     const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
 
@@ -117,7 +117,7 @@ describe("isUploadPath", () => {
     expect(isUploadPath(UPLOAD_PATH)).toBe(true);
     expect(isUploadPath("/assets/upload/")).toBe(false);
     expect(isUploadPath("/assets/upload/a/b")).toBe(false);
-    expect(isUploadPath("/assets/user/app-1/res-1/photo.png")).toBe(false);
+    expect(isUploadPath("/assets/user/res-1/photo.png")).toBe(false);
     expect(isStorageAssetPath(UPLOAD_PATH)).toBe(false);
   });
 });
@@ -236,7 +236,7 @@ describe("corsHeadersFor", () => {
   });
 
   it("does not open PUT anywhere else", () => {
-    for (const path of ["/assets/user/app-1/res-1/photo.png", "/scene/s1", "/assets/upload/a/b"]) {
+    for (const path of ["/assets/user/res-1/photo.png", "/scene/s1", "/assets/upload/a/b"]) {
       expect(corsHeadersFor(path)["Access-Control-Allow-Methods"]).not.toContain("PUT");
     }
   });

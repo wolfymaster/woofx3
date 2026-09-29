@@ -11,7 +11,8 @@
 //!
 //! Pass 2 resolves intra-manifest references — the `function` field of
 //! `function`-typed actions, `workflows[].trigger`,
-//! `workflows[].steps[].action`, `commands[].workflow` — to canonical
+//! `workflows[].steps[].action`, `commands[].workflow`,
+//! `commands[].actions[].action` — to canonical
 //! ids, either via the local symbol tables or by accepting an
 //! already-canonical id verbatim
 //! (cross-module references).
@@ -29,11 +30,13 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset,
-    ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestFunction,
-    ManifestResourceKind, ManifestSetting, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget, SECRET_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP, LIST_ITEM_FIELD_TYPES,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
+    ManifestDataShape, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
+    ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE,
+    THEME_FIELD_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
 };
+use super::theme::{self, InstalledModule};
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
 /// carries fully-resolved canonical ids ready for persistence.
@@ -66,6 +69,8 @@ pub struct ResolvedFunction {
 pub struct ResolvedCommand {
     pub canonical_id: CanonicalId,
     pub workflow: Option<CanonicalId>,
+    /// The action each of the command's `actions` names, index for index.
+    pub step_actions: Vec<CanonicalId>,
 }
 
 /// What a workflow binds to, and therefore whether it creates a dependency.
@@ -113,6 +118,11 @@ pub struct ResolvedAsset {
 }
 
 #[derive(Debug, Clone)]
+pub struct ResolvedModuleTheme {
+    pub canonical_id: CanonicalId,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResolvedManifest {
     pub module_id: String,
     pub triggers: Vec<ResolvedTrigger>,
@@ -122,6 +132,7 @@ pub struct ResolvedManifest {
     pub workflows: Vec<ResolvedWorkflow>,
     pub widgets: Vec<ResolvedWidget>,
     pub assets: Vec<ResolvedAsset>,
+    pub themes: Vec<ResolvedModuleTheme>,
 }
 
 /// The module id every bundled ("built-in") declaration lives under.
@@ -197,6 +208,8 @@ pub fn validate_with_provenance(
         }
     }
 
+    validate_deadlines(manifest)?;
+
     // Step ids are the names an author's own `${id.field}` references and
     // `dependsOn` entries resolve against. A duplicate makes a reference
     // ambiguous and a dangling `dependsOn` makes the graph unsatisfiable --
@@ -271,6 +284,12 @@ pub fn validate_with_provenance(
         &manifest.assets,
         |a: &ManifestAsset| &a.id,
     )?;
+    let themes_table = build_kind_table(
+        &module_id,
+        ResourceKind::Theme,
+        &manifest.themes,
+        |t: &ManifestTheme| &t.id,
+    )?;
     validate_no_overlays(manifest)?;
     validate_no_accepted_events(&manifest.widgets)?;
     validate_asset_paths(&manifest.assets)?;
@@ -280,6 +299,7 @@ pub fn validate_with_provenance(
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
     validate_field_lists(manifest)?;
     validate_trigger_sentences(&manifest.triggers)?;
+    validate_themes(manifest, &module_id)?;
 
     // Pass 2: resolve references for kinds that have them.
     let triggers = entries_to_resolved(&triggers_table, |e| ResolvedTrigger {
@@ -291,8 +311,16 @@ pub fn validate_with_provenance(
     let assets = entries_to_resolved(&assets_table, |e| ResolvedAsset {
         canonical_id: e.canonical_id.clone(),
     });
+    let themes = entries_to_resolved(&themes_table, |e| ResolvedModuleTheme {
+        canonical_id: e.canonical_id.clone(),
+    });
     let actions = resolve_actions(&manifest.actions, &actions_table, &functions_table)?;
-    let commands = resolve_commands(&manifest.commands, &commands_table, &workflows_table)?;
+    let commands = resolve_commands(
+        &manifest.commands,
+        &commands_table,
+        &workflows_table,
+        &actions_table,
+    )?;
     let workflows = resolve_workflows(
         &manifest.workflows,
         &workflows_table,
@@ -312,7 +340,94 @@ pub fn validate_with_provenance(
         workflows,
         widgets,
         assets,
+        themes,
     })
+}
+
+/// Validate every theme contract, theme and `requires` entry that can be
+/// checked from this manifest alone. A theme for one of this module's own
+/// widgets is checked against that widget's contract here; one for another
+/// module's widget waits for `validate_theme_dependencies`, and must name
+/// that module in `requires`, since the theme is useless without it.
+fn validate_themes(manifest: &ModuleManifest, module_id: &str) -> Result<()> {
+    for (i, w) in manifest.widgets.iter().enumerate() {
+        theme::validate_contract(w, &format!("widget #{i} ({})", w.id))?;
+    }
+    theme::validate_requires_shape(&manifest.requires, module_id)?;
+    for (i, t) in manifest.themes.iter().enumerate() {
+        let label = format!("theme #{i} ({})", t.id);
+        theme::validate_theme_shape(t, &label)?;
+        let (target_module, widget_id) = theme::parse_widget_target(&t.target)?;
+        if target_module != module_id {
+            if !manifest.requires.contains_key(target_module) {
+                return Err(anyhow!(
+                    "{label}: `target` {:?} belongs to module {target_module:?}, which `requires` must name with a version range",
+                    t.target
+                ));
+            }
+            continue;
+        }
+        let Some(widget) = theme::find_target_widget(manifest, widget_id) else {
+            return Err(anyhow!(
+                "{label}: `target` {:?} names no widget this module declares",
+                t.target
+            ));
+        };
+        let Some(contract) = &widget.theme else {
+            return Err(anyhow!(
+                "{label}: widget {:?} declares no `theme` contract, so it cannot be themed",
+                t.target
+            ));
+        };
+        theme::check_against_contract(t, contract).map_err(|e| anyhow!("{label}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Check `requires` and every theme for another module's widget against the
+/// installed modules. Skipped entirely for a manifest with neither, so an
+/// ordinary module's install makes no extra db-proxy call.
+async fn validate_theme_dependencies(
+    manifest: &ModuleManifest,
+    db_proxy: &dyn ModuleDbProxy,
+) -> Result<()> {
+    if manifest.requires.is_empty() && manifest.themes.is_empty() {
+        return Ok(());
+    }
+    let own_id = manifest.id.trim();
+    let installed: Vec<InstalledModule> = db_proxy
+        .list_modules()
+        .await?
+        .into_iter()
+        .filter_map(InstalledModule::from_record)
+        .filter(|m| m.module_id != own_id)
+        .collect();
+    let versions: HashMap<String, String> = installed
+        .iter()
+        .map(|m| (m.module_id.clone(), m.version.clone()))
+        .collect();
+    theme::check_requires(&manifest.requires, &versions)?;
+
+    for (i, t) in manifest.themes.iter().enumerate() {
+        let label = format!("theme #{i} ({})", t.id);
+        let (target_module, widget_id) = theme::parse_widget_target(&t.target)?;
+        if target_module == own_id {
+            continue;
+        }
+        let widget = installed
+            .iter()
+            .find(|m| m.module_id == target_module)
+            .and_then(|m| theme::find_target_widget(&m.manifest, widget_id))
+            .ok_or_else(|| anyhow!("{label}: `target` {:?} names no installed widget", t.target))?;
+        let Some(contract) = &widget.theme else {
+            return Err(anyhow!(
+                "{label}: widget {:?} declares no `theme` contract, so it cannot be themed",
+                t.target
+            ));
+        };
+        theme::check_against_contract(t, contract).map_err(|e| anyhow!("{label}: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Event prefixes no bus-fired trigger may claim: the webhook placeholder
@@ -432,6 +547,41 @@ fn validate_no_ingress_bindings(
     Ok(())
 }
 
+/// A deadline is scheduled by id and invokes a function of this same module,
+/// so a bad declaration can only surface when a module first calls
+/// `ctx.schedule.at` -- or never, for a function that does not exist. All of
+/// it is known here, so it fails the install instead.
+fn validate_deadlines(manifest: &ModuleManifest) -> Result<()> {
+    let functions: HashSet<&str> = manifest.functions.iter().map(|f| f.id.as_str()).collect();
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (i, deadline) in manifest.deadlines.iter().enumerate() {
+        if deadline.id.trim().is_empty() {
+            return Err(anyhow!("deadlines[{i}]: id is required"));
+        }
+        if !seen.insert(deadline.id.as_str()) {
+            return Err(anyhow!(
+                "deadlines[{i}] ({}): duplicate deadline id",
+                deadline.id
+            ));
+        }
+        if !functions.contains(deadline.function.as_str()) {
+            return Err(anyhow!(
+                "deadlines[{i}] ({}): function {:?} is not declared in this manifest's `functions`",
+                deadline.id,
+                deadline.function
+            ));
+        }
+        if !(1..=DEADLINES_MAX_PENDING_CAP).contains(&deadline.max_pending) {
+            return Err(anyhow!(
+                "deadlines[{i}] ({}): maxPending is required and must be between 1 and {DEADLINES_MAX_PENDING_CAP}, got {}",
+                deadline.id,
+                deadline.max_pending
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// One unit of work in an install plan. Each variant names exactly one
 /// thing `module_install.rs`'s executor does against the repository or
 /// db-proxy — see its `SagaState::execute` for what each one runs.
@@ -508,6 +658,7 @@ pub async fn build_install_plan(
     db_proxy: &dyn ModuleDbProxy,
 ) -> Result<Vec<InstallStep>> {
     validate_cross_module_refs(resolved, db_proxy).await?;
+    validate_theme_dependencies(manifest, db_proxy).await?;
 
     let mut nodes: Vec<StepNode> = Vec::new();
     let mut index_of: HashMap<InstallStep, usize> = HashMap::new();
@@ -624,7 +775,9 @@ pub async fn build_install_plan(
 
     for (i, cmd) in resolved.commands.iter().enumerate() {
         let step = InstallStep::RegisterCommand(cmd.canonical_id.clone());
-        let mut deps = vec![InstallStep::CreateModule];
+        // `UploadAssets` builds the `asset_repo_keys` a command's actions
+        // resolve `${asset:...}` markers against, as a workflow's steps do.
+        let mut deps = vec![InstallStep::CreateModule, InstallStep::UploadAssets];
         // A command referencing a workflow declared in *this* manifest
         // must run after that workflow registers. A cross-module
         // workflow reference has no node in this plan — it was already
@@ -740,6 +893,26 @@ async fn validate_cross_module_refs(
                 missing.push(format!(
                     "workflow '{}' step #{} → action '{}' ({})",
                     wf.canonical_id.resource_id(),
+                    si,
+                    action_canonical,
+                    e
+                ));
+            }
+        }
+    }
+
+    for cmd in &resolved.commands {
+        for (si, action_canonical) in cmd.step_actions.iter().enumerate() {
+            if !is_external(action_canonical) || !checked.insert(action_canonical.to_string()) {
+                continue;
+            }
+            if let Err(e) = db_proxy
+                .get_action_ref_by_canonical_id(&action_canonical.to_string())
+                .await
+            {
+                missing.push(format!(
+                    "command '{}' action #{} → action '{}' ({})",
+                    cmd.canonical_id.resource_id(),
                     si,
                     action_canonical,
                     e
@@ -936,6 +1109,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             ));
         }
         validate_field_type(&field.field_type, &format!("{context} field #{i} ({id})"))?;
+        reject_theme_field(&field.field_type, &format!("{context} field #{i} ({id})"))?;
         // A select with nothing to select, or a resource picker that does not
         // say what to pick, renders a dead control. Both are cheap to catch
         // here and confusing to debug in a form.
@@ -963,6 +1137,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 &format!("{context} field #{i} ({id}): `layout` needs a `surface`"),
             )?;
         }
+        validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
         if let Some(any_text) = &field.any_text
@@ -985,6 +1160,35 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
         }
     }
     Ok(())
+}
+
+/// A `list` field declares the fields of one row, and only a `list` does.
+fn validate_item_fields(field: &ManifestConfigField, context: &str) -> Result<()> {
+    let Some(item_fields) = &field.item_fields else {
+        if field.field_type == "list" {
+            return Err(anyhow!("{context}: `list` needs `itemFields`"));
+        }
+        return Ok(());
+    };
+    if field.field_type != "list" {
+        return Err(anyhow!("{context}: only a `list` field takes `itemFields`"));
+    }
+    if item_fields.is_empty() {
+        return Err(anyhow!(
+            "{context}: `itemFields` must name at least one field"
+        ));
+    }
+    for (i, item) in item_fields.iter().enumerate() {
+        if !LIST_ITEM_FIELD_TYPES.contains(&item.field_type.as_str()) {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) has type {:?}; a list row takes only: {}",
+                item.id,
+                item.field_type,
+                LIST_ITEM_FIELD_TYPES.join(", ")
+            ));
+        }
+    }
+    validate_field_list(item_fields, &format!("{context}: `itemFields`"))
 }
 
 /// Validate every declared trigger `sentence` against its trigger's `schema`.
@@ -1076,6 +1280,14 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
             }
         } else {
             validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+            reject_theme_field(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+        }
+        // A module setting declares no `itemFields`, so a list would render
+        // rows with nothing in them.
+        if setting.setting_type == "list" {
+            return Err(anyhow!(
+                "setting #{i} ({id}): a module setting cannot be a `list`"
+            ));
         }
         if setting.setting_type == "button" && setting.action.is_null() {
             return Err(anyhow!("setting #{i} ({id}): `button` needs an `action`"));
@@ -1092,6 +1304,17 @@ fn validate_field_type(field_type: &str, context: &str) -> Result<()> {
         return Err(anyhow!(
             "{context}: unknown `type` {field_type:?}; expected one of {}",
             CONFIG_FIELD_TYPES.join(", ")
+        ));
+    }
+    Ok(())
+}
+
+/// A `theme` field is the engine's to add, to a widget that declares a
+/// contract; declared by hand it would have no contract to list themes for.
+fn reject_theme_field(field_type: &str, context: &str) -> Result<()> {
+    if field_type == THEME_FIELD_TYPE {
+        return Err(anyhow!(
+            "{context}: a `theme` field cannot be declared; declare a `theme` contract on the widget and the engine adds the picker"
         ));
     }
     Ok(())
@@ -1357,6 +1580,7 @@ fn resolve_commands(
     items: &[ManifestCommand],
     commands_table: &KindTable,
     workflows_table: &KindTable,
+    actions_table: &KindTable,
 ) -> Result<Vec<ResolvedCommand>> {
     let mut out = Vec::with_capacity(items.len());
     for (i, command) in items.iter().enumerate() {
@@ -1373,9 +1597,25 @@ fn resolve_commands(
             )?),
             _ => None,
         };
+        if workflow.is_some() && !command.actions.is_empty() {
+            return Err(anyhow!(
+                "command #{i} ({}): declare either `workflow` or `actions`, not both",
+                command.id
+            ));
+        }
+        let mut step_actions = Vec::with_capacity(command.actions.len());
+        for (si, step) in command.actions.iter().enumerate() {
+            step_actions.push(resolve_local_or_canonical(
+                step.action.trim(),
+                ResourceKind::Action,
+                actions_table,
+                &format!("command #{i} ({}) action #{si}", command.id),
+            )?);
+        }
         out.push(ResolvedCommand {
             canonical_id: entry.canonical_id.clone(),
             workflow,
+            step_actions,
         });
     }
     Ok(out)
@@ -1523,7 +1763,16 @@ mod tests {
             .expect("bundled woofx3 manifest validates as a system module");
 
         for (kind, expected) in [
-            ("counter", &["lifetime", "initialValue", "step"][..]),
+            (
+                "counter",
+                &[
+                    "lifetime",
+                    "initialValue",
+                    "step",
+                    "goals",
+                    "announceEveryTime",
+                ][..],
+            ),
             ("timer", &["lifetime", "duration"][..]),
             ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
         ] {
@@ -1539,6 +1788,38 @@ mod tests {
                 .collect();
             assert_eq!(fields, expected, "{kind}");
         }
+    }
+
+    /// The sample theme pack is the reference for authors, so it has to fit
+    /// the bundled Timer widget's contract as that contract stands.
+    #[test]
+    fn the_sample_theme_pack_fits_the_bundled_timer_contract() {
+        let bundled: ModuleManifest =
+            serde_json::from_str(include_str!("../../../modules/woofx3/manifest.json"))
+                .expect("bundled woofx3 manifest parses");
+        let pack: ModuleManifest = serde_json::from_str(include_str!(
+            "../../../examples/theme-packs/timer-neon/manifest.json"
+        ))
+        .expect("sample theme pack parses");
+        validate(&pack).expect("sample theme pack validates");
+
+        let timer = bundled
+            .widgets
+            .iter()
+            .find(|w| w.id == "timer")
+            .expect("woofx3 declares the timer widget");
+        let contract = timer
+            .theme
+            .as_ref()
+            .expect("the timer widget declares a theme contract");
+        for t in &pack.themes {
+            assert_eq!(t.target, "woofx3:widget:timer");
+            theme::check_against_contract(t, contract).expect("sample theme fits the contract");
+        }
+        let mut installed = HashMap::new();
+        installed.insert("woofx3".to_string(), bundled.version.clone());
+        theme::check_requires(&pack.requires, &installed)
+            .expect("the bundled version satisfies the sample pack's requires");
     }
 
     fn parse(json: &str) -> ModuleManifest {
@@ -2039,6 +2320,83 @@ mod tests {
         );
         let err = validate(&m).expect_err("picker with nothing to pick");
         assert!(err.to_string().contains("resourceKind"), "{err}");
+    }
+
+    fn resource_with_field(field: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "resources": [{{ "kind": "counter", "name": "Counter", "schema": [{field}] }}]"#
+        ))
+    }
+
+    #[test]
+    fn accepts_a_list_of_plain_rows() {
+        let m = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                { "id": "value", "label": "Goal", "type": "number", "required": true },
+                { "id": "name", "label": "Name", "type": "text" }
+            ] }"#,
+        );
+        validate(&m).expect("a list of number and text rows is valid");
+    }
+
+    #[test]
+    fn rejects_a_list_that_does_not_say_what_a_row_holds() {
+        let missing = resource_with_field(r#"{ "id": "goals", "label": "Goals", "type": "list" }"#);
+        let err = validate(&missing).expect_err("list with no rows declared");
+        assert!(
+            err.to_string().contains("`list` needs `itemFields`"),
+            "{err}"
+        );
+
+        let empty = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [] }"#,
+        );
+        let err = validate(&empty).expect_err("list with an empty row");
+        assert!(err.to_string().contains("at least one field"), "{err}");
+    }
+
+    #[test]
+    fn rejects_item_fields_on_anything_but_a_list() {
+        let m = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "text", "itemFields": [
+                { "id": "value", "label": "Goal", "type": "number" }
+            ] }"#,
+        );
+        let err = validate(&m).expect_err("itemFields on a text field");
+        assert!(err.to_string().contains("only a `list`"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_row_field_that_does_not_fit_in_a_row() {
+        let nested = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                { "id": "inner", "label": "Inner", "type": "list", "itemFields": [
+                    { "id": "v", "label": "V", "type": "number" }
+                ] }
+            ] }"#,
+        );
+        let err = validate(&nested).expect_err("a list inside a list");
+        assert!(err.to_string().contains("a list row takes only"), "{err}");
+    }
+
+    #[test]
+    fn validates_row_fields_like_any_other_field_list() {
+        let m = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                { "id": "value", "label": "Goal", "type": "number" },
+                { "id": "value", "label": "Again", "type": "text" }
+            ] }"#,
+        );
+        let err = validate(&m).expect_err("duplicate row field id");
+        assert!(err.to_string().contains("duplicate"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_list_module_setting() {
+        let m = minimal(r#", "settings": [{ "id": "goals", "label": "Goals", "type": "list" }]"#);
+        let err = validate(&m).expect_err("a list setting");
+        assert!(err.to_string().contains("cannot be a `list`"), "{err}");
     }
 
     #[test]
@@ -2567,6 +2925,84 @@ mod tests {
         );
     }
 
+    const SWEEP_FUNCTION: &str = r#",
+            "functions": [{ "id": "timer.expire", "name": "Expire", "runtime": "js", "path": "functions/timer.js" }]"#;
+
+    fn with_deadlines(deadlines: &str) -> ModuleManifest {
+        minimal(&format!(r#"{SWEEP_FUNCTION}, "deadlines": {deadlines}"#))
+    }
+
+    #[test]
+    fn a_declared_deadline_installs_and_parses_both_spellings() {
+        let m = with_deadlines(
+            r#"[
+                { "id": "timer_end", "function": "timer.expire", "maxPending": 256, "description": "d" },
+                { "id": "other", "function": "timer.expire", "max_pending": 1 }
+            ]"#,
+        );
+        validate(&m).expect("a well-formed deadline must install");
+        assert_eq!(m.deadlines[0].max_pending, 256);
+        assert_eq!(m.deadlines[1].max_pending, 1);
+    }
+
+    #[test]
+    fn a_duplicate_deadline_id_fails_the_install() {
+        let m = with_deadlines(
+            r#"[
+                { "id": "timer_end", "function": "timer.expire", "maxPending": 4 },
+                { "id": "timer_end", "function": "timer.expire", "maxPending": 4 }
+            ]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("duplicate deadline id"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_naming_an_undeclared_function_fails_the_install() {
+        let m =
+            with_deadlines(r#"[{ "id": "timer_end", "function": "timer.gone", "maxPending": 4 }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("timer.gone"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_without_max_pending_fails_the_install() {
+        let m = with_deadlines(r#"[{ "id": "timer_end", "function": "timer.expire" }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("maxPending is required"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_over_the_pending_cap_fails_the_install() {
+        let m = with_deadlines(&format!(
+            r#"[{{ "id": "timer_end", "function": "timer.expire", "maxPending": {} }}]"#,
+            DEADLINES_MAX_PENDING_CAP + 1
+        ));
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("between 1 and"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_without_an_id_fails_the_install() {
+        let m = with_deadlines(r#"[{ "id": " ", "function": "timer.expire", "maxPending": 4 }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("id is required"), "{err}");
+    }
+
+    #[test]
+    fn run_on_load_defaults_off_and_parses_both_spellings() {
+        let m = minimal(&format!(
+            r#"{SWEEP_FUNCTION}, "backgroundTasks": [
+                {{ "id": "a", "function": "timer.expire", "schedule": "* * * * *" }},
+                {{ "id": "b", "function": "timer.expire", "schedule": "* * * * *", "runOnLoad": true }},
+                {{ "id": "c", "function": "timer.expire", "schedule": "* * * * *", "run_on_load": true }}
+            ]"#
+        ));
+        validate(&m).expect("runOnLoad installs");
+        let flags: Vec<bool> = m.background_tasks.iter().map(|t| t.run_on_load).collect();
+        assert_eq!(flags, vec![false, true, true]);
+    }
+
     #[test]
     fn a_declared_step_id_is_kept() {
         let m = minimal(
@@ -2950,6 +3386,53 @@ mod tests {
     }
 
     #[test]
+    fn resolves_command_actions() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "actions": [{ "action": "a1" }, { "action": "other_mod:action:say" }] }]"#,
+        );
+        let r = validate(&m).expect("ok");
+        let actions: Vec<String> = r.commands[0]
+            .step_actions
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        assert_eq!(actions, ["test_mod:action:a1", "other_mod:action:say"]);
+        assert!(r.commands[0].workflow.is_none());
+    }
+
+    #[test]
+    fn rejects_command_action_naming_no_local_action() {
+        let err = validate(&minimal(
+            r#",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "actions": [{ "action": "missing" }] }]"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("command #0 (c1) action #0"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_command_declaring_both_workflow_and_actions() {
+        let err = validate(&minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }],
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "workflow": "w1", "actions": [{ "action": "a1" }] }]"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("either `workflow` or `actions`"), "got: {err}");
+    }
+
+    #[test]
     fn command_without_workflow_resolves_to_none() {
         let m = minimal(
             r#",
@@ -3083,5 +3566,212 @@ mod tests {
         // webhook event), but the entry must still be present and
         // canonicalized so cross-references resolve.
         assert_eq!(r.assets[0].canonical_id.to_string(), "test_mod:asset:raw");
+    }
+
+    // ---------------------------------------------------------------
+    // Themes: contracts, theme entries, `requires`
+    // ---------------------------------------------------------------
+
+    const COUNTDOWN_CONTRACT: &str = r##"{
+        "contractVersion": 1,
+        "variables": [{ "id": "accent", "type": "color", "default": "#7ad7ff" }],
+        "assetSlots": [{ "id": "background", "kinds": ["image", "video"] }]
+    }"##;
+
+    fn timerpro_manifest_json() -> String {
+        format!(
+            r#"{{"id": "timerpro", "name": "Timer Pro", "version": "1.2.3",
+                 "widgets": [{{"id": "countdown", "name": "Countdown",
+                              "entry": "widgets/countdown/index.html", "assets": "widgets/countdown",
+                              "theme": {COUNTDOWN_CONTRACT}}},
+                             {{"id": "plain", "name": "Plain",
+                              "entry": "widgets/plain/index.html", "assets": "widgets/plain"}}]}}"#
+        )
+    }
+
+    fn installed_timerpro() -> super::super::db_proxy::ModuleRecord {
+        serde_json::from_value(serde_json::json!({
+            "id": "row-1",
+            "module_id": "timerpro",
+            "module_key": "timerpro:1.2.3:abc1234",
+            "name": "Timer Pro",
+            "version": "1.2.3",
+            "state": "active",
+            "manifest": timerpro_manifest_json(),
+        }))
+        .expect("module record")
+    }
+
+    fn neon_pack(requires: &str, theme: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "neonpack", "name": "Neon", "version": "1.0.0",
+                 "requires": {requires},
+                 "themes": [{theme}]}}"#
+        ))
+    }
+
+    const NEON: &str = r##"{"id": "neon", "name": "Neon", "target": "timerpro:widget:countdown",
+        "contractVersion": 1, "variables": { "accent": "#ff2bd6" },
+        "assets": { "background": "assets/grid.webm" }}"##;
+
+    async fn plan_err(m: &ModuleManifest, db_proxy: &FakeDbProxyClient) -> String {
+        let resolved = validate(m).expect("static validation passes");
+        build_install_plan(m, &resolved, db_proxy)
+            .await
+            .expect_err("install plan should fail")
+            .to_string()
+    }
+
+    #[test]
+    fn a_theme_gets_the_theme_canonical_kind() {
+        let m = neon_pack(r#"{"timerpro": "^1.2.0"}"#, NEON);
+        let resolved = validate(&m).expect("valid");
+        assert_eq!(
+            resolved.themes[0].canonical_id.to_string(),
+            "neonpack:theme:neon"
+        );
+    }
+
+    #[test]
+    fn a_manifest_may_not_declare_a_theme_field() {
+        let m = minimal(
+            r#",
+            "widgets": [{ "id": "w", "name": "W",
+                          "settingsSchema": [{ "id": "look", "label": "Look", "type": "theme" }] }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("a `theme` field cannot be declared"), "{err}");
+    }
+
+    #[test]
+    fn a_theme_for_another_module_must_require_it() {
+        let err = validate(&neon_pack("{}", NEON)).unwrap_err().to_string();
+        assert!(err.contains("which `requires` must name"), "{err}");
+    }
+
+    #[test]
+    fn a_module_may_theme_its_own_widget() {
+        let m = parse(&format!(
+            r##"{{"id": "timerpro", "name": "Timer Pro", "version": "1.2.3",
+                 "widgets": [{{"id": "countdown", "name": "Countdown",
+                              "entry": "widgets/countdown/index.html", "assets": "widgets/countdown",
+                              "theme": {COUNTDOWN_CONTRACT}}}],
+                 "themes": [{{"id": "free", "name": "Free", "target": "timerpro:widget:countdown",
+                              "contractVersion": 1, "variables": {{ "accent": "#00ff00" }}}}]}}"##
+        ));
+        validate(&m).expect("own theme validates");
+    }
+
+    #[test]
+    fn a_module_cannot_theme_its_own_widget_without_a_contract() {
+        let m = parse(
+            r#"{"id": "timerpro", "name": "Timer Pro", "version": "1.2.3",
+                 "widgets": [{"id": "plain", "name": "Plain"}],
+                 "themes": [{"id": "free", "name": "Free", "target": "timerpro:widget:plain",
+                             "contractVersion": 1}]}"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("declares no `theme` contract"), "{err}");
+    }
+
+    #[test]
+    fn a_theme_entry_with_code_fails_to_parse() {
+        let err = serde_json::from_str::<ModuleManifest>(
+            r#"{"id": "neonpack", "name": "Neon",
+                "themes": [{"id": "neon", "name": "Neon", "target": "timerpro:widget:countdown",
+                            "contractVersion": 1, "functions": []}]}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("unknown field `functions`"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_requires_is_not_installed() {
+        let err = plan_err(
+            &neon_pack(r#"{"timerpro": "^1.2.0"}"#, NEON),
+            &FakeDbProxyClient::new(),
+        )
+        .await;
+        assert!(err.contains("timerpro ^1.2.0 is not installed"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_the_installed_version_is_out_of_range() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^2.0.0"}"#, NEON), &db_proxy).await;
+        assert!(err.contains("1.2.3 is installed"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_the_target_widget_is_not_installed() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let theme = NEON.replace("timerpro:widget:countdown", "timerpro:widget:gone");
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^1.2.0"}"#, &theme), &db_proxy).await;
+        assert!(err.contains("names no installed widget"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_the_target_widget_has_no_contract() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let theme = NEON.replace("timerpro:widget:countdown", "timerpro:widget:plain");
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^1.2.0"}"#, &theme), &db_proxy).await;
+        assert!(err.contains("declares no `theme` contract"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_the_contract_version_differs() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let theme = NEON.replace("\"contractVersion\": 1", "\"contractVersion\": 2");
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^1.2.0"}"#, &theme), &db_proxy).await;
+        assert!(
+            err.contains("theme #0 (neon): `contractVersion` 2 does not match"),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_a_theme_sets_an_undeclared_variable() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let theme = NEON.replace("\"accent\"", "\"glow\"");
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^1.2.0"}"#, &theme), &db_proxy).await;
+        assert!(err.contains("`variables.glow`"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_a_variable_value_does_not_fit() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let theme = NEON.replace("#ff2bd6", "red; background: url(x)");
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^1.2.0"}"#, &theme), &db_proxy).await;
+        assert!(err.contains("`variables.accent`"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_an_asset_does_not_match_the_slot_kinds() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let theme = NEON.replace("assets/grid.webm", "assets/grid.mp3");
+        let err = plan_err(&neon_pack(r#"{"timerpro": "^1.2.0"}"#, &theme), &db_proxy).await;
+        assert!(err.contains("`assets.background`"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_theme_pack_plans_once_its_target_is_installed() {
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_timerpro()]);
+        let m = neon_pack(r#"{"timerpro": "^1.2.0"}"#, NEON);
+        let resolved = validate(&m).expect("valid");
+        build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("theme pack plans");
+    }
+
+    #[tokio::test]
+    async fn a_module_without_themes_or_requires_never_lists_modules() {
+        let m = minimal("");
+        let resolved = validate(&m).expect("valid");
+        let db_proxy = FakeDbProxyClient::new();
+        build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("plans");
+        assert!(!db_proxy.calls().contains(&"list_modules".to_string()));
     }
 }

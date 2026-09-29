@@ -13,8 +13,6 @@ pub struct Workflow {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub description: ::prost::alloc::string::String,
-    #[prost(string, tag="4")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(bool, tag="6")]
     pub enabled: bool,
     /// Default variables for the workflow
@@ -69,9 +67,6 @@ pub struct WorkflowExecution {
     /// User ID who triggered the execution
     #[prost(string, tag="4")]
     pub started_by: ::prost::alloc::string::String,
-    /// ID of the application
-    #[prost(string, tag="5")]
-    pub application_id: ::prost::alloc::string::String,
     /// Input variables for the workflow
     #[prost(map="string, string", tag="6")]
     pub inputs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
@@ -152,8 +147,6 @@ pub struct CreateWorkflowRequest {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub description: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(bool, tag="5")]
     pub enabled: bool,
     #[prost(map="string, string", tag="7")]
@@ -241,8 +234,6 @@ pub struct DeleteWorkflowRequest {
 /// Request to list workflows
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListWorkflowsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(bool, tag="2")]
     pub include_disabled: bool,
     #[prost(int32, tag="3")]
@@ -276,9 +267,6 @@ pub struct ExecuteWorkflowRequest {
     /// ID of the workflow to execute
     #[prost(string, tag="1")]
     pub workflow_id: ::prost::alloc::string::String,
-    /// ID of the application
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// User ID who triggered the execution
     #[prost(string, tag="3")]
     pub started_by: ::prost::alloc::string::String,
@@ -331,9 +319,6 @@ pub struct ListWorkflowExecutionsRequest {
     /// Filter by workflow ID
     #[prost(string, tag="1")]
     pub workflow_id: ::prost::alloc::string::String,
-    /// Filter by application ID
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Filter by status
     #[prost(string, tag="3")]
     pub status: ::prost::alloc::string::String,
@@ -379,9 +364,6 @@ pub struct RecordWorkflowRunRequest {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub workflow_id: ::prost::alloc::string::String,
-    /// The owning user is resolved from this
-    #[prost(string, tag="3")]
-    pub application_id: ::prost::alloc::string::String,
     /// Provenance: "twitch", "dashboard", ...
     #[prost(string, tag="4")]
     pub triggered_by: ::prost::alloc::string::String,
@@ -412,8 +394,6 @@ pub struct UpdateWorkflowRunStatusRequest {
 pub struct RecordWorkflowRunStepRequest {
     #[prost(string, tag="1")]
     pub execution_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub task_id: ::prost::alloc::string::String,
     #[prost(string, tag="4")]

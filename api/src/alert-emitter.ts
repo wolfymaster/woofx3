@@ -34,20 +34,11 @@ interface CloudEventEnvelope<T> {
 type Mapper<T> = (data: T) => AlertContext | null;
 
 export class AlertEmitter {
-  private channelId: string;
-
   constructor(
     private nats: NATSClient,
     private webhook: ConvexWebhookClient,
-    channelId: string,
     private logger: SharedLogger
-  ) {
-    this.channelId = channelId;
-  }
-
-  setChannelId(channelId: string): void {
-    this.channelId = channelId;
-  }
+  ) {}
 
   async start(): Promise<void> {
     await this.bind<Follow>(SUBJECT_FOLLOW, mapFollow);
@@ -57,7 +48,7 @@ export class AlertEmitter {
     await this.bind<HypeTrainBegin>(SUBJECT_HYPETRAIN, mapHypeTrain);
     await this.bind<Raid>(SUBJECT_RAID, mapRaid);
     await this.bind<StreamOnline>(SUBJECT_STREAM_ONLINE, mapStreamOnline);
-    this.logger.info("AlertEmitter started", { channelId: this.channelId });
+    this.logger.info("AlertEmitter started");
   }
 
   private async bind<T>(subject: string, mapper: Mapper<T>): Promise<void> {
@@ -82,7 +73,7 @@ export class AlertEmitter {
     if (!ctx) {
       return;
     }
-    void this.webhook.sendAlert(this.channelId, ctx).catch((err) => {
+    void this.webhook.sendAlert(ctx).catch((err) => {
       this.logger.error("AlertEmitter: webhook delivery threw", {
         subject,
         error: err instanceof Error ? err.message : String(err),

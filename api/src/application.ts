@@ -2,6 +2,7 @@ import type { ApplicationContext, Application as RuntimeApplication, IApplicatio
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { StreamGaugeSampler } from "./stream-gauge-sampler";
 import type { Msg } from "@woofx3/nats/src/types";
 
 export type ApiServices = {
@@ -33,6 +34,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly context: ApiRuntimeContext;
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
+  private gaugeSampler: StreamGaugeSampler | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -51,9 +53,14 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initModuleHandlers },
       { initOverlayTokenHandlers },
       { initSceneHandlers },
+      { initCommandHandlers },
+      { SessionSummaryEmitter },
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
       { StreamSessionResolver },
+      { StreamGaugeSampler },
+      { TwitchHelixGauges },
+      { UserEventRecorder },
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
@@ -61,7 +68,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initWorkflowRunHandlers },
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
-      { ApplicationScope },
       { connectMessageBus },
     ] = await Promise.all([
       import("@woofx3/nats"),
@@ -75,9 +81,14 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./module-event-handlers"),
       import("./overlay-token-handlers"),
       import("./scene-event-handlers"),
+      import("./command-event-handlers"),
+      import("./session-summary-emitter"),
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
       import("./stream-session-resolver"),
+      import("./stream-gauge-sampler"),
+      import("./twitch-helix-gauges"),
+      import("./user-event-recorder"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
@@ -85,7 +96,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
       import("./readiness"),
-      import("./application-scope"),
       import("./message-bus"),
     ]);
 
@@ -152,47 +162,18 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       });
     }
 
-    const webhookClient = new WebhookClient(db, logger, null);
+    const webhookClient = new WebhookClient(db, logger);
     api.setWebhookClient(webhookClient);
-
-    // Components that exist per application. They start here when the
-    // engine is already registered, and otherwise at the first
-    // registerClient, which creates the application (see ApiGateway).
-    const applicationScope = new ApplicationScope(async (applicationId) => {
-      const convexWebhookClient = new ConvexWebhookClient({ db, logger, applicationId });
-      await convexWebhookClient.loadConfig();
-
-      if (!natsClient) {
-        logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
-        return;
-      }
-      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, applicationId, logger);
-      await alertEmitter.start();
-
-      const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
-      await storageChangeEmitter.start();
-
-      // A session is scoped to an application; there is nothing to resolve
-      // before onboarding.
-      const streamSessionResolver = new StreamSessionResolver(natsClient, db, applicationId, logger, webhookClient);
-      await streamSessionResolver.start();
-    }, logger);
-
     try {
-      const existing = await db.getDefaultApplication();
-      if (existing) {
-        api.setApplicationId(existing.id);
-        await webhookClient.refreshCallbackUrls();
-        logger.info("Warmed applicationId cache from existing default", { applicationId: existing.id });
-        await applicationScope.start(existing.id);
-      } else {
-        logger.info("No default application yet; application-scoped components start at the first registration");
-      }
+      await webhookClient.refreshCallbackUrls();
     } catch (err) {
-      logger.warn("Default-application warmup failed (continuing)", {
+      logger.warn("Loading webhook callback URLs failed; they load again at the next registration", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+
+    const convexWebhookClient = new ConvexWebhookClient({ db, logger });
+    await convexWebhookClient.loadConfig();
 
     // api.initSubscriptions() covers only the module.trigger.* and
     // twitch stream lifecycle subscriptions — the ones that need more
@@ -203,10 +184,28 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     await api.initSubscriptions();
 
     if (natsClient) {
-      // Started here rather than alongside AlertEmitter above: that block is
-      // gated on a default application already existing, and this needs only
-      // the bus — a dashboard should receive events before onboarding has
-      // resolved an applicationId.
+      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, logger);
+      await alertEmitter.start();
+
+      const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
+      await storageChangeEmitter.start();
+
+      // Subscribed before the resolver starts, so no `session.ended` it
+      // publishes can be missed.
+      const sessionSummaryEmitter = new SessionSummaryEmitter(natsClient, db, webhookClient, logger);
+      await sessionSummaryEmitter.start();
+
+      const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
+      await streamSessionResolver.start();
+
+      const userEventRecorder = new UserEventRecorder(natsClient, db, logger);
+      await userEventRecorder.start();
+
+      // Inside the bus block because segments open and close only through the
+      // resolver above; without a bus, "is a segment open" would go stale.
+      this.gaugeSampler = new StreamGaugeSampler(db, new TwitchHelixGauges(db), logger);
+      this.gaugeSampler.start();
+
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
       await streamEventBroadcaster.start();
       api.setStreamEventBroadcaster(streamEventBroadcaster);
@@ -215,6 +214,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);
+      await initCommandHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);
       await initWidgetStatusHandlers(natsClient, webhookClient, logger);
       // Run history, projected from the db-proxy outbox. Distinct from
@@ -222,10 +222,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       // waiting on one run: this carries persisted rows for the history.
       await initWorkflowRunHandlers(natsClient, webhookClient, logger);
 
-      // Needs only the bus and the webhook client, so it starts here rather
-      // than in the applicationId-gated block above: each run event carries
-      // its own applicationId, resolved by the engine that owns the workflow
-      // definition.
       const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
       await workflowRunEmitter.start();
     }
@@ -234,7 +230,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     api.setAuthInvalidate(() => auth.invalidateCache());
     const gateway = new ApiGateway(api, auth, db, logger, config.registrationToken);
     gateway.setWebhookClient(webhookClient);
-    gateway.setApplicationScope(applicationScope);
 
     this.server = createHttpServer({
       port: config.port,
@@ -266,6 +261,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   }
 
   async terminate(): Promise<void> {
+    this.gaugeSampler?.stop();
+    this.gaugeSampler = null;
     this.server?.stop();
     this.server = null;
   }

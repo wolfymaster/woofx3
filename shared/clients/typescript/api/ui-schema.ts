@@ -33,6 +33,12 @@ import type { ConditionOperator } from "./workflow-definition";
  * `text` and `toggle` are the spellings — not `string` and `boolean`, which
  * described the stored value rather than the control and only ever appeared on
  * module settings.
+ *
+ * `theme` is never declared by a manifest: barkloader adds it, as the field
+ * `THEME_SETTING_ID`, to a widget that declares a theme contract. Its value is
+ * a theme's canonical id (`{moduleId}:theme:{id}`), or absent for the widget's
+ * own look. Mirrors `CONFIG_FIELD_TYPES` in barkloader's module_manifest.rs,
+ * which checks the two lists match.
  */
 export const CONFIG_FIELD_TYPES = [
   "number",
@@ -46,9 +52,21 @@ export const CONFIG_FIELD_TYPES = [
   "resource_ref",
   "button",
   "layout",
+  "list",
+  "theme",
 ] as const;
 
 export type ConfigFieldType = (typeof CONFIG_FIELD_TYPES)[number];
+
+/** The settings key of the theme picker barkloader adds to a themeable widget. */
+export const THEME_SETTING_ID = "theme";
+
+/**
+ * The types a `list` field's `itemFields` may use: controls that fit in one
+ * row and hold a plain value. Mirrors `LIST_ITEM_FIELD_TYPES` in barkloader's
+ * module_manifest.rs.
+ */
+export const LIST_ITEM_FIELD_TYPES = ["number", "text", "select", "toggle", "color"] as const;
 
 /**
  * The places a widget can be put. A `layout` field places widgets of one
@@ -105,6 +123,11 @@ export interface ConfigField {
   resourceKind?: string;
   /** Required for `type: "layout"` — whose widgets the layout places. */
   surface?: WidgetSurface;
+  /**
+   * Required for `type: "list"` — the fields of one row. The collected value
+   * is an array of objects, each keyed by these fields' ids.
+   */
+  itemFields?: ConfigField[];
   /**
    * Present only on `type: "button"`, which collects no value and instead
    * fires a request: `{ kind: "internal", request: {...}, timeoutMs? }` or
@@ -168,11 +191,12 @@ export function parseFieldList(raw: string | undefined | null): ConfigField[] {
   } catch {
     return [];
   }
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
+  return Array.isArray(parsed) ? parseFieldEntries(parsed) : [];
+}
+
+function parseFieldEntries(entries: unknown[]): ConfigField[] {
   const fields: ConfigField[] = [];
-  for (const entry of parsed) {
+  for (const entry of entries) {
     if (typeof entry !== "object" || entry === null) {
       continue;
     }
@@ -183,6 +207,19 @@ export function parseFieldList(raw: string | undefined | null): ConfigField[] {
       typeof candidate.label !== "string" ||
       !isConfigFieldType(candidate.type)
     ) {
+      continue;
+    }
+    if (candidate.type === "list") {
+      // A list whose rows hold nothing it can render is a half-built control.
+      const itemFields = Array.isArray(candidate.itemFields)
+        ? parseFieldEntries(candidate.itemFields).filter((item) =>
+            (LIST_ITEM_FIELD_TYPES as readonly string[]).includes(item.type)
+          )
+        : [];
+      if (itemFields.length === 0) {
+        continue;
+      }
+      fields.push({ ...(candidate as ConfigField), itemFields });
       continue;
     }
     fields.push(candidate as ConfigField);

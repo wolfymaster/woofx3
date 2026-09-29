@@ -235,7 +235,6 @@ describe("WoofWoofWoof application", () => {
   test("a command's actions are dispatched to the engine, carrying the command event", async () => {
     const songCmd = {
       id: "c1",
-      applicationId: "app-1",
       command: "customsong",
       actionsJson: JSON.stringify([
         { id: "action-1", action: "function", function: "song_request" },
@@ -272,13 +271,11 @@ describe("WoofWoofWoof application", () => {
     const payload = JSON.parse(new TextDecoder().decode(dispatch.data)) as {
       data: {
         label: string;
-        applicationId: string;
         actions: { action: string; function?: string }[];
         event: { type: string; data: Record<string, unknown> };
       };
     };
     expect(payload.data.label).toBe("command:customsong");
-    expect(payload.data.applicationId).toBe("app-1");
     expect(payload.data.actions.map((a) => a.action)).toEqual(["function", "chat.reply"]);
     expect(payload.data.actions[0]?.function).toBe("song_request");
     // The actions resolve against the same payload a workflow triggered by
@@ -300,7 +297,6 @@ describe("WoofWoofWoof application", () => {
   test("a command with no actions announces itself and runs nothing", async () => {
     const triggerOnly = {
       id: "c2",
-      applicationId: "app-1",
       command: "raid",
       actionsJson: "[]",
       cooldown: 0,
@@ -331,7 +327,6 @@ describe("WoofWoofWoof application", () => {
   test("a command whose actions are unreadable runs nothing rather than breaking the command", async () => {
     const brokenCmd = {
       id: "c3",
-      applicationId: "app-1",
       command: "broken",
       actionsJson: "{not json",
       cooldown: 0,

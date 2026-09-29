@@ -82,7 +82,6 @@ func (ResponseStatus_Code) EnumDescriptor() ([]byte, []int) {
 type RequestContext struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClientId      string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ModuleKey     string                 `protobuf:"bytes,3,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -121,13 +120,6 @@ func (*RequestContext) Descriptor() ([]byte, []int) {
 func (x *RequestContext) GetClientId() string {
 	if x != nil {
 		return x.ClientId
-	}
-	return ""
-}
-
-func (x *RequestContext) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -387,12 +379,11 @@ var File_common_proto protoreflect.FileDescriptor
 
 const file_common_proto_rawDesc = "" +
 	"\n" +
-	"\fcommon.proto\x12\x06common\"s\n" +
+	"\fcommon.proto\x12\x06common\"b\n" +
 	"\x0eRequestContext\x12\x1b\n" +
-	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1d\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1d\n" +
 	"\n" +
-	"module_key\x18\x03 \x01(\tR\tmoduleKey\"\xb5\x01\n" +
+	"module_key\x18\x03 \x01(\tR\tmoduleKeyJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xb5\x01\n" +
 	"\x0eResponseStatus\x12/\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1b.common.ResponseStatus.CodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"X\n" +

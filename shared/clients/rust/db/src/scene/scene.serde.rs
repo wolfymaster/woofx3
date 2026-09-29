@@ -7,9 +7,6 @@ impl serde::Serialize for CreateSceneRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.name.is_empty() {
             len += 1;
         }
@@ -29,9 +26,6 @@ impl serde::Serialize for CreateSceneRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("scene.CreateSceneRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
         }
@@ -60,8 +54,6 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "name",
             "description",
             "widgets_json",
@@ -76,7 +68,6 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Name,
             Description,
             WidgetsJson,
@@ -104,7 +95,6 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             "widgetsJson" | "widgets_json" => Ok(GeneratedField::WidgetsJson),
@@ -130,7 +120,6 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut name__ = None;
                 let mut description__ = None;
                 let mut widgets_json__ = None;
@@ -139,12 +128,6 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                 let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Name => {
                             if name__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("name"));
@@ -184,7 +167,6 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                     }
                 }
                 Ok(CreateSceneRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                     widgets_json: widgets_json__.unwrap_or_default(),
@@ -387,9 +369,6 @@ impl serde::Serialize for ListScenesRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.page != 0 {
             len += 1;
         }
@@ -403,9 +382,6 @@ impl serde::Serialize for ListScenesRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("scene.ListScenesRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if self.page != 0 {
             struct_ser.serialize_field("page", &self.page)?;
         }
@@ -428,8 +404,6 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "page",
             "page_size",
             "pageSize",
@@ -441,7 +415,6 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Page,
             PageSize,
             SortBy,
@@ -467,7 +440,6 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "page" => Ok(GeneratedField::Page),
                             "pageSize" | "page_size" => Ok(GeneratedField::PageSize),
                             "sortBy" | "sort_by" => Ok(GeneratedField::SortBy),
@@ -491,19 +463,12 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut page__ = None;
                 let mut page_size__ = None;
                 let mut sort_by__ = None;
                 let mut sort_desc__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Page => {
                             if page__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("page"));
@@ -535,7 +500,6 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                     }
                 }
                 Ok(ListScenesRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     page: page__.unwrap_or_default(),
                     page_size: page_size__.unwrap_or_default(),
                     sort_by: sort_by__.unwrap_or_default(),
@@ -724,9 +688,6 @@ impl serde::Serialize for Scene {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.name.is_empty() {
             len += 1;
         }
@@ -754,9 +715,6 @@ impl serde::Serialize for Scene {
         let mut struct_ser = serializer.serialize_struct("scene.Scene", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -793,8 +751,6 @@ impl<'de> serde::Deserialize<'de> for Scene {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "name",
             "description",
             "widgets_json",
@@ -814,7 +770,6 @@ impl<'de> serde::Deserialize<'de> for Scene {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Name,
             Description,
             WidgetsJson,
@@ -845,7 +800,6 @@ impl<'de> serde::Deserialize<'de> for Scene {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             "widgetsJson" | "widgets_json" => Ok(GeneratedField::WidgetsJson),
@@ -874,7 +828,6 @@ impl<'de> serde::Deserialize<'de> for Scene {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut name__ = None;
                 let mut description__ = None;
                 let mut widgets_json__ = None;
@@ -890,12 +843,6 @@ impl<'de> serde::Deserialize<'de> for Scene {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Name => {
                             if name__.is_some() {
@@ -949,7 +896,6 @@ impl<'de> serde::Deserialize<'de> for Scene {
                 }
                 Ok(Scene {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                     widgets_json: widgets_json__.unwrap_or_default(),

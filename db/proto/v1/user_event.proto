@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package user_event;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// The log of platform events viewers caused -- cheers, follows, subs, gifts,
+// raids, redemptions -- that Analytics aggregates. Append-only: a fact is never
+// rewritten, so every total derived from it can be recomputed.
+//
+// The engine records each event where it enters the engine, so a fact does not
+// depend on anything reacting to it. See docs/services/analytics.md.
+service UserEventService {
+  // Records one event. Idempotent on (source, event_id), the CloudEvent's
+  // identity: recording the same event again leaves the stored row untouched
+  // and returns it with `created` false.
+  rpc RecordUserEvent(RecordUserEventRequest) returns (RecordUserEventResponse);
+
+  // The reads below attribute an event to a stream session by when it
+  // happened: a session owns the time from its start until a later session
+  // replaced it, and every event in that span belongs to it, whatever it was
+  // stamped with. The stamp records who owned the time when the event was
+  // published, which a later split or merge can change; the session's bounds
+  // are the current answer, and they are resolved once per query rather than
+  // per event.
+  //
+  // Events with no platform_user_id count toward session totals and never
+  // toward a viewer.
+
+  // Channel totals for one session. `not_found` for an unknown session.
+  rpc GetStreamSessionEventTotals(GetStreamSessionEventTotalsRequest) returns (GetStreamSessionEventTotalsResponse);
+  // One viewer's totals, for a session or, without one, over every event
+  // recorded. `not_found` for an unknown session; a viewer with no events has
+  // zero totals.
+  rpc GetViewerEventTotals(GetViewerEventTotalsRequest) returns (GetViewerEventTotalsResponse);
+  // Viewers ranked by bits cheered or subs gifted, for a session or lifetime,
+  // keeping only those whose total reaches `min_total`. `not_found` for an
+  // unknown session.
+  rpc ListViewerLeaderboard(ListViewerLeaderboardRequest) returns (ListViewerLeaderboardResponse);
+
+  // The latest events that occurred at or after `since`, newest first, and how
+  // many occurred in that span. Reads the log by time alone, not by session.
+  rpc ListRecentUserEvents(ListRecentUserEventsRequest) returns (ListRecentUserEventsResponse);
+}
+
+message UserEvent {
+  string id = 1;
+  // The CloudEvent `id` and `source` the event was published with.
+  string event_id = 2;
+  string source = 3;
+  // The CloudEvent `type`, e.g. `channel.cheer`.
+  string event_type = 4;
+  // The CloudEvent `platform` extension, e.g. `twitch`.
+  string platform = 5;
+  // The viewer's id on `platform`. Absent when the event is not attributable
+  // to anyone -- an anonymous cheer or gift -- which keeps it out of every
+  // per-viewer total while it still counts toward channel totals.
+  optional string platform_user_id = 6;
+  // The viewer's display name when the event happened. Informational: names
+  // change, so per-viewer grouping uses platform_user_id.
+  optional string user_name = 7;
+  // The stream session the event was stamped with. Not a stable key: a later
+  // split can move its segment to another session, so readers resolve it
+  // through the session record. Absent when the publisher knew no session.
+  optional string session_id = 8;
+  // The quantity the event carries: bits for a cheer, subs for a gift, raiders
+  // for a raid, points for a redemption. Absent when the event carries none.
+  optional int64 amount = 9;
+  // The CloudEvent `data`, as JSON.
+  string event_value = 10;
+  // When the event happened (the CloudEvent `time`).
+  google.protobuf.Timestamp occurred_at = 11;
+  // When the row was written.
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message RecordUserEventRequest {
+  string event_id = 1;
+  string source = 2;
+  string event_type = 3;
+  string platform = 4;
+  optional string platform_user_id = 5;
+  optional string user_name = 6;
+  optional string session_id = 7;
+  optional int64 amount = 8;
+  // JSON. Defaults to `{}` when empty.
+  string event_value = 9;
+  // Defaults to the time of the call when absent.
+  google.protobuf.Timestamp occurred_at = 10;
+}
+
+message RecordUserEventResponse {
+  common.ResponseStatus status = 1;
+  UserEvent event = 2;
+  // False when the event was already recorded; `event` is then the row that
+  // was stored the first time.
+  bool created = 3;
+}
+
+message GetStreamSessionEventTotalsRequest {
+  string stream_session_id = 1;
+}
+
+message StreamSessionEventTotals {
+  // Bits cheered, anonymous cheers included.
+  int64 bits = 1;
+  int64 cheers = 2;
+  // Subscriptions viewers took out or renewed themselves: new subs that were
+  // not gifted, plus resubs. Gifted subs are in `gifted_subs` only, so the two
+  // add up without counting a gift twice.
+  int64 subs = 3;
+  // Subs gifted, counted from the gifter's side (the gift's `amount`), not
+  // from each recipient's gifted sub.
+  int64 gifted_subs = 4;
+  int64 follows = 5;
+  int64 raids = 6;
+  // Viewers brought by those raids.
+  int64 raiders = 7;
+}
+
+message GetStreamSessionEventTotalsResponse {
+  common.ResponseStatus status = 1;
+  StreamSessionEventTotals totals = 2;
+}
+
+message GetViewerEventTotalsRequest {
+  string platform = 1;
+  string platform_user_id = 2;
+  // Absent for the viewer's lifetime totals.
+  optional string stream_session_id = 3;
+}
+
+message ViewerEventTotals {
+  string platform = 1;
+  string platform_user_id = 2;
+  // The name on the viewer's most recent event, absent when none carried one.
+  optional string user_name = 3;
+  int64 bits = 4;
+  int64 cheers = 5;
+  // Subs the viewer gifted.
+  int64 gifted_subs = 6;
+  // Gift events: one community gift of five subs is one gift.
+  int64 gifts = 7;
+}
+
+message GetViewerEventTotalsResponse {
+  common.ResponseStatus status = 1;
+  ViewerEventTotals totals = 2;
+}
+
+enum LeaderboardMetric {
+  LEADERBOARD_METRIC_UNSPECIFIED = 0;
+  // Bits cheered.
+  LEADERBOARD_METRIC_BITS = 1;
+  // Subs gifted.
+  LEADERBOARD_METRIC_GIFTED_SUBS = 2;
+}
+
+message ListViewerLeaderboardRequest {
+  LeaderboardMetric metric = 1;
+  // Absent for a lifetime leaderboard.
+  optional string stream_session_id = 2;
+  // Keep viewers whose total is at least this. Defaults to 1; must be >= 1.
+  optional int64 min_total = 3;
+  // 1-100. Defaults to 10.
+  optional int32 limit = 4;
+}
+
+message LeaderboardEntry {
+  string platform = 1;
+  string platform_user_id = 2;
+  // The name on the viewer's most recent event, absent when none carried one.
+  optional string user_name = 3;
+  // Bits, or subs gifted, depending on the metric.
+  int64 total = 4;
+  // The events that make up `total`: cheers, or gifts.
+  int64 events = 5;
+}
+
+message ListViewerLeaderboardResponse {
+  common.ResponseStatus status = 1;
+  // Highest total first; ties by platform, then platform_user_id.
+  repeated LeaderboardEntry entries = 2;
+}
+
+message ListRecentUserEventsRequest {
+  // Start of the span, inclusive. Required.
+  google.protobuf.Timestamp since = 1;
+  // 1-100. Defaults to 20.
+  optional int32 limit = 2;
+}
+
+message ListRecentUserEventsResponse {
+  common.ResponseStatus status = 1;
+  // Newest first by occurred_at, at most `limit` of them.
+  repeated UserEvent events = 2;
+  // Every event in the span, not only those returned.
+  int64 total = 3;
+}

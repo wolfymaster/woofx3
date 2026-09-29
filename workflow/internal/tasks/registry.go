@@ -19,20 +19,12 @@ type TaskContext struct {
 	// definition cannot be traced back to the run that produced it, which is
 	// the join any "what caused this" question needs. Empty for in-memory
 	// test workflows executed outside the engine.
-	ExecutionID string
-	// ApplicationID scopes the executing workflow to a specific
-	// application — populated by the engine from the workflow
-	// definition before each task runs. Action handlers stamp this
-	// onto outbound envelopes (e.g. the `alert` action) so downstream
-	// recorders can attribute dispatches without a singleton fallback.
-	// Empty string when the engine couldn't resolve it (e.g.
-	// in-memory test workflows registered without an application).
-	ApplicationID string
-	TaskID        string
-	TriggerEvent  *types.Event
-	Variables     map[string]any
-	TaskExports   map[string]map[string]any // task ID -> exports
-	Logger        Logger
+	ExecutionID  string
+	TaskID       string
+	TriggerEvent *types.Event
+	Variables    map[string]any
+	TaskExports  map[string]map[string]any // task ID -> exports
+	Logger       Logger
 }
 
 type Logger interface {
@@ -97,21 +89,20 @@ func (r *TaskRegistry) List() []string {
 
 type ActionContext[TServices any] struct {
 	Services TServices
-	// ApplicationID, WorkflowID and ExecutionID are forwarded from
-	// TaskContext so action handlers (e.g. NewAlertAction) can attribute
-	// their side effects — to the owning application, to the workflow that
-	// defined the step, and to the run that fired it. Empty when unresolved.
+	// WorkflowID and ExecutionID are forwarded from TaskContext so action
+	// handlers (e.g. NewAlertAction) can attribute their side effects — to
+	// the workflow that defined the step, and to the run that fired it.
+	// Empty when unresolved.
 	//
 	// Every field below is copied by hand in two places, ActionTask.Execute
 	// and WithServices. A field added to this struct alone therefore arrives
 	// as its zero value for every action, which reads as a data bug rather
 	// than the wiring omission it is.
-	ApplicationID string
-	WorkflowID    string
-	ExecutionID   string
-	TaskID        string
-	TriggerEvent  *types.Event
-	Logger        Logger
+	WorkflowID   string
+	ExecutionID  string
+	TaskID       string
+	TriggerEvent *types.Event
+	Logger       Logger
 }
 
 type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)

@@ -4,9 +4,9 @@ import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
 
 /**
  * `POST /scene/{sceneId}/session/refresh` — the client's pre-emptive
- * ~50s refresh loop. Re-signs a fresh session JWT for the same
- * (sceneId, applicationId) claims as long as the current cookie is
- * still valid and its sceneId claim matches the URL — does not
+ * ~50s refresh loop. Re-signs a fresh session JWT for the same sceneId
+ * claim as long as the current cookie is still valid and its sceneId
+ * claim matches the URL — does not
  * re-verify the original opaque overlay token (see session-token.ts's
  * header comment for why). A failed refresh returns 401 so the client
  * shows its "unable to refresh" overlay per the diagram and keeps

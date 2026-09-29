@@ -68,7 +68,7 @@ const (
 	// Single inbound subject for everything an overlay reports about a
 	// widget — alert lifecycle acks, counter increments, timer state,
 	// goal hits, generic completion. CloudEvent data shape:
-	//   { applicationId, moduleId, instanceId, widgetCanonicalId?,
+	//   { moduleId, instanceId, widgetCanonicalId?,
 	//     key, value, occurredAt }
 	// Dispatch on `key`:
 	//   "alert.lifecycle" → AlertQueueManager.handleStatus

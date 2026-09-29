@@ -109,7 +109,6 @@ interface Logger {
 export class DerivedGroupSync {
   private readonly db: DatabaseClient;
   private readonly logger: Logger;
-  private readonly applicationId: string;
 
   /** username -> the derived membership last written for them. */
   private readonly lastSeen = new Map<string, DerivedMembership>();
@@ -117,9 +116,8 @@ export class DerivedGroupSync {
   /** group name -> group id, resolved once from the seeded catalog. */
   private groupIds: Map<string, string> | null = null;
 
-  constructor(db: DatabaseClient, applicationId: string, logger: Logger) {
+  constructor(db: DatabaseClient, logger: Logger) {
     this.db = db;
-    this.applicationId = applicationId;
     this.logger = logger;
   }
 
@@ -157,7 +155,7 @@ export class DerivedGroupSync {
         }
         const groupId = ids.get(group);
         if (groupId) {
-          const req = { applicationId: this.applicationId, groupId, username: user };
+          const req = { groupId, username: user };
           if (want) {
             await this.db.addUserToGroup(req);
           } else {
@@ -165,8 +163,8 @@ export class DerivedGroupSync {
           }
         }
         // Recorded either way. A group missing from the catalog means the
-        // application predates it and has not been migrated - there is nothing
-        // to write, so retrying it on every message would be pure noise.
+        // engine's built-in groups predate it and have not been migrated - there
+        // is nothing to write, so retrying it on every message would be pure noise.
         written[group] = want;
       }
 
@@ -183,7 +181,7 @@ export class DerivedGroupSync {
     if (this.groupIds) {
       return this.groupIds;
     }
-    const response = await this.db.listGroups({ applicationId: this.applicationId });
+    const response = await this.db.listGroups({});
     if (response.status?.code !== "OK") {
       throw new Error(response.status?.message || "failed to list groups");
     }

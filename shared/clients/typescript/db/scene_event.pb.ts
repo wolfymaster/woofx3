@@ -19,7 +19,6 @@ import * as common from "./common.pb";
 export interface SceneEvent {
   id: string;
   sceneId: string;
-  applicationId: string;
   /**
    * Event class, e.g. "widget.event", "alert" — mirrors the
    * `OverlayWidgetEvent`/CloudEvent `type` convention used elsewhere.
@@ -72,7 +71,6 @@ export interface SceneEventLogEntry {
 
 export interface RecordSceneEventRequest {
   sceneId: string;
-  applicationId: string;
   type: string;
   key: string;
   /**
@@ -552,7 +550,6 @@ export const SceneEvent = {
     return {
       id: "",
       sceneId: "",
-      applicationId: "",
       type: "",
       key: "",
       value: "",
@@ -574,9 +571,6 @@ export const SceneEvent = {
     }
     if (msg.sceneId) {
       writer.writeString(2, msg.sceneId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(3, msg.applicationId);
     }
     if (msg.type) {
       writer.writeString(4, msg.type);
@@ -620,10 +614,6 @@ export const SceneEvent = {
         }
         case 2: {
           msg.sceneId = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 4: {
@@ -956,7 +946,6 @@ export const RecordSceneEventRequest = {
   ): RecordSceneEventRequest {
     return {
       sceneId: "",
-      applicationId: "",
       type: "",
       key: "",
       value: "",
@@ -975,9 +964,6 @@ export const RecordSceneEventRequest = {
   ): protoscript.BinaryWriter {
     if (msg.sceneId) {
       writer.writeString(1, msg.sceneId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.type) {
       writer.writeString(3, msg.type);
@@ -1009,10 +995,6 @@ export const RecordSceneEventRequest = {
       switch (field) {
         case 1: {
           msg.sceneId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -1720,7 +1702,6 @@ export const SceneEventJSON = {
     return {
       id: "",
       sceneId: "",
-      applicationId: "",
       type: "",
       key: "",
       value: "",
@@ -1742,9 +1723,6 @@ export const SceneEventJSON = {
     }
     if (msg.sceneId) {
       json["sceneId"] = msg.sceneId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.type) {
       json["type"] = msg.type;
@@ -1775,10 +1753,6 @@ export const SceneEventJSON = {
     const _sceneId_ = json["sceneId"] ?? json["scene_id"];
     if (_sceneId_) {
       msg.sceneId = _sceneId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _type_ = json["type"];
     if (_type_) {
@@ -2041,7 +2015,6 @@ export const RecordSceneEventRequestJSON = {
   ): RecordSceneEventRequest {
     return {
       sceneId: "",
-      applicationId: "",
       type: "",
       key: "",
       value: "",
@@ -2060,9 +2033,6 @@ export const RecordSceneEventRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.sceneId) {
       json["sceneId"] = msg.sceneId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.type) {
       json["type"] = msg.type;
@@ -2092,10 +2062,6 @@ export const RecordSceneEventRequestJSON = {
     const _sceneId_ = json["sceneId"] ?? json["scene_id"];
     if (_sceneId_) {
       msg.sceneId = _sceneId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _type_ = json["type"];
     if (_type_) {

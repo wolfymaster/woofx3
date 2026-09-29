@@ -26,8 +26,8 @@ impl HttpResourceClient {
         }
     }
 
-    /// Bind a default `RequestContext` (client_id / application_id /
-    /// module_key) that travels with every call. Today the sandbox
+    /// Bind a default `RequestContext` (client_id / module_key) that
+    /// travels with every call. Today the sandbox
     /// invocations don't have a per-call context distinct from the engine
     /// instance's own, so a single bound value covers it.
     pub fn with_request_context(mut self, ctx: DbRequestContext) -> Self {

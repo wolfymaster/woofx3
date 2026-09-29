@@ -13,8 +13,8 @@ import (
 
 // WidgetStatusRoutes registers the WidgetStatusService Twirp handler.
 // Symmetric with `AlertRoutes` / `SceneRoutes`. Casbin middleware is
-// not applied yet — like the alert log this is application-scoped and
-// gated by the proxy's existing auth surface.
+// not applied yet — like the alert log this is gated by the proxy's
+// existing auth surface.
 func WidgetStatusRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
 	r := repo.NewWidgetStatusRepository(app.Db)
 	s := svc.NewWidgetStatusService(r, app.EventPublisher)

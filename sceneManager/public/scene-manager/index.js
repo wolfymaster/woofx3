@@ -228,6 +228,11 @@ class WidgetBridge {
       supportedVersions: [PROTOCOL_VERSION]
     });
   }
+  sendStorageValue(key, value) {
+    if (this.moduleId) {
+      this.sendStorageChanged(this.moduleId, key, value);
+    }
+  }
   sendStorageChanged(moduleId, key, value) {
     if (!this.initialized) {
       return;
@@ -1015,6 +1020,12 @@ function parseSseChunk(rawEvent) {
   if (eventName === "hello") {
     return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId } : null;
   }
+  if (eventName === "scene-updated") {
+    return { kind: "scene-updated" };
+  }
+  if (eventName === "module-state") {
+    return typeof parsed.moduleId === "string" && typeof parsed.key === "string" ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } } : null;
+  }
   if (typeof parsed.eventId === "string" && typeof parsed.instanceId === "string" && typeof parsed.type === "string" && typeof parsed.key === "string") {
     return {
       kind: "delivery",
@@ -1131,6 +1142,10 @@ class SceneEventSource {
           }
           if (parsed.kind === "hello") {
             this.sink?.onHello?.(parsed.bootId);
+          } else if (parsed.kind === "module-state") {
+            this.sink?.onModuleState?.(parsed.frame);
+          } else if (parsed.kind === "scene-updated") {
+            this.sink?.onSceneUpdated?.();
           } else {
             this.sink?.onFrame(parsed.frame);
           }
@@ -1174,6 +1189,96 @@ class SceneEventSource {
   }
 }
 
+// public/scene-manager/module-state.ts
+class ModuleStateCache {
+  fetchValue;
+  entries = new Map;
+  constructor(fetchValue) {
+    this.fetchValue = fetchValue;
+  }
+  peek(moduleId, key) {
+    const entry = this.entries.get(entryKey(moduleId, key));
+    return entry?.known ? entry.value : null;
+  }
+  watch(moduleId, key, target) {
+    const entry = this.entry(moduleId, key);
+    entry.targets.set(target, (entry.targets.get(target) ?? 0) + 1);
+    this.load(entry);
+  }
+  unwatch(moduleId, key, target) {
+    const entry = this.entries.get(entryKey(moduleId, key));
+    const count = entry?.targets.get(target);
+    if (!entry || count === undefined) {
+      return;
+    }
+    if (count > 1) {
+      entry.targets.set(target, count - 1);
+    } else {
+      entry.targets.delete(target);
+    }
+  }
+  apply(moduleId, key, value) {
+    const entry = this.entries.get(entryKey(moduleId, key));
+    if (!entry) {
+      return;
+    }
+    entry.generation += 1;
+    this.settle(entry, value);
+  }
+  refresh() {
+    for (const entry of this.entries.values()) {
+      if (entry.targets.size > 0) {
+        this.load(entry);
+      }
+    }
+  }
+  entry(moduleId, key) {
+    const id = entryKey(moduleId, key);
+    let entry = this.entries.get(id);
+    if (!entry) {
+      entry = { moduleId, key, known: false, value: null, generation: 0, loading: false, targets: new Map };
+      this.entries.set(id, entry);
+    }
+    return entry;
+  }
+  async load(entry) {
+    if (entry.loading) {
+      return;
+    }
+    const via = entry.targets.keys().next().value;
+    if (via === undefined) {
+      return;
+    }
+    entry.loading = true;
+    const generation = entry.generation;
+    let value;
+    try {
+      value = await this.fetchValue(via.instanceId, entry.key);
+    } catch {
+      if (entry.known && entry.generation === generation) {
+        this.settle(entry, entry.value);
+      }
+      return;
+    } finally {
+      entry.loading = false;
+    }
+    if (entry.generation !== generation) {
+      return;
+    }
+    this.settle(entry, value);
+  }
+  settle(entry, value) {
+    entry.known = true;
+    entry.value = value;
+    for (const target of entry.targets.keys()) {
+      target.sendStorageValue(entry.key, value);
+    }
+  }
+}
+function entryKey(moduleId, key) {
+  return `${moduleId}\x00${key}`;
+}
+
 // public/scene-manager/connection-status.ts
 class ConnectionStatus {
   render;
@@ -1197,6 +1302,57 @@ class ConnectionStatus {
   }
   get connected() {
     return this.unhealthy.size === 0;
+  }
+}
+
+// public/scene-manager/preview-layout.ts
+var PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function parseWidget(raw) {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const w = raw;
+  if (typeof w.id !== "string" || w.id.length === 0) {
+    return null;
+  }
+  if (!isFiniteNumber(w.x) || !isFiniteNumber(w.y) || !isFiniteNumber(w.width) || !isFiniteNumber(w.height)) {
+    return null;
+  }
+  return { id: w.id, x: w.x, y: w.y, width: w.width, height: w.height };
+}
+function parsePreviewLayout(data) {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const message = data;
+  if (message.type !== PREVIEW_LAYOUT_MESSAGE || !Array.isArray(message.widgets)) {
+    return null;
+  }
+  const widgets = [];
+  for (const raw of message.widgets) {
+    const widget = parseWidget(raw);
+    if (widget) {
+      widgets.push(widget);
+    }
+  }
+  return widgets;
+}
+function applyPreviewLayout(elements, layout) {
+  const byId = new Map(layout.map((widget) => [widget.id, widget]));
+  for (const [id, element] of elements) {
+    const widget = byId.get(id);
+    if (!widget) {
+      element.style.display = "none";
+      continue;
+    }
+    element.style.display = "";
+    element.style.left = `${widget.x}px`;
+    element.style.top = `${widget.y}px`;
+    element.style.width = `${widget.width}px`;
+    element.style.height = `${widget.height}px`;
   }
 }
 
@@ -1229,9 +1385,19 @@ function main() {
   const sceneId = sceneData.id;
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
   const bridges = new Set;
+  const widgetElements = new Map;
   const queueManager = new EventQueueManager;
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
+  const moduleState = new ModuleStateCache(async (instanceId, key) => {
+    const url = `${sceneBase}/widget/${encodeURIComponent(instanceId)}/storage?key=${encodeURIComponent(key)}`;
+    const resp = await fetch(url, { credentials: "same-origin" });
+    if (!resp.ok) {
+      throw new Error(`module state ${key}: ${resp.status}`);
+    }
+    const body = await resp.json();
+    return body.value ?? null;
+  });
   function postStatus(instanceId, report) {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -1251,6 +1417,7 @@ function main() {
     element.className = "alert-widget";
     placeAt(element, instance.position);
     container.appendChild(element);
+    widgetElements.set(instance.id, element);
     const subId = `alert:${instance.id}`;
     const alertWidget = new AlertWidget({
       element,
@@ -1277,9 +1444,9 @@ function main() {
     const nonce = generateNonce();
     let currentSubId = null;
     const callbacks = {
-      onStorageGet: () => null,
-      onStorageSubscribe: () => {},
-      onStorageUnsubscribe: () => {},
+      onStorageGet: (_moduleId, key) => moduleState.peek(instance.moduleId, key),
+      onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
+      onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
       onStatusReport: (report) => postStatus(instance.id, report),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;
@@ -1303,10 +1470,15 @@ function main() {
       }
     };
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
+    const storageTarget = {
+      instanceId: instance.id,
+      sendStorageValue: (key, value) => bridge.sendStorageValue(key, value)
+    };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
     bridges.add(bridge);
     container.appendChild(iframe);
+    widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
   }
   window.addEventListener("message", (event) => {
@@ -1314,6 +1486,17 @@ function main() {
       bridge.handleMessage(event);
     }
   });
+  if (window.parent !== window) {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) {
+        return;
+      }
+      const layout = parsePreviewLayout(event.data);
+      if (layout) {
+        applyPreviewLayout(widgetElements, layout);
+      }
+    });
+  }
   const status = new ConnectionStatus(renderConnected);
   let serverBootId = null;
   const coordinator = createReconnectCoordinator();
@@ -1331,13 +1514,23 @@ function main() {
   eventSource.start({
     onFrame: (frame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
-      queueManager.enqueue(frame.instanceId, { eventId: frame.eventId, type: frame.type, key: frame.key, value: frame.value });
+      queueManager.enqueue(frame.instanceId, {
+        eventId: frame.eventId,
+        type: frame.type,
+        key: frame.key,
+        value: frame.value
+      });
     },
+    onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onConnectionChange: (connected) => status.set("stream", connected),
+    onSceneUpdated: () => location.reload(),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
         return;
+      }
+      if (serverBootId !== null) {
+        moduleState.refresh();
       }
       serverBootId = bootId;
     },

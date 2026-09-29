@@ -26,12 +26,6 @@ The API server requires the following environment variables:
 - `MESSAGE_BUS_JWT`: Optional JWT for NATS authentication
 - `MESSAGE_BUS_NKEY`: Optional NKey seed for NATS authentication
 
-> Note: the default `applicationId` is no longer an env var. It is created (or
-> recovered) on first UI onboarding through `api.registerClient(description, { userId })`
-> and returned to the caller. The server warms this value at startup when a default
-> application already exists; otherwise it is populated lazily on the first
-> `registerClient` call.
-
 ## Running the Server
 
 ```bash

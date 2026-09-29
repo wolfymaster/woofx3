@@ -330,7 +330,7 @@ func buildAssetDeregisteredData(modulePrefix, moduleKey string, assets []*models
 }
 
 // buildWorkflowChangeData produces the snake_case payload for the
-// `db.workflow.{created,updated}.{appId}` outbox events. Mirrors the
+// `db.workflow.{created,updated}.system` outbox events. Mirrors the
 // trigger / action builders above so every webhook the UI receives uses
 // the same casing convention. Emits `projection_key` only for
 // MODULE-owned rows so user-authored workflows project as themselves
@@ -341,7 +341,6 @@ func buildAssetDeregisteredData(modulePrefix, moduleKey string, assets []*models
 func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 	row := map[string]any{
 		"id":              wf.ID.String(),
-		"application_id":  wf.ApplicationID.String(),
 		"name":            wf.Name,
 		"enabled":         wf.Enabled,
 		"steps_json":      wf.Steps,

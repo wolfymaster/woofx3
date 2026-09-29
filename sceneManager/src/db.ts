@@ -5,8 +5,10 @@ import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as scene_event from "@woofx3/db/scene_event.pb";
 import * as setting from "@woofx3/db/setting.pb";
+import * as storage from "@woofx3/db/storage.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
-import { GetModuleByModuleId, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
+import { GetModuleByModuleId, GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
+import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 
 // twirpscript ClientConfiguration is { baseURL: string }; inlined so
@@ -118,9 +120,29 @@ export class DbClient {
     return alert.UpdateAlertLifecycle(req, this.config);
   }
 
-  async getSetting(key: string, applicationId: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key, applicationId }, this.config);
+  async getSetting(key: string): Promise<string | null> {
+    const resp = await setting.GetSetting({ key }, this.config);
     return resp.setting?.value?.stringValue ?? null;
+  }
+
+  /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
+  async getModuleStorageValue(namespace: string, key: string): Promise<unknown> {
+    const response = await storage.Get({ namespace, key }, this.config);
+    // Twirpscript decodes an absent message field as a default one, so an
+    // empty key is what marks "nothing stored".
+    if (!response.item || response.item.key === "") {
+      return undefined;
+    }
+    return JSON.parse(response.item.value);
+  }
+
+  /** A resource instance by canonical id, or `null` when there is none. */
+  async getResourceInstance(canonicalId: string): Promise<module_resource_instance.ModuleResourceInstance | null> {
+    const response = await GetResourceInstance({ canonicalId }, this.config);
+    if (response.status?.code !== "OK" || !response.instance) {
+      return null;
+    }
+    return response.instance;
   }
 
   // Durable, at-least-once scene event delivery (see scene_event.proto

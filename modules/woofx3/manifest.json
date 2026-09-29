@@ -2,14 +2,14 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.10.0",
+  "version": "0.18.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
     {
       "kind": "counter",
       "name": "Counter",
-      "description": "A number that actions change and overlays and chat can show: deaths, wins, hugs given.",
+      "description": "A number that actions change and overlays and chat can show: deaths, wins, hugs given. Give it goals and it announces reaching them.",
       "icon": "Tally5",
       "schema": [
         {
@@ -44,6 +44,34 @@
           "min": 1,
           "defaultValue": 1,
           "description": "How much Increment adds and Decrement takes away."
+        },
+        {
+          "id": "goals",
+          "label": "Goals",
+          "type": "list",
+          "description": "Numbers to announce reaching, each with an optional name. Leave it empty and the counter just counts.",
+          "itemFields": [
+            {
+              "id": "value",
+              "label": "Goal",
+              "type": "number",
+              "required": true,
+              "placeholder": "100"
+            },
+            {
+              "id": "name",
+              "label": "Name",
+              "type": "text",
+              "placeholder": "New emote"
+            }
+          ]
+        },
+        {
+          "id": "announceEveryTime",
+          "label": "Announce every time",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "Announce a goal again each time it is reached after dropping below it. Off, only the first time announces."
         }
       ]
     },
@@ -219,10 +247,17 @@
     },
     {
       "id": "timer.expire",
-      "name": "End timers that have run out",
+      "name": "End a timer that has run out",
       "runtime": "js",
       "path": "functions/timer.js",
       "entryPoint": "timerExpire"
+    },
+    {
+      "id": "timer.reconcile",
+      "name": "Re-arm timer ends",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerReconcile"
     }
   ],
   "actions": [
@@ -300,7 +335,7 @@
     {
       "id": "counter.increment",
       "name": "Increment counter",
-      "description": "Add the counter's step to it.",
+      "description": "Add an amount to the counter, or its step when no amount is given.",
       "type": "function",
       "function": "counter.increment",
       "schema": [
@@ -311,6 +346,13 @@
           "resourceKind": "counter",
           "required": true,
           "description": "Which counter to change."
+        },
+        {
+          "id": "amount",
+          "label": "Amount",
+          "type": "number",
+          "min": 1,
+          "description": "How much to increase it by. Leave blank to use the counter's own step."
         }
       ],
       "returns": {
@@ -329,6 +371,11 @@
             "path": "next",
             "type": "number",
             "description": "Its value after the change."
+          },
+          {
+            "path": "reached",
+            "type": "array",
+            "description": "The goals this change reached, if any."
           }
         ]
       },
@@ -339,7 +386,7 @@
     {
       "id": "counter.decrement",
       "name": "Decrement counter",
-      "description": "Take the counter's step away from it.",
+      "description": "Take an amount away from the counter, or its step when no amount is given.",
       "type": "function",
       "function": "counter.decrement",
       "schema": [
@@ -350,6 +397,13 @@
           "resourceKind": "counter",
           "required": true,
           "description": "Which counter to change."
+        },
+        {
+          "id": "amount",
+          "label": "Amount",
+          "type": "number",
+          "min": 1,
+          "description": "How much to decrease it by. Leave blank to use the counter's own step."
         }
       ],
       "returns": {
@@ -368,6 +422,11 @@
             "path": "next",
             "type": "number",
             "description": "Its value after the change."
+          },
+          {
+            "path": "reached",
+            "type": "array",
+            "description": "The goals this change reached, if any."
           }
         ]
       },
@@ -414,6 +473,11 @@
             "path": "next",
             "type": "number",
             "description": "Its value after the change."
+          },
+          {
+            "path": "reached",
+            "type": "array",
+            "description": "The goals this change reached, if any."
           }
         ]
       },
@@ -453,6 +517,11 @@
             "path": "next",
             "type": "number",
             "description": "Its value after the change."
+          },
+          {
+            "path": "reached",
+            "type": "array",
+            "description": "The goals this change reached, if any."
           }
         ]
       },
@@ -940,11 +1009,6 @@
             "description": "Workflow id."
           },
           {
-            "path": "ApplicationID",
-            "type": "string",
-            "description": "Application the workflow belongs to."
-          },
-          {
             "path": "Name",
             "type": "string",
             "description": "Workflow name."
@@ -1004,11 +1068,6 @@
             "description": "Workflow id."
           },
           {
-            "path": "ApplicationID",
-            "type": "string",
-            "description": "Application the workflow belongs to."
-          },
-          {
             "path": "Name",
             "type": "string",
             "description": "Workflow name."
@@ -1066,11 +1125,6 @@
             "path": "ID",
             "type": "string",
             "description": "Workflow id."
-          },
-          {
-            "path": "ApplicationID",
-            "type": "string",
-            "description": "Application the workflow belongs to."
           },
           {
             "path": "Name",
@@ -1280,7 +1334,7 @@
     {
       "id": "timer_ended",
       "name": "Timer ended",
-      "description": "Fires within a second of a running timer reaching zero. Start the timer again from here to make it repeat.",
+      "description": "Fires when a running timer reaches zero. Start the timer again from here to make it repeat.",
       "type": "eventbus",
       "event": "timer.ended",
       "taxonomy": [
@@ -1391,6 +1445,69 @@
             "path": "size",
             "type": "number",
             "description": "How many entries the queue holds now."
+          }
+        ]
+      }
+    },
+    {
+      "id": "goal_reached",
+      "name": "Counter Goal Met",
+      "description": "Fires when a counter reaches one of its goals, whatever counted toward it. Reaching a goal again after dropping below it fires again only when the counter is set to announce every time.",
+      "type": "eventbus",
+      "event": "goal.reached",
+      "taxonomy": [
+        "system.counter",
+        "platform.system",
+        "alert.counter"
+      ],
+      "schema": [
+        {
+          "id": "counter",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this counter. Leave it as any to act on every counter."
+        }
+      ],
+      "sentence": "{counter} reaches a goal",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter, by canonical id."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change that reached the goal."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after that change."
+          },
+          {
+            "path": "goal",
+            "type": "number",
+            "description": "The goal it reached."
+          },
+          {
+            "path": "goalName",
+            "type": "string",
+            "description": "The goal's name, or empty when it has none."
+          },
+          {
+            "path": "first",
+            "type": "boolean",
+            "description": "Whether this was the first time it reached that goal."
+          },
+          {
+            "path": "firstReachedAt",
+            "type": "number",
+            "description": "When it first reached that goal, in milliseconds since the epoch."
           }
         ]
       }
@@ -1706,14 +1823,210 @@
       "taxonomy": [
         "media.animation"
       ]
+    },
+    {
+      "id": "counter",
+      "name": "Counter",
+      "description": "A counter's number, kept up to date as it changes. Put {value} where the number goes, and {goal} and {goalName} for the goal it is working toward. Wrap words in {primary}...{primary} to show them in the highlight color.",
+      "entry": "widgets/counter/index.html",
+      "assets": "widgets/counter",
+      "surfaces": [
+        "scene"
+      ],
+      "settingsSchema": [
+        {
+          "id": "counter",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "required": true,
+          "description": "The counter to show."
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "defaultValue": "{value}",
+          "placeholder": "{value} / {goal} {primary}{goalName}{primary}",
+          "description": "{value} is the counter's number. {goal} and {goalName} are the next goal it has not reached and that goal's name; both are empty when there is none. Wrap words in {primary}...{primary} to show them in the highlight color."
+        },
+        {
+          "id": "color",
+          "label": "Color",
+          "type": "color",
+          "defaultValue": "#ffffff"
+        },
+        {
+          "id": "highlightColor",
+          "label": "Highlight color",
+          "type": "color",
+          "defaultValue": "#ec6758"
+        },
+        {
+          "id": "fontFamily",
+          "label": "Font",
+          "type": "text",
+          "defaultValue": "Roboto, system-ui, sans-serif"
+        },
+        {
+          "id": "fontSize",
+          "label": "Font size",
+          "type": "number",
+          "unit": "px",
+          "min": 1,
+          "defaultValue": 48
+        },
+        {
+          "id": "align",
+          "label": "Alignment",
+          "type": "select",
+          "defaultValue": "center",
+          "options": [
+            {
+              "value": "left",
+              "label": "Left"
+            },
+            {
+              "value": "center",
+              "label": "Center"
+            },
+            {
+              "value": "right",
+              "label": "Right"
+            }
+          ]
+        }
+      ],
+      "taxonomy": [
+        "data.counter"
+      ]
+    },
+    {
+      "id": "timer",
+      "name": "Timer",
+      "description": "A timer's time left, counting down live as it runs. Put {time} where the time goes and {duration} for how long it runs. Wrap words in {primary}...{primary} to show them in the highlight color.",
+      "entry": "widgets/timer/index.html",
+      "assets": "widgets/timer",
+      "surfaces": [
+        "scene"
+      ],
+      "settingsSchema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "The timer to show."
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "defaultValue": "{time}",
+          "placeholder": "{primary}Break{primary} {time}",
+          "description": "{time} is the time left, as M:SS or H:MM:SS. {duration} is how long the timer runs in all. Wrap words in {primary}...{primary} to show them in the highlight color."
+        },
+        {
+          "id": "color",
+          "label": "Color",
+          "type": "color",
+          "defaultValue": "#ffffff"
+        },
+        {
+          "id": "highlightColor",
+          "label": "Highlight color",
+          "type": "color",
+          "defaultValue": "#ec6758"
+        },
+        {
+          "id": "fontFamily",
+          "label": "Font",
+          "type": "text",
+          "defaultValue": "Roboto, system-ui, sans-serif"
+        },
+        {
+          "id": "fontSize",
+          "label": "Font size",
+          "type": "number",
+          "unit": "px",
+          "min": 1,
+          "defaultValue": 48
+        },
+        {
+          "id": "align",
+          "label": "Alignment",
+          "type": "select",
+          "defaultValue": "center",
+          "options": [
+            {
+              "value": "left",
+              "label": "Left"
+            },
+            {
+              "value": "center",
+              "label": "Center"
+            },
+            {
+              "value": "right",
+              "label": "Right"
+            }
+          ]
+        }
+      ],
+      "taxonomy": [
+        "data.timer"
+      ],
+      "theme": {
+        "contractVersion": 1,
+        "variables": [
+          {
+            "id": "shadow",
+            "type": "text",
+            "default": "0 2px 8px rgba(0, 0, 0, 0.7)"
+          },
+          {
+            "id": "fontWeight",
+            "type": "text",
+            "default": "bold"
+          },
+          {
+            "id": "background",
+            "type": "color",
+            "default": "transparent"
+          },
+          {
+            "id": "padding",
+            "type": "text",
+            "default": "8px"
+          }
+        ],
+        "assetSlots": [
+          {
+            "id": "backdrop",
+            "kinds": [
+              "image"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "deadlines": [
+    {
+      "id": "timer_end",
+      "function": "timer.expire",
+      "maxPending": 256,
+      "description": "Ends a running timer the moment it reaches zero and announces that it ended."
     }
   ],
   "backgroundTasks": [
     {
-      "id": "timer_expiry",
-      "function": "timer.expire",
-      "schedule": "* * * * * *",
-      "description": "Once a second, stops every running timer that has reached zero and announces that it ended."
+      "id": "timer_reconcile",
+      "function": "timer.reconcile",
+      "schedule": "* * * * *",
+      "runOnLoad": true,
+      "description": "When the module loads and once a minute after, ends every running timer that has run out and arms the end of the rest."
     }
   ]
 }

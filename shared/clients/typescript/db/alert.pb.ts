@@ -18,7 +18,6 @@ import * as common from "./common.pb";
 
 export interface Alert {
   id: string;
-  applicationId: string;
   /**
    * Full AlertPayload envelope JSON
    * (`{ id, parameters, event }`) — same bytes streamware broadcasts.
@@ -72,7 +71,6 @@ export interface Alert {
 }
 
 export interface CreateAlertRequest {
-  applicationId: string;
   /**
    * JSON-encoded AlertPayload. Persisted verbatim into `alerts.payload`.
    */
@@ -101,7 +99,6 @@ export interface GetAlertRequest {
  * the overlay reports `playing` / `completed` / `failed`.
  */
 export interface GetAlertByEnvelopeIdRequest {
-  applicationId: string;
   envelopeId: string;
 }
 
@@ -115,7 +112,6 @@ export interface GetAlertByEnvelopeIdRequest {
  * `error` is ignored unless status is `failed`.
  */
 export interface UpdateAlertLifecycleRequest {
-  applicationId: string;
   envelopeId: string;
   status: string;
   error: string;
@@ -127,7 +123,6 @@ export interface AlertResponse {
 }
 
 export interface ListAlertsRequest {
-  applicationId: string;
   limit: number;
   offset: number;
 }
@@ -469,7 +464,6 @@ export const Alert = {
   initialize: function (msg?: Partial<Alert>): Alert {
     return {
       id: "",
-      applicationId: "",
       payload: "",
       workflowId: "",
       sourceEventId: "",
@@ -494,9 +488,6 @@ export const Alert = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.payload) {
       writer.writeString(3, msg.payload);
@@ -563,10 +554,6 @@ export const Alert = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -655,7 +642,6 @@ export const CreateAlertRequest = {
    */
   initialize: function (msg?: Partial<CreateAlertRequest>): CreateAlertRequest {
     return {
-      applicationId: "",
       payload: "",
       workflowId: "",
       sourceEventId: "",
@@ -671,9 +657,6 @@ export const CreateAlertRequest = {
     msg: PartialDeep<CreateAlertRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.payload) {
       writer.writeString(2, msg.payload);
     }
@@ -699,10 +682,6 @@ export const CreateAlertRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.payload = reader.readString();
           break;
@@ -825,7 +804,6 @@ export const GetAlertByEnvelopeIdRequest = {
     msg?: Partial<GetAlertByEnvelopeIdRequest>,
   ): GetAlertByEnvelopeIdRequest {
     return {
-      applicationId: "",
       envelopeId: "",
       ...msg,
     };
@@ -838,9 +816,6 @@ export const GetAlertByEnvelopeIdRequest = {
     msg: PartialDeep<GetAlertByEnvelopeIdRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.envelopeId) {
       writer.writeString(2, msg.envelopeId);
     }
@@ -857,10 +832,6 @@ export const GetAlertByEnvelopeIdRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.envelopeId = reader.readString();
           break;
@@ -903,7 +874,6 @@ export const UpdateAlertLifecycleRequest = {
     msg?: Partial<UpdateAlertLifecycleRequest>,
   ): UpdateAlertLifecycleRequest {
     return {
-      applicationId: "",
       envelopeId: "",
       status: "",
       error: "",
@@ -918,9 +888,6 @@ export const UpdateAlertLifecycleRequest = {
     msg: PartialDeep<UpdateAlertLifecycleRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.envelopeId) {
       writer.writeString(2, msg.envelopeId);
     }
@@ -943,10 +910,6 @@ export const UpdateAlertLifecycleRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.envelopeId = reader.readString();
           break;
@@ -1071,7 +1034,6 @@ export const ListAlertsRequest = {
    */
   initialize: function (msg?: Partial<ListAlertsRequest>): ListAlertsRequest {
     return {
-      applicationId: "",
       limit: 0,
       offset: 0,
       ...msg,
@@ -1085,9 +1047,6 @@ export const ListAlertsRequest = {
     msg: PartialDeep<ListAlertsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.limit) {
       writer.writeInt32(2, msg.limit);
     }
@@ -1107,10 +1066,6 @@ export const ListAlertsRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.limit = reader.readInt32();
           break;
@@ -1402,7 +1357,6 @@ export const AlertJSON = {
   initialize: function (msg?: Partial<Alert>): Alert {
     return {
       id: "",
-      applicationId: "",
       payload: "",
       workflowId: "",
       sourceEventId: "",
@@ -1425,9 +1379,6 @@ export const AlertJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.payload) {
       json["payload"] = msg.payload;
@@ -1475,10 +1426,6 @@ export const AlertJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _payload_ = json["payload"];
     if (_payload_) {
@@ -1551,7 +1498,6 @@ export const CreateAlertRequestJSON = {
    */
   initialize: function (msg?: Partial<CreateAlertRequest>): CreateAlertRequest {
     return {
-      applicationId: "",
       payload: "",
       workflowId: "",
       sourceEventId: "",
@@ -1567,9 +1513,6 @@ export const CreateAlertRequestJSON = {
     msg: PartialDeep<CreateAlertRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.payload) {
       json["payload"] = msg.payload;
     }
@@ -1592,10 +1535,6 @@ export const CreateAlertRequestJSON = {
     msg: CreateAlertRequest,
     json: any,
   ): CreateAlertRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _payload_ = json["payload"];
     if (_payload_) {
       msg.payload = _payload_;
@@ -1694,7 +1633,6 @@ export const GetAlertByEnvelopeIdRequestJSON = {
     msg?: Partial<GetAlertByEnvelopeIdRequest>,
   ): GetAlertByEnvelopeIdRequest {
     return {
-      applicationId: "",
       envelopeId: "",
       ...msg,
     };
@@ -1707,9 +1645,6 @@ export const GetAlertByEnvelopeIdRequestJSON = {
     msg: PartialDeep<GetAlertByEnvelopeIdRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.envelopeId) {
       json["envelopeId"] = msg.envelopeId;
     }
@@ -1723,10 +1658,6 @@ export const GetAlertByEnvelopeIdRequestJSON = {
     msg: GetAlertByEnvelopeIdRequest,
     json: any,
   ): GetAlertByEnvelopeIdRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
     if (_envelopeId_) {
       msg.envelopeId = _envelopeId_;
@@ -1760,7 +1691,6 @@ export const UpdateAlertLifecycleRequestJSON = {
     msg?: Partial<UpdateAlertLifecycleRequest>,
   ): UpdateAlertLifecycleRequest {
     return {
-      applicationId: "",
       envelopeId: "",
       status: "",
       error: "",
@@ -1775,9 +1705,6 @@ export const UpdateAlertLifecycleRequestJSON = {
     msg: PartialDeep<UpdateAlertLifecycleRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.envelopeId) {
       json["envelopeId"] = msg.envelopeId;
     }
@@ -1797,10 +1724,6 @@ export const UpdateAlertLifecycleRequestJSON = {
     msg: UpdateAlertLifecycleRequest,
     json: any,
   ): UpdateAlertLifecycleRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
     if (_envelopeId_) {
       msg.envelopeId = _envelopeId_;
@@ -1907,7 +1830,6 @@ export const ListAlertsRequestJSON = {
    */
   initialize: function (msg?: Partial<ListAlertsRequest>): ListAlertsRequest {
     return {
-      applicationId: "",
       limit: 0,
       offset: 0,
       ...msg,
@@ -1921,9 +1843,6 @@ export const ListAlertsRequestJSON = {
     msg: PartialDeep<ListAlertsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.limit) {
       json["limit"] = msg.limit;
     }
@@ -1940,10 +1859,6 @@ export const ListAlertsRequestJSON = {
     msg: ListAlertsRequest,
     json: any,
   ): ListAlertsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _limit_ = json["limit"];
     if (_limit_) {
       msg.limit = protoscript.parseNumber(_limit_);

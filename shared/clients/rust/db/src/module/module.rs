@@ -50,8 +50,6 @@ pub struct RegisterBackgroundTasksRequest {
     pub version: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="4")]
     pub tasks: ::prost::alloc::vec::Vec<BackgroundTaskInput>,
-    #[prost(string, tag="5")]
-    pub application_id: ::prost::alloc::string::String,
     /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
     /// so a module upgrade upserts its resources in place instead of orphaning
     /// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -187,10 +185,6 @@ pub struct RegisterTriggersRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
-    /// Scopes the registration to a specific application so cross-module
-    /// dependency checks are tenant-isolated.
-    #[prost(string, tag="7")]
-    pub application_id: ::prost::alloc::string::String,
     /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
     /// so a module upgrade upserts its resources in place instead of orphaning
     /// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -303,10 +297,6 @@ pub struct RegisterActionsRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
-    /// Scopes the registration to a specific application so cross-module
-    /// dependency checks are tenant-isolated.
-    #[prost(string, tag="7")]
-    pub application_id: ::prost::alloc::string::String,
     /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
     /// so a module upgrade upserts its resources in place instead of orphaning
     /// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -769,10 +759,6 @@ pub struct RegisterWidgetsRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
-    /// Reserved for future tenant-scoped widget registration. Module catalog
-    /// rows keep the default '' (instance-global), same as triggers/actions.
-    #[prost(string, tag="7")]
-    pub application_id: ::prost::alloc::string::String,
     /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
     /// so a module upgrade upserts its resources in place instead of orphaning
     /// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -1136,8 +1122,6 @@ pub struct ResourceUsage {
 pub struct CheckModuleResourceUsageRequest {
     #[prost(string, tag="1")]
     pub module_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckModuleResourceUsageResponse {
@@ -1194,8 +1178,6 @@ pub struct DeleteByModuleIdRequest {
 pub struct GetByCanonicalIdRequest {
     #[prost(string, tag="1")]
     pub canonical_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerResponse {

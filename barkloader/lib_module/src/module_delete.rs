@@ -17,10 +17,10 @@ use tracing::{info, warn};
 
 use super::db_proxy::{self, ResourceInstanceJson, ResourceUsage, UsageRef};
 use super::db_proxy_client::ModuleDbProxy;
+use super::theme::{self, InstalledModule};
 
 pub struct DeleteContext<'a, R: Repository> {
     pub db_proxy: &'a dyn ModuleDbProxy,
-    pub application_id: &'a str,
     pub module_id: &'a str,
     pub module_name: &'a str,
     pub module_key: &'a str,
@@ -184,7 +184,7 @@ impl ModuleDeletePlan {
             }
             DeleteStep::Workflows => {
                 ctx.db_proxy
-                    .delete_workflows_by_module("", ctx.manifest_id)
+                    .delete_workflows_by_module(ctx.manifest_id)
                     .await
             }
             DeleteStep::Actions => {
@@ -356,7 +356,6 @@ pub async fn run_delete_resolved<R: Repository>(
     resolved: &ResolvedModule,
     module_name: &str,
     db_proxy: &dyn ModuleDbProxy,
-    application_id: &str,
     repository: &R,
     registry: Arc<ModuleRegistry>,
 ) -> Result<(), DeleteError> {
@@ -376,7 +375,7 @@ pub async fn run_delete_resolved<R: Repository>(
     // `resource_type` ("instance:<kind>") lets the UI render an
     // instance-specific affordance ("Delete this counter first").
     let mut usage = db_proxy
-        .check_module_resource_usage(&resolved.module_id, application_id)
+        .check_module_resource_usage(&resolved.module_id)
         .await
         .map_err(DeleteError::Other)?;
 
@@ -393,6 +392,23 @@ pub async fn run_delete_resolved<R: Repository>(
         usage.extend(instances.into_iter().map(instance_to_usage));
     }
 
+    let installed: Vec<InstalledModule> = db_proxy
+        .list_modules()
+        .await
+        .map_err(DeleteError::Other)?
+        .into_iter()
+        .filter_map(InstalledModule::from_record)
+        .collect();
+    let dependents = theme::dependents_of(&installed, &resolved.manifest_id);
+    if !dependents.is_empty() {
+        info!(
+            "module {} is required by {} installed module(s); blocking uninstall",
+            module_name,
+            dependents.len()
+        );
+        usage.push(dependents_to_usage(&resolved.manifest_id, dependents));
+    }
+
     if !usage.is_empty() {
         return Err(DeleteError::InUse(usage));
     }
@@ -401,7 +417,6 @@ pub async fn run_delete_resolved<R: Repository>(
     let plan = ModuleDeletePlan::new();
     let ctx = DeleteContext {
         db_proxy,
-        application_id,
         module_id: &resolved.module_id,
         module_name,
         module_key: &resolved.module_key,
@@ -413,6 +428,27 @@ pub async fn run_delete_resolved<R: Repository>(
         .map_err(DeleteError::Other)?;
 
     Ok(())
+}
+
+/// Project the modules whose `requires` names this one into the in-use
+/// channel. `resource_type` is `"module"` because the whole module, not one
+/// of its resources, is what they need; each dependent is a `module` source
+/// whose context carries the range it requires.
+fn dependents_to_usage(manifest_id: &str, dependents: Vec<(String, String)>) -> ResourceUsage {
+    ResourceUsage {
+        resource_id: String::new(),
+        resource_type: "module".to_string(),
+        resource_name: manifest_id.to_string(),
+        used_by: dependents
+            .into_iter()
+            .map(|(module_id, range)| UsageRef {
+                source_type: "module".to_string(),
+                source_id: module_id.clone(),
+                source_name: module_id,
+                context: format!("requires {range}"),
+            })
+            .collect(),
+    }
 }
 
 /// Project a `ResourceInstanceJson` into the `ResourceUsage` shape so
@@ -518,7 +554,6 @@ mod tests {
             &system_module("woofx3"),
             "woofx3",
             &db_proxy,
-            "",
             &repo,
             registry,
         )
@@ -555,7 +590,6 @@ mod tests {
             &system_module("woofx3"),
             "woofx3",
             &db_proxy,
-            "",
             &repo,
             registry,
         )
@@ -576,7 +610,7 @@ mod tests {
         let resolved = resolved_module("del-mod-1");
         let registry = Arc::new(ModuleRegistry::new());
 
-        run_delete_resolved(&resolved, "Del Mod 1", &db_proxy, "", &repo, registry)
+        run_delete_resolved(&resolved, "Del Mod 1", &db_proxy, &repo, registry)
             .await
             .expect("delete should succeed against a fake with no configured failures");
 
@@ -591,6 +625,7 @@ mod tests {
             vec![
                 "check_module_resource_usage",
                 "list_resource_instances_by_module",
+                "list_modules",
                 "delete_commands_by_module",
                 "delete_workflows_by_module",
                 "delete_actions_by_module_id",
@@ -600,6 +635,48 @@ mod tests {
                 "delete_module_resources",
                 "delete_module",
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_to_delete_a_module_another_installed_module_requires() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        let pack: db_proxy::ModuleRecord = serde_json::from_value(serde_json::json!({
+            "id": "row-2",
+            "module_id": "neonpack",
+            "module_key": "neonpack:1.0.0:def5678",
+            "name": "Neon Pack",
+            "version": "1.0.0",
+            "state": "active",
+            "manifest": r#"{"id":"neonpack","name":"Neon Pack","requires":{"timerpro":"^1.2.0"}}"#
+        }))
+        .expect("module record");
+        let db_proxy = FakeDbProxyClient::new().with_installed([pack]);
+        let mut resolved = resolved_module("row-1");
+        resolved.manifest_id = "timerpro".to_string();
+
+        let err = run_delete_resolved(
+            &resolved,
+            "Timer Pro",
+            &db_proxy,
+            &repo,
+            Arc::new(ModuleRegistry::new()),
+        )
+        .await
+        .expect_err("a required module stays installed");
+        let DeleteError::InUse(usage) = err else {
+            panic!("expected InUse, got {err:?}");
+        };
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].resource_type, "module");
+        assert_eq!(usage[0].used_by[0].source_name, "neonpack");
+        assert_eq!(usage[0].used_by[0].context, "requires ^1.2.0");
+        assert!(
+            !db_proxy.calls().iter().any(|c| c.starts_with("delete_")),
+            "nothing is deleted"
         );
     }
 
@@ -617,7 +694,7 @@ mod tests {
         let resolved = resolved_module("del-mod-2");
         let registry = Arc::new(ModuleRegistry::new());
 
-        let err = run_delete_resolved(&resolved, "Del Mod 2", &db_proxy, "", &repo, registry)
+        let err = run_delete_resolved(&resolved, "Del Mod 2", &db_proxy, &repo, registry)
             .await
             .expect_err("delete should fail when delete_actions_by_module_id fails");
         assert!(matches!(err, DeleteError::Other(_)));
@@ -628,6 +705,7 @@ mod tests {
             vec![
                 "check_module_resource_usage",
                 "list_resource_instances_by_module",
+                "list_modules",
                 "delete_commands_by_module",
                 "delete_workflows_by_module",
                 "delete_actions_by_module_id",

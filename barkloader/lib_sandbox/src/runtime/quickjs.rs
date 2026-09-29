@@ -230,6 +230,7 @@ fn build_ctx_object<'js>(
     build_http_namespace(ctx, &ctx_obj, invocation)?;
     build_env_namespace(ctx, &ctx_obj, invocation)?;
     build_resources_namespace(ctx, &ctx_obj, invocation)?;
+    build_schedule_namespace(ctx, &ctx_obj, invocation)?;
     build_module_namespace(ctx, &ctx_obj, invocation)?;
     build_log_namespace(ctx, &ctx_obj, invocation)?;
     build_response_fn(ctx, &ctx_obj)?;
@@ -520,11 +521,11 @@ fn build_resources_namespace<'js>(
     .map_err(map)?;
     resources.set("create", create_fn).map_err(map)?;
 
-    let client = invocation.host.resources.clone();
+    let host = invocation.host.clone();
     let delete_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, canonical_id: String| -> rquickjs::Result<()> {
-            client.delete(&canonical_id).map_err(host_err)?;
+            super::host_bindings::resources_delete(&host, &canonical_id).map_err(host_err)?;
             Ok(())
         },
     )
@@ -552,6 +553,67 @@ fn build_resources_namespace<'js>(
     resources.set("list", list_fn).map_err(map)?;
 
     ctx_obj.set("resources", resources).map_err(map)?;
+    Ok(())
+}
+
+/// `ctx.schedule` -- one-shot invocations of a function the module declared
+/// under `deadlines`.
+///
+///   - `ctx.schedule.at(deadlineId, key, whenMs, params?)` -> no return; upsert
+///   - `ctx.schedule.cancel(deadlineId, key)` -> no return; no-op when absent
+///
+/// Both throw on a refused request; see `host_bindings::schedule_at`.
+fn build_schedule_namespace<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    invocation: &InvocationContext,
+) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let schedule = Object::new(ctx.clone()).map_err(map)?;
+
+    let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let at_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>,
+              deadline_id: String,
+              key: String,
+              when_ms: f64,
+              params: Opt<JsValue<'_>>|
+              -> rquickjs::Result<()> {
+            let json_params = params
+                .0
+                .as_ref()
+                .map(js_to_json)
+                .transpose()
+                .map_err(|e| host_err(e.to_string()))?;
+            super::host_bindings::schedule_at(
+                &host,
+                &module_id,
+                &deadline_id,
+                &key,
+                when_ms,
+                json_params,
+            )
+            .map_err(host_err)
+        },
+    )
+    .map_err(map)?;
+    schedule.set("at", at_fn).map_err(map)?;
+
+    let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let cancel_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, deadline_id: String, key: String| -> rquickjs::Result<()> {
+            super::host_bindings::schedule_cancel(&host, &module_id, &deadline_id, &key)
+                .map_err(host_err)
+        },
+    )
+    .map_err(map)?;
+    schedule.set("cancel", cancel_fn).map_err(map)?;
+
+    ctx_obj.set("schedule", schedule).map_err(map)?;
     Ok(())
 }
 
@@ -749,6 +811,49 @@ mod tests {
     use super::*;
     use crate::host::{InvocationContext, noop::noop_host_context};
     use crate::runtime::RuntimeAdapter;
+
+    #[test]
+    fn quickjs_ctx_schedule_reaches_the_scheduler_and_throws_a_refusal() {
+        let schedule = std::sync::Arc::new(crate::host::recording::RecordingSchedule::default());
+        let mut host = noop_host_context();
+        host.schedule = schedule.clone();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "1.0.0".to_string(),
+        };
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = r#"
+            function run(ctx) {
+                ctx.schedule.at("timer_end", "t1", 2000, { target: "t1" });
+                ctx.schedule.cancel("timer_end", "t2");
+                return { ok: true };
+            }
+        "#;
+        adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(
+            *schedule.calls.lock().unwrap(),
+            vec!["at mymod/timer_end/t1@2000", "cancel mymod/timer_end/t2"]
+        );
+        assert_eq!(
+            schedule.params.lock().unwrap()[0],
+            serde_json::json!({ "target": "t1" })
+        );
+
+        *schedule.refusal.lock().unwrap() = Some("deadline not declared".to_string());
+        let err = adapter
+            .execute(
+                r#"function run(ctx) { ctx.schedule.at("nope", "t1", 0); return {}; }"#,
+                "run",
+                &invocation,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("deadline not declared"), "{err}");
+    }
 
     #[test]
     fn a_thrown_error_reports_its_message() {

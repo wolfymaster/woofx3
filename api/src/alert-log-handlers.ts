@@ -23,7 +23,7 @@ export type AlertUpdatedEvent =
   | AlertSkippedEvent;
 
 // The db proxy publishes alert lifecycle events on
-// `db.alert.{created,updated,deleted}.{appId}`. We only project the
+// `db.alert.{created,updated,deleted}`. We only project the
 // `created` and `updated` flavors today — `created` becomes
 // `alert.recorded`, and `updated` (with `status: "replayed"`) becomes
 // `alert.replayed`. Other status changes don't produce a webhook
@@ -38,8 +38,6 @@ export type AlertUpdatedEvent =
 interface RawAlertRow {
   ID?: unknown;
   id?: unknown;
-  ApplicationID?: unknown;
-  application_id?: unknown;
   Payload?: unknown;
   payload?: unknown;
   WorkflowID?: unknown;
@@ -78,7 +76,6 @@ function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
   const errorMsg = pickFirst(row.Error, row.error);
   return {
     id,
-    applicationId: pickFirst(row.ApplicationID, row.application_id),
     payload: pickFirst(row.Payload, row.payload),
     workflowId: pickFirst(row.WorkflowID, row.workflow_id),
     sourceEventId: pickFirst(row.SourceEventID, row.source_event_id),
@@ -101,22 +98,18 @@ function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
 }
 
 export interface ParsedAlertChange<T> {
-  applicationId: string;
   clientId: string;
   event: T | null;
 }
 
 export function parseAlertCreated(ce: Record<string, unknown>): ParsedAlertChange<AlertRecordedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
   return {
-    applicationId,
     clientId,
     event: snapshot
       ? {
           type: EngineEventType.ALERT_RECORDED,
-          applicationId,
           alert: snapshot,
         }
       : null,
@@ -136,31 +129,30 @@ export function parseAlertCreated(ce: Record<string, unknown>): ParsedAlertChang
  * the operator UI wants live "currently playing" highlights.
  */
 export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChange<AlertUpdatedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
   if (!snapshot) {
-    return { applicationId, clientId, event: null };
+    return { clientId, event: null };
   }
   let event: AlertUpdatedEvent | null = null;
   switch (snapshot.status) {
     case "replayed":
-      event = { type: EngineEventType.ALERT_REPLAYED, applicationId, alert: snapshot };
+      event = { type: EngineEventType.ALERT_REPLAYED, alert: snapshot };
       break;
     case "completed":
-      event = { type: EngineEventType.ALERT_COMPLETED, applicationId, alert: snapshot };
+      event = { type: EngineEventType.ALERT_COMPLETED, alert: snapshot };
       break;
     case "failed":
-      event = { type: EngineEventType.ALERT_FAILED, applicationId, alert: snapshot };
+      event = { type: EngineEventType.ALERT_FAILED, alert: snapshot };
       break;
     case "timed_out":
-      event = { type: EngineEventType.ALERT_TIMED_OUT, applicationId, alert: snapshot };
+      event = { type: EngineEventType.ALERT_TIMED_OUT, alert: snapshot };
       break;
     case "skipped":
-      event = { type: EngineEventType.ALERT_SKIPPED, applicationId, alert: snapshot };
+      event = { type: EngineEventType.ALERT_SKIPPED, alert: snapshot };
       break;
   }
-  return { applicationId, clientId, event };
+  return { clientId, event };
 }
 
 /**

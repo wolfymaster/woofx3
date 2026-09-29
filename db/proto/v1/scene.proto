@@ -6,7 +6,7 @@ option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
 import "common.proto";
 import "google/protobuf/timestamp.proto";
 
-// Per-application widget arrangement.
+// A widget arrangement.
 //
 // Mirrors `workflow.Workflow` in shape: typed audit fields + opaque
 // JSON strings (`widgets_json`, `layout_json`) the engine forwards
@@ -31,7 +31,8 @@ service SceneService {
 
 message Scene {
     string id = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string name = 3;
     string description = 4;
     // JSON array of placed widget instances. Shape:
@@ -53,7 +54,8 @@ message Scene {
 }
 
 message CreateSceneRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string name = 2;
     string description = 3;
     // JSON-encoded widget-instances array. Persisted verbatim into
@@ -92,7 +94,8 @@ message DeleteSceneRequest {
 }
 
 message ListScenesRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     int32 page = 2;
     int32 page_size = 3;
     string sort_by = 4;  // e.g. "name", "created_at", "updated_at"

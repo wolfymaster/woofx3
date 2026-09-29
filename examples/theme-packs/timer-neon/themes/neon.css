@@ -1,0 +1,16 @@
+/* Loaded after the Timer widget's own styles, so these rules win over the
+   defaults they restyle. Files come through the manifest's asset slots
+   (var(--theme-asset-*)), never a url() here: the widget frame only loads
+   styles, fonts and media from the engine. */
+#box {
+  border: 2px solid #ff2bd6;
+  border-radius: 12px;
+  box-shadow:
+    0 0 24px rgba(255, 43, 214, 0.5),
+    inset 0 0 24px rgba(255, 43, 214, 0.25);
+}
+
+#text {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

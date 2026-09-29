@@ -26,8 +26,7 @@ there.
 | workflow | `${woofx3_asset_url:...}` token values (see [Expressions](../workflow/expressions.md)) |
 | barkloader | The `resourceBaseUrl` a widget frame's `<base>` tag points at |
 
-Each resolves the same row — process-wide, not per application — and
-caches it for 30 seconds.
+Each resolves the same row and caches it for 30 seconds.
 
 ## Why there's only one URL setting
 
@@ -77,4 +76,4 @@ address, never to an empty or guessed one.
 ## Out of scope
 
 - No per-workflow override — `scene.publicUrl` is one value per
-  deployment (process-wide, not even per-application).
+  deployment.

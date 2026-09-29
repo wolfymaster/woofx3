@@ -16,9 +16,7 @@ export const workflowsRoutes = routeModule({
   }> {
     const page = query?.page ?? 1;
     const pageSize = query?.pageSize ?? 20;
-    const applicationId = await this.ensureApplicationId();
     const response = await this.db.listWorkflows({
-      applicationId,
       includeDisabled: query?.enabled === undefined ? true : !query.enabled,
       page,
       pageSize,
@@ -58,7 +56,6 @@ export const workflowsRoutes = routeModule({
     }
 
     this.logger.info("Creating workflow", { name: data.definition.name });
-    const applicationId = await this.ensureApplicationId();
 
     // Steps and trigger are persisted as raw JSON; the engine reads
     // them directly off the workflow row. The definition's `id` is
@@ -67,7 +64,6 @@ export const workflowsRoutes = routeModule({
     const response = await this.db.createWorkflow({
       name: data.definition.name,
       description: data.definition.description ?? "",
-      applicationId,
       enabled: false,
       stepsJson: JSON.stringify(data.definition.tasks ?? []),
       triggerJson: JSON.stringify(data.definition.trigger),
@@ -94,7 +90,6 @@ export const workflowsRoutes = routeModule({
 
     void this.emitWorkflowWebhook({
       type: EngineEventType.WORKFLOW_CREATED,
-      applicationId,
       correlationKey: data.correlationKey,
       workflow: {
         id: createdId,
@@ -146,14 +141,12 @@ export const workflowsRoutes = routeModule({
 
     this.logger.info("Updated workflow", { id, name: response.name });
 
-    const applicationId = await this.ensureApplicationId();
     const isEnabled = response.enabled ?? false;
     const createdAt = timestampToIso(existing.createdAt);
     const updatedAt = timestampToIso(response.updatedAt);
 
     void this.emitWorkflowWebhook({
       type: EngineEventType.WORKFLOW_UPDATED,
-      applicationId,
       correlationKey: data.correlationKey,
       workflow: {
         id,
@@ -169,14 +162,12 @@ export const workflowsRoutes = routeModule({
   },
 
   async deleteWorkflow(id: string, correlationKey?: string): Promise<boolean> {
-    const applicationId = await this.ensureApplicationId();
     this.logger.info("Deleting workflow", { id });
     const deleted = await this.db.tryDeleteWorkflow({ id });
     this.logger.info("Workflow deleted", { id, success: deleted });
     if (deleted) {
       void this.emitWorkflowWebhook({
         type: EngineEventType.WORKFLOW_DELETED,
-        applicationId,
         correlationKey,
         workflowId: id,
       });
@@ -206,14 +197,12 @@ export const workflowsRoutes = routeModule({
       timeoutSeconds: existing.timeoutSeconds ?? 0,
     });
 
-    const applicationId = await this.ensureApplicationId();
     const definition = rebuildWorkflowDefinition(existing);
     if (definition) {
       const createdAt = timestampToIso(existing.createdAt);
       const updatedAt = timestampToIso(response.updatedAt);
       void this.emitWorkflowWebhook({
         type: EngineEventType.WORKFLOW_UPDATED,
-        applicationId,
         correlationKey,
         workflow: {
           id,
@@ -241,10 +230,8 @@ export const workflowsRoutes = routeModule({
       error: string;
     }>
   > {
-    const applicationId = await this.ensureApplicationId();
     const req: workflow.ListWorkflowExecutionsRequest = {
       workflowId: query?.workflowId || "",
-      applicationId,
       status: "",
       startedBy: "",
       from: protoscript.Timestamp.initialize(),

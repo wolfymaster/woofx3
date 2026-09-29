@@ -75,9 +75,9 @@ type settledRuns struct {
 	done chan struct{}
 }
 
-func (r *settledRuns) RunStarted(string, *types.WorkflowExecution)           {}
-func (r *settledRuns) StepSettled(string, *types.WorkflowExecution, RunStep) {}
-func (r *settledRuns) RunSettled(_ string, execution *types.WorkflowExecution) {
+func (r *settledRuns) RunStarted(*types.WorkflowExecution)           {}
+func (r *settledRuns) StepSettled(*types.WorkflowExecution, RunStep) {}
+func (r *settledRuns) RunSettled(execution *types.WorkflowExecution) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.runs = append(r.runs, *execution)

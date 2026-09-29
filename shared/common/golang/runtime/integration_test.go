@@ -239,3 +239,56 @@ func TestIntegration_ServiceRetryOnlyFailedServices(t *testing.T) {
 
 	rt.Stop()
 }
+
+// slowStopService records when its Disconnect starts and finishes, taking a
+// while in between, as a store flushing to a replica does.
+type slowStopService struct {
+	*BaseService[any]
+	events *[]string
+	mu     *sync.Mutex
+	delay  time.Duration
+}
+
+func (s *slowStopService) Disconnect(ctx context.Context) error {
+	s.mu.Lock()
+	*s.events = append(*s.events, s.Name()+" stopping")
+	s.mu.Unlock()
+	time.Sleep(s.delay)
+	s.mu.Lock()
+	*s.events = append(*s.events, s.Name()+" stopped")
+	s.mu.Unlock()
+	return s.BaseService.Disconnect(ctx)
+}
+
+func TestIntegration_ShutdownFinishesDependentsFirst(t *testing.T) {
+	events := []string{}
+	mu := &sync.Mutex{}
+
+	app := NewBaseApplication()
+	storage := &slowStopService{BaseService: NewBaseService[any]("storage", "test", nil, false), events: &events, mu: mu, delay: 50 * time.Millisecond}
+	server := &slowStopService{BaseService: NewBaseServiceWithDeps[any]("server", "test", nil, false, []string{"storage"}), events: &events, mu: mu, delay: 50 * time.Millisecond}
+	if err := app.Register("storage", storage); err != nil {
+		t.Fatalf("register storage: %v", err)
+	}
+	if err := app.Register("server", server); err != nil {
+		t.Fatalf("register server: %v", err)
+	}
+
+	rt, err := NewRuntime(&RuntimeConfig{Application: app, Logger: &noOpLogger{}})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	rt.Start()
+	time.Sleep(100 * time.Millisecond)
+
+	if err := rt.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"server stopping", "server stopped", "storage stopping", "storage stopped"}
+	if fmt.Sprint(events) != fmt.Sprint(want) {
+		t.Errorf("shutdown events = %v, want %v: Stop must wait for each batch, dependents first", events, want)
+	}
+}

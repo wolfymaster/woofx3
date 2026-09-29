@@ -25,18 +25,11 @@ describe("the RPC surface a client sees", () => {
 
   test("does not expose engine wiring", () => {
     // Each of these was reachable by any authenticated client before the
-    // surface was pinned. setApplicationId rewrites the process-wide
-    // application id and cascades into the webhook client;
-    // initSubscriptions duplicates four NATS subscriptions on every call;
+    // surface was pinned. setWebhookClient swaps where every engine event
+    // is delivered; initSubscriptions duplicates four NATS subscriptions on every call;
     // handleProcessingCallback is barkloader's completion path, which
     // http.ts serves separately and deliberately keeps off capnweb.
-    const internal = [
-      "setApplicationId",
-      "setWebhookClient",
-      "setAuthInvalidate",
-      "initSubscriptions",
-      "handleProcessingCallback",
-    ];
+    const internal = ["setWebhookClient", "setAuthInvalidate", "initSubscriptions", "handleProcessingCallback"];
     for (const name of internal) {
       expect(exposedMethods()).not.toContain(name);
     }
@@ -44,7 +37,7 @@ describe("the RPC surface a client sees", () => {
 
   test("still carries the wiring on Api itself, where the engine calls it", () => {
     // Hidden from clients, not removed: application.ts drives all of these.
-    for (const name of ["setApplicationId", "setWebhookClient", "initSubscriptions", "handleProcessingCallback"]) {
+    for (const name of ["setWebhookClient", "initSubscriptions", "handleProcessingCallback"]) {
       expect(typeof (Api.prototype as unknown as Record<string, unknown>)[name]).toBe("function");
     }
   });
@@ -95,8 +88,6 @@ describe("the RPC surface a client sees", () => {
     // it just silently fails to appear. This catches that direction, so the
     // choice is deliberate either way -- declare it, or name it here.
     const INTERNAL = [
-      "applicationIdOrNull",
-      "setApplicationId",
       "setWebhookClient",
       "setAuthInvalidate",
       "setStreamEventBroadcaster",

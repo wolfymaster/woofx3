@@ -97,6 +97,40 @@ export interface WidgetEventSource {
 }
 
 /**
+ * The theme a widget renders with, for a widget whose manifest declares a
+ * `theme` contract. Theme values are already applied before the widget runs:
+ * every variable is set as the CSS custom property `--theme-{id}` and every
+ * filled asset slot as `--theme-asset-{id}: url(...)`, so a widget styled
+ * with those needs no script at all. This object is for the rest - an
+ * `<audio>` source, a canvas colour.
+ *
+ * Widget code is the same for every theme: with no theme selected, or one
+ * that is missing or no longer fits the contract, every value is the
+ * contract's default.
+ */
+export interface WidgetTheme {
+  /** Canonical id of the theme in effect, or `null` for the defaults. */
+  readonly id: string | null;
+  readonly contractVersion: number;
+  /** Contract variable id to CSS value. Every declared variable is present. */
+  readonly variables: Readonly<Record<string, string>>;
+  /** Asset slot id to URL, `null` for a slot with nothing to show. */
+  readonly assets: Readonly<Record<string, string | null>>;
+  /**
+   * What each slot shows without a theme. Use it when a theme file fails to
+   * load in the browser (an `error` event), so a broken file shows the
+   * widget's own look rather than nothing.
+   */
+  readonly defaultAssets: Readonly<Record<string, string | null>>;
+  /**
+   * Why the defaults are shown although a theme was selected: `missing`
+   * when no installed module provides it, `incompatible` when it no longer
+   * fits the widget's contract. `null` otherwise.
+   */
+  readonly fallback: "missing" | "incompatible" | null;
+}
+
+/**
  * The injected `window.widgetHost` object — the only API a widget
  * bundle interacts with. The contract is host-agnostic so the same
  * widget code works inside streamware's iframe sandbox, a future
@@ -108,6 +142,10 @@ export interface WidgetHost {
    *  widget's `settingsSchema`. Frozen at load time. */
   readonly settings: Readonly<Record<string, unknown>>;
   readonly surface: WidgetSurface;
+
+  /** The theme in effect, or `null` for a widget that declares no theme
+   *  contract. Frozen at load time. */
+  readonly theme: WidgetTheme | null;
 
   /** Module id this widget belongs to. Surfaced so widgets can scope
    *  storage calls without the shell having to bind it. */
@@ -197,9 +235,6 @@ export interface WidgetStatusReport {
   instanceId: string;
   /** Canonical widget definition id, when known. */
   widgetCanonicalId?: string;
-  /** Optional explicit applicationId; the orchestrator falls back to
-   *  its warmed default when absent. */
-  applicationId?: string;
   key: string;
   value: unknown;
   ts?: string;

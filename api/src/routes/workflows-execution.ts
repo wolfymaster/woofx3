@@ -17,9 +17,7 @@ export const workflowsExecutionRoutes = routeModule({
     }>;
   }> {
     this.logger.debug("Getting available workflows");
-    const applicationId = await this.ensureApplicationId();
     const req: workflow.ListWorkflowsRequest = {
-      applicationId,
       includeDisabled: false,
       page: 1,
       pageSize: 1000,
@@ -36,7 +34,6 @@ export const workflowsExecutionRoutes = routeModule({
       response.workflows.map(async (wf) => {
         const execReq: workflow.ListWorkflowExecutionsRequest = {
           workflowId: wf.id,
-          applicationId,
           status: "",
           startedBy: "",
           from: protoscript.Timestamp.initialize(),
@@ -94,10 +91,8 @@ export const workflowsExecutionRoutes = routeModule({
       triggerId,
       parametersCount: Object.keys(parameters).length,
     });
-    const applicationId = await this.ensureApplicationId();
     // First, find the workflow by name
     const workflowsReq: workflow.ListWorkflowsRequest = {
-      applicationId,
       includeDisabled: false,
       page: 1,
       pageSize: 1000,
@@ -278,11 +273,9 @@ export const workflowsExecutionRoutes = routeModule({
       startedBy: string;
     }>;
   }> {
-    const applicationId = await this.ensureApplicationId();
     let workflowId: string | undefined;
     if (options.workflowName) {
       const workflowsReq: workflow.ListWorkflowsRequest = {
-        applicationId,
         includeDisabled: false,
         page: 1,
         pageSize: 1000,
@@ -298,7 +291,6 @@ export const workflowsExecutionRoutes = routeModule({
 
     const req: workflow.ListWorkflowExecutionsRequest = {
       workflowId: workflowId || "",
-      applicationId,
       status: options.status || "",
       startedBy: options.userId || "",
       from: protoscript.Timestamp.initialize(),

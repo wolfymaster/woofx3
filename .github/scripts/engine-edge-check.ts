@@ -93,7 +93,7 @@ await check("registerClient is refused with the wrong registration token", async
   assert(isRefusal(refused), `expected a refusal, got: ${refused}`);
 });
 
-let credentials: { clientId: string; clientSecret: string; applicationId: string } | null = null;
+let credentials: { clientId: string; clientSecret: string } | null = null;
 
 await check("registerClient succeeds with the registration token", async () => {
   credentials = await createEngineGatewaySession(BASE_URL).registerClient("engine-image-check", {
@@ -102,7 +102,6 @@ await check("registerClient succeeds with the registration token", async () => {
   });
   assert(credentials.clientId.length > 0, "no clientId returned");
   assert(credentials.clientSecret.length > 0, "no clientSecret returned");
-  assert(credentials.applicationId.length > 0, "no applicationId returned");
 });
 
 if (credentials === null) {

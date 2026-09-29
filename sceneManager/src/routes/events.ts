@@ -168,7 +168,6 @@ export async function handleWidgetStatusRoute(
   }
 
   await handleStatusReport(deps.ctx.services.db.client, deps.ctx.logger, {
-    applicationId: claims.applicationId,
     moduleId: typeof body.moduleId === "string" ? body.moduleId : "",
     instanceId,
     widgetCanonicalId: typeof body.widgetCanonicalId === "string" ? body.widgetCanonicalId : undefined,

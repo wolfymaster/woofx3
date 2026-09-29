@@ -1,5 +1,4 @@
 import * as alert from "@woofx3/db/alert.pb";
-import * as application from "@woofx3/db/application.pb";
 import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
 import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
@@ -17,9 +16,11 @@ import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
+import * as stream_gauge from "@woofx3/db/stream_gauge.pb";
 import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
+import * as user_event from "@woofx3/db/user_event.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
@@ -110,6 +111,24 @@ function unwrapVoid(op: string, response: { status?: { code?: string; message?: 
   const code = response.status?.code;
   if (code !== "OK") {
     throw new DbError(op, code ?? "unknown", response.status?.message ?? "");
+  }
+}
+
+/**
+ * Runs a read keyed by a stream session id and returns null when db-proxy has
+ * no such session. Session ids are opaque to callers, so an id db-proxy cannot
+ * parse (`invalid_argument`) is the same answer as one it cannot find; callers
+ * validate every other argument first, so that code means the id.
+ */
+async function nullWhenSessionMissing<T>(op: string, read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch (err) {
+    const failure = toError(err, op);
+    if (failure instanceof DbError && (failure.code === "not_found" || failure.code === "invalid_argument")) {
+      return null;
+    }
+    throw failure;
   }
 }
 
@@ -316,7 +335,7 @@ export class DbClient {
     unwrapStatus("deleteWorkflow", await workflow.DeleteWorkflow(req, this.config));
   }
 
-  // SceneService — per-application widget arrangement persistence.
+  // SceneService — widget arrangement persistence.
   // The engine treats widgets_json / layout_json as opaque strings,
   // mirroring the workflow steps_json / trigger_json pattern.
   async getScene(req: scene.GetSceneRequest): Promise<scene.Scene> {
@@ -459,7 +478,7 @@ export class DbClient {
   }
 
   /**
-   * Drop every module storage key the application flagged session-scoped,
+   * Drop every module storage key flagged session-scoped,
    * returning what went, by namespace and key. The storage RPCs carry no status
    * envelope, so there is nothing to unwrap.
    */
@@ -469,9 +488,11 @@ export class DbClient {
   }
 
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
-  async getModuleStorageValue(applicationId: string, namespace: string, key: string): Promise<unknown> {
-    const response = await storage.Get({ applicationId, namespace, key }, this.config);
-    if (!response.item) {
+  async getModuleStorageValue(namespace: string, key: string): Promise<unknown> {
+    const response = await storage.Get({ namespace, key }, this.config);
+    // The generated decoder fills an absent `item` with an empty StorageItem,
+    // so absence shows as a blank key rather than a missing field.
+    if (!response.item || response.item.key === "") {
       return undefined;
     }
     return JSON.parse(response.item.value);
@@ -515,14 +536,133 @@ export class DbClient {
     return unwrap("closeStreamSessionSegment", response, response.segment);
   }
 
-  async getStreamSession(req: stream_session.GetStreamSessionRequest): Promise<stream_session.StreamSession> {
-    const response = await stream_session.GetStreamSession(req, this.config);
-    return unwrap("getStreamSession", response, response.session);
+  /**
+   * One session and its segments, or null when db-proxy has no session with
+   * that id. Session ids are opaque to callers, so one db-proxy cannot parse
+   * is the same answer as one it cannot find.
+   */
+  async findStreamSession(
+    req: stream_session.GetStreamSessionRequest
+  ): Promise<{ session: stream_session.StreamSession; segments: stream_session.StreamSessionSegment[] } | null> {
+    let response: stream_session.StreamSessionResponse;
+    try {
+      response = await stream_session.GetStreamSession(req, this.config);
+    } catch (err) {
+      const failure = toError(err, "findStreamSession");
+      if (failure instanceof DbError && (failure.code === "not_found" || failure.code === "invalid_argument")) {
+        return null;
+      }
+      throw failure;
+    }
+    const session = unwrap("findStreamSession", response, response.session);
+    return { session, segments: response.segments ?? [] };
   }
 
-  async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<stream_session.StreamSession[]> {
+  /** A page of sessions, newest first, with every segment of those sessions. */
+  async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<{
+    sessions: stream_session.StreamSession[];
+    segments: stream_session.StreamSessionSegment[];
+    totalCount: number;
+    limit: number;
+    offset: number;
+  }> {
     const response = await stream_session.ListStreamSessions(req, this.config);
-    return unwrap("listStreamSessions", response, response.sessions ?? []);
+    unwrapVoid("listStreamSessions", response);
+    return {
+      sessions: response.sessions ?? [],
+      segments: response.segments ?? [],
+      totalCount: Number(response.totalCount),
+      limit: response.limit,
+      offset: response.offset,
+    };
+  }
+
+  /**
+   * Records one platform event. Idempotent on the CloudEvent's source and id,
+   * so a retry after an ambiguous failure cannot double-count.
+   */
+  async recordUserEvent(req: user_event.RecordUserEventRequest): Promise<user_event.RecordUserEventResponse> {
+    const response = await user_event.RecordUserEvent(req, this.config);
+    unwrapVoid("recordUserEvent", response);
+    return response;
+  }
+
+  /**
+   * Records the gauge sample for one minute of the open segment. Rejects with
+   * `failed_precondition` when no segment is open, and returns the stored row
+   * with `created` false when the minute was already sampled.
+   */
+  async recordStreamGaugeSample(
+    req: stream_gauge.RecordStreamGaugeSampleRequest
+  ): Promise<stream_gauge.RecordStreamGaugeSampleResponse> {
+    const response = await stream_gauge.RecordStreamGaugeSample(req, this.config);
+    unwrapVoid("recordStreamGaugeSample", response);
+    return response;
+  }
+
+  /**
+   * A session's gauge samples, oldest first, resolved through its segments,
+   * or null when db-proxy has no session with that id.
+   */
+  async findStreamGaugeSamples(streamSessionId: string): Promise<stream_gauge.StreamGaugeSample[] | null> {
+    const response = await nullWhenSessionMissing("findStreamGaugeSamples", () =>
+      stream_gauge.ListStreamGaugeSamples({ streamSessionId }, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("findStreamGaugeSamples", response);
+    return response.samples ?? [];
+  }
+
+  /** Channel totals for the time a session owns, or null for an unknown session. */
+  async findStreamSessionEventTotals(streamSessionId: string): Promise<user_event.StreamSessionEventTotals | null> {
+    const response = await nullWhenSessionMissing("findStreamSessionEventTotals", () =>
+      user_event.GetStreamSessionEventTotals({ streamSessionId }, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    return unwrap("findStreamSessionEventTotals", response, response.totals);
+  }
+
+  /**
+   * One viewer's totals for a session, or lifetime without one. Null only
+   * for an unknown session: a viewer with no events has zero totals.
+   */
+  async findViewerEventTotals(
+    req: user_event.GetViewerEventTotalsRequest
+  ): Promise<user_event.ViewerEventTotals | null> {
+    const response = await nullWhenSessionMissing("findViewerEventTotals", () =>
+      user_event.GetViewerEventTotals(req, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    return unwrap("findViewerEventTotals", response, response.totals);
+  }
+
+  /** Viewers ranked by the metric, highest first, or null for an unknown session. */
+  async findViewerLeaderboard(
+    req: user_event.ListViewerLeaderboardRequest
+  ): Promise<user_event.LeaderboardEntry[] | null> {
+    const response = await nullWhenSessionMissing("findViewerLeaderboard", () =>
+      user_event.ListViewerLeaderboard(req, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("findViewerLeaderboard", response);
+    return response.entries ?? [];
+  }
+
+  /** The latest events at or after `since`, newest first, and how many fell in that span. */
+  async listRecentUserEvents(
+    req: user_event.ListRecentUserEventsRequest
+  ): Promise<{ events: user_event.UserEvent[]; total: bigint }> {
+    const response = await user_event.ListRecentUserEvents(req, this.config);
+    unwrapVoid("listRecentUserEvents", response);
+    return { events: response.events ?? [], total: response.total };
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
@@ -586,10 +726,7 @@ export class DbClient {
    * Resources owned by this module that are still referenced externally
    * (workflows, commands, etc.). `moduleId` is the engine modules.id UUID.
    */
-  async checkModuleResourceUsage(
-    moduleId: string,
-    applicationId = ""
-  ): Promise<
+  async checkModuleResourceUsage(moduleId: string): Promise<
     Array<{
       resourceId: string;
       resourceType: string;
@@ -603,7 +740,7 @@ export class DbClient {
       }>;
     }>
   > {
-    const resp = await module.CheckModuleResourceUsage({ moduleId, applicationId }, this.config);
+    const resp = await module.CheckModuleResourceUsage({ moduleId }, this.config);
     return (resp.inUse ?? []).map((row) => ({
       resourceId: row.resourceId,
       resourceType: row.resourceType,
@@ -634,33 +771,6 @@ export class DbClient {
     return resp.actions;
   }
 
-  async createApplication(opts: {
-    name: string;
-    ownerId: string;
-    isDefault: boolean;
-  }): Promise<{ id: string; name: string }> {
-    const resp = await application.CreateApplication(
-      { name: opts.name, ownerId: opts.ownerId, isDefault: opts.isDefault },
-      this.config
-    );
-    if (!resp.application || resp.status?.code !== "OK") {
-      throw new Error(`createApplication failed: ${resp.status?.message ?? "unknown error"}`);
-    }
-    return { id: resp.application.id, name: resp.application.name };
-  }
-
-  async getApplication(req: application.GetApplicationRequest): Promise<application.ApplicationResponse> {
-    return application.GetApplication(req, this.config);
-  }
-
-  async getDefaultApplication(): Promise<{ id: string; name: string } | null> {
-    const resp = await application.GetDefaultApplication({}, this.config);
-    if (resp.status?.code !== "OK" || !resp.application) {
-      return null;
-    }
-    return { id: resp.application.id, name: resp.application.name };
-  }
-
   async findOrCreateByWoofx3UIUserId(woofx3UIUserId: string): Promise<{ id: string }> {
     const resp = await user.FindOrCreateByWoofx3UIUserId({ woofx3UiUserId: woofx3UIUserId }, this.config);
     if (!resp.user || resp.status?.code !== "OK") {
@@ -669,43 +779,37 @@ export class DbClient {
     return { id: resp.user.id };
   }
 
-  async setSetting(key: string, value: string, applicationId: string, userId?: string): Promise<void> {
-    unwrapVoid("setSetting", await this.writeSetting(key, value, applicationId, userId));
+  async setSetting(key: string, value: string, userId?: string): Promise<void> {
+    unwrapVoid("setSetting", await this.writeSetting(key, value, userId));
   }
 
   /**
    * Write a setting, reporting whether it landed. For the settings screens,
    * which surface a failed save as `{ success: false }` rather than throwing.
    */
-  async trySetSetting(key: string, value: string, applicationId: string, userId?: string): Promise<boolean> {
-    const response = await this.writeSetting(key, value, applicationId, userId);
+  async trySetSetting(key: string, value: string, userId?: string): Promise<boolean> {
+    const response = await this.writeSetting(key, value, userId);
     return response.status?.code === "OK";
   }
 
-  private async writeSetting(
-    key: string,
-    value: string,
-    applicationId: string,
-    userId?: string
-  ): Promise<setting.SettingResponse> {
+  private async writeSetting(key: string, value: string, userId?: string): Promise<setting.SettingResponse> {
     return setting.SetSetting(
       {
         userId: userId ?? "",
         key,
         value: { stringValue: value },
-        applicationId,
       },
       this.config
     );
   }
 
-  async getSetting(key: string, applicationId: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key, applicationId }, this.config);
+  async getSetting(key: string): Promise<string | null> {
+    const resp = await setting.GetSetting({ key }, this.config);
     return resp.setting?.value?.stringValue ?? null;
   }
 
-  async listSettings(keyPrefix: string, applicationId: string): Promise<Record<string, string>> {
-    const resp = await setting.ListSettingsByPrefix({ keyPrefix, applicationId }, this.config);
+  async listSettings(keyPrefix: string): Promise<Record<string, string>> {
+    const resp = await setting.ListSettingsByPrefix({ keyPrefix }, this.config);
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(resp.settings ?? {})) {
       if (value != null) {
@@ -723,8 +827,8 @@ export class DbClient {
     return clientPb.ValidateClient({ clientId, clientSecret }, this.config);
   }
 
-  async listClients(applicationId: string): Promise<clientPb.ListClientsResponse> {
-    return clientPb.ListClients({ applicationId }, this.config);
+  async listClients(): Promise<clientPb.ListClientsResponse> {
+    return clientPb.ListClients({}, this.config);
   }
 
   async getClientByClientID(clientId: string): Promise<clientPb.ClientResponse> {

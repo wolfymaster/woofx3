@@ -337,9 +337,6 @@ type RegisterTriggersRequest struct {
 	// namespace. The upsert key is (created_by_type, created_by_ref, name).
 	CreatedByType string `protobuf:"bytes,5,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string `protobuf:"bytes,6,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
-	// Scopes the registration to a specific application so cross-module
-	// dependency checks are tenant-isolated.
-	ApplicationId string `protobuf:"bytes,7,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
 	// so a module upgrade upserts its resources in place instead of orphaning
 	// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -417,13 +414,6 @@ func (x *RegisterTriggersRequest) GetCreatedByType() string {
 func (x *RegisterTriggersRequest) GetCreatedByRef() string {
 	if x != nil {
 		return x.CreatedByRef
-	}
-	return ""
-}
-
-func (x *RegisterTriggersRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -574,7 +564,7 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\ttransport\x18\n" +
 	" \x01(\tR\ttransport\x12\x18\n" +
 	"\ahandler\x18\v \x01(\tR\ahandler\x12\x1a\n" +
-	"\bsentence\x18\f \x01(\tR\bsentenceJ\x04\b\x01\x10\x02R\bcategory\"\xb7\x02\n" +
+	"\bsentence\x18\f \x01(\tR\bsentenceJ\x04\b\x01\x10\x02R\bcategory\"\xa6\x02\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
@@ -583,9 +573,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x120\n" +
 	"\btriggers\x18\x04 \x03(\v2\x14.module.TriggerInputR\btriggers\x12&\n" +
 	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\x12%\n" +
-	"\x0eapplication_id\x18\a \x01(\tR\rapplicationId\x12\x1b\n" +
-	"\tmodule_id\x18\b \x01(\tR\bmoduleId\"c\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\x12\x1b\n" +
+	"\tmodule_id\x18\b \x01(\tR\bmoduleIdJ\x04\b\a\x10\bR\x0eapplication_id\"c\n" +
 	"\x13ListTriggersRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"s\n" +

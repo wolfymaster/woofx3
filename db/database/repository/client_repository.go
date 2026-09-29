@@ -14,10 +14,6 @@ func NewClientRepository(db *gorm.DB) *ClientRepository {
 	return &ClientRepository{db: db}
 }
 
-func (r *ClientRepository) DB() *gorm.DB {
-	return r.db
-}
-
 func (r *ClientRepository) Create(client *models.Client) error {
 	return r.db.Create(client).Error
 }
@@ -34,9 +30,9 @@ func (r *ClientRepository) GetByClientID(clientID uuid.UUID) (*models.Client, er
 	return &client, err
 }
 
-func (r *ClientRepository) GetByApplicationID(appID uuid.UUID) ([]models.Client, error) {
+func (r *ClientRepository) List() ([]models.Client, error) {
 	var clients []models.Client
-	err := r.db.Where("application_id = ?", appID).Find(&clients).Error
+	err := r.db.Find(&clients).Error
 	return clients, err
 }
 

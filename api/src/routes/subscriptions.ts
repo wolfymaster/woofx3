@@ -17,12 +17,8 @@ import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "..
  *     notify in-process trigger subscribers via
  *     `this.notifyTriggerChange`, which reaches into
  *     `ApiRouteHost.triggerSubscribers`.
- *   - `stream.{online,offline}` call `this.getStreamStatus`
- *     (a real RPC method, for enrichment) and
- *     `this.ensureApplicationId`/`this.applicationId` (the cached
- *     default-application id). Extracting them to a standalone
- *     function would just mean passing the same `Api` instance in
- *     under a different name — no real decoupling, more indirection.
+ *   - `stream.{online,offline}` also read `this.db` to enrich the
+ *     event with the live stream status.
  */
 export const subscriptionsRoutes = routeModule({
   async initSubscriptions(): Promise<void> {
@@ -67,10 +63,6 @@ export const subscriptionsRoutes = routeModule({
     // `stream.online` / `stream.offline` cloudevents from
     // its EventSub listener; we translate them to the webhook
     // `stream.online` / `stream.offline` events the UI subscribes to.
-    //
-    // applicationId is resolved lazily from the default application —
-    // the engine is single-broadcaster-per-deployment today, so every
-    // emitted event scopes to the same id.
     await this.nats.subscribe(EventType.StreamOnline, async (msg) => {
       try {
         const ce = msg.json() as Record<string, unknown>;
@@ -102,13 +94,8 @@ export const subscriptionsRoutes = routeModule({
             error: err instanceof Error ? err.message : String(err),
           });
         }
-        const applicationId = await this.tryEnsureApplicationId("stream.online");
-        if (!applicationId) {
-          return;
-        }
         await this.webhookClient.send({
           type: EngineEventType.STREAM_ONLINE,
-          applicationId,
           twitchUserId,
           startedAt: enrichment?.startedAt ?? startedAt,
           streamTitle: enrichment?.streamTitle,
@@ -135,13 +122,8 @@ export const subscriptionsRoutes = routeModule({
         if (!this.webhookClient) {
           return;
         }
-        const applicationId = await this.tryEnsureApplicationId("stream.offline");
-        if (!applicationId) {
-          return;
-        }
         await this.webhookClient.send({
           type: EngineEventType.STREAM_OFFLINE,
-          applicationId,
           twitchUserId,
         });
       } catch (err) {

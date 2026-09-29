@@ -36,7 +36,8 @@ message RegisterBackgroundTasksRequest {
   string module_name = 2;
   string version = 3;
   repeated BackgroundTaskInput tasks = 4;
-  string application_id = 5;
+  reserved 5;
+  reserved "application_id";
   // Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
   // so a module upgrade upserts its resources in place instead of orphaning
   // every reference. Stored as created_by_ref when created_by_type/ref are

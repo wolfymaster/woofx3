@@ -799,9 +799,6 @@ impl serde::Serialize for RecordSceneEventRequest {
         if !self.scene_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.r#type.is_empty() {
             len += 1;
         }
@@ -820,9 +817,6 @@ impl serde::Serialize for RecordSceneEventRequest {
         let mut struct_ser = serializer.serialize_struct("scene_event.RecordSceneEventRequest", len)?;
         if !self.scene_id.is_empty() {
             struct_ser.serialize_field("sceneId", &self.scene_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.r#type.is_empty() {
             struct_ser.serialize_field("type", &self.r#type)?;
@@ -851,8 +845,6 @@ impl<'de> serde::Deserialize<'de> for RecordSceneEventRequest {
         const FIELDS: &[&str] = &[
             "scene_id",
             "sceneId",
-            "application_id",
-            "applicationId",
             "type",
             "key",
             "value",
@@ -865,7 +857,6 @@ impl<'de> serde::Deserialize<'de> for RecordSceneEventRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             SceneId,
-            ApplicationId,
             Type,
             Key,
             Value,
@@ -893,7 +884,6 @@ impl<'de> serde::Deserialize<'de> for RecordSceneEventRequest {
                     {
                         match value {
                             "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "type" => Ok(GeneratedField::Type),
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
@@ -919,7 +909,6 @@ impl<'de> serde::Deserialize<'de> for RecordSceneEventRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut scene_id__ = None;
-                let mut application_id__ = None;
                 let mut r#type__ = None;
                 let mut key__ = None;
                 let mut value__ = None;
@@ -932,12 +921,6 @@ impl<'de> serde::Deserialize<'de> for RecordSceneEventRequest {
                                 return Err(serde::de::Error::duplicate_field("sceneId"));
                             }
                             scene_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Type => {
                             if r#type__.is_some() {
@@ -973,7 +956,6 @@ impl<'de> serde::Deserialize<'de> for RecordSceneEventRequest {
                 }
                 Ok(RecordSceneEventRequest {
                     scene_id: scene_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     r#type: r#type__.unwrap_or_default(),
                     key: key__.unwrap_or_default(),
                     value: value__.unwrap_or_default(),
@@ -999,9 +981,6 @@ impl serde::Serialize for SceneEvent {
         if !self.scene_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.r#type.is_empty() {
             len += 1;
         }
@@ -1023,9 +1002,6 @@ impl serde::Serialize for SceneEvent {
         }
         if !self.scene_id.is_empty() {
             struct_ser.serialize_field("sceneId", &self.scene_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.r#type.is_empty() {
             struct_ser.serialize_field("type", &self.r#type)?;
@@ -1055,8 +1031,6 @@ impl<'de> serde::Deserialize<'de> for SceneEvent {
             "id",
             "scene_id",
             "sceneId",
-            "application_id",
-            "applicationId",
             "type",
             "key",
             "value",
@@ -1070,7 +1044,6 @@ impl<'de> serde::Deserialize<'de> for SceneEvent {
         enum GeneratedField {
             Id,
             SceneId,
-            ApplicationId,
             Type,
             Key,
             Value,
@@ -1099,7 +1072,6 @@ impl<'de> serde::Deserialize<'de> for SceneEvent {
                         match value {
                             "id" => Ok(GeneratedField::Id),
                             "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "type" => Ok(GeneratedField::Type),
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
@@ -1126,7 +1098,6 @@ impl<'de> serde::Deserialize<'de> for SceneEvent {
             {
                 let mut id__ = None;
                 let mut scene_id__ = None;
-                let mut application_id__ = None;
                 let mut r#type__ = None;
                 let mut key__ = None;
                 let mut value__ = None;
@@ -1145,12 +1116,6 @@ impl<'de> serde::Deserialize<'de> for SceneEvent {
                                 return Err(serde::de::Error::duplicate_field("sceneId"));
                             }
                             scene_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Type => {
                             if r#type__.is_some() {
@@ -1187,7 +1152,6 @@ impl<'de> serde::Deserialize<'de> for SceneEvent {
                 Ok(SceneEvent {
                     id: id__.unwrap_or_default(),
                     scene_id: scene_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     r#type: r#type__.unwrap_or_default(),
                     key: key__.unwrap_or_default(),
                     value: value__.unwrap_or_default(),

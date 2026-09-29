@@ -22,7 +22,6 @@ const DEDUP_CAP = 10_000;
 export interface ConvexWebhookClientDeps {
   db: DbClient;
   logger: SharedLogger;
-  applicationId: string;
   fetchFn?: typeof fetch;
   scheduleRetry?: (fn: () => void, ms: number) => void;
   ttlMs?: number;
@@ -38,7 +37,6 @@ interface InFlight {
 export class ConvexWebhookClient {
   private db: DbClient;
   private logger: SharedLogger;
-  private applicationId: string;
   private fetchFn: typeof fetch;
   private scheduleRetry: (fn: () => void, ms: number) => void;
   private ttlMs: number;
@@ -55,7 +53,6 @@ export class ConvexWebhookClient {
   constructor(deps: ConvexWebhookClientDeps) {
     this.db = deps.db;
     this.logger = deps.logger;
-    this.applicationId = deps.applicationId;
     this.fetchFn = deps.fetchFn ?? globalThis.fetch.bind(globalThis);
     this.scheduleRetry =
       deps.scheduleRetry ??
@@ -65,19 +62,11 @@ export class ConvexWebhookClient {
     this.ttlMs = deps.ttlMs ?? DEFAULT_TTL_MS;
   }
 
-  setApplicationId(applicationId: string): void {
-    this.applicationId = applicationId;
-    this.configLoaded = false;
-    this.webhookUrl = null;
-    this.signingSecret = null;
-    this.warnedMissingConfig = false;
-  }
-
   async loadConfig(): Promise<void> {
     try {
       const [url, secret] = await Promise.all([
-        this.db.getSetting(SETTING_KEY_URL, this.applicationId),
-        this.db.getSetting(SETTING_KEY_SECRET, this.applicationId),
+        this.db.getSetting(SETTING_KEY_URL),
+        this.db.getSetting(SETTING_KEY_SECRET),
       ]);
       this.webhookUrl = url ?? null;
       this.signingSecret = secret ?? null;
@@ -100,12 +89,12 @@ export class ConvexWebhookClient {
     }
   }
 
-  async sendAlert(channelId: string, ctx: AlertContext): Promise<void> {
-    return this.send(channelId, "alert", ctx);
+  async sendAlert(ctx: AlertContext): Promise<void> {
+    return this.send("alert", ctx);
   }
 
-  async sendObsCommand(channelId: string, cmd: OBSCommand): Promise<void> {
-    return this.send(channelId, "obs_command", cmd);
+  async sendObsCommand(cmd: OBSCommand): Promise<void> {
+    return this.send("obs_command", cmd);
   }
 
   // Send a pre-built envelope. Used by callers that want explicit control over
@@ -138,7 +127,7 @@ export class ConvexWebhookClient {
     return this.inFlight.size;
   }
 
-  private async send(channelId: string, kind: WebhookKind, payload: WebhookPayload): Promise<void> {
+  private async send(kind: WebhookKind, payload: WebhookPayload): Promise<void> {
     if (!this.configLoaded) {
       await this.loadConfig();
     }
@@ -148,7 +137,6 @@ export class ConvexWebhookClient {
 
     const envelope: WebhookEnvelope = {
       eventId: randomUUID(),
-      channelId,
       emittedAt: Date.now(),
       kind,
       payload,

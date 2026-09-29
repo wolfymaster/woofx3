@@ -58,7 +58,6 @@ interface OverlayApi extends Woofx3EngineApi {
     tokenId: string;
     token: string;
     sceneId: string;
-    applicationId: string;
     label: string;
     status: string;
     createdAt: string;

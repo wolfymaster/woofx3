@@ -1,5 +1,5 @@
 // Package resource_reference produces resource_references edges from
-// higher-level definitions (workflows, commands). Each extractor reads the
+// higher-level definitions (workflows, commands, scenes). Each extractor reads the
 // definition and returns a list of edges that should be persisted for that
 // source. Callers are responsible for writing the edges via the repository.
 //
@@ -29,6 +29,7 @@ const (
 	TargetTypeWorkflow = "workflow"
 	TargetTypeWidget   = "widget"
 	TargetTypeOverlay  = "overlay"
+	TargetTypeTheme    = "theme"
 )
 
 // canonicalIDSeparator must stay in sync with barkloader's
@@ -62,7 +63,6 @@ type WorkflowTriggerJSON struct {
 type WorkflowSource struct {
 	ID                  uuid.UUID
 	Name                string
-	ApplicationID       *uuid.UUID
 	SourceCreatedByType string
 	SourceCreatedByRef  string
 }
@@ -126,7 +126,7 @@ func kindFromCanonicalID(s string) (string, bool) {
 	}
 	switch parts[1] {
 	case TargetTypeAction, TargetTypeTrigger, TargetTypeFunction,
-		TargetTypeCommand, TargetTypeWorkflow, TargetTypeWidget, TargetTypeOverlay:
+		TargetTypeCommand, TargetTypeWorkflow, TargetTypeWidget, TargetTypeOverlay, TargetTypeTheme:
 		return parts[1], true
 	default:
 		return "", false
@@ -137,7 +137,6 @@ func kindFromCanonicalID(s string) (string, bool) {
 type CommandSource struct {
 	ID                  uuid.UUID
 	Name                string
-	ApplicationID       *uuid.UUID
 	SourceCreatedByType string
 	SourceCreatedByRef  string
 }
@@ -176,7 +175,6 @@ func ExtractCommandEdges(src CommandSource, actionsJSON string) []models.Resourc
 func newEdge(src WorkflowSource, targetType, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
 		ID:                  uuid.New(),
-		ApplicationID:       src.ApplicationID,
 		SourceType:          "workflow",
 		SourceID:            src.ID,
 		SourceName:          src.Name,
@@ -191,7 +189,6 @@ func newEdge(src WorkflowSource, targetType, targetName, context string) models.
 func newEdgeFromCommand(src CommandSource, targetType, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
 		ID:                  uuid.New(),
-		ApplicationID:       src.ApplicationID,
 		SourceType:          "command",
 		SourceID:            src.ID,
 		SourceName:          src.Name,
@@ -208,4 +205,77 @@ func defaultString(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+// SceneSource captures the identity of the scene that owns the edges.
+type SceneSource struct {
+	ID                  uuid.UUID
+	Name                string
+	SourceCreatedByType string
+	SourceCreatedByRef  string
+}
+
+// themeSettingKey is the settings key of the theme picker barkloader adds to
+// a widget that declares a theme contract. Must match `THEME_SETTING_ID` in
+// barkloader's module_manifest.rs.
+const themeSettingKey = "theme"
+
+// ExtractSceneEdges records the theme each widget placement selects, so a
+// theme on screen cannot be uninstalled from under the scene.
+//
+// The whole widgets document is walked rather than only its top-level
+// placements: a placement's settings can themselves hold widgets (an alert
+// layout field places widgets with settings of their own), and a theme
+// selected at any depth is equally on screen. A `theme` key only counts when
+// its value is a theme canonical id, so an unrelated setting that happens to
+// be called `theme` adds nothing. Malformed JSON yields no edges, as for
+// commands.
+func ExtractSceneEdges(src SceneSource, widgetsJSON string) []models.ResourceReference {
+	if strings.TrimSpace(widgetsJSON) == "" {
+		return nil
+	}
+	var doc interface{}
+	if err := json.Unmarshal([]byte(widgetsJSON), &doc); err != nil {
+		return nil
+	}
+	var edges []models.ResourceReference
+	seen := make(map[string]bool)
+	var walk func(value interface{}, path string)
+	walk = func(value interface{}, path string) {
+		switch v := value.(type) {
+		case []interface{}:
+			for i, item := range v {
+				walk(item, fmt.Sprintf("%s[%d]", path, i))
+			}
+		case map[string]interface{}:
+			for key, item := range v {
+				childPath := path + "." + key
+				if key == themeSettingKey {
+					if id, ok := item.(string); ok {
+						if kind, ok := kindFromCanonicalID(id); ok && kind == TargetTypeTheme && !seen[id] {
+							seen[id] = true
+							edges = append(edges, newEdgeFromScene(src, id, strings.TrimPrefix(childPath, ".")))
+						}
+					}
+				}
+				walk(item, childPath)
+			}
+		}
+	}
+	walk(doc, "widgets")
+	return edges
+}
+
+func newEdgeFromScene(src SceneSource, targetName, context string) models.ResourceReference {
+	return models.ResourceReference{
+		ID:                  uuid.New(),
+		SourceType:          "scene",
+		SourceID:            src.ID,
+		SourceName:          src.Name,
+		SourceCreatedByType: defaultString(src.SourceCreatedByType, "USER"),
+		SourceCreatedByRef:  src.SourceCreatedByRef,
+		TargetType:          TargetTypeTheme,
+		TargetName:          targetName,
+		Context:             context,
+	}
 }

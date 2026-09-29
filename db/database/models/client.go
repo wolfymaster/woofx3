@@ -8,14 +8,10 @@ import (
 type Client struct {
 	ID            int       `gorm:"primaryKey;autoIncrement"`
 	Description   string    `gorm:"type:varchar(100)"`
-	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_clients_application_id;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	ClientID      uuid.UUID `gorm:"column:client_id;type:uuid;not null;uniqueIndex"`
 	ClientSecret  string    `gorm:"column:client_secret;type:varchar(100);not null"`
 	CallbackUrl   string    `gorm:"column:callback_url;type:varchar(255)"`
 	CallbackToken string    `gorm:"column:callback_token;type:varchar(255)"`
-
-	// Relationships
-	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
 }
 
 func (Client) TableName() string {
@@ -39,12 +35,6 @@ func GetClientByID(db *gorm.DB, id int) (*Client, error) {
 	var client Client
 	err := db.First(&client, id).Error
 	return &client, err
-}
-
-func GetClientsByApplicationID(db *gorm.DB, appID uuid.UUID) ([]Client, error) {
-	var clients []Client
-	err := db.Where("application_id = ?", appID).Find(&clients).Error
-	return clients, err
 }
 
 func GetClientByClientID(db *gorm.DB, clientID uuid.UUID) (*Client, error) {

@@ -18,7 +18,6 @@ import * as common from "./common.pb";
 
 export interface Scene {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   /**
@@ -46,7 +45,6 @@ export interface Scene {
 }
 
 export interface CreateSceneRequest {
-  applicationId: string;
   name: string;
   description: string;
   /**
@@ -91,7 +89,6 @@ export interface DeleteSceneRequest {
 }
 
 export interface ListScenesRequest {
-  applicationId: string;
   page: number;
   pageSize: number;
   sortBy: string;
@@ -239,7 +236,7 @@ export async function ListScenesJSON(
 //========================================//
 
 /**
- * Per-application widget arrangement.
+ * A widget arrangement.
  *
  * Mirrors `workflow.Workflow` in shape: typed audit fields + opaque
  * JSON strings (`widgets_json`, `layout_json`) the engine forwards
@@ -350,7 +347,6 @@ export const Scene = {
   initialize: function (msg?: Partial<Scene>): Scene {
     return {
       id: "",
-      applicationId: "",
       name: "",
       description: "",
       widgetsJson: "",
@@ -372,9 +368,6 @@ export const Scene = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.name) {
       writer.writeString(3, msg.name);
@@ -420,10 +413,6 @@ export const Scene = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -494,7 +483,6 @@ export const CreateSceneRequest = {
    */
   initialize: function (msg?: Partial<CreateSceneRequest>): CreateSceneRequest {
     return {
-      applicationId: "",
       name: "",
       description: "",
       widgetsJson: "",
@@ -512,9 +500,6 @@ export const CreateSceneRequest = {
     msg: PartialDeep<CreateSceneRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.name) {
       writer.writeString(2, msg.name);
     }
@@ -546,10 +531,6 @@ export const CreateSceneRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.name = reader.readString();
           break;
@@ -922,7 +903,6 @@ export const ListScenesRequest = {
    */
   initialize: function (msg?: Partial<ListScenesRequest>): ListScenesRequest {
     return {
-      applicationId: "",
       page: 0,
       pageSize: 0,
       sortBy: "",
@@ -938,9 +918,6 @@ export const ListScenesRequest = {
     msg: PartialDeep<ListScenesRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.page) {
       writer.writeInt32(2, msg.page);
     }
@@ -966,10 +943,6 @@ export const ListScenesRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.page = reader.readInt32();
           break;
@@ -1123,7 +1096,6 @@ export const SceneJSON = {
   initialize: function (msg?: Partial<Scene>): Scene {
     return {
       id: "",
-      applicationId: "",
       name: "",
       description: "",
       widgetsJson: "",
@@ -1143,9 +1115,6 @@ export const SceneJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.name) {
       json["name"] = msg.name;
@@ -1181,10 +1150,6 @@ export const SceneJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _name_ = json["name"];
     if (_name_) {
@@ -1245,7 +1210,6 @@ export const CreateSceneRequestJSON = {
    */
   initialize: function (msg?: Partial<CreateSceneRequest>): CreateSceneRequest {
     return {
-      applicationId: "",
       name: "",
       description: "",
       widgetsJson: "",
@@ -1263,9 +1227,6 @@ export const CreateSceneRequestJSON = {
     msg: PartialDeep<CreateSceneRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.name) {
       json["name"] = msg.name;
     }
@@ -1294,10 +1255,6 @@ export const CreateSceneRequestJSON = {
     msg: CreateSceneRequest,
     json: any,
   ): CreateSceneRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _name_ = json["name"];
     if (_name_) {
       msg.name = _name_;
@@ -1613,7 +1570,6 @@ export const ListScenesRequestJSON = {
    */
   initialize: function (msg?: Partial<ListScenesRequest>): ListScenesRequest {
     return {
-      applicationId: "",
       page: 0,
       pageSize: 0,
       sortBy: "",
@@ -1629,9 +1585,6 @@ export const ListScenesRequestJSON = {
     msg: PartialDeep<ListScenesRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.page) {
       json["page"] = msg.page;
     }
@@ -1654,10 +1607,6 @@ export const ListScenesRequestJSON = {
     msg: ListScenesRequest,
     json: any,
   ): ListScenesRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _page_ = json["page"];
     if (_page_) {
       msg.page = protoscript.parseNumber(_page_);

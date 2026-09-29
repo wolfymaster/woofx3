@@ -159,7 +159,6 @@ export class DeliveryStore {
    */
   async recordEvent(params: {
     sceneId: string;
-    applicationId: string;
     type: string;
     key: string;
     value: unknown;
@@ -172,7 +171,6 @@ export class DeliveryStore {
     try {
       const resp = await this.db.recordSceneEvent({
         sceneId: params.sceneId,
-        applicationId: params.applicationId,
         type: params.type,
         key: params.key,
         value: JSON.stringify(params.value ?? null),
@@ -278,6 +276,25 @@ export class DeliveryStore {
    *  point loading/matching a scene nobody is watching. */
   connectedSceneIds(): string[] {
     return [...this.connections.keys()].filter((sceneId) => (this.connections.get(sceneId)?.size ?? 0) > 0);
+  }
+
+  /**
+   * Push a named frame to every open connection of a scene. Unlike a
+   * delivery it is not recorded, acked or redelivered: it carries state
+   * the page can ask for again, not an event it must not miss.
+   */
+  broadcast(sceneId: string, event: string, data: unknown): void {
+    const bytes = new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    for (const controller of this.connections.get(sceneId) ?? []) {
+      try {
+        controller.enqueue(bytes);
+      } catch (err) {
+        this.logger.warn("delivery-store: SSE push failed", {
+          event,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   private push(sceneId: string, frame: DeliveryFrame): void {

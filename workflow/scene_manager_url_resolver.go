@@ -53,8 +53,7 @@ func (r *SceneManagerURLResolver) Resolve() string {
 
 	value := r.defaultURL
 	resp, err := r.settings.GetSetting(ctx, &dbv1.GetSettingRequest{
-		Key:           SceneManagerURLSettingKey,
-		ApplicationId: "",
+		Key: SceneManagerURLSettingKey,
 	})
 	if err != nil {
 		if r.logger != nil {

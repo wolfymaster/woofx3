@@ -10,18 +10,12 @@ impl serde::Serialize for ListOverlayTokensRequest {
         if !self.scene_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.include_revoked {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("overlay_token.ListOverlayTokensRequest", len)?;
         if !self.scene_id.is_empty() {
             struct_ser.serialize_field("sceneId", &self.scene_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if self.include_revoked {
             struct_ser.serialize_field("includeRevoked", &self.include_revoked)?;
@@ -38,8 +32,6 @@ impl<'de> serde::Deserialize<'de> for ListOverlayTokensRequest {
         const FIELDS: &[&str] = &[
             "scene_id",
             "sceneId",
-            "application_id",
-            "applicationId",
             "include_revoked",
             "includeRevoked",
         ];
@@ -47,7 +39,6 @@ impl<'de> serde::Deserialize<'de> for ListOverlayTokensRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             SceneId,
-            ApplicationId,
             IncludeRevoked,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -71,7 +62,6 @@ impl<'de> serde::Deserialize<'de> for ListOverlayTokensRequest {
                     {
                         match value {
                             "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "includeRevoked" | "include_revoked" => Ok(GeneratedField::IncludeRevoked),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -93,7 +83,6 @@ impl<'de> serde::Deserialize<'de> for ListOverlayTokensRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut scene_id__ = None;
-                let mut application_id__ = None;
                 let mut include_revoked__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
@@ -102,12 +91,6 @@ impl<'de> serde::Deserialize<'de> for ListOverlayTokensRequest {
                                 return Err(serde::de::Error::duplicate_field("sceneId"));
                             }
                             scene_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::IncludeRevoked => {
                             if include_revoked__.is_some() {
@@ -119,7 +102,6 @@ impl<'de> serde::Deserialize<'de> for ListOverlayTokensRequest {
                 }
                 Ok(ListOverlayTokensRequest {
                     scene_id: scene_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     include_revoked: include_revoked__.unwrap_or_default(),
                 })
             }
@@ -267,18 +249,12 @@ impl serde::Serialize for MintOverlayTokenRequest {
         if !self.scene_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.label.is_empty() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("overlay_token.MintOverlayTokenRequest", len)?;
         if !self.scene_id.is_empty() {
             struct_ser.serialize_field("sceneId", &self.scene_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.label.is_empty() {
             struct_ser.serialize_field("label", &self.label)?;
@@ -295,15 +271,12 @@ impl<'de> serde::Deserialize<'de> for MintOverlayTokenRequest {
         const FIELDS: &[&str] = &[
             "scene_id",
             "sceneId",
-            "application_id",
-            "applicationId",
             "label",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             SceneId,
-            ApplicationId,
             Label,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -327,7 +300,6 @@ impl<'de> serde::Deserialize<'de> for MintOverlayTokenRequest {
                     {
                         match value {
                             "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "label" => Ok(GeneratedField::Label),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -349,7 +321,6 @@ impl<'de> serde::Deserialize<'de> for MintOverlayTokenRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut scene_id__ = None;
-                let mut application_id__ = None;
                 let mut label__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
@@ -358,12 +329,6 @@ impl<'de> serde::Deserialize<'de> for MintOverlayTokenRequest {
                                 return Err(serde::de::Error::duplicate_field("sceneId"));
                             }
                             scene_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Label => {
                             if label__.is_some() {
@@ -375,7 +340,6 @@ impl<'de> serde::Deserialize<'de> for MintOverlayTokenRequest {
                 }
                 Ok(MintOverlayTokenRequest {
                     scene_id: scene_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     label: label__.unwrap_or_default(),
                 })
             }
@@ -398,9 +362,6 @@ impl serde::Serialize for OverlayToken {
             len += 1;
         }
         if !self.scene_id.is_empty() {
-            len += 1;
-        }
-        if !self.application_id.is_empty() {
             len += 1;
         }
         if !self.label.is_empty() {
@@ -427,9 +388,6 @@ impl serde::Serialize for OverlayToken {
         }
         if !self.scene_id.is_empty() {
             struct_ser.serialize_field("sceneId", &self.scene_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.label.is_empty() {
             struct_ser.serialize_field("label", &self.label)?;
@@ -460,8 +418,6 @@ impl<'de> serde::Deserialize<'de> for OverlayToken {
             "token",
             "scene_id",
             "sceneId",
-            "application_id",
-            "applicationId",
             "label",
             "status",
             "created_at",
@@ -477,7 +433,6 @@ impl<'de> serde::Deserialize<'de> for OverlayToken {
             Id,
             Token,
             SceneId,
-            ApplicationId,
             Label,
             Status,
             CreatedAt,
@@ -507,7 +462,6 @@ impl<'de> serde::Deserialize<'de> for OverlayToken {
                             "id" => Ok(GeneratedField::Id),
                             "token" => Ok(GeneratedField::Token),
                             "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "label" => Ok(GeneratedField::Label),
                             "status" => Ok(GeneratedField::Status),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
@@ -535,7 +489,6 @@ impl<'de> serde::Deserialize<'de> for OverlayToken {
                 let mut id__ = None;
                 let mut token__ = None;
                 let mut scene_id__ = None;
-                let mut application_id__ = None;
                 let mut label__ = None;
                 let mut status__ = None;
                 let mut created_at__ = None;
@@ -560,12 +513,6 @@ impl<'de> serde::Deserialize<'de> for OverlayToken {
                                 return Err(serde::de::Error::duplicate_field("sceneId"));
                             }
                             scene_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Label => {
                             if label__.is_some() {
@@ -603,7 +550,6 @@ impl<'de> serde::Deserialize<'de> for OverlayToken {
                     id: id__.unwrap_or_default(),
                     token: token__.unwrap_or_default(),
                     scene_id: scene_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     label: label__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
                     created_at: created_at__,
@@ -829,18 +775,12 @@ impl serde::Serialize for ResolveOverlayTokenResponse {
         if !self.scene_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("overlay_token.ResolveOverlayTokenResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
         }
         if !self.scene_id.is_empty() {
             struct_ser.serialize_field("sceneId", &self.scene_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -855,15 +795,12 @@ impl<'de> serde::Deserialize<'de> for ResolveOverlayTokenResponse {
             "status",
             "scene_id",
             "sceneId",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Status,
             SceneId,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -887,7 +824,6 @@ impl<'de> serde::Deserialize<'de> for ResolveOverlayTokenResponse {
                         match value {
                             "status" => Ok(GeneratedField::Status),
                             "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -909,7 +845,6 @@ impl<'de> serde::Deserialize<'de> for ResolveOverlayTokenResponse {
             {
                 let mut status__ = None;
                 let mut scene_id__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -924,18 +859,11 @@ impl<'de> serde::Deserialize<'de> for ResolveOverlayTokenResponse {
                             }
                             scene_id__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(ResolveOverlayTokenResponse {
                     status: status__,
                     scene_id: scene_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }

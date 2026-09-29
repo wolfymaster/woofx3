@@ -23,9 +23,8 @@ const (
 )
 
 type Alert struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Full AlertPayload envelope JSON
 	// (`{ id, parameters, event }`) — same bytes streamware broadcasts.
 	// Persisted verbatim in `alerts.payload` (JSONB).
@@ -99,13 +98,6 @@ func (*Alert) Descriptor() ([]byte, []int) {
 func (x *Alert) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *Alert) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -188,8 +180,7 @@ func (x *Alert) GetError() string {
 }
 
 type CreateAlertRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
 	// JSON-encoded AlertPayload. Persisted verbatim into `alerts.payload`.
 	Payload string `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
 	// Optional attribution (see Alert.workflow_id / source_event_id).
@@ -232,13 +223,6 @@ func (x *CreateAlertRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CreateAlertRequest.ProtoReflect.Descriptor instead.
 func (*CreateAlertRequest) Descriptor() ([]byte, []int) {
 	return file_alert_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *CreateAlertRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *CreateAlertRequest) GetPayload() string {
@@ -318,7 +302,6 @@ func (x *GetAlertRequest) GetId() string {
 // the overlay reports `playing` / `completed` / `failed`.
 type GetAlertByEnvelopeIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	EnvelopeId    string                 `protobuf:"bytes,2,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -354,13 +337,6 @@ func (*GetAlertByEnvelopeIdRequest) Descriptor() ([]byte, []int) {
 	return file_alert_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *GetAlertByEnvelopeIdRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *GetAlertByEnvelopeIdRequest) GetEnvelopeId() string {
 	if x != nil {
 		return x.EnvelopeId
@@ -378,7 +354,6 @@ func (x *GetAlertByEnvelopeIdRequest) GetEnvelopeId() string {
 // `error` is ignored unless status is `failed`.
 type UpdateAlertLifecycleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	EnvelopeId    string                 `protobuf:"bytes,2,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
@@ -414,13 +389,6 @@ func (x *UpdateAlertLifecycleRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UpdateAlertLifecycleRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAlertLifecycleRequest) Descriptor() ([]byte, []int) {
 	return file_alert_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *UpdateAlertLifecycleRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *UpdateAlertLifecycleRequest) GetEnvelopeId() string {
@@ -498,7 +466,6 @@ func (x *AlertResponse) GetAlert() *Alert {
 
 type ListAlertsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	Offset        int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -533,13 +500,6 @@ func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListAlertsRequest.ProtoReflect.Descriptor instead.
 func (*ListAlertsRequest) Descriptor() ([]byte, []int) {
 	return file_alert_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ListAlertsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListAlertsRequest) GetLimit() int32 {
@@ -732,10 +692,9 @@ var File_alert_proto protoreflect.FileDescriptor
 
 const file_alert_proto_rawDesc = "" +
 	"\n" +
-	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9f\x04\n" +
+	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
 	"\x05Alert\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x1f\n" +
 	"\vworkflow_id\x18\x04 \x01(\tR\n" +
 	"workflowId\x12&\n" +
@@ -751,34 +710,30 @@ const file_alert_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\fdispatchedAt\x127\n" +
 	"\tplayed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bplayedAt\x12=\n" +
 	"\fcompleted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
-	"\x05error\x18\r \x01(\tR\x05error\"\xbf\x01\n" +
-	"\x12CreateAlertRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\x05error\x18\r \x01(\tR\x05errorJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xae\x01\n" +
+	"\x12CreateAlertRequest\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12\x1f\n" +
 	"\vworkflow_id\x18\x03 \x01(\tR\n" +
 	"workflowId\x12&\n" +
 	"\x0fsource_event_id\x18\x04 \x01(\tR\rsourceEventId\x12\x1f\n" +
 	"\venvelope_id\x18\x05 \x01(\tR\n" +
-	"envelopeId\"!\n" +
+	"envelopeIdJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
 	"\x0fGetAlertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"e\n" +
-	"\x1bGetAlertByEnvelopeIdRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"T\n" +
+	"\x1bGetAlertByEnvelopeIdRequest\x12\x1f\n" +
 	"\venvelope_id\x18\x02 \x01(\tR\n" +
-	"envelopeId\"\x93\x01\n" +
-	"\x1bUpdateAlertLifecycleRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"envelopeIdJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x82\x01\n" +
+	"\x1bUpdateAlertLifecycleRequest\x12\x1f\n" +
 	"\venvelope_id\x18\x02 \x01(\tR\n" +
 	"envelopeId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"c\n" +
+	"\x05error\x18\x04 \x01(\tR\x05errorJ\x04\b\x01\x10\x02R\x0eapplication_id\"c\n" +
 	"\rAlertResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
-	"\x05alert\x18\x02 \x01(\v2\f.alert.AlertR\x05alert\"h\n" +
-	"\x11ListAlertsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\x05alert\x18\x02 \x01(\v2\f.alert.AlertR\x05alert\"W\n" +
+	"\x11ListAlertsRequest\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\x05R\x06offset\"\xb9\x01\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offsetJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xb9\x01\n" +
 	"\x12ListAlertsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06alerts\x18\x02 \x03(\v2\f.alert.AlertR\x06alerts\x12\x1f\n" +

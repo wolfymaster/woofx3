@@ -15,7 +15,6 @@ type BackgroundTask struct {
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string    `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID string    `gorm:"column:application_id;type:text;not null;default:''"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

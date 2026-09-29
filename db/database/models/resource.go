@@ -12,7 +12,7 @@ import (
 // empty RepositoryKey, and Kind ResourceKindFolder.
 //
 // ParentID is self-referencing and nullable; nil means the row sits at
-// the root of its application's tree.
+// the root of the tree.
 //
 // ThumbnailRepositoryKey is a column, never a separate row. That is
 // what makes "thumbnails are never listed as their own resource" a
@@ -20,8 +20,7 @@ import (
 // remember to apply.
 type Resource struct {
 	ID            uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID uuid.UUID  `gorm:"column:application_id;type:uuid;not null;index:idx_resources_app_parent,priority:1;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
-	ParentID      *uuid.UUID `gorm:"column:parent_id;type:uuid;index:idx_resources_app_parent,priority:2"`
+	ParentID      *uuid.UUID `gorm:"column:parent_id;type:uuid;index:idx_resources_parent_id"`
 	IsFolder      bool       `gorm:"column:is_folder;not null;default:false"`
 	Name          string     `gorm:"column:name;type:text;not null"`
 	Kind          string     `gorm:"column:kind;type:text;not null;default:'other'"`

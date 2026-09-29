@@ -20,10 +20,6 @@ func NewSceneEventRepository(db *gorm.DB) *SceneEventRepository {
 	return &SceneEventRepository{db: db}
 }
 
-func (r *SceneEventRepository) DB() *gorm.DB {
-	return r.db
-}
-
 // RecordSceneEvent persists the parent row plus one open delivery row
 // per fan-out target, in a single transaction — the row set must exist
 // before the caller pushes the event down the SSE stream, so a crash
@@ -31,9 +27,6 @@ func (r *SceneEventRepository) DB() *gorm.DB {
 func (r *SceneEventRepository) RecordSceneEvent(event *models.SceneEvent, targetInstanceIDs []string) (*models.SceneEvent, error) {
 	if event.SceneID == uuid.Nil {
 		return nil, fmt.Errorf("scene_id is required")
-	}
-	if event.ApplicationID == uuid.Nil {
-		return nil, fmt.Errorf("application_id is required")
 	}
 	if len(targetInstanceIDs) == 0 {
 		return nil, fmt.Errorf("at least one target_instance_id is required")

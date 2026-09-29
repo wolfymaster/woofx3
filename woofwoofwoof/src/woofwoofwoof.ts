@@ -64,12 +64,11 @@ const runtime = createRuntime({
           redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string,
         },
         getSetting: async (key) => {
-          const response = await dbService.client.getSetting({ applicationId: "", key });
+          const response = await dbService.client.getSetting({ key });
           return response.setting.value.stringValue ?? undefined;
         },
         setSetting: async (key, value) => {
           await dbService.client.setSetting({
-            applicationId: "",
             key,
             value: { stringValue: value },
             userId: "",

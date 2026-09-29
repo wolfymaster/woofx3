@@ -6,13 +6,7 @@ type BootstrapArgs = {
 };
 
 async function GetBroadcasterToken(dbUrl: string): Promise<AccessTokenWithUserId> {
-  const response = await GetSetting(
-    {
-      applicationId: "",
-      key: "twitch_token",
-    },
-    { baseURL: dbUrl }
-  );
+  const response = await GetSetting({ key: "twitch_token" }, { baseURL: dbUrl });
   return JSON.parse(response.setting.value.stringValue || "") satisfies AccessTokenWithUserId;
 }
 

@@ -53,5 +53,9 @@ func All() []*gormigrate.Migration {
 		CommandActions(),
 		ResourceInstanceSettings(),
 		AddWidgetTaxonomy(),
+		DropApplications(),
+		RebuildUserEventsAsFactLog(),
+		DeclareDatetimeColumns(),
+		AddStreamGaugeSamples(),
 	}
 }

@@ -5,7 +5,6 @@ import { initWidgetStatusHandlers, parseWidgetStatusUpdated } from "../src/widge
 describe("parseWidgetStatusUpdated", () => {
   it("maps snake_case NATS payload to the WidgetStatusChangedEvent shape", () => {
     const event = parseWidgetStatusUpdated({
-      application_id: "app-1",
       data: {
         module_id: "mod-1",
         instance_id: "inst-1",
@@ -18,7 +17,6 @@ describe("parseWidgetStatusUpdated", () => {
 
     expect(event).not.toBeNull();
     expect(event?.type).toBe(EngineEventType.WIDGET_STATUS_CHANGED);
-    expect(event?.applicationId).toBe("app-1");
     expect(event?.moduleId).toBe("mod-1");
     expect(event?.instanceId).toBe("inst-1");
     expect(event?.widgetCanonicalId).toBe("mod-1:widget:counter");
@@ -31,7 +29,6 @@ describe("parseWidgetStatusUpdated", () => {
         ModuleID: "mod-1",
         InstanceID: "inst-1",
         Key: "viewer_count",
-        application_id: "app-1",
         Value: "42",
       },
     });
@@ -40,18 +37,13 @@ describe("parseWidgetStatusUpdated", () => {
 
   it("falls back to the raw value when it isn't valid JSON", () => {
     const event = parseWidgetStatusUpdated({
-      application_id: "app-1",
       data: { module_id: "mod-1", instance_id: "inst-1", key: "k", value: "not-json" },
     });
     expect(event?.value).toBe("not-json");
   });
 
   it("returns null when moduleId/instanceId/key are missing", () => {
-    expect(parseWidgetStatusUpdated({ application_id: "app-1", data: {} })).toBeNull();
-  });
-
-  it("returns null when applicationId is missing", () => {
-    expect(parseWidgetStatusUpdated({ data: { module_id: "mod-1", instance_id: "inst-1", key: "k" } })).toBeNull();
+    expect(parseWidgetStatusUpdated({ data: {} })).toBeNull();
   });
 });
 
@@ -108,7 +100,6 @@ class FakeWebhookClient {
   async send(event: { type: string; [key: string]: unknown }): Promise<void> {
     this.sentEvents.push(event);
   }
-  setApplicationId(): void {}
   async refreshCallbackUrls(): Promise<void> {}
 }
 
@@ -118,8 +109,7 @@ describe("initWidgetStatusHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initWidgetStatusHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.widget_status.updated.app-1", {
-      application_id: "app-1",
+    await nats.dispatch("db.widget_status.updated.system", {
       data: { module_id: "mod-1", instance_id: "inst-1", key: "viewer_count", value: "42" },
     });
 
@@ -132,7 +122,7 @@ describe("initWidgetStatusHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initWidgetStatusHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.widget_status.updated.app-1", { application_id: "app-1", data: {} });
+    await nats.dispatch("db.widget_status.updated.system", { data: {} });
 
     expect(webhook.sentEvents).toHaveLength(0);
   });

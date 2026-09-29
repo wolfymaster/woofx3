@@ -128,7 +128,6 @@ export const resourcesRoutes = routeModule({
     size?: number;
     ttlSeconds?: number;
   }): Promise<UploadGrant> {
-    const applicationId = await this.ensureApplicationId();
     if (input.name.length === 0) {
       throw new Error("name is required");
     }
@@ -141,7 +140,6 @@ export const resourcesRoutes = routeModule({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        application_id: applicationId,
         resource_id: resourceId,
         file_name: input.name,
         content_type: input.contentType,
@@ -156,16 +154,16 @@ export const resourcesRoutes = routeModule({
       expiresAt: number;
     };
 
-    // deleteResource recovers the resource id from this prefix to purge
-    // storage, so a key outside it would orphan the bytes on delete.
-    const expectedPrefix = `user/${applicationId}/${resourceId}/`;
+    // deleteResource purges storage by the directory holding the stored key,
+    // so a key outside this resource's own directory would take other
+    // resources' bytes with it on delete.
+    const expectedPrefix = `user/${resourceId}/`;
     if (typeof grant.repositoryKey !== "string" || !grant.repositoryKey.startsWith(expectedPrefix)) {
       throw new Error(`Upload grant repository key is not under ${expectedPrefix}: ${String(grant.repositoryKey)}`);
     }
 
     const row = await this.db.createResource({
       id: resourceId,
-      applicationId,
       parentId: input.parentId ?? undefined,
       name: input.name,
       kind: kindForContentType(input.contentType),
@@ -190,10 +188,8 @@ export const resourcesRoutes = routeModule({
    * is called the row is inert: it lists, but serves no URL.
    */
   async completeUpload(resourceId: string, size?: number): Promise<ResourceItem> {
-    const applicationId = await this.ensureApplicationId();
     const response = await this.db.updateResource({
       id: resourceId,
-      applicationId,
       status: "ready",
       size: size === undefined ? undefined : BigInt(size),
     } as resource.UpdateResourceRequest);
@@ -201,12 +197,10 @@ export const resourcesRoutes = routeModule({
   },
 
   async createFolder(name: string, parentId?: string | null): Promise<ResourceItem> {
-    const applicationId = await this.ensureApplicationId();
     if (name.length === 0) {
       throw new Error("name is required");
     }
     const response = await this.db.createResourceFolder({
-      applicationId,
       parentId: parentId ?? undefined,
       name,
     });
@@ -214,8 +208,7 @@ export const resourcesRoutes = routeModule({
   },
 
   async getResource(id: string): Promise<ResourceItem> {
-    const applicationId = await this.ensureApplicationId();
-    const response = await this.db.getResource({ id, applicationId });
+    const response = await this.db.getResource({ id });
     return resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), response);
   },
 
@@ -232,9 +225,7 @@ export const resourcesRoutes = routeModule({
     page?: number;
     pageSize?: number;
   }): Promise<{ resources: ResourceItem[]; total: number; page: number; pageSize: number }> {
-    const applicationId = await this.ensureApplicationId();
     const response = await this.db.listResources({
-      applicationId,
       parentId: query?.folderId ?? undefined,
       kind: query?.kind ?? "",
       search: query?.search ?? "",
@@ -252,10 +243,8 @@ export const resourcesRoutes = routeModule({
 
   /** Rename, or move by supplying a new parent. Null moves to the root. */
   async updateResource(id: string, changes: { name?: string; parentId?: string | null }): Promise<ResourceItem> {
-    const applicationId = await this.ensureApplicationId();
     const request: resource.UpdateResourceRequest = {
       id,
-      applicationId,
       name: changes.name,
       // Present-but-empty is how the proto expresses "move to root", so a
       // null here must still be sent rather than dropped as absent.
@@ -277,27 +266,31 @@ export const resourcesRoutes = routeModule({
    * that mostly succeeded and invite a retry that cannot fix anything.
    */
   async deleteResource(id: string): Promise<{ deleted: boolean }> {
-    const applicationId = await this.ensureApplicationId();
-    const repositoryKeys = await this.db.deleteResource({ id, applicationId });
+    const repositoryKeys = await this.db.deleteResource({ id });
 
-    const resourceIds = new Set<string>();
+    // One representative key per directory: barkloader removes the whole
+    // directory holding the key it is given. The stored key is used verbatim
+    // because rows written under an older layout keep their original path.
+    const keysByDirectory = new Map<string, string>();
     for (const key of repositoryKeys) {
-      // Keys are `user/{applicationId}/{resourceId}/{file}`.
-      const segments = key.split("/");
-      if (segments.length >= 3 && segments[0] === "user") {
-        resourceIds.add(segments[2]);
+      const slash = key.lastIndexOf("/");
+      if (slash <= 0) {
+        this.logger.error("Deleted resource has a repository key with no directory; skipping purge", { key });
+        continue;
       }
+      keysByDirectory.set(key.slice(0, slash), key);
     }
 
-    for (const storedId of resourceIds) {
+    for (const repositoryKey of keysByDirectory.values()) {
       try {
-        await this.barkloaderRequest(
-          `/assets/resource/${encodeURIComponent(applicationId)}/${encodeURIComponent(storedId)}`,
-          { method: "DELETE" }
-        );
+        await this.barkloaderRequest("/assets/resource", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repositoryKey }),
+        });
       } catch (err) {
         this.logger.error("Failed to purge stored objects for deleted resource", {
-          resourceId: storedId,
+          repositoryKey,
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -315,12 +308,11 @@ export const resourcesRoutes = routeModule({
    * for it.
    */
   async requestProcessing(resourceId: string, utility: string = UTILITY_THUMBNAIL): Promise<{ accepted: boolean }> {
-    const applicationId = await this.ensureApplicationId();
     if (utility !== UTILITY_THUMBNAIL) {
       throw new Error(`Unsupported processing utility: ${utility}`);
     }
 
-    const existing = await this.db.getResource({ id: resourceId, applicationId });
+    const existing = await this.db.getResource({ id: resourceId });
     const row = existing;
     if (row.isFolder === true) {
       throw new Error("Folders cannot be processed");
@@ -361,7 +353,6 @@ export const resourcesRoutes = routeModule({
       this.logger.error("Processing callback carried no resource id", { body });
       return;
     }
-    const applicationId = await this.ensureApplicationId();
 
     if (body.status === "failed") {
       this.logger.error("Resource processing failed", {
@@ -384,7 +375,6 @@ export const resourcesRoutes = routeModule({
 
     await this.db.updateResource({
       id: resourceId,
-      applicationId,
       thumbnailRepositoryKey: thumbnailKey,
     } as resource.UpdateResourceRequest);
     this.logger.info("Recorded generated thumbnail", { resourceId });

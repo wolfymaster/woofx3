@@ -404,7 +404,7 @@ All services read from a shared `.woofx3.json` at the repo root (gitignored). Cr
 {
   "messagebusUrl": "nats://messagebus:4222",
   "databaseUrl": "postgres://...",
-  "badgerPath": "/tmp/woofx3-badger",
+  "storagePath": "./data/module-storage.db",
   "barkloaderKey": "...",
   "databaseProxyPort": "8080"
 }

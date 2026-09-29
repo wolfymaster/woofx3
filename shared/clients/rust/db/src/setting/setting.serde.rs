@@ -10,15 +10,9 @@ impl serde::Serialize for DeleteSettingRequest {
         if !self.key.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("setting.DeleteSettingRequest", len)?;
         if !self.key.is_empty() {
             struct_ser.serialize_field("key", &self.key)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -31,14 +25,11 @@ impl<'de> serde::Deserialize<'de> for DeleteSettingRequest {
     {
         const FIELDS: &[&str] = &[
             "key",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Key,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -61,7 +52,6 @@ impl<'de> serde::Deserialize<'de> for DeleteSettingRequest {
                     {
                         match value {
                             "key" => Ok(GeneratedField::Key),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -82,7 +72,6 @@ impl<'de> serde::Deserialize<'de> for DeleteSettingRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut key__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Key => {
@@ -91,17 +80,10 @@ impl<'de> serde::Deserialize<'de> for DeleteSettingRequest {
                             }
                             key__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(DeleteSettingRequest {
                     key: key__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -119,15 +101,9 @@ impl serde::Serialize for GetSettingRequest {
         if !self.key.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("setting.GetSettingRequest", len)?;
         if !self.key.is_empty() {
             struct_ser.serialize_field("key", &self.key)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -140,14 +116,11 @@ impl<'de> serde::Deserialize<'de> for GetSettingRequest {
     {
         const FIELDS: &[&str] = &[
             "key",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Key,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -170,7 +143,6 @@ impl<'de> serde::Deserialize<'de> for GetSettingRequest {
                     {
                         match value {
                             "key" => Ok(GeneratedField::Key),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -191,7 +163,6 @@ impl<'de> serde::Deserialize<'de> for GetSettingRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut key__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Key => {
@@ -200,17 +171,10 @@ impl<'de> serde::Deserialize<'de> for GetSettingRequest {
                             }
                             key__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(GetSettingRequest {
                     key: key__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -228,15 +192,9 @@ impl serde::Serialize for GetSettingsRequest {
         if !self.keys.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("setting.GetSettingsRequest", len)?;
         if !self.keys.is_empty() {
             struct_ser.serialize_field("keys", &self.keys)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -249,14 +207,11 @@ impl<'de> serde::Deserialize<'de> for GetSettingsRequest {
     {
         const FIELDS: &[&str] = &[
             "keys",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Keys,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -279,7 +234,6 @@ impl<'de> serde::Deserialize<'de> for GetSettingsRequest {
                     {
                         match value {
                             "keys" => Ok(GeneratedField::Keys),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -300,7 +254,6 @@ impl<'de> serde::Deserialize<'de> for GetSettingsRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut keys__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Keys => {
@@ -309,17 +262,10 @@ impl<'de> serde::Deserialize<'de> for GetSettingsRequest {
                             }
                             keys__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(GetSettingsRequest {
                     keys: keys__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -445,15 +391,9 @@ impl serde::Serialize for ListSettingsRequest {
         if !self.key_prefix.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("setting.ListSettingsRequest", len)?;
         if !self.key_prefix.is_empty() {
             struct_ser.serialize_field("keyPrefix", &self.key_prefix)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -467,14 +407,11 @@ impl<'de> serde::Deserialize<'de> for ListSettingsRequest {
         const FIELDS: &[&str] = &[
             "key_prefix",
             "keyPrefix",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             KeyPrefix,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -497,7 +434,6 @@ impl<'de> serde::Deserialize<'de> for ListSettingsRequest {
                     {
                         match value {
                             "keyPrefix" | "key_prefix" => Ok(GeneratedField::KeyPrefix),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -518,7 +454,6 @@ impl<'de> serde::Deserialize<'de> for ListSettingsRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut key_prefix__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::KeyPrefix => {
@@ -527,17 +462,10 @@ impl<'de> serde::Deserialize<'de> for ListSettingsRequest {
                             }
                             key_prefix__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(ListSettingsRequest {
                     key_prefix: key_prefix__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -668,9 +596,6 @@ impl serde::Serialize for SetSettingRequest {
         if self.value.is_some() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.user_id.is_empty() {
             len += 1;
         }
@@ -680,9 +605,6 @@ impl serde::Serialize for SetSettingRequest {
         }
         if let Some(v) = self.value.as_ref() {
             struct_ser.serialize_field("value", v)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.user_id.is_empty() {
             struct_ser.serialize_field("userId", &self.user_id)?;
@@ -699,8 +621,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
         const FIELDS: &[&str] = &[
             "key",
             "value",
-            "application_id",
-            "applicationId",
             "user_id",
             "userId",
         ];
@@ -709,7 +629,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
         enum GeneratedField {
             Key,
             Value,
-            ApplicationId,
             UserId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -734,7 +653,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                         match value {
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "userId" | "user_id" => Ok(GeneratedField::UserId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -757,7 +675,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
             {
                 let mut key__ = None;
                 let mut value__ = None;
-                let mut application_id__ = None;
                 let mut user_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
@@ -773,12 +690,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                             }
                             value__ = map_.next_value()?;
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::UserId => {
                             if user_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("userId"));
@@ -790,7 +701,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                 Ok(SetSettingRequest {
                     key: key__.unwrap_or_default(),
                     value: value__,
-                    application_id: application_id__.unwrap_or_default(),
                     user_id: user_id__.unwrap_or_default(),
                 })
             }
@@ -809,15 +719,9 @@ impl serde::Serialize for SetSettingsRequest {
         if !self.settings.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("setting.SetSettingsRequest", len)?;
         if !self.settings.is_empty() {
             struct_ser.serialize_field("settings", &self.settings)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -830,14 +734,11 @@ impl<'de> serde::Deserialize<'de> for SetSettingsRequest {
     {
         const FIELDS: &[&str] = &[
             "settings",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Settings,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -860,7 +761,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingsRequest {
                     {
                         match value {
                             "settings" => Ok(GeneratedField::Settings),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -881,7 +781,6 @@ impl<'de> serde::Deserialize<'de> for SetSettingsRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut settings__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Settings => {
@@ -890,17 +789,10 @@ impl<'de> serde::Deserialize<'de> for SetSettingsRequest {
                             }
                             settings__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(SetSettingsRequest {
                     settings: settings__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -1143,9 +1035,6 @@ impl serde::Serialize for Setting {
         if !self.value_type.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.user_id.is_empty() {
             len += 1;
         }
@@ -1167,9 +1056,6 @@ impl serde::Serialize for Setting {
         }
         if !self.value_type.is_empty() {
             struct_ser.serialize_field("valueType", &self.value_type)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.user_id.is_empty() {
             struct_ser.serialize_field("userId", &self.user_id)?;
@@ -1195,8 +1081,6 @@ impl<'de> serde::Deserialize<'de> for Setting {
             "value",
             "value_type",
             "valueType",
-            "application_id",
-            "applicationId",
             "user_id",
             "userId",
             "created_at",
@@ -1211,7 +1095,6 @@ impl<'de> serde::Deserialize<'de> for Setting {
             Key,
             Value,
             ValueType,
-            ApplicationId,
             UserId,
             CreatedAt,
             UpdatedAt,
@@ -1240,7 +1123,6 @@ impl<'de> serde::Deserialize<'de> for Setting {
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
                             "valueType" | "value_type" => Ok(GeneratedField::ValueType),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "userId" | "user_id" => Ok(GeneratedField::UserId),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
@@ -1267,7 +1149,6 @@ impl<'de> serde::Deserialize<'de> for Setting {
                 let mut key__ = None;
                 let mut value__ = None;
                 let mut value_type__ = None;
-                let mut application_id__ = None;
                 let mut user_id__ = None;
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
@@ -1297,12 +1178,6 @@ impl<'de> serde::Deserialize<'de> for Setting {
                             }
                             value_type__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::UserId => {
                             if user_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("userId"));
@@ -1328,7 +1203,6 @@ impl<'de> serde::Deserialize<'de> for Setting {
                     key: key__.unwrap_or_default(),
                     value: value__,
                     value_type: value_type__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     user_id: user_id__.unwrap_or_default(),
                     created_at: created_at__,
                     updated_at: updated_at__,

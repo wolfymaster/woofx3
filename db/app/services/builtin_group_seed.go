@@ -6,18 +6,17 @@ import (
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
-// SeedBuiltInGroups ensures every group in models.BuiltInGroups exists for the
-// application. It is idempotent, so it is safe to call on every application
-// create and safe to re-run against an application the 0032 migration already
-// backfilled.
+// SeedBuiltInGroups ensures every group in models.BuiltInGroups exists. It is
+// idempotent, so db-proxy runs it on every start and it is safe against a
+// database whose migrations already inserted some or all of the catalog.
 //
 // A group that already exists under a built-in name is promoted rather than
 // duplicated: an operator who hand-made a "moderator" group before upgrading
 // keeps its membership and simply gains built-in protection. Promoting is the
-// only correct option anyway - (application_id, name) is unique, so inserting
-// a second one is impossible.
-func SeedBuiltInGroups(groupRepo *repo.GroupRepository, appID uuid.UUID) error {
-	existing, err := groupRepo.GetByApplicationID(appID)
+// only correct option anyway - group names are unique, so inserting a second
+// one is impossible.
+func SeedBuiltInGroups(groupRepo *repo.GroupRepository) error {
+	existing, err := groupRepo.List()
 	if err != nil {
 		return err
 	}
@@ -39,11 +38,10 @@ func SeedBuiltInGroups(groupRepo *repo.GroupRepository, appID uuid.UUID) error {
 		}
 
 		group := models.Group{
-			ID:            uuid.New(),
-			ApplicationID: appID,
-			Name:          builtIn.Name,
-			Description:   builtIn.Description,
-			IsBuiltIn:     true,
+			ID:          uuid.New(),
+			Name:        builtIn.Name,
+			Description: builtIn.Description,
+			IsBuiltIn:   true,
 		}
 		if err := groupRepo.Create(&group); err != nil {
 			return err

@@ -10,11 +10,10 @@ import (
 
 func TestWorkflow_NewWorkflowChangeEvent(t *testing.T) {
 	entityID := "workflow-123"
-	applicationID := "app-1"
 	source := "/woofx3/workflow"
 
 	// Create a new workflow change event
-	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationCreated, entityID, applicationID, source)
+	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationCreated, entityID, source)
 	if err != nil {
 		t.Fatalf("Failed to create workflow change event: %v", err)
 	}
@@ -69,19 +68,14 @@ func TestWorkflow_NewWorkflowChangeEvent(t *testing.T) {
 	if data["workflowId"] != entityID {
 		t.Errorf("Expected JSON data %q=%q, got %v", "workflowId", entityID, data["workflowId"])
 	}
-
-	if data["applicationId"] != applicationID {
-		t.Errorf("Expected JSON data %q=%q, got %v", "applicationId", applicationID, data["applicationId"])
-	}
 }
 
 func TestWorkflow_ParseWorkflowChangeEvent(t *testing.T) {
 	entityID := "workflow-456"
-	applicationID := "app-2"
 	source := "/woofx3/workflow"
 
 	// Create a new workflow change event
-	originalEvt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, applicationID, source)
+	originalEvt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, source)
 	if err != nil {
 		t.Fatalf("Failed to create workflow change event: %v", err)
 	}
@@ -123,10 +117,6 @@ func TestWorkflow_ParseWorkflowChangeEvent(t *testing.T) {
 		t.Errorf("Expected change data WorkflowID %q, got %q", entityID, changeData.WorkflowID)
 	}
 
-	if changeData.ApplicationID != applicationID {
-		t.Errorf("Expected change data ApplicationID %q, got %q", applicationID, changeData.ApplicationID)
-	}
-
 	// Verify helper methods
 	if !changeData.IsUpdated() {
 		t.Error("Expected IsUpdated() to return true")
@@ -144,12 +134,11 @@ func TestWorkflow_ParseWorkflowChangeEvent(t *testing.T) {
 
 func TestWorkflow_ParseWorkflowChangeEventWithSubject(t *testing.T) {
 	entityID := "workflow-789"
-	applicationID := "app-3"
 	source := "/woofx3/workflow"
-	subject := "db.workflow.updated.app-3"
+	subject := "db.workflow.updated"
 
 	// Create a new workflow change event
-	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, applicationID, source)
+	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, source)
 	if err != nil {
 		t.Fatalf("Failed to create workflow change event: %v", err)
 	}
@@ -224,13 +213,11 @@ func TestWorkflow_WorkflowChangeDataHelpers(t *testing.T) {
 
 // TestWorkflow_DataReadsFromExtensions covers the producer style used by db's
 // generic worker publisher (db/app/workers/publisher_worker.go), which carries
-// `operation` / `entityid` / `applicationid` as CloudEvent extensions and uses
-// the data payload for the row body itself. The consumer must source
-// operation/workflowID/applicationID from extensions when the data fields are
-// empty.
+// `operation` / `entityid` as CloudEvent extensions and uses the data payload
+// for the row body itself. The consumer must source operation/workflowID from
+// extensions when the data fields are empty.
 func TestWorkflow_DataReadsFromExtensions(t *testing.T) {
 	workflowID := "workflow-456"
-	applicationID := "app-xyz"
 
 	rawEvt := ce.NewEvent()
 	rawEvt.SetID("event-1")
@@ -239,12 +226,10 @@ func TestWorkflow_DataReadsFromExtensions(t *testing.T) {
 	rawEvt.SetTime(time.Now())
 	rawEvt.SetExtension("operation", OperationUpdated)
 	rawEvt.SetExtension("entityid", workflowID)
-	rawEvt.SetExtension("applicationid", applicationID)
 	rowPayload := map[string]any{
-		"id":             workflowID,
-		"application_id": applicationID,
-		"name":           "Some Workflow",
-		"enabled":        true,
+		"id":      workflowID,
+		"name":    "Some Workflow",
+		"enabled": true,
 	}
 	if err := rawEvt.SetData(ce.ApplicationJSON, rowPayload); err != nil {
 		t.Fatalf("SetData: %v", err)
@@ -271,10 +256,6 @@ func TestWorkflow_DataReadsFromExtensions(t *testing.T) {
 	if data.WorkflowID != workflowID {
 		t.Errorf("WorkflowID = %q, want %q (must come from extensions when not in data)",
 			data.WorkflowID, workflowID)
-	}
-	if data.ApplicationID != applicationID {
-		t.Errorf("ApplicationID = %q, want %q (must come from extensions when not in data)",
-			data.ApplicationID, applicationID)
 	}
 	if !data.IsUpdated() {
 		t.Error("IsUpdated() = false; want true")

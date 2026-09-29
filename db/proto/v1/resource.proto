@@ -15,8 +15,7 @@ import "google/protobuf/timestamp.proto";
 // content; this one is.
 //
 // Storage layout: bytes live in barkloader's repository under
-// `user/{application_id}/{resource_id}/{filename}`, mirroring the
-// `modules/` convention. `repository_key` holds that key verbatim;
+// `user/{resource_id}/{filename}`, mirroring the `modules/` convention. `repository_key` holds that key verbatim;
 // resolving it to a public URL is the api gateway's concern (it
 // composes `{sceneManagerUrl}/assets/{repository_key}`), so
 // no URL is persisted on the row.
@@ -66,10 +65,11 @@ service ResourceService {
 // Folders are always "ready".
 message Resource {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
 
   // Parent folder. Unset means the resource sits at the root of the
-  // application's tree. Self-referencing; a folder's children carry
+  // tree. Self-referencing; a folder's children carry
   // its id here.
   optional string parent_id = 3;
 
@@ -100,7 +100,8 @@ message Resource {
 }
 
 message CreateResourceRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   optional string parent_id = 2;
   string name = 3;
   string kind = 4;
@@ -117,18 +118,21 @@ message CreateResourceRequest {
 }
 
 message CreateFolderRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   optional string parent_id = 2;
   string name = 3;
 }
 
 message GetResourceRequest {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
 }
 
 message ListResourcesRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
 
   // Unset lists the root. Set lists that folder's direct children.
   optional string parent_id = 2;
@@ -151,12 +155,13 @@ message ListResourcesResponse {
   int32 page_size = 5;
 }
 
-// Every field but `id`/`application_id` is optional; absent fields are
+// Every field but `id` is optional; absent fields are
 // left untouched. `parent_id` present-but-empty moves the resource to
 // the root.
 message UpdateResourceRequest {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   optional string name = 3;
   optional string parent_id = 4;
   optional string status = 5;
@@ -167,7 +172,8 @@ message UpdateResourceRequest {
 
 message DeleteResourceRequest {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
 }
 
 message DeleteResourceResponse {

@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use lib_repository::{CreateFileRequest, Repository};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tracing::{info, warn};
 
 use super::module_file::ModuleFile;
@@ -216,6 +216,10 @@ pub struct ManifestConfigField {
     /// fires a request. Opaque here.
     #[serde(default)]
     pub action: Option<serde_json::Value>,
+    /// Required for `type: "list"` - the fields of one row. The collected
+    /// value is an array of objects, each keyed by these fields' ids.
+    #[serde(default)]
+    pub item_fields: Option<Vec<ManifestConfigField>>,
     /// Trigger config only - binds this field to a path in the event payload.
     #[serde(default)]
     pub event_path: Option<String>,
@@ -256,7 +260,11 @@ pub struct ManifestConfigFieldOption {
 /// `text` and `toggle` rather than `string` and `boolean`: these name the
 /// control, not the stored value, and the latter pair only ever appeared on
 /// module settings.
-pub const CONFIG_FIELD_TYPES: [&str; 11] = [
+///
+/// `theme` is in the list because consumers render it, but no manifest may
+/// declare one: the engine adds it to a widget that declares a `theme`
+/// contract (see `THEME_SETTING_ID`).
+pub const CONFIG_FIELD_TYPES: [&str; 13] = [
     "number",
     "range",
     "text",
@@ -268,7 +276,20 @@ pub const CONFIG_FIELD_TYPES: [&str; 11] = [
     "resource_ref",
     "button",
     "layout",
+    "list",
+    "theme",
 ];
+
+/// The field type, and the settings key, of the theme picker the engine adds
+/// to a widget that declares a `theme` contract. The stored value is a theme's
+/// canonical id, or absent for the contract's defaults.
+pub const THEME_FIELD_TYPE: &str = "theme";
+pub const THEME_SETTING_ID: &str = "theme";
+
+/// The types a `list` field's `itemFields` may use: controls that fit in one
+/// row and hold a plain value. A nested list, a picker that opens its own
+/// dialog, or a button has no sensible place in a row.
+pub const LIST_ITEM_FIELD_TYPES: [&str; 5] = ["number", "text", "select", "toggle", "color"];
 
 /// The places a widget can be put. Mirrors `WIDGET_SURFACES` in
 /// `shared/clients/typescript/api/ui-schema.ts` and `WidgetSurface` in the
@@ -330,6 +351,38 @@ fn encode_field_list(fields: Option<&[ManifestConfigField]>) -> String {
     }
 }
 
+fn theme_setting_field() -> ManifestConfigField {
+    ManifestConfigField {
+        id: THEME_SETTING_ID.to_string(),
+        label: "Theme".to_string(),
+        field_type: THEME_FIELD_TYPE.to_string(),
+        required: Some(false),
+        placeholder: None,
+        unit: None,
+        options: None,
+        source: None,
+        min: None,
+        max: None,
+        default_value: None,
+        media_type: None,
+        kinds: None,
+        resource_kind: None,
+        surface: None,
+        action: None,
+        item_fields: None,
+        event_path: None,
+        operator: None,
+        description: Some(
+            "How this widget looks. Lists the installed themes made for it; none uses its own look."
+                .to_string(),
+        ),
+        hint: None,
+        example_payload: None,
+        any_text: None,
+        missing_text: None,
+    }
+}
+
 fn encode_data_shape(shape: Option<&ManifestDataShape>) -> String {
     match shape {
         Some(shape) => serde_json::to_string(shape).unwrap_or_else(|_| "{}".to_string()),
@@ -356,8 +409,15 @@ pub struct ManifestCommand {
     pub pattern: String,
     #[serde(rename = "type")]
     pub pattern_type: String,
+    /// A workflow the command runs as its one action. Mutually exclusive with
+    /// `actions`.
     #[serde(default)]
     pub workflow: Option<String>,
+    /// The actions the command runs, in order, stored as the command's
+    /// actions exactly as declared. Same shape as a workflow's steps.
+    /// Mutually exclusive with `workflow`.
+    #[serde(default)]
+    pub actions: Vec<ManifestWorkflowStep>,
     #[serde(default)]
     pub required_role: Option<String>,
 }
@@ -555,6 +615,166 @@ pub struct ModuleWidget {
     /// (see `resolve_taxonomy`).
     #[serde(default)]
     pub category: Option<String>,
+    /// Opts the widget into themes. Absent means the widget cannot be themed
+    /// and nothing about it changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<WidgetThemeContract>,
+}
+
+/// What a theme may change about a widget: named CSS variables and named
+/// asset slots, each with a default. The defaults are the widget's own look,
+/// so rendering with no theme selected and rendering with a theme that sets
+/// nothing are the same.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WidgetThemeContract {
+    /// The compatibility key for themes, independent of the module version.
+    /// Bumped only when a variable or slot changes incompatibly; a theme built
+    /// for another version renders as the defaults.
+    pub contract_version: u32,
+    #[serde(default)]
+    pub variables: Vec<ThemeVariable>,
+    #[serde(default)]
+    pub asset_slots: Vec<ThemeAssetSlot>,
+}
+
+/// One CSS custom property a theme may set, exposed to the widget as
+/// `--theme-{id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ThemeVariable {
+    pub id: String,
+    /// One of `THEME_VARIABLE_TYPES`.
+    #[serde(rename = "type")]
+    pub variable_type: String,
+    pub default: serde_json::Value,
+}
+
+/// A named place a theme may supply a file, exposed to the widget as
+/// `--theme-asset-{id}: url(...)` and `host.theme.assets[id]`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ThemeAssetSlot {
+    pub id: String,
+    /// `THEME_ASSET_KINDS` tokens a file for this slot may be.
+    pub kinds: Vec<String>,
+    /// Module-root path of the file used when no theme fills the slot. Must
+    /// lie inside the widget's `assets` directory, so it is served from the
+    /// same place as the widget itself.
+    #[serde(default)]
+    pub default: Option<String>,
+}
+
+/// The value types a theme variable may take. A subset of the field
+/// vocabulary: each one has an unambiguous CSS rendering.
+pub const THEME_VARIABLE_TYPES: [&str; 3] = ["color", "text", "number"];
+
+/// The kinds of file an asset slot may take, told apart by file extension.
+pub const THEME_ASSET_KINDS: [&str; 4] = ["image", "video", "audio", "font"];
+
+/// A theme for another widget (or one of this module's own): data only.
+///
+/// Unknown properties are rejected, which is what keeps a theme from carrying
+/// functions, scripts or markup: there is nowhere to put them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestTheme {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// The widget this theme is for, as `{moduleId}:widget:{id}`.
+    pub target: String,
+    /// Must equal the target contract's `contractVersion`.
+    pub contract_version: u32,
+    /// Contract variable id to value.
+    #[serde(default)]
+    pub variables: BTreeMap<String, serde_json::Value>,
+    /// Contract asset slot id to the module-root path of a file in this zip.
+    #[serde(default)]
+    pub assets: BTreeMap<String, String>,
+    /// Module-root path of a CSS file injected after the widget's own styles.
+    #[serde(default)]
+    pub stylesheet: Option<String>,
+    /// Module-root path of an image the picker shows for this theme.
+    #[serde(default)]
+    pub preview: Option<String>,
+}
+
+impl ManifestTheme {
+    /// Every file this theme ships, as module-root paths: what install
+    /// uploads and what must be present in the zip.
+    pub fn files(&self) -> Vec<&str> {
+        let mut files: Vec<&str> = Vec::new();
+        if let Some(stylesheet) = &self.stylesheet {
+            files.push(stylesheet);
+        }
+        if let Some(preview) = &self.preview {
+            files.push(preview);
+        }
+        files.extend(self.assets.values().map(String::as_str));
+        files
+    }
+
+    /// Repository key a theme file is stored under. Theme files keep their
+    /// module-root path beneath a per-theme directory, which `routes::assets`
+    /// serves from the engine itself so a widget frame's CSP can hold.
+    pub fn repository_key(
+        &self,
+        module_key: &str,
+        version_dir: &str,
+        rel_path: &str,
+    ) -> Result<String> {
+        let rel = normalize_rel_path(rel_path)?;
+        Ok(format!(
+            "modules/{module_key}/{version_dir}/themes/{}/{rel}",
+            self.id
+        ))
+    }
+
+    pub async fn upload_files<R: Repository>(
+        &self,
+        module_key: &str,
+        version_dir: &str,
+        files: &[ModuleFile],
+        repository: &R,
+    ) -> Result<()> {
+        for rel in self.files() {
+            let file = resolve_zip_file(files, rel).ok_or_else(|| {
+                anyhow!(
+                    "theme {}: file '{}' not found in module archive",
+                    self.id,
+                    rel
+                )
+            })?;
+            let repo_key = self.repository_key(module_key, version_dir, rel)?;
+            upload_content_addressed(
+                repository,
+                &repo_key,
+                &file.contents,
+                extension_for_path(rel),
+            )
+            .await?;
+        }
+        info!("Stored theme {} files for {}", self.id, module_key);
+        Ok(())
+    }
+}
+
+/// The kind of file a theme asset is, from its extension, or `None` for an
+/// extension that is no `THEME_ASSET_KINDS` kind.
+pub fn theme_asset_kind(path: &str) -> Option<&'static str> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())?
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "svg" => Some("image"),
+        "webm" | "mp4" | "m4v" | "mov" => Some("video"),
+        "mp3" | "ogg" | "oga" | "wav" | "m4a" | "flac" | "aac" => Some("audio"),
+        "woff" | "woff2" | "ttf" | "otf" => Some("font"),
+        _ => None,
+    }
 }
 
 fn default_widget_surfaces() -> Vec<String> {
@@ -574,6 +794,34 @@ pub struct ManifestBackgroundTask {
     pub function: String,
     /// Cron expression controlling the fire rate (e.g. `"*/30 * * * * *"`).
     pub schedule: String,
+    #[serde(default)]
+    pub description: String,
+    /// Also fire once whenever the module is registered: boot, install,
+    /// upgrade, enable. Cron alone never fires at startup, and a module that
+    /// keeps deadlines needs a moment to re-arm them from its own storage,
+    /// since the scheduler holds them only in memory.
+    #[serde(default, alias = "run_on_load")]
+    pub run_on_load: bool,
+}
+
+/// Upper bound on a deadline's `maxPending`. Deadlines live in memory, so
+/// each declaration's budget is bounded at install rather than trusted.
+pub const DEADLINES_MAX_PENDING_CAP: u32 = 1024;
+
+/// A one-shot, point-in-time invocation a module may schedule from its own
+/// functions with `ctx.schedule.at(id, key, whenMs, params)`. Only functions
+/// declared here can be scheduled, so what a module can make the engine run
+/// later is reviewable at install and bounded by `max_pending`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestDeadline {
+    pub id: String,
+    /// Manifest-local function id invoked when an entry comes due.
+    pub function: String,
+    /// Most entries this deadline may hold at once. Zero, the value when the
+    /// field is missing, fails validation: it is required.
+    #[serde(default, alias = "max_pending")]
+    pub max_pending: u32,
     #[serde(default)]
     pub description: String,
 }
@@ -680,10 +928,23 @@ pub struct ModuleManifest {
     /// since module authors commonly use either form.
     #[serde(default, alias = "background_tasks")]
     pub background_tasks: Vec<ManifestBackgroundTask>,
+    /// One-shot invocations the module's functions may schedule; see
+    /// [`ManifestDeadline`].
+    #[serde(default)]
+    pub deadlines: Vec<ManifestDeadline>,
     /// Module-level settings declared in the manifest. Registered into the
     /// `module_settings` table at install time. Values survive upgrades.
     #[serde(default)]
     pub settings: Vec<ManifestSetting>,
+    /// Other modules this one needs installed: module id to a semver range
+    /// (`"^1.2.0"`). Install fails when one is missing or out of range, and
+    /// uninstalling a required module is refused while this one is installed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub requires: BTreeMap<String, String>,
+    /// Themes for widgets that declare a `theme` contract - see
+    /// [`ManifestTheme`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub themes: Vec<ManifestTheme>,
 }
 
 impl ModuleManifest {
@@ -1055,7 +1316,7 @@ impl ModuleWidget {
                     })
             })
             .unwrap_or_default();
-        let settings_schema = encode_field_list(self.settings_schema.as_deref());
+        let settings_schema = encode_field_list(Some(&self.settings_fields()));
         // Manifest validation rejects unnormalizable entries before any
         // registration runs, so the error arm is unreachable on the
         // install path; registering an empty entry there keeps this
@@ -1080,6 +1341,18 @@ impl ModuleWidget {
             taxonomy: self.resolve_taxonomy(),
             entry,
         }
+    }
+
+    /// The fields a placement of this widget collects: the declared
+    /// `settingsSchema`, plus the theme picker when the widget declares a
+    /// `theme` contract. Only a contract adds the picker, so a widget that
+    /// never opted in never shows one.
+    pub fn settings_fields(&self) -> Vec<ManifestConfigField> {
+        let mut fields = self.settings_schema.clone().unwrap_or_default();
+        if self.theme.is_some() {
+            fields.push(theme_setting_field());
+        }
+        fields
     }
 
     /// Taxonomy for `RegisterWidgets`: manifest `taxonomy` when non-empty,
@@ -1221,33 +1494,66 @@ impl ManifestAction {
 }
 
 impl ManifestCommand {
-    /// `resolved_workflow` is the canonical id of the workflow this command
-    /// invokes (when the manifest declared one). When `None`, the command
-    /// is treated as a text command per the existing semantics.
+    /// The name the command is stored and matched under: its pattern without
+    /// the leading `!`.
+    pub fn command_name(&self) -> &str {
+        self.pattern.strip_prefix('!').unwrap_or(&self.pattern)
+    }
+
+    /// Registers the command with the actions the manifest declared for it.
+    ///
+    /// `resolved_workflow` is the canonical id of the workflow the command
+    /// runs, when it declared `workflow`. `resolved_steps` holds the resolution
+    /// of each of its `actions`, index for index. A command declaring neither
+    /// runs nothing: it still matches and still announces itself on
+    /// `chat.command.<slug>` for workflows listening to it.
     pub async fn register(
         &self,
         module_name: &str,
         db_proxy: &dyn super::db_proxy_client::ModuleDbProxy,
         resolved_workflow: Option<&str>,
+        resolved_steps: &[ResolvedWorkflowStep],
+        asset_repo_keys: &HashMap<String, String>,
     ) -> Result<()> {
-        let command_name = self.pattern.strip_prefix('!').unwrap_or(&self.pattern);
+        if resolved_steps.len() != self.actions.len() {
+            return Err(anyhow!(
+                "command {} register: resolved_steps ({}) does not match actions ({})",
+                self.id,
+                resolved_steps.len(),
+                self.actions.len(),
+            ));
+        }
+        let command_name = self.command_name();
 
-        // A declared workflow becomes a workflow step, which is what the engine
-        // runs it as. Without one the command has nothing to run: it still
-        // matches and still announces itself on `chat.command.<slug>`, which is
-        // what a module command with no workflow has always amounted to.
         let actions = match resolved_workflow {
             Some(workflow) => serde_json::json!([{
                 "id": "action-1",
                 "type": "workflow",
                 "workflow": { "workflowId": workflow, "waitUntilCompletion": false },
             }]),
-            None => serde_json::json!([]),
+            None => {
+                let step_id_prefix = format!("{}-{}-", module_name, self.id);
+                let tasks = self
+                    .actions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, step)| {
+                        step_to_task_json(
+                            &step_id_prefix,
+                            i,
+                            step,
+                            &resolved_steps[i],
+                            asset_repo_keys,
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                serde_json::Value::Array(tasks)
+            }
         };
         let actions_json = serde_json::to_string(&actions)?;
 
         db_proxy
-            .register_command("", command_name, &actions_json, module_name)
+            .register_command(command_name, &actions_json, module_name)
             .await?;
 
         info!(
@@ -1529,9 +1835,6 @@ impl ManifestWorkflow {
                 self.trigger,
                 self.steps.len()
             ),
-            // Module workflows are instance-global; applicationId is set on
-            // the triggering event payload when the workflow runs.
-            application_id: String::new(),
             enabled: true,
             variables: std::collections::HashMap::new(),
             on_success: String::new(),
@@ -2276,9 +2579,42 @@ mod tests {
         assert_eq!(m.settings[1].id, "clientId");
         assert_eq!(m.settings[1].setting_type, "text");
         assert!(m.settings[1].action.is_null());
+        assert_eq!(m.commands[0].actions[0].action, "song_request");
+        assert!(m.commands[0].workflow.is_none());
+
+        let resolved =
+            super::super::manifest_validate::validate(&m).expect("validate spotify fixture");
+        assert_eq!(
+            resolved.commands[0].step_actions[0].to_string(),
+            "woofx3_spotify:action:song_request"
+        );
 
         let reserialized = serde_json::to_string(&m).expect("serialize");
         let reparsed: ModuleManifest = serde_json::from_str(&reserialized).expect("reparse");
         assert_eq!(reparsed.settings[0].action["integration"], "spotify");
+    }
+
+    /// `CONFIG_FIELD_TYPES` and its TypeScript mirror must list the same
+    /// tokens in the same order. Read at run time rather than with
+    /// `include_str!`, so a checkout without the TypeScript clients fails this
+    /// one test instead of the whole test binary.
+    #[test]
+    fn config_field_types_match_the_typescript_mirror() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../shared/clients/typescript/api/ui-schema.ts");
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let start = source
+            .find("export const CONFIG_FIELD_TYPES = [")
+            .expect("ui-schema.ts declares CONFIG_FIELD_TYPES");
+        let body = &source[start..];
+        let end = body.find("] as const;").expect("CONFIG_FIELD_TYPES ends");
+        let body = &body[body.find('[').expect("array opens") + 1..end];
+        let mirrored: Vec<&str> = body
+            .split(',')
+            .map(|entry| entry.trim().trim_matches('"'))
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        assert_eq!(mirrored, CONFIG_FIELD_TYPES.to_vec());
     }
 }

@@ -31,11 +31,10 @@ const (
 //
 // Folders are always "ready".
 type Resource struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Parent folder. Unset means the resource sits at the root of the
-	// application's tree. Self-referencing; a folder's children carry
+	// tree. Self-referencing; a folder's children carry
 	// its id here.
 	ParentId *string `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	IsFolder bool    `protobuf:"varint,4,opt,name=is_folder,json=isFolder,proto3" json:"is_folder,omitempty"`
@@ -93,13 +92,6 @@ func (*Resource) Descriptor() ([]byte, []int) {
 func (x *Resource) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *Resource) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -183,7 +175,6 @@ func (x *Resource) GetUpdatedAt() *timestamppb.Timestamp {
 
 type CreateResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ParentId      *string                `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
@@ -229,13 +220,6 @@ func (x *CreateResourceRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CreateResourceRequest.ProtoReflect.Descriptor instead.
 func (*CreateResourceRequest) Descriptor() ([]byte, []int) {
 	return file_resource_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *CreateResourceRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *CreateResourceRequest) GetParentId() string {
@@ -296,7 +280,6 @@ func (x *CreateResourceRequest) GetId() string {
 
 type CreateFolderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ParentId      *string                `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -333,13 +316,6 @@ func (*CreateFolderRequest) Descriptor() ([]byte, []int) {
 	return file_resource_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *CreateFolderRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *CreateFolderRequest) GetParentId() string {
 	if x != nil && x.ParentId != nil {
 		return *x.ParentId
@@ -357,7 +333,6 @@ func (x *CreateFolderRequest) GetName() string {
 type GetResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -399,16 +374,8 @@ func (x *GetResourceRequest) GetId() string {
 	return ""
 }
 
-func (x *GetResourceRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 type ListResourcesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unset lists the root. Set lists that folder's direct children.
 	ParentId *string `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	// Optional filters. Empty means "no filter".
@@ -450,13 +417,6 @@ func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
 	return file_resource_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListResourcesRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListResourcesRequest) GetParentId() string {
@@ -570,13 +530,12 @@ func (x *ListResourcesResponse) GetPageSize() int32 {
 	return 0
 }
 
-// Every field but `id`/`application_id` is optional; absent fields are
+// Every field but `id` is optional; absent fields are
 // left untouched. `parent_id` present-but-empty moves the resource to
 // the root.
 type UpdateResourceRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	Id                     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId          string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Name                   *string                `protobuf:"bytes,3,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	ParentId               *string                `protobuf:"bytes,4,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	Status                 *string                `protobuf:"bytes,5,opt,name=status,proto3,oneof" json:"status,omitempty"`
@@ -620,13 +579,6 @@ func (*UpdateResourceRequest) Descriptor() ([]byte, []int) {
 func (x *UpdateResourceRequest) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *UpdateResourceRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -676,7 +628,6 @@ func (x *UpdateResourceRequest) GetThumbnailRepositoryKey() string {
 type DeleteResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -714,13 +665,6 @@ func (*DeleteResourceRequest) Descriptor() ([]byte, []int) {
 func (x *DeleteResourceRequest) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *DeleteResourceRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -835,10 +779,9 @@ var File_resource_proto protoreflect.FileDescriptor
 
 const file_resource_proto_rawDesc = "" +
 	"\n" +
-	"\x0eresource.proto\x12\bresource\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdc\x03\n" +
+	"\x0eresource.proto\x12\bresource\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x03\n" +
 	"\bResource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12 \n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\tparent_id\x18\x03 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x1b\n" +
 	"\tis_folder\x18\x04 \x01(\bR\bisFolder\x12\x12\n" +
 	"\x04name\x18\x05 \x01(\tR\x04name\x12\x12\n" +
@@ -854,9 +797,8 @@ const file_resource_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtB\f\n" +
 	"\n" +
-	"_parent_id\"\xa8\x02\n" +
-	"\x15CreateResourceRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12 \n" +
+	"_parent_idJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x97\x02\n" +
+	"\x15CreateResourceRequest\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12!\n" +
@@ -867,34 +809,30 @@ const file_resource_proto_rawDesc = "" +
 	"\x02id\x18\t \x01(\tH\x01R\x02id\x88\x01\x01B\f\n" +
 	"\n" +
 	"_parent_idB\x05\n" +
-	"\x03_id\"\x80\x01\n" +
-	"\x13CreateFolderRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12 \n" +
+	"\x03_idJ\x04\b\x01\x10\x02R\x0eapplication_id\"o\n" +
+	"\x13CreateFolderRequest\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04nameB\f\n" +
 	"\n" +
-	"_parent_id\"K\n" +
+	"_parent_idJ\x04\b\x01\x10\x02R\x0eapplication_id\":\n" +
 	"\x12GetResourceRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\xca\x01\n" +
-	"\x14ListResourcesRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12 \n" +
+	"\x02id\x18\x01 \x01(\tR\x02idJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xb9\x01\n" +
+	"\x14ListResourcesRequest\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06search\x18\x04 \x01(\tR\x06search\x12\x12\n" +
 	"\x04page\x18\x05 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x06 \x01(\x05R\bpageSizeB\f\n" +
 	"\n" +
-	"_parent_id\"\xc0\x01\n" +
+	"_parent_idJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xc0\x01\n" +
 	"\x15ListResourcesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x120\n" +
 	"\tresources\x18\x02 \x03(\v2\x12.resource.ResourceR\tresources\x12\x14\n" +
 	"\x05total\x18\x03 \x01(\x05R\x05total\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xff\x02\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xee\x02\n" +
 	"\x15UpdateResourceRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\x04name\x18\x03 \x01(\tH\x00R\x04name\x88\x01\x01\x12 \n" +
 	"\tparent_id\x18\x04 \x01(\tH\x01R\bparentId\x88\x01\x01\x12\x1b\n" +
 	"\x06status\x18\x05 \x01(\tH\x02R\x06status\x88\x01\x01\x12&\n" +
@@ -907,10 +845,9 @@ const file_resource_proto_rawDesc = "" +
 	"\a_statusB\x0f\n" +
 	"\r_content_typeB\a\n" +
 	"\x05_sizeB\x1b\n" +
-	"\x19_thumbnail_repository_key\"N\n" +
+	"\x19_thumbnail_repository_keyJ\x04\b\x02\x10\x03R\x0eapplication_id\"=\n" +
 	"\x15DeleteResourceRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"q\n" +
+	"\x02id\x18\x01 \x01(\tR\x02idJ\x04\b\x02\x10\x03R\x0eapplication_id\"q\n" +
 	"\x16DeleteResourceResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12'\n" +
 	"\x0frepository_keys\x18\x02 \x03(\tR\x0erepositoryKeys\"r\n" +

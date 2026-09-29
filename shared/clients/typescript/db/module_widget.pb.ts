@@ -107,11 +107,6 @@ export interface RegisterWidgetsRequest {
   createdByType: string;
   createdByRef: string;
   /**
-   * Reserved for future tenant-scoped widget registration. Module catalog
-   * rows keep the default '' (instance-global), same as triggers/actions.
-   */
-  applicationId: string;
-  /**
    * Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
    * so a module upgrade upserts its resources in place instead of orphaning
    * every reference. Stored as created_by_ref when created_by_type/ref are
@@ -485,7 +480,6 @@ export const RegisterWidgetsRequest = {
       widgets: [],
       createdByType: "",
       createdByRef: "",
-      applicationId: "",
       moduleId: "",
       ...msg,
     };
@@ -519,9 +513,6 @@ export const RegisterWidgetsRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(6, msg.createdByRef);
-    }
-    if (msg.applicationId) {
-      writer.writeString(7, msg.applicationId);
     }
     if (msg.moduleId) {
       writer.writeString(8, msg.moduleId);
@@ -563,10 +554,6 @@ export const RegisterWidgetsRequest = {
         }
         case 6: {
           msg.createdByRef = reader.readString();
-          break;
-        }
-        case 7: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 8: {
@@ -1127,7 +1114,6 @@ export const RegisterWidgetsRequestJSON = {
       widgets: [],
       createdByType: "",
       createdByRef: "",
-      applicationId: "",
       moduleId: "",
       ...msg,
     };
@@ -1157,9 +1143,6 @@ export const RegisterWidgetsRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
@@ -1201,10 +1184,6 @@ export const RegisterWidgetsRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {

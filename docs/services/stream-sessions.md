@@ -5,7 +5,8 @@
 `stream_sessions` / `stream_session_segments` tables behind
 `StreamSessionService`, central stamping in all three languages, and the
 `session.started` subscription in every process that publishes — so events now
-carry a session id end to end.
+carry a session id end to end — and the `listStreamSessions` /
+`getStreamSession` engine RPCs.
 
 **Not built:** "Reaching the UI" below is still design.
 :::
@@ -104,7 +105,7 @@ because that is the input the next decision reads. Both live in db-proxy behind
 `StreamSessionService`.
 
 Two partial unique indexes hold the invariants the rest of the design leans on:
-at most one open session per application, and at most one open segment. They sit
+at most one open session, and at most one open segment. They sit
 in the schema rather than in resolver code because a concurrent second writer
 should fail a write, not silently corrupt the history every future aggregate
 will be computed from. A duplicate `stream.online` is the ordinary case — Twitch
@@ -245,9 +246,8 @@ which is the [engine integrity](./engine-integrity.md) rule working as intended
 
 ### Storage is per module
 
-The storage key is `<application_id>\x00<namespace>\x00<key>`, where the
-namespace is the owning module's manifest id, so two modules writing `"count"`
-hold two separate values. Every read and write must name its namespace; the
+The storage key is `<namespace>\x00<key>`, where the namespace is the owning
+module's manifest id, so two modules writing `"count"` hold two separate values. Every read and write must name its namespace; the
 sandbox supplies the calling module's, never one the module chooses.
 
 `expires_at` is still never populated, so `ClearExpired` has nothing to match.
@@ -275,6 +275,14 @@ the property sessions exist for.
 *changed* but never that one *ended*, so anything that must react to an ending
 needs the bus event rather than the row.
 
+Past sessions are read over RPC rather than pushed. `listStreamSessions` (newest
+first, `limit`/`offset`) and `getStreamSession(id)` return each session with its
+segments, oldest first, because "when was this stream live" is a segment-level
+question. An empty `segments` list means the session has never been live, and a
+missing end is `null`, never a zero timestamp. Splits and merges move segments
+between sessions, so a cached session id can stop existing; `getStreamSession`
+returns `null` for it.
+
 Two consumers were hand-rolling this concept against the wrong key and have
 moved:
 
@@ -294,13 +302,14 @@ Uptime readers — `broadcast-shell.tsx`, `stream-status.tsx`, `stream-stats.tsx
 Nothing in the system aggregates anything today: no totals of chats, subs or
 cheers exist. `widget_status` holds a last-reported value per key and explicitly
 discards history (`db/database/models/widget_status.go:14-17`);
-`alert.CountByApplicationID` is unbounded; the workflow engine's only
+`AlertRepository.Count` is unbounded; the workflow engine's only
 aggregation lives inside a single waiting execution and dies with it.
 
 Producing aggregate values from events and stream statistics is **Analytics**, a
-subsystem still to be built. Sessions are not that subsystem and do not
-partially implement it — a session id makes per-stream totals *possible* and
-cheap to query, it does not make them exist.
+subsystem still to be built and designed in [Analytics](/services/analytics).
+Sessions are not that subsystem and do not partially implement it — a session id
+makes per-stream totals *possible* and cheap to query, it does not make them
+exist.
 
 What sessions give Analytics is the partition key. "Total chats" is meaningless
 without a definition of which chats, and that definition has to exist *at the
@@ -310,13 +319,11 @@ from an accidental one. Building sessions first means events are correctly
 attributed from the day the stamp lands, and Analytics inherits a corpus it can
 group rather than one it must guess at.
 
-One property to design against when that work starts: the id on an event is not
-a stable key (see [Splits are retroactive](#splits-are-retroactive-and-events-are-immutable)),
-so aggregation resolves it to a canonical session. Doing that per row does not
-scale to the volumes Analytics will read. The likely shapes are resolving once
-per segment rather than per event, or materialising a canonical id alongside the
-stamped one — either is cheap to add later, and neither is worth building before
-there is something counting.
+The id on an event is not a stable key (see [Splits are
+retroactive](#splits-are-retroactive-and-events-are-immutable)), so Analytics
+does not group on it. It attributes an event to the session that owns the time
+the event occurred in, read from the session record once per query — see
+[Analytics](/services/analytics#reading-the-log).
 
 **The rules engine is unaffected.** `treats/` contains a README and no
 implementation, so there are no facts to retract at a session boundary. If facts

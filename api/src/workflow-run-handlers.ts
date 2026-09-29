@@ -13,8 +13,8 @@ import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes run history on
-// `db.workflow_execution.{created,updated}.{appId}` and
-// `db.workflow_execution_step.recorded.{appId}`. The `recorded` operation is
+// `db.workflow_execution.{created,updated}` and
+// `db.workflow_execution_step.recorded`. The `recorded` operation is
 // not a typo for `created`: a step row is upserted, so a given report may have
 // created the row or replaced one, and neither word describes it.
 //
@@ -27,8 +27,6 @@ interface RawRunRow {
   id?: unknown;
   WorkflowID?: unknown;
   workflow_id?: unknown;
-  ApplicationID?: unknown;
-  application_id?: unknown;
   Status?: unknown;
   status?: unknown;
   TriggeredBy?: unknown;
@@ -52,8 +50,6 @@ interface RawStepRow {
   id?: unknown;
   ExecutionID?: unknown;
   execution_id?: unknown;
-  ApplicationID?: unknown;
-  application_id?: unknown;
   TaskID?: unknown;
   task_id?: unknown;
   Name?: unknown;
@@ -109,7 +105,6 @@ function buildRunSnapshot(ce: Record<string, unknown>): WorkflowRunSnapshot | nu
   return {
     id,
     workflowId: pickFirst(row.WorkflowID, row.workflow_id),
-    applicationId: pickFirst(row.ApplicationID, row.application_id),
     status: pickFirst(row.Status, row.status) || "running",
     // Only emitted when present, so a row written by an older db proxy without
     // these columns still round-trips rather than gaining empty strings.
@@ -146,7 +141,6 @@ function buildStepSnapshot(ce: Record<string, unknown>): WorkflowRunStepSnapshot
   return {
     id,
     executionId,
-    applicationId: pickFirst(row.ApplicationID, row.application_id),
     taskId,
     status: pickFirst(row.Status, row.status) || "running",
     // Defaulted rather than dropped: the column is NOT NULL with a positive
@@ -166,41 +160,34 @@ function buildStepSnapshot(ce: Record<string, unknown>): WorkflowRunStepSnapshot
 }
 
 export interface ParsedRunChange<T> {
-  applicationId: string;
   clientId: string;
   event: T | null;
 }
 
 export function parseRunRecorded(ce: Record<string, unknown>): ParsedRunChange<WorkflowRunRecordedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const run = buildRunSnapshot(ce);
   return {
-    applicationId,
     clientId,
-    event: run ? { type: EngineEventType.WORKFLOW_RUN_RECORDED, applicationId, run } : null,
+    event: run ? { type: EngineEventType.WORKFLOW_RUN_RECORDED, run } : null,
   };
 }
 
 export function parseRunUpdated(ce: Record<string, unknown>): ParsedRunChange<WorkflowRunUpdatedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const run = buildRunSnapshot(ce);
   return {
-    applicationId,
     clientId,
-    event: run ? { type: EngineEventType.WORKFLOW_RUN_UPDATED, applicationId, run } : null,
+    event: run ? { type: EngineEventType.WORKFLOW_RUN_UPDATED, run } : null,
   };
 }
 
 export function parseRunStepRecorded(ce: Record<string, unknown>): ParsedRunChange<WorkflowRunStepRecordedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const step = buildStepSnapshot(ce);
   return {
-    applicationId,
     clientId,
-    event: step ? { type: EngineEventType.WORKFLOW_RUN_STEP_RECORDED, applicationId, step } : null,
+    event: step ? { type: EngineEventType.WORKFLOW_RUN_STEP_RECORDED, step } : null,
   };
 }
 

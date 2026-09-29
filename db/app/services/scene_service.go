@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -20,7 +22,7 @@ import (
 // through as opaque strings the engine never inspects.
 //
 // Outbox publishing is opt-in via `publisher`. When set, every CRUD
-// op emits a `db.scene.<op>.<applicationId>` event so downstream
+// op emits a `db.scene.<op>.system` event so downstream
 // consumers (Convex projector, future cache layers) can react. When
 // nil, the service is silent — useful for tests and for early-boot
 // pre-NATS scenarios.
@@ -29,30 +31,46 @@ type sceneService struct {
 	// Deleting a scene has to revoke the tokens that address it; without this
 	// they keep resolving to an id nothing answers for.
 	overlayTokenRepo *repo.OverlayTokenRepository
-	publisher        *workers.EventPublisher
+	// Records the themes a scene's widgets select, which is what keeps an
+	// on-screen theme from being uninstalled. Optional, as for workflows.
+	refRepo   *repo.ResourceReferenceRepository
+	publisher *workers.EventPublisher
 }
 
 func NewSceneService(
 	sceneRepo *repo.SceneRepository,
 	overlayTokenRepo *repo.OverlayTokenRepository,
+	refRepo *repo.ResourceReferenceRepository,
 	publisher *workers.EventPublisher,
 ) client.SceneService {
 	return &sceneService{
 		repo:             sceneRepo,
 		overlayTokenRepo: overlayTokenRepo,
+		refRepo:          refRepo,
 		publisher:        publisher,
 	}
 }
 
+// syncSceneEdges recomputes the resource_references edges for a scene.
+// Failures are logged but do not fail the parent request: the edges are a
+// secondary index and the scene row is already written.
+func (s *sceneService) syncSceneEdges(scene *models.Scene) {
+	if s.refRepo == nil {
+		return
+	}
+	src := refsvc.SceneSource{
+		ID:                  scene.ID,
+		Name:                scene.Name,
+		SourceCreatedByType: scene.CreatedByType,
+		SourceCreatedByRef:  scene.CreatedByRef,
+	}
+	edges := refsvc.ExtractSceneEdges(src, scene.WidgetsJSON)
+	if err := s.refRepo.ReplaceEdgesForSource("scene", scene.ID, edges); err != nil {
+		log.Printf("scene_service: ReplaceEdgesForSource failed for scene %s: %v", scene.ID, err)
+	}
+}
+
 func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneRequest) (*client.SceneResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.Name == "" {
 		return nil, twirp.RequiredArgumentError("name")
 	}
@@ -71,7 +89,6 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 	}
 
 	scene := &models.Scene{
-		ApplicationID: applicationID,
 		Name:          req.Name,
 		Description:   req.Description,
 		WidgetsJSON:   widgetsJSON,
@@ -83,8 +100,9 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 	if err := s.repo.Create(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create scene: %w", err))
 	}
+	s.syncSceneEdges(scene)
 
-	s.publishChange(appIDStr, scene, "created")
+	s.publishChange(scene, "created")
 
 	return &client.SceneResponse{
 		Status: &client.ResponseStatus{
@@ -144,8 +162,9 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	if err := s.repo.Update(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
 	}
+	s.syncSceneEdges(scene)
 
-	s.publishChange(scene.ApplicationID.String(), scene, "updated")
+	s.publishChange(scene, "updated")
 
 	return &client.SceneResponse{
 		Status: &client.ResponseStatus{
@@ -184,8 +203,13 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 	if err := s.repo.Delete(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete scene: %w", err))
 	}
+	if s.refRepo != nil {
+		if err := s.refRepo.DeleteEdgesBySource("scene", scene.ID); err != nil {
+			log.Printf("scene_service: DeleteEdgesBySource failed for scene %s: %v", scene.ID, err)
+		}
+	}
 
-	s.publishChange(scene.ApplicationID.String(), scene, "deleted")
+	s.publishChange(scene, "deleted")
 
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
@@ -204,7 +228,7 @@ func (s *sceneService) revokeTokensForScene(scene *models.Scene) (int, error) {
 		return 0, nil
 	}
 	sceneID := scene.ID
-	tokens, err := s.overlayTokenRepo.List(&sceneID, nil, false)
+	tokens, err := s.overlayTokenRepo.List(&sceneID, false)
 	if err != nil {
 		return 0, err
 	}
@@ -230,7 +254,6 @@ func (s *sceneService) publishOverlayTokenChange(token *models.OverlayToken, op 
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   token.ApplicationID.String(),
 		EntityType:      "overlay_token",
 		EntityID:        token.ID.String(),
 		Operation:       op,
@@ -240,18 +263,7 @@ func (s *sceneService) publishOverlayTokenChange(token *models.OverlayToken, op 
 }
 
 func (s *sceneService) ListScenes(ctx context.Context, req *client.ListScenesRequest) (*client.ListScenesResponse, error) {
-	var scenes []*models.Scene
-	var err error
-
-	if req.ApplicationId != "" {
-		appID, parseErr := uuid.Parse(req.ApplicationId)
-		if parseErr != nil {
-			return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-		}
-		scenes, err = s.repo.GetByApplicationID(appID)
-	} else {
-		scenes, err = s.repo.GetAll()
-	}
+	scenes, err := s.repo.GetAll()
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list scenes: %w", err))
 	}
@@ -280,7 +292,6 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	var createdAt, updatedAt *timestamppb.Timestamp
 	return &client.Scene{
 		Id:            m.ID.String(),
-		ApplicationId: m.ApplicationID.String(),
 		Name:          m.Name,
 		Description:   m.Description,
 		WidgetsJson:   m.WidgetsJSON,
@@ -292,12 +303,11 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	}
 }
 
-func (s *sceneService) publishChange(applicationID string, scene *models.Scene, op string) {
+func (s *sceneService) publishChange(scene *models.Scene, op string) {
 	if s.publisher == nil {
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   applicationID,
 		EntityType:      "scene",
 		EntityID:        scene.ID.String(),
 		Operation:       op,
@@ -309,7 +319,6 @@ func (s *sceneService) publishChange(applicationID string, scene *models.Scene, 
 func buildSceneChangeData(scene *models.Scene) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              scene.ID.String(),
-		"application_id":  scene.ApplicationID.String(),
 		"name":            scene.Name,
 		"description":     scene.Description,
 		"widgets_json":    scene.WidgetsJSON,

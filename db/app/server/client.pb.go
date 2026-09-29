@@ -25,7 +25,6 @@ type Client struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ClientId      string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	ClientSecret  string                 `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
 	CallbackUrl   string                 `protobuf:"bytes,6,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
@@ -78,13 +77,6 @@ func (x *Client) GetDescription() string {
 	return ""
 }
 
-func (x *Client) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *Client) GetClientId() string {
 	if x != nil {
 		return x.ClientId
@@ -116,7 +108,6 @@ func (x *Client) GetCallbackToken() string {
 type CreateClientRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Description   string                 `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	CallbackUrl   string                 `protobuf:"bytes,3,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
 	CallbackToken string                 `protobuf:"bytes,4,opt,name=callback_token,json=callbackToken,proto3" json:"callback_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -156,13 +147,6 @@ func (*CreateClientRequest) Descriptor() ([]byte, []int) {
 func (x *CreateClientRequest) GetDescription() string {
 	if x != nil {
 		return x.Description
-	}
-	return ""
-}
-
-func (x *CreateClientRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -227,7 +211,6 @@ func (x *GetClientRequest) GetClientId() string {
 
 type ListClientsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -260,13 +243,6 @@ func (x *ListClientsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListClientsRequest.ProtoReflect.Descriptor instead.
 func (*ListClientsRequest) Descriptor() ([]byte, []int) {
 	return file_client_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListClientsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 type UpdateClientRequest struct {
@@ -541,24 +517,21 @@ var File_client_proto protoreflect.FileDescriptor
 
 const file_client_proto_rawDesc = "" +
 	"\n" +
-	"\fclient.proto\x12\x06client\x1a\fcommon.proto\"\xed\x01\n" +
+	"\fclient.proto\x12\x06client\x1a\fcommon.proto\"\xdc\x01\n" +
 	"\x06Client\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x12\x1b\n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1b\n" +
 	"\tclient_id\x18\x04 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x05 \x01(\tR\fclientSecret\x12!\n" +
 	"\fcallback_url\x18\x06 \x01(\tR\vcallbackUrl\x12%\n" +
-	"\x0ecallback_token\x18\a \x01(\tR\rcallbackToken\"\xa8\x01\n" +
+	"\x0ecallback_token\x18\a \x01(\tR\rcallbackTokenJ\x04\b\x03\x10\x04R\x0eapplication_id\"\x97\x01\n" +
 	"\x13CreateClientRequest\x12 \n" +
-	"\vdescription\x18\x01 \x01(\tR\vdescription\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12!\n" +
+	"\vdescription\x18\x01 \x01(\tR\vdescription\x12!\n" +
 	"\fcallback_url\x18\x03 \x01(\tR\vcallbackUrl\x12%\n" +
-	"\x0ecallback_token\x18\x04 \x01(\tR\rcallbackToken\"/\n" +
+	"\x0ecallback_token\x18\x04 \x01(\tR\rcallbackTokenJ\x04\b\x02\x10\x03R\x0eapplication_id\"/\n" +
 	"\x10GetClientRequest\x12\x1b\n" +
-	"\tclient_id\x18\x01 \x01(\tR\bclientId\";\n" +
-	"\x12ListClientsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"\x91\x01\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\"*\n" +
+	"\x12ListClientsRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x91\x01\n" +
 	"\x13UpdateClientRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12!\n" +

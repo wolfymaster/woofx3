@@ -1,5 +1,5 @@
 // Classic-script entry point for the widget-host shim. Built by
-// `bun run build:shim` into `dist/widget-host-shim.js` — a
+// `bun run build:shim` into `dist/widget-host-shim.iife.js` — a
 // self-contained IIFE with no ESM, no top-level await, no async/defer
 // assumptions. The frame assembler injects it as a plain
 // `<script src="...">` so existing widgets can read

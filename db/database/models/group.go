@@ -11,11 +11,10 @@ import (
 // the Casbin `group:<id>` subject used in policy rows, but callers never
 // need to know that - they only ever deal with Group rows and membership.
 type Group struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_groups_application_id;constraint:OnDelete:CASCADE"`
-	Name          string    `gorm:"column:name;type:varchar(100);not null"`
-	Description   string    `gorm:"column:description;type:varchar(500);default:''"`
-	// IsBuiltIn marks the groups seeded with every application
+	ID          uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name        string    `gorm:"column:name;type:varchar(100);not null;uniqueIndex:idx_groups_name"`
+	Description string    `gorm:"column:description;type:varchar(500);default:''"`
+	// IsBuiltIn marks the groups seeded once for the engine
 	// (everyone/subscriber/vip/moderator/broadcaster). They are part of the
 	// system contract: undeletable and non-renamable, so a command bound to
 	// one can never be orphaned by a UI edit.
@@ -44,12 +43,6 @@ func GetGroupByID(db *gorm.DB, id uuid.UUID) (*Group, error) {
 	var group Group
 	err := db.First(&group, "id = ?", id).Error
 	return &group, err
-}
-
-func GetGroupsByApplicationID(db *gorm.DB, appID uuid.UUID) ([]Group, error) {
-	var groups []Group
-	err := db.Where("application_id = ?", appID).Order("name ASC").Find(&groups).Error
-	return groups, err
 }
 
 // UserGroup records that a chat username belongs to a group. Membership is

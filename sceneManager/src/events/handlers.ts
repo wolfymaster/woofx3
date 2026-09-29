@@ -7,7 +7,6 @@ import type { DbClient } from "../db";
  * convention streamware used.
  */
 export interface StatusReport {
-  applicationId: string;
   moduleId: string;
   instanceId: string;
   widgetCanonicalId?: string;
@@ -34,7 +33,6 @@ export async function handleStatusReport(db: DbClient, logger: Logger, report: S
   }
   try {
     await db.upsertWidgetStatus({
-      applicationId: report.applicationId,
       moduleId: report.moduleId,
       instanceId: report.instanceId,
       widgetCanonicalId: report.widgetCanonicalId ?? "",

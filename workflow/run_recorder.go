@@ -47,7 +47,7 @@ func newDBRunRecorder(client runStore, logger tasks.Logger) *dbRunRecorder {
 	return &dbRunRecorder{client: client, logger: logger}
 }
 
-func (r *dbRunRecorder) RunStarted(applicationID string, execution *types.WorkflowExecution) {
+func (r *dbRunRecorder) RunStarted(execution *types.WorkflowExecution) {
 	if r.skip(execution) {
 		return
 	}
@@ -55,7 +55,6 @@ func (r *dbRunRecorder) RunStarted(applicationID string, execution *types.Workfl
 	_, err := r.client.RecordWorkflowRun(context.Background(), &dbv1.RecordWorkflowRunRequest{
 		Id:               execution.ID,
 		WorkflowId:       execution.WorkflowID,
-		ApplicationId:    applicationID,
 		TriggeredBy:      triggeredBy(execution),
 		TriggerEventJson: r.triggerEventJSON(execution),
 		StartedAt:        timestamppb.New(execution.StartedAt),
@@ -68,7 +67,7 @@ func (r *dbRunRecorder) RunStarted(applicationID string, execution *types.Workfl
 	}
 }
 
-func (r *dbRunRecorder) RunSettled(applicationID string, execution *types.WorkflowExecution) {
+func (r *dbRunRecorder) RunSettled(execution *types.WorkflowExecution) {
 	if r.skip(execution) {
 		return
 	}
@@ -90,23 +89,22 @@ func (r *dbRunRecorder) RunSettled(applicationID string, execution *types.Workfl
 	}
 }
 
-func (r *dbRunRecorder) StepSettled(applicationID string, execution *types.WorkflowExecution, step engine.RunStep) {
+func (r *dbRunRecorder) StepSettled(execution *types.WorkflowExecution, step engine.RunStep) {
 	if r.skip(execution) {
 		return
 	}
 
 	req := &dbv1.RecordWorkflowRunStepRequest{
-		ExecutionId:   execution.ID,
-		ApplicationId: applicationID,
-		TaskId:        step.TaskID,
-		Name:          step.TaskID,
-		Status:        step.Status,
-		Attempt:       int32(step.Attempt),
-		StepIndex:     int32(step.StepIndex),
-		InputsJson:    r.marshalMap(step.Inputs, "step inputs"),
-		OutputsJson:   r.marshalMap(step.Outputs, "step outputs"),
-		Error:         step.Error,
-		StartedAt:     timestamppb.New(step.StartedAt),
+		ExecutionId: execution.ID,
+		TaskId:      step.TaskID,
+		Name:        step.TaskID,
+		Status:      step.Status,
+		Attempt:     int32(step.Attempt),
+		StepIndex:   int32(step.StepIndex),
+		InputsJson:  r.marshalMap(step.Inputs, "step inputs"),
+		OutputsJson: r.marshalMap(step.Outputs, "step outputs"),
+		Error:       step.Error,
+		StartedAt:   timestamppb.New(step.StartedAt),
 	}
 	if step.CompletedAt != nil {
 		req.CompletedAt = timestamppb.New(*step.CompletedAt)

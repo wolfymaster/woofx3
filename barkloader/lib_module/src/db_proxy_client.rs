@@ -21,8 +21,8 @@ use super::manifest_validate::InstallProvenance;
 
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage,
-    SettingInputJson, TriggerInputJson, WidgetInputJson,
+    ModuleCommandRow, ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson,
+    ResourceUsage, SettingInputJson, TriggerInputJson, WidgetInputJson,
 };
 
 #[async_trait]
@@ -52,7 +52,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         triggers: Vec<TriggerInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_actions(
         &self,
@@ -61,7 +60,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         actions: Vec<ActionInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_widgets(
         &self,
@@ -70,7 +68,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         widgets: Vec<WidgetInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_background_tasks(
         &self,
@@ -79,7 +76,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         tasks: Vec<BackgroundTaskInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_module_settings(
         &self,
@@ -104,12 +100,10 @@ pub trait ModuleDbProxy: Send + Sync {
         module_id: &str,
         module_key: &str,
     ) -> Result<()>;
-    async fn delete_workflows_by_module(
-        &self,
-        application_id: &str,
-        module_name: &str,
-    ) -> Result<()>;
+    async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()>;
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()>;
+    async fn list_commands_by_module(&self, module_name: &str) -> Result<Vec<ModuleCommandRow>>;
+    async fn delete_command(&self, id: &str) -> Result<()>;
 
     // resource ledger
     async fn create_module_resource(
@@ -141,11 +135,7 @@ pub trait ModuleDbProxy: Send + Sync {
 
     // module deletion (module_delete.rs)
     async fn delete_module_resources(&self, module_id: &str) -> Result<()>;
-    async fn check_module_resource_usage(
-        &self,
-        module_id: &str,
-        application_id: &str,
-    ) -> Result<Vec<ResourceUsage>>;
+    async fn check_module_resource_usage(&self, module_id: &str) -> Result<Vec<ResourceUsage>>;
     async fn list_resource_instances_by_module(
         &self,
         module_id: &str,
@@ -174,7 +164,6 @@ pub trait ModuleDbProxy: Send + Sync {
     /// -- the same shape a workflow's steps have.
     async fn register_command(
         &self,
-        application_id: &str,
         command: &str,
         actions_json: &str,
         module_name: &str,
@@ -194,6 +183,8 @@ pub trait ModuleDbProxy: Send + Sync {
     async fn fetch_module_by_name(&self, name: &str) -> Result<Option<ModuleRecord>>;
     async fn get_widget_entry(&self, module_id: &str, manifest_id: &str) -> Result<Option<String>>;
     async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>>;
+    /// Every installed module, in any state, with its stored manifest.
+    async fn list_modules(&self) -> Result<Vec<ModuleRecord>>;
 }
 
 /// Real adapter: delegates to the existing free functions in `db_proxy`,
@@ -259,7 +250,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         triggers: Vec<TriggerInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_triggers(
             &self.base_url,
@@ -268,7 +258,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             triggers,
-            application_id,
         )
         .await
     }
@@ -280,7 +269,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         actions: Vec<ActionInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_actions(
             &self.base_url,
@@ -289,7 +277,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             actions,
-            application_id,
         )
         .await
     }
@@ -301,7 +288,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         widgets: Vec<WidgetInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_widgets(
             &self.base_url,
@@ -310,7 +296,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             widgets,
-            application_id,
         )
         .await
     }
@@ -322,7 +307,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         tasks: Vec<BackgroundTaskInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_background_tasks(
             &self.base_url,
@@ -331,7 +315,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             tasks,
-            application_id,
         )
         .await
     }
@@ -383,16 +366,20 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::delete_background_tasks_by_module_id(&self.base_url, module_id, module_key).await
     }
 
-    async fn delete_workflows_by_module(
-        &self,
-        application_id: &str,
-        module_name: &str,
-    ) -> Result<()> {
-        db_proxy::delete_workflows_by_module(&self.base_url, application_id, module_name).await
+    async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()> {
+        db_proxy::delete_workflows_by_module(&self.base_url, module_name).await
     }
 
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()> {
         db_proxy::delete_commands_by_module(&self.base_url, module_name).await
+    }
+
+    async fn list_commands_by_module(&self, module_name: &str) -> Result<Vec<ModuleCommandRow>> {
+        db_proxy::list_commands_by_module(&self.base_url, module_name).await
+    }
+
+    async fn delete_command(&self, id: &str) -> Result<()> {
+        db_proxy::delete_command(&self.base_url, id).await
     }
 
     async fn create_module_resource(
@@ -461,12 +448,8 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::delete_module_resources(&self.base_url, module_id).await
     }
 
-    async fn check_module_resource_usage(
-        &self,
-        module_id: &str,
-        application_id: &str,
-    ) -> Result<Vec<ResourceUsage>> {
-        db_proxy::check_module_resource_usage(&self.base_url, module_id, application_id).await
+    async fn check_module_resource_usage(&self, module_id: &str) -> Result<Vec<ResourceUsage>> {
+        db_proxy::check_module_resource_usage(&self.base_url, module_id).await
     }
 
     async fn list_resource_instances_by_module(
@@ -516,19 +499,11 @@ impl ModuleDbProxy for HttpDbProxyClient {
 
     async fn register_command(
         &self,
-        application_id: &str,
         command: &str,
         actions_json: &str,
         module_name: &str,
     ) -> Result<()> {
-        db_proxy::create_command(
-            &self.base_url,
-            application_id,
-            command,
-            actions_json,
-            module_name,
-        )
-        .await
+        db_proxy::create_command(&self.base_url, command, actions_json, module_name).await
     }
 
     async fn complete_module_install(
@@ -563,6 +538,10 @@ impl ModuleDbProxy for HttpDbProxyClient {
     async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>> {
         db_proxy::resolve_module_version_dir(&self.base_url, module_id).await
     }
+
+    async fn list_modules(&self) -> Result<Vec<ModuleRecord>> {
+        db_proxy::list_modules(&self.base_url, None).await
+    }
 }
 
 #[cfg(test)]
@@ -586,6 +565,15 @@ mod test_support {
         /// Provenance the last `create_module` was called with, so tests can
         /// assert what the module row would be stamped with.
         provenance: Mutex<Option<InstallProvenance>>,
+        /// The module's commands as the db would hold them.
+        commands: Mutex<Vec<ModuleCommandRow>>,
+        /// A command whose `register_command` fails, for failing an install
+        /// after some of its commands are already registered.
+        failing_command: Option<&'static str>,
+        /// `(command, actions_json)` for every `register_command`, in order.
+        registered_commands: Mutex<Vec<(String, String)>>,
+        /// What `list_modules` answers: the modules already installed.
+        installed: Mutex<Vec<ModuleRecord>>,
     }
 
     impl FakeDbProxyClient {
@@ -598,7 +586,50 @@ mod test_support {
                 calls: Mutex::new(Vec::new()),
                 fail_on: methods.into_iter().collect(),
                 provenance: Mutex::new(None),
+                commands: Mutex::new(Vec::new()),
+                failing_command: None,
+                registered_commands: Mutex::new(Vec::new()),
+                installed: Mutex::new(Vec::new()),
             }
+        }
+
+        pub fn failing_on_command(command: &'static str) -> Self {
+            Self {
+                failing_command: Some(command),
+                ..Self::default()
+            }
+        }
+
+        /// Seeds the commands an earlier install of the module left behind.
+        pub fn with_commands(self, rows: impl IntoIterator<Item = ModuleCommandRow>) -> Self {
+            self.commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .extend(rows);
+            self
+        }
+
+        /// Seeds the modules `list_modules` reports as installed.
+        pub fn with_installed(self, modules: impl IntoIterator<Item = ModuleRecord>) -> Self {
+            self.installed
+                .lock()
+                .expect("installed mutex poisoned")
+                .extend(modules);
+            self
+        }
+
+        pub fn registered_commands(&self) -> Vec<(String, String)> {
+            self.registered_commands
+                .lock()
+                .expect("registered_commands mutex poisoned")
+                .clone()
+        }
+
+        pub fn commands(&self) -> Vec<ModuleCommandRow> {
+            self.commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .clone()
         }
 
         pub fn calls(&self) -> Vec<String> {
@@ -664,7 +695,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _triggers: Vec<TriggerInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_triggers")
         }
@@ -676,7 +706,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _actions: Vec<ActionInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_actions")
         }
@@ -688,7 +717,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _widgets: Vec<WidgetInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_widgets")
         }
@@ -700,7 +728,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _tasks: Vec<BackgroundTaskInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_background_tasks")
         }
@@ -756,16 +783,33 @@ mod test_support {
             self.record("delete_background_tasks_by_module_id")
         }
 
-        async fn delete_workflows_by_module(
-            &self,
-            _application_id: &str,
-            _module_name: &str,
-        ) -> Result<()> {
+        async fn delete_workflows_by_module(&self, _module_name: &str) -> Result<()> {
             self.record("delete_workflows_by_module")
         }
 
         async fn delete_commands_by_module(&self, _module_name: &str) -> Result<()> {
             self.record("delete_commands_by_module")
+        }
+
+        async fn list_commands_by_module(
+            &self,
+            _module_name: &str,
+        ) -> Result<Vec<ModuleCommandRow>> {
+            self.record("list_commands_by_module")?;
+            Ok(self
+                .commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .clone())
+        }
+
+        async fn delete_command(&self, id: &str) -> Result<()> {
+            self.record("delete_command")?;
+            self.commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .retain(|row| row.id != id);
+            Ok(())
         }
 
         async fn create_module_resource(
@@ -821,7 +865,6 @@ mod test_support {
         async fn check_module_resource_usage(
             &self,
             _module_id: &str,
-            _application_id: &str,
         ) -> Result<Vec<ResourceUsage>> {
             self.record("check_module_resource_usage")?;
             Ok(Vec::new())
@@ -856,12 +899,31 @@ mod test_support {
 
         async fn register_command(
             &self,
-            _application_id: &str,
-            _command: &str,
-            _actions_json: &str,
+            command: &str,
+            actions_json: &str,
             _module_name: &str,
         ) -> Result<()> {
-            self.record("register_command")
+            self.record("register_command")?;
+            self.registered_commands
+                .lock()
+                .expect("registered_commands mutex poisoned")
+                .push((command.to_string(), actions_json.to_string()));
+            if self.failing_command == Some(command) {
+                return Err(anyhow!(
+                    "FakeDbProxyClient: injected failure registering command {}",
+                    command
+                ));
+            }
+            // Mirrors the db service: a module command that already exists is
+            // kept, id and all.
+            let mut commands = self.commands.lock().expect("commands mutex poisoned");
+            if !commands.iter().any(|row| row.command == command) {
+                commands.push(ModuleCommandRow {
+                    id: format!("new-{}", command),
+                    command: command.to_string(),
+                });
+            }
+            Ok(())
         }
 
         async fn complete_module_install(
@@ -894,6 +956,15 @@ mod test_support {
             self.record("resolve_module_version_dir")?;
             Ok(None)
         }
+
+        async fn list_modules(&self) -> Result<Vec<ModuleRecord>> {
+            self.record("list_modules")?;
+            Ok(self
+                .installed
+                .lock()
+                .expect("installed mutex poisoned")
+                .clone())
+        }
     }
 
     #[tokio::test]
@@ -914,7 +985,7 @@ mod test_support {
             .await
             .expect("create_module");
         client
-            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
+            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![])
             .await
             .expect("register_triggers");
 
@@ -925,11 +996,11 @@ mod test_support {
     async fn fails_only_the_configured_call() {
         let client = FakeDbProxyClient::failing_on(["register_actions"]);
         client
-            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
+            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![])
             .await
             .expect("register_triggers should succeed");
         let err = client
-            .register_actions("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
+            .register_actions("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![])
             .await
             .expect_err("register_actions should fail");
         assert!(err.to_string().contains("register_actions"));

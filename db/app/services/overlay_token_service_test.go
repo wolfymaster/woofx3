@@ -25,7 +25,6 @@ func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
 	stmts := []string{
 		`CREATE TABLE scenes (
 			id TEXT PRIMARY KEY,
-			application_id TEXT NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT NOT NULL DEFAULT '',
 			widgets_json TEXT NOT NULL DEFAULT '[]',
@@ -39,7 +38,6 @@ func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			token TEXT NOT NULL UNIQUE,
 			scene_id TEXT NOT NULL,
-			application_id TEXT NOT NULL,
 			label TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'active',
 			created_at DATETIME,
@@ -63,12 +61,12 @@ func newOverlayTokenSvc(t *testing.T) (client.OverlayTokenService, *repository.O
 	return NewOverlayTokenService(tokenRepo, sceneRepo, nil), tokenRepo, db
 }
 
-func seedScene(t *testing.T, db *gorm.DB, applicationID uuid.UUID, name string) uuid.UUID {
+func seedScene(t *testing.T, db *gorm.DB, name string) uuid.UUID {
 	t.Helper()
 	sceneID := uuid.New()
 	err := db.Exec(
-		`INSERT INTO scenes (id, application_id, name) VALUES (?, ?, ?)`,
-		sceneID.String(), applicationID.String(), name,
+		`INSERT INTO scenes (id, name) VALUES (?, ?)`,
+		sceneID.String(), name,
 	).Error
 	if err != nil {
 		t.Fatalf("seed scene: %v", err)
@@ -76,12 +74,11 @@ func seedScene(t *testing.T, db *gorm.DB, applicationID uuid.UUID, name string) 
 	return sceneID
 }
 
-func mintToken(t *testing.T, svc client.OverlayTokenService, sceneID, applicationID uuid.UUID, label string) *client.OverlayToken {
+func mintToken(t *testing.T, svc client.OverlayTokenService, sceneID uuid.UUID, label string) *client.OverlayToken {
 	t.Helper()
 	resp, err := svc.MintOverlayToken(context.Background(), &client.MintOverlayTokenRequest{
-		SceneId:       sceneID.String(),
-		ApplicationId: applicationID.String(),
-		Label:         label,
+		SceneId: sceneID.String(),
+		Label:   label,
 	})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -94,11 +91,10 @@ func mintToken(t *testing.T, svc client.OverlayTokenService, sceneID, applicatio
 
 func TestOverlayTokenService_Mint_FormatAndUniqueness(t *testing.T) {
 	svc, _, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "main")
+	sceneID := seedScene(t, db, "main")
 
-	first := mintToken(t, svc, sceneID, appID, "OBS main PC")
-	second := mintToken(t, svc, sceneID, appID, "OBS laptop")
+	first := mintToken(t, svc, sceneID, "OBS main PC")
+	second := mintToken(t, svc, sceneID, "OBS laptop")
 
 	for _, tok := range []*client.OverlayToken{first, second} {
 		if !strings.HasPrefix(tok.Token, "ovl_") {
@@ -118,8 +114,8 @@ func TestOverlayTokenService_Mint_FormatAndUniqueness(t *testing.T) {
 		if tok.Status != models.OverlayTokenStatusActive {
 			t.Fatalf("expected active status, got %q", tok.Status)
 		}
-		if tok.SceneId != sceneID.String() || tok.ApplicationId != appID.String() {
-			t.Fatalf("scene/application mismatch: %+v", tok)
+		if tok.SceneId != sceneID.String() {
+			t.Fatalf("scene mismatch: %+v", tok)
 		}
 	}
 	if first.Token == second.Token {
@@ -133,30 +129,15 @@ func TestOverlayTokenService_Mint_FormatAndUniqueness(t *testing.T) {
 func TestOverlayTokenService_Mint_SceneNotFound(t *testing.T) {
 	svc, _, _ := newOverlayTokenSvc(t)
 	_, err := svc.MintOverlayToken(context.Background(), &client.MintOverlayTokenRequest{
-		SceneId:       uuid.New().String(),
-		ApplicationId: uuid.New().String(),
+		SceneId: uuid.New().String(),
 	})
-	assertTwirpCode(t, err, twirp.NotFound)
-}
-
-func TestOverlayTokenService_Mint_SceneWrongApplication(t *testing.T) {
-	svc, _, db := newOverlayTokenSvc(t)
-	sceneID := seedScene(t, db, uuid.New(), "main")
-
-	_, err := svc.MintOverlayToken(context.Background(), &client.MintOverlayTokenRequest{
-		SceneId:       sceneID.String(),
-		ApplicationId: uuid.New().String(),
-	})
-	// Ownership mismatch is indistinguishable from missing — a caller
-	// holding the wrong application id must not learn the scene exists.
 	assertTwirpCode(t, err, twirp.NotFound)
 }
 
 func TestOverlayTokenService_Resolve_Active(t *testing.T) {
 	svc, tokenRepo, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "main")
-	minted := mintToken(t, svc, sceneID, appID, "")
+	sceneID := seedScene(t, db, "main")
+	minted := mintToken(t, svc, sceneID, "")
 
 	resp, err := svc.ResolveOverlayToken(context.Background(), &client.ResolveOverlayTokenRequest{Token: minted.Token})
 	if err != nil {
@@ -165,7 +146,7 @@ func TestOverlayTokenService_Resolve_Active(t *testing.T) {
 	if resp.Status.Code != client.ResponseStatus_OK {
 		t.Fatalf("expected OK, got %v", resp.Status.Code)
 	}
-	if resp.SceneId != sceneID.String() || resp.ApplicationId != appID.String() {
+	if resp.SceneId != sceneID.String() {
 		t.Fatalf("resolve mismatch: %+v", resp)
 	}
 
@@ -194,9 +175,8 @@ func TestOverlayTokenService_Resolve_Active(t *testing.T) {
 
 func TestOverlayTokenService_Resolve_RevokedEqualsUnknown(t *testing.T) {
 	svc, _, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "main")
-	minted := mintToken(t, svc, sceneID, appID, "")
+	sceneID := seedScene(t, db, "main")
+	minted := mintToken(t, svc, sceneID, "")
 
 	if _, err := svc.RevokeOverlayToken(context.Background(), &client.RevokeOverlayTokenRequest{Id: minted.Id}); err != nil {
 		t.Fatalf("revoke: %v", err)
@@ -222,9 +202,8 @@ func TestOverlayTokenService_Resolve_RevokedEqualsUnknown(t *testing.T) {
 
 func TestOverlayTokenService_Revoke_Idempotent(t *testing.T) {
 	svc, tokenRepo, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "main")
-	minted := mintToken(t, svc, sceneID, appID, "")
+	sceneID := seedScene(t, db, "main")
+	minted := mintToken(t, svc, sceneID, "")
 
 	first, err := svc.RevokeOverlayToken(context.Background(), &client.RevokeOverlayTokenRequest{Id: minted.Id})
 	if err != nil {
@@ -260,9 +239,8 @@ func TestOverlayTokenService_Revoke_Idempotent(t *testing.T) {
 
 func TestOverlayTokenService_Rotate_Atomicity(t *testing.T) {
 	svc, tokenRepo, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "main")
-	minted := mintToken(t, svc, sceneID, appID, "OBS main PC")
+	sceneID := seedScene(t, db, "main")
+	minted := mintToken(t, svc, sceneID, "OBS main PC")
 
 	resp, err := svc.RotateOverlayToken(context.Background(), &client.RotateOverlayTokenRequest{Id: minted.Id})
 	if err != nil {
@@ -279,8 +257,8 @@ func TestOverlayTokenService_Rotate_Atomicity(t *testing.T) {
 	if rotated.Status != models.OverlayTokenStatusActive {
 		t.Fatalf("expected new token active, got %q", rotated.Status)
 	}
-	if rotated.SceneId != minted.SceneId || rotated.ApplicationId != minted.ApplicationId || rotated.Label != minted.Label {
-		t.Fatalf("expected scene/application/label carried over, got %+v", rotated)
+	if rotated.SceneId != minted.SceneId || rotated.Label != minted.Label {
+		t.Fatalf("expected scene/label carried over, got %+v", rotated)
 	}
 
 	oldRow, err := tokenRepo.GetByID(uuid.MustParse(minted.Id))
@@ -301,9 +279,8 @@ func TestOverlayTokenService_Rotate_Atomicity(t *testing.T) {
 
 func TestOverlayTokenService_Rotate_RevokedFails(t *testing.T) {
 	svc, _, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "main")
-	minted := mintToken(t, svc, sceneID, appID, "")
+	sceneID := seedScene(t, db, "main")
+	minted := mintToken(t, svc, sceneID, "")
 
 	if _, err := svc.RevokeOverlayToken(context.Background(), &client.RevokeOverlayTokenRequest{Id: minted.Id}); err != nil {
 		t.Fatalf("revoke: %v", err)
@@ -314,13 +291,12 @@ func TestOverlayTokenService_Rotate_RevokedFails(t *testing.T) {
 
 func TestOverlayTokenService_List_Filtering(t *testing.T) {
 	svc, _, db := newOverlayTokenSvc(t)
-	appID := uuid.New()
-	sceneA := seedScene(t, db, appID, "scene-a")
-	sceneB := seedScene(t, db, appID, "scene-b")
+	sceneA := seedScene(t, db, "scene-a")
+	sceneB := seedScene(t, db, "scene-b")
 
-	active := mintToken(t, svc, sceneA, appID, "keep")
-	revoked := mintToken(t, svc, sceneA, appID, "drop")
-	other := mintToken(t, svc, sceneB, appID, "other")
+	active := mintToken(t, svc, sceneA, "keep")
+	revoked := mintToken(t, svc, sceneA, "drop")
+	other := mintToken(t, svc, sceneB, "other")
 
 	if _, err := svc.RevokeOverlayToken(context.Background(), &client.RevokeOverlayTokenRequest{Id: revoked.Id}); err != nil {
 		t.Fatalf("revoke: %v", err)
@@ -344,20 +320,20 @@ func TestOverlayTokenService_List_Filtering(t *testing.T) {
 		t.Fatalf("expected 2 tokens for scene A with include_revoked, got %d", len(resp.OverlayTokens))
 	}
 
-	// Application-wide listing spans scenes.
-	resp, err = svc.ListOverlayTokens(context.Background(), &client.ListOverlayTokensRequest{ApplicationId: appID.String()})
+	// An unfiltered listing spans scenes.
+	resp, err = svc.ListOverlayTokens(context.Background(), &client.ListOverlayTokensRequest{})
 	if err != nil {
-		t.Fatalf("list by application: %v", err)
+		t.Fatalf("list all: %v", err)
 	}
 	if len(resp.OverlayTokens) != 2 {
-		t.Fatalf("expected 2 active tokens application-wide, got %d", len(resp.OverlayTokens))
+		t.Fatalf("expected 2 active tokens across scenes, got %d", len(resp.OverlayTokens))
 	}
 	seen := map[string]bool{}
 	for _, tok := range resp.OverlayTokens {
 		seen[tok.Id] = true
 	}
 	if !seen[active.Id] || !seen[other.Id] {
-		t.Fatalf("expected active+other application-wide, got %+v", resp.OverlayTokens)
+		t.Fatalf("expected active+other across scenes, got %+v", resp.OverlayTokens)
 	}
 	if resp.TotalCount != 2 {
 		t.Fatalf("expected total_count 2, got %d", resp.TotalCount)

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,10 +11,12 @@ import (
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 const (
@@ -28,6 +31,7 @@ type commandService struct {
 	casbinRepo *repo.PermissionRepository
 	groupRepo  *repo.GroupRepository
 	enforcer   *casbin.Enforcer
+	publisher  *workers.EventPublisher
 }
 
 func NewCommandService(
@@ -37,6 +41,7 @@ func NewCommandService(
 	casbinRepo *repo.PermissionRepository,
 	groupRepo *repo.GroupRepository,
 	enforcer *casbin.Enforcer,
+	publisher *workers.EventPublisher,
 ) *commandService {
 	return &commandService{
 		repo:       cmdRepo,
@@ -45,6 +50,7 @@ func NewCommandService(
 		casbinRepo: casbinRepo,
 		groupRepo:  groupRepo,
 		enforcer:   enforcer,
+		publisher:  publisher,
 	}
 }
 
@@ -53,7 +59,7 @@ func NewCommandService(
 // create/update so the DB join tables and Casbin's derived cache never
 // drift. Public commands never get Casbin rows - visibility is checked in
 // application code (woofwoofwoof) before Casbin is ever consulted.
-func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Command, groupIDStrs, usernames []string) error {
+func (s *commandService) syncCommandPermissions(cmd *models.Command, groupIDStrs, usernames []string) error {
 	groupIDs := make([]uuid.UUID, 0, len(groupIDStrs))
 	for _, idStr := range groupIDStrs {
 		id, err := uuid.Parse(idStr)
@@ -71,7 +77,7 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 	}
 
 	object := "command/" + cmd.Command
-	if err := s.casbinRepo.RemoveAllPTypeForObject(appID, object); err != nil {
+	if err := s.casbinRepo.RemoveAllPTypeForObject(object); err != nil {
 		return err
 	}
 	if cmd.Visibility == commandVisibilityRestricted {
@@ -80,7 +86,7 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 		// wildcard subject so every enforcement path agrees; leaving the object
 		// with zero rules would deny it everywhere instead.
 		if len(groupIDs) == 0 && len(usernames) == 0 {
-			if err := s.casbinRepo.AddPType(appID, models.WildcardSubject, object, "read", "allow"); err != nil {
+			if err := s.casbinRepo.AddPType(models.WildcardSubject, object, "read", "allow"); err != nil {
 				return err
 			}
 			return s.enforcer.LoadPolicy()
@@ -98,12 +104,12 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 				// the wildcard the matcher understands.
 				subject = models.WildcardSubject
 			}
-			if err := s.casbinRepo.AddPType(appID, subject, object, "read", "allow"); err != nil {
+			if err := s.casbinRepo.AddPType(subject, object, "read", "allow"); err != nil {
 				return err
 			}
 		}
 		for _, username := range usernames {
-			if err := s.casbinRepo.AddPType(appID, username, object, "read", "allow"); err != nil {
+			if err := s.casbinRepo.AddPType(username, object, "read", "allow"); err != nil {
 				return err
 			}
 		}
@@ -145,11 +151,9 @@ func (s *commandService) syncCommandEdges(cmd *models.Command, actionsJSON, crea
 	if s.refRepo == nil {
 		return
 	}
-	appID := cmd.ApplicationID
 	src := refsvc.CommandSource{
 		ID:                  cmd.ID,
 		Name:                cmd.Command,
-		ApplicationID:       &appID,
 		SourceCreatedByType: createdByType,
 		SourceCreatedByRef:  createdByRef,
 	}
@@ -178,7 +182,6 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 
 	return &client.Command{
 		Id:              cmd.ID.String(),
-		ApplicationId:   cmd.ApplicationID.String(),
 		Command:         cmd.Command,
 		ActionsJson:     defaultActionsJSON(cmd.Actions),
 		Cooldown:        int32(cmd.Cooldown),
@@ -194,16 +197,41 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 	}, nil
 }
 
-func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), cmd.ApplicationId)
-	if err != nil {
-		return nil, err
+// publishChange announces a command row change on the outbox. The api
+// projects it onto the UI's command webhooks, which is the only way the UI
+// hears about commands written by something other than the api's own command
+// routes -- barkloader registering a module's commands, for one.
+func (s *commandService) publishChange(cmd *client.Command, op string) {
+	if s.publisher == nil {
+		return
 	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
+	s.publisher.Publish(workers.PublishOptions{
+		EntityType:      "command",
+		EntityID:        cmd.Id,
+		Operation:       op,
+		Data:            buildCommandChangeData(cmd),
+		AutoAcknowledge: true,
+	})
+}
 
+func buildCommandChangeData(cmd *client.Command) map[string]any {
+	return map[string]any{
+		"id":               cmd.Id,
+		"command":          cmd.Command,
+		"actions_json":     cmd.ActionsJson,
+		"cooldown":         cmd.Cooldown,
+		"priority":         cmd.Priority,
+		"enabled":          cmd.Enabled,
+		"visibility":       cmd.Visibility,
+		"group_ids":        cmd.GroupIds,
+		"usernames":        cmd.Usernames,
+		"argument_pattern": cmd.ArgumentPattern,
+		"created_by_type":  cmd.CreatedByType,
+		"created_by_ref":   cmd.CreatedByRef,
+	}
+}
+
+func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
 	createdByType := cmd.CreatedByType
 	if createdByType == "" {
 		createdByType = "USER"
@@ -213,12 +241,36 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		visibility = commandVisibilityRestricted
 	}
 
+	// A module declares its commands in its manifest and registers them on
+	// every install, but once one exists it belongs to the streamer: they
+	// edit its actions, cooldown and permissions. Re-registering must leave
+	// that row alone, id included, or an upgrade silently discards their
+	// edits and orphans every reference to the old id.
+	if createdByType == "MODULE" {
+		existing, err := s.repo.GetByOrigin(createdByType, cmd.CreatedByRef, cmd.Command)
+		if err == nil {
+			protoCmd, err := s.toProtoCommand(existing)
+			if err != nil {
+				return nil, err
+			}
+			return &client.CommandResponse{
+				Status: &client.ResponseStatus{
+					Code:    client.ResponseStatus_OK,
+					Message: "Command already registered",
+				},
+				Command: protoCmd,
+			}, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+
 	// Assign the id here rather than leaning on the column default: that
 	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
 	// every command would otherwise be inserted with the zero UUID and collide.
 	m := models.Command{
 		ID:              uuid.New(),
-		ApplicationID:   applicationID,
 		Command:         cmd.Command,
 		Actions:         defaultActionsJSON(cmd.ActionsJson),
 		Cooldown:        int(cmd.Cooldown),
@@ -230,14 +282,13 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		ArgumentPattern: cmd.ArgumentPattern,
 	}
 
-	err = s.repo.Create(&m)
-	if err != nil {
+	if err := s.repo.Create(&m); err != nil {
 		return nil, err
 	}
 
 	s.syncCommandEdges(&m, m.Actions, m.CreatedByType, m.CreatedByRef)
 
-	if err := s.syncCommandPermissions(applicationID, &m, cmd.GroupIds, cmd.Usernames); err != nil {
+	if err := s.syncCommandPermissions(&m, cmd.GroupIds, cmd.Usernames); err != nil {
 		return nil, err
 	}
 
@@ -245,6 +296,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	if err != nil {
 		return nil, err
 	}
+	s.publishChange(protoCmd, "created")
 
 	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -256,16 +308,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 }
 
 func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandRequest) (*client.CommandResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	cmd, err := s.repo.GetByCommand(req.Command, applicationID)
+	cmd, err := s.repo.GetByCommand(req.Command)
 	if err != nil {
 		return nil, err
 	}
@@ -343,12 +386,12 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	// old object's rows too, since syncCommandPermissions only re-derives
 	// under the (possibly new) current name.
 	if oldCommandName != m.Command {
-		if err := s.casbinRepo.RemoveAllPTypeForObject(m.ApplicationID, "command/"+oldCommandName); err != nil {
+		if err := s.casbinRepo.RemoveAllPTypeForObject("command/" + oldCommandName); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := s.syncCommandPermissions(m.ApplicationID, m, req.GroupIds, req.Usernames); err != nil {
+	if err := s.syncCommandPermissions(m, req.GroupIds, req.Usernames); err != nil {
 		return nil, err
 	}
 
@@ -356,6 +399,7 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	if err != nil {
 		return nil, err
 	}
+	s.publishChange(protoCmd, "updated")
 
 	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -391,11 +435,21 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 	if err := s.permRepo.DeleteBySourceCommand(m.ID); err != nil {
 		log.Printf("command_service: DeleteBySourceCommand failed for command %s: %v", m.ID, err)
 	}
-	if err := s.casbinRepo.RemoveAllPTypeForObject(m.ApplicationID, "command/"+m.Command); err != nil {
+	if err := s.casbinRepo.RemoveAllPTypeForObject("command/" + m.Command); err != nil {
 		log.Printf("command_service: RemoveAllPTypeForObject failed for command %s: %v", m.ID, err)
 	}
 	if err := s.enforcer.LoadPolicy(); err != nil {
 		log.Printf("command_service: enforcer.LoadPolicy failed after deleting command %s: %v", m.ID, err)
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			EntityType:      "command",
+			EntityID:        m.ID.String(),
+			Operation:       "deleted",
+			Data:            map[string]any{"id": m.ID.String(), "command": m.Command},
+			AutoAcknowledge: true,
+		})
 	}
 
 	res := &client.ResponseStatus{
@@ -427,15 +481,7 @@ func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enf
 			return false, fmt.Errorf("username is required")
 		}
 
-		appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-		if err != nil {
-			return false, err
-		}
-		appID, err := uuid.Parse(appIDStr)
-		if err != nil {
-			return false, err
-		}
-		cmd, err := s.repo.GetByCommand(req.Command, appID)
+		cmd, err := s.repo.GetByCommand(req.Command)
 		if err != nil {
 			return false, err
 		}

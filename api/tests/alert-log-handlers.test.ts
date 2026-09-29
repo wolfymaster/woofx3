@@ -2,13 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { initAlertLogHandlers, parseAlertCreated, parseAlertUpdated } from "../src/alert-log-handlers";
 
-const APP_ID = "11111111-1111-1111-1111-111111111111";
 const ALERT_ID = "22222222-2222-2222-2222-222222222222";
 const WORKFLOW_ID = "33333333-3333-3333-3333-333333333333";
 
 function snakeCe(data: Record<string, unknown>) {
   return {
-    application_id: APP_ID,
     client_id: "client-1",
     data,
   };
@@ -18,7 +16,6 @@ describe("parseAlertCreated", () => {
   it("decodes a snake_case row from buildAlertChangeData", () => {
     const ce = snakeCe({
       id: ALERT_ID,
-      application_id: APP_ID,
       payload: '{"id":"env-1","parameters":{"widget":"MediaWidget","text":"yo"},"event":null}',
       workflow_id: WORKFLOW_ID,
       source_event_id: "ce-abc",
@@ -26,8 +23,7 @@ describe("parseAlertCreated", () => {
       created_at: "2026-05-03T01:02:03.000Z",
       updated_at: "2026-05-03T01:02:03.000Z",
     });
-    const { applicationId, clientId, event } = parseAlertCreated(ce);
-    expect(applicationId).toBe(APP_ID);
+    const { clientId, event } = parseAlertCreated(ce);
     expect(clientId).toBe("client-1");
     expect(event?.type).toBe(EngineEventType.ALERT_RECORDED);
     expect(event?.alert.id).toBe(ALERT_ID);
@@ -193,7 +189,6 @@ class FakeWebhookClient {
   async send(event: { type: string; [key: string]: unknown }): Promise<void> {
     this.sentEvents.push(event);
   }
-  setApplicationId(): void {}
   async refreshCallbackUrls(): Promise<void> {}
 }
 
@@ -203,7 +198,7 @@ describe("initAlertLogHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.alert.created.app-1", snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" }));
+    await nats.dispatch("db.alert.created.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" }));
 
     expect(webhook.sentEvents).toHaveLength(1);
     expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_RECORDED);
@@ -214,7 +209,7 @@ describe("initAlertLogHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.alert.updated.app-1", snakeCe({ id: ALERT_ID, payload: "{}", status: "replayed" }));
+    await nats.dispatch("db.alert.updated.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "replayed" }));
 
     expect(webhook.sentEvents).toHaveLength(1);
     expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_REPLAYED);
@@ -225,7 +220,7 @@ describe("initAlertLogHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.alert.updated.app-1", snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" }));
+    await nats.dispatch("db.alert.updated.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" }));
 
     expect(webhook.sentEvents).toHaveLength(0);
   });

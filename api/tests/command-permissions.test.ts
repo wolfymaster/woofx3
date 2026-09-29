@@ -17,11 +17,14 @@ function fakeLogger() {
  */
 function recordingNats() {
   const published: string[] = [];
+  const payloads: Array<{ subject: string; data: any }> = [];
   return {
     published,
+    payloads,
     client: {
-      publish: mock((subject: string) => {
+      publish: mock((subject: string, payload?: Uint8Array) => {
         published.push(subject);
+        payloads.push({ subject, data: payload ? JSON.parse(new TextDecoder().decode(payload)).data : undefined });
       }),
     },
   };
@@ -43,12 +46,9 @@ function makeApi(db: any) {
   return { api, nats };
 }
 
-const APPLICATION = { id: "app-1" };
-
 function commandRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "cmd-1",
-    applicationId: APPLICATION.id,
     command: "song",
     type: "text",
     typeValue: "now playing",
@@ -69,14 +69,13 @@ describe("executeCommand permission enforcement", () => {
   it("executes a command that has no group restriction", async () => {
     const getCommand = mock(async (_req: any) => commandRow({ groupIds: [] }));
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand,
     });
 
     const result = await api.executeCommand("song", "randomchatter");
 
     expect(result.success).toBe(true);
-    expect(nats.published).toContain("command.execute");
+    expect(nats.published).toContain("chat.command.song");
     // The invoking username must be forwarded so db-proxy can make the call.
     expect(getCommand.mock.calls[0][0]).toMatchObject({
       command: "song",
@@ -86,7 +85,6 @@ describe("executeCommand permission enforcement", () => {
 
   it("executes a command whose required group the user belongs to", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       // db-proxy already enforced the grant and returned the command, which is
       // exactly what an authorized call looks like from this side.
       getCommand: mock(async () => commandRow({ command: "vanish", groupIds: ["group-mods"] })),
@@ -95,12 +93,48 @@ describe("executeCommand permission enforcement", () => {
     const result = await api.executeCommand("vanish", "trustedmod");
 
     expect(result.success).toBe(true);
-    expect(nats.published).toContain("command.execute");
+    expect(nats.published).toContain("chat.command.vanish");
   });
 
-  it("refuses to publish command.execute when db-proxy denies the user", async () => {
+  it("dispatches the command's actions with its argument pattern resolved from the text", async () => {
+    const actions = [{ action: "chat.reply", parameters: { message: "queued" } }];
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
+      getCommand: mock(async () =>
+        commandRow({ command: "sr", argumentPattern: "{songTitle}", actionsJson: JSON.stringify(actions) })
+      ),
+    });
+
+    await api.executeCommand("sr", "wolfy", "  life is a highway ");
+
+    const announced = nats.payloads.find((p) => p.subject === "chat.command.sr");
+    expect(announced?.data).toMatchObject({
+      command: "sr",
+      args: ["life", "is", "a", "highway"],
+      text: "life is a highway",
+      rawMessage: "!sr life is a highway",
+      variables: { songTitle: "life is a highway" },
+      chatter: "wolfy",
+    });
+
+    const dispatched = nats.payloads.find((p) => p.subject === "action.execute");
+    expect(dispatched?.data.label).toBe("command:sr");
+    expect(dispatched?.data.actions).toEqual(actions);
+    expect(dispatched?.data.event.type).toBe("chat.command.sr");
+    expect(dispatched?.data.event.data.variables).toEqual({ songTitle: "life is a highway" });
+  });
+
+  it("only announces a command that has no actions", async () => {
+    const { api, nats } = makeApi({
+      getCommand: mock(async () => commandRow({ command: "raid", actionsJson: "[]" })),
+    });
+
+    await api.executeCommand("raid", "wolfy");
+
+    expect(nats.published).toEqual(["chat.command.raid"]);
+  });
+
+  it("publishes nothing when db-proxy denies the user", async () => {
+    const { api, nats } = makeApi({
       getCommand: mock(async () => {
         // The denial is data now, not a message template a test has to
         // match character for character.
@@ -109,40 +143,36 @@ describe("executeCommand permission enforcement", () => {
     });
 
     await expect(api.executeCommand("vanish", "randomchatter")).rejects.toThrow(/do not have permission/i);
-    expect(nats.published).not.toContain("command.execute");
+    expect(nats.published).toEqual([]);
   });
 
   it("surfaces a transport failure as itself rather than as a denial", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand: mock(async () => {
         throw new Error("db.getCommand: connection refused");
       }),
     });
 
     await expect(api.executeCommand("song", "randomchatter")).rejects.toThrow(/connection refused/);
-    expect(nats.published).not.toContain("command.execute");
+    expect(nats.published).toEqual([]);
   });
 
   it("does not publish for a disabled command", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand: mock(async () => commandRow({ enabled: false })),
     });
 
     await expect(api.executeCommand("song", "randomchatter")).rejects.toThrow(/disabled/i);
-    expect(nats.published).not.toContain("command.execute");
+    expect(nats.published).toEqual([]);
   });
 });
 
 describe("group routes", () => {
   it("marks built-in groups on the snapshot so a UI can disable edit affordances", async () => {
     const { api } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       listGroups: mock(async () => [
         {
           id: "g-everyone",
-          applicationId: APPLICATION.id,
           name: "everyone",
           description: "",
           createdAt: undefined,
@@ -150,7 +180,6 @@ describe("group routes", () => {
         },
         {
           id: "g-regulars",
-          applicationId: APPLICATION.id,
           name: "regulars",
           description: "",
           createdAt: undefined,
@@ -168,7 +197,6 @@ describe("group routes", () => {
 
   it("propagates the engine's refusal to delete a built-in group", async () => {
     const { api } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       deleteGroup: mock(async () => {
         throw new DbError("deleteGroup", "permission_denied", 'built-in group "moderator" cannot be deleted');
       }),
@@ -181,7 +209,6 @@ describe("group routes", () => {
     const listUserGroupsForUser = mock(async (_req: any) => [
       {
         id: "g-mods",
-        applicationId: APPLICATION.id,
         name: "moderator",
         description: "",
         createdAt: undefined,
@@ -189,7 +216,6 @@ describe("group routes", () => {
       },
     ]);
     const { api } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       listUserGroupsForUser,
     });
 

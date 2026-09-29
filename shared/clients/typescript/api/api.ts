@@ -38,6 +38,35 @@ export interface ModuleSettingsResponse {
   settings: ModuleSetting[];
 }
 
+/** One installed theme a widget's `theme` settings field can select. */
+export interface WidgetThemeOption {
+  /** Theme canonical id `{moduleId}:theme:{id}` — the value the field stores. */
+  id: string;
+  name: string;
+  description: string;
+  /** The module that ships the theme. */
+  moduleId: string;
+  moduleVersion: string;
+  contractVersion: number;
+  /**
+   * False when the theme no longer fits the widget's current contract (the
+   * widget's module was upgraded past it). A frame selecting it renders the
+   * widget's defaults, so a picker should not offer it, and should flag it
+   * when it is the stored value.
+   */
+  compatible: boolean;
+  previewUrl: string | null;
+}
+
+export interface WidgetThemes {
+  /** The widget canonical id the list is for. */
+  widget: string;
+  /** The widget's contract version, or null when it cannot be themed. */
+  contractVersion: number | null;
+  /** Ordered by name. Empty when nothing installed targets the widget. */
+  themes: WidgetThemeOption[];
+}
+
 /**
  * An inbound HTTP request the control plane relays to a module's webhook
  * handler. See `Woofx3EngineApi.handleInboundWebhook`.
@@ -95,7 +124,6 @@ export interface Workflow {
   id: string;
   name: string;
   description: string;
-  accountId: string;
   isEnabled: boolean;
   definition: WorkflowDefinition | null;
   stats: WorkflowStats;
@@ -243,7 +271,6 @@ export type CommandVisibility = "public" | "restricted";
  */
 export interface CommandSnapshot {
   id: string;
-  applicationId: string;
   command: string;
   actions: ActionStep[];
   cooldown: number;
@@ -365,12 +392,11 @@ export interface UpdateCommandInput {
  */
 export interface GroupSnapshot {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   createdAt: string;
   /**
-   * Built-in groups are seeded with every application: `everyone`,
+   * Built-in groups are seeded once for the engine: `everyone`,
    * `subscriber`, `vip`, `moderator`, `broadcaster`. They cannot be renamed
    * or deleted - the engine refuses both, so a UI should render those
    * affordances as disabled rather than relying on the call failing.
@@ -406,7 +432,6 @@ export interface UpdateGroupInput {
  */
 export interface PermissionRule {
   id: number;
-  applicationId: string;
   ptype: string;
   v0: string;
   v1: string;
@@ -510,7 +535,6 @@ export interface SceneWidget {
 export interface Scene {
   id: string;
   name: string;
-  accountId: string;
   widgets: SceneWidget[];
   createdAt: string;
 }
@@ -587,8 +611,25 @@ export interface DashboardStats {
   totalWorkflows: number;
   installedModules: number;
   totalModules: number;
-  activeAccounts: number;
+  /**
+   * Platform events -- cheers, follows, subs, gifts, raids, redemptions -- that
+   * occurred in the 24 hours before the call. Chat is not counted.
+   */
   recentEvents: number;
+}
+
+/** One platform event, as the dashboard's activity feed shows it. */
+export interface RecentActivity {
+  /** The event type, e.g. `channel.cheer`. */
+  type: string;
+  /** e.g. `twitch`. */
+  platform: string;
+  /** The viewer's display name. Null for an anonymous cheer or gift. */
+  userName: string | null;
+  /** Bits, gifted subs, raiders or channel points. Null when the event carries no quantity. */
+  amount: number | null;
+  /** ISO 8601. When the event happened. */
+  timestamp: string;
 }
 
 // ==================== Module lifecycle response types ====================
@@ -664,6 +705,165 @@ export interface StreamStatus {
   twitchUserId?: string;
 }
 
+/**
+ * One online span within a stream session: the stream went live at
+ * `startedAt` and went down at `endedAt`. Offline is the gap between
+ * segments, not a segment of its own.
+ */
+export interface StreamSessionSegment {
+  id: string;
+  /** ISO 8601. When the stream went live. */
+  startedAt: string;
+  /** ISO 8601. When the stream went down; null while it is still live. */
+  endedAt: string | null;
+}
+
+/**
+ * The logical span a broadcast belongs to. A session can cover several
+ * online/offline cycles, and can be entirely offline, so whether and when the
+ * stream was live is read from `segments`, not from the session's own times.
+ *
+ * Splits and merges move segments between sessions, so an id cached from an
+ * earlier read may no longer exist.
+ */
+export interface StreamSession {
+  id: string;
+  /** `open` for the session events are being stamped with; at most one is. */
+  status: "open" | "closed";
+  /** ISO 8601. When the session began, which may predate its first segment. */
+  startedAt: string;
+  /** ISO 8601. When a later session replaced this one; null while open. */
+  endedAt: string | null;
+  /**
+   * Oldest first. Empty means the session has never been live, which is a
+   * different fact from "went offline long ago".
+   */
+  segments: StreamSessionSegment[];
+}
+
+export interface StreamSessionsQuery {
+  /** Page size, 1-200. Defaults to 50. */
+  limit?: number;
+  /** Sessions to skip, newest first. Defaults to 0. */
+  offset?: number;
+}
+
+/**
+ * A page of sessions, newest first. The list is not append-only (a split
+ * inserts a session and a merge removes one), so offset paging can skip or
+ * repeat a session that changed between pages.
+ */
+export interface PaginatedStreamSessions {
+  sessions: StreamSession[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * What a stream session added up to. Events count toward the session that
+ * owns the time they occurred in -- from the session's start until the one
+ * that replaced it began -- so a split or merge after the fact is reflected
+ * on the next read. Anonymous cheers and gifts are included.
+ */
+export interface StreamSessionTotals {
+  sessionId: string;
+  /** Bits cheered. */
+  bits: number;
+  cheers: number;
+  /**
+   * Subscriptions viewers took out or renewed themselves: new subs that were
+   * not gifted, plus resubs. Gifted subs are only in `giftedSubs`, so the two
+   * add up without counting a gift twice.
+   */
+  subs: number;
+  /** Subs gifted, counted from the gifter's side. */
+  giftedSubs: number;
+  follows: number;
+  raids: number;
+  /** Viewers brought by those raids. */
+  raiders: number;
+  /**
+   * Highest per-minute viewer count while live. Null when no minute of the
+   * session was sampled with a viewer count.
+   */
+  peakViewers: number | null;
+  /** Mean of the sampled per-minute viewer counts, rounded. Null as above. */
+  averageViewers: number | null;
+  /** Minutes sampled with a viewer count; what the two figures above cover. */
+  viewerSampleMinutes: number;
+}
+
+export interface ViewerTotalsQuery {
+  /** e.g. `twitch`. */
+  platform: string;
+  /** The viewer's id on `platform`. */
+  platformUserId: string;
+  /** Totals for one session. Omit for the viewer's lifetime totals. */
+  sessionId?: string;
+}
+
+/** What one viewer gave. Anonymous cheers and gifts are never attributed. */
+export interface ViewerTotals {
+  platform: string;
+  platformUserId: string;
+  /** The name on the viewer's most recent event; null when none carried one. */
+  userName: string | null;
+  /** The session the totals cover; null for lifetime. */
+  sessionId: string | null;
+  bits: number;
+  cheers: number;
+  giftedSubs: number;
+  /** Gift events: one community gift of five subs is one gift. */
+  gifts: number;
+}
+
+export type LeaderboardMetric = "bits" | "giftedSubs";
+
+export interface LeaderboardQuery {
+  metric: LeaderboardMetric;
+  /** Rank one session. Omit for a lifetime leaderboard. */
+  sessionId?: string;
+  /** Keep viewers whose total is at least this, e.g. "gifted 5 or more". Integer >= 1; defaults to 1. */
+  minTotal?: number;
+  /** 1-100. Defaults to 10. */
+  limit?: number;
+}
+
+export interface LeaderboardEntry {
+  platform: string;
+  platformUserId: string;
+  /** The name on the viewer's most recent event; null when none carried one. */
+  userName: string | null;
+  /** Bits, or subs gifted. */
+  total: number;
+  /** The events behind `total`: cheers, or gifts. */
+  events: number;
+}
+
+export interface Leaderboard {
+  metric: LeaderboardMetric;
+  /** The session ranked; null for lifetime. */
+  sessionId: string | null;
+  minTotal: number;
+  /** Highest total first; ties by platform, then platform user id. */
+  entries: LeaderboardEntry[];
+}
+
+/**
+ * One sampled minute of a live segment. A minute with no entry was not
+ * sampled, which is not the same as zero; a null metric is one whose read
+ * failed that minute.
+ */
+export interface StreamGaugeSample {
+  /** ISO 8601, truncated to the minute. */
+  sampledAt: string;
+  viewerCount: number | null;
+  followerTotal: number | null;
+  subscriberTotal: number | null;
+  subscriberPoints: number | null;
+}
+
 export interface TriggerWorkflowResponse {
   /**
    * Empty. A run is started asynchronously by the engine, which mints the
@@ -680,7 +880,7 @@ export interface TriggerWorkflowResponse {
 // ==================== API Interface ====================
 
 /** RPC connectivity check; mirrors `GET /health` semantics. */
-export type PingResponse = { status: "ok"; instanceId: string };
+export type PingResponse = { status: "ok" };
 
 /**
  * Gateway is the capnweb entry point. Unauthenticated callers see only
@@ -693,7 +893,7 @@ export interface Woofx3EngineGateway {
   registerClient(
     description: string,
     options: RegisterClientOptions
-  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }>;
+  ): Promise<{ clientId: string; clientSecret: string }>;
 }
 
 /**
@@ -701,8 +901,7 @@ export interface Woofx3EngineGateway {
  * Returned by `getEngineInfo()` — typically called once per UI
  * session and cached.
  *
- * Lives in the engine's `settings` table under `overlay.publicUrl`
- * (process-wide — not application-scoped); set via
+ * Lives in the engine's `settings` table under `overlay.publicUrl`; set via
  * `setOverlayPublicUrl`. Falls back to the engine's configured
  * `sceneManagerUrl` when no override is configured.
  *
@@ -909,6 +1108,14 @@ export interface Woofx3EngineApi {
   getModuleManifest(moduleId: string): Promise<Record<string, unknown> | null>;
 
   /**
+   * The installed themes made for one widget, for the picker behind a
+   * `theme` settings field. `widgetCanonicalId` is `{moduleId}:widget:{id}`.
+   * Themes come and go only with module installs, so a picker refreshes on
+   * `module.installed` and `module.deleted`.
+   */
+  listWidgetThemes(widgetCanonicalId: string): Promise<WidgetThemes>;
+
+  /**
    * Creates a runtime instance of a module-declared resource kind (e.g. a
    * user-defined counter — see manifest `resources[]`). `moduleName` is the
    * manifest-local module id, same as `getModuleSettings`. `instanceId` is
@@ -1093,7 +1300,6 @@ export interface Woofx3EngineApi {
       tokenId: string;
       token: string;
       sceneId: string;
-      applicationId: string;
       label: string;
       status: string;
       createdAt: string;
@@ -1122,6 +1328,22 @@ export interface Woofx3EngineApi {
    *  this takes no scope -- the parameter it used to accept was documented
    *  as unused and ignored. */
   getStreamStatus(): Promise<StreamStatus>;
+
+  // Stream sessions
+  /** Past and current stream sessions with their segments, newest first. */
+  listStreamSessions(query?: StreamSessionsQuery): Promise<PaginatedStreamSessions>;
+  /** One session with its segments, or null when no session has that id. */
+  getStreamSession(id: string): Promise<StreamSession | null>;
+
+  // Analytics
+  /** A session's channel totals and viewer figures, or null when no session has that id. */
+  getStreamSessionTotals(sessionId: string): Promise<StreamSessionTotals | null>;
+  /** One viewer's totals for a session or lifetime, or null when the session does not exist. */
+  getViewerTotals(query: ViewerTotalsQuery): Promise<ViewerTotals | null>;
+  /** Top cheerers or gifters for a session or lifetime, or null when the session does not exist. */
+  getLeaderboard(query: LeaderboardQuery): Promise<Leaderboard | null>;
+  /** A session's per-minute gauge samples, oldest first, or null when no session has that id. */
+  getStreamSessionGauges(sessionId: string): Promise<StreamGaugeSample[] | null>;
 
   /**
    * Publish a CloudEvent on the engine's NATS bus. The `eventType` becomes
@@ -1207,11 +1429,6 @@ export interface Woofx3EngineApi {
 
   // Operator controls (Phase 3) over the backend-authoritative
   // alert queue (`api/src/alert-queue-manager.ts`).
-  //
-  // `applicationId` is optional on each method: when omitted we
-  // resolve to the authenticated session's application or the
-  // engine's default application — matches the convention used by
-  // listAlerts / getAlert.
 
   /**
    * Mark the currently-playing alert (if any) as `skipped`,
@@ -1240,7 +1457,6 @@ export interface Woofx3EngineApi {
     tokenId: string;
     token: string;
     sceneId: string;
-    applicationId: string;
     label: string;
     status: string;
     createdAt: string;
@@ -1258,15 +1474,13 @@ export interface Woofx3EngineApi {
     tokenId: string;
     token: string;
     sceneId: string;
-    applicationId: string;
     label: string;
     status: string;
     createdAt: string;
     url: string;
   }>;
 
-  /** List all overlay tokens for the authenticated application, optionally
-   *  filtered by sceneId. Includes the browser-source URL for each. */
+  /** List all overlay tokens, optionally filtered by sceneId. Includes the browser-source URL for each. */
   listOverlayTokens(input?: { sceneId?: string; page?: number; pageSize?: number }): Promise<
     Array<{
       tokenId: string;
@@ -1285,14 +1499,13 @@ export interface Woofx3EngineApi {
   // engine actually offers -- `api-session.ts` now derives the exposed surface
   // from these keys, so an undeclared method is no longer callable.
 
-  /** Run a chat command as `username`. Authorization is enforced by db-proxy
-   *  when it resolves the command, so a caller without permission is refused
-   *  rather than silently ignored. */
-  executeCommand(
-    commandName: string,
-    username: string,
-    args?: Record<string, string>
-  ): Promise<{ success: boolean; message: string }>;
+  /** Run a chat command as though `username` typed `!<commandName> <text>`
+   *  in chat: `text` is parsed into args and `argumentPattern` variables the
+   *  same way, the command's actions run, and `chat.command.<slug>` fires for
+   *  workflows. Authorization is enforced by db-proxy when it resolves the
+   *  command, so a caller without permission is refused rather than silently
+   *  ignored. Cooldown is not applied. */
+  executeCommand(commandName: string, username: string, text?: string): Promise<{ success: boolean; message: string }>;
 
   /** Commands a caller may run. The username parameter is accepted but not
    *  yet used to filter the list. */
@@ -1307,10 +1520,14 @@ export interface Woofx3EngineApi {
     }>;
   }>;
 
-  /** Workflow counts and a recent-activity feed, for a dashboard landing view. */
+  /**
+   * Workflow counts and a recent-activity feed, for a dashboard landing view.
+   * `recentActivity` is the latest platform events of the last 24 hours,
+   * newest first, at most 20; empty when nothing happened in that span.
+   */
   getDashboard(): Promise<{
     workflows: { total: number; enabled: number; running: number };
-    recentActivity: Array<{ type: string; message: string; timestamp: string }>;
+    recentActivity: RecentActivity[];
   }>;
 
   getAvailableWorkflows(): Promise<{

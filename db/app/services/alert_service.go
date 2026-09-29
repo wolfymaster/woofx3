@@ -24,7 +24,7 @@ import (
 //
 // Outbox publishing is opt-in via `publisher`. When set, every
 // successful Create / Update / Delete emits a
-// `db.alert.<op>.<applicationId>` event so the api gateway can
+// `db.alert.<op>.system` event so the api gateway can
 // project new alerts to Convex via the Bearer-auth callback channel.
 type alertService struct {
 	repo      *repo.AlertRepository
@@ -42,14 +42,6 @@ func NewAlertService(
 }
 
 func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertRequest) (*client.AlertResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.Payload == "" {
 		return nil, twirp.RequiredArgumentError("payload")
 	}
@@ -65,7 +57,6 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 
 	now := time.Now().UTC()
 	alert := &models.Alert{
-		ApplicationID: applicationID,
 		Payload:       req.Payload,
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
@@ -77,7 +68,7 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
 	}
 
-	s.publishChange(appIDStr, alert, "created")
+	s.publishChange(alert, "created")
 
 	return &client.AlertResponse{
 		Status: &client.ResponseStatus{
@@ -107,15 +98,6 @@ func (s *alertService) GetAlert(ctx context.Context, req *client.GetAlertRequest
 }
 
 func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsRequest) (*client.ListAlertsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-
 	limit := int(req.Limit)
 	offset := int(req.Offset)
 	// Sane default for the alert-log page; callers can override.
@@ -126,11 +108,11 @@ func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsReq
 		offset = 0
 	}
 
-	alerts, err := s.repo.GetByApplicationID(applicationID, limit, offset)
+	alerts, err := s.repo.List(limit, offset)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list alerts: %w", err))
 	}
-	total, err := s.repo.CountByApplicationID(applicationID)
+	total, err := s.repo.Count()
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count alerts: %w", err))
 	}
@@ -153,18 +135,10 @@ func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsReq
 }
 
 func (s *alertService) GetAlertByEnvelopeId(ctx context.Context, req *client.GetAlertByEnvelopeIdRequest) (*client.AlertResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.EnvelopeId == "" {
 		return nil, twirp.RequiredArgumentError("envelope_id")
 	}
-	alert, err := s.repo.GetByEnvelopeID(applicationID, req.EnvelopeId)
+	alert, err := s.repo.GetByEnvelopeID(req.EnvelopeId)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("alert not found for envelope")
@@ -181,14 +155,6 @@ func (s *alertService) GetAlertByEnvelopeId(ctx context.Context, req *client.Get
 }
 
 func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.UpdateAlertLifecycleRequest) (*client.AlertResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.EnvelopeId == "" {
 		return nil, twirp.RequiredArgumentError("envelope_id")
 	}
@@ -199,14 +165,14 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 		return nil, twirp.InvalidArgumentError("status",
 			"must be one of: dispatched, playing, completed, failed, timed_out, skipped")
 	}
-	alert, err := s.repo.UpdateLifecycle(applicationID, req.EnvelopeId, req.Status, req.Error)
+	alert, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("alert not found for envelope")
 		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update alert lifecycle: %w", err))
 	}
-	s.publishChange(alert.ApplicationID.String(), alert, "updated")
+	s.publishChange(alert, "updated")
 	return &client.AlertResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
@@ -231,7 +197,7 @@ func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.Update
 	if err != nil {
 		return nil, twirp.NotFoundError("alert not found")
 	}
-	s.publishChange(alert.ApplicationID.String(), alert, "updated")
+	s.publishChange(alert, "updated")
 	return &client.AlertResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
@@ -253,7 +219,7 @@ func (s *alertService) DeleteAlert(ctx context.Context, req *client.DeleteAlertR
 	if err := s.repo.Delete(id); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete alert: %w", err))
 	}
-	s.publishChange(alert.ApplicationID.String(), alert, "deleted")
+	s.publishChange(alert, "deleted")
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
 		Message: "Alert deleted successfully",
@@ -267,7 +233,6 @@ func (s *alertService) alertToProto(m *models.Alert) *client.Alert {
 	}
 	out := &client.Alert{
 		Id:            m.ID.String(),
-		ApplicationId: m.ApplicationID.String(),
 		Payload:       m.Payload,
 		WorkflowId:    wf,
 		SourceEventId: m.SourceEventID,
@@ -289,12 +254,11 @@ func (s *alertService) alertToProto(m *models.Alert) *client.Alert {
 	return out
 }
 
-func (s *alertService) publishChange(applicationID string, alert *models.Alert, op string) {
+func (s *alertService) publishChange(alert *models.Alert, op string) {
 	if s.publisher == nil {
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   applicationID,
 		EntityType:      "alert",
 		EntityID:        alert.ID.String(),
 		Operation:       op,
@@ -310,7 +274,6 @@ func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 	}
 	out := map[string]interface{}{
 		"id":              alert.ID.String(),
-		"application_id":  alert.ApplicationID.String(),
 		"payload":         alert.Payload,
 		"workflow_id":     wf,
 		"source_event_id": alert.SourceEventID,

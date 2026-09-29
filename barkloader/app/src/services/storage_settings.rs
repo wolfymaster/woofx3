@@ -6,8 +6,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 /// Settings keys read from the engine's `settings` table to compose
-/// the active repository. All keys are application-scoped to the
-/// default application — barkloader is single-application.
+/// the active repository. Settings are engine-wide, keyed by name alone.
 ///
 /// Provider selector:
 ///   - `storage.provider` → "file" | "s3"
@@ -31,8 +30,6 @@ use tracing::{info, warn};
 #[derive(Debug, Serialize)]
 struct GetSettingRequest<'a> {
     key: &'a str,
-    #[serde(rename = "applicationId")]
-    application_id: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,16 +50,10 @@ struct SettingPayload {
 }
 
 /// Look up a single setting by key. Returns `Ok(None)` when the
-/// setting is unset; `Err` only for transport errors. The
-/// application id is empty string today (barkloader has no notion of
-/// applicationId at startup; the db-proxy treats empty as
-/// "default application").
+/// setting is unset; `Err` only for transport errors.
 pub async fn get_setting(db_proxy_url: &str, key: &str) -> Result<Option<String>> {
     let url = format!("{}/twirp/setting.SettingService/GetSetting", db_proxy_url);
-    let body = GetSettingRequest {
-        key,
-        application_id: "",
-    };
+    let body = GetSettingRequest { key };
     let client = reqwest::Client::new();
     let response = client
         .post(&url)
@@ -147,7 +138,7 @@ impl Backoff {
 
 /// Block until db-proxy answers `Ping`.
 ///
-/// Application configuration lives in the engine's `settings` table, so
+/// Runtime configuration lives in the engine's `settings` table, so
 /// nothing that reads it -- the storage provider above all -- may run
 /// before the connection is established. A db-proxy that is merely slow
 /// to bind would otherwise resolve every setting to whatever the
@@ -156,7 +147,7 @@ impl Backoff {
 ///
 /// Retries indefinitely rather than giving up: barkloader can do no
 /// useful work without db-proxy, and the Go and TypeScript runtimes
-/// hold their application init exactly the same way.
+/// hold their service init exactly the same way.
 pub async fn wait_for_db_proxy(db_proxy_url: &str) {
     let mut backoff = Backoff::new();
     let mut attempt: u32 = 1;
@@ -297,7 +288,7 @@ mod tests {
     // what protojson.Marshal actually emits for a string-valued Setting.
     #[test]
     fn deserializes_protojson_collapsed_value() {
-        let body = r#"{"setting":{"id":"1","key":"storage.provider","value":"s3","valueType":"string","applicationId":"","userId":""}}"#;
+        let body = r#"{"setting":{"id":"1","key":"storage.provider","value":"s3","valueType":"string","userId":""}}"#;
         let parsed: GetSettingResponse = serde_json::from_str(body).unwrap();
         assert_eq!(parsed.setting.and_then(|s| s.value), Some("s3".to_string()));
     }

@@ -1,6 +1,6 @@
 package models
 
-// Built-in group names. These are seeded for every application, so a command
+// Built-in group names. These are seeded once for the engine, so a command
 // can be bound to "subscriber" or "moderator" without the operator first
 // having to create the group by hand. The names describe roles a chat platform
 // may report; nothing here is specific to one platform.

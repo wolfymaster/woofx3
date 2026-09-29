@@ -11,11 +11,10 @@ function fakeLogger() {
   } as any;
 }
 
-function okResponse(sceneId: string, applicationId: string) {
+function okResponse(sceneId: string) {
   return {
     status: { code: "OK" as const, message: "" },
     sceneId,
-    applicationId,
   };
 }
 
@@ -23,7 +22,6 @@ function notFoundResponse() {
   return {
     status: { code: "NOT_FOUND" as const, message: "" },
     sceneId: "",
-    applicationId: "",
   };
 }
 
@@ -50,11 +48,11 @@ describe("maskToken", () => {
 describe("OverlayTokenResolver", () => {
   it("resolves an active token via db", async () => {
     const db: OverlayTokenDb = {
-      resolveOverlayToken: mock(async () => okResponse("scene-1", "app-1")),
+      resolveOverlayToken: mock(async () => okResponse("scene-1")),
     };
     const resolver = new OverlayTokenResolver(db, fakeLogger());
     const result = await resolver.resolve("ovl_token1");
-    expect(result).toEqual({ sceneId: "scene-1", applicationId: "app-1" });
+    expect(result).toEqual({ sceneId: "scene-1" });
   });
 
   it("returns null for NOT_FOUND and negatively caches the miss", async () => {
@@ -78,7 +76,7 @@ describe("OverlayTokenResolver", () => {
         if (callCount === 1) {
           throw new Error("connection refused");
         }
-        return okResponse("scene-2", "app-2");
+        return okResponse("scene-2");
       }),
     };
     const resolver = new OverlayTokenResolver(db, fakeLogger());
@@ -88,13 +86,13 @@ describe("OverlayTokenResolver", () => {
     expect(resolver.cacheSize()).toBe(0);
 
     const r2 = await resolver.resolve("ovl_retry");
-    expect(r2).toEqual({ sceneId: "scene-2", applicationId: "app-2" });
+    expect(r2).toEqual({ sceneId: "scene-2" });
     expect(callCount).toBe(2);
   });
 
   it("respects TTL — re-queries after expiry", async () => {
     let now = 1_000_000;
-    const dbCall = mock(async () => okResponse("scene-3", "app-3"));
+    const dbCall = mock(async () => okResponse("scene-3"));
     const db: OverlayTokenDb = { resolveOverlayToken: dbCall };
     const resolver = new OverlayTokenResolver(db, fakeLogger(), {
       ttlMs: 30_000,
@@ -114,7 +112,7 @@ describe("OverlayTokenResolver", () => {
   });
 
   it("invalidateAll clears the cache so the next resolve hits db", async () => {
-    const dbCall = mock(async () => okResponse("scene-4", "app-4"));
+    const dbCall = mock(async () => okResponse("scene-4"));
     const db: OverlayTokenDb = { resolveOverlayToken: dbCall };
     const resolver = new OverlayTokenResolver(db, fakeLogger());
 
@@ -130,7 +128,7 @@ describe("OverlayTokenResolver", () => {
   });
 
   it("returns null for an empty token without calling db", async () => {
-    const dbCall = mock(async () => okResponse("x", "y"));
+    const dbCall = mock(async () => okResponse("x"));
     const db: OverlayTokenDb = { resolveOverlayToken: dbCall };
     const resolver = new OverlayTokenResolver(db, fakeLogger());
     const result = await resolver.resolve("");

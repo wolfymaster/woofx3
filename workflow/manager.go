@@ -88,7 +88,7 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 }
 
 // HandleWorkflowCreateOrUpdate registers or updates a workflow in memory.
-// The event only carries operation + workflowID + applicationID; workflow
+// The event only carries operation + workflowID; workflow
 // definition data must be fetched separately.
 func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.WorkflowChangeEvent) {
 	changeData, err := evt.Data()
@@ -179,10 +179,9 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 // removed in the canonical-id rework — see Phase C.
 func convertDBWorkflowToEngineWorkflow(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
 	def := &types.WorkflowDefinition{
-		ID:            dbWorkflow.GetId(),
-		Name:          dbWorkflow.GetName(),
-		Description:   dbWorkflow.GetDescription(),
-		ApplicationID: dbWorkflow.GetApplicationId(),
+		ID:          dbWorkflow.GetId(),
+		Name:        dbWorkflow.GetName(),
+		Description: dbWorkflow.GetDescription(),
 	}
 
 	if rawTrigger := dbWorkflow.GetTriggerJson(); rawTrigger != "" && rawTrigger != "{}" {

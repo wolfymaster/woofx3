@@ -184,7 +184,6 @@ export interface ResourceUsage {
 
 export interface CheckModuleResourceUsageRequest {
   moduleId: string;
-  applicationId: string;
 }
 
 export interface CheckModuleResourceUsageResponse {
@@ -236,7 +235,6 @@ export interface DeleteByModuleIdRequest {
  */
 export interface GetByCanonicalIdRequest {
   canonicalId: string;
-  applicationId: string;
 }
 
 export interface TriggerResponse {
@@ -1490,12 +1488,14 @@ export interface ModuleService<Context = unknown> {
     registerAssetsRequest: module_asset.RegisterAssetsRequest,
     context: Context,
   ) =>
-    Promise<module_asset.ListAssetsResponse> | module_asset.ListAssetsResponse;
+    | Promise<module_asset.ListAssetsResponse>
+    | module_asset.ListAssetsResponse;
   ListAssets: (
     listAssetsRequest: module_asset.ListAssetsRequest,
     context: Context,
   ) =>
-    Promise<module_asset.ListAssetsResponse> | module_asset.ListAssetsResponse;
+    | Promise<module_asset.ListAssetsResponse>
+    | module_asset.ListAssetsResponse;
   DeleteAssetsByModuleId: (
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,
@@ -3734,7 +3734,6 @@ export const CheckModuleResourceUsageRequest = {
   ): CheckModuleResourceUsageRequest {
     return {
       moduleId: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -3748,9 +3747,6 @@ export const CheckModuleResourceUsageRequest = {
   ): protoscript.BinaryWriter {
     if (msg.moduleId) {
       writer.writeString(1, msg.moduleId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -3767,10 +3763,6 @@ export const CheckModuleResourceUsageRequest = {
       switch (field) {
         case 1: {
           msg.moduleId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -4107,7 +4099,6 @@ export const GetByCanonicalIdRequest = {
   ): GetByCanonicalIdRequest {
     return {
       canonicalId: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -4121,9 +4112,6 @@ export const GetByCanonicalIdRequest = {
   ): protoscript.BinaryWriter {
     if (msg.canonicalId) {
       writer.writeString(1, msg.canonicalId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -4140,10 +4128,6 @@ export const GetByCanonicalIdRequest = {
       switch (field) {
         case 1: {
           msg.canonicalId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -5739,7 +5723,6 @@ export const CheckModuleResourceUsageRequestJSON = {
   ): CheckModuleResourceUsageRequest {
     return {
       moduleId: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -5754,9 +5737,6 @@ export const CheckModuleResourceUsageRequestJSON = {
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -5770,10 +5750,6 @@ export const CheckModuleResourceUsageRequestJSON = {
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -6068,7 +6044,6 @@ export const GetByCanonicalIdRequestJSON = {
   ): GetByCanonicalIdRequest {
     return {
       canonicalId: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -6083,9 +6058,6 @@ export const GetByCanonicalIdRequestJSON = {
     if (msg.canonicalId) {
       json["canonicalId"] = msg.canonicalId;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -6099,10 +6071,6 @@ export const GetByCanonicalIdRequestJSON = {
     const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
     if (_canonicalId_) {
       msg.canonicalId = _canonicalId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },

@@ -17,7 +17,8 @@ service ClientService {
 message Client {
     string id = 1;
     string description = 2;
-    string application_id = 3;
+    reserved 3;
+    reserved "application_id";
     string client_id = 4;
     string client_secret = 5;
     string callback_url = 6;
@@ -26,7 +27,8 @@ message Client {
 
 message CreateClientRequest {
     string description = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string callback_url = 3;
     string callback_token = 4;
 }
@@ -36,7 +38,8 @@ message GetClientRequest {
 }
 
 message ListClientsRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
 }
 
 message UpdateClientRequest {

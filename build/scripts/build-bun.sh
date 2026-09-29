@@ -51,12 +51,14 @@ if [[ ${#shared_ts_roots[@]} -gt 0 ]]; then
         -print0)
 fi
 
-# sceneManager's build:client imports @woofx3/module-sdk from dist/. Rebuild
-# so Docker/CI are not dependent on a pre-built (and possibly stale) tree.
+# sceneManager's build:client imports @woofx3/module-sdk from dist/ and copies
+# the widget host shim IIFE (dist/widget-host-shim.iife.js) into its public/.
+# Rebuild both so Docker/CI are not dependent on a pre-built (and possibly
+# stale) tree.
 MODULE_SDK="$REPO_ROOT/shared/clients/typescript/module-sdk"
 if [[ -f "$MODULE_SDK/package.json" ]] && jq -e '.scripts.build' "$MODULE_SDK/package.json" >/dev/null 2>&1; then
     log_info "Building @woofx3/module-sdk"
-    (cd "$MODULE_SDK" && bun install && bun run build)
+    (cd "$MODULE_SDK" && bun install && bun run build && bun run build:shim)
 fi
 
 for service_json in "${BUN_SERVICES[@]}"; do

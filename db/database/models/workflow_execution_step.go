@@ -21,22 +21,21 @@ import (
 // workflow is edited, so the index records the order as it was rather than as
 // it would be recomputed today.
 type WorkflowExecutionStep struct {
-	ID            uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
-	ExecutionID   uuid.UUID  `gorm:"type:uuid;not null;index" json:"execution_id"`
-	ApplicationID uuid.UUID  `gorm:"type:uuid;not null;index" json:"application_id"`
-	TaskID        string     `gorm:"type:text;not null" json:"task_id"`
-	Name          string     `gorm:"type:text;not null;default:''" json:"name"`
-	Status        string     `gorm:"type:text;not null" json:"status"`
-	Attempt       int        `gorm:"not null;default:1" json:"attempt"`
-	StepIndex     int        `gorm:"not null" json:"step_index"`
-	Inputs        string     `gorm:"type:jsonb" json:"inputs,omitempty"`
-	Outputs       string     `gorm:"type:jsonb" json:"outputs,omitempty"`
-	Error         string     `gorm:"type:text" json:"error,omitempty"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	DurationMs    int64      `json:"duration_ms,omitempty"`
-	CreatedAt     time.Time  `gorm:"not null;default:now()" json:"created_at"`
-	UpdatedAt     time.Time  `gorm:"not null;default:now()" json:"updated_at"`
+	ID          uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
+	ExecutionID uuid.UUID  `gorm:"type:uuid;not null;index" json:"execution_id"`
+	TaskID      string     `gorm:"type:text;not null" json:"task_id"`
+	Name        string     `gorm:"type:text;not null;default:''" json:"name"`
+	Status      string     `gorm:"type:text;not null" json:"status"`
+	Attempt     int        `gorm:"not null;default:1" json:"attempt"`
+	StepIndex   int        `gorm:"not null" json:"step_index"`
+	Inputs      string     `gorm:"type:jsonb" json:"inputs,omitempty"`
+	Outputs     string     `gorm:"type:jsonb" json:"outputs,omitempty"`
+	Error       string     `gorm:"type:text" json:"error,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	DurationMs  int64      `json:"duration_ms,omitempty"`
+	CreatedAt   time.Time  `gorm:"not null;default:now()" json:"created_at"`
+	UpdatedAt   time.Time  `gorm:"not null;default:now()" json:"updated_at"`
 }
 
 // TableName specifies the table name for the WorkflowExecutionStep model

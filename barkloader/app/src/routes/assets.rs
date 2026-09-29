@@ -18,7 +18,7 @@ const REDIRECT_CACHE_CONTROL: &str = "public, max-age=3600";
 /// Top-level repository key prefixes this route will ever serve.
 /// `modules/` holds files unpacked from an installed module bundle;
 /// `user/` holds generic user uploads written through
-/// `routes::resources` (`user/{application_id}/{resource_id}/...`),
+/// `routes::resources` (`user/{resource_id}/...`),
 /// including the thumbnails derived from them.
 const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 
@@ -71,10 +71,13 @@ async fn redirect_if_present(repository: &RepositoryImpl, key: &str, url: String
 
 /// Served inline on every backend: a browser resolves a stylesheet's
 /// `url(...)` or a module's relative `import` against the post-redirect
-/// URL, which on a private bucket would arrive unsigned.
+/// URL, which on a private bucket would arrive unsigned. Theme files are
+/// served the same way for a second reason: a widget frame's CSP allows
+/// styles, fonts and media from the engine only, and a redirect to the
+/// bucket would leave it.
 fn is_widget_bundle_key(key: &str) -> bool {
     let mut segments = key.split('/');
-    segments.next() == Some("modules") && segments.nth(2) == Some("widgets")
+    segments.next() == Some("modules") && matches!(segments.nth(2), Some("widgets" | "themes"))
 }
 
 /// Only `modules/{module_key}/{version_dir}/...` keys are safe to cache
@@ -227,18 +230,18 @@ mod tests {
     #[test]
     fn sanitize_allows_user_uploads_and_their_thumbnails() {
         // `user/` is live: routes::resources writes uploads under
-        // user/{application_id}/{resource_id}/{filename} and their
+        // user/{resource_id}/{filename} and their
         // thumbnails beside them. Both shapes must sanitize through.
         assert_eq!(
-            sanitize_asset_key("user/app-1/res-1/photo.png").as_deref(),
-            Some("user/app-1/res-1/photo.png")
+            sanitize_asset_key("user/res-1/photo.png").as_deref(),
+            Some("user/res-1/photo.png")
         );
         assert_eq!(
-            sanitize_asset_key("user/app-1/res-1/thumbnail.png").as_deref(),
-            Some("user/app-1/res-1/thumbnail.png")
+            sanitize_asset_key("user/res-1/thumbnail.png").as_deref(),
+            Some("user/res-1/thumbnail.png")
         );
         // Traversal is rejected under user/ exactly as under modules/.
-        assert_eq!(sanitize_asset_key("user/app-1/../../etc/passwd"), None);
+        assert_eq!(sanitize_asset_key("user/../../etc/passwd"), None);
         assert_eq!(sanitize_asset_key("user/%2e%2e/secret"), None);
     }
 
@@ -268,8 +271,11 @@ mod tests {
         assert!(is_widget_bundle_key(
             "modules/m1/abc123/widgets/w1/nested/app.js"
         ));
+        assert!(is_widget_bundle_key(
+            "modules/pack/abc123/themes/neon/assets/grid.webm"
+        ));
         assert!(!is_widget_bundle_key("modules/m1/abc123/assets/bell.mp3"));
-        assert!(!is_widget_bundle_key("user/app-1/res-1/photo.png"));
+        assert!(!is_widget_bundle_key("user/res-1/photo.png"));
         // A module whose id is literally "widgets" does not make its
         // assets bundle files.
         assert!(!is_widget_bundle_key("modules/widgets/abc123/assets/x.png"));
@@ -282,7 +288,7 @@ mod tests {
             "public, max-age=31536000, immutable"
         );
         assert_eq!(
-            cache_control_for_key("user/app-1/res-1/photo.png"),
+            cache_control_for_key("user/res-1/photo.png"),
             "public, max-age=60, must-revalidate"
         );
     }
@@ -413,8 +419,8 @@ mod tests {
     async fn get_serves_user_uploads_and_their_thumbnails() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = file_backed_repo(dir.path()).await;
-        seed(&repo, "user/app-1/res-1/photo.png", b"\x89PNG-original").await;
-        seed(&repo, "user/app-1/res-1/thumbnail.png", b"\x89PNG-thumb").await;
+        seed(&repo, "user/res-1/photo.png", b"\x89PNG-original").await;
+        seed(&repo, "user/res-1/thumbnail.png", b"\x89PNG-thumb").await;
 
         let app = actix_test::init_service(
             App::new()
@@ -424,14 +430,8 @@ mod tests {
         .await;
 
         for (uri, expected) in [
-            (
-                "/assets/user/app-1/res-1/photo.png",
-                &b"\x89PNG-original"[..],
-            ),
-            (
-                "/assets/user/app-1/res-1/thumbnail.png",
-                &b"\x89PNG-thumb"[..],
-            ),
+            ("/assets/user/res-1/photo.png", &b"\x89PNG-original"[..]),
+            ("/assets/user/res-1/thumbnail.png", &b"\x89PNG-thumb"[..]),
         ] {
             let req = actix_test::TestRequest::get().uri(uri).to_request();
             let resp = actix_test::call_service(&app, req).await;
@@ -460,7 +460,7 @@ mod tests {
         .await;
 
         let req = actix_test::TestRequest::get()
-            .uri("/assets/user/app-1/res-1/missing.png")
+            .uri("/assets/user/res-1/missing.png")
             .to_request();
         let resp = actix_test::call_service(&app, req).await;
         assert_eq!(resp.status(), 404);

@@ -3,12 +3,14 @@ import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
 import type { FrameAssembler } from "./scene/frame-assembler";
+import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
   handleStorageAssetRoute,
   handleUploadRoute,
@@ -32,6 +34,7 @@ export interface HttpDeps {
   frameAssembler: FrameAssembler;
   sessionTokens: SessionTokenService;
   deliveryStore: DeliveryStore;
+  moduleState: ModuleStateWatch;
   /** Identity of this sceneManager process, minted once at startup and
    *  announced on every SSE stream. Lets a reconnecting overlay tell a
    *  resumed stream from one that came back against a restarted server
@@ -156,6 +159,12 @@ export function createHttpServer(deps: HttpDeps) {
           const statusMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/status$/.exec(url.pathname);
           if (statusMatch && req.method === "POST") {
             return withCors(await handleWidgetStatusRoute(req, statusMatch[1]!, statusMatch[2]!, deps));
+          }
+
+          // GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}
+          const storageMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/storage$/.exec(url.pathname);
+          if (storageMatch && req.method === "GET") {
+            return withCors(await handleWidgetStorageRoute(req, storageMatch[1]!, storageMatch[2]!, deps));
           }
 
           // GET /scene/{sceneId}/events — SSE.

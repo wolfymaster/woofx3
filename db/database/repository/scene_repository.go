@@ -17,12 +17,6 @@ func NewSceneRepository(db *gorm.DB) *SceneRepository {
 	return &SceneRepository{db: db}
 }
 
-// DB exposes the underlying *gorm.DB for handler-level helpers
-// (used to resolve the default application id from context).
-func (r *SceneRepository) DB() *gorm.DB {
-	return r.db
-}
-
 func (r *SceneRepository) Create(s *models.Scene) error {
 	return r.db.Create(s).Error
 }
@@ -41,23 +35,16 @@ func (r *SceneRepository) GetByID(id uuid.UUID) (*models.Scene, error) {
 	return &s, err
 }
 
-func (r *SceneRepository) GetByApplicationID(applicationID uuid.UUID) ([]*models.Scene, error) {
-	var scenes []*models.Scene
-	err := r.db.Where("application_id = ?", applicationID).Find(&scenes).Error
-	return scenes, err
-}
-
 func (r *SceneRepository) GetAll() ([]*models.Scene, error) {
 	var scenes []*models.Scene
 	err := r.db.Find(&scenes).Error
 	return scenes, err
 }
 
-// GetByName resolves a scene by its (application_id, name) pair —
-// backed by the unique index `idx_scenes_application_name` so the
-// editor can use names as stable handles.
-func (r *SceneRepository) GetByName(applicationID uuid.UUID, name string) (*models.Scene, error) {
+// GetByName resolves a scene by its name — backed by the unique index
+// `idx_scenes_name` so the editor can use names as stable handles.
+func (r *SceneRepository) GetByName(name string) (*models.Scene, error) {
 	var s models.Scene
-	err := r.db.Where("application_id = ? AND name = ?", applicationID, name).First(&s).Error
+	err := r.db.Where("name = ?", name).First(&s).Error
 	return &s, err
 }

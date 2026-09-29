@@ -22,7 +22,6 @@ import type { ClientConfiguration } from "twirpscript";
  */
 export interface RequestContext {
   clientId: string;
-  applicationId: string;
   moduleKey: string;
 }
 
@@ -224,7 +223,6 @@ export const RequestContext = {
   initialize: function (msg?: Partial<RequestContext>): RequestContext {
     return {
       clientId: "",
-      applicationId: "",
       moduleKey: "",
       ...msg,
     };
@@ -239,9 +237,6 @@ export const RequestContext = {
   ): protoscript.BinaryWriter {
     if (msg.clientId) {
       writer.writeString(1, msg.clientId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.moduleKey) {
       writer.writeString(3, msg.moduleKey);
@@ -261,10 +256,6 @@ export const RequestContext = {
       switch (field) {
         case 1: {
           msg.clientId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -699,7 +690,6 @@ export const RequestContextJSON = {
   initialize: function (msg?: Partial<RequestContext>): RequestContext {
     return {
       clientId: "",
-      applicationId: "",
       moduleKey: "",
       ...msg,
     };
@@ -715,9 +705,6 @@ export const RequestContextJSON = {
     if (msg.clientId) {
       json["clientId"] = msg.clientId;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.moduleKey) {
       json["moduleKey"] = msg.moduleKey;
     }
@@ -731,10 +718,6 @@ export const RequestContextJSON = {
     const _clientId_ = json["clientId"] ?? json["client_id"];
     if (_clientId_) {
       msg.clientId = _clientId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
     if (_moduleKey_) {

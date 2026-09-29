@@ -41,8 +41,7 @@ func TestRunActionsRunsInOrder(t *testing.T) {
 	}
 
 	executionID, err := e.RunActions(ActionRun{
-		Label:         "command:hug",
-		ApplicationID: "app-1",
+		Label: "command:hug",
 		Actions: []types.TaskDefinition{
 			{Action: "record", Parameters: map[string]any{"mark": "first"}},
 			{Action: "record", Parameters: map[string]any{"mark": "second"}},
@@ -204,19 +203,19 @@ func (r *countingRecorder) count() int {
 	return r.events
 }
 
-func (r *countingRecorder) RunStarted(applicationID string, execution *types.WorkflowExecution) {
+func (r *countingRecorder) RunStarted(execution *types.WorkflowExecution) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events++
 }
 
-func (r *countingRecorder) RunSettled(applicationID string, execution *types.WorkflowExecution) {
+func (r *countingRecorder) RunSettled(execution *types.WorkflowExecution) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events++
 }
 
-func (r *countingRecorder) StepSettled(applicationID string, execution *types.WorkflowExecution, step RunStep) {
+func (r *countingRecorder) StepSettled(execution *types.WorkflowExecution, step RunStep) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events++

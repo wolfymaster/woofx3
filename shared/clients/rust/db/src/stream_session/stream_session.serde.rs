@@ -7,16 +7,10 @@ impl serde::Serialize for CloseStreamSessionSegmentRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.ended_at.is_some() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("stream_session.CloseStreamSessionSegmentRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if let Some(v) = self.ended_at.as_ref() {
             struct_ser.serialize_field("endedAt", v)?;
         }
@@ -30,15 +24,12 @@ impl<'de> serde::Deserialize<'de> for CloseStreamSessionSegmentRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "ended_at",
             "endedAt",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             EndedAt,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -61,7 +52,6 @@ impl<'de> serde::Deserialize<'de> for CloseStreamSessionSegmentRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "endedAt" | "ended_at" => Ok(GeneratedField::EndedAt),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -82,16 +72,9 @@ impl<'de> serde::Deserialize<'de> for CloseStreamSessionSegmentRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut ended_at__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::EndedAt => {
                             if ended_at__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("endedAt"));
@@ -101,7 +84,6 @@ impl<'de> serde::Deserialize<'de> for CloseStreamSessionSegmentRequest {
                     }
                 }
                 Ok(CloseStreamSessionSegmentRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     ended_at: ended_at__,
                 })
             }
@@ -116,14 +98,8 @@ impl serde::Serialize for EnsureCurrentStreamSessionRequest {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
-        let mut struct_ser = serializer.serialize_struct("stream_session.EnsureCurrentStreamSessionRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
+        let len = 0;
+        let struct_ser = serializer.serialize_struct("stream_session.EnsureCurrentStreamSessionRequest", len)?;
         struct_ser.end()
     }
 }
@@ -134,13 +110,10 @@ impl<'de> serde::Deserialize<'de> for EnsureCurrentStreamSessionRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -161,10 +134,7 @@ impl<'de> serde::Deserialize<'de> for EnsureCurrentStreamSessionRequest {
                     where
                         E: serde::de::Error,
                     {
-                        match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
-                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
-                        }
+                            Err(serde::de::Error::unknown_field(value, FIELDS))
                     }
                 }
                 deserializer.deserialize_identifier(GeneratedVisitor)
@@ -182,19 +152,10 @@ impl<'de> serde::Deserialize<'de> for EnsureCurrentStreamSessionRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
-                while let Some(k) = map_.next_key()? {
-                    match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
-                    }
+                while map_.next_key::<GeneratedField>()?.is_some() {
+                    let _ = map_.next_value::<serde::de::IgnoredAny>()?;
                 }
                 Ok(EnsureCurrentStreamSessionRequest {
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -300,9 +261,6 @@ impl serde::Serialize for ListStreamSessionsRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.limit != 0 {
             len += 1;
         }
@@ -310,9 +268,6 @@ impl serde::Serialize for ListStreamSessionsRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("stream_session.ListStreamSessionsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if self.limit != 0 {
             struct_ser.serialize_field("limit", &self.limit)?;
         }
@@ -329,15 +284,12 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "limit",
             "offset",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Limit,
             Offset,
         }
@@ -361,7 +313,6 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "limit" => Ok(GeneratedField::Limit),
                             "offset" => Ok(GeneratedField::Offset),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -383,17 +334,10 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut limit__ = None;
                 let mut offset__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Limit => {
                             if limit__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("limit"));
@@ -413,7 +357,6 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsRequest {
                     }
                 }
                 Ok(ListStreamSessionsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     limit: limit__.unwrap_or_default(),
                     offset: offset__.unwrap_or_default(),
                 })
@@ -445,6 +388,9 @@ impl serde::Serialize for ListStreamSessionsResponse {
         if self.offset != 0 {
             len += 1;
         }
+        if !self.segments.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("stream_session.ListStreamSessionsResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
@@ -463,6 +409,9 @@ impl serde::Serialize for ListStreamSessionsResponse {
         if self.offset != 0 {
             struct_ser.serialize_field("offset", &self.offset)?;
         }
+        if !self.segments.is_empty() {
+            struct_ser.serialize_field("segments", &self.segments)?;
+        }
         struct_ser.end()
     }
 }
@@ -479,6 +428,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
             "totalCount",
             "limit",
             "offset",
+            "segments",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -488,6 +438,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
             TotalCount,
             Limit,
             Offset,
+            Segments,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -514,6 +465,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                             "totalCount" | "total_count" => Ok(GeneratedField::TotalCount),
                             "limit" => Ok(GeneratedField::Limit),
                             "offset" => Ok(GeneratedField::Offset),
+                            "segments" => Ok(GeneratedField::Segments),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -538,6 +490,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                 let mut total_count__ = None;
                 let mut limit__ = None;
                 let mut offset__ = None;
+                let mut segments__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -576,6 +529,12 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::Segments => {
+                            if segments__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("segments"));
+                            }
+                            segments__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ListStreamSessionsResponse {
@@ -584,6 +543,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                     total_count: total_count__.unwrap_or_default(),
                     limit: limit__.unwrap_or_default(),
                     offset: offset__.unwrap_or_default(),
+                    segments: segments__.unwrap_or_default(),
                 })
             }
         }
@@ -598,9 +558,6 @@ impl serde::Serialize for OpenStreamSessionSegmentRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.stream_session_id.is_empty() {
             len += 1;
         }
@@ -608,9 +565,6 @@ impl serde::Serialize for OpenStreamSessionSegmentRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("stream_session.OpenStreamSessionSegmentRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.stream_session_id.is_empty() {
             struct_ser.serialize_field("streamSessionId", &self.stream_session_id)?;
         }
@@ -627,8 +581,6 @@ impl<'de> serde::Deserialize<'de> for OpenStreamSessionSegmentRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "stream_session_id",
             "streamSessionId",
             "started_at",
@@ -637,7 +589,6 @@ impl<'de> serde::Deserialize<'de> for OpenStreamSessionSegmentRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             StreamSessionId,
             StartedAt,
         }
@@ -661,7 +612,6 @@ impl<'de> serde::Deserialize<'de> for OpenStreamSessionSegmentRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "streamSessionId" | "stream_session_id" => Ok(GeneratedField::StreamSessionId),
                             "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -683,17 +633,10 @@ impl<'de> serde::Deserialize<'de> for OpenStreamSessionSegmentRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut stream_session_id__ = None;
                 let mut started_at__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::StreamSessionId => {
                             if stream_session_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("streamSessionId"));
@@ -709,7 +652,6 @@ impl<'de> serde::Deserialize<'de> for OpenStreamSessionSegmentRequest {
                     }
                 }
                 Ok(OpenStreamSessionSegmentRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     stream_session_id: stream_session_id__.unwrap_or_default(),
                     started_at: started_at__,
                 })
@@ -726,16 +668,10 @@ impl serde::Serialize for SplitStreamSessionRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.at.is_some() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("stream_session.SplitStreamSessionRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if let Some(v) = self.at.as_ref() {
             struct_ser.serialize_field("at", v)?;
         }
@@ -749,14 +685,11 @@ impl<'de> serde::Deserialize<'de> for SplitStreamSessionRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "at",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             At,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -779,7 +712,6 @@ impl<'de> serde::Deserialize<'de> for SplitStreamSessionRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "at" => Ok(GeneratedField::At),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -800,16 +732,9 @@ impl<'de> serde::Deserialize<'de> for SplitStreamSessionRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut at__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::At => {
                             if at__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("at"));
@@ -819,7 +744,6 @@ impl<'de> serde::Deserialize<'de> for SplitStreamSessionRequest {
                     }
                 }
                 Ok(SplitStreamSessionRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     at: at__,
                 })
             }
@@ -963,9 +887,6 @@ impl serde::Serialize for StreamSession {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.status.is_empty() {
             len += 1;
         }
@@ -984,9 +905,6 @@ impl serde::Serialize for StreamSession {
         let mut struct_ser = serializer.serialize_struct("stream_session.StreamSession", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.status.is_empty() {
             struct_ser.serialize_field("status", &self.status)?;
@@ -1014,8 +932,6 @@ impl<'de> serde::Deserialize<'de> for StreamSession {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "status",
             "started_at",
             "startedAt",
@@ -1030,7 +946,6 @@ impl<'de> serde::Deserialize<'de> for StreamSession {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Status,
             StartedAt,
             EndedAt,
@@ -1058,7 +973,6 @@ impl<'de> serde::Deserialize<'de> for StreamSession {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "status" => Ok(GeneratedField::Status),
                             "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
                             "endedAt" | "ended_at" => Ok(GeneratedField::EndedAt),
@@ -1084,7 +998,6 @@ impl<'de> serde::Deserialize<'de> for StreamSession {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut status__ = None;
                 let mut started_at__ = None;
                 let mut ended_at__ = None;
@@ -1097,12 +1010,6 @@ impl<'de> serde::Deserialize<'de> for StreamSession {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Status => {
                             if status__.is_some() {
@@ -1138,7 +1045,6 @@ impl<'de> serde::Deserialize<'de> for StreamSession {
                 }
                 Ok(StreamSession {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
                     started_at: started_at__,
                     ended_at: ended_at__,
@@ -1164,12 +1070,18 @@ impl serde::Serialize for StreamSessionResponse {
         if self.session.is_some() {
             len += 1;
         }
+        if !self.segments.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("stream_session.StreamSessionResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
         }
         if let Some(v) = self.session.as_ref() {
             struct_ser.serialize_field("session", v)?;
+        }
+        if !self.segments.is_empty() {
+            struct_ser.serialize_field("segments", &self.segments)?;
         }
         struct_ser.end()
     }
@@ -1183,12 +1095,14 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
         const FIELDS: &[&str] = &[
             "status",
             "session",
+            "segments",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Status,
             Session,
+            Segments,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1212,6 +1126,7 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
                         match value {
                             "status" => Ok(GeneratedField::Status),
                             "session" => Ok(GeneratedField::Session),
+                            "segments" => Ok(GeneratedField::Segments),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1233,6 +1148,7 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
             {
                 let mut status__ = None;
                 let mut session__ = None;
+                let mut segments__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -1247,11 +1163,18 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
                             }
                             session__ = map_.next_value()?;
                         }
+                        GeneratedField::Segments => {
+                            if segments__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("segments"));
+                            }
+                            segments__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(StreamSessionResponse {
                     status: status__,
                     session: session__,
+                    segments: segments__.unwrap_or_default(),
                 })
             }
         }
@@ -1267,9 +1190,6 @@ impl serde::Serialize for StreamSessionSegment {
         use serde::ser::SerializeStruct;
         let mut len = 0;
         if !self.id.is_empty() {
-            len += 1;
-        }
-        if !self.application_id.is_empty() {
             len += 1;
         }
         if !self.stream_session_id.is_empty() {
@@ -1290,9 +1210,6 @@ impl serde::Serialize for StreamSessionSegment {
         let mut struct_ser = serializer.serialize_struct("stream_session.StreamSessionSegment", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.stream_session_id.is_empty() {
             struct_ser.serialize_field("streamSessionId", &self.stream_session_id)?;
@@ -1320,8 +1237,6 @@ impl<'de> serde::Deserialize<'de> for StreamSessionSegment {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "stream_session_id",
             "streamSessionId",
             "started_at",
@@ -1337,7 +1252,6 @@ impl<'de> serde::Deserialize<'de> for StreamSessionSegment {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             StreamSessionId,
             StartedAt,
             EndedAt,
@@ -1365,7 +1279,6 @@ impl<'de> serde::Deserialize<'de> for StreamSessionSegment {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "streamSessionId" | "stream_session_id" => Ok(GeneratedField::StreamSessionId),
                             "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
                             "endedAt" | "ended_at" => Ok(GeneratedField::EndedAt),
@@ -1391,7 +1304,6 @@ impl<'de> serde::Deserialize<'de> for StreamSessionSegment {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut stream_session_id__ = None;
                 let mut started_at__ = None;
                 let mut ended_at__ = None;
@@ -1404,12 +1316,6 @@ impl<'de> serde::Deserialize<'de> for StreamSessionSegment {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::StreamSessionId => {
                             if stream_session_id__.is_some() {
@@ -1445,7 +1351,6 @@ impl<'de> serde::Deserialize<'de> for StreamSessionSegment {
                 }
                 Ok(StreamSessionSegment {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     stream_session_id: stream_session_id__.unwrap_or_default(),
                     started_at: started_at__,
                     ended_at: ended_at__,

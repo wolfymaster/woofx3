@@ -13,8 +13,9 @@ pub mod module_manifest;
 mod module_plan;
 mod module_service;
 pub mod registry_loader;
+pub mod theme;
 
 pub use manifest_validate::InstallProvenance;
 pub use module_file::ModuleFileKind;
 pub use module_service::{ModuleService, ModuleServiceConfig};
-pub use registry_loader::BackgroundTaskRegistrar;
+pub use registry_loader::{ModuleSchedule, ScheduleRegistrar};

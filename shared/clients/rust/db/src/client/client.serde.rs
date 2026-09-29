@@ -13,9 +13,6 @@ impl serde::Serialize for Client {
         if !self.description.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.client_id.is_empty() {
             len += 1;
         }
@@ -34,9 +31,6 @@ impl serde::Serialize for Client {
         }
         if !self.description.is_empty() {
             struct_ser.serialize_field("description", &self.description)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.client_id.is_empty() {
             struct_ser.serialize_field("clientId", &self.client_id)?;
@@ -62,8 +56,6 @@ impl<'de> serde::Deserialize<'de> for Client {
         const FIELDS: &[&str] = &[
             "id",
             "description",
-            "application_id",
-            "applicationId",
             "client_id",
             "clientId",
             "client_secret",
@@ -78,7 +70,6 @@ impl<'de> serde::Deserialize<'de> for Client {
         enum GeneratedField {
             Id,
             Description,
-            ApplicationId,
             ClientId,
             ClientSecret,
             CallbackUrl,
@@ -106,7 +97,6 @@ impl<'de> serde::Deserialize<'de> for Client {
                         match value {
                             "id" => Ok(GeneratedField::Id),
                             "description" => Ok(GeneratedField::Description),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "clientId" | "client_id" => Ok(GeneratedField::ClientId),
                             "clientSecret" | "client_secret" => Ok(GeneratedField::ClientSecret),
                             "callbackUrl" | "callback_url" => Ok(GeneratedField::CallbackUrl),
@@ -132,7 +122,6 @@ impl<'de> serde::Deserialize<'de> for Client {
             {
                 let mut id__ = None;
                 let mut description__ = None;
-                let mut application_id__ = None;
                 let mut client_id__ = None;
                 let mut client_secret__ = None;
                 let mut callback_url__ = None;
@@ -150,12 +139,6 @@ impl<'de> serde::Deserialize<'de> for Client {
                                 return Err(serde::de::Error::duplicate_field("description"));
                             }
                             description__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::ClientId => {
                             if client_id__.is_some() {
@@ -186,7 +169,6 @@ impl<'de> serde::Deserialize<'de> for Client {
                 Ok(Client {
                     id: id__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     client_id: client_id__.unwrap_or_default(),
                     client_secret: client_secret__.unwrap_or_default(),
                     callback_url: callback_url__.unwrap_or_default(),
@@ -316,9 +298,6 @@ impl serde::Serialize for CreateClientRequest {
         if !self.description.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.callback_url.is_empty() {
             len += 1;
         }
@@ -328,9 +307,6 @@ impl serde::Serialize for CreateClientRequest {
         let mut struct_ser = serializer.serialize_struct("client.CreateClientRequest", len)?;
         if !self.description.is_empty() {
             struct_ser.serialize_field("description", &self.description)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.callback_url.is_empty() {
             struct_ser.serialize_field("callbackUrl", &self.callback_url)?;
@@ -349,8 +325,6 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
     {
         const FIELDS: &[&str] = &[
             "description",
-            "application_id",
-            "applicationId",
             "callback_url",
             "callbackUrl",
             "callback_token",
@@ -360,7 +334,6 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Description,
-            ApplicationId,
             CallbackUrl,
             CallbackToken,
         }
@@ -385,7 +358,6 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                     {
                         match value {
                             "description" => Ok(GeneratedField::Description),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "callbackUrl" | "callback_url" => Ok(GeneratedField::CallbackUrl),
                             "callbackToken" | "callback_token" => Ok(GeneratedField::CallbackToken),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -408,7 +380,6 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut description__ = None;
-                let mut application_id__ = None;
                 let mut callback_url__ = None;
                 let mut callback_token__ = None;
                 while let Some(k) = map_.next_key()? {
@@ -418,12 +389,6 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                                 return Err(serde::de::Error::duplicate_field("description"));
                             }
                             description__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::CallbackUrl => {
                             if callback_url__.is_some() {
@@ -441,7 +406,6 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                 }
                 Ok(CreateClientRequest {
                     description: description__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     callback_url: callback_url__.unwrap_or_default(),
                     callback_token: callback_token__.unwrap_or_default(),
                 })
@@ -640,14 +604,8 @@ impl serde::Serialize for ListClientsRequest {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
-        let mut struct_ser = serializer.serialize_struct("client.ListClientsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
+        let len = 0;
+        let struct_ser = serializer.serialize_struct("client.ListClientsRequest", len)?;
         struct_ser.end()
     }
 }
@@ -658,13 +616,10 @@ impl<'de> serde::Deserialize<'de> for ListClientsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -685,10 +640,7 @@ impl<'de> serde::Deserialize<'de> for ListClientsRequest {
                     where
                         E: serde::de::Error,
                     {
-                        match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
-                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
-                        }
+                            Err(serde::de::Error::unknown_field(value, FIELDS))
                     }
                 }
                 deserializer.deserialize_identifier(GeneratedVisitor)
@@ -706,19 +658,10 @@ impl<'de> serde::Deserialize<'de> for ListClientsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
-                while let Some(k) = map_.next_key()? {
-                    match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
-                    }
+                while map_.next_key::<GeneratedField>()?.is_some() {
+                    let _ = map_.next_value::<serde::de::IgnoredAny>()?;
                 }
                 Ok(ListClientsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }

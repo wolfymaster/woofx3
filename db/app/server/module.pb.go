@@ -1207,7 +1207,6 @@ func (x *ResourceUsage) GetResourceDisplayName() string {
 type CheckModuleResourceUsageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ModuleId      string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1245,13 +1244,6 @@ func (*CheckModuleResourceUsageRequest) Descriptor() ([]byte, []int) {
 func (x *CheckModuleResourceUsageRequest) GetModuleId() string {
 	if x != nil {
 		return x.ModuleId
-	}
-	return ""
-}
-
-func (x *CheckModuleResourceUsageRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -1474,7 +1466,6 @@ func (x *DeleteByModuleIdRequest) GetCreatedByType() string {
 type GetByCanonicalIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CanonicalId   string                 `protobuf:"bytes,1,opt,name=canonical_id,json=canonicalId,proto3" json:"canonical_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1512,13 +1503,6 @@ func (*GetByCanonicalIdRequest) Descriptor() ([]byte, []int) {
 func (x *GetByCanonicalIdRequest) GetCanonicalId() string {
 	if x != nil {
 		return x.CanonicalId
-	}
-	return ""
-}
-
-func (x *GetByCanonicalIdRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -1732,10 +1716,9 @@ const file_module_proto_rawDesc = "" +
 	"\rresource_type\x18\x02 \x01(\tR\fresourceType\x12#\n" +
 	"\rresource_name\x18\x03 \x01(\tR\fresourceName\x12)\n" +
 	"\aused_by\x18\x04 \x03(\v2\x10.module.UsageRefR\x06usedBy\x122\n" +
-	"\x15resource_display_name\x18\x05 \x01(\tR\x13resourceDisplayName\"e\n" +
+	"\x15resource_display_name\x18\x05 \x01(\tR\x13resourceDisplayName\"T\n" +
 	"\x1fCheckModuleResourceUsageRequest\x12\x1b\n" +
-	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\x80\x01\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleIdJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x80\x01\n" +
 	" CheckModuleResourceUsageResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
 	"\x06in_use\x18\x02 \x03(\v2\x15.module.ResourceUsageR\x05inUse\"\x8b\x02\n" +
@@ -1751,10 +1734,9 @@ const file_module_proto_rawDesc = "" +
 	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x02 \x01(\tR\tmoduleKey\x12&\n" +
-	"\x0fcreated_by_type\x18\x03 \x01(\tR\rcreatedByType\"c\n" +
+	"\x0fcreated_by_type\x18\x03 \x01(\tR\rcreatedByType\"R\n" +
 	"\x17GetByCanonicalIdRequest\x12!\n" +
-	"\fcanonical_id\x18\x01 \x01(\tR\vcanonicalId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"l\n" +
+	"\fcanonical_id\x18\x01 \x01(\tR\vcanonicalIdJ\x04\b\x02\x10\x03R\x0eapplication_id\"l\n" +
 	"\x0fTriggerResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12)\n" +
 	"\atrigger\x18\x02 \x01(\v2\x0f.module.TriggerR\atrigger\"h\n" +

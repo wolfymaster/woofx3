@@ -7,6 +7,7 @@ import {
   SHIM_SRC,
 } from "../../src/scene/frame-assembler";
 import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
+import type { FrameTheme } from "../../src/scene/widget-theme";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function minimalBoot(): FrameScaffold["boot"] {
@@ -141,7 +142,7 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
-    expect(result).toEqual({ entryHtml: "<html></html>", resourceBaseUrl: "https://cdn.example.com/w/" });
+    expect(result).toEqual({ entryHtml: "<html></html>", resourceBaseUrl: "https://cdn.example.com/w/", theme: null });
     expect(warn).not.toHaveBeenCalled();
   });
 });
@@ -177,7 +178,6 @@ describe("FrameAssembler.assemble", () => {
     const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [instance],
@@ -189,6 +189,7 @@ describe("FrameAssembler.assemble", () => {
         return {
           entryHtml: "<!doctype html><body></body>",
           resourceBaseUrl: "https://cdn.example.com/modules/mymod/abc123/widgets/mywid/",
+          theme: null,
         };
       }),
     };
@@ -200,13 +201,14 @@ describe("FrameAssembler.assemble", () => {
     const html = await resp.text();
     expect(html).toContain('<base href="https://cdn.example.com/modules/mymod/abc123/widgets/mywid/">');
     expect(barkloader.fetchWidgetFrame).toHaveBeenCalledTimes(1);
+    expect(resp.headers.get("Content-Security-Policy")).toBeNull();
+    expect(bootOf(html).theme).toBeNull();
   });
 
   it("returns 502 (uniform blank-adjacent doc) when Barkloader has no frame info for the module widget", async () => {
     const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [instance],
@@ -237,7 +239,6 @@ describe("FrameAssembler.assemble", () => {
   it("returns the same uniform blank document for a valid scene with an unknown instance id", async () => {
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [],
@@ -248,5 +249,115 @@ describe("FrameAssembler.assemble", () => {
     });
     const resp = await assembler.assemble("scene-1", "missing-instance", null);
     expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");
+  });
+});
+
+function bootOf(html: string): Record<string, unknown> {
+  const match = /window\.__WOOFX3_WIDGET_BOOT__ = (.*?);<\/script>/.exec(html);
+  expect(match).not.toBeNull();
+  return JSON.parse(match![1]!);
+}
+
+const THEMED_BASE = "https://engine.example.com/assets/modules/timerpro/abc123/widgets/countdown/";
+
+function frameTheme(overrides: Partial<FrameTheme> = {}): FrameTheme {
+  return {
+    id: "neonpack:theme:neon",
+    contractVersion: 1,
+    variables: { accent: "#ff2bd6", font: '"Orbitron", sans-serif' },
+    assets: { background: "https://engine.example.com/assets/modules/neonpack/def/themes/neon/assets/grid.webm" },
+    defaultAssets: { background: null },
+    fallback: null,
+    stylesheetUrl: "https://engine.example.com/assets/modules/neonpack/def/themes/neon/themes/neon.css",
+    ...overrides,
+  };
+}
+
+async function assembleThemed(settings: Record<string, unknown>, theme: FrameTheme | null) {
+  const instance = widgetInstance({ moduleId: "timerpro", manifestId: "countdown", settings });
+  const state: OverlaySceneState = { sceneId: "scene-1", name: "Scene", layout: {}, instances: [instance] };
+  const fetchWidgetFrame = mock(async (_moduleKey: string, _manifestId: string, _themeId?: string) => ({
+    entryHtml: "<!doctype html><html><head><style>#t{}</style></head><body><script>1</script></body></html>",
+    resourceBaseUrl: THEMED_BASE,
+    theme,
+  }));
+  const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
+    barkloader: { fetchWidgetFrame },
+  });
+  const resp = await assembler.assemble("scene-1", "inst-1", null);
+  return { resp, html: await resp.text(), fetchWidgetFrame };
+}
+
+describe("FrameAssembler — widget themes", () => {
+  it("asks barkloader for the theme the placement's settings select", async () => {
+    const { fetchWidgetFrame } = await assembleThemed({ theme: "neonpack:theme:neon" }, frameTheme());
+    expect(fetchWidgetFrame.mock.calls[0]).toEqual(["timerpro", "countdown", "neonpack:theme:neon"]);
+  });
+
+  it("asks for no theme when none is selected", async () => {
+    const { fetchWidgetFrame } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
+    expect(fetchWidgetFrame.mock.calls[0]![2]).toBeUndefined();
+  });
+
+  it("sets variables and asset slots as custom properties before the widget's own styles", async () => {
+    const { html } = await assembleThemed({ theme: "neonpack:theme:neon" }, frameTheme());
+    const themeStyle = html.indexOf("<style data-woofx3-theme>");
+    expect(themeStyle).toBeGreaterThan(0);
+    expect(themeStyle).toBeLessThan(html.indexOf("<style>#t{}"));
+    expect(html).toContain("--theme-accent: #ff2bd6;");
+    expect(html).toContain('--theme-font: "Orbitron", sans-serif;');
+    expect(html).toContain(
+      '--theme-asset-background: url("https://engine.example.com/assets/modules/neonpack/def/themes/neon/assets/grid.webm");'
+    );
+  });
+
+  it("links the theme stylesheet after the widget's own styles and before its scripts", async () => {
+    const { html } = await assembleThemed({ theme: "neonpack:theme:neon" }, frameTheme());
+    const link = html.indexOf('<link rel="stylesheet" href="https://engine.example.com/assets/modules/neonpack');
+    expect(link).toBeGreaterThan(html.indexOf("<style>#t{}"));
+    expect(link).toBeLessThan(html.indexOf("</head>"));
+    expect(link).toBeLessThan(html.indexOf("<script>1</script>"));
+  });
+
+  it("hands the widget its theme as host.theme, without the stylesheet", async () => {
+    const { html } = await assembleThemed({ theme: "neonpack:theme:neon" }, frameTheme());
+    expect(bootOf(html).theme).toEqual({
+      id: "neonpack:theme:neon",
+      contractVersion: 1,
+      variables: { accent: "#ff2bd6", font: '"Orbitron", sans-serif' },
+      assets: { background: "https://engine.example.com/assets/modules/neonpack/def/themes/neon/assets/grid.webm" },
+      defaultAssets: { background: null },
+      fallback: null,
+    });
+  });
+
+  it("restricts styles, fonts and media to the engine for a themeable widget", async () => {
+    const { resp } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
+    const csp = resp.headers.get("Content-Security-Policy");
+    expect(csp).toContain("style-src 'self' https://engine.example.com 'unsafe-inline'");
+    expect(csp).toContain("font-src 'self' https://engine.example.com data:");
+    expect(csp).toContain("media-src 'self' https://engine.example.com data: blob:");
+    expect(csp).not.toContain("script-src");
+  });
+
+  it("renders the defaults, and still loads, when the selected theme is missing", async () => {
+    const { resp, html } = await assembleThemed(
+      { theme: "gone:theme:neon" },
+      frameTheme({ id: null, variables: { accent: "#7ad7ff" }, assets: {}, fallback: "missing", stylesheetUrl: null })
+    );
+    expect(resp.status).toBe(200);
+    expect(html).toContain("--theme-accent: #7ad7ff;");
+    expect(html).not.toContain('rel="stylesheet"');
+    expect((bootOf(html).theme as { fallback: string }).fallback).toBe("missing");
+  });
+
+  it("drops a variable value that could end the declaration", async () => {
+    const { html } = await assembleThemed(
+      {},
+      frameTheme({ variables: { accent: "red; } body { display: none" }, stylesheetUrl: null })
+    );
+    const style = html.slice(html.indexOf("<style data-woofx3-theme>"), html.indexOf("<style>#t{}"));
+    expect(style).not.toContain("--theme-accent");
+    expect(style).not.toContain("display: none");
   });
 });

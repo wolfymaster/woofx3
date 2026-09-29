@@ -22,7 +22,6 @@ import (
 // triggers don't, and replay re-uses the original row's attribution.
 type Alert struct {
 	ID            uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID uuid.UUID  `gorm:"column:application_id;type:uuid;not null;index:idx_alerts_application_created_at,priority:1;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	Payload       string     `gorm:"column:payload;type:jsonb;not null"`
 	WorkflowID    *uuid.UUID `gorm:"column:workflow_id;type:uuid"`
 	SourceEventID string     `gorm:"column:source_event_id;type:text;not null;default:''"`
@@ -39,11 +38,8 @@ type Alert struct {
 	// (autoplay block, missing media, etc.). Empty string = "no error",
 	// matching the source_event_id convention.
 	Error     string    `gorm:"column:error;type:text;not null;default:''"`
-	CreatedAt time.Time `gorm:"column:created_at;index:idx_alerts_application_created_at,priority:2,sort:desc"`
+	CreatedAt time.Time `gorm:"column:created_at;index:idx_alerts_created_at,sort:desc"`
 	UpdatedAt time.Time
-
-	// Relationships
-	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
 }
 
 func (Alert) TableName() string {

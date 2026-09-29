@@ -23,12 +23,11 @@ const (
 )
 
 type StreamSession struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// `open` while this is the session events are stamped with; `closed` once a
-	// later session has replaced it. At most one session per application is
-	// open, enforced by a partial unique index rather than by convention.
+	// later session has replaced it. At most one session is open, enforced by a
+	// partial unique index rather than by convention.
 	Status    string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	StartedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	// Set when the session was closed by a split. Absent while open.
@@ -72,13 +71,6 @@ func (*StreamSession) Descriptor() ([]byte, []int) {
 func (x *StreamSession) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *StreamSession) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -129,7 +121,6 @@ func (x *StreamSession) GetUpdatedAt() *timestamppb.Timestamp {
 type StreamSessionSegment struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	StreamSessionId string                 `protobuf:"bytes,3,opt,name=stream_session_id,json=streamSessionId,proto3" json:"stream_session_id,omitempty"`
 	StartedAt       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	// Absent while the stream is live.
@@ -177,13 +168,6 @@ func (x *StreamSessionSegment) GetId() string {
 	return ""
 }
 
-func (x *StreamSessionSegment) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *StreamSessionSegment) GetStreamSessionId() string {
 	if x != nil {
 		return x.StreamSessionId
@@ -221,7 +205,6 @@ func (x *StreamSessionSegment) GetUpdatedAt() *timestamppb.Timestamp {
 
 type EnsureCurrentStreamSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -254,13 +237,6 @@ func (x *EnsureCurrentStreamSessionRequest) ProtoReflect() protoreflect.Message 
 // Deprecated: Use EnsureCurrentStreamSessionRequest.ProtoReflect.Descriptor instead.
 func (*EnsureCurrentStreamSessionRequest) Descriptor() ([]byte, []int) {
 	return file_stream_session_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *EnsureCurrentStreamSessionRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 // The open session and the inputs to the extend-or-split decision, fetched
@@ -338,8 +314,7 @@ func (x *StreamSessionStateResponse) GetLastSegmentEndedAt() *timestamppb.Timest
 }
 
 type SplitStreamSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
 	// The boundary. Supplied by the caller rather than defaulted to NOW() so a
 	// split can be made from an event's own timestamp, and used as both the old
 	// session's end and the new one's start so no instant falls outside both.
@@ -376,13 +351,6 @@ func (x *SplitStreamSessionRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SplitStreamSessionRequest.ProtoReflect.Descriptor instead.
 func (*SplitStreamSessionRequest) Descriptor() ([]byte, []int) {
 	return file_stream_session_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *SplitStreamSessionRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *SplitStreamSessionRequest) GetAt() *timestamppb.Timestamp {
@@ -454,7 +422,6 @@ func (x *SplitStreamSessionResponse) GetStarted() *StreamSession {
 
 type OpenStreamSessionSegmentRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId   string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	StreamSessionId string                 `protobuf:"bytes,2,opt,name=stream_session_id,json=streamSessionId,proto3" json:"stream_session_id,omitempty"`
 	StartedAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -491,13 +458,6 @@ func (*OpenStreamSessionSegmentRequest) Descriptor() ([]byte, []int) {
 	return file_stream_session_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *OpenStreamSessionSegmentRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *OpenStreamSessionSegmentRequest) GetStreamSessionId() string {
 	if x != nil {
 		return x.StreamSessionId
@@ -512,12 +472,11 @@ func (x *OpenStreamSessionSegmentRequest) GetStartedAt() *timestamppb.Timestamp 
 	return nil
 }
 
-// Closes whichever segment is currently open for the application. Keyed on the
-// application rather than a segment id because the caller reacting to
-// `stream.offline` knows the channel, not which segment it opened.
+// Closes whichever segment is currently open. Takes no segment id because the
+// caller reacting to `stream.offline` knows the channel, not which segment it
+// opened.
 type CloseStreamSessionSegmentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -551,13 +510,6 @@ func (x *CloseStreamSessionSegmentRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CloseStreamSessionSegmentRequest.ProtoReflect.Descriptor instead.
 func (*CloseStreamSessionSegmentRequest) Descriptor() ([]byte, []int) {
 	return file_stream_session_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *CloseStreamSessionSegmentRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *CloseStreamSessionSegmentRequest) GetEndedAt() *timestamppb.Timestamp {
@@ -612,9 +564,12 @@ func (x *GetStreamSessionRequest) GetId() string {
 }
 
 type StreamSessionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	Session       *StreamSession         `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Status  *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Session *StreamSession         `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	// The session's segments, oldest first. Empty means the session has never
+	// been live.
+	Segments      []*StreamSessionSegment `protobuf:"bytes,3,rep,name=segments,proto3" json:"segments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -659,6 +614,13 @@ func (x *StreamSessionResponse) GetStatus() *ResponseStatus {
 func (x *StreamSessionResponse) GetSession() *StreamSession {
 	if x != nil {
 		return x.Session
+	}
+	return nil
+}
+
+func (x *StreamSessionResponse) GetSegments() []*StreamSessionSegment {
+	if x != nil {
+		return x.Segments
 	}
 	return nil
 }
@@ -717,7 +679,6 @@ func (x *StreamSessionSegmentResponse) GetSegment() *StreamSessionSegment {
 
 type ListStreamSessionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	Offset        int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -754,13 +715,6 @@ func (*ListStreamSessionsRequest) Descriptor() ([]byte, []int) {
 	return file_stream_session_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ListStreamSessionsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *ListStreamSessionsRequest) GetLimit() int32 {
 	if x != nil {
 		return x.Limit
@@ -776,12 +730,15 @@ func (x *ListStreamSessionsRequest) GetOffset() int32 {
 }
 
 type ListStreamSessionsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	Sessions      []*StreamSession       `protobuf:"bytes,2,rep,name=sessions,proto3" json:"sessions,omitempty"`
-	TotalCount    int64                  `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
-	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        int32                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Status     *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Sessions   []*StreamSession       `protobuf:"bytes,2,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	TotalCount int64                  `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	Limit      int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset     int32                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Every segment of the sessions in `sessions`, oldest first; group them by
+	// `stream_session_id`. A session with none has never been live.
+	Segments      []*StreamSessionSegment `protobuf:"bytes,6,rep,name=segments,proto3" json:"segments,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -851,14 +808,20 @@ func (x *ListStreamSessionsResponse) GetOffset() int32 {
 	return 0
 }
 
+func (x *ListStreamSessionsResponse) GetSegments() []*StreamSessionSegment {
+	if x != nil {
+		return x.Segments
+	}
+	return nil
+}
+
 var File_stream_session_proto protoreflect.FileDescriptor
 
 const file_stream_session_proto_rawDesc = "" +
 	"\n" +
-	"\x14stream_session.proto\x12\x0estream_session\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc6\x02\n" +
+	"\x14stream_session.proto\x12\x0estream_session\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb5\x02\n" +
 	"\rStreamSession\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x16\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x129\n" +
 	"\n" +
 	"started_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
@@ -866,10 +829,9 @@ const file_stream_session_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe1\x02\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xd0\x02\n" +
 	"\x14StreamSessionSegment\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12*\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
 	"\x11stream_session_id\x18\x03 \x01(\tR\x0fstreamSessionId\x129\n" +
 	"\n" +
 	"started_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
@@ -877,48 +839,45 @@ const file_stream_session_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"J\n" +
-	"!EnsureCurrentStreamSessionRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"\xfc\x01\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\x02\x10\x03R\x0eapplication_id\"9\n" +
+	"!EnsureCurrentStreamSessionRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xfc\x01\n" +
 	"\x1aStreamSessionStateResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x127\n" +
 	"\asession\x18\x02 \x01(\v2\x1d.stream_session.StreamSessionR\asession\x12&\n" +
 	"\x0fis_segment_open\x18\x03 \x01(\bR\risSegmentOpen\x12M\n" +
-	"\x15last_segment_ended_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x12lastSegmentEndedAt\"n\n" +
-	"\x19SplitStreamSessionRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12*\n" +
-	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\xba\x01\n" +
+	"\x15last_segment_ended_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x12lastSegmentEndedAt\"]\n" +
+	"\x19SplitStreamSessionRequest\x12*\n" +
+	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02atJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xba\x01\n" +
 	"\x1aSplitStreamSessionResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x123\n" +
 	"\x05ended\x18\x02 \x01(\v2\x1d.stream_session.StreamSessionR\x05ended\x127\n" +
-	"\astarted\x18\x03 \x01(\v2\x1d.stream_session.StreamSessionR\astarted\"\xaf\x01\n" +
-	"\x1fOpenStreamSessionSegmentRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12*\n" +
+	"\astarted\x18\x03 \x01(\v2\x1d.stream_session.StreamSessionR\astarted\"\x9e\x01\n" +
+	"\x1fOpenStreamSessionSegmentRequest\x12*\n" +
 	"\x11stream_session_id\x18\x02 \x01(\tR\x0fstreamSessionId\x129\n" +
 	"\n" +
-	"started_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\"\x80\x01\n" +
-	" CloseStreamSessionSegmentRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x125\n" +
-	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\")\n" +
+	"started_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAtJ\x04\b\x01\x10\x02R\x0eapplication_id\"o\n" +
+	" CloseStreamSessionSegmentRequest\x125\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAtJ\x04\b\x01\x10\x02R\x0eapplication_id\")\n" +
 	"\x17GetStreamSessionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x80\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xc2\x01\n" +
 	"\x15StreamSessionResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x127\n" +
-	"\asession\x18\x02 \x01(\v2\x1d.stream_session.StreamSessionR\asession\"\x8e\x01\n" +
+	"\asession\x18\x02 \x01(\v2\x1d.stream_session.StreamSessionR\asession\x12@\n" +
+	"\bsegments\x18\x03 \x03(\v2$.stream_session.StreamSessionSegmentR\bsegments\"\x8e\x01\n" +
 	"\x1cStreamSessionSegmentResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12>\n" +
-	"\asegment\x18\x02 \x01(\v2$.stream_session.StreamSessionSegmentR\asegment\"p\n" +
-	"\x19ListStreamSessionsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\asegment\x18\x02 \x01(\v2$.stream_session.StreamSessionSegmentR\asegment\"_\n" +
+	"\x19ListStreamSessionsRequest\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\x05R\x06offset\"\xd6\x01\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offsetJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x98\x02\n" +
 	"\x1aListStreamSessionsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x129\n" +
 	"\bsessions\x18\x02 \x03(\v2\x1d.stream_session.StreamSessionR\bsessions\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x03R\n" +
 	"totalCount\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x05 \x01(\x05R\x06offset2\xc9\x05\n" +
+	"\x06offset\x18\x05 \x01(\x05R\x06offset\x12@\n" +
+	"\bsegments\x18\x06 \x03(\v2$.stream_session.StreamSessionSegmentR\bsegments2\xc9\x05\n" +
 	"\x14StreamSessionService\x12{\n" +
 	"\x1aEnsureCurrentStreamSession\x121.stream_session.EnsureCurrentStreamSessionRequest\x1a*.stream_session.StreamSessionStateResponse\x12k\n" +
 	"\x12SplitStreamSession\x12).stream_session.SplitStreamSessionRequest\x1a*.stream_session.SplitStreamSessionResponse\x12y\n" +
@@ -977,27 +936,29 @@ var file_stream_session_proto_depIdxs = []int32{
 	13, // 16: stream_session.CloseStreamSessionSegmentRequest.ended_at:type_name -> google.protobuf.Timestamp
 	14, // 17: stream_session.StreamSessionResponse.status:type_name -> common.ResponseStatus
 	0,  // 18: stream_session.StreamSessionResponse.session:type_name -> stream_session.StreamSession
-	14, // 19: stream_session.StreamSessionSegmentResponse.status:type_name -> common.ResponseStatus
-	1,  // 20: stream_session.StreamSessionSegmentResponse.segment:type_name -> stream_session.StreamSessionSegment
-	14, // 21: stream_session.ListStreamSessionsResponse.status:type_name -> common.ResponseStatus
-	0,  // 22: stream_session.ListStreamSessionsResponse.sessions:type_name -> stream_session.StreamSession
-	2,  // 23: stream_session.StreamSessionService.EnsureCurrentStreamSession:input_type -> stream_session.EnsureCurrentStreamSessionRequest
-	4,  // 24: stream_session.StreamSessionService.SplitStreamSession:input_type -> stream_session.SplitStreamSessionRequest
-	6,  // 25: stream_session.StreamSessionService.OpenStreamSessionSegment:input_type -> stream_session.OpenStreamSessionSegmentRequest
-	7,  // 26: stream_session.StreamSessionService.CloseStreamSessionSegment:input_type -> stream_session.CloseStreamSessionSegmentRequest
-	8,  // 27: stream_session.StreamSessionService.GetStreamSession:input_type -> stream_session.GetStreamSessionRequest
-	11, // 28: stream_session.StreamSessionService.ListStreamSessions:input_type -> stream_session.ListStreamSessionsRequest
-	3,  // 29: stream_session.StreamSessionService.EnsureCurrentStreamSession:output_type -> stream_session.StreamSessionStateResponse
-	5,  // 30: stream_session.StreamSessionService.SplitStreamSession:output_type -> stream_session.SplitStreamSessionResponse
-	10, // 31: stream_session.StreamSessionService.OpenStreamSessionSegment:output_type -> stream_session.StreamSessionSegmentResponse
-	10, // 32: stream_session.StreamSessionService.CloseStreamSessionSegment:output_type -> stream_session.StreamSessionSegmentResponse
-	9,  // 33: stream_session.StreamSessionService.GetStreamSession:output_type -> stream_session.StreamSessionResponse
-	12, // 34: stream_session.StreamSessionService.ListStreamSessions:output_type -> stream_session.ListStreamSessionsResponse
-	29, // [29:35] is the sub-list for method output_type
-	23, // [23:29] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	1,  // 19: stream_session.StreamSessionResponse.segments:type_name -> stream_session.StreamSessionSegment
+	14, // 20: stream_session.StreamSessionSegmentResponse.status:type_name -> common.ResponseStatus
+	1,  // 21: stream_session.StreamSessionSegmentResponse.segment:type_name -> stream_session.StreamSessionSegment
+	14, // 22: stream_session.ListStreamSessionsResponse.status:type_name -> common.ResponseStatus
+	0,  // 23: stream_session.ListStreamSessionsResponse.sessions:type_name -> stream_session.StreamSession
+	1,  // 24: stream_session.ListStreamSessionsResponse.segments:type_name -> stream_session.StreamSessionSegment
+	2,  // 25: stream_session.StreamSessionService.EnsureCurrentStreamSession:input_type -> stream_session.EnsureCurrentStreamSessionRequest
+	4,  // 26: stream_session.StreamSessionService.SplitStreamSession:input_type -> stream_session.SplitStreamSessionRequest
+	6,  // 27: stream_session.StreamSessionService.OpenStreamSessionSegment:input_type -> stream_session.OpenStreamSessionSegmentRequest
+	7,  // 28: stream_session.StreamSessionService.CloseStreamSessionSegment:input_type -> stream_session.CloseStreamSessionSegmentRequest
+	8,  // 29: stream_session.StreamSessionService.GetStreamSession:input_type -> stream_session.GetStreamSessionRequest
+	11, // 30: stream_session.StreamSessionService.ListStreamSessions:input_type -> stream_session.ListStreamSessionsRequest
+	3,  // 31: stream_session.StreamSessionService.EnsureCurrentStreamSession:output_type -> stream_session.StreamSessionStateResponse
+	5,  // 32: stream_session.StreamSessionService.SplitStreamSession:output_type -> stream_session.SplitStreamSessionResponse
+	10, // 33: stream_session.StreamSessionService.OpenStreamSessionSegment:output_type -> stream_session.StreamSessionSegmentResponse
+	10, // 34: stream_session.StreamSessionService.CloseStreamSessionSegment:output_type -> stream_session.StreamSessionSegmentResponse
+	9,  // 35: stream_session.StreamSessionService.GetStreamSession:output_type -> stream_session.StreamSessionResponse
+	12, // 36: stream_session.StreamSessionService.ListStreamSessions:output_type -> stream_session.ListStreamSessionsResponse
+	31, // [31:37] is the sub-list for method output_type
+	25, // [25:31] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_stream_session_proto_init() }

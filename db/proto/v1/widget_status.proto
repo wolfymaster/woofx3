@@ -18,9 +18,8 @@ import "google/protobuf/timestamp.proto";
 //     the value via WIDGET_STATUS_CHANGED webhook.
 //
 // Read path:
-//   - Dashboard backfill on connect: ListWidgetStatus(applicationId).
-//   - Future workflow trigger: GetWidgetStatus(applicationId,
-//     instanceId, key).
+//   - Dashboard backfill on connect: ListWidgetStatus.
+//   - Future workflow trigger: GetWidgetStatus(instanceId, key).
 service WidgetStatusService {
   rpc UpsertWidgetStatus(UpsertWidgetStatusRequest) returns (WidgetStatusResponse);
   rpc GetWidgetStatus(GetWidgetStatusRequest) returns (WidgetStatusResponse);
@@ -30,7 +29,8 @@ service WidgetStatusService {
 
 message WidgetStatus {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   // Module that owns the widget definition. Denormalised from the
   // scene's widgets_json so consumers can group by module without
   // joining.
@@ -55,7 +55,8 @@ message WidgetStatus {
 }
 
 message UpsertWidgetStatusRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   string module_id = 2;
   string instance_id = 3;
   string widget_canonical_id = 4;
@@ -68,7 +69,8 @@ message UpsertWidgetStatusRequest {
 }
 
 message GetWidgetStatusRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   string instance_id = 2;
   string key = 3;
 }
@@ -79,7 +81,8 @@ message WidgetStatusResponse {
 }
 
 message ListWidgetStatusRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   // Optional filters. Empty string = no filter.
   string module_id = 2;
   string instance_id = 3;
@@ -96,7 +99,8 @@ message ListWidgetStatusResponse {
 }
 
 message DeleteWidgetStatusRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   string instance_id = 2;
   // Optional: when omitted, deletes every row for the instance.
   string key = 3;

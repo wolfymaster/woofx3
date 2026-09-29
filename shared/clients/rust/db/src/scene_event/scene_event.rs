@@ -6,8 +6,6 @@ pub struct SceneEvent {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub scene_id: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub application_id: ::prost::alloc::string::String,
     /// Event class, e.g. "widget.event", "alert" — mirrors the
     /// `OverlayWidgetEvent`/CloudEvent `type` convention used elsewhere.
     #[prost(string, tag="4")]
@@ -68,8 +66,6 @@ pub struct SceneEventLogEntry {
 pub struct RecordSceneEventRequest {
     #[prost(string, tag="1")]
     pub scene_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub r#type: ::prost::alloc::string::String,
     #[prost(string, tag="4")]

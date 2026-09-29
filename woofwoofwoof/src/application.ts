@@ -103,9 +103,8 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     });
 
     // Keeps the built-in subscriber/vip/moderator/broadcaster groups in step
-    // with the membership reported on each chat message. applicationId is left
-    // empty so db-proxy resolves the default, matching every other call here.
-    const derivedGroupSync = new DerivedGroupSync(db, "", ctx.logger);
+    // with the membership reported on each chat message.
+    const derivedGroupSync = new DerivedGroupSync(db, ctx.logger);
 
     // subscribe to chat message events
     ctx.services.messageBus.client.subscribe(EventType.ChatMessage, async (msg: Msg) => {
@@ -246,7 +245,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     const db = ctx.services.db.client;
 
     const commands = await db.listCommands({
-      applicationId: "",
       includeDisabled: false,
     });
     ctx.logger.info("after list commands");
@@ -268,7 +266,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     ctx.commander.add("grantcommands", async (text: string, _user?: string) => {
       await db.addUserToResource({
-        applicationId: "",
         username: text,
         resource: "command/*",
         role: "moderator",
@@ -278,7 +275,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     ctx.commander.add("revokecommands", async (text: string, _user?: string) => {
       await db.removeUserFromResource({
-        applicationId: "",
         username: text,
         resource: "command/*",
         role: "moderator",
@@ -453,7 +449,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           };
           const [topic, payload] = ctx.events.Action().execute({
             label: `command:${command.command}`,
-            applicationId: command.applicationId,
             actions,
             event: {
               id: crypto.randomUUID(),
@@ -521,7 +516,6 @@ function parseCommandActions(command: Command, ctx: Context): ActionStep[] {
 // them with zero values so a round-trip stays type-safe.
 function snapshotToCommand(snapshot: {
   id: string;
-  applicationId: string;
   command: string;
   actions: ActionStep[];
   cooldown: number;
@@ -534,7 +528,6 @@ function snapshotToCommand(snapshot: {
 }): Command {
   return {
     id: snapshot.id,
-    applicationId: snapshot.applicationId,
     command: snapshot.command,
     actionsJson: JSON.stringify(snapshot.actions ?? []),
     cooldown: snapshot.cooldown,

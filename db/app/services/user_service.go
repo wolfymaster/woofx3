@@ -45,7 +45,6 @@ func (s *UserService) CreateUser(ctx context.Context, req *client.CreateUserRequ
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   "default",
 			EntityType:      "user",
 			EntityID:        user.ID,
 			Operation:       "created",

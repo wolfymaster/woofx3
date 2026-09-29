@@ -30,7 +30,7 @@ service OverlayTokenService {
     rpc MintOverlayToken(MintOverlayTokenRequest) returns (OverlayTokenResponse);
     rpc RevokeOverlayToken(RevokeOverlayTokenRequest) returns (OverlayTokenResponse);
     // Atomically mints a replacement token and tombstones the old one
-    // (same scene / application / label). The response carries the NEW
+    // (same scene / label). The response carries the NEW
     // token row.
     rpc RotateOverlayToken(RotateOverlayTokenRequest) returns (OverlayTokenResponse);
     rpc ListOverlayTokens(ListOverlayTokensRequest) returns (ListOverlayTokensResponse);
@@ -43,7 +43,8 @@ message OverlayToken {
     // Generated db-proxy-side; never accepted from callers.
     string token = 2;
     string scene_id = 3;
-    string application_id = 4;
+    reserved 4;
+    reserved "application_id";
     // Operator bookkeeping (e.g. "OBS main PC"). Free-form.
     string label = 5;
     // "active" | "revoked".
@@ -55,9 +56,8 @@ message OverlayToken {
 
 message MintOverlayTokenRequest {
     string scene_id = 1;
-    // Empty resolves to the default application (same convention as
-    // CreateSceneRequest). The scene must belong to this application.
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string label = 3;
 }
 
@@ -76,7 +76,8 @@ message OverlayTokenResponse {
 
 message ListOverlayTokensRequest {
     string scene_id = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     // Revoked tombstones are excluded unless explicitly requested.
     bool include_revoked = 3;
 }
@@ -92,10 +93,11 @@ message ResolveOverlayTokenRequest {
 }
 
 // Engine-internal resolution result. Active tokens return OK with the
-// bound scene/application; revoked and unknown tokens return byte-for-
+// bound scene; revoked and unknown tokens return byte-for-
 // byte identical NOT_FOUND responses.
 message ResolveOverlayTokenResponse {
     common.ResponseStatus status = 1;
     string scene_id = 2;
-    string application_id = 3;
+    reserved 3;
+    reserved "application_id";
 }

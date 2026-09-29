@@ -2,20 +2,23 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/model"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"
 
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/db/app/secrets"
+	svc "github.com/wolfymaster/woofx3/db/app/services"
 	"github.com/wolfymaster/woofx3/db/app/types"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
+	"github.com/wolfymaster/woofx3/db/database/repository"
 )
 
 type DatabaseAppConfig struct {
@@ -26,7 +29,7 @@ type DatabaseApp struct {
 	*runtime.BaseApplication
 	logger          *slog.Logger
 	db              *gorm.DB
-	badgerDB        *badger.DB
+	moduleStorage   *sql.DB
 	casbin          *casbin.Enforcer
 	natsConn        *nats.Conn
 	eventCache      *outbox.EventCache
@@ -47,7 +50,7 @@ func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
 
 func (a *DatabaseApp) App() *types.App {
 	return &types.App{
-		BadgerDB:        a.badgerDB,
+		ModuleStorage:   a.moduleStorage,
 		Casbin:          a.casbin,
 		Db:              a.db,
 		Logger:          a.logger,
@@ -62,8 +65,8 @@ func (a *DatabaseApp) App() *types.App {
 	}
 }
 
-func (a *DatabaseApp) BadgerDB() *badger.DB {
-	return a.badgerDB
+func (a *DatabaseApp) ModuleStorage() *sql.DB {
+	return a.moduleStorage
 }
 
 func (a *DatabaseApp) Casbin() *casbin.Enforcer {
@@ -99,13 +102,13 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		}
 	}
 
-	if badgerSvc, ok := services["badger"]; ok {
-		if typedSvc, ok := badgerSvc.(interface{ Client() *badger.DB }); ok {
-			a.badgerDB = typedSvc.Client()
-		} else {
-			a.logger.Warn("Badger service does not implement Client() *badger.DB")
-		}
+	// Init runs only once every service has connected, so module storage is
+	// open here; without it the storage routes would serve a nil pool.
+	storageSvc, ok := services[svc.ModuleStorageServiceName].(interface{ Client() *sql.DB })
+	if !ok || storageSvc.Client() == nil {
+		return errors.New("module storage is not open")
 	}
+	a.moduleStorage = storageSvc.Client()
 
 	if natsSvc, ok := services["nats"]; ok {
 		if typedSvc, ok := natsSvc.(interface{ Connection() *nats.Conn }); ok {
@@ -128,6 +131,13 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 	}
 
 	if a.db != nil {
+		// The built-in groups are part of the command-permission contract,
+		// so db-proxy does not serve requests until they exist.
+		if err := svc.SeedBuiltInGroups(repository.NewGroupRepository(a.db)); err != nil {
+			a.logger.Error("Failed to seed built-in groups", "error", err)
+			return err
+		}
+
 		casbinEnforcer, err := a.initCasbin(a.db)
 		if err != nil {
 			a.logger.Error("Failed to initialize Casbin", "error", err)

@@ -18,7 +18,7 @@ type Published = {
 
 /**
  * The route is a mixin over the api's route host. `triggerWorkflowByName`
- * touches only these four members, so the rest of the host is irrelevant here.
+ * touches only these three members, so the rest of the host is irrelevant here.
  */
 function setup(workflows: WorkflowRow[]) {
   const published: Published[] = [];
@@ -26,9 +26,6 @@ function setup(workflows: WorkflowRow[]) {
 
   const ctx = {
     logger: { info() {}, warn() {}, error() {}, debug() {} },
-    async ensureApplicationId() {
-      return "app-1";
-    },
     db: {
       async listWorkflows() {
         return { workflows };

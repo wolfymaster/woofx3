@@ -24,16 +24,7 @@ const defaultRedactPaths = [
   "*.token",
 ];
 
-const contextKeys = new Set([
-  "applicationId",
-  "eventId",
-  "eventType",
-  "instanceId",
-  "requestId",
-  "spanId",
-  "traceFlags",
-  "traceId",
-]);
+const contextKeys = new Set(["eventId", "eventType", "instanceId", "requestId", "spanId", "traceFlags", "traceId"]);
 
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value == null || value === "") {

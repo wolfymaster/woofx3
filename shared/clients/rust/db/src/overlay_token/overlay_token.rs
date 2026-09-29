@@ -10,8 +10,6 @@ pub struct OverlayToken {
     pub token: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub scene_id: ::prost::alloc::string::String,
-    #[prost(string, tag="4")]
-    pub application_id: ::prost::alloc::string::String,
     /// Operator bookkeeping (e.g. "OBS main PC"). Free-form.
     #[prost(string, tag="5")]
     pub label: ::prost::alloc::string::String,
@@ -29,10 +27,6 @@ pub struct OverlayToken {
 pub struct MintOverlayTokenRequest {
     #[prost(string, tag="1")]
     pub scene_id: ::prost::alloc::string::String,
-    /// Empty resolves to the default application (same convention as
-    /// CreateSceneRequest). The scene must belong to this application.
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub label: ::prost::alloc::string::String,
 }
@@ -57,8 +51,6 @@ pub struct OverlayTokenResponse {
 pub struct ListOverlayTokensRequest {
     #[prost(string, tag="1")]
     pub scene_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Revoked tombstones are excluded unless explicitly requested.
     #[prost(bool, tag="3")]
     pub include_revoked: bool,
@@ -78,7 +70,7 @@ pub struct ResolveOverlayTokenRequest {
     pub token: ::prost::alloc::string::String,
 }
 /// Engine-internal resolution result. Active tokens return OK with the
-/// bound scene/application; revoked and unknown tokens return byte-for-
+/// bound scene; revoked and unknown tokens return byte-for-
 /// byte identical NOT_FOUND responses.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ResolveOverlayTokenResponse {
@@ -86,8 +78,6 @@ pub struct ResolveOverlayTokenResponse {
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(string, tag="2")]
     pub scene_id: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub application_id: ::prost::alloc::string::String,
 }
 include!("overlay_token.serde.rs");
 include!("overlay_token.tonic.rs");

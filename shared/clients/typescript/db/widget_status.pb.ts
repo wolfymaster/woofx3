@@ -18,7 +18,6 @@ import * as common from "./common.pb";
 
 export interface WidgetStatus {
   id: string;
-  applicationId: string;
   /**
    * Module that owns the widget definition. Denormalised from the
    * scene's widgets_json so consumers can group by module without
@@ -55,7 +54,6 @@ export interface WidgetStatus {
 }
 
 export interface UpsertWidgetStatusRequest {
-  applicationId: string;
   moduleId: string;
   instanceId: string;
   widgetCanonicalId: string;
@@ -72,7 +70,6 @@ export interface UpsertWidgetStatusRequest {
 }
 
 export interface GetWidgetStatusRequest {
-  applicationId: string;
   instanceId: string;
   key: string;
 }
@@ -83,7 +80,6 @@ export interface WidgetStatusResponse {
 }
 
 export interface ListWidgetStatusRequest {
-  applicationId: string;
   /**
    * Optional filters. Empty string = no filter.
    */
@@ -102,7 +98,6 @@ export interface ListWidgetStatusResponse {
 }
 
 export interface DeleteWidgetStatusRequest {
-  applicationId: string;
   instanceId: string;
   /**
    * Optional: when omitted, deletes every row for the instance.
@@ -231,9 +226,8 @@ export async function DeleteWidgetStatusJSON(
  *     the value via WIDGET_STATUS_CHANGED webhook.
  *
  * Read path:
- *   - Dashboard backfill on connect: ListWidgetStatus(applicationId).
- *   - Future workflow trigger: GetWidgetStatus(applicationId,
- *     instanceId, key).
+ *   - Dashboard backfill on connect: ListWidgetStatus.
+ *   - Future workflow trigger: GetWidgetStatus(instanceId, key).
  */
 export interface WidgetStatusService<Context = unknown> {
   UpsertWidgetStatus: (
@@ -343,7 +337,6 @@ export const WidgetStatus = {
   initialize: function (msg?: Partial<WidgetStatus>): WidgetStatus {
     return {
       id: "",
-      applicationId: "",
       moduleId: "",
       instanceId: "",
       widgetCanonicalId: "",
@@ -365,9 +358,6 @@ export const WidgetStatus = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.moduleId) {
       writer.writeString(3, msg.moduleId);
@@ -420,10 +410,6 @@ export const WidgetStatus = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -499,7 +485,6 @@ export const UpsertWidgetStatusRequest = {
     msg?: Partial<UpsertWidgetStatusRequest>,
   ): UpsertWidgetStatusRequest {
     return {
-      applicationId: "",
       moduleId: "",
       instanceId: "",
       widgetCanonicalId: "",
@@ -517,9 +502,6 @@ export const UpsertWidgetStatusRequest = {
     msg: PartialDeep<UpsertWidgetStatusRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.moduleId) {
       writer.writeString(2, msg.moduleId);
     }
@@ -551,10 +533,6 @@ export const UpsertWidgetStatusRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.moduleId = reader.readString();
           break;
@@ -617,7 +595,6 @@ export const GetWidgetStatusRequest = {
     msg?: Partial<GetWidgetStatusRequest>,
   ): GetWidgetStatusRequest {
     return {
-      applicationId: "",
       instanceId: "",
       key: "",
       ...msg,
@@ -631,9 +608,6 @@ export const GetWidgetStatusRequest = {
     msg: PartialDeep<GetWidgetStatusRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.instanceId) {
       writer.writeString(2, msg.instanceId);
     }
@@ -653,10 +627,6 @@ export const GetWidgetStatusRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.instanceId = reader.readString();
           break;
@@ -781,7 +751,6 @@ export const ListWidgetStatusRequest = {
     msg?: Partial<ListWidgetStatusRequest>,
   ): ListWidgetStatusRequest {
     return {
-      applicationId: "",
       moduleId: "",
       instanceId: "",
       limit: 0,
@@ -797,9 +766,6 @@ export const ListWidgetStatusRequest = {
     msg: PartialDeep<ListWidgetStatusRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.moduleId) {
       writer.writeString(2, msg.moduleId);
     }
@@ -825,10 +791,6 @@ export const ListWidgetStatusRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.moduleId = reader.readString();
           break;
@@ -991,7 +953,6 @@ export const DeleteWidgetStatusRequest = {
     msg?: Partial<DeleteWidgetStatusRequest>,
   ): DeleteWidgetStatusRequest {
     return {
-      applicationId: "",
       instanceId: "",
       key: "",
       ...msg,
@@ -1005,9 +966,6 @@ export const DeleteWidgetStatusRequest = {
     msg: PartialDeep<DeleteWidgetStatusRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.instanceId) {
       writer.writeString(2, msg.instanceId);
     }
@@ -1027,10 +985,6 @@ export const DeleteWidgetStatusRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.instanceId = reader.readString();
           break;
@@ -1077,7 +1031,6 @@ export const WidgetStatusJSON = {
   initialize: function (msg?: Partial<WidgetStatus>): WidgetStatus {
     return {
       id: "",
-      applicationId: "",
       moduleId: "",
       instanceId: "",
       widgetCanonicalId: "",
@@ -1099,9 +1052,6 @@ export const WidgetStatusJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
@@ -1137,10 +1087,6 @@ export const WidgetStatusJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
@@ -1204,7 +1150,6 @@ export const UpsertWidgetStatusRequestJSON = {
     msg?: Partial<UpsertWidgetStatusRequest>,
   ): UpsertWidgetStatusRequest {
     return {
-      applicationId: "",
       moduleId: "",
       instanceId: "",
       widgetCanonicalId: "",
@@ -1222,9 +1167,6 @@ export const UpsertWidgetStatusRequestJSON = {
     msg: PartialDeep<UpsertWidgetStatusRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
     }
@@ -1253,10 +1195,6 @@ export const UpsertWidgetStatusRequestJSON = {
     msg: UpsertWidgetStatusRequest,
     json: any,
   ): UpsertWidgetStatusRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
@@ -1311,7 +1249,6 @@ export const GetWidgetStatusRequestJSON = {
     msg?: Partial<GetWidgetStatusRequest>,
   ): GetWidgetStatusRequest {
     return {
-      applicationId: "",
       instanceId: "",
       key: "",
       ...msg,
@@ -1325,9 +1262,6 @@ export const GetWidgetStatusRequestJSON = {
     msg: PartialDeep<GetWidgetStatusRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.instanceId) {
       json["instanceId"] = msg.instanceId;
     }
@@ -1344,10 +1278,6 @@ export const GetWidgetStatusRequestJSON = {
     msg: GetWidgetStatusRequest,
     json: any,
   ): GetWidgetStatusRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _instanceId_ = json["instanceId"] ?? json["instance_id"];
     if (_instanceId_) {
       msg.instanceId = _instanceId_;
@@ -1457,7 +1387,6 @@ export const ListWidgetStatusRequestJSON = {
     msg?: Partial<ListWidgetStatusRequest>,
   ): ListWidgetStatusRequest {
     return {
-      applicationId: "",
       moduleId: "",
       instanceId: "",
       limit: 0,
@@ -1473,9 +1402,6 @@ export const ListWidgetStatusRequestJSON = {
     msg: PartialDeep<ListWidgetStatusRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
     }
@@ -1498,10 +1424,6 @@ export const ListWidgetStatusRequestJSON = {
     msg: ListWidgetStatusRequest,
     json: any,
   ): ListWidgetStatusRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
@@ -1644,7 +1566,6 @@ export const DeleteWidgetStatusRequestJSON = {
     msg?: Partial<DeleteWidgetStatusRequest>,
   ): DeleteWidgetStatusRequest {
     return {
-      applicationId: "",
       instanceId: "",
       key: "",
       ...msg,
@@ -1658,9 +1579,6 @@ export const DeleteWidgetStatusRequestJSON = {
     msg: PartialDeep<DeleteWidgetStatusRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.instanceId) {
       json["instanceId"] = msg.instanceId;
     }
@@ -1677,10 +1595,6 @@ export const DeleteWidgetStatusRequestJSON = {
     msg: DeleteWidgetStatusRequest,
     json: any,
   ): DeleteWidgetStatusRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _instanceId_ = json["instanceId"] ?? json["instance_id"];
     if (_instanceId_) {
       msg.instanceId = _instanceId_;

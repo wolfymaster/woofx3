@@ -13,7 +13,7 @@
 // carrying its `supportedVersions`. Unknown message `type`s are
 // ignored by both sides (forward compatibility).
 
-import type { WidgetEvent, WidgetSurface } from "./widget-host";
+import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
 export type WidgetProtocolName = typeof WIDGET_PROTOCOL;
@@ -55,6 +55,9 @@ export interface WidgetBootPayload {
    *  `WidgetHost.getResourceUrl(path)` is `resourceBaseUrl + path`,
    *  computed locally with no round trip. */
   resourceBaseUrl: string;
+  /** The widget's theme, `null` (or absent, from an older host) for a widget
+   *  that declares no theme contract. Becomes `WidgetHost.theme`. */
+  theme?: WidgetTheme | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,7 +335,30 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     boot.settings !== null &&
     Array.isArray(boot.capabilities) &&
     typeof boot.resourceBaseUrl === "string" &&
-    boot.resourceBaseUrl.length > 0
+    boot.resourceBaseUrl.length > 0 &&
+    (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme))
+  );
+}
+
+function isStringRecord(value: unknown, allowNull: boolean): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((v) => typeof v === "string" || (allowNull && v === null));
+}
+
+export function isWidgetTheme(value: unknown): value is WidgetTheme {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const theme = value as Record<string, unknown>;
+  return (
+    (theme.id === null || typeof theme.id === "string") &&
+    typeof theme.contractVersion === "number" &&
+    isStringRecord(theme.variables, false) &&
+    isStringRecord(theme.assets, true) &&
+    isStringRecord(theme.defaultAssets, true) &&
+    (theme.fallback === null || theme.fallback === "missing" || theme.fallback === "incompatible")
   );
 }
 

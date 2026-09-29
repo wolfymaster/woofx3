@@ -7,7 +7,7 @@ import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes overlay token lifecycle events on
-// `db.overlay_token.{created,updated}.{appId}`. The CloudEvent's
+// `db.overlay_token.{created,updated}`. The CloudEvent's
 // `data` carries a snake_cased overlay_token row. We accept both
 // camelCase and snake_case defensively — same convention as
 // `parseSceneCreated` and `parseWorkflowCreated`.
@@ -20,9 +20,6 @@ interface RawOverlayTokenRow {
   SceneID?: unknown;
   scene_id?: unknown;
   sceneId?: unknown;
-  ApplicationID?: unknown;
-  application_id?: unknown;
-  applicationId?: unknown;
   Label?: unknown;
   label?: unknown;
   Status?: unknown;
@@ -48,8 +45,7 @@ function buildTokenPrefix(token: string): string {
  *   db.overlay_token.updated.*  → OVERLAY_TOKEN_REVOKED webhook (only when status=revoked)
  *
  * Invariant: the webhook payload NEVER includes the plaintext token.
- * Only `tokenId`, `tokenPrefix`, `sceneId`, `applicationId`, and
- * `label` are forwarded.
+ * Only `tokenId`, `tokenPrefix`, `sceneId`, and `label` are forwarded.
  */
 /**
  * Fields shared by both overlay-token projections.
@@ -64,14 +60,13 @@ function readTokenFields(ce: Record<string, unknown>) {
     tokenId: pickFirst(row.ID, row.id),
     token: pickFirst(row.Token, row.token),
     sceneId: pickFirst(row.SceneID, row.scene_id, row.sceneId),
-    applicationId: pickFirst(row.ApplicationID, row.application_id, row.applicationId),
     label: pickFirst(row.Label, row.label),
     status: pickFirst(row.Status, row.status),
   };
 }
 
 export function parseOverlayTokenMinted(ce: Record<string, unknown>): OverlayTokenMintedEvent | null {
-  const { tokenId, token, sceneId, applicationId, label } = readTokenFields(ce);
+  const { tokenId, token, sceneId, label } = readTokenFields(ce);
   if (!tokenId) {
     return null;
   }
@@ -79,7 +74,6 @@ export function parseOverlayTokenMinted(ce: Record<string, unknown>): OverlayTok
     type: EngineEventType.OVERLAY_TOKEN_MINTED,
     tokenId,
     sceneId,
-    applicationId,
     label,
     // Non-secret prefix only -- never the full plaintext token.
     tokenPrefix: buildTokenPrefix(token),
@@ -87,7 +81,7 @@ export function parseOverlayTokenMinted(ce: Record<string, unknown>): OverlayTok
 }
 
 export function parseOverlayTokenRevoked(ce: Record<string, unknown>): OverlayTokenRevokedEvent | null {
-  const { tokenId, token, sceneId, applicationId, label } = readTokenFields(ce);
+  const { tokenId, token, sceneId, label } = readTokenFields(ce);
   if (!tokenId) {
     return null;
   }
@@ -95,7 +89,6 @@ export function parseOverlayTokenRevoked(ce: Record<string, unknown>): OverlayTo
     type: EngineEventType.OVERLAY_TOKEN_REVOKED,
     tokenId,
     sceneId,
-    applicationId,
     label,
     tokenPrefix: buildTokenPrefix(token),
   };

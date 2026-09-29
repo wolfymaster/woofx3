@@ -15,9 +15,6 @@ pub struct Setting {
     /// Value type (e.g., "string", "number", "boolean", "object")
     #[prost(string, tag="4")]
     pub value_type: ::prost::alloc::string::String,
-    /// ID of the application this setting belongs to (for app settings)
-    #[prost(string, tag="5")]
-    pub application_id: ::prost::alloc::string::String,
     /// Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
     #[prost(string, tag="6")]
     pub user_id: ::prost::alloc::string::String,
@@ -32,9 +29,6 @@ pub struct GetSettingRequest {
     /// Setting key
     #[prost(string, tag="1")]
     pub key: ::prost::alloc::string::String,
-    /// Optional: Application ID for app-specific settings
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 /// Response containing a single setting
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -50,9 +44,6 @@ pub struct GetSettingsRequest {
     /// Keys of the settings to retrieve
     #[prost(string, repeated, tag="1")]
     pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Optional: Application ID for app-specific settings
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 /// Response containing multiple settings
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -71,9 +62,6 @@ pub struct SetSettingRequest {
     /// New value for the setting
     #[prost(message, optional, tag="2")]
     pub value: ::core::option::Option<::pbjson_types::Value>,
-    /// Application ID for app-specific settings
-    #[prost(string, tag="4")]
-    pub application_id: ::prost::alloc::string::String,
     /// Optional user scope. For twitch_token, the broadcaster's Twitch user id.
     #[prost(string, tag="5")]
     pub user_id: ::prost::alloc::string::String,
@@ -83,9 +71,6 @@ pub struct SetSettingRequest {
 pub struct SetSettingsRequest {
     #[prost(message, repeated, tag="1")]
     pub settings: ::prost::alloc::vec::Vec<set_settings_request::SettingUpdate>,
-    /// Application ID for app-specific settings
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 /// Nested message and enum types in `SetSettingsRequest`.
 pub mod set_settings_request {
@@ -112,9 +97,6 @@ pub struct DeleteSettingRequest {
     /// Key of the setting to delete
     #[prost(string, tag="1")]
     pub key: ::prost::alloc::string::String,
-    /// Optional: Application ID for app-specific settings
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 /// Request to list settings by key prefix
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -122,9 +104,6 @@ pub struct ListSettingsRequest {
     /// Key prefix to filter by
     #[prost(string, tag="1")]
     pub key_prefix: ::prost::alloc::string::String,
-    /// Application ID for app-specific settings
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 /// Response with settings map
 #[derive(Clone, PartialEq, ::prost::Message)]

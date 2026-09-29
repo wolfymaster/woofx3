@@ -3,8 +3,8 @@ package migrations
 import (
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/go-gormigrate/gormigrate/v2"
+	"github.com/libtnb/sqlite"
 	"github.com/wolfymaster/woofx3/db/database"
 	"gorm.io/gorm"
 )

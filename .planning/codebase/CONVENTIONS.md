@@ -37,7 +37,7 @@
 | Interfaces | PascalCase | `Service<T>`, `Application`, `RuntimeConfig` |
 | Types | PascalCase | `HandlerResponse<T>`, `CommandResponse` |
 | Functions | camelCase | `createApplication`, `createRuntime`, `canUse` |
-| Variables | camelCase | `applicationId`, `channelName`, `messageBus` |
+| Variables | camelCase | `clientId`, `channelName`, `messageBus` |
 | Constants | camelCase | `healthcheck`, `connected` |
 
 ## TypeScript Patterns

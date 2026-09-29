@@ -7,12 +7,10 @@ import {
   parseSceneUpdated,
 } from "../src/scene-event-handlers";
 
-const APP_ID = "11111111-1111-1111-1111-111111111111";
 const SCENE_ID = "22222222-2222-2222-2222-222222222222";
 
 function snakeCe(data: Record<string, unknown>) {
   return {
-    application_id: APP_ID,
     client_id: "client-1",
     data,
   };
@@ -22,7 +20,6 @@ describe("parseSceneCreated", () => {
   it("decodes a snake_case row from buildSceneChangeData", () => {
     const ce = snakeCe({
       id: SCENE_ID,
-      application_id: APP_ID,
       name: "Main",
       description: "Primary stream layout",
       widgets_json: '[{"id":"w1"}]',
@@ -30,8 +27,7 @@ describe("parseSceneCreated", () => {
       created_by_type: "USER",
       created_by_ref: "",
     });
-    const { applicationId, clientId, event } = parseSceneCreated(ce);
-    expect(applicationId).toBe(APP_ID);
+    const { clientId, event } = parseSceneCreated(ce);
     expect(clientId).toBe("client-1");
     expect(event?.type).toBe(EngineEventType.SCENE_CREATED);
     expect(event?.scene.id).toBe(SCENE_ID);
@@ -95,7 +91,6 @@ describe("parseSceneDeleted", () => {
 
   it("falls back to entity_id when data is missing the row", () => {
     const ce = {
-      application_id: APP_ID,
       client_id: "c",
       entity_id: SCENE_ID,
     };
@@ -104,7 +99,7 @@ describe("parseSceneDeleted", () => {
   });
 
   it("returns null when neither data.id nor entity_id is present", () => {
-    const ce = { application_id: APP_ID, client_id: "c" };
+    const ce = { client_id: "c" };
     const { event } = parseSceneDeleted(ce);
     expect(event).toBeNull();
   });
@@ -163,7 +158,6 @@ class FakeWebhookClient {
   async send(event: { type: string; [key: string]: unknown }): Promise<void> {
     this.sentEvents.push(event);
   }
-  setApplicationId(): void {}
   async refreshCallbackUrls(): Promise<void> {}
 }
 
@@ -173,8 +167,8 @@ describe("initSceneHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initSceneHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.scene.created.app-1", {
-      data: { ID: SCENE_ID, ApplicationID: APP_ID, Name: "Main Scene" },
+    await nats.dispatch("db.scene.created.system", {
+      data: { ID: SCENE_ID, Name: "Main Scene" },
     });
 
     expect(webhook.sentEvents).toHaveLength(1);
@@ -186,7 +180,7 @@ describe("initSceneHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initSceneHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.scene.deleted.app-1", { data: { id: SCENE_ID } });
+    await nats.dispatch("db.scene.deleted.system", { data: { id: SCENE_ID } });
 
     expect(webhook.sentEvents).toHaveLength(1);
     expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.SCENE_DELETED);
@@ -197,7 +191,7 @@ describe("initSceneHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initSceneHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.scene.created.app-1", { data: {} });
+    await nats.dispatch("db.scene.created.system", { data: {} });
 
     expect(webhook.sentEvents).toHaveLength(0);
   });

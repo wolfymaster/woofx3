@@ -26,12 +26,11 @@ const (
 // Setting represents a configuration setting
 type Setting struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                            // Unique identifier
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`                                          // Setting key (unique within scope)
-	Value         *structpb.Value        `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`                                      // Setting value (can be any JSON-serializable type)
-	ValueType     string                 `protobuf:"bytes,4,opt,name=value_type,json=valueType,proto3" json:"value_type,omitempty"`             // Value type (e.g., "string", "number", "boolean", "object")
-	ApplicationId string                 `protobuf:"bytes,5,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // ID of the application this setting belongs to (for app settings)
-	UserId        string                 `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                      // Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                // Unique identifier
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`                              // Setting key (unique within scope)
+	Value         *structpb.Value        `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`                          // Setting value (can be any JSON-serializable type)
+	ValueType     string                 `protobuf:"bytes,4,opt,name=value_type,json=valueType,proto3" json:"value_type,omitempty"` // Value type (e.g., "string", "number", "boolean", "object")
+	UserId        string                 `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`          // Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -96,13 +95,6 @@ func (x *Setting) GetValueType() string {
 	return ""
 }
 
-func (x *Setting) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *Setting) GetUserId() string {
 	if x != nil {
 		return x.UserId
@@ -127,8 +119,7 @@ func (x *Setting) GetUpdatedAt() *timestamppb.Timestamp {
 // Request to get a setting by key
 type GetSettingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                          // Setting key
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Optional: Application ID for app-specific settings
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"` // Setting key
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -166,13 +157,6 @@ func (*GetSettingRequest) Descriptor() ([]byte, []int) {
 func (x *GetSettingRequest) GetKey() string {
 	if x != nil {
 		return x.Key
-	}
-	return ""
-}
-
-func (x *GetSettingRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -233,8 +217,7 @@ func (x *SettingResponse) GetSetting() *Setting {
 // Request to get multiple settings by keys
 type GetSettingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Keys          []string               `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`                                        // Keys of the settings to retrieve
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Optional: Application ID for app-specific settings
+	Keys          []string               `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"` // Keys of the settings to retrieve
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -274,13 +257,6 @@ func (x *GetSettingsRequest) GetKeys() []string {
 		return x.Keys
 	}
 	return nil
-}
-
-func (x *GetSettingsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 // Response containing multiple settings
@@ -339,10 +315,9 @@ func (x *GetSettingsResponse) GetSettings() []*Setting {
 // Request to set a setting value
 type SetSettingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                          // Setting key
-	Value         *structpb.Value        `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                                      // New value for the setting
-	ApplicationId string                 `protobuf:"bytes,4,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Application ID for app-specific settings
-	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                      // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                     // Setting key
+	Value         *structpb.Value        `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                 // New value for the setting
+	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -391,13 +366,6 @@ func (x *SetSettingRequest) GetValue() *structpb.Value {
 	return nil
 }
 
-func (x *SetSettingRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *SetSettingRequest) GetUserId() string {
 	if x != nil {
 		return x.UserId
@@ -409,7 +377,6 @@ func (x *SetSettingRequest) GetUserId() string {
 type SetSettingsRequest struct {
 	state         protoimpl.MessageState              `protogen:"open.v1"`
 	Settings      []*SetSettingsRequest_SettingUpdate `protobuf:"bytes,1,rep,name=settings,proto3" json:"settings,omitempty"`
-	ApplicationId string                              `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Application ID for app-specific settings
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -449,13 +416,6 @@ func (x *SetSettingsRequest) GetSettings() []*SetSettingsRequest_SettingUpdate {
 		return x.Settings
 	}
 	return nil
-}
-
-func (x *SetSettingsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 // Response from setting multiple settings
@@ -514,8 +474,7 @@ func (x *SetSettingsResponse) GetSettings() []*Setting {
 // Request to delete a setting
 type DeleteSettingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                          // Key of the setting to delete
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Optional: Application ID for app-specific settings
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"` // Key of the setting to delete
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -557,18 +516,10 @@ func (x *DeleteSettingRequest) GetKey() string {
 	return ""
 }
 
-func (x *DeleteSettingRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 // Request to list settings by key prefix
 type ListSettingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	KeyPrefix     string                 `protobuf:"bytes,1,opt,name=key_prefix,json=keyPrefix,proto3" json:"key_prefix,omitempty"`             // Key prefix to filter by
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Application ID for app-specific settings
+	KeyPrefix     string                 `protobuf:"bytes,1,opt,name=key_prefix,json=keyPrefix,proto3" json:"key_prefix,omitempty"` // Key prefix to filter by
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -606,13 +557,6 @@ func (*ListSettingsRequest) Descriptor() ([]byte, []int) {
 func (x *ListSettingsRequest) GetKeyPrefix() string {
 	if x != nil {
 		return x.KeyPrefix
-	}
-	return ""
-}
-
-func (x *ListSettingsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -726,52 +670,45 @@ var File_setting_proto protoreflect.FileDescriptor
 
 const file_setting_proto_rawDesc = "" +
 	"\n" +
-	"\rsetting.proto\x12\asetting\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xae\x02\n" +
+	"\rsetting.proto\x12\asetting\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x9d\x02\n" +
 	"\aSetting\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12\x1d\n" +
 	"\n" +
-	"value_type\x18\x04 \x01(\tR\tvalueType\x12%\n" +
-	"\x0eapplication_id\x18\x05 \x01(\tR\rapplicationId\x12\x17\n" +
+	"value_type\x18\x04 \x01(\tR\tvalueType\x12\x17\n" +
 	"\auser_id\x18\x06 \x01(\tR\x06userId\x129\n" +
 	"\n" +
 	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"L\n" +
+	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\x05\x10\x06R\x0eapplication_id\";\n" +
 	"\x11GetSettingRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"m\n" +
+	"\x03key\x18\x01 \x01(\tR\x03keyJ\x04\b\x02\x10\x03R\x0eapplication_id\"m\n" +
 	"\x0fSettingResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12*\n" +
-	"\asetting\x18\x02 \x01(\v2\x10.setting.SettingR\asetting\"O\n" +
+	"\asetting\x18\x02 \x01(\v2\x10.setting.SettingR\asetting\">\n" +
 	"\x12GetSettingsRequest\x12\x12\n" +
-	"\x04keys\x18\x01 \x03(\tR\x04keys\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"s\n" +
+	"\x04keys\x18\x01 \x03(\tR\x04keysJ\x04\b\x02\x10\x03R\x0eapplication_id\"s\n" +
 	"\x13GetSettingsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"\x93\x01\n" +
+	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"\x82\x01\n" +
 	"\x11SetSettingRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
-	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12%\n" +
-	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\x12\x17\n" +
-	"\auser_id\x18\x05 \x01(\tR\x06userId\"\xd3\x01\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userIdJ\x04\b\x04\x10\x05R\x0eapplication_id\"\xc2\x01\n" +
 	"\x12SetSettingsRequest\x12E\n" +
-	"\bsettings\x18\x01 \x03(\v2).setting.SetSettingsRequest.SettingUpdateR\bsettings\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x1aO\n" +
+	"\bsettings\x18\x01 \x03(\v2).setting.SetSettingsRequest.SettingUpdateR\bsettings\x1aO\n" +
 	"\rSettingUpdate\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
-	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value\"s\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05valueJ\x04\b\x02\x10\x03R\x0eapplication_id\"s\n" +
 	"\x13SetSettingsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"O\n" +
+	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\">\n" +
 	"\x14DeleteSettingRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"[\n" +
+	"\x03key\x18\x01 \x01(\tR\x03keyJ\x04\b\x02\x10\x03R\x0eapplication_id\"J\n" +
 	"\x13ListSettingsRequest\x12\x1d\n" +
 	"\n" +
-	"key_prefix\x18\x01 \x01(\tR\tkeyPrefix\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\xcc\x01\n" +
+	"key_prefix\x18\x01 \x01(\tR\tkeyPrefixJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xcc\x01\n" +
 	"\x14ListSettingsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12G\n" +
 	"\bsettings\x18\x02 \x03(\v2+.setting.ListSettingsResponse.SettingsEntryR\bsettings\x1a;\n" +

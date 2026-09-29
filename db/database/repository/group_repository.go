@@ -15,10 +15,6 @@ func NewGroupRepository(db *gorm.DB) *GroupRepository {
 	return &GroupRepository{db: db}
 }
 
-func (r *GroupRepository) DB() *gorm.DB {
-	return r.db
-}
-
 func (r *GroupRepository) Create(group *models.Group) error {
 	return r.db.Create(group).Error
 }
@@ -37,8 +33,10 @@ func (r *GroupRepository) GetByID(id uuid.UUID) (*models.Group, error) {
 	return &group, err
 }
 
-func (r *GroupRepository) GetByApplicationID(appID uuid.UUID) ([]models.Group, error) {
-	return models.GetGroupsByApplicationID(r.db, appID)
+func (r *GroupRepository) List() ([]models.Group, error) {
+	var groups []models.Group
+	err := r.db.Order("name ASC").Find(&groups).Error
+	return groups, err
 }
 
 // AddMember records that username belongs to groupID. Idempotent.
@@ -64,13 +62,12 @@ func (r *GroupRepository) ListMembers(groupID uuid.UUID) ([]string, error) {
 	return usernames, err
 }
 
-// ListGroupsForUser returns every group (scoped to appID) that username
-// belongs to.
-func (r *GroupRepository) ListGroupsForUser(appID uuid.UUID, username string) ([]models.Group, error) {
+// ListGroupsForUser returns every group that username belongs to.
+func (r *GroupRepository) ListGroupsForUser(username string) ([]models.Group, error) {
 	var groups []models.Group
 	err := r.db.
 		Joins("JOIN user_groups ON user_groups.group_id = groups.id").
-		Where("user_groups.username = ? AND groups.application_id = ?", username, appID).
+		Where("user_groups.username = ?", username).
 		Order("groups.name ASC").
 		Find(&groups).Error
 	return groups, err
@@ -87,9 +84,9 @@ func (r *GroupRepository) GetByIDs(ids []uuid.UUID) ([]models.Group, error) {
 	return groups, err
 }
 
-// GetByName looks up one group by its application-scoped unique name.
-func (r *GroupRepository) GetByName(appID uuid.UUID, name string) (*models.Group, error) {
+// GetByName looks up one group by its unique name.
+func (r *GroupRepository) GetByName(name string) (*models.Group, error) {
 	var group models.Group
-	err := r.db.Where("application_id = ? AND name = ?", appID, name).First(&group).Error
+	err := r.db.Where("name = ?", name).First(&group).Error
 	return &group, err
 }

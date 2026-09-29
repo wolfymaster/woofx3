@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package stream_gauge;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Per-minute samples of the levels a broadcast has -- viewer count, follower
+// total, subscriber total and sub points -- that no event log can produce.
+// Twitch emits no unfollow, and `stream.online` carries no viewer count, so
+// these are read from Helix while the stream is live and stored here.
+//
+// A sample belongs to the segment that was open when it was recorded, and is
+// only ever recorded while one is. A minute with no row was not sampled; it
+// does not mean zero. See docs/services/analytics.md.
+service StreamGaugeService {
+  // Records the sample for one minute of the open segment. The segment and
+  // session are resolved here, not supplied by the caller, so a sample cannot
+  // land on a segment that has already closed.
+  //
+  // Fails with `failed_precondition` when no segment is open, or when
+  // `sampled_at` is before the open segment started. Idempotent per minute: a
+  // second sample for a minute already recorded leaves the stored row
+  // untouched and returns it with `created` false.
+  rpc RecordStreamGaugeSample(RecordStreamGaugeSampleRequest) returns (RecordStreamGaugeSampleResponse);
+  // Every sample of a session, oldest first, resolved through the segments the
+  // session owns now rather than the session each sample was stamped with, so
+  // a split or merge after the fact is reflected.
+  rpc ListStreamGaugeSamples(ListStreamGaugeSamplesRequest) returns (ListStreamGaugeSamplesResponse);
+}
+
+message StreamGaugeSample {
+  string id = 1;
+  // The segment that was open when the sample was taken. Stable across
+  // splits; resolve a session's samples through it.
+  string segment_id = 2;
+  // The session that owned `segment_id` when the sample was recorded. Not a
+  // stable key: a later split can move the segment to another session.
+  string session_id = 3;
+  // The minute the sample stands for, truncated to the minute in UTC.
+  google.protobuf.Timestamp sampled_at = 4;
+  // Each metric is absent when its Helix read failed for this minute, so a
+  // failure reads as "unknown" rather than as zero. At least one is present.
+  optional int64 viewer_count = 5;
+  optional int64 follower_total = 6;
+  optional int64 subscriber_total = 7;
+  optional int64 subscriber_points = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message RecordStreamGaugeSampleRequest {
+  // When the values were read. Required; stored truncated to the minute.
+  google.protobuf.Timestamp sampled_at = 1;
+  // Omit a metric whose read failed. At least one must be present: a sample
+  // with none carries nothing a missing row does not already say.
+  optional int64 viewer_count = 2;
+  optional int64 follower_total = 3;
+  optional int64 subscriber_total = 4;
+  optional int64 subscriber_points = 5;
+}
+
+message RecordStreamGaugeSampleResponse {
+  common.ResponseStatus status = 1;
+  StreamGaugeSample sample = 2;
+  // False when the minute was already sampled; `sample` is then the row that
+  // was stored the first time.
+  bool created = 3;
+}
+
+message ListStreamGaugeSamplesRequest {
+  string stream_session_id = 1;
+}
+
+message ListStreamGaugeSamplesResponse {
+  common.ResponseStatus status = 1;
+  // Oldest first. Gaps between consecutive `sampled_at` values are minutes
+  // that were not sampled.
+  repeated StreamGaugeSample samples = 2;
+}

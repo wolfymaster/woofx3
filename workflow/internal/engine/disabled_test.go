@@ -16,9 +16,9 @@ type stepRecorder struct {
 	steps map[string]RunStep
 }
 
-func (r *stepRecorder) RunStarted(string, *types.WorkflowExecution) {}
-func (r *stepRecorder) RunSettled(string, *types.WorkflowExecution) {}
-func (r *stepRecorder) StepSettled(_ string, _ *types.WorkflowExecution, step RunStep) {
+func (r *stepRecorder) RunStarted(*types.WorkflowExecution) {}
+func (r *stepRecorder) RunSettled(*types.WorkflowExecution) {}
+func (r *stepRecorder) StepSettled(_ *types.WorkflowExecution, step RunStep) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.steps[step.TaskID] = step

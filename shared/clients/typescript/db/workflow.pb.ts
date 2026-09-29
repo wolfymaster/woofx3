@@ -27,7 +27,6 @@ export interface Workflow {
   id: string;
   name: string;
   description: string;
-  applicationId: string;
   enabled: boolean;
   variables: Record<string, Workflow.Variables["value"] | undefined>;
   onSuccess: string;
@@ -76,7 +75,6 @@ export interface WorkflowExecution {
   workflowId: string;
   status: string;
   startedBy: string;
-  applicationId: string;
   inputs: Record<string, WorkflowExecution.Inputs["value"] | undefined>;
   outputs: Record<string, WorkflowExecution.Outputs["value"] | undefined>;
   error: string;
@@ -150,7 +148,6 @@ export interface ExecutionStep {
 export interface CreateWorkflowRequest {
   name: string;
   description: string;
-  applicationId: string;
   enabled: boolean;
   variables: Record<
     string,
@@ -247,7 +244,6 @@ export interface DeleteWorkflowRequest {
  * Request to list workflows
  */
 export interface ListWorkflowsRequest {
-  applicationId: string;
   includeDisabled: boolean;
   page: number;
   pageSize: number;
@@ -271,7 +267,6 @@ export interface ListWorkflowsResponse {
  */
 export interface ExecuteWorkflowRequest {
   workflowId: string;
-  applicationId: string;
   startedBy: string;
   inputs: Record<string, ExecuteWorkflowRequest.Inputs["value"] | undefined>;
   async: boolean;
@@ -323,7 +318,6 @@ export interface WorkflowExecutionResponse {
  */
 export interface ListWorkflowExecutionsRequest {
   workflowId: string;
-  applicationId: string;
   status: string;
   startedBy: string;
   from: protoscript.Timestamp;
@@ -351,7 +345,6 @@ export interface ListWorkflowExecutionsResponse {
 export interface RecordWorkflowRunRequest {
   id: string;
   workflowId: string;
-  applicationId: string;
   triggeredBy: string;
   /**
    * Originating CloudEvent, stored verbatim so a replay can re-feed it to
@@ -377,7 +370,6 @@ export interface UpdateWorkflowRunStatusRequest {
  */
 export interface RecordWorkflowRunStepRequest {
   executionId: string;
-  applicationId: string;
   taskId: string;
   name: string;
   status: string;
@@ -544,7 +536,7 @@ export async function CancelWorkflowExecution(
  * Distinct from ExecuteWorkflow, which asks for a run to happen: this
  * reports one already underway. The engine owns the id, and the run exists
  * whether or not anyone asked for it -- most runs are started by an event
- * nobody is waiting on. The owning user is resolved from application_id.
+ * nobody is waiting on, so a recorded run has no starting user.
  */
 export async function RecordWorkflowRun(
   recordWorkflowRunRequest: RecordWorkflowRunRequest,
@@ -735,7 +727,7 @@ export async function CancelWorkflowExecutionJSON(
  * Distinct from ExecuteWorkflow, which asks for a run to happen: this
  * reports one already underway. The engine owns the id, and the run exists
  * whether or not anyone asked for it -- most runs are started by an event
- * nobody is waiting on. The owning user is resolved from application_id.
+ * nobody is waiting on, so a recorded run has no starting user.
  */
 export async function RecordWorkflowRunJSON(
   recordWorkflowRunRequest: RecordWorkflowRunRequest,
@@ -855,7 +847,7 @@ export interface WorkflowService<Context = unknown> {
    * Distinct from ExecuteWorkflow, which asks for a run to happen: this
    * reports one already underway. The engine owns the id, and the run exists
    * whether or not anyone asked for it -- most runs are started by an event
-   * nobody is waiting on. The owning user is resolved from application_id.
+   * nobody is waiting on, so a recorded run has no starting user.
    */
   RecordWorkflowRun: (
     recordWorkflowRunRequest: RecordWorkflowRunRequest,
@@ -1054,7 +1046,6 @@ export const Workflow = {
       id: "",
       name: "",
       description: "",
-      applicationId: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -1088,9 +1079,6 @@ export const Workflow = {
     }
     if (msg.description) {
       writer.writeString(3, msg.description);
-    }
-    if (msg.applicationId) {
-      writer.writeString(4, msg.applicationId);
     }
     if (msg.enabled) {
       writer.writeBool(6, msg.enabled);
@@ -1172,10 +1160,6 @@ export const Workflow = {
         }
         case 3: {
           msg.description = reader.readString();
-          break;
-        }
-        case 4: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 6: {
@@ -1321,7 +1305,6 @@ export const WorkflowExecution = {
       workflowId: "",
       status: "",
       startedBy: "",
-      applicationId: "",
       inputs: {},
       outputs: {},
       error: "",
@@ -1354,9 +1337,6 @@ export const WorkflowExecution = {
     }
     if (msg.startedBy) {
       writer.writeString(4, msg.startedBy);
-    }
-    if (msg.applicationId) {
-      writer.writeString(5, msg.applicationId);
     }
     if (msg.inputs) {
       writer.writeRepeatedMessage(
@@ -1449,10 +1429,6 @@ export const WorkflowExecution = {
         }
         case 4: {
           msg.startedBy = reader.readString();
-          break;
-        }
-        case 5: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 6: {
@@ -1793,7 +1769,6 @@ export const CreateWorkflowRequest = {
     return {
       name: "",
       description: "",
-      applicationId: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -1822,9 +1797,6 @@ export const CreateWorkflowRequest = {
     }
     if (msg.description) {
       writer.writeString(2, msg.description);
-    }
-    if (msg.applicationId) {
-      writer.writeString(3, msg.applicationId);
     }
     if (msg.enabled) {
       writer.writeBool(5, msg.enabled);
@@ -1888,10 +1860,6 @@ export const CreateWorkflowRequest = {
         }
         case 2: {
           msg.description = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 5: {
@@ -2445,7 +2413,6 @@ export const ListWorkflowsRequest = {
     msg?: Partial<ListWorkflowsRequest>,
   ): ListWorkflowsRequest {
     return {
-      applicationId: "",
       includeDisabled: false,
       page: 0,
       pageSize: 0,
@@ -2462,9 +2429,6 @@ export const ListWorkflowsRequest = {
     msg: PartialDeep<ListWorkflowsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.includeDisabled) {
       writer.writeBool(2, msg.includeDisabled);
     }
@@ -2493,10 +2457,6 @@ export const ListWorkflowsRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.includeDisabled = reader.readBool();
           break;
@@ -2664,7 +2624,6 @@ export const ExecuteWorkflowRequest = {
   ): ExecuteWorkflowRequest {
     return {
       workflowId: "",
-      applicationId: "",
       startedBy: "",
       inputs: {},
       async: false,
@@ -2682,9 +2641,6 @@ export const ExecuteWorkflowRequest = {
   ): protoscript.BinaryWriter {
     if (msg.workflowId) {
       writer.writeString(1, msg.workflowId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.startedBy) {
       writer.writeString(3, msg.startedBy);
@@ -2720,10 +2676,6 @@ export const ExecuteWorkflowRequest = {
       switch (field) {
         case 1: {
           msg.workflowId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -3134,7 +3086,6 @@ export const ListWorkflowExecutionsRequest = {
   ): ListWorkflowExecutionsRequest {
     return {
       workflowId: "",
-      applicationId: "",
       status: "",
       startedBy: "",
       from: protoscript.Timestamp.initialize(),
@@ -3156,9 +3107,6 @@ export const ListWorkflowExecutionsRequest = {
   ): protoscript.BinaryWriter {
     if (msg.workflowId) {
       writer.writeString(1, msg.workflowId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.status) {
       writer.writeString(3, msg.status);
@@ -3199,10 +3147,6 @@ export const ListWorkflowExecutionsRequest = {
       switch (field) {
         case 1: {
           msg.workflowId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -3387,7 +3331,6 @@ export const RecordWorkflowRunRequest = {
     return {
       id: "",
       workflowId: "",
-      applicationId: "",
       triggeredBy: "",
       triggerEventJson: "",
       startedAt: protoscript.Timestamp.initialize(),
@@ -3407,9 +3350,6 @@ export const RecordWorkflowRunRequest = {
     }
     if (msg.workflowId) {
       writer.writeString(2, msg.workflowId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(3, msg.applicationId);
     }
     if (msg.triggeredBy) {
       writer.writeString(4, msg.triggeredBy);
@@ -3443,10 +3383,6 @@ export const RecordWorkflowRunRequest = {
         }
         case 2: {
           msg.workflowId = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 4: {
@@ -3613,7 +3549,6 @@ export const RecordWorkflowRunStepRequest = {
   ): RecordWorkflowRunStepRequest {
     return {
       executionId: "",
-      applicationId: "",
       taskId: "",
       name: "",
       status: "",
@@ -3638,9 +3573,6 @@ export const RecordWorkflowRunStepRequest = {
   ): protoscript.BinaryWriter {
     if (msg.executionId) {
       writer.writeString(1, msg.executionId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.taskId) {
       writer.writeString(3, msg.taskId);
@@ -3698,10 +3630,6 @@ export const RecordWorkflowRunStepRequest = {
       switch (field) {
         case 1: {
           msg.executionId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -3871,7 +3799,6 @@ export const WorkflowJSON = {
       id: "",
       name: "",
       description: "",
-      applicationId: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -3905,9 +3832,6 @@ export const WorkflowJSON = {
     }
     if (msg.description) {
       json["description"] = msg.description;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
@@ -3977,10 +3901,6 @@ export const WorkflowJSON = {
     const _description_ = json["description"];
     if (_description_) {
       msg.description = _description_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _enabled_ = json["enabled"];
     if (_enabled_) {
@@ -4110,7 +4030,6 @@ export const WorkflowExecutionJSON = {
       workflowId: "",
       status: "",
       startedBy: "",
-      applicationId: "",
       inputs: {},
       outputs: {},
       error: "",
@@ -4143,9 +4062,6 @@ export const WorkflowExecutionJSON = {
     }
     if (msg.startedBy) {
       json["startedBy"] = msg.startedBy;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.inputs) {
       const _inputs_ = Object.fromEntries(
@@ -4218,10 +4134,6 @@ export const WorkflowExecutionJSON = {
     const _startedBy_ = json["startedBy"] ?? json["started_by"];
     if (_startedBy_) {
       msg.startedBy = _startedBy_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _inputs_ = json["inputs"];
     if (_inputs_) {
@@ -4514,7 +4426,6 @@ export const CreateWorkflowRequestJSON = {
     return {
       name: "",
       description: "",
-      applicationId: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -4543,9 +4454,6 @@ export const CreateWorkflowRequestJSON = {
     }
     if (msg.description) {
       json["description"] = msg.description;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
@@ -4608,10 +4516,6 @@ export const CreateWorkflowRequestJSON = {
     const _description_ = json["description"];
     if (_description_) {
       msg.description = _description_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _enabled_ = json["enabled"];
     if (_enabled_) {
@@ -5099,7 +5003,6 @@ export const ListWorkflowsRequestJSON = {
     msg?: Partial<ListWorkflowsRequest>,
   ): ListWorkflowsRequest {
     return {
-      applicationId: "",
       includeDisabled: false,
       page: 0,
       pageSize: 0,
@@ -5116,9 +5019,6 @@ export const ListWorkflowsRequestJSON = {
     msg: PartialDeep<ListWorkflowsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.includeDisabled) {
       json["includeDisabled"] = msg.includeDisabled;
     }
@@ -5144,10 +5044,6 @@ export const ListWorkflowsRequestJSON = {
     msg: ListWorkflowsRequest,
     json: any,
   ): ListWorkflowsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _includeDisabled_ =
       json["includeDisabled"] ?? json["include_disabled"];
     if (_includeDisabled_) {
@@ -5296,7 +5192,6 @@ export const ExecuteWorkflowRequestJSON = {
   ): ExecuteWorkflowRequest {
     return {
       workflowId: "",
-      applicationId: "",
       startedBy: "",
       inputs: {},
       async: false,
@@ -5314,9 +5209,6 @@ export const ExecuteWorkflowRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.workflowId) {
       json["workflowId"] = msg.workflowId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.startedBy) {
       json["startedBy"] = msg.startedBy;
@@ -5351,10 +5243,6 @@ export const ExecuteWorkflowRequestJSON = {
     const _workflowId_ = json["workflowId"] ?? json["workflow_id"];
     if (_workflowId_) {
       msg.workflowId = _workflowId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _startedBy_ = json["startedBy"] ?? json["started_by"];
     if (_startedBy_) {
@@ -5715,7 +5603,6 @@ export const ListWorkflowExecutionsRequestJSON = {
   ): ListWorkflowExecutionsRequest {
     return {
       workflowId: "",
-      applicationId: "",
       status: "",
       startedBy: "",
       from: protoscript.TimestampJSON.initialize(),
@@ -5737,9 +5624,6 @@ export const ListWorkflowExecutionsRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.workflowId) {
       json["workflowId"] = msg.workflowId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.status) {
       json["status"] = msg.status;
@@ -5778,10 +5662,6 @@ export const ListWorkflowExecutionsRequestJSON = {
     const _workflowId_ = json["workflowId"] ?? json["workflow_id"];
     if (_workflowId_) {
       msg.workflowId = _workflowId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _status_ = json["status"];
     if (_status_) {
@@ -5947,7 +5827,6 @@ export const RecordWorkflowRunRequestJSON = {
     return {
       id: "",
       workflowId: "",
-      applicationId: "",
       triggeredBy: "",
       triggerEventJson: "",
       startedAt: protoscript.TimestampJSON.initialize(),
@@ -5967,9 +5846,6 @@ export const RecordWorkflowRunRequestJSON = {
     }
     if (msg.workflowId) {
       json["workflowId"] = msg.workflowId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.triggeredBy) {
       json["triggeredBy"] = msg.triggeredBy;
@@ -5997,10 +5873,6 @@ export const RecordWorkflowRunRequestJSON = {
     const _workflowId_ = json["workflowId"] ?? json["workflow_id"];
     if (_workflowId_) {
       msg.workflowId = _workflowId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _triggeredBy_ = json["triggeredBy"] ?? json["triggered_by"];
     if (_triggeredBy_) {
@@ -6137,7 +6009,6 @@ export const RecordWorkflowRunStepRequestJSON = {
   ): RecordWorkflowRunStepRequest {
     return {
       executionId: "",
-      applicationId: "",
       taskId: "",
       name: "",
       status: "",
@@ -6162,9 +6033,6 @@ export const RecordWorkflowRunStepRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.executionId) {
       json["executionId"] = msg.executionId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.taskId) {
       json["taskId"] = msg.taskId;
@@ -6212,10 +6080,6 @@ export const RecordWorkflowRunStepRequestJSON = {
     const _executionId_ = json["executionId"] ?? json["execution_id"];
     if (_executionId_) {
       msg.executionId = _executionId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _taskId_ = json["taskId"] ?? json["task_id"];
     if (_taskId_) {

@@ -52,12 +52,11 @@ func (t *ActionTask[TServices]) Execute(ctx *TaskContext) (*types.TaskResult, er
 	}
 
 	result, err := action(ActionContext[TServices]{
-		ApplicationID: ctx.ApplicationID,
-		WorkflowID:    ctx.WorkflowID,
-		ExecutionID:   ctx.ExecutionID,
-		TaskID:        ctx.TaskID,
-		TriggerEvent:  ctx.TriggerEvent,
-		Logger:        ctx.Logger,
+		WorkflowID:   ctx.WorkflowID,
+		ExecutionID:  ctx.ExecutionID,
+		TaskID:       ctx.TaskID,
+		TriggerEvent: ctx.TriggerEvent,
+		Logger:       ctx.Logger,
 	}, t.parameters)
 	if err != nil {
 		return &types.TaskResult{

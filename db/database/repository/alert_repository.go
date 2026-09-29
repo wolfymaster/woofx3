@@ -19,10 +19,6 @@ func NewAlertRepository(db *gorm.DB) *AlertRepository {
 	return &AlertRepository{db: db}
 }
 
-func (r *AlertRepository) DB() *gorm.DB {
-	return r.db
-}
-
 func (r *AlertRepository) Create(a *models.Alert) error {
 	return r.db.Create(a).Error
 }
@@ -33,15 +29,15 @@ func (r *AlertRepository) GetByID(id uuid.UUID) (*models.Alert, error) {
 	return &a, err
 }
 
-// GetByApplicationID returns alerts ordered newest-first — backed by
-// the composite index `idx_alerts_application_created_at`.
+// List returns alerts ordered newest-first — backed by the index
+// `idx_alerts_created_at`.
 //
 // `limit <= 0` means "no limit" (returns the full history). Callers
 // driving the alert-log UI should always pass a finite limit + offset;
 // the no-limit path is for tooling / one-off scripts.
-func (r *AlertRepository) GetByApplicationID(applicationID uuid.UUID, limit, offset int) ([]*models.Alert, error) {
+func (r *AlertRepository) List(limit, offset int) ([]*models.Alert, error) {
 	var alerts []*models.Alert
-	q := r.db.Where("application_id = ?", applicationID).Order("created_at DESC")
+	q := r.db.Order("created_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -49,10 +45,10 @@ func (r *AlertRepository) GetByApplicationID(applicationID uuid.UUID, limit, off
 	return alerts, err
 }
 
-// CountByApplicationID returns the total count for pagination headers.
-func (r *AlertRepository) CountByApplicationID(applicationID uuid.UUID) (int64, error) {
+// Count returns the total count for pagination headers.
+func (r *AlertRepository) Count() (int64, error) {
 	var n int64
-	err := r.db.Model(&models.Alert{}).Where("application_id = ?", applicationID).Count(&n).Error
+	err := r.db.Model(&models.Alert{}).Count(&n).Error
 	return n, err
 }
 
@@ -64,17 +60,15 @@ func (r *AlertRepository) UpdateStatus(id uuid.UUID, status string) error {
 }
 
 // GetByEnvelopeID looks up the most recent alert row for a given
-// AlertPayload envelope id, scoped by application. Returns
-// gorm.ErrRecordNotFound when no row matches. Scoping by application
-// id keeps the query backed by the composite index even when an
-// envelope id is somehow reused across tenants.
-func (r *AlertRepository) GetByEnvelopeID(applicationID uuid.UUID, envelopeID string) (*models.Alert, error) {
+// AlertPayload envelope id. Returns gorm.ErrRecordNotFound when no row
+// matches.
+func (r *AlertRepository) GetByEnvelopeID(envelopeID string) (*models.Alert, error) {
 	if envelopeID == "" {
 		return nil, fmt.Errorf("envelope_id is required")
 	}
 	var a models.Alert
 	err := r.db.
-		Where("application_id = ? AND envelope_id = ?", applicationID, envelopeID).
+		Where("envelope_id = ?", envelopeID).
 		Order("created_at DESC").
 		First(&a).Error
 	return &a, err
@@ -95,7 +89,7 @@ func (r *AlertRepository) GetByEnvelopeID(applicationID uuid.UUID, envelopeID st
 // not overwrite the original timestamp (first transition wins) but
 // status flips so a late ack still lands. `error` is always
 // overwritten when the transition supplies one.
-func (r *AlertRepository) UpdateLifecycle(applicationID uuid.UUID, envelopeID string, status string, errorMsg string) (*models.Alert, error) {
+func (r *AlertRepository) UpdateLifecycle(envelopeID string, status string, errorMsg string) (*models.Alert, error) {
 	if envelopeID == "" {
 		return nil, fmt.Errorf("envelope_id is required")
 	}
@@ -124,7 +118,7 @@ func (r *AlertRepository) UpdateLifecycle(applicationID uuid.UUID, envelopeID st
 	}
 
 	res := r.db.Model(&models.Alert{}).
-		Where("application_id = ? AND envelope_id = ?", applicationID, envelopeID).
+		Where("envelope_id = ?", envelopeID).
 		Updates(updates)
 	if res.Error != nil {
 		return nil, res.Error
@@ -132,16 +126,16 @@ func (r *AlertRepository) UpdateLifecycle(applicationID uuid.UUID, envelopeID st
 	if res.RowsAffected == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return r.GetByEnvelopeID(applicationID, envelopeID)
+	return r.GetByEnvelopeID(envelopeID)
 }
 
-// ListPendingByApplicationID returns alerts that have never been
+// ListPending returns alerts that have never been
 // dispatched, in chronological order. Used by AlertQueueManager on
 // boot to hydrate the in-memory queue from the persistent backstop.
-func (r *AlertRepository) ListPendingByApplicationID(applicationID uuid.UUID) ([]*models.Alert, error) {
+func (r *AlertRepository) ListPending() ([]*models.Alert, error) {
 	var alerts []*models.Alert
 	err := r.db.
-		Where("application_id = ? AND status = ?", applicationID, "pending").
+		Where("status = ?", "pending").
 		Order("created_at ASC").
 		Find(&alerts).Error
 	return alerts, err

@@ -26,9 +26,6 @@ service StorageService {
   
   // Clear all expired keys
   rpc ClearExpired(ClearExpiredRequest) returns (ClearExpiredResponse) {}
-  
-  // Clear all keys for an application
-  rpc ClearAllForApplication(ClearAllForApplicationRequest) returns (ClearAllForApplicationResponse) {}
 
   // Clear every key flagged `clear_on_session_end`. The engine calls this when
   // a stream session ends; a module declares the key is session-scoped and the
@@ -38,16 +35,17 @@ service StorageService {
 
 // Storage item with metadata.
 //
-// A value is addressed by (application_id, namespace, key). The namespace is
-// the owning module's manifest id, so two modules using the same key never see
-// each other's values; it is required on every read and write.
+// A value is addressed by (namespace, key). The namespace is the owning
+// module's manifest id, so two modules using the same key never see each
+// other's values; it is required on every read and write.
 message StorageItem {
   string key = 1;
   string value = 2;
   int64 created_at = 3;  // Unix timestamp in seconds
   int64 expires_at = 4;  // 0 means never expires
   string namespace = 5;
-  string application_id = 6;
+  reserved 6;
+  reserved "application_id";
   // Drop this key when the stream *session* ends. Not the same as the stream
   // going offline: a session spans dropouts, so clearing when the broadcast
   // stops would wipe exactly the state a brief reconnect is meant to preserve.
@@ -58,7 +56,8 @@ message StorageItem {
 // Get a value by key
 message GetRequest {
   string key = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   string namespace = 3;
 }
 
@@ -93,7 +92,8 @@ message CompareAndSetResponse {
 // Delete a key
 message DeleteRequest {
   string key = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   string namespace = 3;
 }
 
@@ -102,28 +102,24 @@ message DeleteResponse {}
 // Clear all keys in a namespace
 message ClearNamespaceRequest {
   string namespace = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
 }
 
 message ClearNamespaceResponse {}
 
 // Clear all expired keys
 message ClearExpiredRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
 }
 
 message ClearExpiredResponse {}
 
-// Clear all keys for an application
-message ClearAllForApplicationRequest {
-  string application_id = 1;
-}
-
-message ClearAllForApplicationResponse {}
-
 // Clear every key flagged `clear_on_session_end`
 message ClearSessionScopedRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
 }
 
 message ClearSessionScopedResponse {

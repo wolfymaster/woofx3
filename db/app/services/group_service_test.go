@@ -7,7 +7,6 @@ import (
 	"github.com/casbin/casbin/v2"
 	casbinmodel "github.com/casbin/casbin/v2/model"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
-	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/config"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -31,14 +30,10 @@ func newTestEnforcer(t *testing.T, db *gorm.DB) *casbin.Enforcer {
 	}
 	// The adapter creates `permissions` itself; its sqlite DDL parser only
 	// understands the shape gorm's own AutoMigrate emits, so the test schema
-	// deliberately does not pre-create the table. application_id is this
-	// project's addition and is invisible to (and unused by) the adapter.
+	// deliberately does not pre-create the table.
 	adapter, err := gormadapter.NewAdapterByDBUseTableName(db, "", "permissions")
 	if err != nil {
 		t.Fatalf("casbin adapter: %v", err)
-	}
-	if err := db.Exec(`ALTER TABLE permissions ADD COLUMN application_id TEXT NOT NULL DEFAULT ''`).Error; err != nil {
-		t.Fatalf("add application_id: %v", err)
 	}
 	e, err := casbin.NewEnforcer(m, adapter)
 	if err != nil {
@@ -47,29 +42,24 @@ func newTestEnforcer(t *testing.T, db *gorm.DB) *casbin.Enforcer {
 	return e
 }
 
-func newGroupSvc(t *testing.T) (*groupService, *gorm.DB, uuid.UUID) {
+func newGroupSvc(t *testing.T) (*groupService, *gorm.DB) {
 	t.Helper()
 	db := newTestDB(t)
-	app := &models.Application{ID: uuid.New(), Name: "default", IsDefault: true, UserID: uuid.New()}
-	if err := db.Create(app).Error; err != nil {
-		t.Fatalf("seed application: %v", err)
-	}
 	svc := NewGroupService(
 		repository.NewGroupRepository(db),
 		repository.NewPermissionRepository(db),
 		newTestEnforcer(t, db),
 	)
-	return svc, db, app.ID
+	return svc, db
 }
 
 func TestGroupService_CRUD(t *testing.T) {
-	svc, _, appID := newGroupSvc(t)
+	svc, _ := newGroupSvc(t)
 	ctx := context.Background()
 
 	created, err := svc.CreateGroup(ctx, &client.CreateGroupRequest{
-		ApplicationId: appID.String(),
-		Name:          "regulars",
-		Description:   "long-time chatters",
+		Name:        "regulars",
+		Description: "long-time chatters",
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -93,7 +83,7 @@ func TestGroupService_CRUD(t *testing.T) {
 		t.Fatalf("expected rename to veterans, got %q", updated.Group.Name)
 	}
 
-	listed, err := svc.ListGroups(ctx, &client.ListGroupsRequest{ApplicationId: appID.String()})
+	listed, err := svc.ListGroups(ctx, &client.ListGroupsRequest{})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -104,7 +94,7 @@ func TestGroupService_CRUD(t *testing.T) {
 	if _, err := svc.DeleteGroup(ctx, &client.DeleteGroupRequest{Id: created.Group.Id}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	listed, err = svc.ListGroups(ctx, &client.ListGroupsRequest{ApplicationId: appID.String()})
+	listed, err = svc.ListGroups(ctx, &client.ListGroupsRequest{})
 	if err != nil {
 		t.Fatalf("list after delete: %v", err)
 	}
@@ -114,12 +104,11 @@ func TestGroupService_CRUD(t *testing.T) {
 }
 
 func TestGroupService_Membership(t *testing.T) {
-	svc, db, appID := newGroupSvc(t)
+	svc, db := newGroupSvc(t)
 	ctx := context.Background()
 
 	created, err := svc.CreateGroup(ctx, &client.CreateGroupRequest{
-		ApplicationId: appID.String(),
-		Name:          "regulars",
+		Name: "regulars",
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -128,9 +117,8 @@ func TestGroupService_Membership(t *testing.T) {
 	// Usernames are normalised to lowercase on the way in so the chat pipeline
 	// and the management UI cannot disagree about identity.
 	if _, err := svc.AddUserToGroup(ctx, &client.GroupMembershipRequest{
-		ApplicationId: appID.String(),
-		GroupId:       created.Group.Id,
-		Username:      "  WolfyMaster  ",
+		GroupId:  created.Group.Id,
+		Username: "  WolfyMaster  ",
 	}); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
@@ -156,8 +144,7 @@ func TestGroupService_Membership(t *testing.T) {
 	}
 
 	forUser, err := svc.ListUserGroupsForUser(ctx, &client.ListUserGroupsForUserRequest{
-		ApplicationId: appID.String(),
-		Username:      "WOLFYMASTER",
+		Username: "WOLFYMASTER",
 	})
 	if err != nil {
 		t.Fatalf("list groups for user: %v", err)
@@ -167,9 +154,8 @@ func TestGroupService_Membership(t *testing.T) {
 	}
 
 	if _, err := svc.RemoveUserFromGroup(ctx, &client.GroupMembershipRequest{
-		ApplicationId: appID.String(),
-		GroupId:       created.Group.Id,
-		Username:      "wolfymaster",
+		GroupId:  created.Group.Id,
+		Username: "wolfymaster",
 	}); err != nil {
 		t.Fatalf("remove member: %v", err)
 	}
@@ -183,16 +169,16 @@ func TestGroupService_Membership(t *testing.T) {
 }
 
 func TestSeedBuiltInGroups_CreatesCatalogIdempotently(t *testing.T) {
-	_, db, appID := newGroupSvc(t)
+	_, db := newGroupSvc(t)
 	groupRepo := repository.NewGroupRepository(db)
 
 	for range 2 {
-		if err := SeedBuiltInGroups(groupRepo, appID); err != nil {
+		if err := SeedBuiltInGroups(groupRepo); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 	}
 
-	groups, err := groupRepo.GetByApplicationID(appID)
+	groups, err := groupRepo.List()
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -215,32 +201,30 @@ func TestSeedBuiltInGroups_CreatesCatalogIdempotently(t *testing.T) {
 }
 
 func TestSeedBuiltInGroups_PromotesExistingSameNamedGroup(t *testing.T) {
-	svc, db, appID := newGroupSvc(t)
+	svc, db := newGroupSvc(t)
 	ctx := context.Background()
 	groupRepo := repository.NewGroupRepository(db)
 
 	// An operator who hand-made a "moderator" group before upgrading must keep
 	// it (and its membership) rather than get a duplicate or an error.
 	existing, err := svc.CreateGroup(ctx, &client.CreateGroupRequest{
-		ApplicationId: appID.String(),
-		Name:          models.GroupModerator,
+		Name: models.GroupModerator,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if _, err := svc.AddUserToGroup(ctx, &client.GroupMembershipRequest{
-		ApplicationId: appID.String(),
-		GroupId:       existing.Group.Id,
-		Username:      "existingmod",
+		GroupId:  existing.Group.Id,
+		Username: "existingmod",
 	}); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
 
-	if err := SeedBuiltInGroups(groupRepo, appID); err != nil {
+	if err := SeedBuiltInGroups(groupRepo); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	groups, err := groupRepo.GetByApplicationID(appID)
+	groups, err := groupRepo.List()
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -248,7 +232,7 @@ func TestSeedBuiltInGroups_PromotesExistingSameNamedGroup(t *testing.T) {
 		t.Fatalf("expected no duplicate, got %d groups", len(groups))
 	}
 
-	promoted, err := groupRepo.GetByName(appID, models.GroupModerator)
+	promoted, err := groupRepo.GetByName(models.GroupModerator)
 	if err != nil {
 		t.Fatalf("get moderator: %v", err)
 	}
@@ -268,14 +252,14 @@ func TestSeedBuiltInGroups_PromotesExistingSameNamedGroup(t *testing.T) {
 }
 
 func TestGroupService_BuiltInCannotBeDeletedOrRenamed(t *testing.T) {
-	svc, db, appID := newGroupSvc(t)
+	svc, db := newGroupSvc(t)
 	ctx := context.Background()
 	groupRepo := repository.NewGroupRepository(db)
 
-	if err := SeedBuiltInGroups(groupRepo, appID); err != nil {
+	if err := SeedBuiltInGroups(groupRepo); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	moderator, err := groupRepo.GetByName(appID, models.GroupModerator)
+	moderator, err := groupRepo.GetByName(models.GroupModerator)
 	if err != nil {
 		t.Fatalf("get moderator: %v", err)
 	}
@@ -283,7 +267,7 @@ func TestGroupService_BuiltInCannotBeDeletedOrRenamed(t *testing.T) {
 	if _, err := svc.DeleteGroup(ctx, &client.DeleteGroupRequest{Id: moderator.ID.String()}); err == nil {
 		t.Fatal("expected deleting a built-in group to be refused")
 	}
-	if _, err := groupRepo.GetByName(appID, models.GroupModerator); err != nil {
+	if _, err := groupRepo.GetByName(models.GroupModerator); err != nil {
 		t.Fatalf("built-in group should still exist: %v", err)
 	}
 
@@ -308,39 +292,5 @@ func TestGroupService_BuiltInCannotBeDeletedOrRenamed(t *testing.T) {
 	}
 	if updated.Group.Name != models.GroupModerator {
 		t.Fatalf("expected name unchanged, got %q", updated.Group.Name)
-	}
-}
-
-func TestApplicationService_CreateApplication_SeedsBuiltInGroups(t *testing.T) {
-	db := newTestDB(t)
-	groupRepo := repository.NewGroupRepository(db)
-	svc := NewApplicationService(repository.NewApplicationRepository(db), groupRepo)
-
-	resp, err := svc.CreateApplication(context.Background(), &client.CreateApplicationRequest{
-		Name:    "app",
-		OwnerId: uuid.New().String(),
-	})
-	if err != nil {
-		t.Fatalf("create application: %v", err)
-	}
-	appID, err := uuid.Parse(resp.Application.Id)
-	if err != nil {
-		t.Fatalf("parse app id: %v", err)
-	}
-
-	groups, err := groupRepo.GetByApplicationID(appID)
-	if err != nil {
-		t.Fatalf("list groups: %v", err)
-	}
-	if len(groups) != len(models.BuiltInGroups) {
-		t.Fatalf("expected %d seeded groups, got %d", len(models.BuiltInGroups), len(groups))
-	}
-	for _, g := range groups {
-		if !g.IsBuiltIn {
-			t.Fatalf("seeded group %q must be built-in", g.Name)
-		}
-		if !models.IsBuiltInGroupName(g.Name) {
-			t.Fatalf("unexpected seeded group %q", g.Name)
-		}
 	}
 }

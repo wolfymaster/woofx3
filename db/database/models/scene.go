@@ -4,7 +4,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Scene is the engine's per-application widget arrangement. Mirrors
+// Scene is the engine's widget arrangement. Mirrors
 // `WorkflowDefinition` in spirit: typed audit columns with two opaque
 // JSONB blobs (`widgets_json`, `layout_json`) the engine never inspects.
 //
@@ -13,10 +13,9 @@ import (
 // engine's only job here is durable storage + delivery; presentation
 // semantics live entirely in the consumer.
 type Scene struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_scenes_application_id;uniqueIndex:idx_scenes_application_name,priority:1;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
-	Name          string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_scenes_application_name,priority:2"`
-	Description   string    `gorm:"type:text;not null;default:''"`
+	ID          uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name        string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_scenes_name"`
+	Description string    `gorm:"type:text;not null;default:''"`
 	// Array of placed widget instances. Shape:
 	// `[{ id, widgetCanonicalId, position: { x, y, width, height },
 	//    settings: { ... per-widget overrides ... } }, ... ]`.
@@ -33,9 +32,6 @@ type Scene struct {
 	// is the composite moduleKey for MODULE rows; empty for USER rows.
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
-
-	// Relationships
-	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
 }
 
 func (Scene) TableName() string {

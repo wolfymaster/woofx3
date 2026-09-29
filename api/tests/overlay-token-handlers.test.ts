@@ -78,7 +78,6 @@ class FakeWebhookClient {
   }
 
   // Stub methods required by the real WebhookClient interface.
-  setApplicationId(_id: string): void {}
   async refreshCallbackUrls(): Promise<void> {}
 }
 
@@ -92,11 +91,10 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_MINTED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.created.app-1", {
+    await nats.dispatch("db.overlay_token.created.system", {
       id: "tok-id-1",
       token: "ovl_abcdefghijklmnop",
       scene_id: "scene-1",
-      application_id: "app-1",
       label: "OBS Main",
       status: "active",
     });
@@ -106,7 +104,6 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_MINTED", () => {
     expect(event.type).toBe("overlay.token.minted");
     expect(event.tokenId).toBe("tok-id-1");
     expect(event.sceneId).toBe("scene-1");
-    expect(event.applicationId).toBe("app-1");
     expect(event.label).toBe("OBS Main");
   });
 
@@ -115,11 +112,10 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_MINTED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.created.app-1", {
+    await nats.dispatch("db.overlay_token.created.system", {
       id: "tok-id-2",
       token: "ovl_SUPERSECRETVALUE12345",
       scene_id: "scene-2",
-      application_id: "app-1",
       label: "",
       status: "active",
     });
@@ -138,11 +134,10 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_MINTED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.created.app-1", {
+    await nats.dispatch("db.overlay_token.created.system", {
       id: "tok-id-3",
       token: "ovl_longerthan8chars_andmore",
       scene_id: "s",
-      application_id: "a",
       label: "",
       status: "active",
     });
@@ -156,10 +151,9 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_MINTED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.created.app-1", {
+    await nats.dispatch("db.overlay_token.created.system", {
       token: "ovl_sometoken",
       scene_id: "scene-1",
-      application_id: "app-1",
       label: "",
       status: "active",
     });
@@ -179,11 +173,10 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_REVOKED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.updated.app-1", {
+    await nats.dispatch("db.overlay_token.updated.system", {
       id: "tok-id-4",
       token: "ovl_revokedtoken12345",
       scene_id: "scene-3",
-      application_id: "app-1",
       label: "Revoked Label",
       status: "revoked",
     });
@@ -193,7 +186,6 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_REVOKED", () => {
     expect(event.type).toBe("overlay.token.revoked");
     expect(event.tokenId).toBe("tok-id-4");
     expect(event.sceneId).toBe("scene-3");
-    expect(event.applicationId).toBe("app-1");
     expect(event.label).toBe("Revoked Label");
     // Plaintext token must not appear.
     expect("token" in event).toBe(false);
@@ -205,11 +197,10 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_REVOKED", () => {
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
     // Simulate a lastUsedAt refresh update.
-    await nats.dispatch("db.overlay_token.updated.app-1", {
+    await nats.dispatch("db.overlay_token.updated.system", {
       id: "tok-id-5",
       token: "ovl_activetoken",
       scene_id: "scene-4",
-      application_id: "app-1",
       label: "Active",
       status: "active",
     });
@@ -222,11 +213,10 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_REVOKED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.updated.app-1", {
+    await nats.dispatch("db.overlay_token.updated.system", {
       id: "tok-id-6",
       token: "ovl_SECRETSECRET9999",
       scene_id: "scene-5",
-      application_id: "app-1",
       label: "",
       status: "revoked",
     });
@@ -241,17 +231,15 @@ describe("initOverlayTokenHandlers - OVERLAY_TOKEN_REVOKED", () => {
     const webhook = new FakeWebhookClient();
     await initOverlayTokenHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.overlay_token.created.app-2", {
+    await nats.dispatch("db.overlay_token.created.system", {
       id: "tok-camel",
       token: "ovl_cameltoken123",
       sceneId: "scene-camel",
-      applicationId: "app-2",
       label: "Camel",
       status: "active",
     });
 
     const event = webhook.sentEvents[0]!;
     expect(event.sceneId).toBe("scene-camel");
-    expect(event.applicationId).toBe("app-2");
   });
 });

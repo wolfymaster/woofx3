@@ -12,6 +12,7 @@ import {
   alertWidgetsNamed,
   parseAlertLayout,
 } from "./scene/alert-layout";
+import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 
@@ -21,20 +22,57 @@ interface InitArgs {
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
+  moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
   logger: Logger;
 }
 
 interface AlertEnvelope {
   id?: unknown;
-  applicationId?: unknown;
   parameters?: unknown;
   event?: { type?: unknown; source?: unknown; time?: unknown; data?: unknown };
 }
 
+interface StorageChangedEnvelope {
+  data?: { moduleId?: unknown; key?: unknown; value?: unknown };
+}
+
+interface SceneUpdatedEnvelope {
+  data?: { id?: unknown };
+}
+
+/** SSE event name telling a scene's open overlays their config is stale. */
+export const SCENE_UPDATED_EVENT = "scene-updated";
+
+/** The slice of `DeliveryStore` a scene-updated push needs. */
+interface SceneBroadcaster {
+  broadcast(sceneId: string, event: string, data: unknown): void;
+}
+
+/**
+ * Tell every overlay open on a scene that its saved config changed.
+ *
+ * The shell bakes the scene config into the page when it loads, so an
+ * overlay open in OBS keeps rendering the old layout until it reloads.
+ * Pushing the change down the stream it already holds is what lets a
+ * save in the dashboard reach OBS without anyone pressing refresh.
+ * Returns the scene id it notified, or null for an envelope with none.
+ */
+export function notifySceneUpdated(scenes: SceneBroadcaster, envelope: SceneUpdatedEnvelope): string | null {
+  const sceneId = typeof envelope.data?.id === "string" ? envelope.data.id : "";
+  if (!sceneId) {
+    return null;
+  }
+  scenes.broadcast(sceneId, SCENE_UPDATED_EVENT, { sceneId });
+  return sceneId;
+}
+
+interface ResourceInstanceUpdatedEnvelope {
+  data?: { canonical_id?: unknown };
+}
+
 interface WidgetEventEnvelope {
   data?: {
-    applicationId?: unknown;
     moduleId?: unknown;
     instanceId?: unknown;
     widgetCanonicalId?: unknown;
@@ -56,15 +94,14 @@ interface WidgetEventEnvelope {
  *     browser's per-widget queue does that now). This subscribes
  *     directly to `ui.notify.alert` (the original workflow-sourced
  *     subject) and hands off straight to `DeliveryStore.recordEvent`.
- *   - No `module.storage.*.changed` broadcaster — that was module
- *     persistent-storage sync, out of scope for this cutover (see
- *     widget-bridge.ts's header comment).
+ *   - `module.storage.*.changed` is pushed only to scenes whose widgets
+ *     asked for that key (see scene/module-state.ts), not broadcast.
  *   - `widget.event`'s `alert.lifecycle`/`instanceId === "alert-overlay"`
  *     special case is gone — every status report is a uniform
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, obs, db, host, deliveryStore, resolver, logger } = args;
+  const { nats, obs, db, host, deliveryStore, moduleState, resolver, logger } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -81,10 +118,9 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
       return;
     }
-    const applicationId = typeof raw.applicationId === "string" ? raw.applicationId : "";
     const alertId = typeof raw.id === "string" ? raw.id : "";
-    if (!applicationId || !alertId) {
-      logger.warn("ui.notify.alert: missing applicationId or id; dropping");
+    if (!alertId) {
+      logger.warn("ui.notify.alert: missing id; dropping");
       return;
     }
     const parameters =
@@ -92,7 +128,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
     if (!parsed.ok) {
       logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
-      await reportAlertNotPlayed(db, logger, { applicationId, alertId, reason: parsed.reason });
+      await reportAlertNotPlayed(db, logger, { alertId, reason: parsed.reason });
       return;
     }
     if (parsed.rejected.length > 0) {
@@ -110,7 +146,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
           ? `no widget in the layout can play in an alert: ${parsed.rejected.map((r) => r.reason).join("; ")}`
           : "the layout contains no widgets";
       logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId, reason });
-      await reportAlertNotPlayed(db, logger, { applicationId, alertId, reason });
+      await reportAlertNotPlayed(db, logger, { alertId, reason });
       return;
     }
     const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
@@ -119,10 +155,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       layout: parsed.layout,
       event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
     };
-    await fanOutAlert(
-      { applicationId, target: alertTarget(parameters), delivery },
-      { db, host, deliveryStore, logger }
-    );
+    await fanOutAlert({ target: alertTarget(parameters), delivery }, { db, host, deliveryStore, logger });
   });
   logger.info("Subscribed to ui.notify.alert");
 
@@ -137,15 +170,13 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       return;
     }
     const data = envelope.data ?? {};
-    const applicationId = typeof data.applicationId === "string" ? data.applicationId : "";
     const instanceId = typeof data.instanceId === "string" ? data.instanceId : "";
     const key = typeof data.key === "string" ? data.key : "";
-    if (!applicationId || !instanceId || !key) {
+    if (!instanceId || !key) {
       logger.warn("widget.event: missing required fields; dropping");
       return;
     }
     await handleStatusReport(db, logger, {
-      applicationId,
       moduleId: typeof data.moduleId === "string" ? data.moduleId : "",
       instanceId,
       widgetCanonicalId: typeof data.widgetCanonicalId === "string" ? data.widgetCanonicalId : undefined,
@@ -155,6 +186,49 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     });
   });
   logger.info("Subscribed to widget.event");
+
+  // Published by barkloader on every module storage write, and by the api
+  // with a null value for each session-scoped key a session end cleared.
+  await nats.subscribe("module.storage.*.changed", async (msg) => {
+    let envelope: StorageChangedEnvelope;
+    try {
+      envelope = msg.json<StorageChangedEnvelope>();
+    } catch (err) {
+      logger.error("module.storage.changed: malformed JSON envelope", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    const data = envelope.data ?? {};
+    const moduleId = typeof data.moduleId === "string" ? data.moduleId : "";
+    const key = typeof data.key === "string" ? data.key : "";
+    if (!moduleId || !key) {
+      logger.warn("module.storage.changed: missing moduleId or key; dropping", { subject: msg.subject });
+      return;
+    }
+    await moduleState.publish(moduleId, key, data.value ?? null);
+  });
+  logger.info("Subscribed to module.storage.*.changed");
+
+  // A resource instance's settings can change what its value reads as (a
+  // counter's goals) without its storage changing.
+  await nats.subscribe("db.module.resource.instance.updated.*", async (msg) => {
+    let envelope: ResourceInstanceUpdatedEnvelope;
+    try {
+      envelope = msg.json<ResourceInstanceUpdatedEnvelope>();
+    } catch (err) {
+      logger.error("db.module.resource.instance.updated: malformed JSON envelope", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    const canonicalId = typeof envelope.data?.canonical_id === "string" ? envelope.data.canonical_id : "";
+    if (!canonicalId) {
+      return;
+    }
+    await moduleState.resourceUpdated(canonicalId);
+  });
+  logger.info("Subscribed to db.module.resource.instance.updated.*");
 
   // Legacy slobs subject: kept temporarily so chat-bot scene/source
   // triggers don't break. Drop once everything moves to workflow actions.
@@ -177,6 +251,22 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   });
   logger.info("Subscribed to slobs (legacy OBS bridge)");
 
+  await nats.subscribe("db.scene.updated.*", (msg) => {
+    let envelope: SceneUpdatedEnvelope;
+    try {
+      envelope = msg.json<SceneUpdatedEnvelope>();
+    } catch (err) {
+      logger.error("db.scene.updated: malformed JSON envelope", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    if (!notifySceneUpdated(deliveryStore, envelope)) {
+      logger.warn("db.scene.updated: missing scene id; dropping", { subject: msg.subject });
+    }
+  });
+  logger.info("Subscribed to db.scene.updated.*");
+
   await nats.subscribe("db.overlay_token.updated.*", () => {
     resolver.invalidateAll();
   });
@@ -189,12 +279,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
  * fourteen methods to report one outcome. The real `DbClient` satisfies it.
  */
 interface AlertLifecycleWriter {
-  updateAlertLifecycle(req: {
-    applicationId: string;
-    envelopeId: string;
-    status: string;
-    error: string;
-  }): Promise<unknown>;
+  updateAlertLifecycle(req: { envelopeId: string; status: string; error: string }): Promise<unknown>;
 }
 
 /**
@@ -213,11 +298,10 @@ interface AlertLifecycleWriter {
 export async function reportAlertNotPlayed(
   db: AlertLifecycleWriter,
   logger: Logger,
-  alert: { applicationId: string; alertId: string; reason: string }
+  alert: { alertId: string; reason: string }
 ): Promise<void> {
   try {
     await db.updateAlertLifecycle({
-      applicationId: alert.applicationId,
       envelopeId: alert.alertId,
       status: "failed",
       error: alert.reason,
@@ -234,11 +318,11 @@ export async function reportAlertNotPlayed(
  * Fan-out targeting: for every scene currently holding an open SSE
  * connection, deliver the alert to each alert widget answering to the
  * step's target name. Only running scenes are considered, which is what
- * makes a scene nobody has open behave as disabled. A scene of another
- * application, or with no alert widget of that name, gets no DB write.
+ * makes a scene nobody has open behave as disabled. A scene with no alert
+ * widget of that name gets no DB write.
  */
 async function fanOutAlert(
-  alert: { applicationId: string; target: string; delivery: AlertDelivery },
+  alert: { target: string; delivery: AlertDelivery },
   deps: { db: DbClient; host: OverlayHost; deliveryStore: DeliveryStore; logger: Logger }
 ): Promise<void> {
   const { db, host, deliveryStore, logger } = deps;
@@ -246,7 +330,7 @@ async function fanOutAlert(
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
-    if (!state || state.applicationId !== alert.applicationId) {
+    if (!state) {
       continue;
     }
     const targetInstanceIds = alertWidgetsNamed(state.instances, alert.target).map((instance) => instance.id);
@@ -255,7 +339,6 @@ async function fanOutAlert(
     }
     const eventId = await deliveryStore.recordEvent({
       sceneId,
-      applicationId: alert.applicationId,
       type: ALERT_EVENT_TYPE,
       key: alert.delivery.alertId,
       value: alert.delivery,
@@ -278,17 +361,12 @@ async function fanOutAlert(
     logger.warn("alert matched no alert widget on a running scene; nothing delivered", {
       target: alert.target,
       alertId: alert.delivery.alertId,
-      applicationId: alert.applicationId,
       connectedScenes: connectedSceneIds.length,
     });
     // Nothing was wrong with this alert — it was correct and nobody was
     // listening. Reported all the same, because "it didn't appear" is the
     // question being asked, and a misspelled target name looks identical to a
     // scene nobody opened.
-    await reportAlertNotPlayed(db, logger, {
-      applicationId: alert.applicationId,
-      alertId: alert.delivery.alertId,
-      reason,
-    });
+    await reportAlertNotPlayed(db, logger, { alertId: alert.delivery.alertId, reason });
   }
 }

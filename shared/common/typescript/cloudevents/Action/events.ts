@@ -21,7 +21,6 @@ export interface ActionStep {
 export interface ActionExecute {
   /** Names the run in the engine's logs, e.g. `command:hug`. */
   label: string;
-  applicationId: string;
   actions: ActionStep[];
   /** What the actions resolve `${trigger.data...}` against. */
   event: {

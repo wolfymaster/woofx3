@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/casbin/casbin/v2"
-	"github.com/google/uuid"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/types"
@@ -106,16 +105,7 @@ func (s *permissionService) RemoveGroupFromResource(ctx context.Context, req *cl
 }
 
 func (s *permissionService) ListPermissions(ctx context.Context, req *client.ListPermissionsRequest) (*client.ListPermissionsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	rules, err := s.repo.List(appID, repo.ListQuery{
+	rules, err := s.repo.List(repo.ListQuery{
 		Ptype:       req.Ptype,
 		PtypePrefix: req.PtypePrefix,
 		Subject:     req.Subject,
@@ -137,15 +127,14 @@ func (s *permissionService) ListPermissions(ctx context.Context, req *client.Lis
 
 func toProtoPermission(m *models.Permission) *client.Permission {
 	return &client.Permission{
-		Id:            int64(m.ID),
-		ApplicationId: m.ApplicationID.String(),
-		Ptype:         m.Ptype,
-		V0:            m.V0,
-		V1:            m.V1,
-		V2:            m.V2,
-		V3:            m.V3,
-		V4:            m.V4,
-		V5:            m.V5,
+		Id:    int64(m.ID),
+		Ptype: m.Ptype,
+		V0:    m.V0,
+		V1:    m.V1,
+		V2:    m.V2,
+		V3:    m.V3,
+		V4:    m.V4,
+		V5:    m.V5,
 	}
 }
 
@@ -153,15 +142,7 @@ func toProtoPermission(m *models.Permission) *client.Permission {
 handleAddUserResourceRoleRequest is a helper function that handles the user resource role request
 */
 func (s *permissionService) handleAddUserResourceRoleRequest(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-	err = s.repo.AddGType(appId, req.Username, req.Resource, req.Role)
+	err := s.repo.AddGType(req.Username, req.Resource, req.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -181,15 +162,7 @@ func (s *permissionService) handleAddUserResourceRoleRequest(ctx context.Context
 handleRemoveUserResourceRoleRequest is a helper function that handles the user resource role request
 */
 func (s *permissionService) handleRemoveUserResourceRoleRequest(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-	err = s.repo.RemoveGType(appId, req.Username, req.Resource, req.Role)
+	err := s.repo.RemoveGType(req.Username, req.Resource, req.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -209,15 +182,7 @@ func (s *permissionService) handleRemoveUserResourceRoleRequest(ctx context.Cont
 handleAddPermissionRequest is a helper function that handles the permission request
 */
 func (s *permissionService) handleAddPermissionRequest(ctx context.Context, req *client.PermissionRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-	err = s.repo.AddPType(appId, req.Subject, req.Object, req.Action, req.Permission)
+	err := s.repo.AddPType(req.Subject, req.Object, req.Action, req.Permission)
 	if err != nil {
 		return nil, err
 	}
@@ -237,15 +202,7 @@ func (s *permissionService) handleAddPermissionRequest(ctx context.Context, req 
 handleRemovePermissionRequest is a helper function that handles the permission request
 */
 func (s *permissionService) handleRemovePermissionRequest(ctx context.Context, req *client.PermissionRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-	err = s.repo.RemovePType(appId, req.Subject, req.Object, req.Action, req.Permission)
+	err := s.repo.RemovePType(req.Subject, req.Object, req.Action, req.Permission)
 	if err != nil {
 		return nil, err
 	}

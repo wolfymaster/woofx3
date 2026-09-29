@@ -264,14 +264,11 @@ func (s *moduleService) publishInstanceEvent(reqCtx *client.RequestContext, modu
 	if s.publisher == nil {
 		return
 	}
-	applicationID := ""
 	clientID := ""
 	if reqCtx != nil {
-		applicationID = reqCtx.ApplicationId
 		clientID = reqCtx.ClientId
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   applicationID,
 		ClientID:        clientID,
 		EntityType:      "module.resource.instance",
 		EntityID:        inst.ID.String(),
@@ -355,7 +352,7 @@ func instanceSettingsOrEmpty(settings string) string {
 }
 
 // buildResourceInstanceData is the snake_case payload for
-// `db.module.resource.instance.{created,deleted}.<appId>` outbox events.
+// `db.module.resource.instance.{created,deleted}.system` outbox events.
 // Mirrors the trigger / action builders in module_event_payload.go.
 func buildResourceInstanceData(module *models.Module, inst *models.ModuleResourceInstance) map[string]interface{} {
 	moduleName := ""

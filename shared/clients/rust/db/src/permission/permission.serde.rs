@@ -132,9 +132,6 @@ impl serde::Serialize for ListPermissionsRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.ptype.is_empty() {
             len += 1;
         }
@@ -145,9 +142,6 @@ impl serde::Serialize for ListPermissionsRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("permission.ListPermissionsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.ptype.is_empty() {
             struct_ser.serialize_field("ptype", &self.ptype)?;
         }
@@ -167,8 +161,6 @@ impl<'de> serde::Deserialize<'de> for ListPermissionsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "ptype",
             "ptype_prefix",
             "ptypePrefix",
@@ -177,7 +169,6 @@ impl<'de> serde::Deserialize<'de> for ListPermissionsRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Ptype,
             PtypePrefix,
             Subject,
@@ -202,7 +193,6 @@ impl<'de> serde::Deserialize<'de> for ListPermissionsRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "ptype" => Ok(GeneratedField::Ptype),
                             "ptypePrefix" | "ptype_prefix" => Ok(GeneratedField::PtypePrefix),
                             "subject" => Ok(GeneratedField::Subject),
@@ -225,18 +215,11 @@ impl<'de> serde::Deserialize<'de> for ListPermissionsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut ptype__ = None;
                 let mut ptype_prefix__ = None;
                 let mut subject__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Ptype => {
                             if ptype__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("ptype"));
@@ -258,7 +241,6 @@ impl<'de> serde::Deserialize<'de> for ListPermissionsRequest {
                     }
                 }
                 Ok(ListPermissionsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     ptype: ptype__.unwrap_or_default(),
                     ptype_prefix: ptype_prefix__.unwrap_or_default(),
                     subject: subject__.unwrap_or_default(),
@@ -387,9 +369,6 @@ impl serde::Serialize for Permission {
         if self.id != 0 {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.ptype.is_empty() {
             len += 1;
         }
@@ -416,9 +395,6 @@ impl serde::Serialize for Permission {
             #[allow(clippy::needless_borrow)]
             #[allow(clippy::needless_borrows_for_generic_args)]
             struct_ser.serialize_field("id", ToString::to_string(&self.id).as_str())?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.ptype.is_empty() {
             struct_ser.serialize_field("ptype", &self.ptype)?;
@@ -452,8 +428,6 @@ impl<'de> serde::Deserialize<'de> for Permission {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "ptype",
             "v0",
             "v1",
@@ -466,7 +440,6 @@ impl<'de> serde::Deserialize<'de> for Permission {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Ptype,
             V0,
             V1,
@@ -496,7 +469,6 @@ impl<'de> serde::Deserialize<'de> for Permission {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "ptype" => Ok(GeneratedField::Ptype),
                             "v0" => Ok(GeneratedField::V0),
                             "v1" => Ok(GeneratedField::V1),
@@ -524,7 +496,6 @@ impl<'de> serde::Deserialize<'de> for Permission {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut ptype__ = None;
                 let mut v0__ = None;
                 let mut v1__ = None;
@@ -541,12 +512,6 @@ impl<'de> serde::Deserialize<'de> for Permission {
                             id__ = 
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Ptype => {
                             if ptype__.is_some() {
@@ -594,7 +559,6 @@ impl<'de> serde::Deserialize<'de> for Permission {
                 }
                 Ok(Permission {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     ptype: ptype__.unwrap_or_default(),
                     v0: v0__.unwrap_or_default(),
                     v1: v1__.unwrap_or_default(),
@@ -616,9 +580,6 @@ impl serde::Serialize for PermissionRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.subject.is_empty() {
             len += 1;
         }
@@ -632,9 +593,6 @@ impl serde::Serialize for PermissionRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("permission.PermissionRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.subject.is_empty() {
             struct_ser.serialize_field("subject", &self.subject)?;
         }
@@ -657,8 +615,6 @@ impl<'de> serde::Deserialize<'de> for PermissionRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "subject",
             "object",
             "action",
@@ -667,7 +623,6 @@ impl<'de> serde::Deserialize<'de> for PermissionRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Subject,
             Object,
             Action,
@@ -693,7 +648,6 @@ impl<'de> serde::Deserialize<'de> for PermissionRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "subject" => Ok(GeneratedField::Subject),
                             "object" => Ok(GeneratedField::Object),
                             "action" => Ok(GeneratedField::Action),
@@ -717,19 +671,12 @@ impl<'de> serde::Deserialize<'de> for PermissionRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut subject__ = None;
                 let mut object__ = None;
                 let mut action__ = None;
                 let mut permission__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Subject => {
                             if subject__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("subject"));
@@ -757,7 +704,6 @@ impl<'de> serde::Deserialize<'de> for PermissionRequest {
                     }
                 }
                 Ok(PermissionRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     subject: subject__.unwrap_or_default(),
                     object: object__.unwrap_or_default(),
                     action: action__.unwrap_or_default(),
@@ -776,9 +722,6 @@ impl serde::Serialize for UserResourceRoleRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.username.is_empty() {
             len += 1;
         }
@@ -789,9 +732,6 @@ impl serde::Serialize for UserResourceRoleRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("permission.UserResourceRoleRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.username.is_empty() {
             struct_ser.serialize_field("username", &self.username)?;
         }
@@ -811,8 +751,6 @@ impl<'de> serde::Deserialize<'de> for UserResourceRoleRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "username",
             "resource",
             "role",
@@ -820,7 +758,6 @@ impl<'de> serde::Deserialize<'de> for UserResourceRoleRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Username,
             Resource,
             Role,
@@ -845,7 +782,6 @@ impl<'de> serde::Deserialize<'de> for UserResourceRoleRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "username" => Ok(GeneratedField::Username),
                             "resource" => Ok(GeneratedField::Resource),
                             "role" => Ok(GeneratedField::Role),
@@ -868,18 +804,11 @@ impl<'de> serde::Deserialize<'de> for UserResourceRoleRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut username__ = None;
                 let mut resource__ = None;
                 let mut role__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Username => {
                             if username__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("username"));
@@ -901,7 +830,6 @@ impl<'de> serde::Deserialize<'de> for UserResourceRoleRequest {
                     }
                 }
                 Ok(UserResourceRoleRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     username: username__.unwrap_or_default(),
                     resource: resource__.unwrap_or_default(),
                     role: role__.unwrap_or_default(),
