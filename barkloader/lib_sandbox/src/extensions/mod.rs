@@ -1,5 +1,4 @@
 pub mod chat;
-mod subject_extension;
 pub mod twitch;
 
 pub use chat::ChatExtension;

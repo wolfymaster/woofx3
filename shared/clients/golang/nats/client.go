@@ -27,11 +27,22 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 }
 
 func (c *Client) Connect() error {
+	_, err := c.conn()
+	return err
+}
+
+// conn returns the client's connection, dialling one only when there is none
+// or the last one is closed for good. A connection that is reconnecting is
+// returned as is: nats.go buffers what is sent meanwhile and restores its
+// subscriptions, whereas dialling a second connection would orphan the first
+// with every subscription on it. Holding mu for the whole call is what keeps
+// concurrent callers from each dialling their own.
+func (c *Client) conn() (*nats.Conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.connection != nil && c.connection.IsConnected() {
-		return nil
+	if c.connection != nil && !c.connection.IsClosed() {
+		return c.connection, nil
 	}
 
 	opts := []nats.Option{
@@ -45,26 +56,21 @@ func (c *Client) Connect() error {
 	conn, err := nats.Connect(c.config.URL, opts...)
 	if err != nil {
 		c.logger.Error("Failed to connect to NATS", "error", err)
-		return fmt.Errorf("failed to connect to NATS: %w", err)
+		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
 	c.connection = conn
 	c.logger.Info("Connected to NATS", "url", c.config.URL, "name", c.config.Name)
-	return nil
+	return conn, nil
 }
 
 func (c *Client) Publish(subject string, data []byte) error {
-	if c.connection == nil || !c.connection.IsConnected() {
-		if err := c.Connect(); err != nil {
-			return err
-		}
+	conn, err := c.conn()
+	if err != nil {
+		return err
 	}
 
-	if c.connection == nil {
-		return fmt.Errorf("NATS connection not available")
-	}
-
-	if err := c.connection.Publish(subject, data); err != nil {
+	if err := conn.Publish(subject, data); err != nil {
 		c.logger.Error("Failed to publish message", "error", err)
 		return fmt.Errorf("failed to publish message: %w", err)
 	}
@@ -74,17 +80,12 @@ func (c *Client) Publish(subject string, data []byte) error {
 }
 
 func (c *Client) Subscribe(subject string, handler Handler) (Subscription, error) {
-	if c.connection == nil || !c.connection.IsConnected() {
-		if err := c.Connect(); err != nil {
-			return nil, err
-		}
+	conn, err := c.conn()
+	if err != nil {
+		return nil, err
 	}
 
-	if c.connection == nil {
-		return nil, fmt.Errorf("NATS connection not available")
-	}
-
-	sub, err := c.connection.Subscribe(subject, func(msg *nats.Msg) {
+	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
 		wrappedMsg := &MessageImpl{
 			subject: msg.Subject,
 			data:    msg.Data,
@@ -114,17 +115,12 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Request(subject string, data []byte, timeout time.Duration) ([]byte, error) {
-	if c.connection == nil || !c.connection.IsConnected() {
-		if err := c.Connect(); err != nil {
-			return nil, err
-		}
+	conn, err := c.conn()
+	if err != nil {
+		return nil, err
 	}
 
-	if c.connection == nil {
-		return nil, fmt.Errorf("NATS connection not available")
-	}
-
-	msg, err := c.connection.Request(subject, data, timeout)
+	msg, err := conn.Request(subject, data, timeout)
 	if err != nil {
 		c.logger.Error("Failed to send request", "error", err)
 		return nil, fmt.Errorf("failed to send request: %w", err)
@@ -135,17 +131,12 @@ func (c *Client) Request(subject string, data []byte, timeout time.Duration) ([]
 }
 
 func (c *Client) SubscribeWithReply(subject string, handler func(Msg) []byte) (Subscription, error) {
-	if c.connection == nil || !c.connection.IsConnected() {
-		if err := c.Connect(); err != nil {
-			return nil, err
-		}
+	conn, err := c.conn()
+	if err != nil {
+		return nil, err
 	}
 
-	if c.connection == nil {
-		return nil, fmt.Errorf("NATS connection not available")
-	}
-
-	sub, err := c.connection.Subscribe(subject, func(msg *nats.Msg) {
+	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
 		wrappedMsg := &MessageImpl{
 			subject: msg.Subject,
 			data:    msg.Data,
@@ -166,5 +157,7 @@ func (c *Client) SubscribeWithReply(subject string, handler func(Msg) []byte) (S
 }
 
 func (c *Client) AsNATS() *nats.Conn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.connection
 }

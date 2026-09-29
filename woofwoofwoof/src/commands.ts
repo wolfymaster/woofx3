@@ -1,3 +1,4 @@
+import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import { extractCommandVariables } from "@woofx3/common/templates/command-variables";
 import { resolve, type ResolverContext } from "@woofx3/common/templates/resolver";
 import type { ChatClient } from "@woofx3/twitch";
@@ -23,6 +24,21 @@ export interface ChatSender {
 
 export type CommandVisibility = "public" | "restricted";
 
+/**
+ * A chat role that can run a command without a permission grant, read off
+ * the chatter's membership on the message itself. Lets a built-in command
+ * that changes the channel work for the broadcaster and moderators on a
+ * fresh engine, where no grant for it exists yet.
+ */
+export type ChatRole = "broadcaster" | "moderator";
+
+function hasRole(membership: ChatterMembership | undefined, roles: readonly ChatRole[]): boolean {
+  if (!membership) {
+    return false;
+  }
+  return roles.some((role) => (role === "broadcaster" ? membership.isBroadcaster : membership.isModerator));
+}
+
 export interface Command {
   action: string;
   command: string;
@@ -39,6 +55,9 @@ export interface Command {
    * argument_pattern (see command-variables.ts). Empty/undefined = the
    * command takes no named arguments (today's default behavior). */
   variables?: string[];
+  /** Roles that pass without the permission check. Everyone else still goes
+   *  through it, so a grant made through the permission model keeps working. */
+  allowRoles?: ChatRole[];
 }
 
 export type ChatWatcherFunction = (msg: string, user?: string) => Promise<void>;
@@ -54,16 +73,21 @@ export type ChatWatcherFunction = (msg: string, user?: string) => Promise<void>;
  * raw message and positional args that `msg` (the command-stripped
  * remainder) doesn't — needed by callers that forward a complete
  * `ChatCommandEventData`-shaped payload elsewhere (e.g. a direct barkloader
- * invoke). Every other handler can ignore it.
+ * invoke). It also carries the chatter's platform id and membership, for
+ * a handler that acts on the chatter rather than on the text. Every other
+ * handler can ignore it.
  */
 export type CommandResponse =
   | string
-  | ((
-      msg: string,
-      user?: string,
-      vars?: Record<string, unknown>,
-      invocation?: { rawMessage: string; args: string[] }
-    ) => Promise<string>);
+  | ((msg: string, user?: string, vars?: Record<string, unknown>, invocation?: CommandInvocation) => Promise<string>);
+
+export interface CommandInvocation {
+  rawMessage: string;
+  args: string[];
+  /** The platform's id for the chatter, when the message carried one. */
+  chatterId?: string;
+  membership?: ChatterMembership;
+}
 
 export type AuthorizationResponse = {
   granted: boolean;
@@ -126,7 +150,7 @@ export class Commands {
   add(
     command: string,
     response: CommandResponse,
-    opts?: { visibility?: CommandVisibility; cooldownSeconds?: number; variables?: string[] }
+    opts?: { visibility?: CommandVisibility; cooldownSeconds?: number; variables?: string[]; allowRoles?: ChatRole[] }
   ) {
     const cmd = this.commands.find((cmd) => cmd.command === command);
 
@@ -135,6 +159,7 @@ export class Commands {
       cmd.visibility = opts?.visibility;
       cmd.cooldownSeconds = opts?.cooldownSeconds;
       cmd.variables = opts?.variables;
+      cmd.allowRoles = opts?.allowRoles;
       // lastInvokedAt is deliberately preserved across an update so a
       // hot-reloaded command's cooldown survives the edit.
       return;
@@ -147,6 +172,7 @@ export class Commands {
       visibility: opts?.visibility,
       cooldownSeconds: opts?.cooldownSeconds,
       variables: opts?.variables,
+      allowRoles: opts?.allowRoles,
     });
   }
 
@@ -164,7 +190,16 @@ export class Commands {
     this.watchers.push(cb);
   }
 
-  async process(text: string, user: string): Promise<[string, boolean]> {
+  /**
+   * `membership` is what the platform reported about the chatter on this
+   * message; without it no command is granted by role.
+   */
+  async process(
+    text: string,
+    user: string,
+    membership?: ChatterMembership,
+    chatterId?: string
+  ): Promise<[string, boolean]> {
     const chatMsg = text.trim();
 
     this.watchers.forEach((w) => this.try(() => w(chatMsg, user)));
@@ -193,7 +228,7 @@ export class Commands {
           cmdRecord.lastInvokedAt = now;
         }
 
-        const auth = cmdRecord.visibility === "public" ? { granted: true } : await this.checkPermissions(user, msg.cmd);
+        const auth = await this.authorize(cmdRecord, user, msg.cmd, membership);
         if (!auth.granted) {
           return [auth.message ?? "", !!auth.message];
         }
@@ -228,7 +263,7 @@ export class Commands {
           return [typeof resolved === "string" ? resolved : String(resolved ?? ""), true];
         }
         if (typeof response === "function") {
-          const res = await response(msg.text, user.trim(), vars, { rawMessage: text, args });
+          const res = await response(msg.text, user.trim(), vars, { rawMessage: text, args, chatterId, membership });
           return [res, true];
         }
       }
@@ -287,6 +322,21 @@ export class Commands {
       }
       console.error("Failed to publish chat.command event", match.commandName, err);
     }
+  }
+
+  private async authorize(
+    cmdRecord: Command,
+    user: string,
+    cmd: string,
+    membership: ChatterMembership | undefined
+  ): Promise<AuthorizationResponse> {
+    if (cmdRecord.visibility === "public") {
+      return { granted: true };
+    }
+    if (cmdRecord.allowRoles && hasRole(membership, cmdRecord.allowRoles)) {
+      return { granted: true };
+    }
+    return this.checkPermissions(user, cmd);
   }
 
   async checkPermissions(user: string, cmd: string): Promise<AuthorizationResponse> {
