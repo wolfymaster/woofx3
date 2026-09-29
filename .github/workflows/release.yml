@@ -6,6 +6,8 @@ name: Release
 #   - woofx3-<tag>-linux-amd64.zip, extracted from the image
 #   - woofx3-<tag>-windows-amd64.zip, cross-compiled by build/main.sh
 #   - a GitHub release of the tag, carrying both archives and the image digest
+#   - the release's entry in CHANGELOG.md, committed to master; the tag points
+#     at that commit, whose parent is the commit the artifacts were built from
 #
 # The version is settled before anything is built, since the image reports it
 # (WOOFX3_VERSION), and nothing is tagged until every artifact exists: the
@@ -30,11 +32,14 @@ env:
   IMAGE_NAME: ghcr.io/wolfymaster/woofx3
   BUN_VERSION: "1.3.14"
   NODE_VERSION: "24"
+  # release-preview.yml installs the same semantic-release and preset.
   # The preset stays on 9.x: 10.x needs conventional-changelog-writer 9, and
   # @semantic-release/release-notes-generator 14 still bundles writer 8.
   SEMANTIC_RELEASE: >-
     -p semantic-release@25.0.9
+    -p @semantic-release/changelog@7.0.0
     -p @semantic-release/exec@7.1.0
+    -p @semantic-release/git@11.0.1
     -p @semantic-release/github@12.0.9
     -p conventional-changelog-conventionalcommits@9.3.1
     semantic-release
@@ -43,16 +48,28 @@ jobs:
   plan:
     name: Settle the next version
     runs-on: ubuntu-latest
-    # A dry run still checks it could push the tag.
+    # The dry run pushes nothing, and checks it could push the tag with the
+    # app token rather than GITHUB_TOKEN.
     permissions:
-      contents: write
+      contents: read
     outputs:
       tag: ${{ steps.next.outputs.tag }}
     steps:
+      # Made here too, with the same app as the release job, so a missing app
+      # or key fails before anything is built.
+      - name: Create the release app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -64,7 +81,7 @@ jobs:
       - name: Dry-run semantic-release
         id: next
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: npx --yes ${SEMANTIC_RELEASE} --dry-run
 
   docker:
@@ -205,10 +222,24 @@ jobs:
       TAG: ${{ needs.plan.outputs.tag }}
       DIGEST: ${{ needs.docker.outputs.digest }}
     steps:
+      # The CHANGELOG.md commit goes straight to master, which the
+      # WolfyMasterOnly ruleset closes to everything but pull requests. This
+      # app is the ruleset's bypass actor; GITHUB_TOKEN cannot be one.
+      - name: Create the release app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      # checkout persists its token as git's credentials, and they take
+      # precedence over the one semantic-release puts in the push URL.
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       # .releaserc.json attaches dist/*.zip to the release.
       - name: Download archives
@@ -226,20 +257,24 @@ jobs:
 
       - name: Tag and create the release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE_EXPECTED_TAG: ${{ needs.plan.outputs.tag }}
         run: npx --yes ${SEMANTIC_RELEASE}
 
       # semantic-release exits cleanly without releasing when master moved on
       # since the dry run, or when a rerun finds the tag already published.
-      # Only the second may go on to tag the image.
+      # Only the second may go on to tag the image. The tag is on the
+      # CHANGELOG.md commit, which must sit directly on the commit the
+      # artifacts were built from and change nothing else.
       - name: Check the release exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git fetch --force --tags origin
-          test "$(git rev-parse "${TAG}^{commit}")" = "$(git rev-parse HEAD)"
+          released="$(git rev-parse "${TAG}^{commit}")"
+          test "$(git rev-parse "${released}^")" = "$(git rev-parse HEAD)"
+          test "$(git diff --name-only HEAD "$released")" = "CHANGELOG.md"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > published
           printf '%s\n' "woofx3-${TAG}-linux-amd64.zip" "woofx3-${TAG}-windows-amd64.zip" | sort > expected
           diff expected published
