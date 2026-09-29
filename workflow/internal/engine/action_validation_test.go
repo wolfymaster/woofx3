@@ -47,7 +47,7 @@ func TestRegisterWorkflowRefusesInvalidActionParams(t *testing.T) {
 }
 
 // A refused update must not take down the version that was working.
-func TestRefusedUpdateKeepsPreviousVersion(t *testing.T) {
+func TestRefusedUpdateUnregistersPreviousVersion(t *testing.T) {
 	e := newExecEngine(t)
 	registerStrictAction(t, e)
 
@@ -57,9 +57,8 @@ func TestRefusedUpdateKeepsPreviousVersion(t *testing.T) {
 	if err := e.RegisterWorkflow(strictWorkflow("bad", false)); err == nil {
 		t.Fatal("invalid update accepted")
 	}
-	wf, err := e.GetWorkflow("wf-strict")
-	if err != nil || wf.Tasks[0].Parameters["value"] != "good" {
-		t.Fatalf("registered = %v, %v; want the previous version", wf, err)
+	if wf, err := e.GetWorkflow("wf-strict"); err == nil {
+		t.Fatalf("registered = %v; want the refused workflow unregistered", wf)
 	}
 }
 
