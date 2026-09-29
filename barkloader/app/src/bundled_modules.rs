@@ -83,37 +83,17 @@ pub fn system_only_actions() -> Result<&'static SystemOnlyActions> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lib_module::canonical_id::{CanonicalId, ResourceKind};
     use lib_module::manifest_validate::{InstallProvenance, validate_with_provenance};
 
     fn manifest_of(m: &BundledModule) -> ModuleManifest {
         m.manifest().unwrap_or_else(|e| panic!("{e}"))
     }
 
-    fn action(id: &str) -> CanonicalId {
-        CanonicalId::new("woofx3", ResourceKind::Action, id).expect("valid canonical id")
-    }
-
-    /// The Twitch actions module code may not request through `ctx.twitch`
-    /// stay out of uploaded modules' workflows too; the ones it may request
-    /// stay available.
+    /// Boot refuses to serve uploads when this fails, so every bundled
+    /// manifest must produce a set.
     #[test]
-    fn twitch_moderation_and_channel_edits_are_system_only() {
-        let reserved = system_only_actions().expect("bundled manifests parse");
-        assert!(reserved.contains(&action("twitch.timeout")));
-        assert!(reserved.contains(&action("twitch.update_stream")));
-        for open in [
-            "twitch.shoutout",
-            "twitch.clip",
-            "twitch.marker",
-            "chat.reply",
-            "alert",
-        ] {
-            assert!(
-                !reserved.contains(&action(open)),
-                "{open} should be open to modules"
-            );
-        }
+    fn the_bundled_system_only_set_builds() {
+        system_only_actions().expect("bundled manifests parse");
     }
 
     #[test]

@@ -158,9 +158,9 @@ pub struct ManifestAction {
     #[serde(default)]
     pub returns: Option<ManifestDataShape>,
     /// Only a system module may use this action in a workflow or command.
-    /// For actions that do what module code is not allowed to ask for (see
-    /// `ctx.twitch`, which offers no timeout), so an uploaded module cannot
-    /// reach the same effect by shipping a workflow instead. Enforced by
+    /// For actions that do what module code is not allowed to ask for through
+    /// a sandbox capability, so an uploaded module cannot reach the same
+    /// effect by shipping a workflow instead. Enforced by
     /// `manifest_validate::refuse_system_only_references`; declarable only by
     /// a system module.
     #[serde(default)]

@@ -48,13 +48,8 @@ modules embedded in the barkloader binary, so it cannot drift from what is
 installed. The streamer's own workflows, built in the UI, are unaffected: the
 limit is on module code, not on the person running the engine.
 
-The bundled `woofx3` module marks `twitch.timeout` and `twitch.update_stream`
-system-only, matching `ctx.twitch`, which offers `clip`, `shoutout` and
-`createMarker` and nothing that moderates chatters or edits the channel.
-`twitch.shoutout`, `twitch.clip` and `twitch.marker` stay open.
-
-When adding an engine-native action, decide whether module code could already
-ask for the same effect through a capability; if not, declare it
+When adding an action to a bundled module, decide whether module code could
+already ask for the same effect through a capability; if not, declare it
 `systemOnly`.
 
 ## Applying it

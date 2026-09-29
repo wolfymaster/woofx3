@@ -2972,13 +2972,13 @@ mod tests {
     // systemOnly: an action a system module reserves for itself.
     // ---------------------------------------------------------------
 
-    fn reserved_twitch_actions() -> SystemOnlyActions {
+    fn reserved_actions() -> SystemOnlyActions {
         let bundled = parse(
             r#"{
                 "id": "woofx3", "name": "woofx3", "version": "1.0.0",
                 "actions": [
-                    { "id": "twitch.timeout", "name": "Timeout", "type": "native", "handler": "twitch.timeout", "systemOnly": true },
-                    { "id": "twitch.clip", "name": "Clip", "type": "native", "handler": "twitch.clip" }
+                    { "id": "restricted", "name": "Restricted", "type": "native", "handler": "restricted", "systemOnly": true },
+                    { "id": "open", "name": "Open", "type": "native", "handler": "open" }
                 ]
             }"#,
         );
@@ -2992,7 +2992,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{{ "id": "s1", "action": "{action}" }}]
             }}],
-            "commands": [{{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{{ "action": "woofx3:action:twitch.clip" }}] }}],
+            "commands": [{{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{{ "action": "woofx3:action:open" }}] }}],
             "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}]"#
         ));
         validate(&m).expect("validate ok")
@@ -3000,17 +3000,13 @@ mod tests {
 
     #[test]
     fn an_upload_cannot_reference_a_system_only_action() {
-        let resolved = uploaded_using("woofx3:action:twitch.timeout");
-        let err = refuse_system_only_references(
-            &resolved,
-            InstallProvenance::User,
-            &reserved_twitch_actions(),
-        )
-        .expect_err("a reserved action must be refused");
+        let resolved = uploaded_using("woofx3:action:restricted");
+        let err =
+            refuse_system_only_references(&resolved, InstallProvenance::User, &reserved_actions())
+                .expect_err("a reserved action must be refused");
         let msg = err.to_string();
         assert!(
-            msg.contains("woofx3:action:twitch.timeout")
-                && msg.contains("reserved for system modules"),
+            msg.contains("woofx3:action:restricted") && msg.contains("reserved for system modules"),
             "got: {msg}"
         );
     }
@@ -3019,38 +3015,27 @@ mod tests {
     fn a_command_cannot_reference_a_system_only_action_either() {
         let m = minimal(
             r#",
-            "commands": [{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{ "action": "woofx3:action:twitch.timeout" }] }]"#,
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{ "action": "woofx3:action:restricted" }] }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
-        let err = refuse_system_only_references(
-            &resolved,
-            InstallProvenance::User,
-            &reserved_twitch_actions(),
-        )
-        .expect_err("a reserved action must be refused");
+        let err =
+            refuse_system_only_references(&resolved, InstallProvenance::User, &reserved_actions())
+                .expect_err("a reserved action must be refused");
         assert!(err.to_string().contains("command 'c1'"), "got: {err}");
     }
 
     #[test]
     fn an_upload_may_reference_an_action_that_is_not_system_only() {
-        let resolved = uploaded_using("woofx3:action:twitch.clip");
-        refuse_system_only_references(
-            &resolved,
-            InstallProvenance::User,
-            &reserved_twitch_actions(),
-        )
-        .expect("an open action installs");
+        let resolved = uploaded_using("woofx3:action:open");
+        refuse_system_only_references(&resolved, InstallProvenance::User, &reserved_actions())
+            .expect("an open action installs");
     }
 
     #[test]
     fn a_system_module_may_reference_a_system_only_action() {
-        let resolved = uploaded_using("woofx3:action:twitch.timeout");
-        refuse_system_only_references(
-            &resolved,
-            InstallProvenance::System,
-            &reserved_twitch_actions(),
-        )
-        .expect("system provenance is exempt");
+        let resolved = uploaded_using("woofx3:action:restricted");
+        refuse_system_only_references(&resolved, InstallProvenance::System, &reserved_actions())
+            .expect("system provenance is exempt");
     }
 
     #[test]
@@ -3066,22 +3051,6 @@ mod tests {
                 .contains("`systemOnly` may only be declared by a bundled system module"),
             "got: {err}"
         );
-    }
-
-    /// The real bundled manifest reserves exactly the Twitch actions module
-    /// code cannot request through `ctx.twitch`.
-    #[test]
-    fn the_bundled_manifest_reserves_timeout_and_stream_edits() {
-        let bundled: ModuleManifest =
-            serde_json::from_str(include_str!("../../../modules/woofx3/manifest.json"))
-                .expect("parse");
-        let reserved = SystemOnlyActions::from_manifests([&bundled]).expect("system-only set");
-        let id = |a: &str| CanonicalId::new("woofx3", ResourceKind::Action, a).expect("id");
-        assert!(reserved.contains(&id("twitch.timeout")));
-        assert!(reserved.contains(&id("twitch.update_stream")));
-        assert!(!reserved.contains(&id("twitch.shoutout")));
-        assert!(!reserved.contains(&id("twitch.clip")));
-        assert!(!reserved.contains(&id("twitch.marker")));
     }
 
     #[test]

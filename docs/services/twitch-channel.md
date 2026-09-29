@@ -83,13 +83,6 @@ message; when the twitch service is not running it rejects with
 uptime and viewer count, where `getStreamInfo()` reads the channel settings
 that apply whether or not it is live.
 
-## Workflow actions
-
-The workflow engine sends `shoutout`, `clip`, `createMarker`, `updateStream`
-and `timeout` as the native actions `twitch.shoutout`, `twitch.clip`,
-`twitch.marker`, `twitch.update_stream` and `twitch.timeout`. See
-[Task types](../workflow/tasks.md#twitch-actions).
-
 ## Chatbot built-ins
 
 woofwoofwoof registers these commands itself. Each waits for the twitch
