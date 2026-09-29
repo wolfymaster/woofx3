@@ -143,7 +143,6 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		return
 	}
 
-	// Register the workflow (this will overwrite if it already exists)
 	if m.registry != nil {
 		if err := m.registry.RegisterWorkflow(workflowDef); err != nil {
 			m.logger.Error("Failed to register workflow", "error", err, "workflow_id", workflowDef.ID)

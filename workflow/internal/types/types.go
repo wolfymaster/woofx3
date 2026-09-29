@@ -72,12 +72,16 @@ type TaskDefinition struct {
 }
 
 type WaitConfig struct {
-	Type        string             `json:"type" yaml:"type"`                                   // "event" or "aggregation"
-	Event       string             `json:"event" yaml:"event"`                                 // NATS subject to wait for
+	Type        string             `json:"type" yaml:"type"`                                   // "event", "aggregation" or "delay"
+	Event       string             `json:"event,omitempty" yaml:"event,omitempty"`             // NATS subject to wait for
 	Conditions  []ConditionConfig  `json:"conditions,omitempty" yaml:"conditions,omitempty"`   // Conditions to match
 	Aggregation *AggregationConfig `json:"aggregation,omitempty" yaml:"aggregation,omitempty"` // Aggregation settings
 	Timeout     *Duration          `json:"timeout,omitempty" yaml:"timeout,omitempty"`         // Wait timeout
 	OnTimeout   string             `json:"onTimeout,omitempty" yaml:"onTimeout,omitempty"`     // "continue" or "fail"
+	// DurationMs is how long a "delay" wait pauses the run. Milliseconds rather
+	// than a Duration so the value a creator types in the editor is the value
+	// stored, with no unit parsing between them.
+	DurationMs int64 `json:"durationMs,omitempty" yaml:"durationMs,omitempty"`
 }
 
 type WorkflowConfig struct {
@@ -283,6 +287,7 @@ type WaitState struct {
 	Aggregation    *AggregationState `json:"aggregation,omitempty"`
 	ReceivedEvents []*Event          `json:"receivedEvents,omitempty"`
 	Satisfied      bool              `json:"satisfied"`
+	TimedOut       bool              `json:"timedOut"`
 }
 
 type AggregationState struct {

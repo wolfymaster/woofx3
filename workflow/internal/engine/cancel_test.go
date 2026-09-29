@@ -176,6 +176,21 @@ func (h *cancelHarness) start(t *testing.T, wf *types.WorkflowDefinition) string
 	return result.ExecutionID
 }
 
+func (h *cancelHarness) startUnvalidated(t *testing.T, wf *types.WorkflowDefinition) string {
+	t.Helper()
+	h.engine.workflowRegistry.mu.Lock()
+	h.engine.workflowRegistry.workflows[wf.ID] = wf
+	h.engine.workflowRegistry.mu.Unlock()
+	result, err := h.engine.RunManual(ManualRun{
+		WorkflowID: wf.ID,
+		Request:    &types.Event{ID: "req-1", Type: "workflow.execute", Source: "test", Time: time.Now(), TriggerID: "corr-1"},
+	})
+	if err != nil || result.ExecutionID == "" {
+		t.Fatalf("RunManual: %+v, %v", result, err)
+	}
+	return result.ExecutionID
+}
+
 func (h *cancelHarness) waitCount(eventType string) int {
 	h.engine.waitingMu.RLock()
 	defer h.engine.waitingMu.RUnlock()
@@ -496,4 +511,112 @@ func containsString(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func armedWaitsOf[T any](e *Engine[T]) int {
+	e.waitingMu.RLock()
+	defer e.waitingMu.RUnlock()
+	return len(e.armedWaits)
+}
+
+// A delay has no event to arrive, only a timer. Cancel claims it like any
+// other armed wait and stops the timer, rather than letting the run sit out
+// the delay before it notices the cancel.
+func TestCancelDuringADelay(t *testing.T) {
+	h := newCancelHarness(t)
+	id := h.start(t, &types.WorkflowDefinition{
+		ID:   "wf-delay",
+		Name: "delay",
+		Tasks: []types.TaskDefinition{
+			{ID: "pause", Type: "wait", Wait: &types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: int64(time.Hour / time.Millisecond)}},
+			{ID: "after", Type: "action", Action: "mark", DependsOn: []string{"pause"}},
+		},
+	})
+	waitUntil(t, func() bool { return armedWaitsOf(h.engine) == 1 })
+
+	if _, err := h.engine.Cancel(id, "changed my mind"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	if got := h.log.settlements(id); len(got) != 1 || got[0] != types.ExecutionStatusCancelled {
+		t.Fatalf("settlements = %v, want [cancelled]", got)
+	}
+	if n := armedWaitsOf(h.engine); n != 0 {
+		t.Errorf("%d waits still armed after cancel, want 0", n)
+	}
+	step, ok := h.log.step("pause")
+	if !ok || step.Status != string(types.TaskStatusCancelled) {
+		t.Errorf("pause step = %+v (recorded %v), want cancelled", step, ok)
+	}
+	if h.didMark("after") {
+		t.Error("a cancelled delay resumed its run")
+	}
+}
+
+// A timed event wait is claimed from both places that could resume it: the
+// event index and its timer.
+func TestCancelClaimsATimedWaitAndItsTimer(t *testing.T) {
+	h := newCancelHarness(t)
+	// Stored without registration validation, which refuses the sub-second
+	// timeout that keeps this test fast.
+	id := h.startUnvalidated(t, &types.WorkflowDefinition{
+		ID:   "wf-timed",
+		Name: "timed",
+		Tasks: []types.TaskDefinition{
+			{ID: "hold", Type: "wait", Wait: &types.WaitConfig{
+				Type:      tasks.WaitTypeEvent,
+				Event:     "test.never",
+				Timeout:   &types.Duration{Duration: 50 * time.Millisecond},
+				OnTimeout: tasks.OnTimeoutContinue,
+			}},
+			{ID: "after", Type: "action", Action: "mark", DependsOn: []string{"hold"}},
+		},
+	})
+	waitUntil(t, func() bool { return armedWaitsOf(h.engine) == 1 })
+
+	if _, err := h.engine.Cancel(id, "stop"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if h.waitCount("test.never") != 0 || armedWaitsOf(h.engine) != 0 {
+		t.Fatal("the cancelled wait is still armed")
+	}
+
+	// Past the timeout: a timer left running would resume the run and
+	// continue to `after`.
+	time.Sleep(150 * time.Millisecond)
+	if h.didMark("after") {
+		t.Error("the cancelled wait's timer resumed its run")
+	}
+	if got := h.log.settlements(id); len(got) != 1 || got[0] != types.ExecutionStatusCancelled {
+		t.Errorf("settlements = %v, want exactly [cancelled]", got)
+	}
+}
+
+// A wait reached by a run already cancelled is refused rather than armed:
+// Cancel has claimed everything it will claim, so an armed wait would pause
+// the run with nothing left to settle it.
+func TestArmingRefusesACancelledRun(t *testing.T) {
+	h := newCancelHarness(t)
+	def := &types.WorkflowDefinition{ID: "wf-late-wait", Name: "late wait"}
+	execution := h.engine.beginExecution(def, &types.Event{ID: "e", Type: "test.start", Time: time.Now()})
+	if _, err := h.engine.Cancel(execution.ID, "early"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	w := &WaitingExecution{
+		ExecutionID: execution.ID,
+		WorkflowID:  def.ID,
+		TaskID:      "pause",
+		TaskDef:     &types.TaskDefinition{ID: "pause", Type: "wait", Wait: &types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: 1000}},
+	}
+	h.engine.waitingMu.Lock()
+	refused := h.engine.armWaitLocked(w, time.Now().Add(time.Hour))
+	h.engine.waitingMu.Unlock()
+
+	if refused != "cancelled" {
+		t.Errorf("armWaitLocked = %q, want cancelled", refused)
+	}
+	if n := armedWaitsOf(h.engine); n != 0 {
+		t.Errorf("%d waits armed for a cancelled run, want 0", n)
+	}
 }

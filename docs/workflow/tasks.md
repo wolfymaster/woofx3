@@ -175,7 +175,7 @@ Publishes an event to the NATS message bus.
   "type": "action",
   "action": "publish_event",
   "parameters": {
-    "eventType": "reward.granted",
+    "eventType": "badge.awarded",
     "source": "workflow",
     "data": {
       "userId": "${trigger.data.userId}",
@@ -188,9 +188,23 @@ Publishes an event to the NATS message bus.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"publish_event"`. Set at the task top level. |
-| `parameters.eventType` | `string` | Yes | CloudEvents type for the published event. Also used as the NATS subject unless `subject` is set on the event. |
+| `parameters.eventType` | `string` | Yes | CloudEvents type for the published event, and the NATS subject it is published on. May not be reserved (below), or contain a wildcard (`*`, `>`), whitespace or a control character. |
 | `parameters.source` | `string` | No | CloudEvents source field. Defaults to `"workflow"`. |
 | `parameters.data` | `object` | No | Event payload. Supports expressions. |
+
+The event type is the subject the event goes out on, so a workflow could otherwise command the engine or forge the events it acts on (see [Engine integrity](../services/engine-integrity.md)). The engine refuses a reserved `eventType`:
+
+- when the workflow is saved (api) or registered (engine), if `eventType` is written out;
+- when the step runs, once an `eventType` built from an expression has resolved.
+
+Reserved names, defined in `shared/common/golang/cloudevents/reserved.go`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
+
+- **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `slobs`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`.
+- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `module.`, `reward`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `widget.event`, `woofwoofwoof`, `workflow.run.`.
+
+Pick an event name of the workflow's own, such as `badge.awarded`. To test a workflow against a platform event (`channel.*`, `stream.online`, ...), fire it with the api's `simulateTwitchEvent` rather than publishing it.
+
+A workflow refused when it is saved or loaded is not registered, and a refused update unregisters the version it would have replaced: the db holds the refused definition, so the engine does not keep running the old one.
 
 Returns:
 
@@ -252,7 +266,7 @@ The condition task itself always succeeds (unless evaluation throws an error). I
 
 ## wait
 
-Pauses workflow execution until a matching event arrives or a timeout expires. Supports both single-event and aggregation modes.
+Pauses workflow execution until a matching event arrives or a timeout expires, or for a fixed time. Supports single-event, aggregation and delay modes.
 
 ### Single Event Wait
 
@@ -264,7 +278,7 @@ Waits for one matching event:
   "type": "wait",
   "wait": {
     "type": "event",
-    "eventType": "channel.follow",
+    "event": "channel.follow",
     "conditions": [
       { "field": "${trigger.data.userId}", "operator": "eq", "value": "${trigger.data.userId}" }
     ],
@@ -284,7 +298,7 @@ Collects multiple events and checks a threshold:
   "type": "wait",
   "wait": {
     "type": "aggregation",
-    "eventType": "channel.cheer",
+    "event": "channel.cheer",
     "aggregation": {
       "strategy": "sum",
       "field": "data.amount",
@@ -296,6 +310,37 @@ Collects multiple events and checks a threshold:
   }
 }
 ```
+
+### Delay
+
+Pauses for a fixed time, then continues. "On raid, wait 10 seconds, then shout out" is a delay between the trigger and the shoutout:
+
+```json
+{
+  "id": "settle",
+  "type": "wait",
+  "wait": {
+    "type": "delay",
+    "durationMs": 10000
+  }
+}
+```
+
+`durationMs` is required and must be a whole number from `1` to `86400000` (24 hours). A delay takes no `event`, `conditions`, `aggregation`, `timeout` or `onTimeout`; a workflow that sets any of them on a delay is refused when it is saved, as is one whose `durationMs` is out of range. A delay always succeeds, and events arriving while it runs do not end it early.
+
+### Timeouts
+
+An event or aggregation wait without a `timeout` waits for its event however long that takes; a run started by `stream.online` can wait for `stream.offline`.
+
+With a `timeout`, the wait ends when it passes even if no event ever arrives: the engine arms a timer when the run pauses and cancels it when the wait is satisfied. What happens next follows `onTimeout`: `"fail"` (the default) fails the task and the run; `"continue"` marks the task successful with `timedOut: true` and runs the next task. If an event and the timeout land at the same moment, exactly one of them settles the wait.
+
+`timeout` is a duration string such as `"30s"`, `"2m"` or `"1h30m"`, at least one second. A number is refused: it would be read as nanoseconds.
+
+A `timeout` was accepted but not enforced by engines before this behaviour was introduced, so a workflow saved then that names one will now time out where it used to keep waiting.
+
+A wait's own guard `condition`, if it has one, is evaluated again when the run resumes at the wait.
+
+Paused waits and delays live in the engine's memory. A run paused when the engine stops is not resumed when it starts again.
 
 ### Aggregation Strategies
 
@@ -309,9 +354,13 @@ Wait tasks export aggregation results for downstream tasks:
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `eventCount` | `number` | Total events received |
-| `sum` | `number` | Running sum (for sum strategy) |
+| `satisfied` | `boolean` | Whether the wait's event (or aggregation threshold) arrived. `true` for a delay that ran its course |
+| `timedOut` | `boolean` | Whether the wait ended at its timeout |
+| `count` | `number` | Events counted (aggregation waits) |
+| `sum` | `number` | Running sum (aggregation waits) |
 | `events` | `Event[]` | All received events |
+| `lastEvent` | `Event` | The most recent received event, when there is one |
+| `data` | `object` | `lastEvent`'s data, when there is one |
 
 ---
 

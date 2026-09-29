@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -182,28 +183,28 @@ func (e *Engine[TServices]) Cancel(executionID, reason string) (CancelResult, er
 	return CancelResult{Outcome: CancelOutcomeCancelled, Status: types.ExecutionStatusCancelled}, nil
 }
 
-// claimWaits removes every event wait the run has armed, and returns them.
-// Removal under waitingMu is the claim: an event arriving afterwards finds
-// nothing to resume.
+// claimWaits claims every wait the run has armed, event or delay, and returns
+// them. Removal from armedWaits under waitingMu is the claim, the same one an
+// event, a wait's timer and Stop make: each stops the wait's timer, and an
+// event or timer arriving afterwards finds nothing to resume.
 func (e *Engine[TServices]) claimWaits(executionID string) []*WaitingExecution {
 	e.waitingMu.Lock()
 	defer e.waitingMu.Unlock()
 
 	var claimed []*WaitingExecution
-	for eventType, list := range e.waitingExecutions {
-		kept := list[:0]
-		for _, w := range list {
-			if w.ExecutionID == executionID {
-				claimed = append(claimed, w)
-				continue
+	for w := range e.armedWaits {
+		if w.ExecutionID != executionID {
+			continue
+		}
+		e.disarmWaitLocked(w)
+		if !tasks.IsDelay(w.TaskDef.Wait) {
+			event := w.TaskDef.Wait.Event
+			e.waitingExecutions[event] = removeWaitingExecution(e.waitingExecutions[event], w)
+			if len(e.waitingExecutions[event]) == 0 {
+				delete(e.waitingExecutions, event)
 			}
-			kept = append(kept, w)
 		}
-		if len(kept) == 0 {
-			delete(e.waitingExecutions, eventType)
-		} else {
-			e.waitingExecutions[eventType] = kept
-		}
+		claimed = append(claimed, w)
 	}
 	return claimed
 }

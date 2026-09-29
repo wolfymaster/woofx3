@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { notifySceneUpdated, reportAlertNotPlayed, SCENE_UPDATED_EVENT } from "../src/nats-subscriptions";
+import { reportAlertNotPlayed } from "../src/events/alert-dispatch";
+import { initSubscriptions, notifySceneUpdated, SCENE_UPDATED_EVENT } from "../src/nats-subscriptions";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
@@ -103,5 +104,111 @@ describe("notifySceneUpdated", () => {
     expect(notifySceneUpdated(scenes, {})).toBeNull();
 
     expect(calls).toEqual([]);
+  });
+});
+
+describe("alert queue control subjects", () => {
+  /** A bus that records each subscription, so a test can deliver a request to one. */
+  function fakeNats() {
+    const handlers = new Map<string, (msg: any) => unknown>();
+    return {
+      handlers,
+      nats: {
+        subscribe: async (subject: string, handler: (msg: any) => unknown) => {
+          handlers.set(subject, handler);
+          return {};
+        },
+      },
+    };
+  }
+
+  async function request(handlers: Map<string, (msg: any) => unknown>, subject: string, body: unknown) {
+    let reply: unknown = null;
+    await handlers.get(subject)!({
+      subject,
+      reply: "_INBOX.test",
+      json: () => body,
+      respond: (data: Uint8Array) => {
+        reply = JSON.parse(new TextDecoder().decode(data));
+        return true;
+      },
+    });
+    return reply;
+  }
+
+  async function wire(deliveryStore: Record<string, unknown>, db: Record<string, unknown> = {}) {
+    const { handlers, nats } = fakeNats();
+    await initSubscriptions({
+      nats: nats as any,
+      obs: null,
+      db: db as any,
+      host: {} as any,
+      deliveryStore: deliveryStore as any,
+      moduleState: {} as any,
+      resolver: {} as any,
+      logger: fakeLogger(),
+    });
+    return handlers;
+  }
+
+  it("answers skip, clear and replay with a refusal when no overlay is open", async () => {
+    const handlers = await wire({ connectedSceneIds: () => [] });
+
+    expect(await request(handlers, "widget.queue.skip", {})).toEqual({
+      ok: false,
+      skipped: 0,
+      reason: "no overlay is open",
+    });
+    expect(await request(handlers, "widget.queue.clear", {})).toEqual({
+      ok: false,
+      cleared: 0,
+      reason: "no overlay is open",
+    });
+    expect(await request(handlers, "widget.queue.replay", { id: "row-1" })).toEqual({
+      ok: false,
+      reason: "no overlay is open",
+    });
+  });
+
+  it("answers a failure it did not expect instead of leaving the caller to time out", async () => {
+    const handlers = await wire({
+      connectedSceneIds: () => {
+        throw new Error("store unavailable");
+      },
+    });
+
+    expect(await request(handlers, "widget.queue.skip", {})).toEqual({ ok: false, reason: "store unavailable" });
+  });
+
+  // Workflows can publish to arbitrary subjects; a plain publish must not be
+  // able to skip, clear or replay anything.
+  it("ignores a publish that is not a request", async () => {
+    let touched = false;
+    const handlers = await wire({
+      connectedSceneIds: () => {
+        touched = true;
+        return ["scene-1"];
+      },
+    });
+    let responded = false;
+    for (const subject of ["widget.queue.skip", "widget.queue.clear", "widget.queue.replay"]) {
+      await handlers.get(subject)!({
+        subject,
+        json: () => ({ id: "row-1" }),
+        respond: () => {
+          responded = true;
+          return false;
+        },
+      });
+    }
+
+    expect(touched).toBe(false);
+    expect(responded).toBe(false);
+  });
+
+  it("refuses a replay without an id", async () => {
+    const handlers = await wire({ connectedSceneIds: () => ["scene-1"] });
+
+    expect(await request(handlers, "widget.queue.replay", null)).toEqual({ ok: false, reason: "alert id is required" });
   });
 });
