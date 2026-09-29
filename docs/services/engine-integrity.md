@@ -30,6 +30,7 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | `ctx.twitch.*`, `ctx.platform.alerts.*`, `ctx.platform.chat.*` | Fixed subject and command table defined by the engine; the module supplies arguments | Yes: a capability, not a channel |
 | `ctx.chat.sendMessage` | Engine-defined chat sender | Yes |
 | `ctx.crypto.*` | Pure computation over the arguments (HMAC, Ed25519 verification, constant-time comparison) | Yes: nothing reaches the engine |
+| Manifest field `source` and button `action` (`kind: "internal"`) | The api sends the declared request when a form renders or a button is pressed. Barkloader refuses, for an upload, a request on any reserved event prefix; `twitchapi` is open only to its `list` reads. The system module's forms may read engine subjects such as `engine.obs.options` | Yes: a read the engine allows, never a command subject |
 
 ## Applying it
 

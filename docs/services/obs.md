@@ -44,7 +44,8 @@ their event streams are still open and a refresh would cut off whatever is
 playing.
 
 While not connected, every `obs.*` step fails with `OBS is not connected
-(retrying)`, and `listObsScenes()` reports that as its reason.
+(retrying)`, and the name pickers in the workflow builder show that as the
+reason they have nothing to offer.
 
 A wrong or missing password is logged separately, as `OBS refused the
 connection: check the OBS WebSocket password (WOOFX3_OBS_RPC_TOKEN)`, once
@@ -70,38 +71,61 @@ A NATS request/reply subject. The request is a CloudEvent of type
 | `switch_scene` | `sceneName` | `SetCurrentProgramScene` |
 | `set_source_visibility` | `sourceName`, `visible`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetSceneItemList`, `GetGroupSceneItemList` per group when the source is not at the top level, `SetSceneItemEnabled` (on the group, for a source inside one) |
 | `set_input_mute` | `inputName`, `muted` | `SetInputMute` |
-| `list_scenes` | none | `GetSceneList`, then `GetSceneItemList` per scene and `GetGroupSceneItemList` per group, in parallel |
 
 `switch_scene` sets the program scene, so it changes what is live even in
 studio mode.
 
-The reply is `{ "ok": true }` (with `scenes` for `list_scenes`) or
-`{ "ok": false, "error": "<reason>" }`. The scene manager answers every
+The reply is `{ "ok": true }` or `{ "ok": false, "error": "<reason>" }`. The scene manager answers every
 request, a malformed one included, so a requester only ever times out when no
 scene manager is running or OBS stops answering it.
 
-Only the engine sends these: the workflow actions and the api's
-`listObsScenes()`. Both send requests, so the scene manager ignores a message
-on this subject that has no reply subject, before anything reaches OBS. An
+Only the engine's workflow actions send these, always as requests, so the
+scene manager ignores a message on this subject that has no reply subject,
+before anything reaches OBS. An
 uploaded module cannot declare `engine.` (or any other engine command subject)
 as an eventbus trigger event, which is the one way module code could otherwise
 get a message published here (see [Engine integrity](./engine-integrity.md)).
 A module that wants OBS changed returns a value, and a workflow step does the
 changing.
 
-## Listing scenes
+## Name pickers (`engine.obs.options`)
 
-`listObsScenes()` on the engine API sends `list_scenes` and returns
+The workflow builder offers OBS's own names for the `obs.*` actions' fields
+through the generic manifest field source (see
+[Dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind)).
+Each field in `modules/woofx3/manifest.json` declares
 
-```ts
-{ available: true, scenes: { name, sources: { name, sceneItemId, inputKind, enabled, group }[] }[] }
-| { available: false, reason: string }
+```json
+"source": {
+  "kind": "internal",
+  "request": { "event": "engine.obs.options", "payload": { "list": "scenes" } },
+  "timeoutMs": 5000
+}
 ```
 
-scenes ordered as OBS's scene list shows them, top first. A group's sources
-follow the group, with `group` set to its name (`null` at the top level). It asks OBS on every
-call, so a scene added a moment ago is listed. A UI offering scene and source
-names should fall back to a text box when the listing is unavailable.
+and the api's `dispatchFieldOptionsRequest` sends that request when the form
+renders. The scene manager answers on `engine.obs.options`, a subject apart
+from `engine.obs.command` that can only read OBS: a field source's payload is
+whatever its manifest wrote, so it must not name a subject that changes
+anything. Uploaded modules cannot name `engine.` subjects in a field source at
+all (see [Engine integrity](./engine-integrity.md)).
+
+| `list` | Used by | Options | OBS requests |
+|---|---|---|---|
+| `scenes` | `obs.switch_scene.sceneName`, `obs.set_source_visibility.sceneName` | Every scene, top of OBS's scene list first | `GetSceneList` |
+| `sources` | `obs.set_source_visibility.sourceName` | Every scene's sources, headed by the scene. A source inside a group is labelled `Group › Source` and saved as its own name | `GetSceneList`, `GetSceneItemList` per scene, `GetGroupSceneItemList` per group |
+| `inputs` | `obs.set_input_mute.inputName` | Every input, headed `Audio inputs` for audio-only kinds and `Other inputs` for the rest. Global audio devices (Desktop Audio, Mic/Aux) are included | `GetInputList` |
+
+The reply is the UI's option list, `[{ "value", "label", "group"? }]`, or
+`{ "error": "<reason>" }` (not connected, OBS hung, a malformed request), which
+the api relays as a failed request so the picker can show the reason. Every
+list is asked of OBS when the form opens, so a scene added a moment ago is
+there.
+
+The fields are `type: "text"`, which the UI renders as a text box with the
+options as suggestions rather than a strict select: a name can still be typed
+while OBS is closed, or built from a `${...}` variable, and a typed name OBS
+does not have is flagged rather than refused.
 
 ## The legacy `slobs` subject
 

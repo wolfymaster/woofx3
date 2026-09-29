@@ -304,10 +304,11 @@ interface SourceChangeArgs {
 
 ### OBS control (`engine.obs.command`)
 
-The workflow engine's `obs.*` actions and the api's `listObsScenes()` control
-OBS through the scene manager with a request/reply CloudEvent on
-`engine.obs.command` (`SubjectObsCommand` in Go). Unlike `slobs`, every
-request is answered with `{ ok, error? }`. See [OBS control](./obs.md).
+The workflow engine's `obs.*` actions control OBS through the scene manager
+with a request/reply CloudEvent on `engine.obs.command` (`SubjectObsCommand`
+in Go). Unlike `slobs`, every request is answered with `{ ok, error? }`. The
+builder's OBS name pickers read OBS over the separate, read-only
+`engine.obs.options`. See [OBS control](./obs.md).
 
 ---
 
