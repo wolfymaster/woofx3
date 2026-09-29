@@ -33,4 +33,18 @@ describe("TwitchEnvSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  test("parses ad-break lead times and rejects bad ones at startup", () => {
+    const base = {
+      woofx3MessagebusUrl: "nats://localhost:4222",
+      woofx3DatabaseProxyUrl: "http://db",
+      woofx3TwitchClientId: "cid",
+      woofx3TwitchClientSecret: "sec",
+    };
+    expect(TwitchEnvSchema.parse(base).woofx3TwitchAdBreakLeadSeconds).toEqual([60]);
+    expect(
+      TwitchEnvSchema.parse({ ...base, woofx3TwitchAdBreakLeadSeconds: "120,60" }).woofx3TwitchAdBreakLeadSeconds
+    ).toEqual([120, 60]);
+    expect(TwitchEnvSchema.safeParse({ ...base, woofx3TwitchAdBreakLeadSeconds: "soon" }).success).toBe(false);
+  });
 });

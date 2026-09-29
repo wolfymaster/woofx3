@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
-	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -15,6 +14,9 @@ type WorkflowRegistry struct {
 	workflows map[string]*types.WorkflowDefinition
 	registrar triggers.Registrar
 	logger    logger
+	// validate refuses a definition before it replaces anything, so a
+	// rejected update leaves the previous version registered. Nil accepts all.
+	validate func(def *types.WorkflowDefinition) error
 }
 
 // logger is the minimal interface the registry needs; engine.Engine passes its own.
@@ -59,12 +61,9 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 	if len(def.Tasks) == 0 {
 		return fmt.Errorf("workflow must have at least one task")
 	}
-	for _, task := range def.Tasks {
-		if task.Type != "wait" {
-			continue
-		}
-		if err := tasks.ValidateWaitConfig(task.Wait); err != nil {
-			return fmt.Errorf("task %q: %w", task.ID, err)
+	if r.validate != nil {
+		if err := r.validate(def); err != nil {
+			return fmt.Errorf("workflow %s: %w", def.ID, err)
 		}
 	}
 

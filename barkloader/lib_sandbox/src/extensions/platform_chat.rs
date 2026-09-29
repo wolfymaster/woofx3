@@ -3,7 +3,7 @@ use crate::host::{HostExtension, HostFunction, NatsPublisher};
 use std::sync::Arc;
 
 const SUBJECT: &str = "woofwoofwoof";
-const COMMANDS: &[CommandEntry] = &[("register", "register", true)];
+const COMMANDS: &[CommandEntry] = &[("register", "register")];
 
 pub struct PlatformChatExtension(SubjectExtension);
 

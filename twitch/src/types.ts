@@ -15,6 +15,8 @@ export interface Context {
    * publishes fine without it - the unresolved fields are simply absent.
    */
   membershipEnricher?: ChatterMembershipEnricher;
+  /** Told when stream.online / stream.offline arrives, after it is published. */
+  onStreamLiveChange?: (live: boolean) => void;
 }
 
 export interface TwitchContext {

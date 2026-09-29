@@ -46,6 +46,9 @@ func (e *Engine[TServices]) RunActions(run ActionRun) (string, error) {
 		Tasks:     tasks,
 		Ephemeral: true,
 	}
+	if err := e.validateDefinition(def); err != nil {
+		return "", fmt.Errorf("RunActions: %w", err)
+	}
 
 	execution := e.beginExecution(def, run.Event)
 	go e.executeWorkflowInternal(def, execution, run.Event)

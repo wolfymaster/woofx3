@@ -1710,8 +1710,9 @@ export interface Woofx3EngineApi {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void>;
 
-  /** Push live stream events -- follows, subs, cheers, raids, stream on/off --
-   *  to the caller for the life of the session. Chat is deliberately not on
+  /** Push live stream events -- follows, subs, cheers, raids, stream on/off,
+   *  ad breaks (upcoming, begin, end) -- to the caller for the life of the
+   *  session. Chat is deliberately not on
    *  this channel; see ./stream-events.
    *
    *  Delivery is not gapless: nothing buffers events behind this, so a client

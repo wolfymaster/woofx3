@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { Commands, type AuthorizationResponse, type ChatSender, type CommandMatch } from "./commands";
+import { type AuthorizationResponse, type ChatSender, type CommandMatch, Commands } from "./commands";
 
 function makeChatClient() {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
@@ -341,5 +341,33 @@ describe("Commands", () => {
     commands.add("echo", handler);
     const [out] = await commands.process("!echo hello there", "player");
     expect(out).toBe("{}");
+  });
+});
+
+describe("Commands allowRoles", () => {
+  const viewer = { isBroadcaster: false, isModerator: false, isSubscriber: false, isVip: false };
+
+  function deniedEverywhere() {
+    const commands = new Commands(sender("#chan", makeChatClient()));
+    const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
+    commands.setAuth(auth);
+    commands.add("title", "changed", { allowRoles: ["broadcaster", "moderator"] });
+    return { commands, auth };
+  }
+
+  test("lets a listed role through without asking the permission model", async () => {
+    const { commands, auth } = deniedEverywhere();
+
+    expect(await commands.process("!title x", "mod", { ...viewer, isModerator: true })).toEqual(["changed", true]);
+    expect(await commands.process("!title x", "me", { ...viewer, isBroadcaster: true })).toEqual(["changed", true]);
+    expect(auth).not.toHaveBeenCalled();
+  });
+
+  test("sends everyone else through the permission model", async () => {
+    const { commands, auth } = deniedEverywhere();
+
+    expect(await commands.process("!title x", "viewer", { ...viewer, isVip: true })).toEqual(["no", true]);
+    expect(await commands.process("!title x", "unknown")).toEqual(["no", true]);
+    expect(auth).toHaveBeenCalledTimes(2);
   });
 });

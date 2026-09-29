@@ -67,7 +67,7 @@ v0.1.0):
 | `ctx.schedule` | `at(deadlineId, key, whenMs, params?)`, `cancel(deadlineId, key)` — one-shot invocations of a function the manifest declares under `deadlines`; see below |
 | `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
-| `ctx.twitch?` | `clip(args?)`, `timeout(args)`, `updateStream(args)`, `addModerator(args)` |
+| `ctx.twitch?` | `clip()`, `shoutout({ userId \| userName })`, `createMarker({ description? })`, `timeout({ userId \| userName, durationSeconds, reason? })`, `updateStream({ title?, category?, categoryId?, tags? })`. Each waits for the twitch service and returns its result, or throws its message with an optional `code`. `timeout` needs the manifest permission `twitch.moderation` and `updateStream` needs `twitch.channel`; see [Twitch channel controls](../services/twitch-channel.md#modules) |
 | `ctx.chat?` | `sendMessage(text)` |
 | `ctx.platform?.alerts?` | `alert(args)`, `setTimer(args)` |
 | `ctx.platform?.chat?` | `register(args)` |
