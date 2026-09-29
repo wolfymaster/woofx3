@@ -102,6 +102,32 @@
 ---@field get fun(canonical_id: string): ResourceInstance|nil
 ---@field list fun(kind: string): ResourceInstance[]
 
+---One-shot invocations of a function this module declares under the
+---manifest's `deadlines`. An entry is identified by (deadline id, key);
+---`at` on an existing key replaces it, and `cancel` of a missing one does
+---nothing. `when_ms` is Unix epoch milliseconds; a time in the past fires
+---as soon as possible.
+---
+---`at` raises an error for an undeclared deadline id, a non-finite
+---`when_ms`, a `when_ms` more than 30 days out, `params` over 4 KiB
+---serialized, or a deadline already holding its `maxPending` entries.
+---
+---The fired function reads `ctx.event.parameters` (the `params` given here)
+---and `ctx.event.deadline` (`{ id, key, dueAt, firedAt }`). Entries are kept
+---in memory only and are dropped when the module is reloaded, upgraded,
+---disabled or uninstalled: a module re-arms them from its own storage in a
+---`runOnLoad` background task, and must treat a stale or repeated firing as
+---harmless.
+---@class CtxSchedule
+---@field at fun(deadline_id: string, key: string, when_ms: number, params?: table): nil
+---@field cancel fun(deadline_id: string, key: string): nil
+
+---@class CtxDeadlineFiring
+---@field id string     the deadline id from the manifest
+---@field key string    the key the entry was armed under
+---@field dueAt number  epoch ms the entry was armed for
+---@field firedAt number epoch ms it actually fired
+
 ---The standard shape a function returns when it wants the invoking chat
 ---command to reply. `proto`/`v` mirror the woofx3.widget/
 ---woofx3.overlay-events envelope convention, letting a caller reliably
@@ -179,6 +205,7 @@
 ---@field http CtxHttp
 ---@field env CtxEnv
 ---@field resources CtxResources
+---@field schedule CtxSchedule
 ---@field module CtxModule
 ---@field log CtxLog
 ---@field response fun(success: boolean, message: string): CtxResponse

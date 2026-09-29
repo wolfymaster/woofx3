@@ -42,6 +42,9 @@ base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 rand = "0.8"
 
+[dev-dependencies]
+tokio = { version = "1.45.0", features = ["macros", "test-util"] }
+
 [dependencies.lib_repository]
 path = "../lib_repository"
 

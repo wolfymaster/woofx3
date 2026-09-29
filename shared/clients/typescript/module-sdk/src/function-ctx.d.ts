@@ -237,6 +237,46 @@ export interface CtxResources {
 }
 
 /**
+ * `ctx.schedule` — one-shot invocations of a function this module declares
+ * under the manifest's `deadlines`. An entry is identified by
+ * `(deadlineId, key)`; the module is implied.
+ *
+ * Entries are kept in memory only and are dropped when the module is
+ * reloaded, upgraded, disabled or uninstalled. A module keeps the durable
+ * truth in its own storage and re-arms from it in a `runOnLoad` background
+ * task, so a stale or repeated firing must be harmless to it. Deleting a
+ * resource instance cancels every entry whose key is its canonical id.
+ */
+export interface CtxSchedule {
+  /**
+   * Arm `key` to invoke the deadline's function at `whenMs` (Unix epoch
+   * milliseconds), replacing any entry already under that key. A time in the
+   * past fires as soon as possible. The fired function receives `params` as
+   * `ctx.event.parameters` and the firing as `ctx.event.deadline`
+   * (`DeadlineFiring`).
+   *
+   * Throws for an undeclared `deadlineId`, a non-finite `whenMs`, a `whenMs`
+   * more than 30 days out, `params` over 4 KiB serialized, or a deadline
+   * already holding its `maxPending` entries.
+   */
+  at(deadlineId: string, key: string, whenMs: number, params?: unknown): void;
+  /** Drop the entry under `key`. Cancelling nothing is not an error. */
+  cancel(deadlineId: string, key: string): void;
+}
+
+/** `ctx.event.deadline` when a function runs because a deadline came due. */
+export interface DeadlineFiring {
+  /** The deadline id from the manifest. */
+  id: string;
+  /** The key the entry was armed under. */
+  key: string;
+  /** Epoch milliseconds the entry was armed for. */
+  dueAt: number;
+  /** Epoch milliseconds it actually fired. */
+  firedAt: number;
+}
+
+/**
  * `ctx.module` — identity and configured settings of the module the
  * invoking function belongs to.
  *
@@ -320,7 +360,7 @@ export interface CtxExtensions {
 /**
  * The `ctx` object passed to every function invocation. Combines the
  * built-in surface (event, user, events, storage, http, env, resources,
- * module, log, response, result) with any extension namespaces the host registered.
+ * schedule, module, log, response, result) with any extension namespaces the host registered.
  *
  * `event` and `user` are typed as `unknown` because their shape is
  * determined by the trigger that fired the function — the author knows
@@ -338,6 +378,7 @@ export interface Ctx extends CtxExtensions {
   http: CtxHttp;
   env: CtxEnv;
   resources: CtxResources;
+  schedule: CtxSchedule;
   module: CtxModule;
   log: CtxLog;
   /**

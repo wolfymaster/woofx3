@@ -5,8 +5,8 @@ use std::sync::{Arc, RwLock};
 use lib_repository::RepositoryImpl;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 
-use crate::services::background_scheduler::BackgroundTaskScheduler;
 use crate::services::public_url::PublicUrlResolver;
+use crate::services::scheduler::ModuleScheduler;
 use crate::util;
 
 /// The live storage backend, swappable at runtime.
@@ -52,7 +52,7 @@ pub struct AppContext {
     pub sandbox: SandboxFactory,
     pub registry: Arc<ModuleRegistry>,
     pub db_proxy_url: Option<String>,
-    pub scheduler: Arc<BackgroundTaskScheduler>,
+    pub scheduler: Arc<ModuleScheduler>,
     pub public_url_resolver: Arc<PublicUrlResolver>,
 }
 
