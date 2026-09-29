@@ -1007,6 +1007,122 @@ func (x *ListViewerLeaderboardResponse) GetEntries() []*LeaderboardEntry {
 	return nil
 }
 
+type ListRecentUserEventsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Start of the span, inclusive. Required.
+	Since *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=since,proto3" json:"since,omitempty"`
+	// 1-100. Defaults to 20.
+	Limit         *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRecentUserEventsRequest) Reset() {
+	*x = ListRecentUserEventsRequest{}
+	mi := &file_user_event_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRecentUserEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRecentUserEventsRequest) ProtoMessage() {}
+
+func (x *ListRecentUserEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRecentUserEventsRequest.ProtoReflect.Descriptor instead.
+func (*ListRecentUserEventsRequest) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListRecentUserEventsRequest) GetSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Since
+	}
+	return nil
+}
+
+func (x *ListRecentUserEventsRequest) GetLimit() int32 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
+}
+
+type ListRecentUserEventsResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Newest first by occurred_at, at most `limit` of them.
+	Events []*UserEvent `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
+	// Every event in the span, not only those returned.
+	Total         int64 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRecentUserEventsResponse) Reset() {
+	*x = ListRecentUserEventsResponse{}
+	mi := &file_user_event_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRecentUserEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRecentUserEventsResponse) ProtoMessage() {}
+
+func (x *ListRecentUserEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRecentUserEventsResponse.ProtoReflect.Descriptor instead.
+func (*ListRecentUserEventsResponse) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListRecentUserEventsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *ListRecentUserEventsResponse) GetEvents() []*UserEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ListRecentUserEventsResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
 var File_user_event_proto protoreflect.FileDescriptor
 
 const file_user_event_proto_rawDesc = "" +
@@ -1114,16 +1230,25 @@ const file_user_event_proto_rawDesc = "" +
 	"_user_name\"\x87\x01\n" +
 	"\x1dListViewerLeaderboardResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x126\n" +
-	"\aentries\x18\x02 \x03(\v2\x1c.user_event.LeaderboardEntryR\aentries*x\n" +
+	"\aentries\x18\x02 \x03(\v2\x1c.user_event.LeaderboardEntryR\aentries\"t\n" +
+	"\x1bListRecentUserEventsRequest\x120\n" +
+	"\x05since\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x19\n" +
+	"\x05limit\x18\x02 \x01(\x05H\x00R\x05limit\x88\x01\x01B\b\n" +
+	"\x06_limit\"\x93\x01\n" +
+	"\x1cListRecentUserEventsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12-\n" +
+	"\x06events\x18\x02 \x03(\v2\x15.user_event.UserEventR\x06events\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x03R\x05total*x\n" +
 	"\x11LeaderboardMetric\x12\"\n" +
 	"\x1eLEADERBOARD_METRIC_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17LEADERBOARD_METRIC_BITS\x10\x01\x12\"\n" +
-	"\x1eLEADERBOARD_METRIC_GIFTED_SUBS\x10\x022\xc7\x03\n" +
+	"\x1eLEADERBOARD_METRIC_GIFTED_SUBS\x10\x022\xb2\x04\n" +
 	"\x10UserEventService\x12Z\n" +
 	"\x0fRecordUserEvent\x12\".user_event.RecordUserEventRequest\x1a#.user_event.RecordUserEventResponse\x12~\n" +
 	"\x1bGetStreamSessionEventTotals\x12..user_event.GetStreamSessionEventTotalsRequest\x1a/.user_event.GetStreamSessionEventTotalsResponse\x12i\n" +
 	"\x14GetViewerEventTotals\x12'.user_event.GetViewerEventTotalsRequest\x1a(.user_event.GetViewerEventTotalsResponse\x12l\n" +
-	"\x15ListViewerLeaderboard\x12(.user_event.ListViewerLeaderboardRequest\x1a).user_event.ListViewerLeaderboardResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x15ListViewerLeaderboard\x12(.user_event.ListViewerLeaderboardRequest\x1a).user_event.ListViewerLeaderboardResponse\x12i\n" +
+	"\x14ListRecentUserEvents\x12'.user_event.ListRecentUserEventsRequest\x1a(.user_event.ListRecentUserEventsResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_user_event_proto_rawDescOnce sync.Once
@@ -1138,7 +1263,7 @@ func file_user_event_proto_rawDescGZIP() []byte {
 }
 
 var file_user_event_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_user_event_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_user_event_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_user_event_proto_goTypes = []any{
 	(LeaderboardMetric)(0),                      // 0: user_event.LeaderboardMetric
 	(*UserEvent)(nil),                           // 1: user_event.UserEvent
@@ -1153,35 +1278,42 @@ var file_user_event_proto_goTypes = []any{
 	(*ListViewerLeaderboardRequest)(nil),        // 10: user_event.ListViewerLeaderboardRequest
 	(*LeaderboardEntry)(nil),                    // 11: user_event.LeaderboardEntry
 	(*ListViewerLeaderboardResponse)(nil),       // 12: user_event.ListViewerLeaderboardResponse
-	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),                      // 14: common.ResponseStatus
+	(*ListRecentUserEventsRequest)(nil),         // 13: user_event.ListRecentUserEventsRequest
+	(*ListRecentUserEventsResponse)(nil),        // 14: user_event.ListRecentUserEventsResponse
+	(*timestamppb.Timestamp)(nil),               // 15: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                      // 16: common.ResponseStatus
 }
 var file_user_event_proto_depIdxs = []int32{
-	13, // 0: user_event.UserEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	13, // 1: user_event.UserEvent.created_at:type_name -> google.protobuf.Timestamp
-	13, // 2: user_event.RecordUserEventRequest.occurred_at:type_name -> google.protobuf.Timestamp
-	14, // 3: user_event.RecordUserEventResponse.status:type_name -> common.ResponseStatus
+	15, // 0: user_event.UserEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	15, // 1: user_event.UserEvent.created_at:type_name -> google.protobuf.Timestamp
+	15, // 2: user_event.RecordUserEventRequest.occurred_at:type_name -> google.protobuf.Timestamp
+	16, // 3: user_event.RecordUserEventResponse.status:type_name -> common.ResponseStatus
 	1,  // 4: user_event.RecordUserEventResponse.event:type_name -> user_event.UserEvent
-	14, // 5: user_event.GetStreamSessionEventTotalsResponse.status:type_name -> common.ResponseStatus
+	16, // 5: user_event.GetStreamSessionEventTotalsResponse.status:type_name -> common.ResponseStatus
 	5,  // 6: user_event.GetStreamSessionEventTotalsResponse.totals:type_name -> user_event.StreamSessionEventTotals
-	14, // 7: user_event.GetViewerEventTotalsResponse.status:type_name -> common.ResponseStatus
+	16, // 7: user_event.GetViewerEventTotalsResponse.status:type_name -> common.ResponseStatus
 	8,  // 8: user_event.GetViewerEventTotalsResponse.totals:type_name -> user_event.ViewerEventTotals
 	0,  // 9: user_event.ListViewerLeaderboardRequest.metric:type_name -> user_event.LeaderboardMetric
-	14, // 10: user_event.ListViewerLeaderboardResponse.status:type_name -> common.ResponseStatus
+	16, // 10: user_event.ListViewerLeaderboardResponse.status:type_name -> common.ResponseStatus
 	11, // 11: user_event.ListViewerLeaderboardResponse.entries:type_name -> user_event.LeaderboardEntry
-	2,  // 12: user_event.UserEventService.RecordUserEvent:input_type -> user_event.RecordUserEventRequest
-	4,  // 13: user_event.UserEventService.GetStreamSessionEventTotals:input_type -> user_event.GetStreamSessionEventTotalsRequest
-	7,  // 14: user_event.UserEventService.GetViewerEventTotals:input_type -> user_event.GetViewerEventTotalsRequest
-	10, // 15: user_event.UserEventService.ListViewerLeaderboard:input_type -> user_event.ListViewerLeaderboardRequest
-	3,  // 16: user_event.UserEventService.RecordUserEvent:output_type -> user_event.RecordUserEventResponse
-	6,  // 17: user_event.UserEventService.GetStreamSessionEventTotals:output_type -> user_event.GetStreamSessionEventTotalsResponse
-	9,  // 18: user_event.UserEventService.GetViewerEventTotals:output_type -> user_event.GetViewerEventTotalsResponse
-	12, // 19: user_event.UserEventService.ListViewerLeaderboard:output_type -> user_event.ListViewerLeaderboardResponse
-	16, // [16:20] is the sub-list for method output_type
-	12, // [12:16] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	15, // 12: user_event.ListRecentUserEventsRequest.since:type_name -> google.protobuf.Timestamp
+	16, // 13: user_event.ListRecentUserEventsResponse.status:type_name -> common.ResponseStatus
+	1,  // 14: user_event.ListRecentUserEventsResponse.events:type_name -> user_event.UserEvent
+	2,  // 15: user_event.UserEventService.RecordUserEvent:input_type -> user_event.RecordUserEventRequest
+	4,  // 16: user_event.UserEventService.GetStreamSessionEventTotals:input_type -> user_event.GetStreamSessionEventTotalsRequest
+	7,  // 17: user_event.UserEventService.GetViewerEventTotals:input_type -> user_event.GetViewerEventTotalsRequest
+	10, // 18: user_event.UserEventService.ListViewerLeaderboard:input_type -> user_event.ListViewerLeaderboardRequest
+	13, // 19: user_event.UserEventService.ListRecentUserEvents:input_type -> user_event.ListRecentUserEventsRequest
+	3,  // 20: user_event.UserEventService.RecordUserEvent:output_type -> user_event.RecordUserEventResponse
+	6,  // 21: user_event.UserEventService.GetStreamSessionEventTotals:output_type -> user_event.GetStreamSessionEventTotalsResponse
+	9,  // 22: user_event.UserEventService.GetViewerEventTotals:output_type -> user_event.GetViewerEventTotalsResponse
+	12, // 23: user_event.UserEventService.ListViewerLeaderboard:output_type -> user_event.ListViewerLeaderboardResponse
+	14, // 24: user_event.UserEventService.ListRecentUserEvents:output_type -> user_event.ListRecentUserEventsResponse
+	20, // [20:25] is the sub-list for method output_type
+	15, // [15:20] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_user_event_proto_init() }
@@ -1196,13 +1328,14 @@ func file_user_event_proto_init() {
 	file_user_event_proto_msgTypes[7].OneofWrappers = []any{}
 	file_user_event_proto_msgTypes[9].OneofWrappers = []any{}
 	file_user_event_proto_msgTypes[10].OneofWrappers = []any{}
+	file_user_event_proto_msgTypes[12].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_event_proto_rawDesc), len(file_user_event_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

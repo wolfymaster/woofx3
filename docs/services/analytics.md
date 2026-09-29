@@ -418,10 +418,13 @@ shipping every viewer's activity to a multi-tenant store.
 |---|---|
 | Gifts in the UI's live feed | The UI drops `SubscriptionGift`: no `PlatformEventType` for it (`client/src/lib/platforms/engine-events.ts:5-8`, woofx3-ui). The engine already broadcasts it, and "users who gifted N subs" is answered from the log by `getLeaderboard`. |
 
-Two smaller things sit in the same area and will be mistaken for Analytics bugs
-once it exists: `getDashboardStats()` returns hardcoded values for
-`activeAccounts` and `recentEvents` (`api/src/routes/dashboard-stats.ts:3-31`),
-and `getDashboard().recentActivity` is always `[]` (`routes/dashboard.ts:50`).
+The dashboard's "recent" figures read the log too, by time rather than by
+session: `UserEventService.ListRecentUserEvents` returns the latest events at
+or after a given instant and how many there were. `getDashboard().recentActivity`
+is the latest twenty of the last 24 hours, and `getDashboardStats().recentEvents`
+is the count for the same span (`api/src/routes/dashboard.ts`). Both are empty
+or zero on a quiet day, which is the true answer. `getDashboardStats` has no
+account count: the engine is single-tenant and has nothing to count.
 
 ## Build order
 

@@ -190,6 +190,26 @@ pub struct ListViewerLeaderboardResponse {
     #[prost(message, repeated, tag="2")]
     pub entries: ::prost::alloc::vec::Vec<LeaderboardEntry>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListRecentUserEventsRequest {
+    /// Start of the span, inclusive. Required.
+    #[prost(message, optional, tag="1")]
+    pub since: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// 1-100. Defaults to 20.
+    #[prost(int32, optional, tag="2")]
+    pub limit: ::core::option::Option<i32>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListRecentUserEventsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// Newest first by occurred_at, at most `limit` of them.
+    #[prost(message, repeated, tag="2")]
+    pub events: ::prost::alloc::vec::Vec<UserEvent>,
+    /// Every event in the span, not only those returned.
+    #[prost(int64, tag="3")]
+    pub total: i64,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum LeaderboardMetric {

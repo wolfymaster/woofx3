@@ -611,8 +611,25 @@ export interface DashboardStats {
   totalWorkflows: number;
   installedModules: number;
   totalModules: number;
-  activeAccounts: number;
+  /**
+   * Platform events -- cheers, follows, subs, gifts, raids, redemptions -- that
+   * occurred in the 24 hours before the call. Chat is not counted.
+   */
   recentEvents: number;
+}
+
+/** One platform event, as the dashboard's activity feed shows it. */
+export interface RecentActivity {
+  /** The event type, e.g. `channel.cheer`. */
+  type: string;
+  /** e.g. `twitch`. */
+  platform: string;
+  /** The viewer's display name. Null for an anonymous cheer or gift. */
+  userName: string | null;
+  /** Bits, gifted subs, raiders or channel points. Null when the event carries no quantity. */
+  amount: number | null;
+  /** ISO 8601. When the event happened. */
+  timestamp: string;
 }
 
 // ==================== Module lifecycle response types ====================
@@ -1503,10 +1520,14 @@ export interface Woofx3EngineApi {
     }>;
   }>;
 
-  /** Workflow counts and a recent-activity feed, for a dashboard landing view. */
+  /**
+   * Workflow counts and a recent-activity feed, for a dashboard landing view.
+   * `recentActivity` is the latest platform events of the last 24 hours,
+   * newest first, at most 20; empty when nothing happened in that span.
+   */
   getDashboard(): Promise<{
     workflows: { total: number; enabled: number; running: number };
-    recentActivity: Array<{ type: string; message: string; timestamp: string }>;
+    recentActivity: RecentActivity[];
   }>;
 
   getAvailableWorkflows(): Promise<{
