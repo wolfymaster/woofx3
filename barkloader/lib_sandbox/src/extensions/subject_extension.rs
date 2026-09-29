@@ -1,10 +1,9 @@
 //! Shared implementation for extensions that are, structurally, just a
 //! NATS subject plus a lookup table of `(js_name, wire_command)` pairs —
-//! `twitch`, `platform.alerts`, and `platform.chat` today. Each of those
-//! namespaces' every function does exactly the same thing (publish
-//! `{ command: wire_command, args? }` to one fixed subject), so the
-//! behavior lives once here; each namespace file becomes a name plus a
-//! data table.
+//! `twitch` today. Every function of such a namespace does exactly the
+//! same thing (publish `{ command: wire_command, args? }` to one fixed
+//! subject), so the behavior lives once here; each namespace file becomes
+//! a name plus a data table.
 //!
 //! `chat` is deliberately not built on this: it calls a different host
 //! trait (`ChatSender`, not `NatsPublisher`) and has real per-call logic
