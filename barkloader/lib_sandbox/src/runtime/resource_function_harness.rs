@@ -162,6 +162,8 @@ impl Harness {
             module_id: "woofx3".to_string(),
             module_name: "woofx3".to_string(),
             module_version: "0.7.0".to_string(),
+            permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let returned = QuickJSAdapter::new()
             .unwrap()

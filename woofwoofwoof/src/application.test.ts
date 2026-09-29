@@ -6,6 +6,10 @@ import WoofWoofWoof from "./application";
 
 type InitCtx = Parameters<WoofWoofWoof["init"]>[0];
 
+const VIEWER = { isBroadcaster: false, isModerator: false, isSubscriber: false, isVip: false };
+const MODERATOR = { ...VIEWER, isModerator: true };
+const BROADCASTER = { ...VIEWER, isBroadcaster: true };
+
 function decodeCommandPayload(data: Uint8Array): { command: string; args: Record<string, unknown> } {
   return JSON.parse(new TextDecoder().decode(data)) as { command: string; args: Record<string, unknown> };
 }
@@ -24,12 +28,21 @@ function getChatHandler(base: {
 // Return type inferred from the cast below, deliberately: annotating it
 // `InitCtx` widens away the spies the tests then assert on, which is why every
 // `base.chatSay` / `base.publishLog` read was a type error.
+type TwitchReply = { type: string; data: unknown };
+
 function buildTestContext(options: {
   listCommands?: () => Promise<{ status: { code: string; message?: string }; commands: Command[] }>;
+  /** What the twitch service answers a `twitchapi` request with. */
+  twitchReply?: (command: string, args: Record<string, unknown>) => TwitchReply;
+  /** Thrown by the NATS request itself, as the client does for a timeout or no responders. */
+  twitchRequestError?: Error;
+  /** The permission model's answer; granted when omitted. */
+  hasPermission?: () => Promise<{ code: string }>;
 }) {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
 
   const publishLog: { topic: string; data: Uint8Array }[] = [];
+  const requestLog: { topic: string; data: Uint8Array }[] = [];
   const subscriptions: { eventType: string; handler: (msg: unknown) => void | Promise<void> }[] = [];
   const messageBus = {
     client: {
@@ -38,6 +51,15 @@ function buildTestContext(options: {
       },
       publish: (topic: string, data: Uint8Array) => {
         publishLog.push({ topic, data });
+      },
+      request: async (topic: string, data: Uint8Array, _opts?: unknown) => {
+        requestLog.push({ topic, data });
+        if (options.twitchRequestError) {
+          throw options.twitchRequestError;
+        }
+        const { command, args } = decodeCommandPayload(data);
+        const reply = options.twitchReply?.(command, args) ?? { type: `twitchapi.${command}.result`, data: {} };
+        return { subject: "inbox", data: new TextEncoder().encode(JSON.stringify(reply)) };
       },
     },
   };
@@ -67,7 +89,7 @@ function buildTestContext(options: {
 
   const db = {
     client: {
-      hasPermission: mock(async () => ({ code: "OK" as const })),
+      hasPermission: mock(options.hasPermission ?? (async () => ({ code: "OK" }))),
       listCommands: mock(listCommandsFn),
       addUserToResource: mock(async () => ({ code: "OK" as const })),
       removeUserFromResource: mock(async () => ({ code: "OK" as const })),
@@ -109,6 +131,7 @@ function buildTestContext(options: {
     logger,
     services,
     publishLog,
+    requestLog,
     subscriptions,
     barkHandlers,
     barkSend,
@@ -150,86 +173,175 @@ describe("WoofWoofWoof application", () => {
     await expect(app.run(ctx)).rejects.toThrow(/Failed to load commands/);
   });
 
-  test("chat subscriber relays a matching command reply to the channel", async () => {
+  test("!category asks the twitch service and says which category it chose", async () => {
     const app = new WoofWoofWoof();
-    const base = buildTestContext({});
+    const base = buildTestContext({
+      twitchReply: () => ({
+        type: "twitchapi.updateStream.result",
+        data: { ok: true, categoryId: "1469308723", categoryName: "Software and Game Development" },
+      }),
+    });
     const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
     await app.run(ctx);
 
-    const handler = getChatHandler(base);
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!category software and game", chatterName: "mod", membership: MODERATOR } }),
+    });
 
-    const msg = {
-      json: () => ({
-        data: {
-          message: "!category sgd",
-          chatterName: "mod",
-        },
-      }),
-    };
-    await handler(msg);
-
-    expect(base.chatSay).toHaveBeenCalled();
-    const lastSay = base.chatSay.mock.calls.at(-1);
-    expect(lastSay?.[1]).toContain("Software and Game Development");
+    expect(base.requestLog).toHaveLength(1);
+    expect(base.requestLog[0]?.topic).toBe("twitchapi");
+    const payload = decodeCommandPayload(base.requestLog[0]?.data ?? new Uint8Array());
+    expect(payload).toEqual({ command: "updateStream", args: { category: "software and game" } });
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe("Stream category set to Software and Game Development");
   });
 
-  test("stream category changes are published for downstream Twitch automation", async () => {
+  test("says in chat why the twitch service refused", async () => {
     const app = new WoofWoofWoof();
-    const base = buildTestContext({});
+    const base = buildTestContext({
+      twitchReply: () => ({ type: "twitchapi.error", data: { error: 'no Twitch category matches "zzz"' } }),
+    });
     const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
     await app.run(ctx);
 
-    const handler = getChatHandler(base);
-
-    await handler({
-      json: () => ({
-        data: { message: "!category jc", chatterName: "mod" },
-      }),
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!category zzz", chatterName: "mod", membership: MODERATOR } }),
     });
 
-    const twitchPublish = base.publishLog.find((p) => p.topic === "twitchapi");
-    expect(twitchPublish).toBeDefined();
-    if (!twitchPublish) {
-      throw new Error("expected twitchapi publish");
-    }
-    const payload = decodeCommandPayload(twitchPublish.data);
-    expect(payload.command).toBe("update_stream");
-    expect(payload.args).toEqual({ category: "just chatting" });
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe('Could not change the category: no Twitch category matches "zzz"');
   });
 
-  test("only the designated broadcaster can change the stream title", async () => {
+  test("!title works for the broadcaster and moderators without a grant, and no one else", async () => {
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      hasPermission: async () => ({ code: "PERMISSION_DENIED" }),
+      twitchReply: (_command, args) => ({ type: "twitchapi.updateStream.result", data: { ok: true, ...args } }),
+    });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+    const handler = getChatHandler(base);
+
+    await handler({
+      json: () => ({ data: { message: "!title Hijacked", chatterName: "randomviewer", membership: VIEWER } }),
+    });
+    expect(base.requestLog).toHaveLength(0);
+
+    for (const [chatterName, membership] of [
+      ["streamer", BROADCASTER],
+      ["mod", MODERATOR],
+    ] as const) {
+      await handler({ json: () => ({ data: { message: "!title Building a bot", chatterName, membership } }) });
+    }
+    expect(base.requestLog).toHaveLength(2);
+    const payload = decodeCommandPayload(base.requestLog[1]?.data ?? new Uint8Array());
+    expect(payload).toEqual({ command: "updateStream", args: { title: "Building a bot" } });
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe("Stream title updated to: Building a bot");
+  });
+
+  // A grant through the permission model still lets a trusted viewer in.
+  test("!title also works for a chatter the permission model grants", async () => {
     const app = new WoofWoofWoof();
     const base = buildTestContext({});
     const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
     await app.run(ctx);
 
-    const handler = getChatHandler(base);
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!title Granted", chatterName: "editor", membership: VIEWER } }),
+    });
+    expect(base.requestLog).toHaveLength(1);
+  });
 
-    base.publishLog.length = 0;
-
-    await handler({
-      json: () => ({
-        data: { message: "!title New stream", chatterName: "randomviewer" },
+  test("!marker places a marker with its description and says where", async () => {
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      twitchReply: () => ({
+        type: "twitchapi.createMarker.result",
+        data: { id: "m1", createdAt: "", description: "clutch", positionSeconds: 3725 },
       }),
     });
-    expect(base.publishLog.filter((p) => p.topic === "twitchapi")).toHaveLength(0);
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
 
-    await handler({
-      json: () => ({
-        data: { message: "!title Allowed", chatterName: "wolfymaster" },
-      }),
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!marker clutch", chatterName: "mod", membership: MODERATOR } }),
     });
-    const twitchPublish = base.publishLog.find((p) => p.topic === "twitchapi");
-    expect(twitchPublish).toBeDefined();
-    if (!twitchPublish) {
-      throw new Error("expected twitchapi publish");
-    }
-    const payload = decodeCommandPayload(twitchPublish.data);
-    expect(payload.command).toBe("update_stream");
-    expect(payload.args).toEqual({ title: "Allowed" });
+
+    const payload = decodeCommandPayload(base.requestLog[0]?.data ?? new Uint8Array());
+    expect(payload).toEqual({ command: "createMarker", args: { description: "clutch" } });
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe("Stream marker placed at 1:02:05");
+  });
+
+  // The name on a chat message is the display name, which is not always the login.
+  test("!vanish times the chatter out by id and says so", async () => {
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({});
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!vanish", chatterName: "Lurker", chatterId: "u-42", membership: VIEWER } }),
+    });
+
+    const payload = decodeCommandPayload(base.requestLog[0]?.data ?? new Uint8Array());
+    expect(payload.command).toBe("timeout");
+    expect(payload.args.userId).toBe("u-42");
+    expect(payload.args).not.toHaveProperty("userName");
+    const duration = payload.args.durationSeconds as number;
+    expect(duration >= 1 && duration <= 600).toBe(true);
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe("/me *poof* @Lurker is gone");
+  });
+
+  test("!vanish does not ask Twitch to time out the broadcaster or a moderator", async () => {
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({});
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!vanish", chatterName: "mod", chatterId: "u-1", membership: MODERATOR } }),
+    });
+
+    expect(base.requestLog).toHaveLength(0);
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe("@mod is too important to vanish");
+  });
+
+  test("says the Twitch service is not running when nothing answers", async () => {
+    const noResponders = Object.assign(new Error("no responders: 'twitchapi'"), { name: "RequestError" });
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({ twitchRequestError: noResponders });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!title New", chatterName: "mod", membership: MODERATOR } }),
+    });
+
+    expect(base.chatSay.mock.calls.at(-1)?.[1]).toBe("Could not change the title: The Twitch service is not running");
+  });
+
+  // The change may land after the wait ran out; calling it failed invites a retry.
+  test("reports a timeout as unknown, not failed", async () => {
+    const timeout = Object.assign(new Error("timeout"), { name: "TimeoutError" });
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({ twitchRequestError: timeout });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    await getChatHandler(base)({
+      json: () => ({ data: { message: "!category IRL", chatterName: "mod", membership: MODERATOR } }),
+    });
+
+    const said = base.chatSay.mock.calls.at(-1)?.[1] ?? "";
+    expect(said).toContain("unknown whether I could change the category");
+    expect(said).not.toContain("Could not");
   });
 
   test("a command's actions are dispatched to the engine, carrying the command event", async () => {

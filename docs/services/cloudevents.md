@@ -210,10 +210,10 @@ workflow id this run does not have.
 
 ## Twitch API Commands
 
-`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject.
+`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the twitch service reads the bare envelope and a CloudEvent carrying it as `data` alike.
 
 ```typescript
-// shared/clients/typescript/cloudevents/Twitch/commands.ts
+// shared/common/typescript/cloudevents/Twitch/commands.ts
 // subject: "twitchapi"
 // payload: { command: string; args: Record<string, unknown> }
 ```
@@ -223,30 +223,35 @@ workflow id this run does not have.
 | Method | Command string | Description |
 |--------|----------------|-------------|
 | `timeout` | `timeout` | Time out a user in chat |
-| `updateStream` | `update_stream` | Update stream title or category |
-
-#### TimeoutArgs
+| `updateStream` | `updateStream` | Change the title, category or tags |
+| `createMarker` | `createMarker` | Place a stream marker (live only) |
 
 ```typescript
 interface TimeoutArgs {
-    user?: string;
-    duration: number;   // timeout duration in seconds
+  userId?: string;          // or userName
+  userName?: string;
+  durationSeconds: number;  // 1 to 1209600
+  reason?: string;          // at most 500 characters
 }
-```
 
-#### UpdateStreamArgs
-
-```typescript
 interface UpdateStreamArgs {
-    category?: string;
-    title?: string;
+  title?: string;           // at most 140 characters (not UTF-16 units)
+  category?: string;        // free text, resolved through Twitch's category search
+  categoryId?: string;      // used as given; "" clears the category
+  tags?: string[];          // at most 10, each at most 25 letters or numbers
+}
+
+interface CreateMarkerArgs {
+  description?: string;     // at most 140 characters
 }
 ```
+
+The twitch service serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
 
 ### Usage
 
 ```typescript
-const [subject, payload] = factory.TwitchApi().timeout({ user: 'bad_actor', duration: 600 });
+const [subject, payload] = factory.TwitchApi().timeout({ userName: 'bad_actor', durationSeconds: 600 });
 nats.publish(subject, payload);
 ```
 
