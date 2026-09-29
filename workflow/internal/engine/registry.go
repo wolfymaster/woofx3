@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
+	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -57,6 +58,14 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 	}
 	if len(def.Tasks) == 0 {
 		return fmt.Errorf("workflow must have at least one task")
+	}
+	for _, task := range def.Tasks {
+		if task.Type != "wait" {
+			continue
+		}
+		if err := tasks.ValidateWaitConfig(task.Wait); err != nil {
+			return fmt.Errorf("task %q: %w", task.ID, err)
+		}
 	}
 
 	r.mu.Lock()
