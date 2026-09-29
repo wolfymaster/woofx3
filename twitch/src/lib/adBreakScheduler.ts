@@ -1,7 +1,6 @@
-import type { AdSchedule } from "@woofx3/api";
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { TwitchCommandError, type TwitchCommandErrorCode } from "./twitch-ads";
+import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
 export const DEFAULT_AD_BREAK_LEAD_SECONDS: readonly number[] = [60];
 
@@ -12,10 +11,9 @@ const POLL_INTERVAL_MS = 60_000;
  * cannot fix. A missing scope needs the streamer to relink, so it waits
  * longest; a rate limit doubles from its base on each consecutive refusal.
  */
-const BACKOFF_MS: Record<Exclude<TwitchCommandErrorCode, "failed" | "unavailable">, number> = {
+const BACKOFF_MS: Record<Exclude<TwitchApiErrorCode, "failed">, number> = {
   missing_scope: 15 * 60_000,
   unauthorized: 5 * 60_000,
-  unlinked: 5 * 60_000,
   rate_limited: 2 * 60_000,
 };
 const MAX_BACKOFF_MS = 30 * 60_000;
@@ -33,8 +31,6 @@ const REAL_CLOCK: SchedulerClock = {
 };
 
 export interface AdBreakSchedulerDeps {
-  /** True while a stream segment is open; Twitch is not asked otherwise. */
-  isSegmentOpen(): Promise<boolean>;
   fetchSchedule(): Promise<AdSchedule>;
   publishUpcoming(event: AdBreakUpcoming): void;
   logger: SharedLogger;
@@ -44,15 +40,37 @@ export interface AdBreakSchedulerDeps {
 }
 
 /**
+ * Parses the configured lead times: a number, or a comma-separated list of
+ * them. Throws on anything that is not positive whole seconds, because a
+ * typo would otherwise silently disable the heads-up a streamer configured.
+ */
+export function parseAdBreakLeadSeconds(raw: unknown): number[] {
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return [...DEFAULT_AD_BREAK_LEAD_SECONDS];
+  }
+  const leads = String(raw)
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .map(Number);
+  if (leads.length === 0 || leads.some((lead) => !Number.isInteger(lead) || lead <= 0)) {
+    throw new Error(
+      `twitchAdBreakLeadSeconds (WOOFX3_TWITCH_AD_BREAK_LEAD_SECONDS) must be positive whole seconds, got "${String(raw)}"`
+    );
+  }
+  return leads;
+}
+
+/**
  * Publishes `channel.ad_break.upcoming` ahead of each scheduled Twitch ad, so
  * a workflow can warn chat or switch scenes before the break rather than
  * after it starts. Twitch has no EventSub topic for this; the only source is
- * the ad schedule, which has to be polled.
+ * the Helix ad schedule, which has to be polled.
  *
- * It lives in the api, beside StreamGaugeSampler, because the api is what
- * knows whether a stream segment is open, and Twitch is polled only then.
- * The schedule itself is read through the twitch service, which holds the
- * token and already answers `getAdSchedule` for the dashboard.
+ * Twitch is polled only while the stream is live. The owner reports that
+ * through `setLive`, from this service's own `stream.online` /
+ * `stream.offline` subscriptions plus one Helix read at connect (EventSub
+ * does not replay an online event that happened before the service started).
  *
  * The schedule is read once a minute; each lead time is then armed as its
  * own timer so the announcement lands on time rather than up to a minute
@@ -60,8 +78,8 @@ export interface AdBreakSchedulerDeps {
  * `nextAdAt`) cancels the old announcement and schedules a new one: an
  * announcement is keyed by the ad's time, and a moved ad is a new ad.
  *
- * Assumes one api instance per engine, as the engine is deployed today. The
- * "announced" set lives in memory, so two instances would each announce
+ * Assumes one twitch service per engine, as the engine is deployed today.
+ * The "announced" set lives in memory, so two instances would each announce
  * every ad, and a restart inside a lead window announces that ad again.
  */
 export class AdBreakScheduler {
@@ -72,8 +90,17 @@ export class AdBreakScheduler {
   private announced = new Set<string>();
   private backoffUntil = 0;
   private rateLimitStreak = 0;
-  private lastFailureCode: TwitchCommandErrorCode | null = null;
-  private stopped = true;
+  private lastFailureCode: TwitchApiErrorCode | null = null;
+  private live = false;
+  /**
+   * Bumped on every live transition. A poll chain carries the value it
+   * started under and stops when it changes, so going offline and back
+   * online while a read is in flight cannot leave two chains running.
+   */
+  private liveEpoch = 0;
+  /** Whether a stream.online/offline event has set `live` yet. */
+  private liveFromEvent = false;
+  private stopped = false;
 
   constructor(private deps: AdBreakSchedulerDeps) {
     const leads = deps.leadSeconds ?? DEFAULT_AD_BREAK_LEAD_SECONDS;
@@ -84,30 +111,60 @@ export class AdBreakScheduler {
     this.clock = deps.clock ?? REAL_CLOCK;
   }
 
-  start(): void {
-    if (!this.stopped) {
-      return;
-    }
-    this.stopped = false;
-    this.schedulePoll(0);
-    this.deps.logger.info("AdBreakScheduler started", { leadSeconds: this.leadSeconds });
+  /** The stream went online or offline, as EventSub reported it. */
+  setLive(live: boolean): void {
+    this.liveFromEvent = true;
+    this.applyLive(live);
   }
 
+  /**
+   * The live state read from Helix at connect. Ignored once an EventSub
+   * event has arrived, since that read may have been answered before the
+   * event and would otherwise undo it.
+   */
+  seedLive(live: boolean): void {
+    if (this.liveFromEvent) {
+      return;
+    }
+    this.applyLive(live);
+  }
+
+  /** Terminal: nothing is polled or announced after this. */
   stop(): void {
     this.stopped = true;
+    this.applyLive(false);
+  }
+
+  private applyLive(live: boolean): void {
+    if (this.stopped && live) {
+      return;
+    }
+    if (live === this.live) {
+      return;
+    }
+    this.live = live;
+    this.liveEpoch += 1;
+    if (live) {
+      this.deps.logger.info("AdBreakScheduler: stream live; watching the ad schedule", {
+        leadSeconds: this.leadSeconds,
+      });
+      this.schedulePoll(0, this.liveEpoch);
+      return;
+    }
     if (this.pollTimer !== null) {
       this.clock.clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
     this.clearLeadTimers();
+    this.announced.clear();
   }
 
   /**
    * Chains one timeout per poll rather than an interval, so a slow read can
    * never overlap the next one.
    */
-  private schedulePoll(delayMs: number): void {
-    if (this.stopped) {
+  private schedulePoll(delayMs: number, epoch: number): void {
+    if (!this.live || epoch !== this.liveEpoch) {
       return;
     }
     this.pollTimer = this.clock.setTimeout(async () => {
@@ -119,29 +176,16 @@ export class AdBreakScheduler {
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      this.schedulePoll(POLL_INTERVAL_MS);
+      this.schedulePoll(POLL_INTERVAL_MS, epoch);
     }, delayMs);
   }
 
   /** One read of the schedule, if the stream is live. Exposed for tests. */
   async pollOnce(): Promise<void> {
-    let live: boolean;
-    try {
-      live = await this.deps.isSegmentOpen();
-    } catch (err) {
-      this.deps.logger.warn("AdBreakScheduler: could not read the stream session; ad schedule not checked", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+    if (!this.live) {
       return;
     }
-    if (!live) {
-      this.clearLeadTimers();
-      this.announced.clear();
-      return;
-    }
-
-    const now = this.clock.now();
-    if (now < this.backoffUntil) {
+    if (this.clock.now() < this.backoffUntil) {
       return;
     }
 
@@ -164,7 +208,8 @@ export class AdBreakScheduler {
 
   private arm(schedule: AdSchedule): void {
     this.clearLeadTimers();
-    if (this.stopped) {
+    // The stream may have gone offline while the read was in flight.
+    if (!this.live) {
       return;
     }
     if (schedule.nextAdAt === null) {
@@ -173,7 +218,7 @@ export class AdBreakScheduler {
     }
     const nextAdAtMs = Date.parse(schedule.nextAdAt);
     if (Number.isNaN(nextAdAtMs)) {
-      this.deps.logger.warn("AdBreakScheduler: Twitch sent an unreadable nextAdAt", { nextAdAt: schedule.nextAdAt });
+      this.deps.logger.warn("AdBreakScheduler: unreadable nextAdAt", { nextAdAt: schedule.nextAdAt });
       return;
     }
     const nextAdAt = new Date(nextAdAtMs).toISOString();
@@ -219,7 +264,7 @@ export class AdBreakScheduler {
   }
 
   private announce(nextAdAt: string, nextAdAtMs: number, durationSeconds: number): void {
-    if (this.stopped) {
+    if (!this.live) {
       return;
     }
     const secondsUntil = Math.max(0, Math.round((nextAdAtMs - this.clock.now()) / 1000));
@@ -228,7 +273,7 @@ export class AdBreakScheduler {
 
   private recordFailure(err: unknown): void {
     const message = err instanceof Error ? err.message : String(err);
-    const code: TwitchCommandErrorCode = err instanceof TwitchCommandError ? err.code : "failed";
+    const code: TwitchApiErrorCode = err instanceof TwitchApiError ? err.code : "failed";
     let backoffMs = 0;
     switch (code) {
       case "rate_limited": {
@@ -237,13 +282,11 @@ export class AdBreakScheduler {
         break;
       }
       case "missing_scope":
-      case "unauthorized":
-      case "unlinked": {
+      case "unauthorized": {
         backoffMs = BACKOFF_MS[code];
         break;
       }
-      case "failed":
-      case "unavailable": {
+      case "failed": {
         backoffMs = 0;
         break;
       }

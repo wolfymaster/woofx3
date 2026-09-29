@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { AdSchedule } from "@woofx3/api";
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { AdBreakScheduler, type SchedulerClock } from "../src/ad-break-scheduler";
-import { TwitchCommandError } from "../src/twitch-ads";
+import { AdBreakScheduler, parseAdBreakLeadSeconds, type SchedulerClock } from "./adBreakScheduler";
+import { type AdSchedule, TwitchApiError } from "./twitch";
 
 /** Timers fire only when a test advances time past them. */
 class FakeClock implements SchedulerClock {
@@ -30,6 +29,22 @@ class FakeClock implements SchedulerClock {
 
   clearTimeout(handle: unknown): void {
     (handle as { cleared: boolean }).cleared = true;
+  }
+
+  /** Like advance, but lets each fired async callback settle before the next. */
+  async advanceAsync(ms: number): Promise<void> {
+    const until = this.nowMs + ms;
+    for (;;) {
+      const due = this.timers.filter((t) => !t.cleared && t.at <= until).sort((a, b) => a.at - b.at)[0];
+      if (!due) {
+        break;
+      }
+      due.cleared = true;
+      this.nowMs = due.at;
+      due.fn();
+      await Bun.sleep(0);
+    }
+    this.nowMs = until;
   }
 
   /** Moves time forward, firing lead timers due on the way. The poll timer is
@@ -81,7 +96,6 @@ function harness(opts: { leadSeconds?: number[]; live?: boolean } = {}) {
     next: schedule(T0 + 5 * 60_000) as AdSchedule | Error,
   };
   const scheduler = new AdBreakScheduler({
-    isSegmentOpen: async () => state.live,
     fetchSchedule: async () => {
       state.fetches += 1;
       if (state.next instanceof Error) {
@@ -94,9 +108,11 @@ function harness(opts: { leadSeconds?: number[]; live?: boolean } = {}) {
     leadSeconds: opts.leadSeconds,
     clock,
   });
-  // Started so it is live, with its own poll loop cancelled: the tests drive
-  // polls through pollOnce.
-  scheduler.start();
+  // Live, with its own poll loop cancelled: the tests drive polls through
+  // pollOnce.
+  if (state.live) {
+    scheduler.setLive(true);
+  }
   clock.cancelAll();
   return { clock, published, warnings, state, scheduler };
 }
@@ -150,11 +166,11 @@ describe("AdBreakScheduler", () => {
     expect(published).toEqual([{ nextAdAt: iso(T0 + 10 * 60_000), secondsUntil: 60, durationSeconds: 90 }]);
   });
 
-  test("does not ask Twitch while no segment is open, and drops armed announcements", async () => {
+  test("does not ask Twitch while offline, and drops armed announcements", async () => {
     const { clock, published, state, scheduler } = harness();
 
     await scheduler.pollOnce();
-    state.live = false;
+    scheduler.setLive(false);
     await scheduler.pollOnce();
     clock.advance(10 * 60_000);
 
@@ -174,7 +190,7 @@ describe("AdBreakScheduler", () => {
 
   test("backs off after a missing scope and warns once", async () => {
     const { clock, state, warnings, scheduler } = harness();
-    state.next = new TwitchCommandError("missing_scope", "reconnect Twitch to allow ad controls");
+    state.next = new TwitchApiError("missing_scope", "reconnect Twitch to allow ad controls");
 
     await scheduler.pollOnce();
     clock.advance(60_000);
@@ -190,7 +206,7 @@ describe("AdBreakScheduler", () => {
 
   test("rate limits back off exponentially and reset on success", async () => {
     const { clock, state, scheduler } = harness();
-    state.next = new TwitchCommandError("rate_limited", "429");
+    state.next = new TwitchApiError("rate_limited", "429");
 
     await scheduler.pollOnce();
     clock.advance(2 * 60_000);
@@ -217,14 +233,73 @@ describe("AdBreakScheduler", () => {
     await scheduler.pollOnce();
     scheduler.stop();
     await scheduler.pollOnce();
+    scheduler.setLive(true);
     clock.advance(10 * 60_000);
 
     expect(published).toEqual([]);
   });
 
+  test("going live starts polling at once and every minute after; offline stops it", async () => {
+    const clock = new FakeClock(T0);
+    let fetches = 0;
+    const scheduler = new AdBreakScheduler({
+      fetchSchedule: async () => {
+        fetches += 1;
+        return schedule(null);
+      },
+      publishUpcoming: () => {},
+      logger: silentLogger,
+      clock,
+    });
+
+    clock.advance(5 * 60_000);
+    expect(fetches).toBe(0);
+
+    scheduler.setLive(true);
+    await clock.advanceAsync(0);
+    expect(fetches).toBe(1);
+    await clock.advanceAsync(60_000);
+    expect(fetches).toBe(2);
+
+    scheduler.setLive(false);
+    await clock.advanceAsync(10 * 60_000);
+    expect(fetches).toBe(2);
+  });
+
+  test("the live state read at connect applies until an EventSub event arrives", async () => {
+    const seeded = harness({ live: false });
+    seeded.scheduler.seedLive(true);
+    seeded.clock.cancelAll();
+    await seeded.scheduler.pollOnce();
+    expect(seeded.state.fetches).toBe(1);
+
+    const raced = harness({ live: true });
+    raced.scheduler.seedLive(false);
+    await raced.scheduler.pollOnce();
+    expect(raced.state.fetches).toBe(1);
+  });
+
   test("rejects lead times that are not positive whole seconds", () => {
     for (const leadSeconds of [[], [0], [-5], [1.5]]) {
       expect(() => harness({ leadSeconds })).toThrow("positive whole seconds");
+    }
+  });
+});
+
+describe("parseAdBreakLeadSeconds", () => {
+  test("defaults to one announcement a minute ahead", () => {
+    expect(parseAdBreakLeadSeconds(undefined)).toEqual([60]);
+    expect(parseAdBreakLeadSeconds("")).toEqual([60]);
+  });
+
+  test("reads a number or a comma-separated list", () => {
+    expect(parseAdBreakLeadSeconds(90)).toEqual([90]);
+    expect(parseAdBreakLeadSeconds("120, 60")).toEqual([120, 60]);
+  });
+
+  test("fails fast on anything but positive whole seconds", () => {
+    for (const bad of ["abc", "0", "-30", "1.5", "60,x"]) {
+      expect(() => parseAdBreakLeadSeconds(bad)).toThrow("WOOFX3_TWITCH_AD_BREAK_LEAD_SECONDS");
     }
   });
 });

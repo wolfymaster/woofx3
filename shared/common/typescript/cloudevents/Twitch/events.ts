@@ -88,14 +88,11 @@ export interface Redeem {
   message?: string;
 }
 
-// Twitch's `stream.online` EventSub payload identifies the broadcaster
-// and carries a start timestamp; everything else (title, game, viewer
-// count) requires a follow-up Helix lookup. Subscribers that just need
-// the on/off transition can ignore the optional fields.
 /**
- * An ad break is scheduled soon. Not a Twitch event: the api reads the ad
- * schedule while the stream is live and publishes this once per scheduled
- * break, `secondsUntil` ahead of it (docs/services/twitch-channel.md).
+ * An ad break is scheduled soon. Not a Twitch event: the twitch service
+ * reads the ad schedule while the stream is live and publishes this once
+ * per scheduled break, `secondsUntil` ahead of it
+ * (docs/services/twitch-channel.md).
  */
 export interface AdBreakUpcoming {
   /** ISO-8601 time Twitch has the next ad break scheduled for. */
@@ -126,6 +123,10 @@ export interface AdBreakEnd {
   endedAt: string;
 }
 
+// Twitch's `stream.online` EventSub payload identifies the broadcaster
+// and carries a start timestamp; everything else (title, game, viewer
+// count) requires a follow-up Helix lookup. Subscribers that just need
+// the on/off transition can ignore the optional fields.
 export interface StreamOnline {
   broadcasterUserId: string;
   broadcasterUserName: string;

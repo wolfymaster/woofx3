@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseAdBreakLeadSeconds } from "./lib/adBreakScheduler";
 
 export const TwitchEnvSchema = z.object({
   woofx3MessagebusUrl: z.string().min(1, "woofx3MessagebusUrl is required"),
@@ -22,6 +23,21 @@ export const TwitchEnvSchema = z.object({
   // How long a chat message may wait on a cache miss before publishing without
   // the unresolved fields.
   woofx3TwitchMembershipDeadlineMs: z.number().int().positive().default(250),
+
+  // Seconds before a scheduled ad at which channel.ad_break.upcoming is
+  // published: one number, or a comma-separated list such as "120,60".
+  // Parsed here so a bad value fails at startup rather than at the first ad.
+  woofx3TwitchAdBreakLeadSeconds: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform((raw, ctx) => {
+      try {
+        return parseAdBreakLeadSeconds(raw);
+      } catch (err) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: err instanceof Error ? err.message : String(err) });
+        return z.NEVER;
+      }
+    }),
 });
 
 export type TwitchEnvConfig = z.infer<typeof TwitchEnvSchema>;

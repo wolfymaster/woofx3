@@ -14,5 +14,6 @@ export default function onStreamOnline(ctx: Context, listener: EventSubWsListene
       startedAt: (event.startDate ?? new Date()).toISOString(),
     });
     ctx.messageBus.publish(topic, data);
+    ctx.onStreamLiveChange?.(true);
   });
 }

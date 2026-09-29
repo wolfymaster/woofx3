@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { loadConfig, parseAdBreakLeadSeconds } from "../src/config";
+import { loadConfig } from "../src/config";
 
 /** The minimum loadConfig requires; each test adds what it is about. */
 const REQUIRED: Record<string, string> = {
@@ -39,23 +39,5 @@ describe("api listener", () => {
     withEnv({ WOOFX3_API_HOST: "0.0.0.0" });
 
     expect(loadConfig().host).toBe("0.0.0.0");
-  });
-});
-
-describe("parseAdBreakLeadSeconds", () => {
-  test("defaults to one announcement a minute ahead", () => {
-    expect(parseAdBreakLeadSeconds(undefined)).toEqual([60]);
-    expect(parseAdBreakLeadSeconds("")).toEqual([60]);
-  });
-
-  test("reads a number or a comma-separated list", () => {
-    expect(parseAdBreakLeadSeconds(90)).toEqual([90]);
-    expect(parseAdBreakLeadSeconds("120, 60")).toEqual([120, 60]);
-  });
-
-  test("fails fast on anything but positive whole seconds", () => {
-    for (const bad of ["abc", "0", "-30", "1.5", "60,x"]) {
-      expect(() => parseAdBreakLeadSeconds(bad)).toThrow("WOOFX3_AD_BREAK_LEAD_SECONDS");
-    }
   });
 });

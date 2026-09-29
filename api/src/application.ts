@@ -2,7 +2,6 @@ import type { ApplicationContext, Application as RuntimeApplication, IApplicatio
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
-import type { AdBreakScheduler } from "./ad-break-scheduler";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
 import type { Msg } from "@woofx3/nats/src/types";
 
@@ -36,7 +35,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private gaugeSampler: StreamGaugeSampler | null = null;
-  private adBreakScheduler: AdBreakScheduler | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -61,9 +59,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamEventBroadcaster },
       { StreamSessionResolver },
       { StreamGaugeSampler },
-      { AdBreakScheduler },
-      { fetchAdSchedule },
-      { default: EventFactory },
       { TwitchHelixGauges },
       { UserEventRecorder },
       { WebhookClient },
@@ -92,9 +87,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-event-broadcaster"),
       import("./stream-session-resolver"),
       import("./stream-gauge-sampler"),
-      import("./ad-break-scheduler"),
-      import("./twitch-ads"),
-      import("@woofx3/common/cloudevents/EventFactory"),
       import("./twitch-helix-gauges"),
       import("./user-event-recorder"),
       import("./webhook-client"),
@@ -214,22 +206,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       this.gaugeSampler = new StreamGaugeSampler(db, new TwitchHelixGauges(db), logger);
       this.gaugeSampler.start();
 
-      // Same reason as the sampler: Twitch is asked about ads only while a
-      // segment is open.
-      const twitchEvents = new EventFactory({ source: "api" }).Twitch();
-      const busForAds = natsClient;
-      this.adBreakScheduler = new AdBreakScheduler({
-        isSegmentOpen: async () => (await db.ensureCurrentStreamSession({})).isSegmentOpen === true,
-        fetchSchedule: () => fetchAdSchedule(busForAds),
-        publishUpcoming: (event) => {
-          const [subject, data] = twitchEvents.adBreakUpcoming(event);
-          busForAds.publish(subject, data);
-        },
-        logger,
-        leadSeconds: config.adBreakLeadSeconds,
-      });
-      this.adBreakScheduler.start();
-
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
       await streamEventBroadcaster.start();
       api.setStreamEventBroadcaster(streamEventBroadcaster);
@@ -287,8 +263,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   async terminate(): Promise<void> {
     this.gaugeSampler?.stop();
     this.gaugeSampler = null;
-    this.adBreakScheduler?.stop();
-    this.adBreakScheduler = null;
     this.server?.stop();
     this.server = null;
   }

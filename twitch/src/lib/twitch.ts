@@ -45,7 +45,7 @@ export interface SnoozeResult {
 
 /**
  * Why a Twitch call failed, in terms a caller can act on. Carried on the
- * dispatcher's error reply as `code`, so the api can tell "reconnect Twitch"
+ * dispatcher's error reply as `code`, so a caller can tell "reconnect Twitch"
  * from "wait and retry" without parsing messages.
  */
 export type TwitchApiErrorCode = "missing_scope" | "unauthorized" | "rate_limited" | "failed";

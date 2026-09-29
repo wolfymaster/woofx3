@@ -7,6 +7,7 @@ import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
+import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, { TwitchApiError, type TwitchApiErrorCode } from "./lib/twitch";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
@@ -67,6 +68,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   private link: "waiting" | "connecting" | "connected" = "waiting";
   private eventBus: TwitchEventBus | null = null;
   private twitchClient: TwitchClient | null = null;
+  private adBreakScheduler: AdBreakScheduler | null = null;
   /** A token update arrived mid-connect; applied once the connect finishes. */
   private relinkPending = false;
 
@@ -107,6 +109,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     if (userChanged && !ctx.config.getConfig("woofx3TwitchChannelName")) {
       ctx.logger.info("twitch: Twitch was relinked to a different account; reconnecting");
       eventBus.disconnect();
+      this.adBreakScheduler?.stop();
+      this.adBreakScheduler = null;
       await client.close();
       this.eventBus = null;
       this.twitchClient = null;
@@ -200,12 +204,26 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const listener = twitchClient.EventBusListener();
     const broadcaster = await twitchClient.broadcaster();
 
+    const twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
+    const events = new EventFactory({ source: "twitch" });
+    const messageBus = ctx.services.messageBus.client;
+    const adBreakScheduler = new AdBreakScheduler({
+      fetchSchedule: () => twitchApi.getAdSchedule({}),
+      publishUpcoming: (event) => {
+        const [topic, data] = events.Twitch().adBreakUpcoming(event);
+        messageBus.publish(topic, data);
+      },
+      logger: ctx.logger,
+      leadSeconds: ctx.config.getConfig("woofx3TwitchAdBreakLeadSeconds") as number[] | undefined,
+    });
+
     const eventBusCtx = {
       broadcaster,
       logger: ctx.logger,
-      messageBus: ctx.services.messageBus.client,
-      events: new EventFactory({ source: "twitch" }),
+      messageBus,
+      events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
+      onStreamLiveChange: (live: boolean) => adBreakScheduler.setLive(live),
     };
     const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);
     await twitchEventBus.start();
@@ -223,15 +241,39 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     }
 
     ctx.broadcaster = broadcaster;
-    ctx.twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
+    ctx.twitchApi = twitchApi;
     ctx.twitchEventBus = twitchEventBus;
     this.eventBus = twitchEventBus;
     this.twitchClient = twitchClient;
+    this.adBreakScheduler = adBreakScheduler;
+    void this.seedLiveState(ctx, apiClient, broadcaster.id, adBreakScheduler);
     this.link = "connected";
     ctx.logger.info("twitch: connected", { broadcasterId: broadcaster.id });
     if (this.relinkPending) {
       this.relinkPending = false;
       await this.relink(ctx);
+    }
+  }
+
+  /**
+   * EventSub does not replay a stream.online that happened before this
+   * service connected, so a service started mid-stream asks Helix once.
+   * A failed read leaves the scheduler offline until the next online event:
+   * a missed heads-up is better than polling a stream that is not live.
+   */
+  private async seedLiveState(
+    ctx: TwitchApiContext,
+    apiClient: ApiClient,
+    broadcasterId: string,
+    scheduler: AdBreakScheduler
+  ): Promise<void> {
+    try {
+      const stream = await apiClient.streams.getStreamByUserId(broadcasterId);
+      scheduler.seedLive(stream !== null);
+    } catch (err) {
+      ctx.logger.warn("twitch: could not read whether the stream is live; ad heads-up waits for stream.online", {
+        err: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -273,6 +315,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   }
 
   async terminate(ctx: TwitchApiContext) {
+    this.adBreakScheduler?.stop();
+    this.adBreakScheduler = null;
     ctx.twitchEventBus?.disconnect();
   }
 
