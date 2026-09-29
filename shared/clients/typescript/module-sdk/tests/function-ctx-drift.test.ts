@@ -99,6 +99,7 @@ const KNOWN_ERROR_FIELDS = ["code"];
 
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
   twitch: ["clip", "shoutout", "createMarker", "timeout", "updateStream"],
+  obs: ["switchScene", "setSourceVisibility", "setInputMute", "listScenes", "listSources", "listInputs"],
   chat: ["sendMessage"],
 };
 
@@ -217,6 +218,18 @@ describe("function ctx drift guard", () => {
     for (const m of bound) {
       if (!lua.includes(`@field ${m} fun(`)) {
         throw new Error(`function-ctx.lua is missing twitch.${m}`);
+      }
+    }
+  });
+
+  it("ctx.obs declares exactly the functions the obs extension binds", () => {
+    const obs = readRust("barkloader/lib_sandbox/src/extensions/obs.rs");
+    const table = obs.slice(obs.indexOf("const FUNCTIONS"), obs.indexOf("];", obs.indexOf("const FUNCTIONS")));
+    const bound = [...table.matchAll(/\(\s*"([a-zA-Z]+)",\s*Operation::/g)].map((m) => m[1]);
+    expect(bound).toEqual(KNOWN_EXTENSIONS.obs!);
+    for (const m of bound) {
+      if (!lua.includes(`@field ${m} fun(`)) {
+        throw new Error(`function-ctx.lua is missing obs.${m}`);
       }
     }
   });

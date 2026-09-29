@@ -315,7 +315,7 @@ export interface CtxModule {
 // know they're available get autocomplete; authors writing portable
 // modules check `if (ctx.twitch) …` first.
 //
-// Source: `barkloader/lib_sandbox/src/extensions/{twitch,chat}.rs`.
+// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs,chat}.rs`.
 // To add a new extension, declare
 // the namespace + its function names below.
 
@@ -338,6 +338,11 @@ export interface CtxHostError extends Error {
    *
    * Absent when the twitch service refused (invalid input, Twitch not linked,
    * Twitch's own error): those carry only a message.
+   *
+   * `ctx.obs` uses `timeout`, `call_limit`, `busy` and `request_failed` the
+   * same way, `unavailable` when no scene manager is running, and
+   * `invalid_arguments` for a call it refuses before asking. A refusal from
+   * OBS (not connected, no scene by that name) carries only its message.
    */
   code?: string;
 }
@@ -398,6 +403,52 @@ export interface CtxTwitchExtension {
   };
 }
 
+/** One OBS name, in the shape a field-options function returns. */
+export interface ObsNameOption {
+  /** The name exactly as OBS shows it. */
+  value: string;
+  label: string;
+  /** The heading the option is listed under, such as the scene a source is in. */
+  group?: string;
+}
+
+/**
+ * `ctx.obs.*`: registered when `ObsExtension` is bound. Each call asks the
+ * scene manager, which holds the engine's OBS connection, to change OBS or
+ * list its names, waits up to 5 seconds (never past the end of the function's
+ * run), and returns its answer. A function may make at most 10 calls per run.
+ * A refusal (OBS not connected, a name OBS does not have) throws a
+ * `CtxHostError` carrying OBS's reason, which a field-options function can
+ * return as `{ error }` so the picker says why it is empty.
+ *
+ * Names are OBS's own, case included. The three changes need
+ * `"permissions": ["obs.control"]` in the manifest, or the call throws
+ * `permission_denied` without reaching OBS; listing needs none.
+ */
+export interface CtxObsExtension {
+  /** Make a scene the live program scene. Needs `obs.control`. */
+  switchScene(args: { sceneName: string }): { ok: true };
+  /**
+   * Show or hide a source in a scene, the live program scene when `sceneName`
+   * is absent or empty. `visible` defaults to true and also accepts "true" and
+   * "false". Needs `obs.control`.
+   */
+  setSourceVisibility(args: { sourceName: string; sceneName?: string; visible?: boolean | "true" | "false" }): {
+    ok: true;
+  };
+  /**
+   * Mute or unmute an audio input. `muted` defaults to true and also accepts
+   * "true" and "false". Needs `obs.control`.
+   */
+  setInputMute(args: { inputName: string; muted?: boolean | "true" | "false" }): { ok: true };
+  /** OBS's scenes. */
+  listScenes(): ObsNameOption[];
+  /** OBS's sources, grouped by the scene they are in. */
+  listSources(): ObsNameOption[];
+  /** OBS's audio inputs. */
+  listInputs(): ObsNameOption[];
+}
+
 /** `ctx.chat.*` — registered when `ChatExtension` is bound. */
 export interface CtxChatExtension {
   /** Send a message via the engine-bound chat sender. */
@@ -407,6 +458,7 @@ export interface CtxChatExtension {
 /** Aggregated extension surface. Each namespace optional. */
 export interface CtxExtensions {
   twitch?: CtxTwitchExtension;
+  obs?: CtxObsExtension;
   chat?: CtxChatExtension;
 }
 
