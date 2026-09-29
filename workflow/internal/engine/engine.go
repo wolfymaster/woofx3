@@ -139,23 +139,10 @@ func (e *Engine[TServices]) Registry() *WorkflowRegistry {
 	return e.workflowRegistry
 }
 
-// RegisterWorkflow refuses a definition the engine would refuse to run, so the
-// author hears about it when the workflow is saved or loaded rather than the
-// first time it fires.
-//
-// A refused definition also unregisters whatever was registered under its id.
-// The db already holds the refused version, so keeping the old one firing
-// would run a workflow nobody can see or edit any more; failing closed leaves
-// the workflow off until a definition the engine accepts is saved.
+// RegisterWorkflow registers a definition; the registry refuses one the engine
+// can't run and fails closed (see WorkflowRegistry.Register).
 func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) error {
-	err := validatePublishSteps(def)
-	if err == nil {
-		err = e.workflowRegistry.Register(def)
-	}
-	if err != nil {
-		if def.ID != "" {
-			_ = e.workflowRegistry.Remove(def.ID)
-		}
+	if err := e.workflowRegistry.Register(def); err != nil {
 		return fmt.Errorf("workflow %q: %w", def.ID, err)
 	}
 	return nil

@@ -99,3 +99,21 @@ func TestARefusedReplacementUnregistersTheWorkflow(t *testing.T) {
 		t.Fatalf("%d workflows still fire on the trigger, want none", len(got))
 	}
 }
+
+// The reconciler registers through the registry directly, not through
+// RegisterWorkflow, so the registry itself must refuse a reserved subject and
+// drop the version it replaces.
+func TestTheRegistryRefusesAReservedSubjectForEveryCaller(t *testing.T) {
+	engine := newExecEngine(t)
+	if err := engine.RegisterWorkflow(publishingWorkflow("badge.awarded")); err != nil {
+		t.Fatalf("register the allowed version: %v", err)
+	}
+
+	err := engine.Registry().Register(publishingWorkflow("widget.queue.clear"))
+	if err == nil || !strings.Contains(err.Error(), `reserved for the engine ("widget.queue.")`) {
+		t.Fatalf("err = %v, want the reserved-subject refusal", err)
+	}
+	if _, getErr := engine.GetWorkflow("wf-publish"); getErr == nil {
+		t.Fatal("the previously registered version is still registered after its replacement was refused")
+	}
+}
