@@ -23,11 +23,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use woofx3_cloudevents::BaseEvent;
 
-/// Must match `SubjectObsCommand` in shared/common/golang/cloudevents/subjects.go
-/// and `ObsControlCommand` in shared/common/typescript/cloudevents/Obs/commands.ts.
+/// Must match `EventType.ObsCommand` and `ObsControlCommand` in
+/// shared/common/typescript/cloudevents/Obs/commands.ts, which the scene
+/// manager answers.
 const COMMAND_SUBJECT: &str = "engine.obs.command";
 
-/// Must match `ObsOptions` in shared/common/typescript/cloudevents/Obs/commands.ts.
+/// Must match `EventType.ObsOptions` in shared/common/typescript/cloudevents/Obs/commands.ts.
 const OPTIONS_SUBJECT: &str = "engine.obs.options";
 
 const NAMESPACE: &str = "obs";

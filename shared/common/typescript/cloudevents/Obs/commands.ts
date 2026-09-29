@@ -29,11 +29,12 @@ export interface OBSCommand {
  * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
  * scene manager answers every command with an `ObsControlReply`.
  *
- * The only producer is the engine's workflow `obs.*` actions, never module
- * code. Names are OBS's own scene, source and input names, exactly as the
+ * The only producer is barkloader's `ctx.obs` extension, on behalf of module
+ * code holding the `obs.control` permission; a module never chooses the
+ * subject. Names are OBS's own scene, source and input names, exactly as the
  * streamer sees them in OBS.
  *
- * Must match `obsCommand` in workflow/obs_actions.go.
+ * Must match the commands built in barkloader/lib_sandbox/src/extensions/obs.rs.
  */
 export type ObsControlCommand =
   | { command: "switch_scene"; sceneName: string }
@@ -58,10 +59,9 @@ export type ObsControlReply =
 
 /**
  * What to list, carried as the `data` of an `engine.obs.options` CloudEvent.
- * Sent by the api's `dispatchFieldOptionsRequest` for a manifest field whose
- * `source` names this subject. A subject apart from `engine.obs.command`, so
- * that a field source, whose payload is whatever a manifest wrote, can only
- * ever read OBS.
+ * Sent by barkloader's `ctx.obs.listScenes`, `listSources` and `listInputs`.
+ * A subject apart from `engine.obs.command`, so that reading OBS's names
+ * never needs the permission that changing OBS does.
  */
 export type ObsOptionsRequest = { list: ObsOptionsList };
 

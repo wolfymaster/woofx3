@@ -3,9 +3,9 @@
 // with whether OBS did it.
 //
 // Every failure is an answer rather than a throw or a silence. The engine is
-// waiting on the reply to settle a workflow step, so a command that cannot be
-// carried out has to say why in words a streamer can act on -- the reason
-// becomes the step's error in the run log.
+// waiting on the reply to settle a workflow step (a module action calling
+// `ctx.obs`), so a command that cannot be carried out has to say why in words a
+// streamer can act on -- the reason becomes the step's error in the run log.
 
 import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
 import type { Logger } from "@woofx3/common/runtime";
@@ -274,7 +274,7 @@ export interface ObsSessionSource {
  * Answer one `engine.obs.command` message.
  *
  * A message with no reply subject is refused before anything reaches OBS.
- * The one legitimate sender, the engine's `obs.*` actions, sends a request and
+ * The one legitimate sender, barkloader's `ctx.obs` extension, sends a request and
  * waits for the answer, so a bare publish on this subject comes from something
  * that is not the engine, and OBS control is not something anything else on
  * the bus may drive.

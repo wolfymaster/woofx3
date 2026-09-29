@@ -4,10 +4,11 @@ import { EngineEventType } from "@woofx3/api/webhooks";
 
 /**
  * The reason a worker gave for not listing options, when its reply is the
- * field-options failure shape `{ error: string }` (what `twitchapi` and the
- * scene manager's `engine.obs.options` answer with), else null. Relayed as a
- * failed request so the UI can say why a picker is empty rather than showing
- * no options at all.
+ * field-options failure shape `{ error: string }` (what `twitchapi` answers
+ * with, and what a module's field-options function returns when it cannot
+ * list, such as OBS not being connected), else null. Relayed as a failed
+ * request so the UI can say why a picker is empty rather than showing no
+ * options at all.
  */
 export function fieldOptionsReplyError(data: unknown): string | null {
   if (data === null || typeof data !== "object" || Array.isArray(data)) {

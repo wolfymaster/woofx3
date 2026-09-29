@@ -1,15 +1,50 @@
 # OBS control
 
-Workflows change OBS through three engine-native actions: `obs.switch_scene`,
-`obs.set_source_visibility` and `obs.set_input_mute` (parameters in
-[Task types](../workflow/tasks.md#obs-switch-scene-obs-set-source-visibility-obs-set-input-mute)).
-The workflow engine never talks to OBS itself. The scene manager holds the one
-OBS WebSocket connection, and the engine asks it to act over NATS.
+The engine holds the OBS connection; a module decides when to use it. The
+scene manager holds the one OBS WebSocket connection. Module code reaches it
+through the `ctx.obs` host extension, which asks the scene manager over NATS
+and returns its answer. The workflow actions and name pickers a streamer sees
+(switch scene, show or hide a source, mute an input) are declared by the OBS
+platform module (`woofx3_obs`, published from woofx3-modules), whose functions
+call `ctx.obs`, the same way the Twitch platform module calls `ctx.twitch`.
 
 ```
-workflow step ──request──▶ engine.obs.command ──▶ sceneManager ──obs-websocket v5──▶ OBS
-              ◀──{ ok, error? }────────────────────┘
+workflow step ─▶ woofx3_obs function ─▶ ctx.obs ──request──▶ engine.obs.command ──▶ sceneManager ──obs-websocket v5──▶ OBS
+                                               ◀──{ ok, error? }──────────────────────┘
 ```
+
+An engine with no OBS module installed has no OBS actions, and an engine
+without `ctx.obs` does not advertise the `obs.control`
+[capability](./engine-capabilities.md).
+
+## `ctx.obs`
+
+Registered by `ObsExtension` (`barkloader/lib_sandbox/src/extensions/obs.rs`)
+and typed in `shared/clients/typescript/module-sdk/src/function-ctx.d.ts`.
+
+| Function | Sends | Returns | Permission |
+|---|---|---|---|
+| `switchScene({ sceneName })` | `switch_scene` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
+| `setSourceVisibility({ sourceName, sceneName?, visible? })` | `set_source_visibility` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
+| `setInputMute({ inputName, muted? })` | `set_input_mute` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
+| `listScenes()`, `listSources()`, `listInputs()` | `{ list }` on `engine.obs.options` | the option list below | none |
+
+Changing OBS changes what viewers see and hear, so it needs the manifest
+permission `obs.control`, which the module install page shows. Listing names
+needs none.
+
+Arguments are checked before anything is sent: names must be non-empty
+strings, `sceneName` may be absent or empty (the live program scene), and
+`visible` / `muted` default to true and accept `true`, `false`, `"true"` and
+`"false"`, since a value filled in from a step's parameters reaches the
+function as text. A bad call throws with `code: "invalid_arguments"`.
+
+A refusal from the scene manager (OBS not connected, no scene by that name)
+throws with OBS's reason as the message and no `code`, so a module action can
+let it fail the step with that reason. Calls are bounded like `ctx.twitch`'s:
+at most 10 per run, each waiting up to 5 seconds and never past the run's
+deadline, with `timeout`, `unavailable` (no scene manager running), `busy`,
+`call_limit` and `request_failed` codes for the rest.
 
 ## Connecting OBS
 
@@ -43,9 +78,10 @@ of the scene manager itself. They are not refreshed after a reconnect, because
 their event streams are still open and a refresh would cut off whatever is
 playing.
 
-While not connected, every `obs.*` step fails with `OBS is not connected
-(retrying)`, and the name pickers in the workflow builder show that as the
-reason they have nothing to offer.
+While not connected, every `ctx.obs` call throws `OBS is not connected
+(retrying)`, so an OBS step fails with that reason, and a name picker whose
+function returns it as `{ error }` shows it as the reason it has nothing to
+offer.
 
 A wrong or missing password is logged separately, as `OBS refused the
 connection: check the OBS WebSocket password (WOOFX3_OBS_RPC_TOKEN)`, once
@@ -56,7 +92,7 @@ answer within 3.5s; reconnecting to it`, and the scene manager drops that
 session and reconnects: a socket that stays open while OBS has stopped
 answering would otherwise fail every command until OBS was restarted.
 
-Names are OBS's own: a step names a scene, source or audio input exactly as it
+Names are OBS's own: a call names a scene, source or audio input exactly as it
 appears in OBS, case included. Renaming a scene in OBS breaks the steps that
 name it, and they fail saying which scene is missing.
 
@@ -79,53 +115,44 @@ The reply is `{ "ok": true }` or `{ "ok": false, "error": "<reason>" }`. The sce
 request, a malformed one included, so a requester only ever times out when no
 scene manager is running or OBS stops answering it.
 
-Only the engine's workflow actions send these, always as requests, so the
-scene manager ignores a message on this subject that has no reply subject,
-before anything reaches OBS. An
-uploaded module cannot declare `engine.` (or any other engine command subject)
-as an eventbus trigger event, which is the one way module code could otherwise
-get a message published here (see [Engine integrity](./engine-integrity.md)).
-A module that wants OBS changed returns a value, and a workflow step does the
-changing.
+Only `ctx.obs` sends these, always as requests, so the scene manager ignores a
+message on this subject that has no reply subject, before anything reaches
+OBS. An uploaded module cannot declare `engine.` (or any other engine command
+subject) as an eventbus trigger event or in a form's request, which would
+otherwise let module code get a message published here without the
+`obs.control` permission (see [Engine integrity](./engine-integrity.md)).
 
 ## Name pickers (`engine.obs.options`)
 
-The workflow builder offers OBS's own names for the `obs.*` actions' fields
-through the generic manifest field source (see
-[Dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind)).
-Each field in `modules/woofx3/manifest.json` declares
+The workflow builder offers OBS's own names for the OBS module's action fields.
+Each field declares a field source that runs one of the module's own functions
+(see
+[Dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind)),
+and that function returns `ctx.obs.listScenes()`, `listSources()` or
+`listInputs()`. The scene manager answers on `engine.obs.options`, a subject
+apart from `engine.obs.command` that can only read OBS, so listing never needs
+the permission that changing OBS does. Uploaded modules cannot name `engine.`
+subjects in a field source at all (see
+[Engine integrity](./engine-integrity.md)); `ctx.obs` is the only way in.
 
-```json
-"source": {
-  "kind": "internal",
-  "request": { "event": "engine.obs.options", "payload": { "list": "scenes" } },
-  "timeoutMs": 5000
-}
-```
-
-and the api's `dispatchFieldOptionsRequest` sends that request when the form
-renders. The scene manager answers on `engine.obs.options`, a subject apart
-from `engine.obs.command` that can only read OBS: a field source's payload is
-whatever its manifest wrote, so it must not name a subject that changes
-anything. Uploaded modules cannot name `engine.` subjects in a field source at
-all (see [Engine integrity](./engine-integrity.md)).
-
-| `list` | Used by | Options | OBS requests |
+| `list` | Function | Options | OBS requests |
 |---|---|---|---|
-| `scenes` | `obs.switch_scene.sceneName`, `obs.set_source_visibility.sceneName` | Every scene, top of OBS's scene list first | `GetSceneList` |
-| `sources` | `obs.set_source_visibility.sourceName` | Every scene's sources, headed by the scene. A source inside a group is labelled `Group › Source` and saved as its own name | `GetSceneList`, `GetSceneItemList` per scene, `GetGroupSceneItemList` per group |
-| `inputs` | `obs.set_input_mute.inputName` | Every input, headed `Audio inputs` for audio-only kinds and `Other inputs` for the rest. Global audio devices (Desktop Audio, Mic/Aux) are included | `GetInputList` |
+| `scenes` | `listScenes` | Every scene, top of OBS's scene list first | `GetSceneList` |
+| `sources` | `listSources` | Every scene's sources, headed by the scene. A source inside a group is labelled `Group › Source` and saved as its own name | `GetSceneList`, `GetSceneItemList` per scene, `GetGroupSceneItemList` per group |
+| `inputs` | `listInputs` | Every input, headed `Audio inputs` for audio-only kinds and `Other inputs` for the rest. Global audio devices (Desktop Audio, Mic/Aux) are included | `GetInputList` |
 
-The reply is the UI's option list, `[{ "value", "label", "group"? }]`, or
-`{ "error": "<reason>" }` (not connected, OBS hung, a malformed request), which
-the api relays as a failed request so the picker can show the reason. Every
-list is asked of OBS when the form opens, so a scene added a moment ago is
-there.
+The scene manager's reply is the UI's option list, `[{ "value", "label",
+"group"? }]`, which the list function returns as it is, or `{ "error":
+"<reason>" }` (not connected, OBS hung, a malformed request), which `ctx.obs`
+throws. A field-options function that catches it and returns `{ error }` has
+the api relay a failed request, so the picker can show the reason instead of
+an empty list. Every list is asked of OBS when the form opens, so a scene added
+a moment ago is there.
 
-The fields are `type: "text"`, which the UI renders as a text box with the
-options as suggestions rather than a strict select: a name can still be typed
-while OBS is closed, or built from a `${...}` variable, and a typed name OBS
-does not have is flagged rather than refused.
+A field declared `type: "text"` renders as a text box with the options as
+suggestions rather than a strict select: a name can still be typed while OBS is
+closed, or built from a `${...}` variable, and a typed name OBS does not have is
+flagged rather than refused.
 
 ## The legacy `slobs` subject
 

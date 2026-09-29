@@ -22,7 +22,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Module settings: the UI contract](/services/module-settings-ui)** - Endpoints for reading and writing a module's engine-typed configuration values (`ctx.module.settings`)
 - **[Config bundles](/services/config-bundles)** - Export, preview and import a creator's workflows, commands, groups and resource instances as one portable file
 - **[Stream sessions](/services/stream-sessions)** - The logical span a broadcast belongs to: the partition key every event is stamped with
-- **[OBS control](/services/obs)** - Connecting OBS, the workflow `obs.*` actions, and the `engine.obs.command` request/reply contract
+- **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that
 
 ## Getting Started

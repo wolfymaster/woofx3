@@ -1,11 +1,11 @@
 // The `engine.obs.options` request/reply handler: lists OBS's scenes, sources
-// or inputs as field options, for the manifest fields of the `obs.*` workflow
-// actions. The api's `dispatchFieldOptionsRequest` sends the request and hands
-// the reply to the UI as-is, so the reply is already in the UI's option shape.
+// or inputs as field options. barkloader's `ctx.obs.listScenes`, `listSources`
+// and `listInputs` send the request, and a module's field-options function
+// returns the reply to the UI as-is, so the reply is already in the UI's option
+// shape.
 //
-// Read-only on purpose. A field source's payload is whatever a manifest wrote,
-// so the subject it names must not be one that can change OBS; changes go over
-// `engine.obs.command`, which only the engine's workflow actions send.
+// Read-only on purpose, and a subject apart from `engine.obs.command`, so that
+// reading OBS's names never needs the permission that changing OBS does.
 
 import {
   OBS_OPTIONS_LISTS,

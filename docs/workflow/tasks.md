@@ -165,67 +165,6 @@ Returns:
 |-------|------|-------------|
 | `published` | `boolean` | Always `true` on success |
 
-#### `obs.switch_scene`, `obs.set_source_visibility`, `obs.set_input_mute`
-
-Change OBS: make a scene live, show or hide a source, mute or unmute an audio
-input. Each step sends one `engine.obs.command` request to the scene manager,
-which holds the OBS WebSocket connection, and waits up to 5 seconds for the
-answer. See [OBS control](../services/obs.md) for connecting OBS.
-
-```json
-{
-  "id": "raid-scene",
-  "type": "action",
-  "action": "obs.switch_scene",
-  "parameters": { "sceneName": "Raid" }
-}
-```
-
-```json
-{
-  "id": "confetti-on",
-  "type": "action",
-  "action": "obs.set_source_visibility",
-  "parameters": { "sceneName": "Raid", "sourceName": "Confetti", "visible": true }
-}
-```
-
-| Action | Parameter | Type | Required | Description |
-|--------|-----------|------|----------|-------------|
-| `obs.switch_scene` | `sceneName` | `string` | Yes | The scene to make live, named exactly as in OBS. |
-| `obs.set_source_visibility` | `sourceName` | `string` | Yes | The source to show or hide, named exactly as in OBS. |
-| | `visible` | `boolean` | No | `true` shows it, `false` hides it. Defaults to `true`. |
-| | `sceneName` | `string` | No | The scene the source is in. Blank means whichever scene is live when the step runs. |
-| `obs.set_input_mute` | `inputName` | `string` | Yes | The audio input, named exactly as in OBS's audio mixer. |
-| | `muted` | `boolean` | No | `true` mutes it, `false` unmutes it. Defaults to `true`. |
-
-`obs.switch_scene` changes the live program scene, also in studio mode, where
-clicking a scene in OBS only changes the preview. `obs.set_source_visibility`
-finds a source placed directly in the scene or inside one of the scene's
-groups.
-
-The booleans are optional because a form may leave an untouched toggle out of
-the saved step; the default is the toggle's initial position.
-
-Every parameter supports expressions. A boolean may also be the string
-`"true"` or `"false"`, which is what an expression embedded in text resolves to.
-
-The step fails, with a reason in the run log, when the request cannot be
-carried out: no scene manager is running, OBS is not connected to it, OBS has
-no scene, source or input by that name, or OBS did not answer within 3.5
-seconds (the scene manager then reconnects to it).
-Set `onError: "continue"` on a step whose failure should not stop the run.
-Saving a workflow refuses a step missing a required parameter.
-
-Returns:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ok` | `boolean` | Always `true`; a step OBS refused fails instead |
-
-"On raid: switch to the Raid scene, show confetti, switch back after 15
-seconds" is three OBS steps with a [wait](#wait) before the last.
-
 #### `publish_event`
 
 Publishes an event to the NATS message bus.
