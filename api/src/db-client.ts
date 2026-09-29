@@ -449,6 +449,16 @@ export class DbClient {
     unwrapStatus("cancelWorkflowExecution", await workflow.CancelWorkflowExecution(req, this.config));
   }
 
+  /**
+   * Advance a recorded run's status. db-proxy refuses to move a run out of a
+   * terminal status, so this throws for a run that has already settled
+   * differently.
+   */
+  async updateWorkflowRunStatus(req: workflow.UpdateWorkflowRunStatusRequest): Promise<workflow.WorkflowExecution> {
+    const response = await workflow.UpdateWorkflowRunStatus(req, this.config);
+    return unwrap("updateWorkflowRunStatus", response, response.execution);
+  }
+
   async createAlert(req: alert.CreateAlertRequest): Promise<alert.AlertResponse> {
     return alert.CreateAlert(req, this.config);
   }

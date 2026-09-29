@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
+	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
 // executeEventLogger captures what a handler reported, so a test can assert that a
@@ -68,13 +69,104 @@ func TestHandleWorkflowExecuteEvent(t *testing.T) {
 			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{"workflowId":"missing"}}`),
 		})
 
-		// Deterministic despite FireByWorkflowID running workflows in a
-		// goroutine: the registry lookup fails first, so no run is ever spawned
-		// and there is nothing to race with.
+		// Deterministic despite runs executing in a goroutine: the registry
+		// lookup fails first, so no run is ever spawned and there is nothing
+		// to race with.
 		if len(logger.errors) != 1 {
 			t.Fatalf("expected one error, got %v", logger.errors)
 		}
 	})
+}
+
+func decodeExecuteReply(t *testing.T, raw []byte) executeReply {
+	t.Helper()
+	var reply executeReply
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		t.Fatalf("reply %q is not JSON: %v", raw, err)
+	}
+	return reply
+}
+
+func conditionalWorkflowApp(t *testing.T) *WorkflowApp {
+	t.Helper()
+	logger := &executeEventLogger{}
+	app := &WorkflowApp{logger: logger, engine: engine.New[AppServices](logger)}
+	if err := app.engine.RegisterWorkflow(&types.WorkflowDefinition{
+		ID:   "wf-raid",
+		Name: "raid",
+		Trigger: &types.TriggerConfig{
+			Type:       "event",
+			Event:      "channel.raid",
+			Conditions: []types.ConditionConfig{{Field: "${trigger.data.viewers}", Operator: "gte", Value: 10}},
+		},
+		Tasks: []types.TaskDefinition{{ID: "log", Type: "log", Parameters: map[string]any{"message": "raid"}}},
+	}); err != nil {
+		t.Fatalf("RegisterWorkflow: %v", err)
+	}
+	return app
+}
+
+func TestWorkflowExecuteReplies(t *testing.T) {
+	t.Run("a sample that satisfies the conditions starts a run", func(t *testing.T) {
+		app := conditionalWorkflowApp(t)
+		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
+			subject: "workflow.execute",
+			data: []byte(`{"id":"e1","type":"workflow.execute","source":"api","triggeredBy":"test",` +
+				`"data":{"workflowId":"wf-raid","triggerData":{"viewers":25},"platform":"twitch"}}`),
+		}))
+		if reply.Outcome != "started" || reply.ExecutionID == "" || reply.EventType != "channel.raid" {
+			t.Fatalf("reply = %+v", reply)
+		}
+	})
+
+	t.Run("a sample that fails the conditions is refused with the reason", func(t *testing.T) {
+		app := conditionalWorkflowApp(t)
+		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
+			subject: "workflow.execute",
+			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{"workflowId":"wf-raid","triggerData":{"viewers":2}}}`),
+		}))
+		if reply.Outcome != "conditions_not_met" || len(reply.Unmet) != 1 || reply.Unmet[0].Field != "${trigger.data.viewers}" {
+			t.Fatalf("reply = %+v", reply)
+		}
+	})
+
+	t.Run("skipConditions runs it anyway", func(t *testing.T) {
+		app := conditionalWorkflowApp(t)
+		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
+			subject: "workflow.execute",
+			data: []byte(`{"id":"e1","type":"workflow.execute","source":"api",` +
+				`"data":{"workflowId":"wf-raid","triggerData":{"viewers":2},"skipConditions":true}}`),
+		}))
+		if reply.Outcome != "started" {
+			t.Fatalf("reply = %+v", reply)
+		}
+	})
+
+	t.Run("an unknown workflow is refused", func(t *testing.T) {
+		app := conditionalWorkflowApp(t)
+		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
+			subject: "workflow.execute",
+			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{"workflowId":"missing"}}`),
+		}))
+		if reply.Outcome != "refused" || reply.Error == "" {
+			t.Fatalf("reply = %+v", reply)
+		}
+	})
+}
+
+func TestWorkflowCancelReplies(t *testing.T) {
+	app := conditionalWorkflowApp(t)
+
+	notFound := app.handleWorkflowCancelRequest(fakeMsg{subject: "workflow.cancel", data: []byte(`{"executionId":"nope"}`)})
+	if string(notFound) != `{"outcome":"not_found"}` {
+		t.Errorf("unknown run reply = %s", notFound)
+	}
+
+	refused := app.handleWorkflowCancelRequest(fakeMsg{subject: "workflow.cancel", data: []byte(`{}`)})
+	var reply cancelReply
+	if err := json.Unmarshal(refused, &reply); err != nil || reply.Outcome != "refused" {
+		t.Errorf("empty request reply = %s", refused)
+	}
 }
 
 // The correlation attributes have to exist on types.Event or encoding/json
@@ -97,5 +189,48 @@ func TestCloudEventCarriesCorrelationAttributes(t *testing.T) {
 	}
 	if event.TriggeredBy != "dashboard" {
 		t.Errorf("TriggeredBy = %q, want dashboard", event.TriggeredBy)
+	}
+}
+
+func TestWorkflowExecuteCarriesDryRun(t *testing.T) {
+	app := conditionalWorkflowApp(t)
+	reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
+		subject: "workflow.execute",
+		data: []byte(`{"id":"e1","type":"workflow.execute","source":"api",` +
+			`"data":{"workflowId":"wf-raid","triggerData":{"viewers":25},"dryRun":true}}`),
+	}))
+	if reply.Outcome != "started" {
+		t.Fatalf("reply = %+v", reply)
+	}
+	execution, err := app.engine.GetExecution(reply.ExecutionID)
+	if err != nil {
+		t.Fatalf("GetExecution: %v", err)
+	}
+	if !execution.DryRun {
+		t.Error("the run was not a dry run")
+	}
+}
+
+func TestNativeActionDryRunSentences(t *testing.T) {
+	if got, err := functionActionSpec.DryRun(map[string]any{"function": "shoutout:function:greet"}); err != nil || got != "would call module function shoutout:function:greet" {
+		t.Errorf("function: %q, %v", got, err)
+	}
+	if _, err := functionActionSpec.DryRun(map[string]any{}); err == nil {
+		t.Error("function: accepted a step naming no function")
+	}
+	if got, err := chatReplyActionSpec.DryRun(map[string]any{"message": "welcome raiders"}); err != nil || got != `would send "welcome raiders" to twitch chat` {
+		t.Errorf("chat.reply: %q, %v", got, err)
+	}
+	if _, err := alertActionSpec.DryRun(map[string]any{}); err == nil {
+		t.Error("alert: accepted parameters the real action refuses")
+	}
+	for name, spec := range map[string]bool{
+		"function":   functionActionSpec.SideEffect,
+		"alert":      alertActionSpec.SideEffect,
+		"chat.reply": chatReplyActionSpec.SideEffect,
+	} {
+		if !spec {
+			t.Errorf("%s is not marked side-effecting", name)
+		}
 	}
 }

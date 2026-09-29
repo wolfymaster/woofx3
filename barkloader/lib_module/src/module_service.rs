@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use lib_repository::Repository;
 
 use super::db_proxy_client::HttpDbProxyClient;
-use super::manifest_validate::InstallProvenance;
+use super::manifest_validate::{InstallProvenance, SystemOnlyActions};
 use super::module_file::ModuleFile;
 use super::module_file::ModuleFileKind;
 use super::module_install::run_install_with_provenance;
@@ -16,10 +16,15 @@ pub struct ModuleService<R> {
     module_name: Option<String>,
     module_version: Option<String>,
     stored_manifest: Option<ModuleManifest>,
+    system_only_actions: SystemOnlyActions,
 }
 
 pub struct ModuleServiceConfig<R> {
     pub repository: R,
+    /// The bundled modules' `systemOnly` actions, which a user-provenance
+    /// install may not reference. Required rather than defaulted so no upload
+    /// path can install without the check by leaving it out.
+    pub system_only_actions: SystemOnlyActions,
 }
 
 impl<R> ModuleService<R>
@@ -34,6 +39,7 @@ where
             module_name: None,
             module_version: None,
             stored_manifest: None,
+            system_only_actions: config.system_only_actions,
         }
     }
 
@@ -150,6 +156,7 @@ where
             composite_module_key,
             client_id,
             provenance,
+            &self.system_only_actions,
         )
         .await
     }
@@ -182,7 +189,10 @@ mod tests {
         let repo = FileRepository::new(FileRepositoryConfig {
             destination: dir.path().to_path_buf(),
         });
-        let mut service = ModuleService::new(ModuleServiceConfig { repository: repo });
+        let mut service = ModuleService::new(ModuleServiceConfig {
+            repository: repo,
+            system_only_actions: SystemOnlyActions::default(),
+        });
         for (name, contents) in files {
             service.add_file(
                 ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),

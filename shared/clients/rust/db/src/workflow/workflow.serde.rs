@@ -2070,6 +2070,9 @@ impl serde::Serialize for RecordWorkflowRunRequest {
         if self.started_at.is_some() {
             len += 1;
         }
+        if self.dry_run {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.RecordWorkflowRunRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -2085,6 +2088,9 @@ impl serde::Serialize for RecordWorkflowRunRequest {
         }
         if let Some(v) = self.started_at.as_ref() {
             struct_ser.serialize_field("startedAt", v)?;
+        }
+        if self.dry_run {
+            struct_ser.serialize_field("dryRun", &self.dry_run)?;
         }
         struct_ser.end()
     }
@@ -2105,6 +2111,8 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
             "triggerEventJson",
             "started_at",
             "startedAt",
+            "dry_run",
+            "dryRun",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -2114,6 +2122,7 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
             TriggeredBy,
             TriggerEventJson,
             StartedAt,
+            DryRun,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -2140,6 +2149,7 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                             "triggeredBy" | "triggered_by" => Ok(GeneratedField::TriggeredBy),
                             "triggerEventJson" | "trigger_event_json" => Ok(GeneratedField::TriggerEventJson),
                             "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
+                            "dryRun" | "dry_run" => Ok(GeneratedField::DryRun),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -2164,6 +2174,7 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                 let mut triggered_by__ = None;
                 let mut trigger_event_json__ = None;
                 let mut started_at__ = None;
+                let mut dry_run__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -2196,6 +2207,12 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                             }
                             started_at__ = map_.next_value()?;
                         }
+                        GeneratedField::DryRun => {
+                            if dry_run__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("dryRun"));
+                            }
+                            dry_run__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(RecordWorkflowRunRequest {
@@ -2204,6 +2221,7 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                     triggered_by: triggered_by__.unwrap_or_default(),
                     trigger_event_json: trigger_event_json__.unwrap_or_default(),
                     started_at: started_at__,
+                    dry_run: dry_run__.unwrap_or_default(),
                 })
             }
         }
@@ -3368,6 +3386,9 @@ impl serde::Serialize for WorkflowExecution {
         if !self.triggered_by.is_empty() {
             len += 1;
         }
+        if self.dry_run {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.WorkflowExecution", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -3411,6 +3432,9 @@ impl serde::Serialize for WorkflowExecution {
         if !self.triggered_by.is_empty() {
             struct_ser.serialize_field("triggeredBy", &self.triggered_by)?;
         }
+        if self.dry_run {
+            struct_ser.serialize_field("dryRun", &self.dry_run)?;
+        }
         struct_ser.end()
     }
 }
@@ -3443,6 +3467,8 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
             "triggerEventJson",
             "triggered_by",
             "triggeredBy",
+            "dry_run",
+            "dryRun",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3461,6 +3487,7 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
             Steps,
             TriggerEventJson,
             TriggeredBy,
+            DryRun,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3496,6 +3523,7 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                             "steps" => Ok(GeneratedField::Steps),
                             "triggerEventJson" | "trigger_event_json" => Ok(GeneratedField::TriggerEventJson),
                             "triggeredBy" | "triggered_by" => Ok(GeneratedField::TriggeredBy),
+                            "dryRun" | "dry_run" => Ok(GeneratedField::DryRun),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3529,6 +3557,7 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                 let mut steps__ = None;
                 let mut trigger_event_json__ = None;
                 let mut triggered_by__ = None;
+                let mut dry_run__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -3619,6 +3648,12 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                             }
                             triggered_by__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::DryRun => {
+                            if dry_run__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("dryRun"));
+                            }
+                            dry_run__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(WorkflowExecution {
@@ -3636,6 +3671,7 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                     steps: steps__.unwrap_or_default(),
                     trigger_event_json: trigger_event_json__.unwrap_or_default(),
                     triggered_by: triggered_by__.unwrap_or_default(),
+                    dry_run: dry_run__.unwrap_or_default(),
                 })
             }
         }

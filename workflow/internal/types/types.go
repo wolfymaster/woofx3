@@ -72,12 +72,16 @@ type TaskDefinition struct {
 }
 
 type WaitConfig struct {
-	Type        string             `json:"type" yaml:"type"`                                   // "event" or "aggregation"
-	Event       string             `json:"event" yaml:"event"`                                 // NATS subject to wait for
+	Type        string             `json:"type" yaml:"type"`                                   // "event", "aggregation" or "delay"
+	Event       string             `json:"event,omitempty" yaml:"event,omitempty"`             // NATS subject to wait for
 	Conditions  []ConditionConfig  `json:"conditions,omitempty" yaml:"conditions,omitempty"`   // Conditions to match
 	Aggregation *AggregationConfig `json:"aggregation,omitempty" yaml:"aggregation,omitempty"` // Aggregation settings
 	Timeout     *Duration          `json:"timeout,omitempty" yaml:"timeout,omitempty"`         // Wait timeout
 	OnTimeout   string             `json:"onTimeout,omitempty" yaml:"onTimeout,omitempty"`     // "continue" or "fail"
+	// DurationMs is how long a "delay" wait pauses the run. Milliseconds rather
+	// than a Duration so the value a creator types in the editor is the value
+	// stored, with no unit parsing between them.
+	DurationMs int64 `json:"durationMs,omitempty" yaml:"durationMs,omitempty"`
 }
 
 type WorkflowConfig struct {
@@ -174,9 +178,15 @@ type Event struct {
 	//
 	// Empty for an event nothing in a workflow caused: a platform event, a
 	// dashboard request, a background task.
-	WorkflowChain string         `json:"workflowChain,omitempty"`
-	Data          map[string]any `json:"data"`
-	Subject       string         `json:"subject,omitempty"`
+	WorkflowChain string `json:"workflowChain,omitempty"`
+	// DryRun is the CloudEvents extension attribute marking an event a dry
+	// run caused: its `workflow.run.*` lifecycle. A workflow the event
+	// triggers runs as a dry run too, so a dry run cannot set off a real
+	// run of a workflow listening for it. The attribute only ever removes
+	// side effects, so it needs no trust in whoever set it.
+	DryRun  bool           `json:"dryRun,omitempty"`
+	Data    map[string]any `json:"data"`
+	Subject string         `json:"subject,omitempty"`
 }
 
 // Chain is WorkflowChain as a list, oldest first.
@@ -225,6 +235,10 @@ const (
 	TaskStatusSuccess TaskStatus = "success"
 	TaskStatusFailed  TaskStatus = "failed"
 	TaskStatusSkipped TaskStatus = "skipped"
+	// TaskStatusCancelled marks a task the run was cancelled during: a wait
+	// that was pending, or an action whose result the engine stopped waiting
+	// for. An abandoned action is not undone; whatever it already did stands.
+	TaskStatusCancelled TaskStatus = "cancelled"
 )
 
 type TaskResult struct {
@@ -241,6 +255,7 @@ const (
 	ExecutionStatusWaiting   ExecutionStatus = "waiting"
 	ExecutionStatusCompleted ExecutionStatus = "completed"
 	ExecutionStatusFailed    ExecutionStatus = "failed"
+	ExecutionStatusCancelled ExecutionStatus = "cancelled"
 )
 
 type WorkflowExecution struct {
@@ -253,6 +268,10 @@ type WorkflowExecution struct {
 	Tasks        map[string]*TaskExecution
 	Variables    map[string]any
 	Error        string
+	// DryRun marks a run whose side-effecting actions record what they would
+	// do instead of doing it, and whose waits complete at once. Set only by
+	// the engine, from a manual run request; a sub-workflow inherits it.
+	DryRun bool
 	// Ephemeral marks a run of a task list that has no workflow row behind it.
 	// Such a run is not recorded and announces no lifecycle: both are keyed by
 	// workflow id, and there is no workflow here to attribute them to.
@@ -278,10 +297,12 @@ type WaitState struct {
 	Aggregation    *AggregationState `json:"aggregation,omitempty"`
 	ReceivedEvents []*Event          `json:"receivedEvents,omitempty"`
 	Satisfied      bool              `json:"satisfied"`
+	TimedOut       bool              `json:"timedOut"`
 }
 
 type AggregationState struct {
 	Strategy    string    `json:"strategy"`
+	Field       string    `json:"field,omitempty"`
 	Count       int       `json:"count"`
 	Sum         float64   `json:"sum"`
 	Threshold   float64   `json:"threshold"`

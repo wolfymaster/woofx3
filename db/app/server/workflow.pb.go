@@ -227,7 +227,10 @@ type WorkflowExecution struct {
 	// the engine, so `${trigger.*}` resolves exactly as it did the first time.
 	TriggerEventJson string `protobuf:"bytes,14,opt,name=trigger_event_json,json=triggerEventJson,proto3" json:"trigger_event_json,omitempty"`
 	// What caused the run ("twitch", "chat", ...).
-	TriggeredBy   string `protobuf:"bytes,15,opt,name=triggered_by,json=triggeredBy,proto3" json:"triggered_by,omitempty"`
+	TriggeredBy string `protobuf:"bytes,15,opt,name=triggered_by,json=triggeredBy,proto3" json:"triggered_by,omitempty"`
+	// A dry run: side-effecting steps recorded what they would have done
+	// instead of doing it.
+	DryRun        bool `protobuf:"varint,16,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -358,6 +361,13 @@ func (x *WorkflowExecution) GetTriggeredBy() string {
 		return x.TriggeredBy
 	}
 	return ""
+}
+
+func (x *WorkflowExecution) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
 }
 
 // Execution details for a single step.
@@ -1530,8 +1540,10 @@ type RecordWorkflowRunRequest struct {
 	// the engine unchanged.
 	TriggerEventJson string                 `protobuf:"bytes,5,opt,name=trigger_event_json,json=triggerEventJson,proto3" json:"trigger_event_json,omitempty"`
 	StartedAt        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// A dry run; see WorkflowExecution.dry_run.
+	DryRun        bool `protobuf:"varint,7,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RecordWorkflowRunRequest) Reset() {
@@ -1597,6 +1609,13 @@ func (x *RecordWorkflowRunRequest) GetStartedAt() *timestamppb.Timestamp {
 		return x.StartedAt
 	}
 	return nil
+}
+
+func (x *RecordWorkflowRunRequest) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
 }
 
 // Request to advance a recorded run to its terminal state.
@@ -1896,7 +1915,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\x0eapplication_idR\n" +
-	"created_byR\x05steps\"\x93\x06\n" +
+	"created_byR\x05steps\"\xac\x06\n" +
 	"\x11WorkflowExecution\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -1917,7 +1936,8 @@ const file_workflow_proto_rawDesc = "" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12-\n" +
 	"\x05steps\x18\r \x03(\v2\x17.workflow.ExecutionStepR\x05steps\x12,\n" +
 	"\x12trigger_event_json\x18\x0e \x01(\tR\x10triggerEventJson\x12!\n" +
-	"\ftriggered_by\x18\x0f \x01(\tR\vtriggeredBy\x1a9\n" +
+	"\ftriggered_by\x18\x0f \x01(\tR\vtriggeredBy\x12\x17\n" +
+	"\adry_run\x18\x10 \x01(\bR\x06dryRun\x1a9\n" +
 	"\vInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
@@ -2055,7 +2075,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xed\x01\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\x86\x02\n" +
 	"\x18RecordWorkflowRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -2063,7 +2083,8 @@ const file_workflow_proto_rawDesc = "" +
 	"\ftriggered_by\x18\x04 \x01(\tR\vtriggeredBy\x12,\n" +
 	"\x12trigger_event_json\x18\x05 \x01(\tR\x10triggerEventJson\x129\n" +
 	"\n" +
-	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAtJ\x04\b\x03\x10\x04R\x0eapplication_id\"\xbe\x01\n" +
+	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12\x17\n" +
+	"\adry_run\x18\a \x01(\bR\x06dryRunJ\x04\b\x03\x10\x04R\x0eapplication_id\"\xbe\x01\n" +
 	"\x1eUpdateWorkflowRunStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x14\n" +

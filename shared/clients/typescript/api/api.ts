@@ -1,5 +1,13 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { EngineCapabilities } from "./capabilities";
+import type {
+  ConfigBundle,
+  ConfigExportOptions,
+  ConfigImportOptions,
+  ConfigImportPlan,
+  ConfigImportResult,
+} from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
@@ -193,6 +201,31 @@ export interface WorkflowRun {
 export interface WorkflowRunsQuery {
   workflowId?: string;
   limit?: number;
+}
+
+/**
+ * Whether the engine could load a stored workflow. `"error"` means the saved
+ * definition is not running as saved: usually it never fires (unreadable,
+ * refused, or its trigger could not be registered), though a refused update
+ * can leave an earlier version running.
+ */
+export type WorkflowHealthStatus = "ok" | "error";
+
+/**
+ * One workflow's health, as returned by getWorkflowHealth and carried by the
+ * `workflow.health.changed` and `workflow.health.snapshot` webhooks.
+ *
+ * A workflow with no entry is ok as far as the engine knows: disabled,
+ * deleted, and healthy workflows all look the same here. Only an `"error"`
+ * entry needs showing.
+ */
+export interface WorkflowHealth {
+  workflowId: string;
+  status: WorkflowHealthStatus;
+  /** The engine's refusal, verbatim. Present only when status is "error". */
+  reason?: string;
+  /** ISO 8601. When the current status (and reason) began. */
+  since: string;
 }
 
 // ==================== Twitch ====================
@@ -632,6 +665,42 @@ export interface RecentActivity {
   timestamp: string;
 }
 
+// ==================== Alert queue controls ====================
+
+/**
+ * Outcome of `skipCurrentAlert`. `ok` is false only when the request could not
+ * act at all (no overlay is open, or the scene manager did not answer), and
+ * `reason` then says why. With `ok` true, `skipped` counts the distinct alerts
+ * that were playing and were ended; 0 means nothing was playing.
+ */
+export interface AlertSkipResult {
+  ok: boolean;
+  skipped: number;
+  reason?: string;
+}
+
+/**
+ * Outcome of `clearAlertQueue`. `cleared` counts the distinct alerts that were
+ * waiting to play and were dropped; the alert playing when the request arrived
+ * keeps playing. `ok`/`reason` as for `AlertSkipResult`.
+ */
+export interface AlertClearResult {
+  ok: boolean;
+  cleared: number;
+  reason?: string;
+}
+
+/**
+ * Outcome of `replayAlert`. With `ok` true the alert was queued on at least
+ * one open overlay under the fresh envelope id `replayEnvelopeId`; otherwise
+ * `reason` says why it will not play.
+ */
+export interface AlertReplayResult {
+  ok: boolean;
+  replayEnvelopeId?: string;
+  reason?: string;
+}
+
 // ==================== Module lifecycle response types ====================
 
 /**
@@ -864,17 +933,103 @@ export interface StreamGaugeSample {
   subscriberPoints: number | null;
 }
 
+/**
+ * Optional behaviour for `triggerWorkflowByName`.
+ *
+ * Supplying `triggerData` or `dryRun` makes the call wait for the engine to
+ * answer, so the response says whether the run started and with which
+ * execution id.
+ */
+export interface TriggerWorkflowOptions {
+  /**
+   * Sample payload for the run's trigger. The run starts from an event of the
+   * workflow's own trigger type with this as its data, so `${trigger.data...}`
+   * resolves exactly as it would for a real event, and the trigger's
+   * conditions are evaluated against it. Only the named workflow runs: no
+   * other workflow listening for the same event sees it. At most
+   * `MAX_TRIGGER_DATA_BYTES` as JSON.
+   */
+  triggerData?: Record<string, unknown>;
+  /** The sample event's platform ("twitch", ...), for `${trigger.platform}` conditions. */
+  platform?: string;
+  /**
+   * Run even when `triggerData` does not satisfy the trigger conditions.
+   * Default false: an unmatched sample is answered with `conditions_not_met`
+   * and the unmet conditions, which is how a creator tests the "doesn't
+   * match" path.
+   */
+  skipConditions?: boolean;
+  /**
+   * What started the run ("test", "dashboard", ...), recorded as its
+   * `triggeredBy`. The same value the positional `triggeredBy` carries; give
+   * one or the other, or the same value in both.
+   */
+  origin?: string;
+  /**
+   * Run without side effects. The engine decides what that means, never the
+   * workflow's modules:
+   * - actions that change something (chat, alerts, published events, module
+   *   functions, and any action not declared side-effect free) are not called;
+   *   each step records `{ dryRun: true, wouldDo: "<sentence>" }` instead.
+   *   Parameters the real action would refuse still fail the step.
+   * - waits complete at once, recording what they would have waited for.
+   * The run is recorded with `dryRun: true` (see `WorkflowRunSnapshot`), and a
+   * replay of it is a dry run too. A later step that reads a skipped step's
+   * real output fails to resolve.
+   */
+  dryRun?: boolean;
+}
+
+/** Most bytes `TriggerWorkflowOptions.triggerData` may encode to as JSON. */
+export const MAX_TRIGGER_DATA_BYTES = 16 * 1024;
+
+/** A trigger condition a sample payload did not satisfy. */
+export interface UnmetTriggerCondition {
+  field: string;
+  operator: string;
+  value: unknown;
+  /** Set when the condition could not be evaluated, e.g. an unknown operator. */
+  error?: string;
+}
+
 export interface TriggerWorkflowResponse {
   /**
-   * Empty. A run is started asynchronously by the engine, which mints the
-   * execution id when it begins -- after this call has returned. Correlate on
-   * `triggerId` instead; it is the id the run's lifecycle is reported against.
+   * The engine's id for the run, when the engine answered: set for `started`.
+   * Empty for `requested` -- a published request is started asynchronously
+   * after this call has returned, so correlate on `triggerId` instead; it is
+   * the id the run's lifecycle is reported against.
    */
   executionId: string;
-  status: string;
+  /**
+   * `requested`: published without waiting for the engine (no options given).
+   * `started`: the engine began the run.
+   * `conditions_not_met`: `triggerData` failed the trigger conditions and no
+   * run started; see `unmetConditions`.
+   */
+  status: "requested" | "started" | "conditions_not_met";
   message: string;
   /** Correlation handle for the requested run. See `executionId`. */
   triggerId: string;
+  /** The event type the run started from; set when the engine answered. */
+  eventType?: string;
+  /** Every condition the sample failed; set for `conditions_not_met`. */
+  unmetConditions?: UnmetTriggerCondition[];
+  /** True when the run started is a dry run. */
+  dryRun?: boolean;
+}
+
+/** What `cancelWorkflow` did. */
+export interface CancelWorkflowResult {
+  executionId: string;
+  /**
+   * `cancelled`: the run was stopped, or already had been by an earlier
+   * cancel. `already_finished`: it had completed or failed first, and is
+   * unchanged.
+   */
+  outcome: "cancelled" | "already_finished";
+  /** The run's status after the call: "cancelled", or the status it finished with. */
+  status: string;
+  message: string;
 }
 
 // ==================== API Interface ====================
@@ -972,6 +1127,14 @@ export interface Woofx3EngineApi {
    * the UI must re-fetch.
    */
   getEngineInfo(): Promise<EngineInfo>;
+
+  /**
+   * The capability ids this engine supports (see `ENGINE_CAPABILITIES` and
+   * docs/services/engine-capabilities.md). Clients gate newer features on
+   * these ids rather than on the engine version, which is an image tag. An
+   * engine without this method predates capabilities and supports none.
+   */
+  getEngineCapabilities(): Promise<EngineCapabilities>;
 
   /**
    * Set the `overlayPublicUrl` that `getEngineInfo()` returns — the
@@ -1193,6 +1356,15 @@ export interface Woofx3EngineApi {
     correlationKey?: string
   ): Promise<{ id: string; isEnabled: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
+  /**
+   * Health of every enabled workflow the engine has loaded. Authoritative:
+   * a client replaces its whole view with the answer, and any workflow not
+   * listed with `"error"` is ok. Answered live by the workflow service, so it
+   * reflects the engine now rather than the last webhook received. Rejects
+   * while the engine is still loading its workflows, when the list would be
+   * partial.
+   */
+  getWorkflowHealth(): Promise<WorkflowHealth[]>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
   // command.created / command.updated / command.deleted webhooks on success)
@@ -1379,17 +1551,20 @@ export interface Woofx3EngineApi {
   /**
    * Ask the engine to run one workflow, matched by id or by name.
    *
-   * Returns once the request is on the bus, not once the run finishes. Supply
-   * `triggerId` to be told how that run ended: the engine echoes it onto the
-   * `workflow.run.*` events it emits. `userId` is recorded as provenance only
-   * and may be any string.
+   * Without `options` this returns once the request is on the bus, not once
+   * the run finishes. With them it waits for the engine to begin the run (or
+   * refuse it) and returns its execution id; see `TriggerWorkflowOptions`.
+   * Either way, supply `triggerId` to be told how that run ended: the engine
+   * echoes it onto the `workflow.run.*` events it emits. `userId` is recorded
+   * as provenance only and may be any string.
    */
   triggerWorkflowByName(
     workflowNameOrId: string,
     parameters?: Record<string, string>,
     userId?: string,
     triggerId?: string,
-    triggeredBy?: string
+    triggeredBy?: string,
+    options?: TriggerWorkflowOptions
   ): Promise<TriggerWorkflowResponse>;
 
   /**
@@ -1419,30 +1594,30 @@ export interface Woofx3EngineApi {
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
 
-  // Alert log replay — re-publishes a previously recorded alert
-  // envelope to `ui.notify.alert` with a fresh envelope id, so it
-  // flows through the queue manager as a new dispatch. The
-  // original row is marked `replayed`. Returns `false` when the id
-  // doesn't exist or the stored payload is malformed; throws on
-  // transport failures (NATS / db proxy unreachable).
-  replayAlert(id: string): Promise<boolean>;
-
-  // Operator controls (Phase 3) over the backend-authoritative
-  // alert queue (`api/src/alert-queue-manager.ts`).
+  // Alert queue controls. Alerts queue and play in each open overlay; the
+  // scene manager carries these requests to every overlay that is open.
 
   /**
-   * Mark the currently-playing alert (if any) as `skipped`,
-   * advance the queue to the next pending envelope. No-op when
-   * nothing is in flight. Returns whether an alert was skipped.
+   * Play a recorded alert again. Re-dispatches the stored envelope under a
+   * fresh envelope id, recorded as a new alert-log row, and marks the original
+   * row `replayed`. Asking again for the same row while that replay is under
+   * way, or within 30 s of it succeeding, returns the same result and plays
+   * nothing, so a retry after a timeout cannot play the alert twice.
    */
-  skipCurrentAlert(): Promise<{ skipped: boolean }>;
+  replayAlert(id: string): Promise<AlertReplayResult>;
 
   /**
-   * Mark every pending (not-yet-dispatched) alert as `skipped`.
-   * Does not touch the in-flight lease; pair with `skipCurrentAlert`
-   * for a full clear. Returns the number of pending alerts dropped.
+   * End the alert playing on every open overlay now, mark it `skipped`, and
+   * let the next queued alert start.
    */
-  clearAlertQueue(): Promise<{ cleared: number }>;
+  skipCurrentAlert(): Promise<AlertSkipResult>;
+
+  /**
+   * Drop every alert waiting to play on every open overlay and mark each
+   * `skipped`. The alert playing now keeps playing; pair with
+   * `skipCurrentAlert` to stop everything.
+   */
+  clearAlertQueue(): Promise<AlertClearResult>;
 
   // Overlay Tokens
   //
@@ -1569,7 +1744,14 @@ export interface Woofx3EngineApi {
     }>;
   }>;
 
-  cancelWorkflow(executionId: string, reason?: string): Promise<void>;
+  /**
+   * Stop a run. The engine stops waiting for the step in flight (its effect,
+   * if already sent, stands), drops any pending wait, and settles the run
+   * `cancelled`, which reaches the history as a `workflow.run.updated`
+   * webhook and a caller watching its `triggerId` as `workflow.run.cancelled`.
+   * Idempotent. Throws for an id no run has.
+   */
+  cancelWorkflow(executionId: string, reason?: string): Promise<CancelWorkflowResult>;
 
   /** Push trigger-catalog changes to the caller. The callback is a capnweb
    *  stub, so it stays live for the duration of the session. */
@@ -1577,8 +1759,9 @@ export interface Woofx3EngineApi {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void>;
 
-  /** Push live stream events -- follows, subs, cheers, raids, stream on/off --
-   *  to the caller for the life of the session. Chat is deliberately not on
+  /** Push live stream events -- follows, subs, cheers, raids, stream on/off,
+   *  ad breaks (upcoming, begin, end) -- to the caller for the life of the
+   *  session. Chat is deliberately not on
    *  this channel; see ./stream-events.
    *
    *  Delivery is not gapless: nothing buffers events behind this, so a client
@@ -1616,6 +1799,33 @@ export interface Woofx3EngineApi {
     triggerId?: string,
     triggeredBy?: string
   ): Promise<{ success: boolean; message: string }>;
+
+  // ==================== Config bundles ====================
+  // Backup, move and share a creator's configuration. Format and import rules:
+  // docs/services/config-bundles.md.
+
+  /**
+   * The creator's workflows, chat commands, command groups and module
+   * resource instances as a versioned bundle. Secrets, tokens, module
+   * settings and live resource values are never included; group members and
+   * per-user command grants only with `includeMembers`.
+   */
+  exportConfig(options?: ConfigExportOptions): Promise<ConfigBundle>;
+
+  /**
+   * What `importConfig` would do with `bundle` under the same options,
+   * without writing anything. Throws when the bundle is malformed, too large,
+   * or of an unsupported version.
+   */
+  previewImport(bundle: ConfigBundle, options?: ConfigImportOptions): Promise<ConfigImportPlan>;
+
+  /**
+   * Apply `bundle` through the same paths a save in the UI takes, so every
+   * item is validated and announced by the usual webhooks. Re-plans against
+   * the engine's current state rather than trusting an earlier preview.
+   * Best-effort per item: the result reports each item's outcome.
+   */
+  importConfig(bundle: ConfigBundle, options?: ConfigImportOptions): Promise<ConfigImportResult>;
 }
 
 // ==================== Widgets ====================

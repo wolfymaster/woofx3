@@ -125,6 +125,7 @@ pub struct ResolvedModuleTheme {
 #[derive(Debug, Clone)]
 pub struct ResolvedManifest {
     pub module_id: String,
+    pub provenance: InstallProvenance,
     pub triggers: Vec<ResolvedTrigger>,
     pub actions: Vec<ResolvedAction>,
     pub functions: Vec<ResolvedFunction>,
@@ -152,6 +153,80 @@ pub const SYSTEM_MODULE_ID: &str = "woofx3";
 pub enum InstallProvenance {
     User,
     System,
+}
+
+/// Canonical ids of the actions only a system module may put in a workflow or
+/// command: declared `systemOnly` by a bundled module.
+///
+/// Built from the bundled manifests rather than read back from the db, because
+/// only a system module may declare the flag (see `validate_with_provenance`),
+/// and every system module is embedded in the running binary.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SystemOnlyActions(HashSet<String>);
+
+impl SystemOnlyActions {
+    pub fn from_manifests<'a>(
+        manifests: impl IntoIterator<Item = &'a ModuleManifest>,
+    ) -> Result<Self> {
+        let mut ids = HashSet::new();
+        for manifest in manifests {
+            let module_id = require_module_id(manifest)?;
+            for action in manifest.actions.iter().filter(|a| a.system_only) {
+                ids.insert(
+                    CanonicalId::new(&module_id, ResourceKind::Action, &action.id)?.to_string(),
+                );
+            }
+        }
+        Ok(Self(ids))
+    }
+
+    pub fn contains(&self, canonical_id: &CanonicalId) -> bool {
+        self.0.contains(&canonical_id.to_string())
+    }
+}
+
+/// Refuse a module that is not a system module when one of its workflow steps
+/// or command actions names a `systemOnly` action.
+///
+/// Such an action does something the engine withholds from module code -- a
+/// timeout, a stream title change -- and a workflow a module ships runs with
+/// the module's say-so rather than the streamer's. See
+/// docs/services/engine-integrity.md.
+pub fn refuse_system_only_references(
+    resolved: &ResolvedManifest,
+    provenance: InstallProvenance,
+    system_only: &SystemOnlyActions,
+) -> Result<()> {
+    if provenance == InstallProvenance::System {
+        return Ok(());
+    }
+    let workflow_refs = resolved.workflows.iter().flat_map(|wf| {
+        wf.step_actions.iter().enumerate().map(move |(si, action)| {
+            (
+                format!("workflow '{}' step #{si}", wf.canonical_id.resource_id()),
+                action,
+            )
+        })
+    });
+    let command_refs = resolved.commands.iter().flat_map(|cmd| {
+        cmd.step_actions
+            .iter()
+            .enumerate()
+            .map(move |(si, action)| {
+                (
+                    format!("command '{}' action #{si}", cmd.canonical_id.resource_id()),
+                    action,
+                )
+            })
+    });
+    for (label, action) in workflow_refs.chain(command_refs) {
+        if system_only.contains(action) {
+            return Err(anyhow!(
+                "{label}: action '{action}' is reserved for system modules; an uploaded module cannot use it"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Validate a user-uploaded manifest and resolve all intra-manifest references.
@@ -191,6 +266,12 @@ pub fn validate_with_provenance(
                     action.id
                 ));
             }
+            if action.system_only {
+                return Err(anyhow!(
+                    "action #{i} ({}): `systemOnly` may only be declared by a bundled system module",
+                    action.id
+                ));
+            }
         }
     }
 
@@ -209,6 +290,7 @@ pub fn validate_with_provenance(
     }
 
     validate_deadlines(manifest)?;
+    validate_permissions(manifest)?;
 
     // Step ids are the names an author's own `${id.field}` references and
     // `dependsOn` entries resolve against. A duplicate makes a reference
@@ -334,6 +416,7 @@ pub fn validate_with_provenance(
 
     Ok(ResolvedManifest {
         module_id,
+        provenance,
         triggers,
         actions,
         functions,
@@ -779,6 +862,25 @@ fn validate_deadlines(manifest: &ModuleManifest) -> Result<()> {
     Ok(())
 }
 
+/// A permission opens privileged host functions to the module's code, so an
+/// id the sandbox does not know is a typo or a request for something that
+/// does not exist, and either way it should not install silently.
+fn validate_permissions(manifest: &ModuleManifest) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (i, permission) in manifest.permissions.iter().enumerate() {
+        if !lib_sandbox::permissions::is_known_permission(permission) {
+            return Err(anyhow!(
+                "permissions[{i}]: unknown permission {permission:?}; known permissions are {}",
+                lib_sandbox::permissions::KNOWN_PERMISSIONS.join(", ")
+            ));
+        }
+        if !seen.insert(permission.as_str()) {
+            return Err(anyhow!("permissions[{i}]: {permission:?} is listed twice"));
+        }
+    }
+    Ok(())
+}
+
 /// One unit of work in an install plan. Each variant names exactly one
 /// thing `module_install.rs`'s executor does against the repository or
 /// db-proxy — see its `SagaState::execute` for what each one runs.
@@ -855,6 +957,7 @@ pub async fn build_install_plan(
     db_proxy: &dyn ModuleDbProxy,
 ) -> Result<Vec<InstallStep>> {
     validate_cross_module_refs(resolved, db_proxy).await?;
+    validate_cross_module_permissions(manifest, resolved, db_proxy).await?;
     validate_theme_dependencies(manifest, db_proxy).await?;
 
     let mut nodes: Vec<StepNode> = Vec::new();
@@ -1125,6 +1228,97 @@ async fn validate_cross_module_refs(
         ));
     }
 
+    Ok(())
+}
+
+/// Refuse an upload whose workflow steps or command actions call another
+/// module's action unless this manifest declares every permission that
+/// module declares.
+///
+/// The sandbox checks a call against the permissions of the module that owns
+/// the running function, so a step naming another module's action runs with
+/// that module's permissions. Without this check an upload holding no
+/// `twitch.moderation` could time out chatters by naming the Twitch module's
+/// timeout action in a workflow step. Requiring the target's whole permission
+/// set, rather than what the one action uses, is coarser than necessary but
+/// needs nothing the manifest does not already state.
+///
+/// Bundled system modules are exempt: they ship with the engine, and their
+/// references are the engine's own wiring. References within this module are
+/// covered by its own `permissions`.
+async fn validate_cross_module_permissions(
+    manifest: &ModuleManifest,
+    resolved: &ResolvedManifest,
+    db_proxy: &dyn ModuleDbProxy,
+) -> Result<()> {
+    if resolved.provenance == InstallProvenance::System {
+        return Ok(());
+    }
+
+    let mut references: Vec<(String, &CanonicalId)> = Vec::new();
+    for wf in &resolved.workflows {
+        for (si, action) in wf.step_actions.iter().enumerate() {
+            references.push((
+                format!("workflow '{}' step #{si}", wf.canonical_id.resource_id()),
+                action,
+            ));
+        }
+    }
+    for cmd in &resolved.commands {
+        for (si, action) in cmd.step_actions.iter().enumerate() {
+            references.push((
+                format!("command '{}' action #{si}", cmd.canonical_id.resource_id()),
+                action,
+            ));
+        }
+    }
+    references.retain(|(_, action)| action.module_id() != resolved.module_id.as_str());
+    if references.is_empty() {
+        return Ok(());
+    }
+
+    let installed: Vec<InstalledModule> = db_proxy
+        .list_modules()
+        .await?
+        .into_iter()
+        .filter_map(InstalledModule::from_record)
+        .collect();
+    let declared: HashSet<&str> = manifest.permissions.iter().map(String::as_str).collect();
+
+    let mut refused: Vec<String> = Vec::new();
+    let mut checked: HashSet<String> = HashSet::new();
+    for (site, action) in references {
+        if !checked.insert(action.to_string()) {
+            continue;
+        }
+        let target = action.module_id();
+        let Some(owner) = installed.iter().find(|m| m.module_id == target) else {
+            refused.push(format!(
+                "{site} → action '{action}': module '{target}' has no readable installed manifest, so the permissions its actions run with are unknown"
+            ));
+            continue;
+        };
+        let missing: Vec<&str> = owner
+            .manifest
+            .permissions
+            .iter()
+            .map(String::as_str)
+            .filter(|p| !declared.contains(p))
+            .collect();
+        if !missing.is_empty() {
+            refused.push(format!(
+                "{site} → action '{action}' runs with module '{target}' permissions; add {} to this module's `permissions`",
+                missing.join(", ")
+            ));
+        }
+    }
+
+    if !refused.is_empty() {
+        return Err(anyhow!(
+            "Module calls actions of other modules without declaring the permissions they run with:\n  - {}",
+            refused.join("\n  - ")
+        ));
+    }
     Ok(())
 }
 
@@ -3274,7 +3468,7 @@ mod tests {
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
-        let db_proxy = FakeDbProxyClient::new();
+        let db_proxy = FakeDbProxyClient::new().with_installed([installed_module("woofx3", &[])]);
 
         let plan = build_install_plan(&m, &resolved, &db_proxy)
             .await
@@ -3282,6 +3476,206 @@ mod tests {
         let workflow_step =
             InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
+    }
+
+    // ---------------------------------------------------------------
+    // systemOnly: an action a system module reserves for itself.
+    // ---------------------------------------------------------------
+
+    fn reserved_actions() -> SystemOnlyActions {
+        let bundled = parse(
+            r#"{
+                "id": "woofx3", "name": "woofx3", "version": "1.0.0",
+                "actions": [
+                    { "id": "restricted", "name": "Restricted", "type": "native", "handler": "restricted", "systemOnly": true },
+                    { "id": "open", "name": "Open", "type": "native", "handler": "open" }
+                ]
+            }"#,
+        );
+        SystemOnlyActions::from_manifests([&bundled]).expect("system-only set")
+    }
+
+    fn uploaded_using(action: &str) -> ResolvedManifest {
+        let m = minimal(&format!(
+            r#",
+            "workflows": [{{
+                "id": "w1", "name": "W1", "trigger": "t1",
+                "steps": [{{ "id": "s1", "action": "{action}" }}]
+            }}],
+            "commands": [{{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{{ "action": "woofx3:action:open" }}] }}],
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}]"#
+        ));
+        validate(&m).expect("validate ok")
+    }
+
+    #[test]
+    fn an_upload_cannot_reference_a_system_only_action() {
+        let resolved = uploaded_using("woofx3:action:restricted");
+        let err =
+            refuse_system_only_references(&resolved, InstallProvenance::User, &reserved_actions())
+                .expect_err("a reserved action must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("woofx3:action:restricted") && msg.contains("reserved for system modules"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn a_command_cannot_reference_a_system_only_action_either() {
+        let m = minimal(
+            r#",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{ "action": "woofx3:action:restricted" }] }]"#,
+        );
+        let resolved = validate(&m).expect("validate ok");
+        let err =
+            refuse_system_only_references(&resolved, InstallProvenance::User, &reserved_actions())
+                .expect_err("a reserved action must be refused");
+        assert!(err.to_string().contains("command 'c1'"), "got: {err}");
+    }
+
+    #[test]
+    fn an_upload_may_reference_an_action_that_is_not_system_only() {
+        let resolved = uploaded_using("woofx3:action:open");
+        refuse_system_only_references(&resolved, InstallProvenance::User, &reserved_actions())
+            .expect("an open action installs");
+    }
+
+    #[test]
+    fn a_system_module_may_reference_a_system_only_action() {
+        let resolved = uploaded_using("woofx3:action:restricted");
+        refuse_system_only_references(&resolved, InstallProvenance::System, &reserved_actions())
+            .expect("system provenance is exempt");
+    }
+
+    #[test]
+    fn an_upload_cannot_declare_system_only() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f", "name": "F", "runtime": "js", "path": "functions/f.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f", "systemOnly": true }]"#,
+        );
+        let err = validate(&m).expect_err("systemOnly is a system-module flag");
+        assert!(
+            err.to_string()
+                .contains("`systemOnly` may only be declared by a bundled system module"),
+            "got: {err}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // A step naming another module's action runs with that module's
+    // permissions, so the upload must declare them too.
+    // ---------------------------------------------------------------
+
+    fn installed_module(
+        module_id: &str,
+        permissions: &[&str],
+    ) -> super::super::db_proxy::ModuleRecord {
+        let manifest = serde_json::json!({
+            "id": module_id, "name": module_id, "version": "1.0.0",
+            "permissions": permissions,
+        });
+        serde_json::from_value(serde_json::json!({
+            "id": format!("row-{module_id}"),
+            "module_id": module_id,
+            "module_key": format!("{module_id}:1.0.0:abc1234"),
+            "name": module_id,
+            "version": "1.0.0",
+            "state": "active",
+            "manifest": manifest.to_string(),
+        }))
+        .expect("module record")
+    }
+
+    fn installed_twitch() -> FakeDbProxyClient {
+        FakeDbProxyClient::new().with_installed([installed_module(
+            "woofx3_twitch",
+            &["twitch.moderation", "twitch.channel"],
+        )])
+    }
+
+    fn calls_twitch_timeout(permissions: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "permissions": {permissions},
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}],
+            "workflows": [{{
+                "id": "w1", "name": "W1", "trigger": "t1",
+                "steps": [{{ "id": "s1", "action": "woofx3_twitch:action:twitch.timeout" }}]
+            }}]"#
+        ))
+    }
+
+    #[tokio::test]
+    async fn a_step_calling_another_modules_action_needs_its_permissions() {
+        let m = calls_twitch_timeout(r#"["twitch.moderation"]"#);
+        let err = plan_err(&m, &installed_twitch()).await;
+        assert!(err.contains("woofx3_twitch:action:twitch.timeout"), "{err}");
+        assert!(err.contains("twitch.channel"), "{err}");
+        assert!(
+            !err.contains("twitch.moderation,"),
+            "a declared permission is not reported missing: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_step_calling_another_modules_action_installs_with_its_permissions() {
+        let m = calls_twitch_timeout(r#"["twitch.moderation", "twitch.channel"]"#);
+        let resolved = validate(&m).expect("validate ok");
+        build_install_plan(&m, &resolved, &installed_twitch())
+            .await
+            .expect("declaring the target's permissions installs");
+    }
+
+    #[tokio::test]
+    async fn a_command_calling_another_modules_action_needs_its_permissions() {
+        let m = minimal(
+            r#",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!to", "type": "prefix",
+                "actions": [{ "action": "woofx3_twitch:action:twitch.timeout" }] }]"#,
+        );
+        let err = plan_err(&m, &installed_twitch()).await;
+        assert!(err.contains("command 'c1'"), "{err}");
+        assert!(err.contains("twitch.moderation, twitch.channel"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_step_calling_a_module_with_no_readable_manifest_is_refused() {
+        let m = calls_twitch_timeout("[]");
+        let err = plan_err(&m, &FakeDbProxyClient::new()).await;
+        assert!(err.contains("no readable installed manifest"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_system_install_is_exempt_from_cross_module_permissions() {
+        let mut m = calls_twitch_timeout("[]");
+        m.id = SYSTEM_MODULE_ID.to_string();
+        let resolved =
+            validate_with_provenance(&m, InstallProvenance::System).expect("validate ok");
+        build_install_plan(&m, &resolved, &installed_twitch())
+            .await
+            .expect("bundled modules wire the engine's own actions");
+    }
+
+    #[tokio::test]
+    async fn a_step_calling_its_own_action_needs_no_extra_permissions() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "f.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "action": "a1" }] }]"#,
+        );
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::new();
+        build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("same-module references are covered by the module's own permissions");
+        assert!(
+            !db_proxy.calls().contains(&"list_modules".to_string()),
+            "no cross-module reference, no extra db-proxy call"
+        );
     }
 
     #[test]
@@ -3383,6 +3777,33 @@ mod tests {
         let m = with_deadlines(r#"[{ "id": " ", "function": "timer.expire", "maxPending": 4 }]"#);
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("id is required"), "{err}");
+    }
+
+    #[test]
+    fn known_permissions_install() {
+        let m = minimal(r#", "permissions": ["twitch.moderation", "twitch.channel"]"#);
+        validate(&m).expect("known permissions must install");
+        assert_eq!(m.permissions, vec!["twitch.moderation", "twitch.channel"]);
+    }
+
+    #[test]
+    fn a_manifest_without_permissions_declares_none() {
+        assert!(minimal("").permissions.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_permission_fails_the_install() {
+        let m = minimal(r#", "permissions": ["twitch.moderation", "twitch.everything"]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("permissions[1]"), "{err}");
+        assert!(err.contains("twitch.everything"), "{err}");
+    }
+
+    #[test]
+    fn a_duplicate_permission_fails_the_install() {
+        let m = minimal(r#", "permissions": ["twitch.channel", "twitch.channel"]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("listed twice"), "{err}");
     }
 
     #[test]

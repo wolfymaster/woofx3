@@ -1,11 +1,18 @@
 import { routeModule } from "./context";
-import type { CreateWorkflowInput, UpdateWorkflowInput, WorkflowDefinition, WorkflowMutationResult } from "@woofx3/api";
+import type {
+  CreateWorkflowInput,
+  UpdateWorkflowInput,
+  WorkflowDefinition,
+  WorkflowHealth,
+  WorkflowMutationResult,
+} from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
 import type { WorkflowItem } from "./types";
-import { validateWorkflowDefinition } from "../workflow/validate-definition";
+import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
+import { requestWorkflowHealth } from "../workflow-health-emitter";
 
 export const workflowsRoutes = routeModule({
   async getWorkflows(query?: { enabled?: boolean; page?: number; pageSize?: number }): Promise<{
@@ -47,13 +54,7 @@ export const workflowsRoutes = routeModule({
     // validation with a placeholder and then swap in the real id before
     // storing + emitting. All id references inside the definition (e.g.
     // dependsOn) refer to TASK ids, so the workflow id itself is inert.
-    const placeholderId = "pending";
-    const preValidation = validateWorkflowDefinition({ id: placeholderId, ...data.definition });
-    if (!preValidation.ok) {
-      throw new Error(
-        `Invalid workflow definition: ${preValidation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`
-      );
-    }
+    assertValidWorkflowDefinition({ id: "pending", ...data.definition });
 
     this.logger.info("Creating workflow", { name: data.definition.name });
 
@@ -108,12 +109,7 @@ export const workflowsRoutes = routeModule({
     if (data.definition.id !== id) {
       throw new Error(`definition.id (${data.definition.id}) must match path id (${id})`);
     }
-    const validation = validateWorkflowDefinition(data.definition);
-    if (!validation.ok) {
-      throw new Error(
-        `Invalid workflow definition: ${validation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`
-      );
-    }
+    assertValidWorkflowDefinition(data.definition);
 
     this.logger.info("Updating workflow", { id });
     const existing = await this.db.findWorkflow({ id });
@@ -216,6 +212,23 @@ export const workflowsRoutes = routeModule({
     }
 
     return { id, isEnabled };
+  },
+
+  /**
+   * Asked of the workflow service rather than kept here from the health
+   * webhooks: only the engine knows what it has loaded, and an answer cached
+   * in this process would be empty after an api restart and stale after a
+   * missed event -- the two cases a client calls this to recover from.
+   */
+  async getWorkflowHealth(): Promise<WorkflowHealth[]> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+    const report = await requestWorkflowHealth(this.nats, this.logger);
+    if (!report.loaded) {
+      throw new Error("the workflow engine is still loading workflows; health is not known yet");
+    }
+    return report.workflows;
   },
 
   async getWorkflowRuns(query?: { workflowId?: string; limit?: number }): Promise<

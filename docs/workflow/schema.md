@@ -158,7 +158,7 @@ Numeric comparisons use type coercion -- string representations of numbers are c
 
 ## WaitConfig
 
-Configuration for `wait` type tasks. Pauses workflow execution until a matching event arrives or a timeout expires.
+Configuration for `wait` type tasks. Pauses workflow execution until a matching event arrives or a timeout expires, or, for a `delay`, for a fixed time.
 
 ```json
 {
@@ -180,12 +180,19 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. |
-| `event` | `string` | Yes | NATS subject to listen for while waiting. |
+| `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. `"delay"` pauses for `durationMs` and then continues. |
+| `event` | `string` | Yes, except for `delay` | NATS subject to listen for while waiting. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
-| `timeout` | [Duration](#duration) | No | Maximum time to wait. If exceeded, behavior is determined by `onTimeout`. |
+| `timeout` | `string` | No | Maximum time to wait, as a duration string of at least `"1s"` (numbers are refused). If exceeded, behavior is determined by `onTimeout`. Without one, the wait lasts until its event arrives. |
 | `onTimeout` | `string` | No | What happens when the timeout expires. `"continue"` marks the task as successful and proceeds. `"fail"` (default) fails the task and the workflow. |
+| `durationMs` | `integer` | Only for `delay` | How long a delay pauses, in milliseconds, from `1` to `86400000` (24 hours). |
+
+A `delay` takes only `type` and `durationMs`; setting `event`, `conditions`, `aggregation`, `timeout` or `onTimeout` on one is refused:
+
+```json
+{ "type": "delay", "durationMs": 10000 }
+```
 
 ---
 
@@ -205,9 +212,9 @@ Defines how multiple events are aggregated in a `wait` task.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `strategy` | `string` | Yes | Aggregation strategy. `"count"` counts events until threshold. `"sum"` sums a numeric field until threshold. `"threshold"` checks if a single event's field meets the threshold. |
-| `field` | `string` | No | Dot-notation path to the numeric field to aggregate. Required for `"sum"` and `"threshold"` strategies. |
+| `field` | `string` | No | Dot-notation path to the numeric field to aggregate, rooted at the event (`data.amount`). Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`, and fail the wait if the event carries neither. |
 | `threshold` | `number` | Yes | Target value. The wait is satisfied when the aggregated value reaches or exceeds this. |
-| `timeWindow` | [Duration](#duration) | No | Rolling time window for aggregation. Events outside this window are not counted. |
+| `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`. |
 
 ---
 

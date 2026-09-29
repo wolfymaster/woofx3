@@ -343,6 +343,7 @@ async fn build_registered_module<R: Repository>(
         functions,
         state: registry_state_from_db(&module.state),
         event_types: eventbus_event_types(module),
+        permissions: declared_permissions(module),
     })
 }
 
@@ -359,6 +360,14 @@ fn eventbus_event_types(module: &ModuleRecord) -> HashSet<String> {
         .filter(|trigger| trigger.trigger_type == "eventbus" && !trigger.event.is_empty())
         .map(|trigger| trigger.event)
         .collect()
+}
+
+/// The permissions the module's stored manifest declares. A manifest that is
+/// missing or unreadable grants none, so its privileged calls are refused.
+fn declared_permissions(module: &ModuleRecord) -> HashSet<String> {
+    stored_manifest(module)
+        .map(|manifest| manifest.permissions.into_iter().collect())
+        .unwrap_or_default()
 }
 
 fn function_manifest_id(row: &crate::db_proxy::ModuleFunctionRecord) -> String {
@@ -428,8 +437,8 @@ pub fn unregister_schedule<S: ScheduleRegistrar>(scheduler: &S, module_key: &str
 #[cfg(test)]
 mod tests {
     use super::{
-        BackgroundTaskJson, ModuleRecord, eventbus_event_types, functions_failed_to_load,
-        module_schedule,
+        BackgroundTaskJson, ModuleRecord, declared_permissions, eventbus_event_types,
+        functions_failed_to_load, module_schedule,
     };
 
     fn module_with_manifest(manifest_json: Option<&str>) -> ModuleRecord {
@@ -462,6 +471,17 @@ mod tests {
     fn a_missing_or_unreadable_manifest_allows_no_events() {
         assert!(eventbus_event_types(&module_with_manifest(None)).is_empty());
         assert!(eventbus_event_types(&module_with_manifest(Some("not json"))).is_empty());
+    }
+
+    #[test]
+    fn a_module_holds_the_permissions_its_stored_manifest_declares() {
+        let manifest =
+            r#"{ "id": "woofx3", "name": "woofx3", "permissions": ["twitch.moderation"] }"#;
+        assert_eq!(
+            declared_permissions(&module_with_manifest(Some(manifest))),
+            ["twitch.moderation".to_string()].into_iter().collect()
+        );
+        assert!(declared_permissions(&module_with_manifest(None)).is_empty());
     }
 
     fn task_row(manifest_id: &str) -> BackgroundTaskJson {

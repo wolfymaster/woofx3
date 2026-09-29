@@ -157,6 +157,14 @@ pub struct ManifestAction {
     /// an opaque map and never validates it against this.
     #[serde(default)]
     pub returns: Option<ManifestDataShape>,
+    /// Only a system module may use this action in a workflow or command.
+    /// For actions that do what module code is not allowed to ask for through
+    /// a sandbox capability, so an uploaded module cannot reach the same
+    /// effect by shipping a workflow instead. Enforced by
+    /// `manifest_validate::refuse_system_only_references`; declarable only by
+    /// a system module.
+    #[serde(default)]
+    pub system_only: bool,
 }
 
 /// One field a user fills in.
@@ -945,6 +953,11 @@ pub struct ModuleManifest {
     /// [`ManifestTheme`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub themes: Vec<ManifestTheme>,
+    /// Privileged host functions this module's code may call, by permission
+    /// id (`lib_sandbox::permissions`). Only known ids install; a call to a
+    /// privileged function the module did not declare is refused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permissions: Vec<String>,
 }
 
 impl ModuleManifest {

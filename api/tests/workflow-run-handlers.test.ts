@@ -36,6 +36,12 @@ describe("parseRunRecorded", () => {
     expect(event?.run.triggeredBy).toBe("twitch");
   });
 
+  test("marks a dry run, and only a dry run", () => {
+    expect(parseRunRecorded({ data: { ...RUN_ROW, dry_run: true } }).event?.run.dryRun).toBe(true);
+    expect(parseRunRecorded({ data: { ...RUN_ROW, dry_run: false } }).event?.run.dryRun).toBeUndefined();
+    expect(parseRunRecorded({ data: RUN_ROW }).event?.run.dryRun).toBeUndefined();
+  });
+
   // Some producers publish the row flat rather than under `data`; readRow
   // handles both, and a projection that only understood one would silently
   // drop every row from the other.

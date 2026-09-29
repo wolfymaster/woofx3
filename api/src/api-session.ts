@@ -1,4 +1,4 @@
-import type { Woofx3EngineApi } from "@woofx3/api";
+import type { ConfigBundle, ConfigImportOptions, Woofx3EngineApi } from "@woofx3/api";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 
@@ -76,6 +76,12 @@ export class ApiSession extends RpcTarget {
     });
   }
 
+  async importConfig(bundle: ConfigBundle, options?: ConfigImportOptions) {
+    return this.api.importConfig(bundle, options, {
+      clientId: this.clientId,
+    });
+  }
+
   async deleteResourceInstance(canonicalId: string) {
     return this.api.deleteResourceInstance(canonicalId, {
       clientId: this.clientId,
@@ -102,6 +108,7 @@ export class ApiSession extends RpcTarget {
 export const RPC_METHODS = [
   "ping",
   "getEngineInfo",
+  "getEngineCapabilities",
   "setOverlayPublicUrl",
   "getStorageConfig",
   "setStorageConfig",
@@ -133,6 +140,7 @@ export const RPC_METHODS = [
   "deleteWorkflow",
   "setWorkflowEnabled",
   "getWorkflowRuns",
+  "getWorkflowHealth",
   "createCommand",
   "updateCommand",
   "deleteCommand",
@@ -196,6 +204,9 @@ export const RPC_METHODS = [
   "getUserProfile",
   "awardTreatsToUser",
   "simulateTwitchEvent",
+  "exportConfig",
+  "previewImport",
+  "importConfig",
 ] as const;
 
 /** True only when A and B are the same type, invariantly. */

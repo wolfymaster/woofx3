@@ -10,7 +10,15 @@
       }
     ],
     ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    ["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Changelog" }],
     ["@semantic-release/exec", { "verifyReleaseCmd": ".github/scripts/release-tag.sh ${nextRelease.gitTag}" }],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md"],
+        "message": "chore(release): ${nextRelease.gitTag} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
     [
       "@semantic-release/github",
       {

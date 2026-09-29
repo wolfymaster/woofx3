@@ -37,15 +37,22 @@ export interface ModuleStateFrame {
   value: unknown;
 }
 
-/** The stream carries four frame kinds: per-event deliveries, module
+/** Deliveries to one widget instance the server closed before it finished them. */
+export interface CancelFrame {
+  instanceId: string;
+  eventIds: string[];
+}
+
+/** The stream carries five frame kinds: per-event deliveries, module
  *  storage changes, the `hello` control frame the server opens every
- *  stream with, and `scene-updated` when the scene's saved config
- *  changes. */
+ *  stream with, `scene-updated` when the scene's saved config changes,
+ *  and `cancel` when an operator skips or clears alerts. */
 export type SceneFrame =
   | { kind: "delivery"; frame: DeliveryFrame }
   | { kind: "module-state"; frame: ModuleStateFrame }
   | { kind: "hello"; bootId: string }
-  | { kind: "scene-updated" };
+  | { kind: "scene-updated" }
+  | { kind: "cancel"; frame: CancelFrame };
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
@@ -56,6 +63,8 @@ export interface SceneEventSink {
   onHello?(bootId: string): void;
   /** The scene's saved config changed; the one baked into this page is stale. */
   onSceneUpdated?(): void;
+  /** The server closed deliveries the page may still be holding. */
+  onCancel?(frame: CancelFrame): void;
   /** The server rejected our session cookie. Unlike every other
    *  failure here, retrying cannot fix this -- see the note on
    *  SESSION_REJECTED_STATUSES. */
@@ -111,6 +120,15 @@ export function parseSseChunk(rawEvent: string): SceneFrame | null {
 
   if (eventName === "scene-updated") {
     return { kind: "scene-updated" };
+  }
+
+  if (eventName === "cancel") {
+    const { instanceId, eventIds } = parsed;
+    return typeof instanceId === "string" &&
+      Array.isArray(eventIds) &&
+      eventIds.every((id): id is string => typeof id === "string")
+      ? { kind: "cancel", frame: { instanceId, eventIds } }
+      : null;
   }
 
   if (eventName === "module-state") {
@@ -271,6 +289,8 @@ export class SceneEventSource {
             this.sink?.onModuleState?.(parsed.frame);
           } else if (parsed.kind === "scene-updated") {
             this.sink?.onSceneUpdated?.();
+          } else if (parsed.kind === "cancel") {
+            this.sink?.onCancel?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }

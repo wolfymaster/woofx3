@@ -151,8 +151,7 @@ steps:
 |------|----------|
 | `action` | Execute a registered action (function call, event publish, HTTP request) |
 | `condition` | Evaluate expression, branch to `onTrue` or `onFalse` steps |
-| `wait` | Pause execution until specified event arrives or timeout |
-| `aggregate` | Collect events until threshold, then continue |
+| `wait` | Pause execution until a specified event arrives, or until an aggregate of those events crosses a threshold, or until timeout |
 | `workflow` | Execute a named sub-workflow, await completion |
 | `log` | Emit debug log entry |
 

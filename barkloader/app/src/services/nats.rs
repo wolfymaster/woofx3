@@ -1,8 +1,9 @@
 use anyhow::Result;
-use async_nats::Client;
-use lib_sandbox::host::NatsPublisher;
+use async_nats::{Client, RequestErrorKind};
+use lib_sandbox::host::{NatsPublisher, NatsRequester, RequestError};
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::runtime::Handle;
 use tracing::{debug, warn};
 
@@ -39,5 +40,34 @@ impl NatsPublisher for NatsService {
             }
         });
         Ok(())
+    }
+}
+
+impl NatsRequester for NatsService {
+    /// Blocks the calling thread on the reply, so it must be called from the
+    /// sandbox's blocking thread (see `SandboxFactory::invoke_blocking`),
+    /// never from an async task.
+    fn request(
+        &self,
+        subject: &str,
+        data: Value,
+        timeout: Duration,
+    ) -> Result<Value, RequestError> {
+        let bytes = serde_json::to_vec(&data).map_err(|e| RequestError::Failed(e.to_string()))?;
+        let request = async_nats::Request::new()
+            .payload(bytes.into())
+            .timeout(Some(timeout));
+        let client = self.client.clone();
+        let subject_owned = subject.to_string();
+        let reply = self
+            .handle
+            .block_on(async move { client.send_request(subject_owned, request).await })
+            .map_err(|e| match e.kind() {
+                RequestErrorKind::TimedOut => RequestError::TimedOut,
+                RequestErrorKind::NoResponders => RequestError::NoResponders,
+                RequestErrorKind::Other => RequestError::Failed(e.to_string()),
+            })?;
+        serde_json::from_slice(&reply.payload)
+            .map_err(|e| RequestError::Failed(format!("the reply on {subject} is not JSON: {e}")))
     }
 }

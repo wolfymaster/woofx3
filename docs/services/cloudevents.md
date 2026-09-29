@@ -91,6 +91,9 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 | `streamOnline` | `stream.online` | The stream went online |
 | `subscribe` | `channel.subscribe` | A viewer subscribed |
 | `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
+| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the twitch service; see [Twitch ad breaks](/services/twitch-channel)) |
+| `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
+| `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
 
 ### Payloads
 
@@ -210,10 +213,10 @@ workflow id this run does not have.
 
 ## Twitch API Commands
 
-`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject.
+`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the twitch service reads the bare envelope and a CloudEvent carrying it as `data` alike.
 
 ```typescript
-// shared/clients/typescript/cloudevents/Twitch/commands.ts
+// shared/common/typescript/cloudevents/Twitch/commands.ts
 // subject: "twitchapi"
 // payload: { command: string; args: Record<string, unknown> }
 ```
@@ -223,30 +226,35 @@ workflow id this run does not have.
 | Method | Command string | Description |
 |--------|----------------|-------------|
 | `timeout` | `timeout` | Time out a user in chat |
-| `updateStream` | `update_stream` | Update stream title or category |
-
-#### TimeoutArgs
+| `updateStream` | `updateStream` | Change the title, category or tags |
+| `createMarker` | `createMarker` | Place a stream marker (live only) |
 
 ```typescript
 interface TimeoutArgs {
-    user?: string;
-    duration: number;   // timeout duration in seconds
+  userId?: string;          // or userName
+  userName?: string;
+  durationSeconds: number;  // 1 to 1209600
+  reason?: string;          // at most 500 characters
 }
-```
 
-#### UpdateStreamArgs
-
-```typescript
 interface UpdateStreamArgs {
-    category?: string;
-    title?: string;
+  title?: string;           // at most 140 characters (not UTF-16 units)
+  category?: string;        // free text, resolved through Twitch's category search
+  categoryId?: string;      // used as given; "" clears the category
+  tags?: string[];          // at most 10, each at most 25 letters or numbers
+}
+
+interface CreateMarkerArgs {
+  description?: string;     // at most 140 characters
 }
 ```
+
+The twitch service serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
 
 ### Usage
 
 ```typescript
-const [subject, payload] = factory.TwitchApi().timeout({ user: 'bad_actor', duration: 600 });
+const [subject, payload] = factory.TwitchApi().timeout({ userName: 'bad_actor', durationSeconds: 600 });
 nats.publish(subject, payload);
 ```
 
@@ -333,19 +341,19 @@ const (
 
 | Subject | Direction | Payload | Pattern |
 |---------|-----------|---------|---------|
-| `ui.notify.alert` | workflow → streamware | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
+| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
 | `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
 | `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
-| `widget.queue.skip` | api → streamware | `{}` | NATS request/reply |
-| `widget.queue.clear` | api → streamware | `{}` | NATS request/reply |
-| `widget.queue.replay` | api → streamware | `{ id }` (alert row id) | NATS request/reply |
+| `widget.queue.skip` | api → sceneManager | `{}`; reply `{ ok, skipped, reason? }` | NATS request/reply |
+| `widget.queue.clear` | api → sceneManager | `{}`; reply `{ ok, cleared, reason? }` | NATS request/reply |
+| `widget.queue.replay` | api → sceneManager | `{ id }` (alert row id); reply `{ ok, replayEnvelopeId?, reason? }` | NATS request/reply |
 
 Routing rules for `widget.event` are handled in `streamware/src/events/handlers.ts`. Dispatch is keyed on `data.key`:
 
 - `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `EventQueueManager.handleStatus` (state transitions on the in-flight alert lease).
 - Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(instanceId, key)`).
 
-See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract.
+See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract, and [Skip, clear and replay](./widget-events.md#skip-clear-and-replay) for the `widget.queue.*` requests.
 
 ## Go — DB-Outbox Subjects (engine → api)
 
@@ -373,6 +381,10 @@ const (
     SubjectWorkflowUpdate  Subject = "workflow.change.update"
     SubjectWorkflowDelete  Subject = "workflow.change.delete"
     SubjectWorkflowExecute Subject = "workflow.execute"
+
+    SubjectWorkflowHealthSnapshot Subject = "workflow.health.snapshot"
+    SubjectWorkflowHealthChanged  Subject = "workflow.health.changed"
+    SubjectWorkflowHealthGet      Subject = "workflow.health.get"
 )
 ```
 
@@ -383,6 +395,47 @@ const (
 | `workflow.change.update` | An existing workflow was updated |
 | `workflow.change.delete` | A workflow was deleted |
 | `workflow.execute` | A workflow execution was triggered |
+| `workflow.health.snapshot` | Every workflow in error, once the engine's first complete load finishes |
+| `workflow.health.changed` | One workflow's health changed after the snapshot |
+| `workflow.health.get` | Request/reply: the health of every workflow the engine has tried to load |
+
+### Workflow health
+
+Published by the workflow service with `source: "workflow"` (see
+[Execution Model](../workflow/execution.md#workflow-health)). Every message is built from
+one entry shape:
+
+```json
+{ "workflowId": "wf-1", "status": "error", "reason": "task \"t1\": unknown action \"gone\"", "since": "2026-09-28T12:00:00Z" }
+```
+
+`status` is `"ok"` or `"error"`; `reason` is present only on an error; `since` is
+RFC 3339 and marks when the current status and reason began.
+
+`workflow.health.snapshot`, once per engine start, is authoritative: replace everything
+with it; any workflow not listed is ok. Its `data`:
+
+```json
+{ "workflows": [ { "workflowId": "wf-1", "status": "error", "reason": "...", "since": "..." } ], "at": "2026-09-28T12:00:00Z" }
+```
+
+`workflow.health.changed` carries one entry as its `data`, for each change after the
+snapshot. Apply it on top of the snapshot; for one workflow, keep the later `since`.
+
+A request on `workflow.health.get` (any body) is answered with every tracked entry, ok
+included. `loaded` is false until the first complete load, when the list is partial and
+must not replace anything:
+
+```json
+{ "loaded": true, "at": "2026-09-28T12:00:00Z", "workflows": [ { "workflowId": "wf-1", "status": "ok", "since": "..." } ] }
+```
+
+The api forwards both events to registered clients as webhooks:
+`workflow.health.snapshot` (`WorkflowHealthSnapshotEvent`: `{ type, workflows, at }`,
+errors only) and `workflow.health.changed` (`WorkflowHealthChangedEvent`: the entry plus
+`type`). It also sends a snapshot webhook of its own, built from `workflow.health.get`,
+when it starts and whenever its bus connection comes back. It serves the request as the
+`getWorkflowHealth()` RPC.
 
 ---
 

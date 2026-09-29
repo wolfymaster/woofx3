@@ -112,6 +112,9 @@ message WorkflowExecution {
     string trigger_event_json = 14;
     // What caused the run ("twitch", "chat", ...).
     string triggered_by = 15;
+    // A dry run: side-effecting steps recorded what they would have done
+    // instead of doing it.
+    bool dry_run = 16;
 }
 
 // Execution details for a single step.
@@ -300,6 +303,8 @@ message RecordWorkflowRunRequest {
     // the engine unchanged.
     string trigger_event_json = 5;
     google.protobuf.Timestamp started_at = 6;
+    // A dry run; see WorkflowExecution.dry_run.
+    bool dry_run = 7;
 }
 
 // Request to advance a recorded run to its terminal state.

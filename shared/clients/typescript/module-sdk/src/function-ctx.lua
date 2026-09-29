@@ -171,26 +171,27 @@
 ---@field settings table<string, string|number|boolean>
 ---@field setSetting fun(key: string, value: string): nil
 
+---Raised by an extension function the host refused or failed:
+---`tostring(err)` is the message. `code` is set when there is a reason to
+---branch on; see `CtxHostError` in function-ctx.d.ts for the values.
+---@class CtxHostError
+---@field message string
+---@field code? string
+
+---`ctx.twitch.*`: each call asks the twitch service to act, waits up to 10
+---seconds (never past the end of the function's run) and returns its result,
+---or raises a `CtxHostError`. At most 10 calls per run. `timeout`
+---needs the manifest permission `twitch.moderation`, `updateStream` needs
+---`twitch.channel`.
 ---@class CtxTwitchExtension
----@field clip fun(args?: any): nil
----@field timeout fun(args: any): nil
----@field updateStream fun(args: any): nil
----@field addModerator fun(args: any): nil
----@field shoutout fun(args: any): nil
+---@field clip fun(): { id: string, url: string }
+---@field shoutout fun(args: { userId?: string, userName?: string }): { ok: boolean, userId: string }
+---@field createMarker fun(args?: { description?: string }): { id: string, createdAt: string, description: string, positionSeconds: number }
+---@field timeout fun(args: { userId?: string, userName?: string, durationSeconds: number, reason?: string }): { ok: boolean, userId: string, durationSeconds: number }
+---@field updateStream fun(args: { title?: string, category?: string, categoryId?: string, tags?: string[] }): { ok: boolean, title?: string, categoryId?: string, categoryName?: string, tags?: string[] }
 
 ---@class CtxChatExtension
 ---@field sendMessage fun(text: string): nil
-
----@class CtxPlatformAlertsExtension
----@field alert fun(args: any): nil
----@field setTimer fun(args: any): nil
-
----@class CtxPlatformChatExtension
----@field register fun(args: any): nil
-
----@class CtxPlatform
----@field alerts? CtxPlatformAlertsExtension
----@field chat? CtxPlatformChatExtension
 
 ---The `ctx` object passed to every function invocation. Combines the
 ---built-in surface with extension namespaces the host registered. Each
@@ -212,4 +213,3 @@
 ---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field chat? CtxChatExtension
----@field platform? CtxPlatform
