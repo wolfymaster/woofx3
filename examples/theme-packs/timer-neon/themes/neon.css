@@ -5,7 +5,9 @@
 #box {
   border: 2px solid #ff2bd6;
   border-radius: 12px;
-  box-shadow: 0 0 24px rgba(255, 43, 214, 0.5), inset 0 0 24px rgba(255, 43, 214, 0.25);
+  box-shadow:
+    0 0 24px rgba(255, 43, 214, 0.5),
+    inset 0 0 24px rgba(255, 43, 214, 0.25);
 }
 
 #text {
