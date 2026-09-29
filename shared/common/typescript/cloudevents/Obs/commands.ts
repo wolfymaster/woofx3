@@ -25,13 +25,13 @@ export interface OBSCommand {
 }
 
 /**
- * One request to the OBS connection the scene manager holds, carried as the
- * `data` of an `engine.obs.command` CloudEvent. Request/reply: the scene
- * manager answers every command with an `ObsControlReply`.
+ * One change to OBS, carried as the `data` of an `engine.obs.command`
+ * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
+ * scene manager answers every command with an `ObsControlReply`.
  *
- * Producers are the engine itself -- the workflow `obs.*` actions and the api's
- * `listObsScenes` -- never module code. Names are OBS's own scene, source and
- * input names, exactly as the streamer sees them in OBS.
+ * The only producer is the engine's workflow `obs.*` actions, never module
+ * code. Names are OBS's own scene, source and input names, exactly as the
+ * streamer sees them in OBS.
  *
  * Must match `obsCommand` in workflow/obs_actions.go.
  */
@@ -44,35 +44,46 @@ export type ObsControlCommand =
       sourceName: string;
       visible: boolean;
     }
-  | { command: "set_input_mute"; inputName: string; muted: boolean }
-  | { command: "list_scenes" };
+  | { command: "set_input_mute"; inputName: string; muted: boolean };
 
 export type ObsControlCommandName = ObsControlCommand["command"];
 
-/** A source placed in a scene, as `list_scenes` reports it. */
-export interface ObsSceneSource {
-  name: string;
-  sceneItemId: number;
-  /** OBS input kind (e.g. `browser_source`); null for a nested scene or group. */
-  inputKind: string | null;
-  enabled: boolean;
-  /** The group this source sits in, listed after the group itself; null at the scene's top level. */
-  group: string | null;
-}
-
-export interface ObsSceneSummary {
-  name: string;
-  sources: ObsSceneSource[];
-}
-
 export type ObsControlReply =
-  | { ok: true; scenes?: ObsSceneSummary[] }
+  | { ok: true }
   | {
       ok: false;
       /** Written for the streamer: it becomes the failed step's error. */
       error: string;
     };
 
+/**
+ * What to list, carried as the `data` of an `engine.obs.options` CloudEvent.
+ * Sent by the api's `dispatchFieldOptionsRequest` for a manifest field whose
+ * `source` names this subject. A subject apart from `engine.obs.command`, so
+ * that a field source, whose payload is whatever a manifest wrote, can only
+ * ever read OBS.
+ */
+export type ObsOptionsRequest = { list: ObsOptionsList };
+
+export const OBS_OPTIONS_LISTS = ["scenes", "sources", "inputs"] as const;
+
+export type ObsOptionsList = (typeof OBS_OPTIONS_LISTS)[number];
+
+/**
+ * One option in the shape the UI's field-options select reads: `value` is the
+ * name saved into the field, `label` what the picker shows, and `group` the
+ * heading the option is listed under.
+ */
+export interface ObsFieldOption {
+  value: string;
+  label: string;
+  group?: string;
+}
+
+/** The options, or why OBS could not be asked; `{ error }` is the field-options failure reply. */
+export type ObsOptionsReply = ObsFieldOption[] | { error: string };
+
 export enum EventType {
   ObsCommand = "engine.obs.command",
+  ObsOptions = "engine.obs.options",
 }

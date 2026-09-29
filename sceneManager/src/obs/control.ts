@@ -7,12 +7,7 @@
 // carried out has to say why in words a streamer can act on -- the reason
 // becomes the step's error in the run log.
 
-import type {
-  ObsControlCommand,
-  ObsControlReply,
-  ObsSceneSource,
-  ObsSceneSummary,
-} from "@woofx3/common/cloudevents/Obs/commands";
+import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
 import type { Logger } from "@woofx3/common/runtime";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
@@ -47,7 +42,6 @@ const commandSchema = z.discriminatedUnion("command", [
     })
     .strict(),
   z.object({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }).strict(),
-  z.object({ command: z.literal("list_scenes") }).strict(),
 ]);
 
 export type ParsedObsCommand = { ok: true; command: ObsControlCommand } | { ok: false; error: string };
@@ -82,9 +76,9 @@ export interface ObsControlOptions {
 /** A refusal already worded for the streamer, passed through as is. */
 class ObsControlError extends Error {}
 
-class ObsTimeoutError extends Error {}
+export class ObsTimeoutError extends Error {}
 
-function isNotFound(err: unknown): boolean {
+export function isNotFound(err: unknown): boolean {
   return (
     typeof err === "object" &&
     err !== null &&
@@ -93,7 +87,7 @@ function isNotFound(err: unknown): boolean {
   );
 }
 
-function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new ObsTimeoutError(`timeout after ${ms}ms`)), ms);
@@ -151,9 +145,6 @@ async function runCommand(obs: ObsControlClient, command: ObsControlCommand): Pr
       await obs.request("SetInputMute", { inputName: command.inputName, inputMuted: command.muted });
       return { ok: true };
     }
-    case "list_scenes": {
-      return { ok: true, scenes: await listScenes(obs) };
-    }
   }
 }
 
@@ -199,7 +190,7 @@ async function findSceneItem(
 }
 
 /** A group's items, or none when the group vanished since it was listed. */
-async function groupSceneItems(obs: ObsControlClient, group: string): Promise<Record<string, unknown>[]> {
+export async function groupSceneItems(obs: ObsControlClient, group: string): Promise<Record<string, unknown>[]> {
   try {
     return (await obs.request("GetGroupSceneItemList", { sceneName: group })).sceneItems;
   } catch (err) {
@@ -208,55 +199,6 @@ async function groupSceneItems(obs: ObsControlClient, group: string): Promise<Re
     }
     throw err;
   }
-}
-
-function toSource(item: Record<string, unknown>, group: string | null): ObsSceneSource {
-  return {
-    name: String(item.sourceName),
-    sceneItemId: Number(item.sceneItemId),
-    inputKind: typeof item.inputKind === "string" ? item.inputKind : null,
-    enabled: item.sceneItemEnabled === true,
-    group,
-  };
-}
-
-/**
- * Scenes in the order OBS's own scene list shows them, top first. OBS numbers
- * scenes from the bottom of that list, so the highest `sceneIndex` is the top.
- * A group's sources follow the group, marked with its name.
- *
- * A scene or group removed between the listing and the read of its items is
- * left out rather than failing the whole listing.
- */
-async function listScenes(obs: ObsControlClient): Promise<ObsSceneSummary[]> {
-  const { scenes } = await obs.request("GetSceneList");
-  const ordered = [...scenes].sort((a, b) => Number(b.sceneIndex) - Number(a.sceneIndex));
-  const summaries = await Promise.all(
-    ordered.map(async (scene): Promise<ObsSceneSummary | null> => {
-      const name = String(scene.sceneName);
-      let sceneItems: Record<string, unknown>[];
-      try {
-        ({ sceneItems } = await obs.request("GetSceneItemList", { sceneName: name }));
-      } catch (err) {
-        if (isNotFound(err)) {
-          return null;
-        }
-        throw err;
-      }
-      const expanded = await Promise.all(
-        sceneItems.map(async (item) => {
-          const own = toSource(item, null);
-          if (item.isGroup !== true) {
-            return [own];
-          }
-          const children = await groupSceneItems(obs, own.name);
-          return [own, ...children.map((child) => toSource(child, own.name))];
-        })
-      );
-      return { name, sources: expanded.flat() };
-    })
-  );
-  return summaries.filter((summary): summary is ObsSceneSummary => summary !== null);
 }
 
 /**
@@ -275,7 +217,6 @@ function describeObsError(command: ObsControlCommand, err: unknown): string {
       case "set_input_mute":
         return `input ${JSON.stringify(command.inputName)} does not exist in OBS`;
       case "set_source_visibility":
-      case "list_scenes":
         break;
     }
   }
@@ -309,9 +250,7 @@ export async function handleObsControlRequest(
   }
   const reply = await executeObsControlCommand(obs, parsed.command, options);
   if (reply.ok) {
-    // A scene listing is a read the UI may repeat; only changes to OBS are worth a line at info.
-    const log = parsed.command.command === "list_scenes" ? logger.debug : logger.info;
-    log.call(logger, "engine.obs.command: applied", { command: parsed.command.command });
+    logger.info("engine.obs.command: applied", { command: parsed.command.command });
   } else {
     logger.warn("engine.obs.command: failed", { command: parsed.command.command, error: reply.error });
   }
@@ -335,10 +274,10 @@ export interface ObsSessionSource {
  * Answer one `engine.obs.command` message.
  *
  * A message with no reply subject is refused before anything reaches OBS.
- * Every legitimate sender -- the engine's `obs.*` actions and the api's scene
- * listing -- sends a request and waits for the answer, so a bare publish on
- * this subject comes from something that is not the engine, and OBS control
- * is not something anything else on the bus may drive.
+ * The one legitimate sender, the engine's `obs.*` actions, sends a request and
+ * waits for the answer, so a bare publish on this subject comes from something
+ * that is not the engine, and OBS control is not something anything else on
+ * the bus may drive.
  */
 export async function answerObsCommand(obs: ObsSessionSource, msg: ObsCommandMessage, logger: Logger): Promise<void> {
   if (!msg.reply) {

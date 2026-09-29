@@ -5,6 +5,7 @@ import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { handleLegacySlobsCommand } from "./obs/commands";
 import { answerObsCommand } from "./obs/control";
+import { answerObsOptions } from "./obs/options";
 import type Manager from "./obs/manager";
 import {
   ALERT_EVENT_TYPE,
@@ -253,10 +254,14 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   });
   logger.info("Subscribed to slobs (legacy OBS bridge)");
 
-  // Engine OBS control, request/reply: the workflow `obs.*` actions and the
-  // api's scene listing wait on this answer to succeed or fail.
+  // Engine OBS control, request/reply: the workflow `obs.*` actions wait on
+  // this answer to succeed or fail.
   await nats.subscribe("engine.obs.command", (msg) => answerObsCommand(obs, msg, logger));
   logger.info("Subscribed to engine.obs.command");
+
+  // OBS names for the `obs.*` actions' manifest fields, request/reply.
+  await nats.subscribe("engine.obs.options", (msg) => answerObsOptions(obs, msg, logger));
+  logger.info("Subscribed to engine.obs.options");
 
   await nats.subscribe("db.scene.updated.*", (msg) => {
     let envelope: SceneUpdatedEnvelope;
