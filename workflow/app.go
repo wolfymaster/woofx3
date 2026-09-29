@@ -12,7 +12,6 @@ import (
 	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
-	"github.com/wolfymaster/woofx3/workflow/internal/actions"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
@@ -154,13 +153,6 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	composite.Set("schedule", a.scheduleReg)
 	a.engine.Registry().SetRegistrar(composite)
 	a.engine.Registry().SetLogger(a.logger)
-
-	// Before workflows load: these actions validate their steps when a
-	// workflow is registered, and a validator registered later would miss
-	// every workflow loaded at startup.
-	if err := actions.RegisterTwitch[AppServices](a.engine, natsClient, actions.TwitchRequestTimeout); err != nil {
-		return fmt.Errorf("register twitch actions: %w", err)
-	}
 
 	// Load workflows from DB now that the registrar is attached. Loading
 	// earlier (in Init) would register them against the default

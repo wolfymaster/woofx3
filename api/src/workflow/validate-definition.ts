@@ -1,5 +1,4 @@
 import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefinition } from "@woofx3/api";
-import { validateTwitchActionParams } from "./twitch-actions";
 
 export interface ValidationError {
   path: string;
@@ -119,11 +118,6 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
       validateConditions(t.conditions, `${p}.conditions`, errors);
       if (t.condition) {
         validateConditions([t.condition], `${p}.condition`, errors);
-      }
-      // A disabled step never runs, so it is not checked: disabling a broken
-      // step is how an author gets the rest of the workflow running again.
-      if (t.type === "action" && typeof t.action === "string" && !t.disabled) {
-        validateTwitchActionParams(t.action, t.parameters, `${p}.parameters`, errors);
       }
 
       (t.dependsOn ?? []).forEach((d, j) => {
