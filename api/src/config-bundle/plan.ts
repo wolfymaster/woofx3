@@ -18,7 +18,14 @@ import { serializeActions } from "../routes/commands";
 import { validateWorkflowDefinition } from "../workflow/validate-definition";
 import { commandToBundle, workflowToBundle } from "./export";
 import { canonicalResourceId, sameJson } from "./schema";
-import type { EngineCommand, EngineConfigState, EngineGroup, EngineResource, EngineWorkflow } from "./state";
+import type {
+  EngineCommand,
+  EngineConfigState,
+  EngineGroup,
+  EngineModule,
+  EngineResource,
+  EngineWorkflow,
+} from "./state";
 
 /**
  * One bundle item and what import will do with it. The public plan item is
@@ -45,30 +52,59 @@ export interface PlannedImport {
  */
 export type Destination = { name: string } | { blocked: string };
 
-/**
- * Actions that moderate chat, change the stream or drive OBS. Matched by id
- * because the action rows carry no privilege flag; a shared bundle using one
- * is worth a second look before it is imported.
- */
-const PRIVILEGED_ACTIONS: ReadonlySet<string> = new Set(["twitch.timeout", "twitch.ban", "twitch.update_stream"]);
-const PRIVILEGED_ACTION_PREFIXES = ["obs."];
+/** `{moduleId}:action:{manifestId}`, an action named by its canonical id. */
+const CANONICAL_ACTION = /^([A-Za-z0-9._-]+):action:(.+)$/;
 
-function isPrivileged(action: string): boolean {
-  return PRIVILEGED_ACTIONS.has(action) || PRIVILEGED_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
+/**
+ * The installed module that owns an action, and the action's id within that
+ * module's manifest. Null when no installed module owns it; `unknown_action`
+ * covers that case.
+ */
+function actionOwner(action: string, state: EngineConfigState): { module: EngineModule; actionId: string } | null {
+  const canonical = CANONICAL_ACTION.exec(action);
+  if (canonical?.[1] && canonical[2]) {
+    const module = state.modules.get(canonical[1]);
+    return module ? { module, actionId: canonical[2] } : null;
+  }
+  const moduleId = state.actionOwners.get(action);
+  const module = moduleId ? state.modules.get(moduleId) : undefined;
+  return module ? { module, actionId: action } : null;
 }
 
-function privilegedReason(actions: string[]): ConfigImportReason[] {
-  const privileged = [...new Set(actions.filter(isPrivileged))].sort();
-  if (privileged.length === 0) {
+/**
+ * Why running an action is privileged, or null when it is not. An action
+ * runs with every permission its owning module declares, so any declared
+ * permission makes each of the module's actions privileged; the manifest is
+ * the only place that knows what an action can reach, which keeps platform
+ * specifics out of this check. A `systemOnly` action is one a system module
+ * reserved for itself.
+ */
+function privilegeOf(action: string, state: EngineConfigState): string | null {
+  const owner = actionOwner(action, state);
+  if (owner === null) {
+    return null;
+  }
+  const grounds: string[] = [];
+  if (owner.module.permissions.length > 0) {
+    grounds.push(
+      `runs with the permissions of module "${owner.module.moduleId}": ${owner.module.permissions.join(", ")}`
+    );
+  }
+  if (owner.module.systemOnlyActions.has(owner.actionId)) {
+    grounds.push(`is reserved for system modules by "${owner.module.moduleId}"`);
+  }
+  return grounds.length > 0 ? `"${action}" ${grounds.join(" and ")}` : null;
+}
+
+function privilegedReason(actions: string[], state: EngineConfigState): ConfigImportReason[] {
+  const details = [...new Set(actions)]
+    .sort()
+    .map((action) => privilegeOf(action, state))
+    .filter((detail): detail is string => detail !== null);
+  if (details.length === 0) {
     return [];
   }
-  return [
-    reason(
-      "privileged_action",
-      `Runs ${privileged.map((a) => `"${a}"`).join(", ")}, which can moderate chat, change the stream or control OBS.`,
-      false
-    ),
-  ];
+  return [reason("privileged_action", `${details.join("; ")}.`, false)];
 }
 
 /**
@@ -471,7 +507,7 @@ function planWorkflows(ctx: PlanContext): PlannedStep[] {
         );
       }
     }
-    reasons.push(...privilegedReason(actions));
+    reasons.push(...privilegedReason(actions, state));
 
     const resolvedRefs: Record<string, string> = {};
     for (const [taskId, target] of Object.entries(wf.workflowRefs)) {
@@ -543,7 +579,12 @@ function planCommands(ctx: PlanContext): PlannedStep[] {
     } catch (err) {
       reasons.push(reason("invalid", err instanceof Error ? err.message : String(err), true));
     }
-    reasons.push(...privilegedReason(cmd.actions.map((a) => a?.action).filter((a): a is string => !!a)));
+    reasons.push(
+      ...privilegedReason(
+        cmd.actions.map((a) => a?.action).filter((a): a is string => !!a),
+        state
+      )
+    );
 
     const resolvedGroups: string[] = [];
     for (const group of cmd.groups) {

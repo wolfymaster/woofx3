@@ -59,6 +59,13 @@ export interface EngineModule {
   version: string;
   /** Resource kinds the module's manifest declares. */
   resourceKinds: ReadonlySet<string>;
+  /**
+   * Permissions the manifest declares. Every action the module owns runs
+   * with them, so a step calling any of its actions acts with them too.
+   */
+  permissions: readonly string[];
+  /** Manifest ids of the module's actions declared `systemOnly`. */
+  systemOnlyActions: ReadonlySet<string>;
 }
 
 export interface EngineConfigState {
@@ -105,18 +112,45 @@ function parseJson<T>(raw: string | undefined, fallback: T): T {
   }
 }
 
-function manifestResourceKinds(rawManifest: string | undefined): Set<string> {
-  const manifest = parseJson<{ resources?: unknown }>(rawManifest, {});
-  const kinds = new Set<string>();
-  if (!Array.isArray(manifest.resources)) {
-    return kinds;
+interface ManifestFacts {
+  resourceKinds: Set<string>;
+  permissions: string[];
+  systemOnlyActions: Set<string>;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * The parts of an installed manifest the planner reads. Any of them may be
+ * absent, since a manifest from an older engine never declared them.
+ */
+function manifestFacts(rawManifest: string | undefined): ManifestFacts {
+  const manifest = parseJson<unknown>(rawManifest, {});
+  const facts: ManifestFacts = { resourceKinds: new Set(), permissions: [], systemOnlyActions: new Set() };
+  if (!isObject(manifest)) {
+    return facts;
   }
-  for (const entry of manifest.resources) {
-    if (entry && typeof entry === "object" && typeof (entry as { kind?: unknown }).kind === "string") {
-      kinds.add((entry as { kind: string }).kind);
+  if (Array.isArray(manifest.resources)) {
+    for (const entry of manifest.resources) {
+      if (isObject(entry) && typeof entry.kind === "string") {
+        facts.resourceKinds.add(entry.kind);
+      }
     }
   }
-  return kinds;
+  if (Array.isArray(manifest.permissions)) {
+    const permissions = manifest.permissions.filter((p): p is string => typeof p === "string" && p !== "");
+    facts.permissions = [...new Set(permissions)].sort();
+  }
+  if (Array.isArray(manifest.actions)) {
+    for (const entry of manifest.actions) {
+      if (isObject(entry) && typeof entry.id === "string" && entry.systemOnly === true) {
+        facts.systemOnlyActions.add(entry.id);
+      }
+    }
+  }
+  return facts;
 }
 
 async function readWorkflows(db: DbClient): Promise<EngineWorkflow[]> {
@@ -178,7 +212,7 @@ export async function readEngineConfig(db: DbClient, options: { members: boolean
     modules.set(m.moduleId, {
       moduleId: m.moduleId,
       version: m.version ?? "",
-      resourceKinds: manifestResourceKinds(m.manifest),
+      ...manifestFacts(m.manifest),
     });
   }
 

@@ -216,10 +216,20 @@ keep it; any other conflict blocks its dependents.
 
 Non-blocking reasons are warnings: `module_version_mismatch` (installed at a
 different version than exported from), `unknown_action` (a step runs an action
-this engine has not registered), `privileged_action` (a step moderates chat,
-edits the stream or drives OBS: `twitch.timeout`, `twitch.ban`,
-`twitch.update_stream`, `obs.*`), `grants_access` and `members_not_applied`
+this engine has not registered), `privileged_action` (a step runs an
+action that is privileged; see below), `grants_access` and `members_not_applied`
 (below), `renamed`, `overwrite`.
+
+### Privileged actions
+
+An action is privileged when the installed module that owns it declares any
+`permissions` in its manifest, since every action a module owns runs with all
+of them, or when its manifest entry is marked `systemOnly`. The warning names
+the action, the owning module and the permissions it runs with. The rule
+reads only manifests, so the engine holds no list of platform action names:
+a platform module that asks for moderation or channel permissions marks its
+own actions. An action that no installed module owns is not flagged,
+because nothing on this engine says what it can reach. A manifest without `permissions` declares none.
 
 ### Members and usernames
 

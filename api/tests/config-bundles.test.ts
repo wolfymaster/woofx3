@@ -671,22 +671,95 @@ describe("conflicts", () => {
     expect(hype).toMatchObject({ outcome: "created", warning: "Saved but left disabled: engine busy" });
     expect(result.items.find((i) => i.key === "Thank follower")?.warning).toBeUndefined();
   });
+});
 
-  it("flags privileged actions without blocking them", async () => {
+describe("privileged actions", () => {
+  const TWITCH_MANIFEST = JSON.stringify({
+    id: "woofx3_twitch",
+    permissions: ["twitch.moderation", "twitch.channel"],
+    actions: [{ id: "twitch.timeout", name: "Timeout", type: "function", function: "timeout" }],
+  });
+  const SYSTEM_MANIFEST = JSON.stringify({
+    id: "woofx3",
+    actions: [
+      { id: "chat.reply", name: "Reply", type: "native", handler: "chat.reply" },
+      { id: "engine.restart", name: "Restart", type: "native", handler: "restart", systemOnly: true },
+    ],
+  });
+
+  function privilegedEngine(): FakeEngineDb {
+    const db = emptyEngine();
+    db.modules = [
+      { moduleId: "woofx3", version: "1.0.0", manifest: SYSTEM_MANIFEST },
+      { moduleId: "counter", version: "2.0.0", manifest: COUNTER_MANIFEST },
+      { moduleId: "woofx3_twitch", version: "0.3.0", manifest: TWITCH_MANIFEST },
+    ];
+    db.actions.push(
+      { manifestId: "twitch.timeout", createdByType: "MODULE", createdByRef: "woofx3_twitch:0.3.0:abc" },
+      { manifestId: "engine.restart", createdByType: "MODULE", createdByRef: "woofx3" }
+    );
+    return db;
+  }
+
+  async function reasonsFor(action: string, target: FakeEngineDb) {
     const bundle = await makeApi(populatedEngine()).api.exportConfig();
-    bundle.workflows[1].definition.tasks[0].action = "obs.set_scene";
-    const { session } = makeApi(emptyEngine());
-
-    const plan = await session.previewImport(bundle, { include: ["workflows"] });
-
+    bundle.workflows[1].definition.tasks[0].action = action;
+    const plan = await makeApi(target).session.previewImport(bundle, { include: ["workflows"] });
     const item = plan.items.find((i) => i.key === "Thank follower");
     expect(item?.action).toBe("create");
-    expect(item?.reasons).toContainEqual(
-      expect.objectContaining({
+    return item?.reasons.filter((r) => r.code === "privileged_action") ?? [];
+  }
+
+  it("flags an action whose module declares permissions, naming them, without blocking it", async () => {
+    const reasons = await reasonsFor("twitch.timeout", privilegedEngine());
+
+    expect(reasons).toEqual([
+      {
         code: "privileged_action",
         blocking: false,
-        message: expect.stringContaining("obs.set_scene"),
-      })
+        message:
+          '"twitch.timeout" runs with the permissions of module "woofx3_twitch": twitch.channel, twitch.moderation.',
+      },
+    ]);
+  });
+
+  it("resolves a canonical action id to its module", async () => {
+    const reasons = await reasonsFor("woofx3_twitch:action:twitch.timeout", privilegedEngine());
+
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]?.message).toContain("twitch.moderation");
+  });
+
+  it("flags a systemOnly action", async () => {
+    const reasons = await reasonsFor("engine.restart", privilegedEngine());
+
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]?.message).toBe('"engine.restart" is reserved for system modules by "woofx3".');
+  });
+
+  it("does not flag an action whose module declares no permissions", async () => {
+    expect(await reasonsFor("chat.reply", privilegedEngine())).toEqual([]);
+  });
+
+  it("does not flag by action name alone", async () => {
+    // Nothing installed here owns these, so nothing says what they can reach.
+    expect(await reasonsFor("twitch.timeout", emptyEngine())).toEqual([]);
+    expect(await reasonsFor("obs.set_scene", emptyEngine())).toEqual([]);
+  });
+
+  it("flags a command's privileged action", async () => {
+    const bundle = await makeApi(populatedEngine()).api.exportConfig();
+    const vanish = bundle.commands.find((c) => c.command === "vanish");
+    if (!vanish?.actions[0]) {
+      throw new Error("fixture command vanish has no action");
+    }
+    vanish.actions[0].action = "twitch.timeout";
+
+    const plan = await makeApi(privilegedEngine()).session.previewImport(bundle, { include: ["commands"] });
+
+    const item = plan.items.find((i) => i.key === "vanish");
+    expect(item?.reasons).toContainEqual(
+      expect.objectContaining({ code: "privileged_action", message: expect.stringContaining("woofx3_twitch") })
     );
   });
 });

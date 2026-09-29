@@ -196,7 +196,10 @@ export type ConfigImportReasonCode =
   | "grants_access"
   /** The bundle carries members or usernames that this import leaves out; see `applyMembers`. */
   | "members_not_applied"
-  /** A step moderates chat, edits the stream or drives OBS. Worth reading before importing a shared bundle. */
+  /**
+   * A step runs an action whose module declares permissions, or one marked
+   * `systemOnly`. Worth reading before importing a shared bundle.
+   */
   | "privileged_action"
   /** The item fails the same validation a save through the API applies. */
   | "invalid";
