@@ -8,6 +8,109 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
+const (
+	WaitTypeEvent       = "event"
+	WaitTypeAggregation = "aggregation"
+	WaitTypeDelay       = "delay"
+
+	OnTimeoutContinue = "continue"
+	OnTimeoutFail     = "fail"
+
+	// MinWaitTimeout is the shortest timeout an event wait accepts. A number in
+	// a definition's timeout is read as nanoseconds, so `30000` meant as thirty
+	// seconds is 30µs; refusing anything under a second turns that mistake into
+	// an error instead of a wait that can never be met. Mirrored by
+	// WAIT_TIMEOUT_MIN_MS in shared/clients/typescript/api/workflow-definition.ts.
+	MinWaitTimeout = time.Second
+
+	// MinDelayMs and MaxDelayMs bound a delay wait. A paused run holds its
+	// state in memory until it resumes, so a delay longer than a day is more
+	// likely a unit mistake than an intent, and it would be lost to a restart
+	// anyway. Mirrored by WAIT_DELAY_MIN_MS / WAIT_DELAY_MAX_MS in
+	// shared/clients/typescript/api/workflow-definition.ts.
+	MinDelayMs int64 = 1
+	MaxDelayMs int64 = 24 * 60 * 60 * 1000
+)
+
+// ValidateWaitConfig rejects a wait that could never behave as written, so a
+// broken definition is refused when it is registered rather than discovered
+// by a run that hangs or ends in a way nobody asked for.
+//
+// An empty type is read as "event": definitions written before the type was
+// checked left it out, and the engine has always treated them as event waits.
+// Empty values (an empty event, no conditions, a zero timeout or durationMs)
+// count as absent, so a field an editor cleared rather than removed is not
+// refused.
+func ValidateWaitConfig(cfg *types.WaitConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("wait task requires a wait config")
+	}
+
+	switch cfg.Type {
+	case WaitTypeDelay:
+		return validateDelayConfig(cfg)
+	case "", WaitTypeEvent, WaitTypeAggregation:
+	default:
+		return fmt.Errorf("unknown wait type %q (expected %q, %q or %q)", cfg.Type, WaitTypeEvent, WaitTypeAggregation, WaitTypeDelay)
+	}
+
+	if cfg.Event == "" {
+		return fmt.Errorf("%s wait requires an event", waitTypeName(cfg))
+	}
+	if cfg.Type == WaitTypeAggregation && cfg.Aggregation == nil {
+		return fmt.Errorf("aggregation wait requires an aggregation config")
+	}
+	if cfg.DurationMs != 0 {
+		return fmt.Errorf("durationMs only applies to a delay wait")
+	}
+	if HasTimeout(cfg) && cfg.Timeout.Duration < MinWaitTimeout {
+		return fmt.Errorf("wait timeout must be at least %s, got %s", MinWaitTimeout, cfg.Timeout.Duration)
+	}
+	switch cfg.OnTimeout {
+	case "", OnTimeoutContinue, OnTimeoutFail:
+	default:
+		return fmt.Errorf("unknown onTimeout %q (expected %q or %q)", cfg.OnTimeout, OnTimeoutContinue, OnTimeoutFail)
+	}
+	return nil
+}
+
+// validateDelayConfig refuses event fields on a delay: a delay always ends by
+// resuming the run, so a timeout or event on it would be silently ignored and
+// the creator left believing it does something.
+func validateDelayConfig(cfg *types.WaitConfig) error {
+	if cfg.DurationMs < MinDelayMs || cfg.DurationMs > MaxDelayMs {
+		return fmt.Errorf("delay durationMs must be between %d and %d, got %d", MinDelayMs, MaxDelayMs, cfg.DurationMs)
+	}
+	if cfg.Event != "" || len(cfg.Conditions) > 0 || cfg.Aggregation != nil {
+		return fmt.Errorf("delay wait does not take an event, conditions or aggregation")
+	}
+	if HasTimeout(cfg) || cfg.OnTimeout != "" {
+		return fmt.Errorf("delay wait does not take a timeout or onTimeout")
+	}
+	return nil
+}
+
+func waitTypeName(cfg *types.WaitConfig) string {
+	if cfg.Type == "" {
+		return WaitTypeEvent
+	}
+	return cfg.Type
+}
+
+// HasTimeout reports whether an event wait names a timeout. Without one the
+// wait lasts until its event arrives, however long that takes: definitions
+// saved before timeouts were enforced rely on that, e.g. a run started by
+// stream.online that waits for stream.offline.
+func HasTimeout(cfg *types.WaitConfig) bool {
+	return cfg != nil && cfg.Timeout != nil && cfg.Timeout.Duration != 0
+}
+
+// IsDelay reports whether a wait resumes after a fixed time rather than on an
+// event.
+func IsDelay(cfg *types.WaitConfig) bool {
+	return cfg != nil && cfg.Type == WaitTypeDelay
+}
+
 type WaitTask struct {
 	config *types.WaitConfig
 }
@@ -37,12 +140,20 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 		return nil
 	}
 
-	timeout := time.Now().Add(5 * time.Minute)
-	if waitConfig.Timeout != nil {
+	if IsDelay(waitConfig) {
+		return &types.WaitState{
+			Timeout:        time.Now().Add(time.Duration(waitConfig.DurationMs) * time.Millisecond),
+			ReceivedEvents: make([]*types.Event, 0),
+		}
+	}
+
+	// The zero time means no deadline: the engine arms no timer for it.
+	var timeout time.Time
+	if HasTimeout(waitConfig) {
 		timeout = time.Now().Add(waitConfig.Timeout.Duration)
 	}
 
-	onTimeout := "fail"
+	onTimeout := OnTimeoutFail
 	if waitConfig.OnTimeout != "" {
 		onTimeout = waitConfig.OnTimeout
 	}
@@ -58,12 +169,13 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 
 	if waitConfig.Aggregation != nil {
 		windowEnd := timeout
-		if waitConfig.Aggregation.TimeWindow != nil {
+		if waitConfig.Aggregation.TimeWindow != nil && waitConfig.Aggregation.TimeWindow.Duration > 0 {
 			windowEnd = time.Now().Add(waitConfig.Aggregation.TimeWindow.Duration)
 		}
 
 		state.Aggregation = &types.AggregationState{
 			Strategy:    waitConfig.Aggregation.Strategy,
+			Field:       waitConfig.Aggregation.Field,
 			Count:       0,
 			Sum:         0,
 			Threshold:   waitConfig.Aggregation.Threshold,
@@ -127,7 +239,7 @@ func (t *WaitTask) matchesConditions(event *types.Event, conditions []types.Cond
 func (t *WaitTask) processAggregation(event *types.Event, waitState *types.WaitState) (bool, error) {
 	agg := waitState.Aggregation
 
-	if time.Now().After(agg.WindowEnd) {
+	if !agg.WindowEnd.IsZero() && time.Now().After(agg.WindowEnd) {
 		return false, nil
 	}
 
@@ -164,29 +276,38 @@ func (t *WaitTask) processAggregation(event *types.Event, waitState *types.WaitS
 	return false, nil
 }
 
+// The number this event contributes to the aggregate, read from the configured
+// `field` — a dot path rooted at the event, as in `data.amount`.
+//
+// With no field configured the conventional payload keys are tried, so a sum
+// over events that carry an obvious amount keeps working without one. What is
+// deliberately not kept is a fallback to 1 for an unreadable value: a `sum`
+// that cannot find its number is a misconfigured workflow, and counting 1 per
+// event silently turns it into a `count` that looks like it is working.
 func (t *WaitTask) extractNumericValue(event *types.Event, waitState *types.WaitState) (float64, error) {
-	if waitState.Aggregation == nil {
+	agg := waitState.Aggregation
+	if agg == nil {
 		return 0, fmt.Errorf("no aggregation config")
 	}
 
-	eventData := map[string]any{
-		"data": event.Data,
-	}
-
-	value, err := expression.ResolvePath(eventData, "data."+waitState.Aggregation.Strategy)
-	if err != nil {
-		if event.Data != nil {
-			if v, ok := event.Data["amount"]; ok {
-				return toFloat64(v)
-			}
-			if v, ok := event.Data["value"]; ok {
-				return toFloat64(v)
-			}
+	if agg.Field != "" {
+		value, err := expression.ResolvePath(map[string]any{"data": event.Data}, agg.Field)
+		if err != nil {
+			return 0, fmt.Errorf("aggregation field %q not found on %q event", agg.Field, event.Type)
 		}
-		return 1, nil
+		return toFloat64(value)
 	}
 
-	return toFloat64(value)
+	for _, key := range []string{"amount", "value"} {
+		if value, ok := event.Data[key]; ok {
+			return toFloat64(value)
+		}
+	}
+
+	return 0, fmt.Errorf(
+		"aggregation strategy %q needs a `field`: %q event carries no `amount` or `value`",
+		agg.Strategy, event.Type,
+	)
 }
 
 func toFloat64(v any) (float64, error) {
@@ -206,13 +327,20 @@ func toFloat64(v any) (float64, error) {
 	}
 }
 
-func (t *WaitTask) CheckTimeout(waitState *types.WaitState) bool {
-	return time.Now().After(waitState.Timeout)
+// Expire settles a wait whose deadline has passed. A delay is satisfied by
+// reaching it; any other wait has timed out and its onTimeout decides the rest.
+func (t *WaitTask) Expire(waitConfig *types.WaitConfig, waitState *types.WaitState) {
+	if IsDelay(waitConfig) {
+		waitState.Satisfied = true
+		return
+	}
+	waitState.TimedOut = true
 }
 
 func (t *WaitTask) GetExports(waitState *types.WaitState) map[string]any {
 	exports := map[string]any{
 		"satisfied": waitState.Satisfied,
+		"timedOut":  waitState.TimedOut,
 		"events":    waitState.ReceivedEvents,
 	}
 

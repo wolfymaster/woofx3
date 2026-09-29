@@ -12,7 +12,7 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
-import type { StreamSession, StreamSessionTotals } from "./api";
+import type { StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
 import type { WorkflowDefinition } from "./workflow-definition";
 
 /**
@@ -48,6 +48,9 @@ export const EngineEventType = {
   WORKFLOW_RUN_STARTED: "workflow.run.started",
   WORKFLOW_RUN_COMPLETED: "workflow.run.completed",
   WORKFLOW_RUN_FAILED: "workflow.run.failed",
+  WORKFLOW_RUN_CANCELLED: "workflow.run.cancelled",
+  WORKFLOW_HEALTH_CHANGED: "workflow.health.changed",
+  WORKFLOW_HEALTH_SNAPSHOT: "workflow.health.snapshot",
   // Persisted run history, projected from the db-proxy outbox. Distinct from
   // the three above on purpose: those are live lifecycle notifications for a
   // caller waiting on one run, these are database rows for the history nobody
@@ -999,6 +1002,50 @@ export interface WorkflowRunFailedEvent {
 }
 
 /**
+ * Fired when a run ends because somebody cancelled it. `reason` is the
+ * engine's own wording, "cancelled: <reason given>".
+ */
+export interface WorkflowRunCancelledEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_CANCELLED;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  reason: string;
+  occurredAt: string;
+}
+
+/**
+ * Fired when one workflow's health changes: an error appears, its reason
+ * changes, or it clears. Sent on change only, never on every retry, so each
+ * one is news. An `"ok"` also arrives when an errored workflow is disabled or
+ * deleted. A workflow that loads fine and never had an error sends nothing.
+ *
+ * Apply on top of the latest WorkflowHealthSnapshotEvent. Changes to one
+ * workflow can arrive out of order; keep the one with the later `since`.
+ */
+export interface WorkflowHealthChangedEvent extends WorkflowHealth {
+  type: typeof EngineEventType.WORKFLOW_HEALTH_CHANGED;
+}
+
+/**
+ * The whole health picture, authoritative: replace every stored health with
+ * this. `workflows` lists only workflows in error; any workflow not listed is
+ * ok.
+ *
+ * Sent once when the engine finishes loading its workflows after it starts,
+ * and by the api when it starts or its message-bus connection comes back, so
+ * errors from before a restart or a gap in delivery do not linger.
+ */
+export interface WorkflowHealthSnapshotEvent {
+  type: typeof EngineEventType.WORKFLOW_HEALTH_SNAPSHOT;
+  /** Errors only. */
+  workflows: WorkflowHealth[];
+  /** ISO 8601. When the engine took the snapshot. */
+  at: string;
+}
+
+/**
  * A persisted run, as the database holds it.
  *
  * `triggerEvent` is the originating CloudEvent verbatim, the same way
@@ -1013,6 +1060,12 @@ export interface WorkflowRunSnapshot {
   triggeredBy?: string;
   /** JSON of the originating CloudEvent. */
   triggerEvent?: string;
+  /**
+   * True for a dry run: its side-effecting steps recorded what they would
+   * have done (`{ dryRun: true, wouldDo }` in their outputs) instead of doing
+   * it. Absent for a real run.
+   */
+  dryRun?: boolean;
   error?: string;
   startedAt?: string;
   completedAt?: string;
@@ -1328,6 +1381,9 @@ export type CallbackEvent =
   | WorkflowRunStartedEvent
   | WorkflowRunCompletedEvent
   | WorkflowRunFailedEvent
+  | WorkflowRunCancelledEvent
+  | WorkflowHealthChangedEvent
+  | WorkflowHealthSnapshotEvent
   | WorkflowRunRecordedEvent
   | WorkflowRunUpdatedEvent
   | WorkflowRunStepRecordedEvent
@@ -1386,6 +1442,9 @@ export type CallbackEventByType = {
   [EngineEventType.WORKFLOW_RUN_STARTED]: WorkflowRunStartedEvent;
   [EngineEventType.WORKFLOW_RUN_COMPLETED]: WorkflowRunCompletedEvent;
   [EngineEventType.WORKFLOW_RUN_FAILED]: WorkflowRunFailedEvent;
+  [EngineEventType.WORKFLOW_RUN_CANCELLED]: WorkflowRunCancelledEvent;
+  [EngineEventType.WORKFLOW_HEALTH_CHANGED]: WorkflowHealthChangedEvent;
+  [EngineEventType.WORKFLOW_HEALTH_SNAPSHOT]: WorkflowHealthSnapshotEvent;
   [EngineEventType.WORKFLOW_RUN_RECORDED]: WorkflowRunRecordedEvent;
   [EngineEventType.WORKFLOW_RUN_UPDATED]: WorkflowRunUpdatedEvent;
   [EngineEventType.WORKFLOW_RUN_STEP_RECORDED]: WorkflowRunStepRecordedEvent;

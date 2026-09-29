@@ -27,6 +27,13 @@ import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
 import { UNVERSIONED } from "../version";
 
 /**
+ * How long a request to the engine waits for its answer. The engine answers
+ * as soon as it has decided -- before any step runs -- so this only expires
+ * when nothing is listening.
+ */
+const ENGINE_REQUEST_TIMEOUT_MS = 5_000;
+
+/**
  * Runs a module function in the barkloader sandbox and waits for its return
  * value. `BarkloaderClient` is the production implementation; a timeout
  * rejects with its `InvokeTimeoutError`.
@@ -213,6 +220,51 @@ export class ApiRouteHost extends RpcTarget {
       data
     );
     await this.publishBytes(subject || eventType, encode(event), { eventType, eventId: event.id });
+  }
+
+  /**
+   * Send a CloudEvent as a NATS request and decode the receiver's JSON reply.
+   *
+   * For a command whose caller needs the receiver's answer, where
+   * `publishEvent` would return before the receiver had decided anything.
+   * Built like `publishEvent`, so a receiver subscribed to the same subject
+   * reads either the same way.
+   */
+  protected async requestEvent<T>(
+    eventType: string,
+    data: Record<string, unknown>,
+    correlation?: { triggerId?: string; triggeredBy?: string },
+    timeoutMs = ENGINE_REQUEST_TIMEOUT_MS
+  ): Promise<T> {
+    const event = Event<Record<string, unknown>>(
+      {
+        type: eventType,
+        source: "api",
+        ...(correlation?.triggerId ? { triggerId: correlation.triggerId } : {}),
+        ...(correlation?.triggeredBy ? { triggeredBy: correlation.triggeredBy } : {}),
+      },
+      data
+    );
+    return this.requestBytes<T>(eventType, encode(event), timeoutMs);
+  }
+
+  /** Send a plain JSON body as a NATS request and decode the JSON reply. */
+  protected async requestJson<T>(subject: string, body: unknown, timeoutMs = ENGINE_REQUEST_TIMEOUT_MS): Promise<T> {
+    return this.requestBytes<T>(subject, new TextEncoder().encode(JSON.stringify(body)), timeoutMs);
+  }
+
+  private async requestBytes<T>(subject: string, payload: Uint8Array, timeoutMs: number): Promise<T> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+    let reply: { data: Uint8Array };
+    try {
+      reply = await this.nats.request(subject, payload, { timeout: timeoutMs });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`No answer on ${subject} (is the workflow engine running?): ${detail}`);
+    }
+    return JSON.parse(new TextDecoder().decode(reply.data)) as T;
   }
 
   /**

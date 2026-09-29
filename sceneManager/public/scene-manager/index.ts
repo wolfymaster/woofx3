@@ -125,6 +125,19 @@ function main(): void {
     }).catch(() => {});
   }
 
+  // Alert widgets ack each alert as it starts and as it finishes, one request
+  // each rather than through a batcher: the server finds the alert on screen
+  // from these, and a quarter-second batch is long enough for an operator's
+  // Skip to land on the alert that just ended.
+  function postAlertAck(kind: "started" | "completed", eventId: string, instanceId: string): void {
+    fetch(`${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instanceIds: [instanceId] }),
+    }).catch(() => {});
+  }
+
   const mountAlertWidget = (instance: WidgetInstanceConfig): void => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -143,15 +156,19 @@ function main(): void {
       postStatus,
       onFinished: (eventId) => {
         queueManager.complete(subId, eventId);
-        completedBatcher.add(eventId, instance.id);
+        postAlertAck("completed", eventId, instance.id);
       },
     });
     queueManager.register(
       subId,
       instance.id,
       { maxInFlight: 1 },
-      (item) => alertWidget.play(item),
-      () => {}
+      (item) => {
+        postAlertAck("started", item.eventId, instance.id);
+        return alertWidget.play(item);
+      },
+      () => {},
+      (eventId) => alertWidget.stop(eventId)
     );
   };
 
@@ -290,6 +307,7 @@ function main(): void {
       });
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
+    onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
     // The scene was saved. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.

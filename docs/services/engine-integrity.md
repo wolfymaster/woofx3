@@ -27,9 +27,30 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | Webhook handler result | Returns `{ status, headers?, body?, events? }`; the engine checks it, publishes the events itself, then answers the request | Yes |
 | `ctx.storage.set` | Writes module storage; the engine emits `module.storage.changed` itself | Yes |
 | `ctx.resources.*` | Engine-defined create / delete / list operations | Yes |
-| `ctx.twitch.*`, `ctx.platform.alerts.*`, `ctx.platform.chat.*` | Fixed subject and command table defined by the engine; the module supplies arguments | Yes: a capability, not a channel |
+| `ctx.twitch.*` | Fixed subject and command table defined by the engine; the module supplies arguments and gets the twitch service's answer. Commands that act on the channel or its chatters need a permission the manifest declares | Yes: a capability, not a channel |
 | `ctx.chat.sendMessage` | Engine-defined chat sender | Yes |
 | `ctx.crypto.*` | Pure computation over the arguments (HMAC, Ed25519 verification, constant-time comparison) | Yes: nothing reaches the engine |
+| Workflow steps and command actions in a manifest | Name actions by canonical id, including the bundled module's; an action declared `systemOnly` is refused (see below) | Yes |
+
+## System-only actions
+
+A module does not have to call a capability to use it: a workflow or command
+in its manifest can name any installed action by canonical id, bundled ones
+included, and the engine runs it with the module's say-so. So a limit on a
+sandbox capability also has to hold for the actions a manifest can reference,
+or it is only a limit on which door is used.
+
+An action declaration can carry `"systemOnly": true`. Barkloader then refuses
+to install any module that is not a bundled system module when one of its
+workflow steps or command actions names that action, and names the step in the
+error. Only a system module may declare the flag, and the set is read from the
+modules embedded in the barkloader binary, so it cannot drift from what is
+installed. The streamer's own workflows, built in the UI, are unaffected: the
+limit is on module code, not on the person running the engine.
+
+When adding an action to a bundled module, decide whether module code could
+already ask for the same effect through a capability; if not, declare it
+`systemOnly`.
 
 ## Applying it
 
@@ -39,6 +60,7 @@ When designing anything module code can reach (a sandbox binding, a manifest fie
 2. The engine validates the returned value (shape, reserved subjects and prefixes, size and count caps) before acting, and fails closed.
 3. If an effect during execution is unavoidable, add a narrow host capability with an engine-defined target, never a general-purpose channel.
 4. Never add a binding that takes a subject, event type, or workflow id from module code and publishes or dispatches it verbatim.
+5. When a capability acts on something the streamer would want to approve (the channel's settings, its chatters), require a manifest permission for it (see [Module format → Permissions](../barkloader/modules.md#permissions-permissions)). Permissions are declared by the module and enforced by the engine, and shown on the module install page (woofx3-ui feat/module-permissions-review). The host refuses an undeclared call before anything is sent, and an upload that names another module's action must declare that module's permissions, so what a module can do is fixed at install rather than discovered at runtime.
 
 ## Requests the dashboard asks for
 

@@ -203,3 +203,15 @@ func TestRecorderStepWithoutPayloads(t *testing.T) {
 		t.Errorf("unfinished step got a completion: %+v", got)
 	}
 }
+
+func TestRecorderMarksADryRun(t *testing.T) {
+	recorder, store := recorderFixture()
+	execution := runWith("test")
+	execution.DryRun = true
+
+	recorder.RunStarted(execution)
+
+	if len(store.runs) != 1 || !store.runs[0].DryRun {
+		t.Fatalf("dry run recorded without its mark: %+v", store.runs)
+	}
+}

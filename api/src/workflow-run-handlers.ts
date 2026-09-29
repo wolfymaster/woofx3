@@ -33,6 +33,8 @@ interface RawRunRow {
   triggered_by?: unknown;
   TriggerEvent?: unknown;
   trigger_event?: unknown;
+  DryRun?: unknown;
+  dry_run?: unknown;
   Error?: unknown;
   error?: unknown;
   StartedAt?: unknown;
@@ -110,6 +112,7 @@ function buildRunSnapshot(ce: Record<string, unknown>): WorkflowRunSnapshot | nu
     // these columns still round-trips rather than gaining empty strings.
     ...(triggeredBy ? { triggeredBy } : {}),
     ...(triggerEvent ? { triggerEvent } : {}),
+    ...(row.DryRun === true || row.dry_run === true ? { dryRun: true } : {}),
     ...(errorMsg ? { error: errorMsg } : {}),
     ...(startedAt ? { startedAt } : {}),
     ...(completedAt ? { completedAt } : {}),

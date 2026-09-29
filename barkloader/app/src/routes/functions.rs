@@ -197,6 +197,9 @@ async fn upload_handler(
 
         let module_config = ModuleServiceConfig {
             repository: (*ctx.repository.current()).clone(),
+            system_only_actions: crate::bundled_modules::system_only_actions()
+                .expect("bundled modules are read at boot, before any upload")
+                .clone(),
         };
         let mut module = ModuleService::new(module_config);
 
@@ -860,6 +863,9 @@ async fn rollback_handler(
 
     let module_config = ModuleServiceConfig {
         repository: (*ctx.repository.current()).clone(),
+        system_only_actions: crate::bundled_modules::system_only_actions()
+            .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?
+            .clone(),
     };
     let mut module = ModuleService::new(module_config);
 

@@ -95,6 +95,7 @@ async fn install<R: Repository + Clone>(
 ) -> Result<()> {
     let mut service = ModuleService::new(ModuleServiceConfig {
         repository: repository.clone(),
+        system_only_actions: crate::bundled_modules::system_only_actions()?.clone(),
     });
     for (name, contents) in read_archive(module)? {
         let extension = std::path::Path::new(&name)

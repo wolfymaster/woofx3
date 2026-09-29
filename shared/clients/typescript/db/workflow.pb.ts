@@ -92,6 +92,11 @@ export interface WorkflowExecution {
    * What caused the run ("twitch", "chat", ...).
    */
   triggeredBy: string;
+  /**
+   * A dry run: side-effecting steps recorded what they would have done
+   * instead of doing it.
+   */
+  dryRun: boolean;
 }
 
 export declare namespace WorkflowExecution {
@@ -352,6 +357,10 @@ export interface RecordWorkflowRunRequest {
    */
   triggerEventJson: string;
   startedAt: protoscript.Timestamp;
+  /**
+   * A dry run; see WorkflowExecution.dry_run.
+   */
+  dryRun: boolean;
 }
 
 /**
@@ -1315,6 +1324,7 @@ export const WorkflowExecution = {
       steps: [],
       triggerEventJson: "",
       triggeredBy: "",
+      dryRun: false,
       ...msg,
     };
   },
@@ -1402,6 +1412,9 @@ export const WorkflowExecution = {
     if (msg.triggeredBy) {
       writer.writeString(15, msg.triggeredBy);
     }
+    if (msg.dryRun) {
+      writer.writeBool(16, msg.dryRun);
+    }
     return writer;
   },
 
@@ -1478,6 +1491,10 @@ export const WorkflowExecution = {
         }
         case 15: {
           msg.triggeredBy = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.dryRun = reader.readBool();
           break;
         }
         default: {
@@ -3334,6 +3351,7 @@ export const RecordWorkflowRunRequest = {
       triggeredBy: "",
       triggerEventJson: "",
       startedAt: protoscript.Timestamp.initialize(),
+      dryRun: false,
       ...msg,
     };
   },
@@ -3363,6 +3381,9 @@ export const RecordWorkflowRunRequest = {
         msg.startedAt,
         protoscript.Timestamp._writeMessage,
       );
+    }
+    if (msg.dryRun) {
+      writer.writeBool(7, msg.dryRun);
     }
     return writer;
   },
@@ -3395,6 +3416,10 @@ export const RecordWorkflowRunRequest = {
         }
         case 6: {
           reader.readMessage(msg.startedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 7: {
+          msg.dryRun = reader.readBool();
           break;
         }
         default: {
@@ -4040,6 +4065,7 @@ export const WorkflowExecutionJSON = {
       steps: [],
       triggerEventJson: "",
       triggeredBy: "",
+      dryRun: false,
       ...msg,
     };
   },
@@ -4108,6 +4134,9 @@ export const WorkflowExecutionJSON = {
     }
     if (msg.triggeredBy) {
       json["triggeredBy"] = msg.triggeredBy;
+    }
+    if (msg.dryRun) {
+      json["dryRun"] = msg.dryRun;
     }
     return json;
   },
@@ -4189,6 +4218,10 @@ export const WorkflowExecutionJSON = {
     const _triggeredBy_ = json["triggeredBy"] ?? json["triggered_by"];
     if (_triggeredBy_) {
       msg.triggeredBy = _triggeredBy_;
+    }
+    const _dryRun_ = json["dryRun"] ?? json["dry_run"];
+    if (_dryRun_) {
+      msg.dryRun = _dryRun_;
     }
     return msg;
   },
@@ -5830,6 +5863,7 @@ export const RecordWorkflowRunRequestJSON = {
       triggeredBy: "",
       triggerEventJson: "",
       startedAt: protoscript.TimestampJSON.initialize(),
+      dryRun: false,
       ...msg,
     };
   },
@@ -5855,6 +5889,9 @@ export const RecordWorkflowRunRequestJSON = {
     }
     if (msg.startedAt && (msg.startedAt.seconds || msg.startedAt.nanos)) {
       json["startedAt"] = protoscript.serializeTimestamp(msg.startedAt);
+    }
+    if (msg.dryRun) {
+      json["dryRun"] = msg.dryRun;
     }
     return json;
   },
@@ -5886,6 +5923,10 @@ export const RecordWorkflowRunRequestJSON = {
     const _startedAt_ = json["startedAt"] ?? json["started_at"];
     if (_startedAt_) {
       msg.startedAt = protoscript.parseTimestamp(_startedAt_);
+    }
+    const _dryRun_ = json["dryRun"] ?? json["dry_run"];
+    if (_dryRun_) {
+      msg.dryRun = _dryRun_;
     }
     return msg;
   },

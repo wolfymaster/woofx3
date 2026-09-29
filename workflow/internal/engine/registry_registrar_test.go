@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
@@ -107,3 +108,33 @@ func TestRegistry_Remove_IdempotentWhenAbsent(t *testing.T) {
 
 // Silences unused import complaint if the file ends up not using triggers.*.
 var _ triggers.Registrar = (*recordingRegistrar)(nil)
+
+type refusingRegistrar struct{ err error }
+
+func (r refusingRegistrar) Register(string, *types.TriggerConfig) error { return r.err }
+func (r refusingRegistrar) Unregister(string, *types.TriggerConfig) error {
+	return nil
+}
+
+func TestRegistry_RegistrarRefusalIsReturnedAndTheWorkflowKept(t *testing.T) {
+	reg := NewWorkflowRegistry()
+	refusal := errors.New(`schedule "* * *" is not a valid cron expression`)
+	reg.SetRegistrar(refusingRegistrar{err: refusal})
+
+	def := &types.WorkflowDefinition{
+		ID:      "wf-1",
+		Name:    "x",
+		Tasks:   []types.TaskDefinition{{ID: "t1", Type: "print"}},
+		Trigger: &types.TriggerConfig{Type: "schedule", Schedule: "* * *"},
+	}
+	err := reg.Register(def)
+
+	if !errors.Is(err, refusal) {
+		t.Fatalf("err = %v, want the registrar's refusal", err)
+	}
+	// Still stored: it can be run by id, and the reconciler does not retry a
+	// definition that cannot change until it is saved again.
+	if _, getErr := reg.Get("wf-1"); getErr != nil {
+		t.Errorf("workflow dropped after a trigger refusal: %v", getErr)
+	}
+}

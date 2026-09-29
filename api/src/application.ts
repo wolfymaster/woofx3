@@ -64,6 +64,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
+      { WorkflowHealthEmitter },
       { WorkflowRunEmitter },
       { initWorkflowRunHandlers },
       { default: BarkloaderClient },
@@ -92,6 +93,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
+      import("./workflow-health-emitter"),
       import("./workflow-run-emitter"),
       import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
@@ -224,6 +226,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
       await workflowRunEmitter.start();
+
+      const workflowHealthEmitter = new WorkflowHealthEmitter(natsClient, webhookClient, logger);
+      await workflowHealthEmitter.start();
     }
 
     const auth = new ClientAuth(db, logger);

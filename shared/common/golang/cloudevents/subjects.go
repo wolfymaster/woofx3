@@ -63,6 +63,28 @@ const (
 	SubjectWorkflowRunStarted   Subject = "workflow.run.started"
 	SubjectWorkflowRunCompleted Subject = "workflow.run.completed"
 	SubjectWorkflowRunFailed    Subject = "workflow.run.failed"
+	// A run stopped by a cancel request rather than by its own outcome.
+	SubjectWorkflowRunCancelled Subject = "workflow.run.cancelled"
+
+	// Stop a run. A request/reply subject: the engine answers with what the
+	// cancel did, so the caller can tell a stopped run from a finished one.
+	SubjectWorkflowCancel Subject = "workflow.cancel"
+
+	// Whether the engine could load its stored workflows. The workflow
+	// service publishes one snapshot when its first complete load finishes,
+	// listing every workflow in error; a consumer replaces its whole view with
+	// it (anything unlisted is ok). Data: { workflows: [entry...], at }.
+	SubjectWorkflowHealthSnapshot Subject = "workflow.health.snapshot"
+
+	// One workflow's health changed after the snapshot. Published only on a
+	// change, never on every reconcile pass. Data (an entry):
+	//   { workflowId, status: "ok" | "error", reason?, since }
+	SubjectWorkflowHealthChanged Subject = "workflow.health.changed"
+
+	// Request/reply: the workflow service answers with every workflow it has
+	// tried to load, as { loaded, at, workflows: [entry...] }. `loaded` is
+	// false until its first complete load, when the list is still partial.
+	SubjectWorkflowHealthGet Subject = "workflow.health.get"
 
 	// Unified widget event channel (R2 of the widget refactor).
 	// Single inbound subject for everything an overlay reports about a

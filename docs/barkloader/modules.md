@@ -197,6 +197,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `deadlines` | array | no | One-shot, point-in-time invocations the module's own functions may schedule with `ctx.schedule.at`. See [Deadlines](#deadlines-deadlines). |
 | `requires` | object | no | Other modules this one needs installed: module id to a semver range, e.g. `{ "timerpro": "^1.2.0" }`. See [Themes](#themes). |
 | `themes` | array | no | Data-only appearance variants for widgets that declare a `theme` contract. See [Themes](#themes). |
+| `permissions` | array of string | no | Privileged host functions this module's code may call, e.g. `["twitch.moderation"]`. See [Permissions](#permissions-permissions). |
 
 ### Trigger entry (`triggers[]`)
 
@@ -561,6 +562,7 @@ Common fields:
 | `type` | string | yes | Workflow action handler name. Must match an existing engine handler (`function` is the only one today). Determines which other top-level fields are required. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
+| `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
 
 Type-specific fields:
@@ -1137,6 +1139,37 @@ The contract that follows: **a stale or duplicate firing must be harmless.** A
 deadline's function checks its own state before acting (the timer is still running,
 its end time has passed) and writes with `ctx.storage.compareAndSet`, so a firing
 for a timer that was paused, extended or deleted in the meantime does nothing.
+
+### Permissions (`permissions[]`)
+
+Most of what a module function can reach needs no declaration. A few host
+functions act on the channel or its chatters, and a module calls those only
+if its manifest asks for them by permission id:
+
+```json
+"permissions": ["twitch.moderation", "twitch.channel"]
+```
+
+| Permission | Opens |
+|---|---|
+| `twitch.moderation` | `ctx.twitch.timeout`: time a chatter out |
+| `twitch.channel` | `ctx.twitch.updateStream`: change the stream title, category or tags |
+
+The ids are fixed by the engine (`barkloader/lib_sandbox/src/permissions.rs`).
+An unknown id or one listed twice fails the install. At runtime barkloader
+reads the permissions from the installed manifest, and a call to a function
+whose permission the invoking module did not declare throws before anything is
+sent, with `code` `permission_denied`. Permissions are declared by the module
+and enforced by the engine, and shown on the module install page (woofx3-ui
+feat/module-permissions-review).
+
+A workflow step or command action that names another module's action runs that
+module's function, with that module's permissions. So an uploaded module whose
+bundled workflows or commands name another module's action must itself declare
+every permission that module declares; otherwise the install fails, naming the
+reference and the missing permissions. The other module must be installed with
+a readable manifest. Bundled system modules are exempt, and references to the
+module's own actions need nothing beyond its own `permissions`.
 
 ## Runtime resource instances
 
