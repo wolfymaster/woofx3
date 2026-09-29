@@ -108,6 +108,30 @@ impl ResourceClient for NoopResourceClient {
     }
 }
 
+/// Accepts every request and schedules nothing, like the other noop clients:
+/// tests and builtin invocations run module code that schedules without an
+/// engine behind it.
+pub struct NoopScheduleClient;
+
+impl ScheduleClient for NoopScheduleClient {
+    fn at(
+        &self,
+        _module_id: &str,
+        _deadline_id: &str,
+        _key: &str,
+        _when_ms: i64,
+        _params: Value,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn cancel(&self, _module_id: &str, _deadline_id: &str, _key: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn cancel_key(&self, _key: &str) {}
+}
+
 pub fn noop_host_context() -> HostContext {
     HostContext {
         nats: Arc::new(NoopNatsPublisher),
@@ -116,6 +140,7 @@ pub fn noop_host_context() -> HostContext {
         http: Arc::new(NoopHttpClient),
         resources: Arc::new(NoopResourceClient),
         settings: Arc::new(NoopSettingsClient),
+        schedule: Arc::new(NoopScheduleClient),
         extensions: Arc::new(ExtensionRegistry::new()),
     }
 }

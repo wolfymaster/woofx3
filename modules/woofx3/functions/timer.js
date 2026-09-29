@@ -8,15 +8,24 @@
 // time left from those. A timer with no stored value is stopped at its full
 // duration, so a new or session-cleared timer needs no write to be ready.
 //
-// Nothing runs at the moment a timer reaches zero, so `timerExpire` — the
-// module's `timer_expiry` background task, once a second — stops every timer
-// that has run out and announces `timer.ended` for it. Starting and pausing are
-// announced by the actions that do them. Workflows act on all three.
+// Every write that leaves a timer running arms the `timer_end` deadline, keyed
+// by the timer's canonical id, for its `endsAt`; every write that stops it
+// cancels that entry. `timerExpire` runs when the entry comes due, stops the
+// timer and announces `timer.ended`. Starting and pausing are announced by the
+// actions that do them. Workflows act on all three.
+//
+// Deadline entries live in memory only, so storage stays the source of truth:
+// `timerReconcile` runs when the module loads and once a minute after, ends the
+// timers that ran out while nothing was watching and arms the rest. A firing
+// that no longer matches storage (time added, timer paused or deleted) does
+// nothing.
 //
 // How long a timer runs and how long its value lives are the instance's own
 // settings, read back through `ctx.resources.get`. Every change goes through
-// `compareAndSet`, because a chat command, a workflow and the expiry task can
+// `compareAndSet`, because a chat command, a workflow and a deadline firing can
 // change the same timer at the same moment.
+
+const DEADLINE = "timer_end";
 
 // Enough to ride out a burst of simultaneous updates; running out means
 // something is writing this key continuously, which is worth failing loudly.
@@ -26,8 +35,9 @@ const MAX_ATTEMPTS = 25;
 // every event can build up.
 const MAX_REMAINING_MS = 24 * 60 * 60 * 1000;
 
-// The engine's limit on events one invocation may return. Timers past it that
-// have run out are still running on the next pass, which ends them then.
+// The engine's limit on events one invocation may return. A reconcile that
+// finds more timers than this already run out arms the rest to fire at once,
+// so each ends on its own firing.
 const MAX_EVENTS = 16;
 
 // Runs a stopped timer from what it has left, or from its full duration when it
@@ -67,31 +77,91 @@ function timerSet(ctx) {
   return update(ctx, timer, (_, running) => ({ running, remainingMs: seconds * 1000 }));
 }
 
-// Ends every running timer of this module that has reached zero: stops it with
-// no time left and announces `timer.ended`. A timer changed between the read and
-// the write (time added at the last second) is left for the next pass to judge.
+// Runs when a timer's `timer_end` entry comes due. Ends the timer only when
+// storage still says it is running and out of time, and announces `timer.ended`
+// only when this call's write is the one that stopped it, so a stale or repeated
+// firing does nothing. A firing that arrives before `endsAt` arms the entry again
+// for it.
 function timerExpire(ctx) {
+  const target = parameters(ctx).target;
+  if (typeof target !== "string" || target === "") {
+    throw new Error("timer: a timer_end firing carried no target");
+  }
+  const instance = ctx.resources.get(target);
+  if (!instance || instance.kind !== "timer") {
+    return ctx.result({ ended: 0 });
+  }
+  const timer = timerFromInstance(instance);
+  const stored = ctx.storage.get(timer.key);
+  if (!isRunning(stored)) {
+    return ctx.result({ ended: 0 });
+  }
+  if (Number(stored.endsAt) > Date.now()) {
+    arm(ctx, timer, stored.endsAt);
+    return ctx.result({ ended: 0 });
+  }
+  const events = end(ctx, timer, stored) ? [endedEvent(timer)] : [];
+  return ctx.result({ ended: events.length }, events);
+}
+
+// Rebuilds this module's timer deadlines from storage: ends every running timer
+// that has run out and arms the rest. Runs when the module loads, which is how
+// deadlines come back after a restart, and once a minute as the safety net for
+// an arm or cancel that did not happen.
+function timerReconcile(ctx) {
   const now = Date.now();
   const events = [];
+  let armed = 0;
   const prefix = `${ctx.module.id}:timer:`;
   for (const instance of ctx.resources.list("timer")) {
-    if (events.length >= MAX_EVENTS) {
-      break;
-    }
     if (!instance.canonical_id.startsWith(prefix)) {
       continue;
     }
     const timer = timerFromInstance(instance);
     const stored = ctx.storage.get(timer.key);
-    if (!stored || stored.running !== true || Number(stored.endsAt) > now) {
+    if (!isRunning(stored)) {
       continue;
     }
-    const ended = { running: false, remainingMs: 0 };
-    if (ctx.storage.compareAndSet(timer.key, stored, ended, timer.options).swapped) {
-      events.push({ type: "timer.ended", data: { target: timer.target } });
+    if (Number(stored.endsAt) <= now && events.length < MAX_EVENTS) {
+      if (end(ctx, timer, stored)) {
+        events.push(endedEvent(timer));
+      }
+      continue;
+    }
+    if (arm(ctx, timer, stored.endsAt)) {
+      armed++;
     }
   }
-  return ctx.result({ ended: events.length }, events);
+  return ctx.result({ ended: events.length, armed }, events);
+}
+
+function isRunning(stored) {
+  return Boolean(stored) && stored.running === true;
+}
+
+// Stops a timer that has run out, unless another writer changed it since
+// `stored` was read. That writer armed or cancelled the deadline itself.
+function end(ctx, timer, stored) {
+  const ended = { running: false, remainingMs: 0 };
+  return ctx.storage.compareAndSet(timer.key, stored, ended, timer.options).swapped;
+}
+
+function endedEvent(timer) {
+  return { type: "timer.ended", data: { target: timer.target } };
+}
+
+// Arms the timer's deadline for `endsAt`. A refusal (the deadline holding its
+// `maxPending` entries) is logged rather than thrown: the timer's value has
+// already been written, and the reconcile task ends a running timer whose
+// deadline was never armed, up to a minute late.
+function arm(ctx, timer, endsAt) {
+  try {
+    ctx.schedule.at(DEADLINE, timer.target, Number(endsAt), { target: timer.target });
+    return true;
+  } catch (err) {
+    ctx.log.error(`timer: could not arm the end of ${timer.target}: ${err && err.message ? err.message : err}`);
+    return false;
+  }
 }
 
 function parameters(ctx) {
@@ -163,6 +233,11 @@ function update(ctx, timer, next, { announcePause = false } = {}) {
     const value = wanted.running ? { running: true, endsAt: now + remainingMs } : { running: false, remainingMs };
     const result = ctx.storage.compareAndSet(timer.key, stored === undefined ? null : stored, value, timer.options);
     if (result.swapped) {
+      if (value.running) {
+        arm(ctx, timer, value.endsAt);
+      } else {
+        ctx.schedule.cancel(DEADLINE, timer.target);
+      }
       const outcome = {
         target: timer.target,
         running: wanted.running,

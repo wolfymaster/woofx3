@@ -194,6 +194,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
 | `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Same `ConfigField[]` shape as every other declaration — see [Field declarations](#field-declarations) — but unlike a widget's `settingsSchema` the *values* are stored engine-side; see [Module-level settings](#module-level-settings-settings). |
 | `backgroundTasks` (alias: `background_tasks`) | array | no | Cron-scheduled functions barkloader fires for the lifetime of the module. See [Background tasks](#background-tasks-backgroundtasks). |
+| `deadlines` | array | no | One-shot, point-in-time invocations the module's own functions may schedule with `ctx.schedule.at`. See [Deadlines](#deadlines-deadlines). |
 | `requires` | object | no | Other modules this one needs installed: module id to a semver range, e.g. `{ "timerpro": "^1.2.0" }`. See [Themes](#themes). |
 | `themes` | array | no | Data-only appearance variants for widgets that declare a `theme` contract. See [Themes](#themes). |
 
@@ -989,8 +990,9 @@ now-playing poll is the canonical example).
 |-------|------|----------|-------------|
 | `id` | string | yes | Manifest-local task id, e.g. `poll_now_playing`. Persisted as `manifest_id` on the `background_tasks` row and used as the scheduler's in-process key together with the module id. |
 | `function` | string | yes | Manifest-local function id to invoke on each fire. Resolved to the canonical function id (`{moduleId}:function:{function}`) at fire time. |
-| `schedule` | string | yes | A 6-field, seconds-first cron expression (parsed with the `cron` crate), e.g. `"*/30 * * * * *"` for every 30 seconds. An invalid expression is logged and that task is skipped — it does not fail the install. |
+| `schedule` | string | yes | A cron expression: the five-field POSIX form (`"*/5 * * * *"`) or a six-field, seconds-first form (`"*/30 * * * * *"`). An expression that does not parse fails the install. |
 | `description` | string | no | Defaults to `""`. |
+| `runOnLoad` (alias: `run_on_load`) | boolean | no | Defaults to `false`. When `true` the task also fires once each time the module is registered: boot, install, upgrade, reload and enable. Cron never fires at startup on its own; this is how a module re-arms its [deadlines](#deadlines-deadlines) and catches up on whatever came due while barkloader was down. A failed load firing is retried with backoff (1s, 2s, 4s, ... capped at a minute, 8 attempts) rather than waiting for the next cron fire. |
 
 Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** repository):
 
@@ -1014,25 +1016,120 @@ process start, barkloader hydrates the in-process scheduler by listing all persi
 tasks from db-proxy and registering each with the scheduler — no manifest parsing is
 involved at boot.
 
+`runOnLoad` and the module's `deadlines` are read from the stored manifest when
+the module is registered, alongside the persisted task rows.
+
 Registration into the in-process scheduler happens on install, on the module's
-`/functions/{name}/register` route, and on upgrade/reload. Unregistration happens on
-module delete, keyed by the task's **manifest-local module id** (not the module's
-database-row UUID) — the scheduler's in-memory map is keyed the same way the sandbox
-registry is, so using the wrong identifier here silently no-ops the unregister and
-leaves the task firing after deletion.
+`/functions/{name}/register` route, and on upgrade/reload. Registering replaces
+everything the module had scheduled, deadlines included. Disabling a module drops
+its entries and enabling it arms them again (and fires its `runOnLoad` tasks).
+Unregistration happens on module delete, keyed by the task's **manifest-local module
+id** (not the module's database-row UUID) — the scheduler's in-memory map is keyed
+the same way the sandbox registry is, so using the wrong identifier here silently
+no-ops the unregister and leaves the task firing after deletion.
 
 #### Scheduler mechanics
 
-Each registered task runs as an independent loop: compute the next fire time from the
-cron schedule, sleep until then, invoke the target function via the same
-`Sandbox::invoke` entrypoint used for every other function call in barkloader (chat
-commands, workflow steps, the field-options NATS responder), then repeat. A fired
-task always invokes with an empty event and empty parameters — background tasks
-receive no per-invocation context beyond what `ctx.module`/`ctx.resources`/etc.
+One scheduler owns every cron task, `runOnLoad` firing and deadline in the
+process: a min-heap of entries ordered by fire time, and one loop that sleeps until
+the earliest entry or until an entry is armed, replaced or cancelled, whichever
+comes first. Nothing runs while nothing is due. Replacing or cancelling an entry
+never searches the heap: each arm carries a generation, and a heap item whose
+generation no longer matches its entry is discarded when it surfaces.
+
+A cron task re-arms itself from its schedule after each firing completes, so a slow
+invocation is never overlapped by the next one. At most one invocation per entry
+runs at a time; an entry that comes due while its previous invocation is still
+running fires as soon as that one finishes. Every firing goes through the same
+`SandboxFactory::invoke_blocking` entrypoint used for every other function call in
+barkloader (chat commands, workflow steps, the field-options NATS responder).
+
+A fired cron task invokes with an empty event and empty parameters — background
+tasks receive no per-invocation context beyond what `ctx.module`/`ctx.resources`/etc.
 already expose; if a task needs input, it has to fetch it itself (e.g. from module
-storage or an external API). Each fire logs its scheduled time, its start, and its
-outcome (success with elapsed ms, or an error) so a stuck or failing poller is
-visible in the barkloader logs without instrumenting the module itself.
+storage or an external API). Each firing and its outcome are logged at `debug`; a
+failure is logged at `error` and is not retried (a `runOnLoad` firing excepted).
+
+### Deadlines (`deadlines[]`)
+
+A deadline lets a module's functions schedule one-shot work at a specific moment —
+end a timer when it reaches zero, close a window, lift a cooldown — instead of
+polling for it from a high-frequency background task. The manifest declares which
+function a deadline invokes and how many entries it may hold; functions then arm
+and cancel entries with [`ctx.schedule`](#ctx-schedule-surface).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Manifest-local deadline id, unique within `deadlines`. The first argument to `ctx.schedule.at`/`cancel`. |
+| `function` | string | yes | Manifest-local id of a function declared in the same manifest's `functions`. Only functions declared here can be scheduled. |
+| `maxPending` (alias: `max_pending`) | number | yes | Most entries this deadline may hold at once, `1` to `1024`. |
+| `description` | string | no | Defaults to `""`. |
+
+All of it is checked at install: a duplicate id, an undeclared function, or a
+missing or out-of-range `maxPending` fails the install.
+
+```json
+"deadlines": [
+  {
+    "id": "timer_end",
+    "function": "timer.expire",
+    "maxPending": 256,
+    "description": "Ends a running timer the moment it reaches zero."
+  }
+],
+"backgroundTasks": [
+  {
+    "id": "timer_reconcile",
+    "function": "timer.reconcile",
+    "schedule": "* * * * *",
+    "runOnLoad": true,
+    "description": "Re-arms timer deadlines from storage and ends any that ran out."
+  }
+]
+```
+
+#### `ctx.schedule` surface
+
+Available in both QuickJS and Lua function runtimes. The module is implied: an entry
+is identified by `(module, deadlineId, key)`, and a function can only arm or cancel
+its own module's entries.
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `ctx.schedule.at(deadlineId, key, whenMs, params?)` | `void` | Arms `key` to fire at `whenMs` (Unix epoch milliseconds), replacing an existing entry under the same key. A time in the past is valid and fires as soon as possible. `params` defaults to `{}`. |
+| `ctx.schedule.cancel(deadlineId, key)` | `void` | Drops the entry. Cancelling one that does not exist is not an error. |
+
+`at` throws for an undeclared `deadlineId`, a non-finite `whenMs`, a `whenMs` more
+than 30 days out, `params` over 4 KiB serialized, a key over 512 bytes, or a
+deadline already holding its `maxPending` entries (replacing an existing key does
+not count against it). `cancel` throws for an undeclared `deadlineId`.
+
+Keys are free-form strings; keying entries by a resource instance's canonical id is
+the usual choice, and deleting that instance with `ctx.resources.delete` cancels
+every entry whose key is its canonical id.
+
+When an entry comes due, its function runs with:
+
+- `ctx.event.parameters` — the `params` given to `at`
+- `ctx.event.deadline` — `{ id, key, dueAt, firedAt }`: the deadline id, the key,
+  the epoch ms the entry was armed for, and the epoch ms it actually fired
+
+A failed firing is logged and not retried.
+
+#### Durability: in memory by design
+
+Entries are not persisted. A deadline is a cache of state the module already keeps
+durably in its own storage, so barkloader holds entries in memory only, and drops a
+module's entries whenever the module is registered again (upgrade, reload), disabled
+or uninstalled. The module's `runOnLoad` reconcile task is what rebuilds them: it
+reads its state, handles anything that came due while the process was down, and arms
+the rest. That same task, on its cron schedule, is the safety net for any `at` or
+`cancel` a function missed.
+
+The contract that follows: **a stale or duplicate firing must be harmless.** A
+deadline's function checks its own state before acting (the timer is still running,
+its end time has passed) and writes with `ctx.storage.compareAndSet`, so a firing
+for a timer that was paused, extended or deleted in the meantime does nothing.
 
 ## Runtime resource instances
 
@@ -1064,7 +1161,7 @@ Available in both QuickJS and Lua function runtimes:
 |------|---------|-------|
 | `ctx.resources.create(kind, instanceId, displayName?, settings?)` | `{ canonical_id, module_name, kind, instance_id, display_name, settings }` | The owning module is implicit (taken from the function's canonical path). `settings` must be an object. |
 | `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
-| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. |
+| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
 
 **Where an instance's value lives:** at `state:<canonicalId>` in the owning module's storage (e.g. `state:woofx3:counter:death_count`). This is the contract, not a suggestion: the engine's `getResourceValues` reads it, and the dashboard's value mirror keys on it, so a kind that stores its value anywhere else shows nothing on its first-party page.
@@ -1088,7 +1185,7 @@ workflow to one instance.
 | `counter.changed` | Any counter action moves the number. |
 | `timer.started` | A timer goes from standing still to counting down. |
 | `timer.paused` | Pause stops a timer that was counting down. |
-| `timer.ended` | A running timer reaches zero. Nothing runs at that moment, so the module's `timer_expiry` background task checks once a second, stops each timer that has run out and announces it. Starting a timer from its ended workflow makes it repeat. |
+| `timer.ended` | A running timer reaches zero. Every change that leaves a timer running arms the module's `timer_end` [deadline](#deadlines-deadlines) for its `endsAt`, and the firing stops the timer and announces it. The `timer_reconcile` task (on load, then once a minute) ends any timer that ran out while the engine was down or whose deadline was not armed. Starting a timer from its ended workflow makes it repeat. |
 | `queue.added` | An entry joins a queue. |
 | `queue.next` | The entry at the front of a queue is taken. |
 | `goal.reached` | A change carries a counter from below one of its goals to at or above it. Climbing further past that goal announces nothing more, and one change crossing several goals announces each. Reaching a goal again after dropping below it announces again only when the counter's `announceEveryTime` setting is on; `first` on the event says which crossing this was, and `goalName` carries the goal's name, or `""` when it has none. A counter with no goals announces none. |

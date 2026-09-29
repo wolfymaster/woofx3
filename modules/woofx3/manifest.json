@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -247,10 +247,17 @@
     },
     {
       "id": "timer.expire",
-      "name": "End timers that have run out",
+      "name": "End a timer that has run out",
       "runtime": "js",
       "path": "functions/timer.js",
       "entryPoint": "timerExpire"
+    },
+    {
+      "id": "timer.reconcile",
+      "name": "Re-arm timer ends",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerReconcile"
     }
   ],
   "actions": [
@@ -1327,7 +1334,7 @@
     {
       "id": "timer_ended",
       "name": "Timer ended",
-      "description": "Fires within a second of a running timer reaching zero. Start the timer again from here to make it repeat.",
+      "description": "Fires when a running timer reaches zero. Start the timer again from here to make it repeat.",
       "type": "eventbus",
       "event": "timer.ended",
       "taxonomy": [
@@ -2005,12 +2012,21 @@
       }
     }
   ],
+  "deadlines": [
+    {
+      "id": "timer_end",
+      "function": "timer.expire",
+      "maxPending": 256,
+      "description": "Ends a running timer the moment it reaches zero and announces that it ended."
+    }
+  ],
   "backgroundTasks": [
     {
-      "id": "timer_expiry",
-      "function": "timer.expire",
-      "schedule": "* * * * * *",
-      "description": "Once a second, stops every running timer that has reached zero and announces that it ended."
+      "id": "timer_reconcile",
+      "function": "timer.reconcile",
+      "schedule": "* * * * *",
+      "runOnLoad": true,
+      "description": "When the module loads and once a minute after, ends every running timer that has run out and arms the end of the rest."
     }
   ]
 }

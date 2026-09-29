@@ -1,5 +1,7 @@
 pub mod extension;
 pub mod noop;
+#[cfg(test)]
+pub(crate) mod recording;
 
 pub use extension::{ExtensionRegistry, HandlerFn, HostExtension, HostFunction};
 
@@ -126,6 +128,38 @@ pub trait ResourceClient: Send + Sync {
     fn list_by_kind(&self, kind: &str) -> Result<Vec<ResourceInstance>, String>;
 }
 
+/// One-shot invocations a module schedules against the deadlines its manifest
+/// declares (`ctx.schedule.*`). The concrete scheduler lives in the barkloader
+/// app; it knows each module's declarations and enforces them.
+///
+/// Called from the sandbox's blocking thread, so implementations must not
+/// block on async work: taking a lock and waking the scheduler is the whole
+/// budget.
+///
+/// `module_id` is always the invoking module, bound by the host, never
+/// supplied by module code: that is what keeps one module from scheduling or
+/// cancelling another's entries.
+pub trait ScheduleClient: Send + Sync {
+    /// Arm `(module_id, deadline_id, key)` to fire at `when_ms` (Unix epoch
+    /// milliseconds), replacing any entry already under that identity. A
+    /// time in the past fires as soon as possible.
+    fn at(
+        &self,
+        module_id: &str,
+        deadline_id: &str,
+        key: &str,
+        when_ms: i64,
+        params: Value,
+    ) -> Result<(), String>;
+    /// Drop the entry if there is one. Cancelling nothing is not an error.
+    fn cancel(&self, module_id: &str, deadline_id: &str, key: &str) -> Result<(), String>;
+    /// Drop every entry, of any module and deadline, whose key is `key`.
+    /// Called by the host when the resource instance with that canonical id
+    /// is deleted, so a module keying entries by instance never fires for one
+    /// that is gone.
+    fn cancel_key(&self, key: &str);
+}
+
 #[derive(Clone)]
 pub struct HostContext {
     pub nats: Arc<dyn NatsPublisher>,
@@ -134,6 +168,7 @@ pub struct HostContext {
     pub http: Arc<dyn HttpClient>,
     pub resources: Arc<dyn ResourceClient>,
     pub settings: Arc<dyn SettingsClient>,
+    pub schedule: Arc<dyn ScheduleClient>,
     pub extensions: Arc<ExtensionRegistry>,
 }
 

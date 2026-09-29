@@ -796,6 +796,34 @@ pub struct ManifestBackgroundTask {
     pub schedule: String,
     #[serde(default)]
     pub description: String,
+    /// Also fire once whenever the module is registered: boot, install,
+    /// upgrade, enable. Cron alone never fires at startup, and a module that
+    /// keeps deadlines needs a moment to re-arm them from its own storage,
+    /// since the scheduler holds them only in memory.
+    #[serde(default, alias = "run_on_load")]
+    pub run_on_load: bool,
+}
+
+/// Upper bound on a deadline's `maxPending`. Deadlines live in memory, so
+/// each declaration's budget is bounded at install rather than trusted.
+pub const DEADLINES_MAX_PENDING_CAP: u32 = 1024;
+
+/// A one-shot, point-in-time invocation a module may schedule from its own
+/// functions with `ctx.schedule.at(id, key, whenMs, params)`. Only functions
+/// declared here can be scheduled, so what a module can make the engine run
+/// later is reviewable at install and bounded by `max_pending`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestDeadline {
+    pub id: String,
+    /// Manifest-local function id invoked when an entry comes due.
+    pub function: String,
+    /// Most entries this deadline may hold at once. Zero, the value when the
+    /// field is missing, fails validation: it is required.
+    #[serde(default, alias = "max_pending")]
+    pub max_pending: u32,
+    #[serde(default)]
+    pub description: String,
 }
 
 /// A module-level setting. `type` must be one of `CONFIG_FIELD_TYPES`.
@@ -900,6 +928,10 @@ pub struct ModuleManifest {
     /// since module authors commonly use either form.
     #[serde(default, alias = "background_tasks")]
     pub background_tasks: Vec<ManifestBackgroundTask>,
+    /// One-shot invocations the module's functions may schedule; see
+    /// [`ManifestDeadline`].
+    #[serde(default)]
+    pub deadlines: Vec<ManifestDeadline>,
     /// Module-level settings declared in the manifest. Registered into the
     /// `module_settings` table at install time. Values survive upgrades.
     #[serde(default)]

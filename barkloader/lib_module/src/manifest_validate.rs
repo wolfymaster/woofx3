@@ -30,11 +30,11 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, LIST_ITEM_FIELD_TYPES, ManifestAction,
-    ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape,
-    ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme, ManifestTrigger,
-    ManifestWorkflow, ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE,
-    WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP, LIST_ITEM_FIELD_TYPES,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
+    ManifestDataShape, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
+    ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE,
+    THEME_FIELD_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
 };
 use super::theme::{self, InstalledModule};
 
@@ -207,6 +207,8 @@ pub fn validate_with_provenance(
             ));
         }
     }
+
+    validate_deadlines(manifest)?;
 
     // Step ids are the names an author's own `${id.field}` references and
     // `dependsOn` entries resolve against. A duplicate makes a reference
@@ -539,6 +541,41 @@ fn validate_no_ingress_bindings(
             return Err(anyhow!(
                 "workflow {:?}: cannot bind to a webhook trigger; bind to an event its handler returns",
                 workflow.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A deadline is scheduled by id and invokes a function of this same module,
+/// so a bad declaration can only surface when a module first calls
+/// `ctx.schedule.at` -- or never, for a function that does not exist. All of
+/// it is known here, so it fails the install instead.
+fn validate_deadlines(manifest: &ModuleManifest) -> Result<()> {
+    let functions: HashSet<&str> = manifest.functions.iter().map(|f| f.id.as_str()).collect();
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (i, deadline) in manifest.deadlines.iter().enumerate() {
+        if deadline.id.trim().is_empty() {
+            return Err(anyhow!("deadlines[{i}]: id is required"));
+        }
+        if !seen.insert(deadline.id.as_str()) {
+            return Err(anyhow!(
+                "deadlines[{i}] ({}): duplicate deadline id",
+                deadline.id
+            ));
+        }
+        if !functions.contains(deadline.function.as_str()) {
+            return Err(anyhow!(
+                "deadlines[{i}] ({}): function {:?} is not declared in this manifest's `functions`",
+                deadline.id,
+                deadline.function
+            ));
+        }
+        if !(1..=DEADLINES_MAX_PENDING_CAP).contains(&deadline.max_pending) {
+            return Err(anyhow!(
+                "deadlines[{i}] ({}): maxPending is required and must be between 1 and {DEADLINES_MAX_PENDING_CAP}, got {}",
+                deadline.id,
+                deadline.max_pending
             ));
         }
     }
@@ -2886,6 +2923,84 @@ mod tests {
             err.contains("cron"),
             "the error must say what is wrong: {err}"
         );
+    }
+
+    const SWEEP_FUNCTION: &str = r#",
+            "functions": [{ "id": "timer.expire", "name": "Expire", "runtime": "js", "path": "functions/timer.js" }]"#;
+
+    fn with_deadlines(deadlines: &str) -> ModuleManifest {
+        minimal(&format!(r#"{SWEEP_FUNCTION}, "deadlines": {deadlines}"#))
+    }
+
+    #[test]
+    fn a_declared_deadline_installs_and_parses_both_spellings() {
+        let m = with_deadlines(
+            r#"[
+                { "id": "timer_end", "function": "timer.expire", "maxPending": 256, "description": "d" },
+                { "id": "other", "function": "timer.expire", "max_pending": 1 }
+            ]"#,
+        );
+        validate(&m).expect("a well-formed deadline must install");
+        assert_eq!(m.deadlines[0].max_pending, 256);
+        assert_eq!(m.deadlines[1].max_pending, 1);
+    }
+
+    #[test]
+    fn a_duplicate_deadline_id_fails_the_install() {
+        let m = with_deadlines(
+            r#"[
+                { "id": "timer_end", "function": "timer.expire", "maxPending": 4 },
+                { "id": "timer_end", "function": "timer.expire", "maxPending": 4 }
+            ]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("duplicate deadline id"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_naming_an_undeclared_function_fails_the_install() {
+        let m =
+            with_deadlines(r#"[{ "id": "timer_end", "function": "timer.gone", "maxPending": 4 }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("timer.gone"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_without_max_pending_fails_the_install() {
+        let m = with_deadlines(r#"[{ "id": "timer_end", "function": "timer.expire" }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("maxPending is required"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_over_the_pending_cap_fails_the_install() {
+        let m = with_deadlines(&format!(
+            r#"[{{ "id": "timer_end", "function": "timer.expire", "maxPending": {} }}]"#,
+            DEADLINES_MAX_PENDING_CAP + 1
+        ));
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("between 1 and"), "{err}");
+    }
+
+    #[test]
+    fn a_deadline_without_an_id_fails_the_install() {
+        let m = with_deadlines(r#"[{ "id": " ", "function": "timer.expire", "maxPending": 4 }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("id is required"), "{err}");
+    }
+
+    #[test]
+    fn run_on_load_defaults_off_and_parses_both_spellings() {
+        let m = minimal(&format!(
+            r#"{SWEEP_FUNCTION}, "backgroundTasks": [
+                {{ "id": "a", "function": "timer.expire", "schedule": "* * * * *" }},
+                {{ "id": "b", "function": "timer.expire", "schedule": "* * * * *", "runOnLoad": true }},
+                {{ "id": "c", "function": "timer.expire", "schedule": "* * * * *", "run_on_load": true }}
+            ]"#
+        ));
+        validate(&m).expect("runOnLoad installs");
+        let flags: Vec<bool> = m.background_tasks.iter().map(|t| t.run_on_load).collect();
+        assert_eq!(flags, vec![false, true, true]);
     }
 
     #[test]

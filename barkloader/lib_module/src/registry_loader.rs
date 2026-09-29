@@ -4,24 +4,42 @@
 use crate::db_proxy::{
     BackgroundTaskJson, ModuleRecord, fetch_module_by_name, list_background_tasks, list_modules,
 };
-use crate::module_manifest::{ManifestBackgroundTask, ModuleManifest};
+use crate::module_manifest::{ManifestBackgroundTask, ManifestDeadline, ModuleManifest};
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
 use std::collections::{HashMap, HashSet};
 use tracing::{error, info, warn};
 
-/// Host-owned background task registration. Implemented by the barkloader
-/// app's `BackgroundTaskScheduler` so `lib_module` does not depend on Actix
-/// or the cron loop itself.
-pub trait BackgroundTaskRegistrar: Send + Sync {
-    fn register(&self, module_key: &str, task_defs: &[ManifestBackgroundTask]);
+/// Everything a module declares for the scheduler: cron background tasks
+/// and the deadlines its functions may schedule.
+#[derive(Debug, Clone, Default)]
+pub struct ModuleSchedule {
+    pub background_tasks: Vec<ManifestBackgroundTask>,
+    pub deadlines: Vec<ManifestDeadline>,
+}
+
+impl ModuleSchedule {
+    pub fn is_empty(&self) -> bool {
+        self.background_tasks.is_empty() && self.deadlines.is_empty()
+    }
+}
+
+/// Host-owned schedule registration. Implemented by the barkloader app's
+/// `ModuleScheduler` so `lib_module` does not depend on Actix or the
+/// scheduler loop itself.
+///
+/// `register` replaces whatever the module had: every pending entry is
+/// dropped, including deadlines its functions scheduled. A module that needs
+/// them back re-arms them from a `runOnLoad` task.
+pub trait ScheduleRegistrar: Send + Sync {
+    fn register(&self, module_key: &str, schedule: &ModuleSchedule);
     fn unregister(&self, module_key: &str);
 }
 
-impl<T: BackgroundTaskRegistrar + ?Sized> BackgroundTaskRegistrar for std::sync::Arc<T> {
-    fn register(&self, module_key: &str, task_defs: &[ManifestBackgroundTask]) {
-        (**self).register(module_key, task_defs);
+impl<T: ScheduleRegistrar + ?Sized> ScheduleRegistrar for std::sync::Arc<T> {
+    fn register(&self, module_key: &str, schedule: &ModuleSchedule) {
+        (**self).register(module_key, schedule);
     }
 
     fn unregister(&self, module_key: &str) {
@@ -29,7 +47,7 @@ impl<T: BackgroundTaskRegistrar + ?Sized> BackgroundTaskRegistrar for std::sync:
     }
 }
 
-pub async fn hydrate_registry_from_db<R: Repository, S: BackgroundTaskRegistrar>(
+pub async fn hydrate_registry_from_db<R: Repository, S: ScheduleRegistrar>(
     registry: &ModuleRegistry,
     db_proxy_url: &str,
     repository: &R,
@@ -102,10 +120,13 @@ pub async fn hydrate_registry_from_db<R: Repository, S: BackgroundTaskRegistrar>
                         "Loaded module {} display_name={} ({} function(s), state={})",
                         registry_key, module.name, function_count, state
                     );
-                    if let Some(tasks) = tasks_by_module.get(&registry_key) {
-                        let task_defs: Vec<ManifestBackgroundTask> =
-                            tasks.iter().map(db_task_to_manifest).collect();
-                        scheduler.register(&registry_key, &task_defs);
+                    let tasks = tasks_by_module
+                        .get(&registry_key)
+                        .map(Vec::as_slice)
+                        .unwrap_or_default();
+                    let schedule = module_schedule(&module, tasks);
+                    if !schedule.is_empty() {
+                        scheduler.register(&registry_key, &schedule);
                     }
                 }
             }
@@ -126,7 +147,7 @@ pub async fn hydrate_registry_from_db<R: Repository, S: BackgroundTaskRegistrar>
 }
 
 /// Reload one module into the registry after install, register, or rollback.
-pub async fn refresh_module_in_registry<R: Repository, S: BackgroundTaskRegistrar>(
+pub async fn refresh_module_in_registry<R: Repository, S: ScheduleRegistrar>(
     registry: &ModuleRegistry,
     db_proxy_url: &str,
     module_name: &str,
@@ -168,12 +189,11 @@ pub async fn refresh_module_in_registry<R: Repository, S: BackgroundTaskRegistra
     // count is small enough that a full fetch is cheaper than a dedicated RPC.
     match list_background_tasks(db_proxy_url).await {
         Ok(all_tasks) => {
-            let task_defs: Vec<ManifestBackgroundTask> = all_tasks
-                .iter()
+            let tasks: Vec<BackgroundTaskJson> = all_tasks
+                .into_iter()
                 .filter(|t| t.module_id == registry_key)
-                .map(db_task_to_manifest)
                 .collect();
-            scheduler.register(&registry_key, &task_defs);
+            scheduler.register(&registry_key, &module_schedule(&module, &tasks));
         }
         Err(e) => {
             warn!(
@@ -221,13 +241,54 @@ fn registry_key_for_module(module: &ModuleRecord) -> String {
         .unwrap_or_default()
 }
 
-/// Convert a DB background task row into the scheduler's input type.
-fn db_task_to_manifest(task: &BackgroundTaskJson) -> ManifestBackgroundTask {
-    ManifestBackgroundTask {
-        id: task.manifest_id.clone(),
-        function: task.function.clone(),
-        schedule: task.schedule.clone(),
-        description: task.description.clone(),
+/// The scheduler's input for one module.
+///
+/// Background tasks come from their db rows, as they always have; `runOnLoad`
+/// and `deadlines` are read from the stored manifest, which already carries
+/// them, rather than widening the background task table for a flag and
+/// adding a table for declarations only this process reads. A module with no
+/// readable manifest schedules its cron tasks and nothing else.
+fn module_schedule(module: &ModuleRecord, tasks: &[BackgroundTaskJson]) -> ModuleSchedule {
+    let manifest = stored_manifest(module);
+    let run_on_load: HashSet<&str> = manifest
+        .iter()
+        .flat_map(|m| m.background_tasks.iter())
+        .filter(|task| task.run_on_load)
+        .map(|task| task.id.as_str())
+        .collect();
+    let background_tasks = tasks
+        .iter()
+        .map(|task| ManifestBackgroundTask {
+            id: task.manifest_id.clone(),
+            function: task.function.clone(),
+            schedule: task.schedule.clone(),
+            description: task.description.clone(),
+            run_on_load: run_on_load.contains(task.manifest_id.as_str()),
+        })
+        .collect();
+    let deadlines = manifest
+        .as_ref()
+        .map(|m| m.deadlines.clone())
+        .unwrap_or_default();
+    ModuleSchedule {
+        background_tasks,
+        deadlines,
+    }
+}
+
+/// The module's manifest as stored at install, or `None` when it is missing
+/// or unreadable.
+fn stored_manifest(module: &ModuleRecord) -> Option<ModuleManifest> {
+    let raw = module
+        .manifest_json
+        .as_deref()
+        .filter(|raw| !raw.is_empty())?;
+    match serde_json::from_str::<ModuleManifest>(raw) {
+        Ok(manifest) => Some(manifest),
+        Err(err) => {
+            warn!("Module {} has an unreadable manifest: {}", module.name, err);
+            None
+        }
     }
 }
 
@@ -289,28 +350,15 @@ async fn build_registered_module<R: Repository>(
 /// manifest. A manifest that is missing or unreadable yields none, so the
 /// module's functions can publish nothing rather than anything.
 fn eventbus_event_types(module: &ModuleRecord) -> HashSet<String> {
-    let Some(raw) = module
-        .manifest_json
-        .as_deref()
-        .filter(|raw| !raw.is_empty())
-    else {
+    let Some(manifest) = stored_manifest(module) else {
         return HashSet::new();
     };
-    match serde_json::from_str::<ModuleManifest>(raw) {
-        Ok(manifest) => manifest
-            .triggers
-            .into_iter()
-            .filter(|trigger| trigger.trigger_type == "eventbus" && !trigger.event.is_empty())
-            .map(|trigger| trigger.event)
-            .collect(),
-        Err(err) => {
-            warn!(
-                "Module {} has an unreadable manifest; its functions cannot publish events: {}",
-                module.name, err
-            );
-            HashSet::new()
-        }
-    }
+    manifest
+        .triggers
+        .into_iter()
+        .filter(|trigger| trigger.trigger_type == "eventbus" && !trigger.event.is_empty())
+        .map(|trigger| trigger.event)
+        .collect()
 }
 
 fn function_manifest_id(row: &crate::db_proxy::ModuleFunctionRecord) -> String {
@@ -371,15 +419,18 @@ fn registry_state_from_db(state: &str) -> ModuleState {
     }
 }
 
-/// Cancel all background tasks for a module. Call this when the module is
-/// uninstalled or deactivated so stale tasks don't keep firing.
-pub fn unregister_background_tasks<S: BackgroundTaskRegistrar>(scheduler: &S, module_key: &str) {
+/// Drop everything a module has scheduled. Call this when the module is
+/// uninstalled so stale tasks and deadlines don't keep firing.
+pub fn unregister_schedule<S: ScheduleRegistrar>(scheduler: &S, module_key: &str) {
     scheduler.unregister(module_key);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ModuleRecord, eventbus_event_types, functions_failed_to_load};
+    use super::{
+        BackgroundTaskJson, ModuleRecord, eventbus_event_types, functions_failed_to_load,
+        module_schedule,
+    };
 
     fn module_with_manifest(manifest_json: Option<&str>) -> ModuleRecord {
         ModuleRecord {
@@ -411,6 +462,49 @@ mod tests {
     fn a_missing_or_unreadable_manifest_allows_no_events() {
         assert!(eventbus_event_types(&module_with_manifest(None)).is_empty());
         assert!(eventbus_event_types(&module_with_manifest(Some("not json"))).is_empty());
+    }
+
+    fn task_row(manifest_id: &str) -> BackgroundTaskJson {
+        BackgroundTaskJson {
+            id: format!("row-{manifest_id}"),
+            module_id: "woofx3".into(),
+            manifest_id: manifest_id.into(),
+            name: manifest_id.into(),
+            description: String::new(),
+            function: "timer.reconcile".into(),
+            schedule: "* * * * *".into(),
+        }
+    }
+
+    #[test]
+    fn the_schedule_takes_run_on_load_and_deadlines_from_the_stored_manifest() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3",
+            "backgroundTasks": [
+                { "id": "reconcile", "function": "timer.reconcile", "schedule": "* * * * *", "runOnLoad": true },
+                { "id": "sweep", "function": "timer.reconcile", "schedule": "* * * * *" }
+            ],
+            "deadlines": [{ "id": "timer_end", "function": "timer.expire", "maxPending": 8 }]
+        }"#;
+        let schedule = module_schedule(
+            &module_with_manifest(Some(manifest)),
+            &[task_row("reconcile"), task_row("sweep")],
+        );
+        let flags: Vec<(&str, bool)> = schedule
+            .background_tasks
+            .iter()
+            .map(|t| (t.id.as_str(), t.run_on_load))
+            .collect();
+        assert_eq!(flags, vec![("reconcile", true), ("sweep", false)]);
+        assert_eq!(schedule.deadlines.len(), 1);
+        assert_eq!(schedule.deadlines[0].max_pending, 8);
+    }
+
+    #[test]
+    fn without_a_manifest_the_schedule_is_the_cron_rows_alone() {
+        let schedule = module_schedule(&module_with_manifest(None), &[task_row("sweep")]);
+        assert_eq!(schedule.background_tasks.len(), 1);
+        assert!(!schedule.background_tasks[0].run_on_load);
+        assert!(schedule.deadlines.is_empty());
     }
 
     #[test]
