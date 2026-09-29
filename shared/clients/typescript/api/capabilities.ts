@@ -17,8 +17,6 @@ export const ENGINE_CAPABILITIES = {
   analyticsGauges: "analytics.gauges",
   /** Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard`. */
   analyticsAggregates: "analytics.aggregates",
-  /** Alert queue controls for the live dashboard: `skipCurrentAlert`, `clearAlertQueue`. */
-  alertsSkipClear: "alerts.skipClear",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
 } as const;

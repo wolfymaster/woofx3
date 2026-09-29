@@ -25,12 +25,12 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 3. **Ids are not removed while any supported UI still gates on them.** Removing an id tells the UI the feature is gone.
 4. **The UI treats a missing `getEngineCapabilities` as a legacy engine with no capabilities.** An engine that predates this method answers with `'getEngineCapabilities' is not a function.`; the UI catches that one error, caches an empty set, and hides every gated feature. Any other error is a real failure and surfaces as one.
 5. **The UI ignores ids it does not know.** A newer engine may list features an older UI has never heard of.
+6. **Capabilities describe the engine, not platforms.** An id names a generic engine feature: an RPC on the engine API, an option on one, or an engine-native workflow action or trigger. Platform features (Twitch actions, stream info, ads, OBS scene lists read through a module) live in platform modules and are discovered through the module and action catalog (`getModules`, the action catalog from `getActions`, and manifest field option sources resolved by `dispatchFieldOptionsRequest`), which already reflects exactly what is installed. They get no capability id: the engine build does not decide whether a creator has the Twitch module installed, and an id for it would advertise something the engine cannot promise.
 
 ## Capability ids
 
 | Id | Feature |
 |---|---|
-| `alerts.skipClear` | Alert queue controls on the live dashboard: `skipCurrentAlert`, `clearAlertQueue` |
 | `analytics.aggregates` | Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard` |
 | `analytics.gauges` | Per-minute viewer, follower and subscriber series for a session: `getStreamSessionGauges` |
 | `analytics.sessions` | Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals` |
