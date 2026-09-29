@@ -18,6 +18,7 @@ function confirmingListener() {
       return { unbind: () => {} };
     },
     onSubscriptionCreateFailure: () => ({ unbind: () => {} }),
+    subscribeCount: 0,
   };
   return new Proxy(base, {
     get(target, prop: string) {
@@ -26,6 +27,7 @@ function confirmingListener() {
       }
       if (prop.startsWith("on")) {
         return () => {
+          (target.subscribeCount as number) += 1;
           const sub = { id: prop, start: () => {}, stop: () => {} } as unknown as EventSubSubscription;
           for (const handler of successHandlers) {
             handler(sub);
@@ -44,6 +46,9 @@ function confirmingListener() {
  */
 let linked = false;
 let constructedWith: Array<{ channel?: string }> = [];
+let instances: MockTwitchClient[] = [];
+/** What the next `reloadToken` reports, as a relink in the UI would. */
+let nextReload = { userId: "42", userChanged: false };
 
 function linkTwitch() {
   linked = true;
@@ -59,7 +64,12 @@ class NotLinkedError extends Error {
 class MockTwitchClient {
   constructor(config: { channel?: string }) {
     constructedWith.push(config);
+    instances.push(this);
   }
+
+  listener = confirmingListener();
+  reloadToken = mock(async () => nextReload);
+  close = mock(async () => {});
 
   init = mock(async () => {
     if (!linked) {
@@ -67,7 +77,7 @@ class MockTwitchClient {
     }
   });
   ApiClient = mock(() => ({}));
-  EventBusListener = mock(() => confirmingListener());
+  EventBusListener = mock(() => this.listener);
   broadcaster = mock(async () => ({ id: "broadcaster-1", displayName: "Stream" }) as HelixUser);
 }
 
@@ -112,6 +122,8 @@ const CREDENTIALS = {
 function reset() {
   linked = false;
   constructedWith = [];
+  instances = [];
+  nextReload = { userId: "42", userChanged: false };
 }
 
 describe("TwitchApi before Twitch is linked", () => {
@@ -203,5 +215,45 @@ describe("TwitchApi before Twitch is linked", () => {
     const body = new TextDecoder().decode(payload);
     expect(body).not.toContain("Missing command");
     expect(body).toContain("not linked");
+  });
+});
+
+describe("TwitchApi relinked while connected", () => {
+  const tokenUpdated = { json: () => ({ data: { integration: "twitch" } }) };
+
+  test("swaps the token in place and requests every subscription again", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context(CREDENTIALS);
+    const app = new TwitchApiApplication();
+    await app.init(ctx);
+    const client = instances[0];
+    const bus = ctx.twitchEventBus;
+    const subscriptionsBefore = client?.listener.subscribeCount as number;
+
+    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+
+    expect(instances).toHaveLength(1);
+    expect(client?.reloadToken).toHaveBeenCalledTimes(1);
+    expect(ctx.twitchEventBus).toBe(bus);
+    expect(client?.listener.subscribeCount).toBe(subscriptionsBefore * 2);
+    expect(app.isReady()).toBe(true);
+  });
+
+  test("reconnects from scratch when a different account was linked", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context(CREDENTIALS);
+    const app = new TwitchApiApplication();
+    await app.init(ctx);
+    const first = instances[0];
+
+    nextReload = { userId: "99", userChanged: true };
+    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+
+    expect(first?.close).toHaveBeenCalledTimes(1);
+    expect(instances).toHaveLength(2);
+    expect(ctx.twitchEventBus).toBeDefined();
+    expect(app.isReady()).toBe(true);
   });
 });

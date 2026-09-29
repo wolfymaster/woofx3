@@ -54,6 +54,12 @@ export default class TwitchClient {
   private authProvider: RefreshingAuthProvider | null;
   /** Twitch user id of whoever linked Twitch, from the stored token. */
   private linkedUserId: string | null = null;
+  /**
+   * The refresh token of the token this client last loaded or persisted.
+   * A stored token with a different one was written by someone else (a
+   * relink in the UI), and a refresh of the old token must not overwrite it.
+   */
+  private knownRefreshToken: string | null = null;
   private apiClient: ApiClient | null;
   private eventListener: EventSubWsListener | null;
 
@@ -150,6 +156,63 @@ export default class TwitchClient {
     return user;
   }
 
+  /**
+   * Re-read the stored token and hand it to the auth provider, replacing the
+   * one it holds. Called when the streamer relinks Twitch (to grant a new
+   * scope, say) while this client is running: without it the provider keeps
+   * refreshing the old token and never sees the new scopes.
+   *
+   * Returns the linked user id and whether it changed. A different account
+   * means a different broadcaster, which a token swap cannot cover; the
+   * caller has to reconnect from scratch.
+   */
+  async reloadToken(): Promise<{ userId: string; userChanged: boolean }> {
+    if (!this.authProvider) {
+      throw new Error("Must initialize TwitchClient before use");
+    }
+    const token = await this.getBroadcasterToken();
+    const previous = this.linkedUserId;
+    const userId = await this.authProvider.addUserForToken(token, ["chat"]);
+    this.linkedUserId = userId;
+    this.knownRefreshToken = token.refreshToken ?? null;
+    return { userId, userChanged: previous !== null && previous !== userId };
+  }
+
+  /**
+   * Persist a refreshed token unless the stored one has moved on since this
+   * client loaded it. A relink writes a new token (new refresh token, later
+   * obtainment time) to the same setting; the provider may still refresh
+   * the old token before it hears about the relink, and writing that back
+   * would silently undo the relink and its scopes.
+   */
+  private async persistRefreshedToken(
+    userId: string,
+    token: AccessTokenWithUserId | Omit<AccessTokenWithUserId, "userId">
+  ): Promise<void> {
+    if (!this.args.setSetting) {
+      return;
+    }
+    try {
+      const raw = await this.args.getSetting("twitch_token");
+      if (raw && raw.trim() !== "") {
+        const stored = JSON.parse(raw) as Partial<AccessTokenWithUserId>;
+        const replacedElsewhere =
+          (stored.refreshToken ?? null) !== this.knownRefreshToken ||
+          (stored.obtainmentTimestamp ?? 0) > token.obtainmentTimestamp;
+        if (replacedElsewhere) {
+          console.warn(
+            "twitch_token changed since it was loaded (relinked?); not overwriting it with a refresh of the old token"
+          );
+          return;
+        }
+      }
+      await this.args.setSetting("twitch_token", JSON.stringify({ ...token, userId }));
+      this.knownRefreshToken = token.refreshToken ?? null;
+    } catch (err) {
+      console.error("failed to persist refreshed twitch_token: ", err);
+    }
+  }
+
   private async getBroadcasterToken(): Promise<AccessTokenWithUserId> {
     const token = await this.args.getSetting("twitch_token");
     if (!token || token.trim() === "") {
@@ -163,20 +226,10 @@ export default class TwitchClient {
 
     authProvider.onRefresh(async (userId, token) => {
       console.log("refreshing token for: ", userId);
-      // Persist the refreshed token back through to the engine's
-      // settings table. Without this, the in-memory provider stays
-      // current but the row stored in dbproxy keeps the original
-      // (pre-refresh) access_token + refresh_token; an engine restart
-      // would load that stale row and have to refresh again — fragile
-      // if Twitch ever invalidates the original refresh_token.
-      if (this.args.setSetting) {
-        try {
-          const persisted = { ...token, userId };
-          await this.args.setSetting("twitch_token", JSON.stringify(persisted));
-        } catch (err) {
-          console.error("failed to persist refreshed twitch_token: ", err);
-        }
-      }
+      // Without persisting, an engine restart loads the pre-refresh row and
+      // has to refresh again, which fails once Twitch invalidates the old
+      // refresh token.
+      await this.persistRefreshedToken(userId, token);
     });
 
     authProvider.onRefreshFailure((userId, error) => {
@@ -186,6 +239,7 @@ export default class TwitchClient {
 
     const response = await this.getBroadcasterToken();
     this.linkedUserId = await authProvider.addUserForToken(response, ["chat"]);
+    this.knownRefreshToken = response.refreshToken ?? null;
 
     return authProvider;
   }

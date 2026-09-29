@@ -22,6 +22,28 @@ export interface ChannelPointRewardOption {
   isEnabled: boolean;
 }
 
+/**
+ * The broadcaster's ad schedule. Times are ISO-8601, or null when Twitch has
+ * none to report (no ad scheduled, or no ad run yet this stream).
+ */
+export interface AdSchedule {
+  nextAdAt: string | null;
+  lastAdAt: string | null;
+  durationSeconds: number;
+  prerollFreeSeconds: number;
+  snoozeCount: number;
+  snoozeRefreshAt: string | null;
+  /** This service's clock when it answered, so a client can correct for skew. */
+  serverNow: string;
+}
+
+export interface SnoozeResult {
+  snoozeCount: number;
+  snoozeRefreshAt: string | null;
+  nextAdAt: string | null;
+  serverNow: string;
+}
+
 /** Twitch's own limits on channel information, checked before any request is made. */
 export const TITLE_MAX_LENGTH = 140;
 export const MARKER_DESCRIPTION_MAX_LENGTH = 140;
@@ -156,6 +178,8 @@ export const TWITCH_API_COMMANDS = [
   "createMarker",
   "searchCategories",
   "getStreamInfo",
+  "getAdSchedule",
+  "snoozeNextAd",
 ] as const satisfies readonly (keyof TwitchApi)[];
 
 export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
@@ -179,11 +203,19 @@ export class TwitchApiError extends Error {
   }
 }
 
-export type TwitchApiErrorCode = "rate_limited";
+/**
+ * Why a Twitch call failed, in terms a caller can act on, so a caller can tell
+ * "reconnect Twitch" from "wait and retry" without parsing messages. `failed`
+ * is everything else; it stays in process and is never sent as a `code`.
+ */
+export type TwitchApiErrorCode = "missing_scope" | "unauthorized" | "rate_limited" | "failed";
 
-/** The contract code a thrown error carries, if it is a TwitchApiError. */
-export function twitchApiErrorCodeOf(err: unknown): TwitchApiErrorCode | undefined {
-  return err instanceof TwitchApiError ? err.code : undefined;
+/** The contract code a thrown error carries, if it is a TwitchApiError with an actionable code. */
+export function twitchApiErrorCodeOf(err: unknown): Exclude<TwitchApiErrorCode, "failed"> | undefined {
+  if (err instanceof TwitchApiError && err.code !== "failed") {
+    return err.code;
+  }
+  return undefined;
 }
 
 /** Twurple's HttpStatusCodeError, matched by shape so this file needs no import of its package. */
@@ -192,6 +224,87 @@ function httpStatusOf(err: unknown): number | undefined {
     return err.statusCode;
   }
   return undefined;
+}
+
+const AD_SCOPE_MESSAGE = "reconnect Twitch to allow ad controls";
+
+/**
+ * Twurple refuses a call its token lacks the scope for before sending it
+ * ("does not have any of the requested scopes"); Twitch answers one it lets
+ * through with a 401 naming the scope. Both mean the streamer has to relink.
+ */
+export function classifyTwitchError(err: unknown, context: string, scope: string): TwitchApiError {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/requested scopes|missing scope/i.test(message)) {
+    return new TwitchApiError("missing_scope", `${context}: Twitch has not granted ${scope}; ${AD_SCOPE_MESSAGE}`);
+  }
+  const status = httpStatusOf(err);
+  if (status !== undefined) {
+    if (status === 401 || status === 403) {
+      if (/scope/i.test(message)) {
+        return new TwitchApiError("missing_scope", `${context}: Twitch has not granted ${scope}; ${AD_SCOPE_MESSAGE}`);
+      }
+      return new TwitchApiError("unauthorized", `${context}: Twitch refused the token (HTTP ${status})`);
+    }
+    if (status === 429) {
+      return new TwitchApiError("rate_limited", `${context}: Twitch rate limited the request`);
+    }
+  }
+  return new TwitchApiError("failed", `${context}: ${message}`);
+}
+
+type HelixTime = string | number | null | undefined;
+
+interface HelixAdScheduleRow {
+  next_ad_at?: HelixTime;
+  last_ad_at?: HelixTime;
+  duration?: number | string;
+  preroll_free_time?: number | string;
+  snooze_count?: number | string;
+  snooze_refresh_at?: HelixTime;
+}
+
+interface HelixSnoozeRow {
+  snooze_count?: number | string;
+  snooze_refresh_at?: HelixTime;
+  next_ad_at?: HelixTime;
+}
+
+/**
+ * A Helix ad-schedule time as ISO-8601, or null for "none". Accepts every
+ * form Helix has used: RFC3339, Unix seconds as a number or a numeric
+ * string, and "" or 0 for nothing scheduled. An unreadable value is null
+ * rather than an error: one odd field should not take the whole schedule
+ * down with it.
+ */
+export function normalizeHelixTime(raw: HelixTime): string | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw === "number") {
+    return epochSecondsToIso(raw);
+  }
+  const text = raw.trim();
+  if (text === "") {
+    return null;
+  }
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    return epochSecondsToIso(Number(text));
+  }
+  const ms = Date.parse(text);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+function epochSecondsToIso(seconds: number): string | null {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return null;
+  }
+  return new Date(seconds * 1000).toISOString();
+}
+
+function wholeSeconds(raw: number | string | undefined): number {
+  const value = Number(raw ?? 0);
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
 }
 
 export default class TwitchApi {
@@ -259,6 +372,39 @@ export default class TwitchApi {
       throw err;
     }
     return { ok: true, userId: target };
+  }
+
+  /**
+   * Requires `channel:read:ads`. Called through `callApi` rather than
+   * Twurple's `getAdSchedule` because Twurple converts the times assuming
+   * Unix seconds, and Helix has sent them as RFC3339 strings, epoch numbers,
+   * numeric strings and "" (nothing scheduled). The raw fields go through
+   * `normalizeHelixTime` instead.
+   */
+  async getAdSchedule(_args: unknown): Promise<AdSchedule> {
+    let row: HelixAdScheduleRow | undefined;
+    try {
+      const response = await this.apiClient.callApi<{ data?: HelixAdScheduleRow[] }>({
+        type: "helix",
+        url: "channels/ads",
+        method: "GET",
+        userId: this.broadcaster.id,
+        scopes: ["channel:read:ads"],
+        query: { broadcaster_id: this.broadcaster.id },
+      });
+      row = response.data?.[0];
+    } catch (err) {
+      throw classifyTwitchError(err, "getAdSchedule", "channel:read:ads");
+    }
+    return {
+      nextAdAt: normalizeHelixTime(row?.next_ad_at),
+      lastAdAt: normalizeHelixTime(row?.last_ad_at),
+      durationSeconds: wholeSeconds(row?.duration),
+      prerollFreeSeconds: wholeSeconds(row?.preroll_free_time),
+      snoozeCount: wholeSeconds(row?.snooze_count),
+      snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
+      serverNow: new Date().toISOString(),
+    };
   }
 
   /**
@@ -391,6 +537,35 @@ export default class TwitchApi {
       categoryName: channel.gameName,
       tags: channel.tags,
       language: channel.language,
+    };
+  }
+
+  /**
+   * Push the next ad back by five minutes, spending one snooze. Twitch
+   * answers a snooze with none left, or with no ad scheduled, with a 400,
+   * which surfaces as a `failed` error carrying Twitch's message.
+   * Requires `channel:manage:ads`.
+   */
+  async snoozeNextAd(_args: unknown): Promise<SnoozeResult> {
+    let row: HelixSnoozeRow | undefined;
+    try {
+      const response = await this.apiClient.callApi<{ data?: HelixSnoozeRow[] }>({
+        type: "helix",
+        url: "channels/ads/schedule/snooze",
+        method: "POST",
+        userId: this.broadcaster.id,
+        scopes: ["channel:manage:ads"],
+        query: { broadcaster_id: this.broadcaster.id },
+      });
+      row = response.data?.[0];
+    } catch (err) {
+      throw classifyTwitchError(err, "snoozeNextAd", "channel:manage:ads");
+    }
+    return {
+      snoozeCount: wholeSeconds(row?.snooze_count),
+      snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
+      nextAdAt: normalizeHelixTime(row?.next_ad_at),
+      serverNow: new Date().toISOString(),
     };
   }
 

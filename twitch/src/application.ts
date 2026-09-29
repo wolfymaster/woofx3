@@ -7,6 +7,7 @@ import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
+import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
@@ -85,6 +86,65 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    */
   private link: "waiting" | "connecting" | "connected" = "waiting";
   private eventBus: TwitchEventBus | null = null;
+  private twitchClient: TwitchClient | null = null;
+  private adBreakScheduler: AdBreakScheduler | null = null;
+  /** A token update arrived mid-connect; applied once the connect finishes. */
+  private relinkPending = false;
+
+  private async onTokenUpdated(ctx: TwitchApiContext): Promise<void> {
+    switch (this.link) {
+      case "waiting": {
+        await this.connect(ctx);
+        return;
+      }
+      case "connecting": {
+        this.relinkPending = true;
+        return;
+      }
+      case "connected": {
+        await this.relink(ctx);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Apply a relinked token while connected. Relinking is how a streamer
+   * grants a scope the first link lacked, so the running auth provider has
+   * to take the new token (it would otherwise keep refreshing the old one,
+   * and its scopes), and every EventSub subscription is requested again so
+   * one refused for a missing scope gets its retry.
+   *
+   * A relink to a different Twitch account changes the broadcaster, which a
+   * token swap cannot cover, so that case reconnects from scratch.
+   */
+  private async relink(ctx: TwitchApiContext): Promise<void> {
+    const client = this.twitchClient;
+    const eventBus = this.eventBus;
+    if (!client || !eventBus) {
+      return;
+    }
+    const { userChanged } = await client.reloadToken();
+    if (userChanged && !ctx.config.getConfig("woofx3TwitchChannelName")) {
+      ctx.logger.info("twitch: Twitch was relinked to a different account; reconnecting");
+      eventBus.disconnect();
+      this.adBreakScheduler?.stop();
+      this.adBreakScheduler = null;
+      await client.close();
+      this.eventBus = null;
+      this.twitchClient = null;
+      ctx.twitchEventBus = undefined;
+      ctx.twitchApi = undefined;
+      ctx.broadcaster = undefined;
+      await this.connect(ctx);
+      return;
+    }
+    await eventBus.resubscribe();
+    ctx.logger.info("twitch: relinked token applied", {
+      established: eventBus.establishedCount(),
+      expected: TwitchEventBus.expectedSubscriptionCount,
+    });
+  }
 
   async init(ctx: TwitchApiContext) {
     // Before anything starts publishing. Every event this service emits is
@@ -101,14 +161,22 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       });
     });
 
-    // Published when the streamer links (or relinks) Twitch in the UI. It is
-    // what moves a waiting service to connected without a restart.
+    // Published when the streamer links (or relinks) Twitch in the UI. A
+    // first link moves a waiting service to connected; a relink while
+    // connected swaps the token in place (see `relink`). Both without a
+    // restart.
     await ctx.services.messageBus.client.subscribe("setting.integration.token.updated", async (msg: Msg) => {
       const integration = msg.json<{ data?: { integration?: string } }>()?.data?.integration;
-      if (integration !== "twitch" || this.link !== "waiting") {
+      if (integration !== "twitch") {
         return;
       }
-      await this.connect(ctx);
+      try {
+        await this.onTokenUpdated(ctx);
+      } catch (err) {
+        ctx.logger.error("twitch: failed to apply the updated Twitch token", {
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
     });
 
     await this.connect(ctx);
@@ -143,6 +211,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     } catch (err) {
       if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
         this.link = "waiting";
+        this.relinkPending = false;
         ctx.logger.info("twitch: no Twitch account linked yet; waiting for a Twitch link");
         return;
       }
@@ -154,12 +223,26 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const listener = twitchClient.EventBusListener();
     const broadcaster = await twitchClient.broadcaster();
 
+    const twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
+    const events = new EventFactory({ source: "twitch" });
+    const messageBus = ctx.services.messageBus.client;
+    const adBreakScheduler = new AdBreakScheduler({
+      fetchSchedule: () => twitchApi.getAdSchedule({}),
+      publishUpcoming: (event) => {
+        const [topic, data] = events.Twitch().adBreakUpcoming(event);
+        messageBus.publish(topic, data);
+      },
+      logger: ctx.logger,
+      leadSeconds: ctx.config.getConfig("woofx3TwitchAdBreakLeadSeconds") as number[] | undefined,
+    });
+
     const eventBusCtx = {
       broadcaster,
       logger: ctx.logger,
-      messageBus: ctx.services.messageBus.client,
-      events: new EventFactory({ source: "twitch" }),
+      messageBus,
+      events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
+      onStreamLiveChange: (live: boolean) => adBreakScheduler.setLive(live),
     };
     const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);
     await twitchEventBus.start();
@@ -177,11 +260,40 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     }
 
     ctx.broadcaster = broadcaster;
-    ctx.twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
+    ctx.twitchApi = twitchApi;
     ctx.twitchEventBus = twitchEventBus;
     this.eventBus = twitchEventBus;
+    this.twitchClient = twitchClient;
+    this.adBreakScheduler = adBreakScheduler;
+    void this.seedLiveState(ctx, apiClient, broadcaster.id, adBreakScheduler);
     this.link = "connected";
     ctx.logger.info("twitch: connected", { broadcasterId: broadcaster.id });
+    if (this.relinkPending) {
+      this.relinkPending = false;
+      await this.relink(ctx);
+    }
+  }
+
+  /**
+   * EventSub does not replay a stream.online that happened before this
+   * service connected, so a service started mid-stream asks Helix once.
+   * A failed read leaves the scheduler offline until the next online event:
+   * a missed heads-up is better than polling a stream that is not live.
+   */
+  private async seedLiveState(
+    ctx: TwitchApiContext,
+    apiClient: ApiClient,
+    broadcasterId: string,
+    scheduler: AdBreakScheduler
+  ): Promise<void> {
+    try {
+      const stream = await apiClient.streams.getStreamByUserId(broadcasterId);
+      scheduler.seedLive(stream !== null);
+    } catch (err) {
+      ctx.logger.warn("twitch: could not read whether the stream is live; ad heads-up waits for stream.online", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -222,6 +334,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   }
 
   async terminate(ctx: TwitchApiContext) {
+    this.adBreakScheduler?.stop();
+    this.adBreakScheduler = null;
     ctx.twitchEventBus?.disconnect();
   }
 
@@ -290,6 +404,11 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
   }
 
+  /**
+   * `code` is set when the failure is one a caller can act on differently
+   * (e.g. `missing_scope` means relink Twitch, `rate_limited` means wait);
+   * absent for everything else.
+   */
   private respondError(msg: Msg, error: string, code?: string) {
     const envelope = {
       id: crypto.randomUUID(),
