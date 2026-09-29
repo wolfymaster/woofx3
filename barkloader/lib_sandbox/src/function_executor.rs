@@ -96,6 +96,7 @@ mod tests {
             module_id: String::new(),
             module_name: String::new(),
             module_version: String::new(),
+            permissions: Default::default(),
         }
     }
 

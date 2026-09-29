@@ -1,25 +1,21 @@
 //! Shared implementation for extensions that are, structurally, just a
-//! NATS subject plus a lookup table of `(js_name, wire_command)` pairs —
-//! `twitch`, `platform.alerts`, and `platform.chat` today. Each of those
-//! namespaces' every function does exactly the same thing (publish
-//! `{ command: wire_command, args? }` to one fixed subject), so the
-//! behavior lives once here; each namespace file becomes a name plus a
-//! data table.
+//! NATS subject plus a lookup table of `(js_name, wire_command)` pairs:
+//! `platform.alerts` and `platform.chat`. Each of those namespaces' every
+//! function does exactly the same thing (publish `{ command: wire_command,
+//! args }` to one fixed subject and return nothing), so the behavior lives
+//! once here; each namespace file becomes a name plus a data table.
 //!
-//! `chat` is deliberately not built on this: it calls a different host
-//! trait (`ChatSender`, not `NatsPublisher`) and has real per-call logic
-//! (extracting/validating a string argument) — a lookup table would not
-//! fit it.
+//! `chat` and `twitch` are deliberately not built on this: `chat` calls a
+//! different host trait (`ChatSender`) with its own argument checks, and
+//! `twitch` waits for the twitch service's reply and gates some commands on
+//! a manifest permission.
 
 use crate::host::{HostExtension, HostFunction, NatsPublisher};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-/// One entry in a subject extension's command table:
-/// `(js_name, wire_command, takes_args)`. `takes_args = false` omits the
-/// `args` key from the published payload entirely, rather than sending
-/// `args: null` — `twitch.clip` is the one command today that needs this.
-pub type CommandEntry = (&'static str, &'static str, bool);
+/// One entry in a subject extension's command table: `(js_name, wire_command)`.
+pub type CommandEntry = (&'static str, &'static str);
 
 pub struct SubjectExtension {
     namespace: &'static str,
@@ -35,14 +31,10 @@ impl SubjectExtension {
     ) -> Self {
         let functions = commands
             .iter()
-            .map(|&(js_name, wire_command, takes_args)| {
+            .map(|&(js_name, wire_command)| {
                 let nats = nats.clone();
                 HostFunction::new(js_name, move |args: Value| {
-                    let payload = if takes_args {
-                        json!({ "command": wire_command, "args": args })
-                    } else {
-                        json!({ "command": wire_command })
-                    };
+                    let payload = json!({ "command": wire_command, "args": args });
                     nats.publish(subject, payload)?;
                     Ok(Value::Null)
                 })
@@ -85,35 +77,12 @@ mod tests {
     }
 
     #[test]
-    fn omits_args_key_when_takes_args_is_false() {
+    fn publishes_the_wire_command_with_the_args() {
         let nats = Arc::new(CapturingNats {
             published: Mutex::new(Vec::new()),
         });
-        let ext = SubjectExtension::new(
-            "x",
-            "subj",
-            &[("noArgs", "no_args_cmd", false)],
-            nats.clone(),
-        );
-        (ext.functions()[0].handler)(serde_json::json!({"ignored": true})).unwrap();
-        let published = nats.published.lock().unwrap();
-        assert_eq!(
-            published[0],
-            ("subj".to_string(), json!({ "command": "no_args_cmd" }))
-        );
-    }
-
-    #[test]
-    fn includes_args_key_when_takes_args_is_true() {
-        let nats = Arc::new(CapturingNats {
-            published: Mutex::new(Vec::new()),
-        });
-        let ext = SubjectExtension::new(
-            "x",
-            "subj",
-            &[("withArgs", "with_args_cmd", true)],
-            nats.clone(),
-        );
+        let ext =
+            SubjectExtension::new("x", "subj", &[("withArgs", "with_args_cmd")], nats.clone());
         (ext.functions()[0].handler)(json!({"n": 1})).unwrap();
         let published = nats.published.lock().unwrap();
         assert_eq!(
@@ -130,12 +99,7 @@ mod tests {
         let nats = Arc::new(CapturingNats {
             published: Mutex::new(Vec::new()),
         });
-        let ext = SubjectExtension::new(
-            "my.ns",
-            "subj",
-            &[("a", "cmd_a", true), ("b", "cmd_b", false)],
-            nats,
-        );
+        let ext = SubjectExtension::new("my.ns", "subj", &[("a", "cmd_a"), ("b", "cmd_b")], nats);
         assert_eq!(ext.namespace(), "my.ns");
         assert_eq!(ext.functions().len(), 2);
         assert_eq!(ext.functions()[0].name, "a");

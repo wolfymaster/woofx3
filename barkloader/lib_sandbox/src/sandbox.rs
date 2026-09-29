@@ -96,6 +96,7 @@ impl Sandbox {
         let module_id = request.function.split(':').next().unwrap_or("").to_string();
 
         let meta = self.registry.get_module_metadata(&module_id);
+        let permissions = self.registry.permissions(&module_id);
         let invocation = InvocationContext {
             event: request.event,
             user: request.user.unwrap_or(Value::Null),
@@ -103,6 +104,7 @@ impl Sandbox {
             module_id,
             module_name: meta.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
             module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
+            permissions,
         };
 
         let result = self

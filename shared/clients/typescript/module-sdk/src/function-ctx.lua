@@ -171,10 +171,23 @@
 ---@field settings table<string, string|number|boolean>
 ---@field setSetting fun(key: string, value: string): nil
 
+---Raised by an extension function the host refused or failed:
+---`tostring(err)` is the message. `code` is set when there is a reason to
+---branch on; see `CtxHostError` in function-ctx.d.ts for the values.
+---@class CtxHostError
+---@field message string
+---@field code? string
+
+---`ctx.twitch.*`: each call asks the twitch service to act, waits up to 10
+---seconds and returns its result, or raises a `CtxHostError`. `timeout`
+---needs the manifest permission `twitch.moderation`, `updateStream` needs
+---`twitch.channel`.
 ---@class CtxTwitchExtension
----@field clip fun(args?: any): nil
----@field shoutout fun(args: any): nil
----@field createMarker fun(args?: any): nil
+---@field clip fun(): { id: string, url: string }
+---@field shoutout fun(args: { userId?: string, userName?: string }): { ok: boolean, userId: string }
+---@field createMarker fun(args?: { description?: string }): { id: string, createdAt: string, description: string, positionSeconds: number }
+---@field timeout fun(args: { userId?: string, userName?: string, durationSeconds: number, reason?: string }): { ok: boolean, userId: string, durationSeconds: number }
+---@field updateStream fun(args: { title?: string, category?: string, categoryId?: string, tags?: string[] }): { ok: boolean, title?: string, categoryId?: string, categoryName?: string, tags?: string[] }
 
 ---@class CtxChatExtension
 ---@field sendMessage fun(text: string): nil

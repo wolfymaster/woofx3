@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::host::InvocationContext;
+use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
 use mlua::{
     Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue, VmState,
@@ -474,25 +474,70 @@ fn ensure_namespace_table(
     Ok(current)
 }
 
+/// Wraps a host call returning `(ok, result)` into a function that returns
+/// `result` or raises it. The raise happens in Lua because only `error` can
+/// raise a table, and a table is what carries `code` to a `pcall`.
+const RAISE_ON_FAILURE: &str = r#"
+return function(call)
+    return function(args)
+        local ok, result = call(args)
+        if ok then
+            return result
+        end
+        error(result, 0)
+    end
+end
+"#;
+
+/// Binds every extension function. A failure is raised as a table
+/// `{ message, code? }` whose `tostring` is the message, so an uncaught one
+/// still reports the host's message and a `pcall` can read `code`.
 fn bind_extensions(
     lua: &Lua,
     ctx: &mlua::Table,
     invocation: &InvocationContext,
 ) -> mlua::Result<()> {
+    let raise_on_failure: Function = lua.load(RAISE_ON_FAILURE).eval()?;
+    let error_meta = lua.create_table()?;
+    error_meta.set(
+        "__tostring",
+        lua.create_function(|_, err: mlua::Table| err.get::<String>("message"))?,
+    )?;
+    let granted = std::sync::Arc::new(invocation.permissions.clone());
     for ext in invocation.host.extensions.iter() {
         let target = ensure_namespace_table(lua, ctx, ext.namespace())?;
         for func in ext.functions() {
-            let handler = func.handler.clone();
-            let f = lua.create_function(move |lua, arg: LuaValue| {
+            let name = func.name.clone();
+            let func = func.clone();
+            let namespace = ext.namespace().to_string();
+            let granted = granted.clone();
+            let error_meta = error_meta.clone();
+            let call = lua.create_function(move |lua, arg: LuaValue| {
                 let value: Value = serde_json::to_value(&arg)
                     .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                let result = handler(value).map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&result)
+                match func.call(&namespace, &granted, value) {
+                    Ok(result) => Ok((true, lua.to_value(&result)?)),
+                    Err(err) => Ok((
+                        false,
+                        LuaValue::Table(host_error_table(lua, &err, &error_meta)?),
+                    )),
+                }
             })?;
-            target.set(func.name.as_str(), f)?;
+            let f: Function = raise_on_failure.call(call)?;
+            target.set(name, f)?;
         }
     }
     Ok(())
+}
+
+fn host_error_table(lua: &Lua, err: &HostError, meta: &mlua::Table) -> mlua::Result<mlua::Table> {
+    let table = lua.create_table()?;
+    table.set("message", err.message.as_str())?;
+    if let Some(code) = &err.code {
+        table.set("code", code.as_str())?;
+    }
+    table.set_metatable(Some(meta.clone()));
+    Ok(table)
 }
 
 #[cfg(test)]
@@ -513,6 +558,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
         };
         let adapter = LuaAdapter::new().unwrap();
         let code = r#"
@@ -554,6 +600,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         // Exercises all three levels and both a string and a table
         // argument; the assertion is just that none of these throw and the
@@ -581,6 +628,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         let code = r#"
             function run(ctx)
@@ -638,6 +686,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         // Never touches ctx.module.settings.
         let code = r#"
@@ -668,6 +717,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
         let code = r#"
@@ -705,6 +755,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         let code = r#"
             function run(ctx)
@@ -739,6 +790,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         let code = r#"
             function run(ctx)

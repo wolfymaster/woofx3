@@ -3,10 +3,7 @@ use crate::host::{HostExtension, HostFunction, NatsPublisher};
 use std::sync::Arc;
 
 const SUBJECT: &str = "slobs";
-const COMMANDS: &[CommandEntry] = &[
-    ("alert", "alert_message", true),
-    ("setTimer", "setTime", true),
-];
+const COMMANDS: &[CommandEntry] = &[("alert", "alert_message"), ("setTimer", "setTime")];
 
 pub struct PlatformAlertsExtension(SubjectExtension);
 

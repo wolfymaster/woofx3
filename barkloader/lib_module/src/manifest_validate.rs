@@ -209,6 +209,7 @@ pub fn validate_with_provenance(
     }
 
     validate_deadlines(manifest)?;
+    validate_permissions(manifest)?;
 
     // Step ids are the names an author's own `${id.field}` references and
     // `dependsOn` entries resolve against. A duplicate makes a reference
@@ -577,6 +578,25 @@ fn validate_deadlines(manifest: &ModuleManifest) -> Result<()> {
                 deadline.id,
                 deadline.max_pending
             ));
+        }
+    }
+    Ok(())
+}
+
+/// A permission opens privileged host functions to the module's code, so an
+/// id the sandbox does not know is a typo or a request for something that
+/// does not exist, and either way it should not install silently.
+fn validate_permissions(manifest: &ModuleManifest) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (i, permission) in manifest.permissions.iter().enumerate() {
+        if !lib_sandbox::permissions::is_known_permission(permission) {
+            return Err(anyhow!(
+                "permissions[{i}]: unknown permission {permission:?}; known permissions are {}",
+                lib_sandbox::permissions::KNOWN_PERMISSIONS.join(", ")
+            ));
+        }
+        if !seen.insert(permission.as_str()) {
+            return Err(anyhow!("permissions[{i}]: {permission:?} is listed twice"));
         }
     }
     Ok(())
@@ -2987,6 +3007,33 @@ mod tests {
         let m = with_deadlines(r#"[{ "id": " ", "function": "timer.expire", "maxPending": 4 }]"#);
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("id is required"), "{err}");
+    }
+
+    #[test]
+    fn known_permissions_install() {
+        let m = minimal(r#", "permissions": ["twitch.moderation", "twitch.channel"]"#);
+        validate(&m).expect("known permissions must install");
+        assert_eq!(m.permissions, vec!["twitch.moderation", "twitch.channel"]);
+    }
+
+    #[test]
+    fn a_manifest_without_permissions_declares_none() {
+        assert!(minimal("").permissions.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_permission_fails_the_install() {
+        let m = minimal(r#", "permissions": ["twitch.moderation", "twitch.everything"]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("permissions[1]"), "{err}");
+        assert!(err.contains("twitch.everything"), "{err}");
+    }
+
+    #[test]
+    fn a_duplicate_permission_fails_the_install() {
+        let m = minimal(r#", "permissions": ["twitch.channel", "twitch.channel"]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("listed twice"), "{err}");
     }
 
     #[test]

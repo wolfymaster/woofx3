@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::host::InvocationContext;
+use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
 use rquickjs::{
     Array, Context, Ctx, Function as JsFunction, Object, Runtime, Value as JsValue, function::Opt,
@@ -18,6 +18,22 @@ const DEFAULT_MAX_INSTRUCTIONS: u64 = 100_000;
 
 fn host_err(msg: impl Into<String>) -> rquickjs::Error {
     rquickjs::Error::new_from_js_message("host", "value", msg.into())
+}
+
+/// Throw `err` into the script as an `Error` whose `message` is the host's
+/// message and whose `code` is set when the host gave one, so module code can
+/// `catch (e) { if (e.code === "timeout") ... }`.
+fn throw_host_error(ctx: &Ctx<'_>, err: &HostError) -> rquickjs::Error {
+    let exception = match rquickjs::Exception::from_message(ctx.clone(), &err.message) {
+        Ok(exception) => exception,
+        Err(e) => return e,
+    };
+    if let Some(code) = &err.code {
+        if let Err(e) = exception.set("code", code.as_str()) {
+            return e;
+        }
+    }
+    ctx.throw(exception.into_value())
 }
 
 pub struct QuickJSAdapter {
@@ -268,20 +284,26 @@ fn bind_extensions<'js>(
     invocation: &InvocationContext,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let granted = Arc::new(invocation.permissions.clone());
     for ext in invocation.host.extensions.iter() {
         let target = ensure_namespace_object(ctx, ctx_obj, ext.namespace())?;
         for func in ext.functions() {
-            let handler = func.handler.clone();
+            let name = func.name.clone();
+            let func = func.clone();
+            let namespace = ext.namespace().to_string();
+            let granted = granted.clone();
             let js_func = JsFunction::new(ctx.clone(), move |ctx, arg: Opt<JsValue<'_>>| {
                 let value = match arg.0 {
                     Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string()))?,
                     None => Value::Null,
                 };
-                let result = handler(value).map_err(host_err)?;
-                json_to_js(&ctx, &result).map_err(|e| host_err(e.to_string()))
+                match func.call(&namespace, &granted, value) {
+                    Ok(result) => json_to_js(&ctx, &result).map_err(|e| host_err(e.to_string())),
+                    Err(err) => Err(throw_host_error(&ctx, &err)),
+                }
             })
             .map_err(map)?;
-            target.set(func.name.as_str(), js_func).map_err(map)?;
+            target.set(name.as_str(), js_func).map_err(map)?;
         }
     }
     Ok(())
@@ -824,6 +846,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
         };
         let adapter = QuickJSAdapter::new().unwrap();
         let code = r#"
@@ -865,6 +888,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
         };
         for (code, expected) in [
             (
@@ -894,6 +918,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         let code = "function run(ctx) { return { id: ctx.module.id, name: ctx.module.name, version: ctx.module.version }; }";
         let result = adapter.execute(code, "run", &invocation).unwrap();
@@ -912,6 +937,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         // Exercises all three levels and both a string and an object
         // argument; the assertion is just that none of these throw and the
@@ -942,6 +968,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         let code = "function run(ctx) { ctx.log.info('data', { foo: 1 }); return { ok: true }; }";
         let result = adapter.execute(code, "run", &invocation).unwrap();
@@ -958,6 +985,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         let code = "function run(ctx) { return ctx.response(false, 'nope'); }";
         let result = adapter.execute(code, "run", &invocation).unwrap();
@@ -1001,6 +1029,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         // Never touches ctx.module.settings.
         let code = "function run(ctx) { return { id: ctx.module.id }; }";
@@ -1026,6 +1055,7 @@ mod tests {
             module_id: "mymod".to_string(),
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
         let code = "function run(ctx) { \

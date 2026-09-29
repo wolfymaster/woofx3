@@ -26,7 +26,7 @@ interface TwitchApiRequest {
  * The request carried by a `twitchapi` message. Two senders shape it
  * differently and both are served: the api wraps it in a CloudEvent
  * (`{ type, source, time, data: { command, args } }`), while the sandbox's
- * `ctx.twitch` and the chatbot's built-in commands publish the bare
+ * `ctx.twitch` and the chatbot's built-in commands send the bare
  * `{ command, args }`.
  */
 export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {

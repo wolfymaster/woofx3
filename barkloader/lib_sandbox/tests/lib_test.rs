@@ -1,11 +1,14 @@
 use lib_sandbox::extensions::{ChatExtension, PlatformAlertsExtension, TwitchExtension};
 use lib_sandbox::host::noop::noop_host_context;
-use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsPublisher};
+use lib_sandbox::host::{
+    ChatSender, ExtensionRegistry, NatsPublisher, NatsRequester, RequestError,
+};
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 fn build_registry() -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
@@ -59,6 +62,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
         functions,
         state: ModuleState::Active,
         event_types: Default::default(),
+        permissions: Default::default(),
     };
 
     registry
@@ -170,6 +174,7 @@ fn test_js_instruction_limit() {
         functions,
         state: ModuleState::Active,
         event_types: Default::default(),
+        permissions: Default::default(),
     };
 
     registry
@@ -229,6 +234,7 @@ function isolation(ctx) {
         functions,
         state: ModuleState::Active,
         event_types: Default::default(),
+        permissions: Default::default(),
     };
 
     registry
@@ -298,6 +304,7 @@ fn test_ctx_event_data() {
         functions,
         state: ModuleState::Active,
         event_types: Default::default(),
+        permissions: Default::default(),
     };
 
     registry
@@ -360,6 +367,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         functions,
         state: ModuleState::Active,
         event_types: Default::default(),
+        permissions: Default::default(),
     };
     registry
         .register_module("chat_test".to_string(), module)
@@ -428,115 +436,261 @@ fn extension_test_module(
         functions,
         state: ModuleState::Active,
         event_types: Default::default(),
+        permissions: Default::default(),
     };
     registry.register_module(name.to_string(), module).unwrap();
     registry
 }
 
-#[test]
-fn test_quickjs_twitch_extension_publishes_canonical_command() {
-    let code = r#"function moderate(ctx) {
-    ctx.twitch.shoutout({ userId: "u1" });
-    return { ok: true };
-}"#;
-    let registry = extension_test_module("twitch_test", "moderate", code, "js");
+/// Stands in for the twitch service: answers every `twitchapi` request with
+/// `reply` and records what it was asked.
+struct FakeTwitchService {
+    reply: Result<serde_json::Value, RequestError>,
+    requests: Mutex<Vec<serde_json::Value>>,
+}
 
-    let nats = Arc::new(CapturingNats::default());
+impl FakeTwitchService {
+    fn answering(reply: Result<serde_json::Value, RequestError>) -> Arc<Self> {
+        Arc::new(Self {
+            reply,
+            requests: Mutex::new(Vec::new()),
+        })
+    }
+}
+
+impl NatsRequester for FakeTwitchService {
+    fn request(
+        &self,
+        subject: &str,
+        data: serde_json::Value,
+        _timeout: Duration,
+    ) -> Result<serde_json::Value, RequestError> {
+        assert_eq!(subject, "twitchapi");
+        self.requests.lock().unwrap().push(data);
+        self.reply.clone()
+    }
+}
+
+/// Runs `code` as a function of module `twitch_test`, which declares
+/// `permissions`, against `twitch`.
+fn invoke_with_twitch(
+    code: &str,
+    ext: &str,
+    permissions: &[&str],
+    twitch: Arc<FakeTwitchService>,
+) -> Result<serde_json::Value, String> {
+    let registry = extension_test_module("twitch_test", "run", code, ext);
+    let mut module = registry
+        .list_registered_modules()
+        .into_iter()
+        .next()
+        .unwrap();
+    module.permissions = permissions.iter().map(|p| p.to_string()).collect();
+    registry
+        .update_module("twitch_test".to_string(), module)
+        .unwrap();
+
     let mut host_ctx = noop_host_context();
-    host_ctx.nats = nats.clone();
     host_ctx.extensions =
-        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))));
-
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
-    sandbox
+        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(twitch))));
+    Sandbox::new(registry, host_ctx)
+        .unwrap()
         .invoke(InvokeRequest {
-            function: "twitch_test:function:moderate".to_string(),
+            function: "twitch_test:function:run".to_string(),
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
         })
-        .unwrap();
+        .map_err(|e| e.to_string())
+}
 
-    let published = nats.published.lock().unwrap();
-    assert_eq!(published.len(), 1);
-    assert_eq!(published[0].0, "twitchapi");
+fn marker_reply() -> Result<serde_json::Value, RequestError> {
+    Ok(serde_json::json!({
+        "type": "twitchapi.createMarker.result",
+        "source": "twitchapi",
+        "data": { "id": "m1", "positionSeconds": 42 }
+    }))
+}
+
+fn not_live_reply() -> Result<serde_json::Value, RequestError> {
+    Ok(serde_json::json!({
+        "type": "twitchapi.error",
+        "source": "twitchapi",
+        "data": { "error": "createMarker: the channel is not live", "code": "not_live" }
+    }))
+}
+
+#[test]
+fn test_quickjs_twitch_call_returns_the_twitch_service_result() {
+    let code = r#"function run(ctx) {
+    const marker = ctx.twitch.createMarker({ description: "clutch" });
+    return { at: marker.positionSeconds };
+}"#;
+    let twitch = FakeTwitchService::answering(marker_reply());
+    let result = invoke_with_twitch(code, "js", &[], twitch.clone()).unwrap();
+
+    assert_eq!(result, serde_json::json!({ "at": 42 }));
     assert_eq!(
-        published[0].1,
-        serde_json::json!({
-            "command": "shoutout",
-            "args": { "userId": "u1" }
-        })
+        *twitch.requests.lock().unwrap(),
+        vec![serde_json::json!({ "command": "createMarker", "args": { "description": "clutch" } })]
     );
 }
 
 #[test]
-fn test_lua_twitch_extension_publishes_canonical_command() {
+fn test_lua_twitch_call_returns_the_twitch_service_result() {
     let code = r#"
-function moderate(ctx)
-    ctx.twitch.shoutout({ userId = "u1" })
-    return { ok = true }
+function run(ctx)
+    local marker = ctx.twitch.createMarker({ description = "clutch" })
+    return { at = marker.positionSeconds }
 end
 "#;
-    let registry = extension_test_module("twitch_test", "moderate", code, "lua");
+    let twitch = FakeTwitchService::answering(marker_reply());
+    let result = invoke_with_twitch(code, "lua", &[], twitch.clone()).unwrap();
 
-    let nats = Arc::new(CapturingNats::default());
-    let mut host_ctx = noop_host_context();
-    host_ctx.nats = nats.clone();
-    host_ctx.extensions =
-        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))));
+    assert_eq!(result, serde_json::json!({ "at": 42 }));
+    assert_eq!(twitch.requests.lock().unwrap().len(), 1);
+}
 
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
-    sandbox
-        .invoke(InvokeRequest {
-            function: "twitch_test:function:moderate".to_string(),
-            event: serde_json::Value::Null,
-            user: None,
-            params: serde_json::Value::Null,
-            workflow_chain: None,
-        })
-        .unwrap();
-
-    let published = nats.published.lock().unwrap();
-    assert_eq!(published.len(), 1);
-    assert_eq!(published[0].0, "twitchapi");
+#[test]
+fn test_quickjs_twitch_refusal_throws_an_error_with_message_and_code() {
+    let code = r#"function run(ctx) {
+    try {
+        ctx.twitch.createMarker();
+        return { threw: false };
+    } catch (e) {
+        return { threw: e instanceof Error, message: e.message, code: e.code };
+    }
+}"#;
+    let result = invoke_with_twitch(
+        code,
+        "js",
+        &[],
+        FakeTwitchService::answering(not_live_reply()),
+    )
+    .unwrap();
     assert_eq!(
-        published[0].1,
+        result,
         serde_json::json!({
-            "command": "shoutout",
-            "args": { "userId": "u1" }
+            "threw": true,
+            "message": "createMarker: the channel is not live",
+            "code": "not_live"
         })
     );
 }
 
 #[test]
-fn test_quickjs_zero_arg_extension_function() {
-    let code = r#"function clip_test(ctx) {
-    ctx.twitch.clip();
-    return { ok: true };
-}"#;
-    let registry = extension_test_module("twitch_test", "clip_test", code, "js");
-
-    let nats = Arc::new(CapturingNats::default());
-    let mut host_ctx = noop_host_context();
-    host_ctx.extensions =
-        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))));
-
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
-    sandbox
-        .invoke(InvokeRequest {
-            function: "twitch_test:function:clip_test".to_string(),
-            event: serde_json::Value::Null,
-            user: None,
-            params: serde_json::Value::Null,
-            workflow_chain: None,
+fn test_lua_twitch_refusal_raises_a_table_with_message_and_code() {
+    let code = r#"
+function run(ctx)
+    local ok, err = pcall(ctx.twitch.createMarker)
+    return { ok = ok, message = err.message, code = err.code, text = tostring(err) }
+end
+"#;
+    let result = invoke_with_twitch(
+        code,
+        "lua",
+        &[],
+        FakeTwitchService::answering(not_live_reply()),
+    )
+    .unwrap();
+    assert_eq!(
+        result,
+        serde_json::json!({
+            "ok": false,
+            "message": "createMarker: the channel is not live",
+            "code": "not_live",
+            "text": "createMarker: the channel is not live"
         })
-        .unwrap();
+    );
+}
 
-    let published = nats.published.lock().unwrap();
-    assert_eq!(published.len(), 1);
-    assert_eq!(published[0].0, "twitchapi");
-    assert_eq!(published[0].1, serde_json::json!({ "command": "clip" }));
+#[test]
+fn test_an_uncaught_twitch_refusal_fails_the_invocation_with_its_message() {
+    for (code, ext) in [
+        (
+            "function run(ctx) { ctx.twitch.createMarker(); return {}; }",
+            "js",
+        ),
+        (
+            "function run(ctx) ctx.twitch.createMarker() return {} end",
+            "lua",
+        ),
+    ] {
+        let err = invoke_with_twitch(
+            code,
+            ext,
+            &[],
+            FakeTwitchService::answering(not_live_reply()),
+        )
+        .unwrap_err();
+        assert!(err.contains("the channel is not live"), "{ext}: {err}");
+    }
+}
+
+#[test]
+fn test_a_timeout_throws_with_the_timeout_code() {
+    let code = r#"function run(ctx) {
+    try { ctx.twitch.clip(); return {}; } catch (e) { return { code: e.code }; }
+}"#;
+    let result = invoke_with_twitch(
+        code,
+        "js",
+        &[],
+        FakeTwitchService::answering(Err(RequestError::TimedOut)),
+    )
+    .unwrap();
+    assert_eq!(result, serde_json::json!({ "code": "timeout" }));
+}
+
+#[test]
+fn test_privileged_twitch_calls_need_the_manifest_permission() {
+    let js = r#"function run(ctx) {
+    try {
+        ctx.twitch.timeout({ userId: "u1", durationSeconds: 60 });
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, code: e.code, message: e.message };
+    }
+}"#;
+    let lua = r#"
+function run(ctx)
+    local ok, err = pcall(ctx.twitch.timeout, { userId = "u1", durationSeconds = 60 })
+    if ok then
+        return { ok = true }
+    end
+    return { ok = false, code = err.code, message = err.message }
+end
+"#;
+    let reply = || {
+        Ok(serde_json::json!({
+            "type": "twitchapi.timeout.result",
+            "data": { "ok": true, "userId": "u1", "durationSeconds": 60 }
+        }))
+    };
+    for (code, ext) in [(js, "js"), (lua, "lua")] {
+        let twitch = FakeTwitchService::answering(reply());
+        let refused = invoke_with_twitch(code, ext, &["twitch.channel"], twitch.clone()).unwrap();
+        assert_eq!(refused["ok"], serde_json::json!(false), "{ext}");
+        assert_eq!(
+            refused["code"],
+            serde_json::json!("permission_denied"),
+            "{ext}"
+        );
+        assert!(
+            refused["message"]
+                .as_str()
+                .unwrap()
+                .contains("twitch.moderation"),
+            "{ext}: {refused}"
+        );
+        assert!(twitch.requests.lock().unwrap().is_empty(), "{ext}");
+
+        let allowed =
+            invoke_with_twitch(code, ext, &["twitch.moderation"], twitch.clone()).unwrap();
+        assert_eq!(allowed, serde_json::json!({ "ok": true }), "{ext}");
+        assert_eq!(twitch.requests.lock().unwrap().len(), 1, "{ext}");
+    }
 }
 
 #[test]

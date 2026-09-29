@@ -319,14 +319,74 @@ export interface CtxModule {
 // platform_alerts,platform_chat}.rs`. To add a new extension, declare
 // the namespace + its function names below.
 
-/** `ctx.twitch.*` — registered when `TwitchExtension` is bound. All
- *  methods publish a command envelope to NATS subject `twitchapi`. */
+/**
+ * What an extension function throws when the host refuses or fails the
+ * call: an `Error` whose `message` says why, with `code` set when there is
+ * a reason to branch on. Lua raises a table `{ message, code? }` whose
+ * `tostring` is the message.
+ */
+export interface CtxHostError extends Error {
+  /** `permission_denied`: the manifest does not declare the permission the
+   *  function needs. `ctx.twitch` adds `timeout` (no answer within 10s; the
+   *  action may still have happened), `unavailable` (the twitch service is
+   *  not running), `request_failed`, and any `code` the twitch service puts
+   *  on a refusal. Absent for a refusal that carries only a message. */
+  code?: string;
+}
+
+export interface TwitchUserTarget {
+  userId?: string;
+  /** Login name, used when `userId` is absent. */
+  userName?: string;
+}
+
+/**
+ * `ctx.twitch.*`: registered when `TwitchExtension` is bound. Each call asks
+ * the twitch service to act (a request on NATS subject `twitchapi`), waits
+ * up to 10 seconds, and returns its result. A refusal (invalid input, Twitch
+ * not linked, Twitch's own error) throws a `CtxHostError` carrying the twitch
+ * service's message.
+ *
+ * `timeout` and `updateStream` are privileged: the module's manifest must
+ * declare `"permissions": ["twitch.moderation"]` or `["twitch.channel"]`
+ * respectively, or the call throws `permission_denied` without reaching
+ * Twitch.
+ */
 export interface CtxTwitchExtension {
-  clip(args?: unknown): null;
-  /** Twitch's own shoutout. `{ userId }` or `{ userName }`. */
-  shoutout(args: unknown): null;
-  /** `{ description? }`. Twitch only places a marker on a live stream. */
-  createMarker(args?: unknown): null;
+  /** Clip the live stream. */
+  clip(): { id: string; url: string };
+  /** Twitch's own shoutout of another channel. */
+  shoutout(args: TwitchUserTarget): { ok: true; userId: string };
+  /** Place a stream marker. Throws while the channel is offline: Twitch
+   *  only marks a live stream. Description at most 140 characters. */
+  createMarker(args?: { description?: string }): {
+    id: string;
+    /** ISO 8601. */
+    createdAt: string;
+    description: string;
+    /** How far into the broadcast the marker sits. */
+    positionSeconds: number;
+  };
+  /** Time a chatter out for 1 to 1209600 seconds. Needs `twitch.moderation`. */
+  timeout(args: TwitchUserTarget & { durationSeconds: number; reason?: string }): {
+    ok: true;
+    userId: string;
+    durationSeconds: number;
+  };
+  /**
+   * Change the title (at most 140 characters), category or tags (at most 10,
+   * each up to 25 letters or numbers). `category` is free text resolved
+   * through Twitch's category search; `categoryId` is used as given and ""
+   * clears it. Needs `twitch.channel`.
+   */
+  updateStream(args: { title?: string; category?: string; categoryId?: string; tags?: string[] }): {
+    ok: true;
+    title?: string;
+    categoryId?: string;
+    /** Present when the category was resolved from free text. */
+    categoryName?: string;
+    tags?: string[];
+  };
 }
 
 /** `ctx.chat.*` — registered when `ChatExtension` is bound. */
