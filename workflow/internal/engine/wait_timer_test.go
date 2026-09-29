@@ -360,15 +360,15 @@ func TestWaitSurvivesUnprocessableEvent(t *testing.T) {
 	h.fire(t, &types.WaitConfig{
 		Type:        tasks.WaitTypeAggregation,
 		Event:       "channel.cheer",
-		Aggregation: &types.AggregationConfig{Strategy: "threshold", Threshold: 100},
+		Aggregation: &types.AggregationConfig{Strategy: "threshold", Field: "data.bits", Threshold: 100},
 	})
 	h.awaitArmed(t)
 
-	bad := &types.Event{ID: "c1", Type: "channel.cheer", Source: "test", Time: time.Now(), Data: map[string]any{"threshold": "lots"}}
+	bad := &types.Event{ID: "c1", Type: "channel.cheer", Source: "test", Time: time.Now(), Data: map[string]any{"bits": "lots"}}
 	if err := h.engine.HandleEvent(bad); err != nil {
 		t.Fatalf("HandleEvent: %v", err)
 	}
-	good := &types.Event{ID: "c2", Type: "channel.cheer", Source: "test", Time: time.Now(), Data: map[string]any{"threshold": 500}}
+	good := &types.Event{ID: "c2", Type: "channel.cheer", Source: "test", Time: time.Now(), Data: map[string]any{"bits": 500}}
 	if err := h.engine.HandleEvent(good); err != nil {
 		t.Fatalf("HandleEvent: %v", err)
 	}

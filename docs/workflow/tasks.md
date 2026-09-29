@@ -350,6 +350,11 @@ Paused waits and delays live in the engine's memory. A run paused when the engin
 | `sum` | Sums the numeric value at `field` across events until `threshold` | Yes |
 | `threshold` | Satisfied when a single event's `field` value meets `threshold` | Yes |
 
+`field` is a dot path rooted at the event, as in `data.amount`. With no `field` set,
+`sum` and `threshold` read `data.amount` and then `data.value`; an event carrying
+neither fails the wait rather than contributing a default, so a `sum` that cannot
+find its number is reported instead of quietly behaving like a `count`.
+
 Wait tasks export aggregation results for downstream tasks:
 
 | Export | Type | Description |
