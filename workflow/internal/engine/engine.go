@@ -74,6 +74,7 @@ type Engine[TServices any] struct {
 	controls             map[string]*runControl
 	executionsMu         sync.RWMutex
 	waitingExecutions    map[string][]*WaitingExecution // eventType -> waiting executions
+	armedWaits           map[*WaitingExecution]struct{} // unsettled waits; see armWaitLocked
 	waitingMu            sync.RWMutex
 	subWorkflowWaiters   map[string][]*SubWorkflowWaiter // subWorkflowExecutionID -> parent executions waiting for it
 	subWorkflowWaitersMu sync.RWMutex
@@ -87,6 +88,10 @@ type Engine[TServices any] struct {
 	// DefaultMaxConcurrentTasks.
 	maxConcurrency int
 }
+
+// errEngineStopped fails a run that reaches a wait after Stop: the engine will
+// never settle a wait armed then, so pausing would leave the run waiting forever.
+var errEngineStopped = errors.New("engine stopped")
 
 type SubWorkflowWaiter struct {
 	ParentExecutionID string
@@ -108,6 +113,11 @@ type WaitingExecution struct {
 	CurrentIndex   int
 	TaskExports    map[string]map[string]any
 	TriggerEvent   *types.Event
+	// SkippedTasks carries the branches earlier conditions excluded, so the
+	// resumed run skips what the paused one would have.
+	SkippedTasks map[string]bool
+	// timer fires when the wait's deadline passes. Guarded by waitingMu.
+	timer *time.Timer
 }
 
 func New[TServices any](logger tasks.Logger) *Engine[TServices] {
@@ -120,6 +130,7 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 		executions:         make(map[string]*types.WorkflowExecution),
 		controls:           make(map[string]*runControl),
 		waitingExecutions:  make(map[string][]*WaitingExecution),
+		armedWaits:         make(map[*WaitingExecution]struct{}),
 		subWorkflowWaiters: make(map[string][]*SubWorkflowWaiter),
 		logger:             logger,
 		ctx:                ctx,
@@ -441,6 +452,10 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 	toResume := make([]*WaitingExecution, 0)
 
 	for _, w := range waiting {
+		if _, armed := e.armedWaits[w]; !armed {
+			continue
+		}
+
 		e.executionsMu.RLock()
 		execution := e.executions[w.ExecutionID]
 		e.executionsMu.RUnlock()
@@ -466,24 +481,127 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 
 		satisfied, err := waitTask.ProcessEvent(event, taskExec.WaitState, resolver)
 		if err != nil {
+			// Kept waiting: one malformed event must not leave the wait deaf to
+			// the well-formed ones that follow.
 			e.logger.Error("Error processing event for waiting execution",
 				"execution", w.ExecutionID, "task", w.TaskID, "error", err)
+			remaining = append(remaining, w)
 			continue
 		}
 
 		if satisfied {
+			e.disarmWaitLocked(w)
 			toResume = append(toResume, w)
 		} else {
 			remaining = append(remaining, w)
 		}
 	}
 
-	e.waitingExecutions[event.Type] = remaining
+	if len(remaining) == 0 {
+		delete(e.waitingExecutions, event.Type)
+	} else {
+		e.waitingExecutions[event.Type] = remaining
+	}
 	e.waitingMu.Unlock()
 
 	for _, w := range toResume {
-		go e.resumeExecution(w)
+		go e.resumeWait(w)
 	}
+}
+
+// armWaitLocked registers a paused wait and starts the timer that ends it at
+// its deadline; a zero deadline arms no timer, and the wait lasts until its
+// event arrives. Caller holds waitingMu. Returns "", or the wait result that
+// settles the run instead when it refuses to arm: "cancelled" once the run has
+// been cancelled, "stopped" once the engine has. Cancel and Stop both claim
+// every armed wait under waitingMu, so a wait armed after either would pause
+// its run with nothing left to settle it; checking here, under the same lock,
+// means a run reaching a wait concurrently is either claimed or refused.
+//
+// armedWaits holds every wait, event-driven or delay, whose outcome is still
+// undecided. Removing a wait from it under waitingMu is how an event, the
+// wait's timer and Stop agree on which of them settles it: whoever removes it
+// owns the resume, and the others back off.
+//
+// One runtime timer per wait rather than an engine-owned scheduler: the Go
+// runtime already keeps timers in a heap, Stop cancels one without a goroutine
+// of its own, and the number of paused runs is small enough that a second
+// heap would only duplicate that bookkeeping.
+func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Time) string {
+	if e.runCancelled(w.ExecutionID) {
+		return "cancelled"
+	}
+	if e.ctx.Err() != nil {
+		return "stopped"
+	}
+	e.armedWaits[w] = struct{}{}
+	if !tasks.IsDelay(w.TaskDef.Wait) {
+		event := w.TaskDef.Wait.Event
+		e.waitingExecutions[event] = append(e.waitingExecutions[event], w)
+	}
+	if !deadline.IsZero() {
+		w.timer = time.AfterFunc(time.Until(deadline), func() {
+			e.expireWait(w)
+		})
+	}
+	return ""
+}
+
+// disarmWaitLocked claims a wait: it stops the wait's timer and removes it
+// from armedWaits. Caller holds waitingMu and must already have removed it
+// from the event index, or be about to replace that index entry.
+func (e *Engine[TServices]) disarmWaitLocked(w *WaitingExecution) {
+	delete(e.armedWaits, w)
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+}
+
+// expireWait runs when a wait's deadline passes. It settles the wait only if
+// nothing else has claimed it first; an event that satisfied the wait while
+// this timer was firing has already removed it from armedWaits, and that
+// resume stands.
+func (e *Engine[TServices]) expireWait(w *WaitingExecution) {
+	e.waitingMu.Lock()
+	if _, armed := e.armedWaits[w]; !armed {
+		e.waitingMu.Unlock()
+		return
+	}
+	e.disarmWaitLocked(w)
+	if !tasks.IsDelay(w.TaskDef.Wait) {
+		event := w.TaskDef.Wait.Event
+		e.waitingExecutions[event] = removeWaitingExecution(e.waitingExecutions[event], w)
+		if len(e.waitingExecutions[event]) == 0 {
+			delete(e.waitingExecutions, event)
+		}
+	}
+
+	e.executionsMu.RLock()
+	execution := e.executions[w.ExecutionID]
+	e.executionsMu.RUnlock()
+	if execution == nil {
+		e.waitingMu.Unlock()
+		return
+	}
+	taskExec := execution.Tasks[w.TaskID]
+	if taskExec == nil || taskExec.WaitState == nil {
+		e.waitingMu.Unlock()
+		return
+	}
+	(&tasks.WaitTask{}).Expire(w.TaskDef.Wait, taskExec.WaitState)
+	e.waitingMu.Unlock()
+
+	e.resumeWait(w)
+}
+
+func removeWaitingExecution(list []*WaitingExecution, target *WaitingExecution) []*WaitingExecution {
+	kept := list[:0]
+	for _, w := range list {
+		if w != target {
+			kept = append(kept, w)
+		}
+	}
+	return kept
 }
 
 func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event *types.Event) error {
@@ -806,15 +924,27 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		}
 
 		if taskDef.Type == "wait" && taskDef.Wait != nil {
-			waitResult := e.handleWaitTask(execution, taskDef, taskExec, executionOrder, i, taskExports, triggerEvent)
+			waitResult := e.handleWaitTask(execution, taskDef, taskExec, executionOrder, i, taskExports, triggerEvent, skippedTasks)
 			if waitResult == "waiting" {
+				return
+			} else if waitResult == "stopped" {
+				taskExec.Status = types.TaskStatusFailed
+				taskExec.Error = errEngineStopped.Error()
+				now := time.Now()
+				taskExec.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, errEngineStopped)
+				e.logger.Warn("Wait task refused: engine stopped", "workflow", execution.WorkflowID, "task", taskDef.ID)
+				e.checkSubWorkflowCompletion(execution.ID)
 				return
 			} else if waitResult == "cancelled" {
 				e.cancelPendingTask(execution, taskDef.ID, i)
 				e.settleCancelled(execution)
 				return
 			} else if waitResult == "timeout" {
-				if taskDef.Wait.OnTimeout == "fail" {
+				// Read from the wait state, not the definition: the state holds
+				// the documented default of "fail" when the definition names none.
+				if taskExec.WaitState.OnTimeout == tasks.OnTimeoutFail {
 					taskExec.Status = types.TaskStatusFailed
 					taskExec.Error = "wait timeout"
 					now := time.Now()
@@ -825,9 +955,11 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 					e.checkSubWorkflowCompletion(execution.ID)
 					return
 				}
+				taskExports[taskDef.ID] = (&tasks.WaitTask{}).GetExports(taskExec.WaitState)
 				taskExec.Status = types.TaskStatusSuccess
 				now := time.Now()
 				taskExec.CompletedAt = &now
+				taskExec.Result = &types.TaskResult{Status: types.TaskStatusSuccess, Exports: taskExports[taskDef.ID]}
 				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 				e.logger.Info("Wait task timed out, continuing", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				continue
@@ -1376,21 +1508,19 @@ func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports
 	return resolver
 }
 
-func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
+// handleWaitTask pauses the run at a wait, or reports how a paused wait was
+// settled when the run is resumed at it.
+//
+// A paused run is resumed by re-entering the wait task (see resumeWait), so
+// every outcome -- event, timeout, delay elapsed -- is applied by runTasksFrom
+// in one place.
+func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event, skippedTasks map[string]bool) string {
 	if taskExec.WaitState == nil {
 		waitTask := &tasks.WaitTask{}
 		taskExec.WaitState = waitTask.InitWaitState(taskDef, execution)
 		taskExec.Status = types.TaskStatusWaiting
 		execution.Status = types.ExecutionStatusWaiting
 
-		e.waitingMu.Lock()
-		// Checked under the lock Cancel claims waits with: a run cancelled
-		// before this point is not paused, and one cancelled after it finds
-		// this wait to claim.
-		if e.runCancelled(execution.ID) {
-			e.waitingMu.Unlock()
-			return "cancelled"
-		}
 		waitingExec := &WaitingExecution{
 			ExecutionID:    execution.ID,
 			WorkflowID:     execution.WorkflowID,
@@ -1400,24 +1530,43 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 			CurrentIndex:   currentIndex,
 			TaskExports:    taskExports,
 			TriggerEvent:   triggerEvent,
+			SkippedTasks:   skippedTasks,
 		}
-		e.waitingExecutions[taskDef.Wait.Event] = append(e.waitingExecutions[taskDef.Wait.Event], waitingExec)
+		deadline := taskExec.WaitState.Timeout
+
+		// Logged before arming: once the timer or an event can claim the wait,
+		// the resumed run may already be using this goroutine's state.
+		if tasks.IsDelay(taskDef.Wait) {
+			e.logger.Info("Task delaying", "workflow", execution.WorkflowID, "task", taskDef.ID, "durationMs", taskDef.Wait.DurationMs)
+		} else {
+			e.logger.Info("Task waiting for events", "workflow", execution.WorkflowID, "task", taskDef.ID, "event", taskDef.Wait.Event, "timeout", deadline)
+		}
+
+		e.waitingMu.Lock()
+		refused := e.armWaitLocked(waitingExec, deadline)
 		e.waitingMu.Unlock()
-
-		e.logger.Info("Task waiting for events", "workflow", execution.WorkflowID, "task", taskDef.ID, "event", taskDef.Wait.Event)
+		if refused != "" {
+			return refused
+		}
 		return "waiting"
-	}
-
-	waitTask := &tasks.WaitTask{}
-	if waitTask.CheckTimeout(taskExec.WaitState) {
-		return "timeout"
 	}
 
 	if taskExec.WaitState.Satisfied {
 		return "satisfied"
 	}
+	if taskExec.WaitState.TimedOut {
+		return "timeout"
+	}
 
-	return "waiting"
+	// A run only re-enters a wait once an event, its timer or its delay has
+	// settled it. Ending the run here, rather than pausing again with nothing
+	// left to wake it, keeps a broken invariant from becoming a silent hang.
+	// It fails rather than following onTimeout: nothing timed out, and a delay
+	// has no onTimeout to follow.
+	e.logger.Error("Wait task re-entered before it was settled", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID)
+	taskExec.WaitState.TimedOut = true
+	taskExec.WaitState.OnTimeout = tasks.OnTimeoutFail
+	return "timeout"
 }
 
 func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
@@ -1716,7 +1865,13 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 	e.executeTasksFromIndex(execution, waiter.ExecutionOrder, waiter.CurrentIndex+1, waiter.TaskExports, waiter.TriggerEvent)
 }
 
-func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
+// resumeWait continues a run whose wait has been settled, by re-entering the
+// wait task so runTasksFrom applies the outcome the wait state records.
+func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
+	if e.ctx.Err() != nil {
+		return
+	}
+
 	e.executionsMu.RLock()
 	execution := e.executions[w.ExecutionID]
 	e.executionsMu.RUnlock()
@@ -1725,22 +1880,11 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 		return
 	}
 
-	taskExec := execution.Tasks[w.TaskID]
-	if taskExec != nil {
-		waitTask := &tasks.WaitTask{}
-		w.TaskExports[w.TaskID] = waitTask.GetExports(taskExec.WaitState)
-		taskExec.Status = types.TaskStatusSuccess
-		now := time.Now()
-		taskExec.CompletedAt = &now
-		taskExec.Result = &types.TaskResult{Status: types.TaskStatusSuccess, Exports: w.TaskExports[w.TaskID]}
-		e.recordStep(execution, w.TaskID, w.CurrentIndex, nil, taskExec)
-	}
-
 	execution.Status = types.ExecutionStatusRunning
 
 	e.logger.Info("Resuming workflow execution", "workflow", w.WorkflowID, "execution", w.ExecutionID, "fromTask", w.TaskID)
 
-	e.executeTasksFromIndex(execution, w.ExecutionOrder, w.CurrentIndex+1, w.TaskExports, w.TriggerEvent)
+	e.runTasksFrom(execution, w.ExecutionOrder, w.CurrentIndex, w.TaskExports, w.TriggerEvent, w.SkippedTasks)
 }
 
 // executeTask runs one task and returns its result alongside the parameters it
@@ -1869,8 +2013,16 @@ func (e *Engine[TServices]) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop ends the engine. Paused waits are dropped rather than resumed: their
+// state lives only in this process, so there is nothing to finish them with.
 func (e *Engine[TServices]) Stop() error {
 	e.cancel()
+	e.waitingMu.Lock()
+	for w := range e.armedWaits {
+		e.disarmWaitLocked(w)
+	}
+	e.waitingExecutions = make(map[string][]*WaitingExecution)
+	e.waitingMu.Unlock()
 	e.logger.Info("Workflow engine stopped")
 	return nil
 }

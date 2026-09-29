@@ -38,7 +38,18 @@ export interface AlertWidgetOptions {
 }
 
 export class AlertWidget {
+  /** Tear-down for each alert on screen, by event id. */
+  private readonly playing = new Map<string, () => void>();
+
   constructor(private readonly opts: AlertWidgetOptions) {}
+
+  /**
+   * Take an alert off screen now. Does not report it finished: it was
+   * cancelled on the server, which has already closed its delivery.
+   */
+  stop(eventId: string): void {
+    this.playing.get(eventId)?.();
+  }
 
   /**
    * Start one alert. Always accepts the delivery: one that cannot be played
@@ -117,19 +128,24 @@ export class AlertWidget {
       children.push(bridge);
     }
 
-    const timer = setInterval(() => {
-      if (!timeline.isOver(Date.now())) {
-        return;
-      }
+    const tearDown = () => {
       clearInterval(timer);
+      this.playing.delete(eventId);
       for (const bridge of children) {
         bridge.dispose();
         bridge.detach();
         bridges.delete(bridge);
       }
       stage.remove();
+    };
+    const timer = setInterval(() => {
+      if (!timeline.isOver(Date.now())) {
+        return;
+      }
+      tearDown();
       this.opts.onFinished(eventId);
     }, TICK_MS);
+    this.playing.set(eventId, tearDown);
   }
 }
 

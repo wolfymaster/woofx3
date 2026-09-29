@@ -1,4 +1,4 @@
-import type { Woofx3EngineApi } from "@woofx3/api";
+import type { ConfigBundle, ConfigImportOptions, Woofx3EngineApi } from "@woofx3/api";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 
@@ -72,6 +72,12 @@ export class ApiSession extends RpcTarget {
 
   async updateResourceInstance(canonicalId: string, displayName: string, settings: Record<string, unknown> = {}) {
     return this.api.updateResourceInstance(canonicalId, displayName, settings, {
+      clientId: this.clientId,
+    });
+  }
+
+  async importConfig(bundle: ConfigBundle, options?: ConfigImportOptions) {
+    return this.api.importConfig(bundle, options, {
       clientId: this.clientId,
     });
   }
@@ -197,6 +203,9 @@ export const RPC_METHODS = [
   "getUserProfile",
   "awardTreatsToUser",
   "simulateTwitchEvent",
+  "exportConfig",
+  "previewImport",
+  "importConfig",
 ] as const;
 
 /** True only when A and B are the same type, invariantly. */

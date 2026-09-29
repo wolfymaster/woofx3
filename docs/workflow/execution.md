@@ -119,15 +119,23 @@ report cannot turn a cancelled run back into a completed one.
 
 When a `wait` task is encountered:
 
-1. A `WaitState` is initialized with the event type, conditions, and timeout
-2. The execution is registered in `waitingExecutions` keyed by event type
+1. A `WaitState` is initialized with the event type, conditions, and deadline (the timeout, the delay's `durationMs`, or none for an event wait without a timeout)
+2. The wait is armed: recorded as unsettled, indexed in `waitingExecutions` by event type (delays are not indexed), and given a `time.AfterFunc` timer for its deadline when it has one. After `Stop`, nothing is armed: the run fails with "engine stopped" instead of pausing
 3. The workflow pauses (returns from execution loop)
 
 When a matching event arrives:
 
 1. `processWaitingExecutions` checks all waiting executions for that event type
-2. If the wait condition is satisfied (event match + aggregation threshold), the execution resumes from the next task
+2. If the wait condition is satisfied (event match + aggregation threshold), the wait is claimed and its timer stopped, and the run resumes
 3. If not satisfied, the execution remains in the waiting list
+
+When the timer fires first, it claims the wait instead: a delay is marked satisfied, any other wait is marked timed out, and the run resumes.
+
+Claiming happens under one lock, so an event and a timer racing for the same wait settle it exactly once. A resumed run re-enters the wait task, which applies the outcome -- exports on success, `onTimeout` on a timeout -- and continues with the branches its earlier conditions skipped still skipped. Because the run re-enters the wait task, the wait's own guard `condition` is evaluated again on resume.
+
+An event the wait cannot process (for example a non-numeric value for a `sum`) is logged and skipped; the wait keeps listening.
+
+Waits are held in memory only. `Stop` drops every armed wait, and nothing is persisted to re-arm on the next start: a run paused across a restart stays recorded as it was when it paused and does not resume.
 
 ### Sub-Workflows
 
@@ -197,8 +205,9 @@ never told about a dry run.
     module function <id>`. The same goes for `alert`, `chat.reply` and
     `publish_event`. `print` and the `log` task run normally.
 - **Waits** complete at once, recording what they would have waited for
-  (`would wait for a channel.follow event for up to 2m0s`). Their exports read
-  `satisfied: true` with no events.
+  (`would wait for a channel.follow event for up to 2m0s`, or `would wait 10s`
+  for a delay). Their exports read `satisfied: true`, `timedOut: false`, with
+  no events.
 - **Sub-workflows** started by a dry run are dry runs too.
 - **Workflows triggered by a dry run.** A dry run's `workflow.run.*`
   lifecycle events carry the CloudEvents extension attribute `dryRun: true`,
@@ -231,8 +240,11 @@ cancelling it:
   task starts.
 - **Claims a pending wait.** A run paused at a `wait` task, or waiting on a
   sub-workflow, is removed from the waiting set under the same lock an arriving
-  event uses. Whichever gets there first owns the resume, so a cancelled wait
-  never resumes. A sub-workflow the run was waiting on is cancelled too. A
+  event and the wait's timer use. Whichever gets there first owns the resume,
+  so a cancelled wait never resumes. This includes a `delay` and a wait with a
+  `timeout`: the timer is stopped, and the run settles at once rather than when
+  the timer would have fired. A run cancelled just before it reaches a wait
+  refuses to pause there. A sub-workflow the run was waiting on is cancelled too. A
   sub-workflow started without `waitUntilCompletion` (fire-and-forget) is
   independent of its parent. It keeps running when the parent is cancelled;
   cancel it by its own execution id.
@@ -321,11 +333,11 @@ Condition evaluation errors always fail the workflow regardless of `onError`.
 Wait task timeouts follow `onTimeout`:
 
 - `"fail"` (default): The workflow fails.
-- `"continue"`: The wait task is marked as successful and execution continues.
+- `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues.
 
 ## Concurrency
 
 - Each workflow execution runs in its own goroutine
 - Multiple workflows can be triggered by the same event simultaneously
-- Wait task resumptions spawn new goroutines
+- Wait task resumptions run on new goroutines (the event handler's, or the wait's timer)
 - Internal state is protected by `sync.RWMutex` on executions, waiting executions, and sub-workflow waiters

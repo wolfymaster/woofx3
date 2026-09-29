@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -12,7 +13,8 @@ import (
 // wait for an event that a preview will never cause would hold it forever.
 //
 // Its exports are those of a wait satisfied by nothing: `satisfied` is true
-// so the steps after it run, and there are no events to read.
+// so the steps after it run, and there are no events to read. A delay has no
+// event to preview and completes the same way.
 func (e *Engine[TServices]) completeDryRunWait(
 	execution *types.WorkflowExecution,
 	taskDef *types.TaskDefinition,
@@ -24,6 +26,7 @@ func (e *Engine[TServices]) completeDryRunWait(
 	exports := map[string]any{
 		"dryRun":    true,
 		"satisfied": true,
+		"timedOut":  false,
 		"events":    []any{},
 	}
 	if taskDef.Wait.Aggregation != nil {
@@ -43,6 +46,9 @@ func (e *Engine[TServices]) completeDryRunWait(
 }
 
 func describeWait(wait *types.WaitConfig) string {
+	if tasks.IsDelay(wait) {
+		return fmt.Sprintf("would wait %s", time.Duration(wait.DurationMs)*time.Millisecond)
+	}
 	var sentence string
 	switch {
 	case wait.Event == "":
@@ -52,7 +58,7 @@ func describeWait(wait *types.WaitConfig) string {
 	default:
 		sentence = fmt.Sprintf("would wait for a %s event", wait.Event)
 	}
-	if wait.Timeout != nil {
+	if wait.Timeout != nil && wait.Timeout.Duration > 0 {
 		sentence += fmt.Sprintf(" for up to %s", wait.Timeout.Duration)
 	}
 	return sentence

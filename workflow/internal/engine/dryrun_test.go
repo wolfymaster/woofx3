@@ -342,3 +342,33 @@ func TestDryRunWaitWithoutAnEvent(t *testing.T) {
 		t.Errorf("describeWait = %q", got)
 	}
 }
+
+func TestDescribeWaitDelay(t *testing.T) {
+	got := describeWait(&types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: 10000})
+	if got != "would wait 10s" {
+		t.Errorf("describeWait = %q, want %q", got, "would wait 10s")
+	}
+}
+
+// A dry run completes a delay at once instead of arming its timer.
+func TestDryRunCompletesADelayAtOnce(t *testing.T) {
+	h := newCancelHarness(t)
+	def := &types.WorkflowDefinition{
+		ID:   "wf-dry-delay",
+		Name: "dry delay",
+		Tasks: []types.TaskDefinition{
+			{ID: "pause", Type: "wait", Wait: &types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: int64(time.Hour / time.Millisecond)}},
+		},
+	}
+	execution := h.engine.beginExecution(def, &types.Event{ID: "e", Type: "test.start", Time: time.Now()})
+	execution.DryRun = true
+	h.engine.runExecution(def, execution, execution.TriggerEvent)
+
+	if n := armedWaitsOf(h.engine); n != 0 {
+		t.Errorf("%d waits armed in a dry run, want 0", n)
+	}
+	step, ok := h.log.step("pause")
+	if !ok || step.Status != string(types.TaskStatusSuccess) {
+		t.Fatalf("pause step = %+v (recorded %v), want success", step, ok)
+	}
+}

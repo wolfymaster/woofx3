@@ -47,7 +47,7 @@ function parseActionCount(actionsJson: string | undefined): number {
   }
 }
 
-function serializeActions(actions: ActionStep[] | undefined): string {
+export function serializeActions(actions: ActionStep[] | undefined): string {
   if (!actions || actions.length === 0) {
     return "[]";
   }

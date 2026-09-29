@@ -53,6 +53,7 @@ jobs:
         run: |
           for dir in \
             shared/common/typescript \
+            shared/clients/typescript/api \
             shared/clients/typescript/db \
             shared/clients/typescript/nats \
             shared/clients/typescript/twitch \

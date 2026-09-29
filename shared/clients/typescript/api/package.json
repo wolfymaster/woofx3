@@ -11,6 +11,7 @@
     "./stream-events": "./stream-events.ts",
     "./webhooks": "./webhooks.ts",
     "./client": "./client.ts",
+    "./config-bundle": "./config-bundle.ts",
     "./ui-schema": "./ui-schema.ts",
     "./workflow-definition": "./workflow-definition.ts"
   },
