@@ -1158,6 +1158,57 @@ mod tests {
         assert!(heap_len <= 2 * 1 + 64, "heap holds {heap_len} items");
     }
 
+    /// The schedule the bundled woofx3 module declares, as registration reads
+    /// it from the stored manifest.
+    fn bundled_woofx3_schedule() -> ModuleSchedule {
+        let manifest: lib_module::module_manifest::ModuleManifest =
+            serde_json::from_str(include_str!("../../../../modules/woofx3/manifest.json"))
+                .expect("bundled woofx3 manifest parses");
+        ModuleSchedule {
+            background_tasks: manifest.background_tasks,
+            deadlines: manifest.deadlines,
+        }
+    }
+
+    // The bundled timer, end to end through its real declarations: it reconciles
+    // on load and once a minute, a timer's end fires at its endsAt, moving the
+    // end moves the firing, and nothing runs once a second.
+    #[tokio::test(start_paused = true)]
+    async fn the_bundled_timer_ends_at_its_end_time_and_reconciles_once_a_minute() {
+        const WOOFX3_EXPIRE: &str = "woofx3:function:timer.expire";
+        const WOOFX3_RECONCILE: &str = "woofx3:function:timer.reconcile";
+        let h = Harness::new();
+        h.scheduler.register("woofx3", &bundled_woofx3_schedule());
+        let target = "woofx3:timer:break";
+        let arm = |in_ms: i64| {
+            h.scheduler.at(
+                "woofx3",
+                "timer_end",
+                target,
+                h.now_ms() + in_ms,
+                json!({ "target": target }),
+            )
+        };
+        arm(90_000).unwrap();
+        advance(1_000).await;
+        arm(29_500).unwrap();
+        advance(150_000).await;
+
+        assert_eq!(h.fired(WOOFX3_EXPIRE), vec![30_500]);
+        let expiry = h
+            .calls()
+            .into_iter()
+            .find(|c| c.function == WOOFX3_EXPIRE)
+            .unwrap();
+        assert_eq!(expiry.event["parameters"], json!({ "target": target }));
+        assert_eq!(
+            expiry.event["deadline"]["dueAt"],
+            expiry.event["deadline"]["firedAt"]
+        );
+        assert_eq!(h.fired(WOOFX3_RECONCILE), vec![0, 60_000, 120_000]);
+        assert_eq!(h.calls().len(), 4, "{:?}", h.calls());
+    }
+
     #[test]
     fn load_retry_backs_off_to_a_cap() {
         assert_eq!(load_retry_delay(1), Duration::from_secs(1));
