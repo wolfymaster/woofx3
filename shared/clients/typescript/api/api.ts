@@ -374,6 +374,31 @@ export interface FieldOptionsDescriptor {
 }
 
 /**
+ * The manifest declarations that can hold a field with a request behind it:
+ * a trigger's `schema`, an action's `schema`, a widget's `settingsSchema`, a
+ * resource kind's `schema`, and the module's `settings`.
+ */
+export type FieldOptionsDeclaration = "trigger" | "action" | "widget" | "resource" | "setting";
+
+/**
+ * Where a field whose options (or button press) the engine answers is
+ * declared, in an installed module's manifest. The engine looks the field up
+ * and sends the request that manifest declares, so a caller can only ask for
+ * a request some installed module declared, never name one.
+ *
+ * `declarationId` is the trigger, action or widget `id`, or the resource
+ * `kind`; a module setting has none, since `settings` is one list per module.
+ */
+export interface FieldOptionsReference {
+  /** Manifest-local module id, the first segment of the module's canonical ids. */
+  moduleId: string;
+  declaration: FieldOptionsDeclaration;
+  declarationId?: string;
+  /** The field's `id` within that declaration. */
+  fieldId: string;
+}
+
+/**
  * One function registered by an installed module. Aggregated across all
  * modules by `listAvailableFunctions`. `qualifiedName` is barkloader's
  * `module/function` lookup path in ModuleRegistry.
@@ -1419,12 +1444,13 @@ export interface Woofx3EngineApi {
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
 
-  // Generic dynamic-options dispatch. Convex action calls this with the
-  // descriptor parsed from a configFields entry; the engine fires a NATS
-  // request and forwards the reply via webhook ENGINE_RESPONSE_RECEIVED.
-  // Returns immediately (fire-and-forget on the engine side).
+  // Generic dynamic-options dispatch. The caller names the field; the engine
+  // reads the request that field declares from the installed manifest, fires
+  // it over NATS and forwards the reply via webhook ENGINE_RESPONSE_RECEIVED.
+  // Returns once the field is resolved, before the reply arrives. An unknown
+  // field, or a request descriptor in place of a reference, is refused.
   dispatchFieldOptionsRequest(
-    descriptor: FieldOptionsDescriptor,
+    reference: FieldOptionsReference,
     correlationKey: string
   ): Promise<{ dispatched: boolean }>;
 

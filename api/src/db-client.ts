@@ -723,6 +723,21 @@ export class DbClient {
     return resp.module ?? null;
   }
 
+  /** The installed module with this manifest id (e.g. `twitch_platform`), or null when none is installed. */
+  async findModuleByModuleId(moduleId: string): Promise<module.Module | null> {
+    let response: module.ModuleResponse;
+    try {
+      response = await module.GetModuleByModuleId({ moduleId }, this.config);
+    } catch (err) {
+      const failure = toError(err, "findModuleByModuleId");
+      if (failure instanceof DbError && failure.code === "not_found") {
+        return null;
+      }
+      throw failure;
+    }
+    return unwrap("findModuleByModuleId", response, response.module);
+  }
+
   async getModuleByModuleKey(moduleKey: string): Promise<module.Module | null> {
     try {
       const resp = await module.GetModuleByModuleKey({ moduleKey }, this.config);
