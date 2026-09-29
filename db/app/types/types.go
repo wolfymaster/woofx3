@@ -2,10 +2,10 @@ package types
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 
 	"github.com/casbin/casbin/v2"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"
 
@@ -18,7 +18,7 @@ type IsPermissionable interface {
 }
 
 type App struct {
-	BadgerDB        *badger.DB
+	ModuleStorage   *sql.DB
 	Casbin          *casbin.Enforcer
 	Db              *gorm.DB
 	Logger          *slog.Logger

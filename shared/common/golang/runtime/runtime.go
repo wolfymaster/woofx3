@@ -696,6 +696,10 @@ func (r *Runtime) handleRuntimeTerminating() {
 					}
 				}()
 			}
+			// A batch finishes before the one it depends on starts, so a
+			// service never loses a dependency while it is still stopping,
+			// and shutdown is not reported done while one is mid-close.
+			batchWg.Wait()
 		}
 	}
 }
