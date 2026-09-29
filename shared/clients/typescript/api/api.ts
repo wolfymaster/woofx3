@@ -1,5 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { EngineCapabilities } from "./capabilities";
 import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
@@ -997,6 +998,14 @@ export interface Woofx3EngineApi {
    * the UI must re-fetch.
    */
   getEngineInfo(): Promise<EngineInfo>;
+
+  /**
+   * The capability ids this engine supports (see `ENGINE_CAPABILITIES` and
+   * docs/services/engine-capabilities.md). Clients gate newer features on
+   * these ids rather than on the engine version, which is an image tag. An
+   * engine without this method predates capabilities and supports none.
+   */
+  getEngineCapabilities(): Promise<EngineCapabilities>;
 
   /**
    * Set the `overlayPublicUrl` that `getEngineInfo()` returns — the

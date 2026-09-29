@@ -102,6 +102,7 @@ export class ApiSession extends RpcTarget {
 export const RPC_METHODS = [
   "ping",
   "getEngineInfo",
+  "getEngineCapabilities",
   "setOverlayPublicUrl",
   "getStorageConfig",
   "setStorageConfig",
