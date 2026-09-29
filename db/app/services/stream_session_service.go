@@ -143,12 +143,17 @@ func (s *streamSessionService) GetStreamSession(ctx context.Context, req *client
 		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to load stream session: %w", err))
 	}
+	segments, err := s.segmentsOf([]*models.StreamSession{session})
+	if err != nil {
+		return nil, err
+	}
 	return &client.StreamSessionResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Stream session retrieved successfully",
 		},
-		Session: sessionToProto(session),
+		Session:  sessionToProto(session),
+		Segments: segments,
 	}, nil
 }
 
@@ -175,6 +180,10 @@ func (s *streamSessionService) ListStreamSessions(ctx context.Context, req *clie
 	for i, session := range sessions {
 		out[i] = sessionToProto(session)
 	}
+	segments, err := s.segmentsOf(sessions)
+	if err != nil {
+		return nil, err
+	}
 
 	return &client.ListStreamSessionsResponse{
 		Status: &client.ResponseStatus{
@@ -182,10 +191,30 @@ func (s *streamSessionService) ListStreamSessions(ctx context.Context, req *clie
 			Message: "Stream sessions retrieved successfully",
 		},
 		Sessions:   out,
+		Segments:   segments,
 		TotalCount: total,
 		Limit:      int32(limit),
 		Offset:     int32(offset),
 	}, nil
+}
+
+// segmentsOf returns the segments of sessions, oldest first. They are read
+// with the sessions rather than left to a second call, so that "no segments"
+// always means "never been live" and never "not loaded".
+func (s *streamSessionService) segmentsOf(sessions []*models.StreamSession) ([]*client.StreamSessionSegment, error) {
+	ids := make([]uuid.UUID, len(sessions))
+	for i, session := range sessions {
+		ids[i] = session.ID
+	}
+	segments, err := s.repo.ListSegmentsForSessions(ids)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list stream session segments: %w", err))
+	}
+	out := make([]*client.StreamSessionSegment, len(segments))
+	for i, segment := range segments {
+		out[i] = segmentToProto(segment)
+	}
+	return out, nil
 }
 
 func (s *streamSessionService) isSegmentOpen() (bool, error) {

@@ -388,6 +388,9 @@ impl serde::Serialize for ListStreamSessionsResponse {
         if self.offset != 0 {
             len += 1;
         }
+        if !self.segments.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("stream_session.ListStreamSessionsResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
@@ -406,6 +409,9 @@ impl serde::Serialize for ListStreamSessionsResponse {
         if self.offset != 0 {
             struct_ser.serialize_field("offset", &self.offset)?;
         }
+        if !self.segments.is_empty() {
+            struct_ser.serialize_field("segments", &self.segments)?;
+        }
         struct_ser.end()
     }
 }
@@ -422,6 +428,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
             "totalCount",
             "limit",
             "offset",
+            "segments",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -431,6 +438,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
             TotalCount,
             Limit,
             Offset,
+            Segments,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -457,6 +465,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                             "totalCount" | "total_count" => Ok(GeneratedField::TotalCount),
                             "limit" => Ok(GeneratedField::Limit),
                             "offset" => Ok(GeneratedField::Offset),
+                            "segments" => Ok(GeneratedField::Segments),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -481,6 +490,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                 let mut total_count__ = None;
                 let mut limit__ = None;
                 let mut offset__ = None;
+                let mut segments__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -519,6 +529,12 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::Segments => {
+                            if segments__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("segments"));
+                            }
+                            segments__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ListStreamSessionsResponse {
@@ -527,6 +543,7 @@ impl<'de> serde::Deserialize<'de> for ListStreamSessionsResponse {
                     total_count: total_count__.unwrap_or_default(),
                     limit: limit__.unwrap_or_default(),
                     offset: offset__.unwrap_or_default(),
+                    segments: segments__.unwrap_or_default(),
                 })
             }
         }
@@ -1053,12 +1070,18 @@ impl serde::Serialize for StreamSessionResponse {
         if self.session.is_some() {
             len += 1;
         }
+        if !self.segments.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("stream_session.StreamSessionResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
         }
         if let Some(v) = self.session.as_ref() {
             struct_ser.serialize_field("session", v)?;
+        }
+        if !self.segments.is_empty() {
+            struct_ser.serialize_field("segments", &self.segments)?;
         }
         struct_ser.end()
     }
@@ -1072,12 +1095,14 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
         const FIELDS: &[&str] = &[
             "status",
             "session",
+            "segments",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Status,
             Session,
+            Segments,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1101,6 +1126,7 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
                         match value {
                             "status" => Ok(GeneratedField::Status),
                             "session" => Ok(GeneratedField::Session),
+                            "segments" => Ok(GeneratedField::Segments),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1122,6 +1148,7 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
             {
                 let mut status__ = None;
                 let mut session__ = None;
+                let mut segments__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -1136,11 +1163,18 @@ impl<'de> serde::Deserialize<'de> for StreamSessionResponse {
                             }
                             session__ = map_.next_value()?;
                         }
+                        GeneratedField::Segments => {
+                            if segments__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("segments"));
+                            }
+                            segments__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(StreamSessionResponse {
                     status: status__,
                     session: session__,
+                    segments: segments__.unwrap_or_default(),
                 })
             }
         }

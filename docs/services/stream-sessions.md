@@ -5,7 +5,8 @@
 `stream_sessions` / `stream_session_segments` tables behind
 `StreamSessionService`, central stamping in all three languages, and the
 `session.started` subscription in every process that publishes — so events now
-carry a session id end to end.
+carry a session id end to end — and the `listStreamSessions` /
+`getStreamSession` engine RPCs.
 
 **Not built:** "Reaching the UI" below is still design.
 :::
@@ -273,6 +274,14 @@ the property sessions exist for.
 `instanceLiveState` is a latest-value row. A reader can observe that the session
 *changed* but never that one *ended*, so anything that must react to an ending
 needs the bus event rather than the row.
+
+Past sessions are read over RPC rather than pushed. `listStreamSessions` (newest
+first, `limit`/`offset`) and `getStreamSession(id)` return each session with its
+segments, oldest first, because "when was this stream live" is a segment-level
+question. An empty `segments` list means the session has never been live, and a
+missing end is `null`, never a zero timestamp. Splits and merges move segments
+between sessions, so a cached session id can stop existing; `getStreamSession`
+returns `null` for it.
 
 Two consumers were hand-rolling this concept against the wrong key and have
 moved:

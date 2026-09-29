@@ -517,14 +517,45 @@ export class DbClient {
     return unwrap("closeStreamSessionSegment", response, response.segment);
   }
 
-  async getStreamSession(req: stream_session.GetStreamSessionRequest): Promise<stream_session.StreamSession> {
-    const response = await stream_session.GetStreamSession(req, this.config);
-    return unwrap("getStreamSession", response, response.session);
+  /**
+   * One session and its segments, or null when db-proxy has no session with
+   * that id. Session ids are opaque to callers, so one db-proxy cannot parse
+   * is the same answer as one it cannot find.
+   */
+  async findStreamSession(
+    req: stream_session.GetStreamSessionRequest
+  ): Promise<{ session: stream_session.StreamSession; segments: stream_session.StreamSessionSegment[] } | null> {
+    let response: stream_session.StreamSessionResponse;
+    try {
+      response = await stream_session.GetStreamSession(req, this.config);
+    } catch (err) {
+      const failure = toError(err, "findStreamSession");
+      if (failure instanceof DbError && (failure.code === "not_found" || failure.code === "invalid_argument")) {
+        return null;
+      }
+      throw failure;
+    }
+    const session = unwrap("findStreamSession", response, response.session);
+    return { session, segments: response.segments ?? [] };
   }
 
-  async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<stream_session.StreamSession[]> {
+  /** A page of sessions, newest first, with every segment of those sessions. */
+  async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<{
+    sessions: stream_session.StreamSession[];
+    segments: stream_session.StreamSessionSegment[];
+    totalCount: number;
+    limit: number;
+    offset: number;
+  }> {
     const response = await stream_session.ListStreamSessions(req, this.config);
-    return unwrap("listStreamSessions", response, response.sessions ?? []);
+    unwrapVoid("listStreamSessions", response);
+    return {
+      sessions: response.sessions ?? [],
+      segments: response.segments ?? [],
+      totalCount: Number(response.totalCount),
+      limit: response.limit,
+      offset: response.offset,
+    };
   }
 
   /**

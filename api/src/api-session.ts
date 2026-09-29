@@ -165,6 +165,8 @@ export const RPC_METHODS = [
   "updateScene",
   "deleteScene",
   "getStreamStatus",
+  "listStreamSessions",
+  "getStreamSession",
   "triggerEvent",
   "handleInboundWebhook",
   "triggerWorkflowByName",

@@ -112,6 +112,11 @@ export interface GetStreamSessionRequest {
 export interface StreamSessionResponse {
   status: common.ResponseStatus;
   session: StreamSession;
+  /**
+   * The session's segments, oldest first. Empty means the session has never
+   * been live.
+   */
+  segments: StreamSessionSegment[];
 }
 
 export interface StreamSessionSegmentResponse {
@@ -130,6 +135,11 @@ export interface ListStreamSessionsResponse {
   totalCount: bigint;
   limit: number;
   offset: number;
+  /**
+   * Every segment of the sessions in `sessions`, oldest first; group them by
+   * `stream_session_id`. A session with none has never been live.
+   */
+  segments: StreamSessionSegment[];
 }
 
 //========================================//
@@ -1256,6 +1266,7 @@ export const StreamSessionResponse = {
     return {
       status: common.ResponseStatus.initialize(),
       session: StreamSession.initialize(),
+      segments: [],
       ...msg,
     };
   },
@@ -1272,6 +1283,13 @@ export const StreamSessionResponse = {
     }
     if (msg.session) {
       writer.writeMessage(2, msg.session, StreamSession._writeMessage);
+    }
+    if (msg.segments?.length) {
+      writer.writeRepeatedMessage(
+        3,
+        msg.segments as any,
+        StreamSessionSegment._writeMessage,
+      );
     }
     return writer;
   },
@@ -1292,6 +1310,12 @@ export const StreamSessionResponse = {
         }
         case 2: {
           reader.readMessage(msg.session, StreamSession._readMessage);
+          break;
+        }
+        case 3: {
+          const m = StreamSessionSegment.initialize();
+          reader.readMessage(m, StreamSessionSegment._readMessage);
+          msg.segments.push(m);
           break;
         }
         default: {
@@ -1495,6 +1519,7 @@ export const ListStreamSessionsResponse = {
       totalCount: 0n,
       limit: 0,
       offset: 0,
+      segments: [],
       ...msg,
     };
   },
@@ -1524,6 +1549,13 @@ export const ListStreamSessionsResponse = {
     }
     if (msg.offset) {
       writer.writeInt32(5, msg.offset);
+    }
+    if (msg.segments?.length) {
+      writer.writeRepeatedMessage(
+        6,
+        msg.segments as any,
+        StreamSessionSegment._writeMessage,
+      );
     }
     return writer;
   },
@@ -1558,6 +1590,12 @@ export const ListStreamSessionsResponse = {
         }
         case 5: {
           msg.offset = reader.readInt32();
+          break;
+        }
+        case 6: {
+          const m = StreamSessionSegment.initialize();
+          reader.readMessage(m, StreamSessionSegment._readMessage);
+          msg.segments.push(m);
           break;
         }
         default: {
@@ -2265,6 +2303,7 @@ export const StreamSessionResponseJSON = {
     return {
       status: common.ResponseStatusJSON.initialize(),
       session: StreamSessionJSON.initialize(),
+      segments: [],
       ...msg,
     };
   },
@@ -2288,6 +2327,11 @@ export const StreamSessionResponseJSON = {
         json["session"] = _session_;
       }
     }
+    if (msg.segments?.length) {
+      json["segments"] = msg.segments.map(
+        StreamSessionSegmentJSON._writeMessage,
+      );
+    }
     return json;
   },
 
@@ -2305,6 +2349,14 @@ export const StreamSessionResponseJSON = {
     const _session_ = json["session"];
     if (_session_) {
       StreamSessionJSON._readMessage(msg.session, _session_);
+    }
+    const _segments_ = json["segments"];
+    if (_segments_) {
+      for (const item of _segments_) {
+        const m = StreamSessionSegmentJSON.initialize();
+        StreamSessionSegmentJSON._readMessage(m, item);
+        msg.segments.push(m);
+      }
     }
     return msg;
   },
@@ -2478,6 +2530,7 @@ export const ListStreamSessionsResponseJSON = {
       totalCount: 0n,
       limit: 0,
       offset: 0,
+      segments: [],
       ...msg,
     };
   },
@@ -2506,6 +2559,11 @@ export const ListStreamSessionsResponseJSON = {
     }
     if (msg.offset) {
       json["offset"] = msg.offset;
+    }
+    if (msg.segments?.length) {
+      json["segments"] = msg.segments.map(
+        StreamSessionSegmentJSON._writeMessage,
+      );
     }
     return json;
   },
@@ -2540,6 +2598,14 @@ export const ListStreamSessionsResponseJSON = {
     const _offset_ = json["offset"];
     if (_offset_) {
       msg.offset = protoscript.parseNumber(_offset_);
+    }
+    const _segments_ = json["segments"];
+    if (_segments_) {
+      for (const item of _segments_) {
+        const m = StreamSessionSegmentJSON.initialize();
+        StreamSessionSegmentJSON._readMessage(m, item);
+        msg.segments.push(m);
+      }
     }
     return msg;
   },

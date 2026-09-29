@@ -125,6 +125,9 @@ message GetStreamSessionRequest {
 message StreamSessionResponse {
   common.ResponseStatus status = 1;
   StreamSession session = 2;
+  // The session's segments, oldest first. Empty means the session has never
+  // been live.
+  repeated StreamSessionSegment segments = 3;
 }
 
 message StreamSessionSegmentResponse {
@@ -145,4 +148,7 @@ message ListStreamSessionsResponse {
   int64 total_count = 3;
   int32 limit = 4;
   int32 offset = 5;
+  // Every segment of the sessions in `sessions`, oldest first; group them by
+  // `stream_session_id`. A session with none has never been live.
+  repeated StreamSessionSegment segments = 6;
 }
