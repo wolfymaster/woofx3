@@ -391,6 +391,13 @@ Two source kinds are supported today:
 | `"internal"` | Generic NATS request/reply against any subject. The engine wraps the descriptor's `payload` in a CloudEvent envelope, fires `nats.request(<event>, ...)`, unwraps the worker's reply (CloudEvent envelope or bare JSON), and forwards through `engine.response.received` to land in the UI's `transientEvents`. The default UI transform expects a `[{value, label}, ...]` shape; workers may include extra fields. | Worker subscribed to `descriptor.request.event` (e.g. `twitchapi`). |
 | `"commands"` | UI-only specialisation that lists registered chat commands. Renderer resolves locally without a NATS round-trip. | Convex `commands` table. |
 
+The UI never sends the descriptor. It names the field (`FieldOptionsReference` in `shared/clients/typescript/api/api.ts`: the module id, the declaration holding the field — `trigger`, `action`, `widget`, `resource` or `setting` — that declaration's id, and the field id), and the api's `dispatchFieldOptionsRequest` reads the installed module's stored manifest and sends exactly the request declared there. A reference to a field that does not exist, or that declares no `internal` request, is refused, and so is a request descriptor in place of a reference: a caller cannot choose the subject or payload, only ask for a request some installed module declared. A settings `button` whose `action` is `internal` goes through the same path, addressed as `{ moduleId, declaration: "setting", fieldId }`.
+
+```jsonc
+// What the UI sends for the reward field below
+{ "moduleId": "woofx3_twitch", "declaration": "trigger", "declarationId": "channelpoints_redeem", "fieldId": "rewardId" }
+```
+
 `internal` descriptor shape (`shared/clients/typescript/api/api.ts` `FieldOptionsDescriptor`):
 
 ```jsonc

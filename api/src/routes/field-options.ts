@@ -1,18 +1,36 @@
 import { routeModule } from "./context";
-import type { FieldOptionsDescriptor } from "@woofx3/api";
+import type { FieldOptionsReference } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { fieldOptionsDescriptorFor, parseFieldOptionsReference, parseStoredManifest } from "../field-options-reference";
 
 export const fieldOptionsRoutes = routeModule({
+  /**
+   * Send the request an installed module declares for one of its fields, and
+   * relay the reply to the caller's webhook under `correlationKey`.
+   *
+   * The caller names the field, never the request: the subject and payload
+   * come from the stored manifest, so a signed-in client can only trigger a
+   * request some installed module declared, not an arbitrary one on any
+   * subject.
+   */
   async dispatchFieldOptionsRequest(
-    descriptor: FieldOptionsDescriptor,
+    reference: FieldOptionsReference,
     correlationKey: string
   ): Promise<{ dispatched: boolean }> {
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    if (descriptor.kind !== "internal") {
-      throw new Error(`Unsupported descriptor kind: ${descriptor.kind}`);
+    if (typeof correlationKey !== "string" || correlationKey === "") {
+      throw new Error("dispatchFieldOptionsRequest: correlationKey is required");
     }
+    const parsed = parseFieldOptionsReference(reference);
+    const modules = await this.db.listModules();
+    const installed = modules.find((m) => m.moduleId === parsed.moduleId);
+    const manifest = installed ? parseStoredManifest(installed.manifest) : null;
+    if (manifest === null) {
+      throw new Error(`dispatchFieldOptionsRequest: module "${parsed.moduleId}" is not installed`);
+    }
+    const descriptor = fieldOptionsDescriptorFor(manifest, parsed);
 
     const eventId = crypto.randomUUID();
     const requestEnvelope = {

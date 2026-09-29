@@ -39,3 +39,7 @@ When designing anything module code can reach (a sandbox binding, a manifest fie
 2. The engine validates the returned value (shape, reserved subjects and prefixes, size and count caps) before acting, and fails closed.
 3. If an effect during execution is unavoidable, add a narrow host capability with an engine-defined target, never a general-purpose channel.
 4. Never add a binding that takes a subject, event type, or workflow id from module code and publishes or dispatches it verbatim.
+
+## Requests the dashboard asks for
+
+A manifest field's `source` and a settings button's `action` (`kind: "internal"`) are requests the api sends on the dashboard's behalf, when a form renders or a button is pressed. The dashboard never supplies them: it names the field (module id, declaration, declaration id, field id) and the api reads the request from the installed module's stored manifest, refusing a field that does not exist or a request descriptor sent in place of a reference. So a signed-in dashboard user can ask only for requests an installed module declared, never an arbitrary command on an arbitrary subject. See [dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-sourcekind).
