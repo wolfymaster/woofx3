@@ -58,16 +58,11 @@ func (r *WorkflowRegistry) SetLogger(l logger) {
 // the db already holds the refused version, so keeping the old one firing would
 // run a workflow nobody can see or edit any more.
 func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
-	if err := checkDefinition(def); err != nil {
+	if err := r.check(def); err != nil {
 		if def.ID != "" {
 			_ = r.Remove(def.ID)
 		}
 		return err
-	}
-	if r.validate != nil {
-		if err := r.validate(def); err != nil {
-			return fmt.Errorf("workflow %s: %w", def.ID, err)
-		}
 	}
 
 	r.mu.Lock()
@@ -88,6 +83,20 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 	if def.Trigger != nil {
 		if err := registrar.Register(def.ID, def.Trigger); err != nil && logger != nil {
 			logger.Error("triggers: register failed", "workflow_id", def.ID, "error", err)
+		}
+	}
+	return nil
+}
+
+// check runs the registry's own checks, then the engine's validator when one
+// is set; a bare registry has none.
+func (r *WorkflowRegistry) check(def *types.WorkflowDefinition) error {
+	if err := checkDefinition(def); err != nil {
+		return err
+	}
+	if r.validate != nil {
+		if err := r.validate(def); err != nil {
+			return fmt.Errorf("workflow %s: %w", def.ID, err)
 		}
 	}
 	return nil
