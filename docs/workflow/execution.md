@@ -196,8 +196,11 @@ cancelling it:
   task starts.
 - **Claims a pending wait.** A run paused at a `wait` task, or waiting on a
   sub-workflow, is removed from the waiting set under the same lock an arriving
-  event uses. Whichever gets there first owns the resume, so a cancelled wait
-  never resumes. A sub-workflow the run was waiting on is cancelled too. A
+  event and the wait's timer use. Whichever gets there first owns the resume,
+  so a cancelled wait never resumes. This includes a `delay` and a wait with a
+  `timeout`: the timer is stopped, and the run settles at once rather than when
+  the timer would have fired. A run cancelled just before it reaches a wait
+  refuses to pause there. A sub-workflow the run was waiting on is cancelled too. A
   sub-workflow started without `waitUntilCompletion` (fire-and-forget) is
   independent of its parent. It keeps running when the parent is cancelled;
   cancel it by its own execution id.
