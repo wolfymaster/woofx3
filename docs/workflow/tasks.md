@@ -175,7 +175,7 @@ Publishes an event to the NATS message bus.
   "type": "action",
   "action": "publish_event",
   "parameters": {
-    "eventType": "reward.granted",
+    "eventType": "badge.awarded",
     "source": "workflow",
     "data": {
       "userId": "${trigger.data.userId}",
@@ -188,9 +188,23 @@ Publishes an event to the NATS message bus.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"publish_event"`. Set at the task top level. |
-| `parameters.eventType` | `string` | Yes | CloudEvents type for the published event. Also used as the NATS subject unless `subject` is set on the event. |
+| `parameters.eventType` | `string` | Yes | CloudEvents type for the published event, and the NATS subject it is published on. May not be reserved (below), or contain a wildcard (`*`, `>`), whitespace or a control character. |
 | `parameters.source` | `string` | No | CloudEvents source field. Defaults to `"workflow"`. |
 | `parameters.data` | `object` | No | Event payload. Supports expressions. |
+
+The event type is the subject the event goes out on, so a workflow could otherwise command the engine or forge the events it acts on (see [Engine integrity](../services/engine-integrity.md)). The engine refuses a reserved `eventType`:
+
+- when the workflow is saved (api) or registered (engine), if `eventType` is written out;
+- when the step runs, once an `eventType` built from an expression has resolved.
+
+Reserved names, defined in `shared/common/golang/cloudevents/reserved.go`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
+
+- **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `slobs`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`.
+- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `module.`, `reward`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `widget.event`, `woofwoofwoof`, `workflow.run.`.
+
+Pick an event name of the workflow's own, such as `badge.awarded`. To test a workflow against a platform event (`channel.*`, `stream.online`, ...), fire it with the api's `simulateTwitchEvent` rather than publishing it.
+
+A workflow refused when it is saved or loaded is not registered, and a refused update unregisters the version it would have replaced: the db holds the refused definition, so the engine does not keep running the old one.
 
 Returns:
 

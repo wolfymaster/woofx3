@@ -2,6 +2,7 @@ import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefini
 // The module itself rather than the package index: the index also loads the
 // RPC client and its dependencies, which a value import would pull in.
 import { WAIT_DELAY_MAX_MS, WAIT_DELAY_MIN_MS, WAIT_TIMEOUT_MIN_MS } from "@woofx3/api/workflow-definition";
+import { publishedEventTypeProblem } from "./reserved-subjects";
 
 export interface ValidationError {
   path: string;
@@ -232,6 +233,16 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
       }
       if (t.type === "wait") {
         validateWait(t.wait, `${p}.wait`, errors);
+      }
+      if (t.type === "action" && t.action === "publish_event") {
+        const eventType = (t.parameters as Record<string, unknown> | undefined)?.eventType;
+        // One built from an expression is checked by the engine once it resolves.
+        if (typeof eventType === "string" && !eventType.includes("${")) {
+          const problem = publishedEventTypeProblem(eventType);
+          if (problem) {
+            errors.push({ path: `${p}.parameters.eventType`, message: `${JSON.stringify(eventType)} ${problem}` });
+          }
+        }
       }
       validateConditions(t.conditions, `${p}.conditions`, errors);
       if (t.condition) {
