@@ -315,8 +315,8 @@ export interface CtxModule {
 // know they're available get autocomplete; authors writing portable
 // modules check `if (ctx.twitch) …` first.
 //
-// Source: `barkloader/lib_sandbox/src/extensions/{twitch,chat,
-// platform_alerts,platform_chat}.rs`. To add a new extension, declare
+// Source: `barkloader/lib_sandbox/src/extensions/{twitch,chat}.rs`.
+// To add a new extension, declare
 // the namespace + its function names below.
 
 /**
@@ -404,25 +404,10 @@ export interface CtxChatExtension {
   sendMessage(text: string): null;
 }
 
-/** `ctx.platform.alerts.*` — publishes to legacy `slobs` NATS subject. */
-export interface CtxPlatformAlertsExtension {
-  alert(args: unknown): null;
-  setTimer(args: unknown): null;
-}
-
-/** `ctx.platform.chat.*` — publishes to `woofwoofwoof` NATS subject. */
-export interface CtxPlatformChatExtension {
-  register(args: unknown): null;
-}
-
 /** Aggregated extension surface. Each namespace optional. */
 export interface CtxExtensions {
   twitch?: CtxTwitchExtension;
   chat?: CtxChatExtension;
-  platform?: {
-    alerts?: CtxPlatformAlertsExtension;
-    chat?: CtxPlatformChatExtension;
-  };
 }
 
 /**

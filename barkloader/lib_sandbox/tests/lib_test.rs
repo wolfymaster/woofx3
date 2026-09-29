@@ -1,7 +1,8 @@
-use lib_sandbox::extensions::{ChatExtension, PlatformAlertsExtension, TwitchExtension};
+use lib_sandbox::extensions::{ChatExtension, TwitchExtension};
 use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::{
-    ChatSender, ExtensionRegistry, NatsPublisher, NatsRequester, RequestError,
+    ChatSender, ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester,
+    RequestError,
 };
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
@@ -703,24 +704,51 @@ end
     }
 }
 
-#[test]
-fn test_quickjs_nested_namespace_platform_alerts() {
-    let code = r#"function alert_test(ctx) {
-    ctx.platform.alerts.alert({ type: "follow", message: "hi" });
-    return { ok: true };
-}"#;
-    let registry = extension_test_module("alerts_test", "alert_test", code, "js");
+/// Test-only extension under a dotted namespace. The runtimes build one
+/// nested object (JS) or table (Lua) per namespace segment, so a call like
+/// `ctx.demo.nested.ping(args)` must reach this handler.
+struct NestedNamespaceExtension {
+    functions: Vec<HostFunction>,
+}
+
+impl NestedNamespaceExtension {
+    fn new(nats: Arc<dyn NatsPublisher>) -> Self {
+        let ping = HostFunction::new("ping", move |args: serde_json::Value| {
+            nats.publish(
+                "demo",
+                serde_json::json!({ "command": "ping", "args": args }),
+            )?;
+            Ok(serde_json::Value::Null)
+        });
+        Self {
+            functions: vec![ping],
+        }
+    }
+}
+
+impl HostExtension for NestedNamespaceExtension {
+    fn namespace(&self) -> &str {
+        "demo.nested"
+    }
+
+    fn functions(&self) -> &[HostFunction] {
+        &self.functions
+    }
+}
+
+fn assert_nested_namespace_call_publishes(module: &str, func_name: &str, code: &str, lang: &str) {
+    let registry = extension_test_module(module, func_name, code, lang);
 
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
     host_ctx.extensions = Arc::new(
-        ExtensionRegistry::new().with(Arc::new(PlatformAlertsExtension::new(nats.clone()))),
+        ExtensionRegistry::new().with(Arc::new(NestedNamespaceExtension::new(nats.clone()))),
     );
 
     let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
         .invoke(InvokeRequest {
-            function: "alerts_test:function:alert_test".to_string(),
+            function: format!("{module}:function:{func_name}"),
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
@@ -731,14 +759,34 @@ fn test_quickjs_nested_namespace_platform_alerts() {
 
     let published = nats.published.lock().unwrap();
     assert_eq!(published.len(), 1);
-    assert_eq!(published[0].0, "slobs");
+    assert_eq!(published[0].0, "demo");
     assert_eq!(
         published[0].1,
         serde_json::json!({
-            "command": "alert_message",
+            "command": "ping",
             "args": { "type": "follow", "message": "hi" }
         })
     );
+}
+
+#[test]
+fn test_quickjs_nested_namespace_extension() {
+    let code = r#"function nested_test(ctx) {
+    ctx.demo.nested.ping({ type: "follow", message: "hi" });
+    return { ok: true };
+}"#;
+    assert_nested_namespace_call_publishes("nested_test", "nested_test", code, "js");
+}
+
+#[test]
+fn test_lua_nested_namespace_extension() {
+    let code = r#"
+function nested_test(ctx)
+    ctx.demo.nested.ping({ type = "follow", message = "hi" })
+    return { ok = true }
+end
+"#;
+    assert_nested_namespace_call_publishes("nested_test", "nested_test", code, "lua");
 }
 
 #[test]

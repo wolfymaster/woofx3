@@ -14,8 +14,7 @@ Module code runs inside two host-managed environments:
 - **Function sandbox** — Rust-hosted QuickJS (JS) or mlua (Lua). The
   host builds a `ctx` object per invocation and registers namespaces
   on it: `crypto`, `storage`, `http`, `env`, `resources`, `module`, `log`,
-  plus any extensions the engine deployment wired up (`twitch`, `chat`,
-  `platform.alerts`, `platform.chat`).
+  plus any extensions the engine deployment wired up (`twitch`, `chat`).
 - **Widget iframe** — streamware loads your widget bundle into a
   sandboxed iframe and assigns `widgetHost` onto its `window` once the
   load event fires.
@@ -69,8 +68,6 @@ v0.1.0):
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip()`, `shoutout({ userId \| userName })`, `createMarker({ description? })`, `timeout({ userId \| userName, durationSeconds, reason? })`, `updateStream({ title?, category?, categoryId?, tags? })`. Each waits for the twitch service and returns its result, or throws its message with an optional `code`. `timeout` needs the manifest permission `twitch.moderation` and `updateStream` needs `twitch.channel`; see [Twitch channel controls](../services/twitch-channel.md#modules) |
 | `ctx.chat?` | `sendMessage(text)` |
-| `ctx.platform?.alerts?` | `alert(args)`, `setTimer(args)` |
-| `ctx.platform?.chat?` | `register(args)` |
 
 `ctx.storage.set` takes an optional third argument. Passing
 `{ clearOnSessionEnd: true }` declares the key as belonging to the current

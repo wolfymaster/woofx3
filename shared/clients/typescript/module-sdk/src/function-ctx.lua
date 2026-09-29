@@ -193,17 +193,6 @@
 ---@class CtxChatExtension
 ---@field sendMessage fun(text: string): nil
 
----@class CtxPlatformAlertsExtension
----@field alert fun(args: any): nil
----@field setTimer fun(args: any): nil
-
----@class CtxPlatformChatExtension
----@field register fun(args: any): nil
-
----@class CtxPlatform
----@field alerts? CtxPlatformAlertsExtension
----@field chat? CtxPlatformChatExtension
-
 ---The `ctx` object passed to every function invocation. Combines the
 ---built-in surface with extension namespaces the host registered. Each
 ---extension namespace is optional — check for presence before calling
@@ -224,4 +213,3 @@
 ---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field chat? CtxChatExtension
----@field platform? CtxPlatform

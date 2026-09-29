@@ -28,7 +28,6 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | `ctx.storage.set` | Writes module storage; the engine emits `module.storage.changed` itself | Yes |
 | `ctx.resources.*` | Engine-defined create / delete / list operations | Yes |
 | `ctx.twitch.*` | Fixed subject and command table defined by the engine; the module supplies arguments and gets the twitch service's answer. Commands that act on the channel or its chatters need a permission the manifest declares | Yes: a capability, not a channel |
-| `ctx.platform.alerts.*`, `ctx.platform.chat.*` | Fixed subject and command table defined by the engine; the module supplies arguments | Yes: a capability, not a channel |
 | `ctx.chat.sendMessage` | Engine-defined chat sender | Yes |
 | `ctx.crypto.*` | Pure computation over the arguments (HMAC, Ed25519 verification, constant-time comparison) | Yes: nothing reaches the engine |
 | Workflow steps and command actions in a manifest | Name actions by canonical id, including the bundled module's; an action declared `systemOnly` is refused (see below) | Yes |
