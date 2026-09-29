@@ -110,8 +110,11 @@ is only ever reached through a grant.
 
 A module function reaches the twitch service through `ctx.twitch`
 (`barkloader/lib_sandbox/src/extensions/twitch.rs`). Each call is a request
-on `twitchapi` made while the function runs: it waits up to 10 seconds and
-returns the command's result, or throws.
+on `twitchapi` made while the function runs: it waits up to 10 seconds, and
+never past the time the function's caller gives it (30 seconds at most), and
+returns the command's result, or throws. A function may make at most 10
+`ctx.twitch` calls per run, and at most 32 requests wait on the twitch service
+at once across the engine, since each one holds a sandbox thread.
 
 | Call | Returns | Manifest permission |
 |---|---|---|
@@ -124,9 +127,14 @@ returns the command's result, or throws.
 Clips, shoutouts and markers are visible and harmless, so any module may
 call them. Timing chatters out and changing the title, category or tags act
 on the channel and its chatters, so the module has to declare the permission
-in its manifest (`"permissions": ["twitch.moderation", "twitch.channel"]`),
-where the streamer can see it before installing; see
+in its manifest (`"permissions": ["twitch.moderation", "twitch.channel"]`).
+Permissions are declared by the module and enforced by the engine, and shown
+on the module install page (woofx3-ui feat/module-permissions-review); see
 [Module format → Permissions](../barkloader/modules.md#permissions-permissions).
+A workflow step or command that names another module's action runs that
+module's code with that module's permissions, so an uploaded module doing so
+must declare every permission the other module declares, or it does not
+install.
 An undeclared call throws before anything is sent. Moderator changes are not
 reachable from modules at all.
 
@@ -137,10 +145,12 @@ unchanged. `code` is:
 | `code` | When |
 |---|---|
 | `permission_denied` | The manifest does not declare the permission the call needs. Nothing was sent. |
-| `timeout` | The twitch service did not answer within 10 seconds. The action may still have happened. |
+| `timeout` | The function's run is out of time, or the twitch service did not answer within 10 seconds. The action may still have happened. |
+| `call_limit` | The run already made 10 `ctx.twitch` calls. Nothing was sent. |
+| `busy` | 32 twitch requests were already waiting and none finished within 2 seconds. Nothing was sent. |
 | `unavailable` | The twitch service is not running. |
 | `request_failed` | The request could not be sent or the reply could not be read. |
-| absent | The twitch service refused: invalid input, Twitch not linked yet, or Twitch's own error. |
+| absent | The twitch service refused: invalid input, Twitch not linked yet, or Twitch's own error. Its refusals carry a message only. |
 
 A platform module exposes these to workflows as actions backed by functions,
 the same way `twitch.shoutout` is. See

@@ -179,7 +179,8 @@
 ---@field code? string
 
 ---`ctx.twitch.*`: each call asks the twitch service to act, waits up to 10
----seconds and returns its result, or raises a `CtxHostError`. `timeout`
+---seconds (never past the end of the function's run) and returns its result,
+---or raises a `CtxHostError`. At most 10 calls per run. `timeout`
 ---needs the manifest permission `twitch.moderation`, `updateStream` needs
 ---`twitch.channel`.
 ---@class CtxTwitchExtension

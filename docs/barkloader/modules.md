@@ -1151,8 +1151,17 @@ The ids are fixed by the engine (`barkloader/lib_sandbox/src/permissions.rs`).
 An unknown id or one listed twice fails the install. At runtime barkloader
 reads the permissions from the installed manifest, and a call to a function
 whose permission the invoking module did not declare throws before anything is
-sent, with `code` `permission_denied`. Declaring a permission is what makes the
-request reviewable: the streamer can see what a module asks for before it runs.
+sent, with `code` `permission_denied`. Permissions are declared by the module
+and enforced by the engine, and shown on the module install page (woofx3-ui
+feat/module-permissions-review).
+
+A workflow step or command action that names another module's action runs that
+module's function, with that module's permissions. So an uploaded module whose
+bundled workflows or commands name another module's action must itself declare
+every permission that module declares; otherwise the install fails, naming the
+reference and the missing permissions. The other module must be installed with
+a readable manifest. Bundled system modules are exempt, and references to the
+module's own actions need nothing beyond its own `permissions`.
 
 ## Runtime resource instances
 

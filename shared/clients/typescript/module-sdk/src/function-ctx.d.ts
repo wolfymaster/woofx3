@@ -326,11 +326,19 @@ export interface CtxModule {
  * `tostring` is the message.
  */
 export interface CtxHostError extends Error {
-  /** `permission_denied`: the manifest does not declare the permission the
-   *  function needs. `ctx.twitch` adds `timeout` (no answer within 10s; the
-   *  action may still have happened), `unavailable` (the twitch service is
-   *  not running), `request_failed`, and any `code` the twitch service puts
-   *  on a refusal. Absent for a refusal that carries only a message. */
+  /**
+   * `permission_denied`: the manifest does not declare the permission the
+   * function needs. `ctx.twitch` adds:
+   * - `timeout`: the function's run is out of time, or the twitch service did
+   *   not answer within 10s (the action may still have happened)
+   * - `call_limit`: the run already made 10 `ctx.twitch` calls
+   * - `busy`: too many twitch requests are waiting across the engine
+   * - `unavailable`: the twitch service is not running
+   * - `request_failed`: the request could not be sent or its reply read
+   *
+   * Absent when the twitch service refused (invalid input, Twitch not linked,
+   * Twitch's own error): those carry only a message.
+   */
   code?: string;
 }
 
@@ -343,9 +351,10 @@ export interface TwitchUserTarget {
 /**
  * `ctx.twitch.*`: registered when `TwitchExtension` is bound. Each call asks
  * the twitch service to act (a request on NATS subject `twitchapi`), waits
- * up to 10 seconds, and returns its result. A refusal (invalid input, Twitch
- * not linked, Twitch's own error) throws a `CtxHostError` carrying the twitch
- * service's message.
+ * up to 10 seconds (never past the end of the function's run), and returns
+ * its result. A function may make at most 10 calls per run. A refusal
+ * (invalid input, Twitch not linked, Twitch's own error) throws a
+ * `CtxHostError` carrying the twitch service's message.
  *
  * `timeout` and `updateStream` are privileged: the module's manifest must
  * declare `"permissions": ["twitch.moderation"]` or `["twitch.channel"]`
