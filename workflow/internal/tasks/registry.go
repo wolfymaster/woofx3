@@ -107,15 +107,52 @@ type ActionContext[TServices any] struct {
 
 type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)
 
+// ParamsValidator checks a step's parameters as written in the workflow
+// definition, before any expression is resolved. It must accept a value that
+// is still an unresolved `${...}` template: that value is only known when the
+// step runs, and the action checks it again then.
+type ParamsValidator func(params map[string]any) error
+
 type ActionRegistry[TServices any] struct {
-	mu      sync.RWMutex
-	actions map[string]ActionFunc[TServices]
+	mu         sync.RWMutex
+	actions    map[string]ActionFunc[TServices]
+	validators map[string]ParamsValidator
 }
 
 func NewActionRegistry[TServices any]() *ActionRegistry[TServices] {
 	return &ActionRegistry[TServices]{
-		actions: make(map[string]ActionFunc[TServices]),
+		actions:    make(map[string]ActionFunc[TServices]),
+		validators: make(map[string]ParamsValidator),
 	}
+}
+
+// RegisterValidated registers an action whose parameters are checked when a
+// workflow using it is registered, so a step that can never succeed is refused
+// up front instead of failing on every run.
+func (r *ActionRegistry[TServices]) RegisterValidated(name string, action ActionFunc[TServices], validate ParamsValidator) error {
+	if validate == nil {
+		return fmt.Errorf("action %s: validator is required", name)
+	}
+	if err := r.Register(name, action); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.validators[name] = validate
+	return nil
+}
+
+// ValidateParams runs the named action's validator. An action registered
+// without one, or not registered at all, passes: an unknown action is reported
+// when the step runs, as it always has been.
+func (r *ActionRegistry[TServices]) ValidateParams(name string, params map[string]any) error {
+	r.mu.RLock()
+	validate, ok := r.validators[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	return validate(params)
 }
 
 func (r *ActionRegistry[TServices]) Register(name string, action ActionFunc[TServices]) error {

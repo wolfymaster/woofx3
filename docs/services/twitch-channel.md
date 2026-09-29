@@ -22,8 +22,12 @@ CloudEvent back:
 // success
 { "type": "twitchapi.<command>.result", "source": "twitchapi", "data": <result> }
 // refusal: invalid input, Twitch not linked, unknown command, or Twitch's own error
-{ "type": "twitchapi.error", "source": "twitchapi", "data": { "error": "<message>" } }
+{ "type": "twitchapi.error", "source": "twitchapi", "data": { "error": "<message>", "code"?: "<code>" } }
 ```
+
+`code` is present only on a refusal a caller may act on without reading the
+message. The one code is `rate_limited`: `shoutout` refused by Twitch's
+shoutout limit (one every 2 minutes, one per channel every 60 minutes).
 
 Only the commands below are served (`TWITCH_API_COMMANDS` in
 `twitch/src/lib/twitch.ts`); anything else is answered with

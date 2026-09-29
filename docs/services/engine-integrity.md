@@ -31,6 +31,27 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | `ctx.platform.alerts.*`, `ctx.platform.chat.*` | Fixed subject and command table defined by the engine; the module supplies arguments | Yes: a capability, not a channel |
 | `ctx.chat.sendMessage` | Engine-defined chat sender | Yes |
 | `ctx.crypto.*` | Pure computation over the arguments (HMAC, Ed25519 verification, constant-time comparison) | Yes: nothing reaches the engine |
+| Workflow steps and command actions in a manifest | Name actions by canonical id, including the bundled module's; an action declared `systemOnly` is refused (see below) | Yes |
+
+## System-only actions
+
+A module does not have to call a capability to use it: a workflow or command
+in its manifest can name any installed action by canonical id, bundled ones
+included, and the engine runs it with the module's say-so. So a limit on a
+sandbox capability also has to hold for the actions a manifest can reference,
+or it is only a limit on which door is used.
+
+An action declaration can carry `"systemOnly": true`. Barkloader then refuses
+to install any module that is not a bundled system module when one of its
+workflow steps or command actions names that action, and names the step in the
+error. Only a system module may declare the flag, and the set is read from the
+modules embedded in the barkloader binary, so it cannot drift from what is
+installed. The streamer's own workflows, built in the UI, are unaffected: the
+limit is on module code, not on the person running the engine.
+
+When adding an action to a bundled module, decide whether module code could
+already ask for the same effect through a capability; if not, declare it
+`systemOnly`.
 
 ## Applying it
 

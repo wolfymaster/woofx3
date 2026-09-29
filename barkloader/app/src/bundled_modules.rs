@@ -4,7 +4,12 @@
 //! the binary so first run needs no network and no `modules/` directory. The
 //! boot reconciler installs them through the ordinary module install path.
 
+use std::io::Read;
+use std::sync::OnceLock;
+
 use anyhow::{Result, anyhow};
+use lib_module::SystemOnlyActions;
+use lib_module::module_manifest::ModuleManifest;
 use sha2::{Digest, Sha256};
 
 /// One embedded module archive, with the identity read from its manifest at
@@ -37,24 +42,58 @@ impl BundledModule {
     }
 }
 
+impl BundledModule {
+    /// The manifest inside the archive.
+    pub fn manifest(&self) -> Result<ModuleManifest> {
+        let cursor = std::io::Cursor::new(self.archive);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| anyhow!("bundled module {:?}: open archive: {e}", self.id))?;
+        let mut entry = archive
+            .by_name("manifest.json")
+            .map_err(|e| anyhow!("bundled module {:?}: no manifest.json: {e}", self.id))?;
+        let mut bytes = Vec::new();
+        entry
+            .read_to_end(&mut bytes)
+            .map_err(|e| anyhow!("bundled module {:?}: read manifest.json: {e}", self.id))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow!("bundled module {:?}: parse manifest.json: {e}", self.id))
+    }
+}
+
 include!(concat!(env!("OUT_DIR"), "/bundled_modules_generated.rs"));
+
+static SYSTEM_ONLY_ACTIONS: OnceLock<SystemOnlyActions> = OnceLock::new();
+
+/// The `systemOnly` actions the embedded modules declare, which an uploaded
+/// module may not reference. Read from the binary once; boot calls this before
+/// serving uploads, so a damaged embed stops the process there instead of
+/// failing each upload.
+pub fn system_only_actions() -> Result<&'static SystemOnlyActions> {
+    if let Some(actions) = SYSTEM_ONLY_ACTIONS.get() {
+        return Ok(actions);
+    }
+    let manifests = BUNDLED_MODULES
+        .iter()
+        .map(BundledModule::manifest)
+        .collect::<Result<Vec<_>>>()?;
+    let actions = SystemOnlyActions::from_manifests(&manifests)?;
+    Ok(SYSTEM_ONLY_ACTIONS.get_or_init(|| actions))
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use lib_module::manifest_validate::{InstallProvenance, validate_with_provenance};
-    use lib_module::module_manifest::ModuleManifest;
-    use std::io::Read;
 
     fn manifest_of(m: &BundledModule) -> ModuleManifest {
-        let cursor = std::io::Cursor::new(m.archive);
-        let mut archive = zip::ZipArchive::new(cursor).expect("bundled archive is a valid zip");
-        let mut entry = archive
-            .by_name("manifest.json")
-            .unwrap_or_else(|_| panic!("bundled module {:?} has no manifest.json entry", m.id));
-        let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes).expect("read manifest.json");
-        serde_json::from_slice(&bytes).expect("bundled manifest parses as a ModuleManifest")
+        m.manifest().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Boot refuses to serve uploads when this fails, so every bundled
+    /// manifest must produce a set.
+    #[test]
+    fn the_bundled_system_only_set_builds() {
+        system_only_actions().expect("bundled manifests parse");
     }
 
     #[test]
