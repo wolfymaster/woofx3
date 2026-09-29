@@ -1028,6 +1028,12 @@ export interface WorkflowRunSnapshot {
   triggeredBy?: string;
   /** JSON of the originating CloudEvent. */
   triggerEvent?: string;
+  /**
+   * True for a dry run: its side-effecting steps recorded what they would
+   * have done (`{ dryRun: true, wouldDo }` in their outputs) instead of doing
+   * it. Absent for a real run.
+   */
+  dryRun?: boolean;
   error?: string;
   startedAt?: string;
   completedAt?: string;

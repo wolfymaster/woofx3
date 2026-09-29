@@ -94,6 +94,10 @@ pub struct WorkflowExecution {
     /// What caused the run ("twitch", "chat", ...).
     #[prost(string, tag="15")]
     pub triggered_by: ::prost::alloc::string::String,
+    /// A dry run: side-effecting steps recorded what they would have done
+    /// instead of doing it.
+    #[prost(bool, tag="16")]
+    pub dry_run: bool,
 }
 /// Execution details for a single step.
 ///
@@ -373,6 +377,9 @@ pub struct RecordWorkflowRunRequest {
     pub trigger_event_json: ::prost::alloc::string::String,
     #[prost(message, optional, tag="6")]
     pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// A dry run; see WorkflowExecution.dry_run.
+    #[prost(bool, tag="7")]
+    pub dry_run: bool,
 }
 /// Request to advance a recorded run to its terminal state.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

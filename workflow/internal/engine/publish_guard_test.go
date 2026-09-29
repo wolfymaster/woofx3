@@ -82,6 +82,31 @@ func TestPublishingAReservedSubjectFailsAtRunTime(t *testing.T) {
 	}
 }
 
+// A dry run must fail where the real run would, not describe a publish the
+// engine would refuse.
+func TestDryRunOfAReservedSubjectFails(t *testing.T) {
+	engine := newExecEngine(t)
+	publisher := &loopbackPublisher{engine: engine}
+	engine.SetPublisher(publisher)
+
+	spec, err := engine.actionRegistry.Spec("publish_event")
+	if err != nil {
+		t.Fatalf("publish_event spec: %v", err)
+	}
+	if spec.DryRun == nil {
+		t.Fatalf("publish_event has no dry-run description")
+	}
+	if _, err := spec.DryRun(map[string]any{"eventType": "widget.queue.skip"}); err == nil || !strings.Contains(err.Error(), "reserved for the engine") {
+		t.Fatalf("err = %v, want a reserved-subject refusal", err)
+	}
+	if _, err := spec.DryRun(map[string]any{"eventType": "badge.awarded"}); err != nil {
+		t.Fatalf("badge.awarded: %v", err)
+	}
+	if len(publisher.published) != 0 {
+		t.Fatalf("published %d events, want none", len(publisher.published))
+	}
+}
+
 // The db holds the refused version, so the one it replaced must stop firing
 // rather than run on unseen.
 func TestARefusedReplacementUnregistersTheWorkflow(t *testing.T) {

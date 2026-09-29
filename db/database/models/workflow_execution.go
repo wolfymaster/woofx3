@@ -54,7 +54,10 @@ type WorkflowExecution struct {
 	// TriggeredBy names what caused the run ("twitch", "dashboard", ...).
 	// Distinct from UserID, which records the person who started the run and
 	// is nil for runs no person started, such as a Twitch follow.
-	TriggeredBy string     `gorm:"type:text" json:"triggered_by,omitempty"`
+	TriggeredBy string `gorm:"type:text" json:"triggered_by,omitempty"`
+	// DryRun marks a run whose side-effecting steps recorded what they would
+	// have done instead of doing it.
+	DryRun      bool       `gorm:"not null;default:false" json:"dry_run"`
 	StartedAt   *time.Time `gorm:"index" json:"started_at,omitempty"`
 	CompletedAt *time.Time `gorm:"index" json:"completed_at,omitempty"`
 	CreatedAt   time.Time  `gorm:"not null;default:now()" json:"created_at"`

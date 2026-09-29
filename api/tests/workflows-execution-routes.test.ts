@@ -23,6 +23,7 @@ type TriggerOptions = {
   platform?: string;
   skipConditions?: boolean;
   origin?: string;
+  dryRun?: boolean;
 };
 
 /**
@@ -262,6 +263,38 @@ describe("triggerWorkflowByName with sample trigger data", () => {
   });
 });
 
+describe("triggerWorkflowByName dry run", () => {
+  test("asks the engine for a dry run, even without sample data", async () => {
+    const { trigger, published, requested } = setup(ROWS, { outcome: "started", executionId: "exec-3" });
+    const result = await trigger("wf-1", {}, undefined, undefined, undefined, { dryRun: true });
+
+    expect(published).toHaveLength(0);
+    expect(requested[0]?.data.dryRun).toBe(true);
+    expect(requested[0]?.data.triggerData).toBeUndefined();
+    expect(result).toMatchObject({ status: "started", executionId: "exec-3", dryRun: true });
+  });
+
+  // Recorded, and labelled as a test, when the caller gave no origin.
+  test("records a dry run as a test run by default", async () => {
+    const { trigger, requested } = setup(ROWS);
+    await trigger("wf-1", {}, undefined, undefined, undefined, { dryRun: true, triggerData: { viewers: 5 } });
+    expect(requested[0]?.correlation?.triggeredBy).toBe("test");
+    expect(requested[0]?.data).toMatchObject({ dryRun: true, triggerData: { viewers: 5 } });
+  });
+
+  test("keeps the caller's origin for a dry run", async () => {
+    const { trigger, requested } = setup(ROWS);
+    await trigger("wf-1", {}, undefined, undefined, "replay", { dryRun: true });
+    expect(requested[0]?.correlation?.triggeredBy).toBe("replay");
+  });
+
+  test("a real run carries no dry-run flag", async () => {
+    const { trigger, requested } = setup(ROWS);
+    await trigger("wf-1", {}, undefined, undefined, undefined, { triggerData: {} });
+    expect(requested[0]?.data.dryRun).toBeUndefined();
+  });
+});
+
 describe("cancelWorkflow", () => {
   type Row = { id: string; status: string };
 
@@ -372,6 +405,7 @@ describe("replayWorkflowRun", () => {
   function setupReplay() {
     const published: ReplayPublished[] = [];
     const lookups: string[] = [];
+    let dryRun = false;
     const ctx = {
       logger: { info() {}, warn() {}, error() {}, debug() {} },
       db: {
@@ -380,6 +414,7 @@ describe("replayWorkflowRun", () => {
           return {
             id: req.id,
             workflowId: "wf-1",
+            dryRun,
             triggerEventJson: '{"id":"ev-1","type":"channel.follow"}',
             steps: [
               { stepId: "fetch", status: "success", attempt: 1, outputsJson: '{"user":"x"}' },
@@ -405,7 +440,14 @@ describe("replayWorkflowRun", () => {
       triggerId?: string,
       triggeredBy?: string
     ) => Promise<{ triggerId: string }>;
-    return { published, lookups, replay: (...args: Parameters<typeof route>) => route.call(ctx, ...args) };
+    return {
+      published,
+      lookups,
+      setDryRun: (value: boolean) => {
+        dryRun = value;
+      },
+      replay: (...args: Parameters<typeof route>) => route.call(ctx, ...args),
+    };
   }
 
   // The db proxy is the record of what happened, so the replay is built from
@@ -431,6 +473,19 @@ describe("replayWorkflowRun", () => {
       { taskId: "alert", status: "failed", attempt: 1, outputs: "{}" },
     ]);
     expect(message?.correlation).toEqual({ triggerId: "corr-1", triggeredBy: "dashboard" });
+  });
+
+  test("replays a dry run as a dry run", async () => {
+    const { replay, published, setDryRun } = setupReplay();
+    setDryRun(true);
+    await replay("run-1");
+    expect((published[0]?.data as { dryRun?: boolean }).dryRun).toBe(true);
+  });
+
+  test("replays a real run without the dry-run flag", async () => {
+    const { replay, published } = setupReplay();
+    await replay("run-1");
+    expect((published[0]?.data as { dryRun?: boolean }).dryRun).toBeUndefined();
   });
 
   // An empty resume step means the whole run; the engine reads it that way.

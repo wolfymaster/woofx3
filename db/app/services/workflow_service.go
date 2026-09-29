@@ -474,6 +474,7 @@ func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.Rec
 		Output:       "{}",
 		TriggerEvent: jsonOrEmptyObject(req.TriggerEventJson),
 		TriggeredBy:  req.TriggeredBy,
+		DryRun:       req.DryRun,
 		StartedAt:    &startedAt,
 	}
 	if err := exec.Create(s.executionRepo); err != nil {
@@ -722,6 +723,7 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *clie
 		Steps:            s.executionSteps(exec.ID),
 		TriggerEventJson: exec.TriggerEvent,
 		TriggeredBy:      exec.TriggeredBy,
+		DryRun:           exec.DryRun,
 	}
 }
 

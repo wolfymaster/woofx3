@@ -233,13 +233,15 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// `native` action declarations name as their `handler`. The engine
 	// implements them; the manifest declares them. That split is the
 	// point -- declaration and implementation stop living in one file.
-	a.engine.RegisterAction("function", WithServices(appServices, NewBarkloaderAction()))
-	a.engine.RegisterAction("alert", WithServices(appServices, NewAlertAction()))
-	a.engine.RegisterAction("chat.reply", WithServices(appServices, NewChatReplyAction()))
-	a.engine.RegisterAction("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+	//
+	// Each declares whether a dry run may call it (see tasks.ActionSpec).
+	a.engine.RegisterActionWithSpec("function", WithServices(appServices, NewBarkloaderAction()), functionActionSpec)
+	a.engine.RegisterActionWithSpec("alert", WithServices(appServices, NewAlertAction()), alertActionSpec)
+	a.engine.RegisterActionWithSpec("chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec)
+	a.engine.RegisterActionWithSpec("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 		a.logger.Info("Action: print", "params", params)
 		return params, nil
-	})
+	}, tasks.ActionSpec{SideEffect: false})
 
 	return a.engine.Start(ctx)
 }
@@ -306,6 +308,7 @@ type executeRequestOptions struct {
 	TriggerData    map[string]any `json:"triggerData"`
 	Platform       string         `json:"platform"`
 	SkipConditions bool           `json:"skipConditions"`
+	DryRun         bool           `json:"dryRun"`
 }
 
 // executeReply answers a workflow.execute request.
@@ -356,7 +359,8 @@ func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) []byte {
 		"workflow_id", workflowID,
 		"trigger_id", event.TriggerID,
 		"triggered_by", event.TriggeredBy,
-		"sample_data", options.TriggerData != nil)
+		"sample_data", options.TriggerData != nil,
+		"dry_run", options.DryRun)
 
 	// A workflow absent from the registry is the common failure here -- it was
 	// deleted, disabled, or never reached this engine. A caller that published
@@ -368,6 +372,7 @@ func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) []byte {
 		TriggerData:    options.TriggerData,
 		Platform:       options.Platform,
 		SkipConditions: options.SkipConditions,
+		DryRun:         options.DryRun,
 	})
 	if err != nil {
 		a.logger.Error("Failed to run requested workflow",
@@ -503,6 +508,7 @@ type replayMessage struct {
 		WorkflowID   string `json:"workflowId"`
 		TriggerEvent string `json:"triggerEvent"`
 		FromTaskID   string `json:"fromTaskId"`
+		DryRun       bool   `json:"dryRun"`
 		Steps        []struct {
 			TaskID  string `json:"taskId"`
 			Status  string `json:"status"`
@@ -531,6 +537,7 @@ func (a *WorkflowApp) handleWorkflowReplayEvent(msg natsclient.Msg) {
 		FromTaskID:  message.Data.FromTaskID,
 		TriggerID:   message.TriggerID,
 		TriggeredBy: message.TriggeredBy,
+		DryRun:      message.Data.DryRun,
 	}
 
 	if message.Data.TriggerEvent != "" {
