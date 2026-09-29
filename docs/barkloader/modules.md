@@ -280,7 +280,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `placeholder` | string | no | Placeholder shown inside empty inputs. |
 | `unit` | string | no | Suffix shown next to numeric inputs (e.g. `bits`). |
 | `options` | array | no | Static `{ value, label }` choices. Required for `select` unless a `source` supplies them. |
-| `source` | object | no | Dynamic option source; see [dynamic-source select fields](#dynamic-source-select-fields-sourcekind). |
+| `source` | object | no | Dynamic option source; see [dynamic-source select fields](#dynamic-source-select-fields-source-kind). |
 | `defaultValue` | any | no | Initial value used when none is set. |
 | `min`, `max` | number | no | Bounds for `number` / `range`. |
 | `mediaType` | string | no | For `media` — `image`, `audio` or `video`. |
