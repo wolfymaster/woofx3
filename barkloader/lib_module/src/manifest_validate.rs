@@ -329,6 +329,7 @@ pub fn validate_with_provenance(
     )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
     validate_trigger_transports(manifest, provenance)?;
+    validate_internal_requests(manifest, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
     Ok(ResolvedManifest {
@@ -463,6 +464,97 @@ fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static 
         InstallProvenance::User => &USER_RESERVED_EVENT_PREFIXES,
         InstallProvenance::System => &[WEBHOOK_EVENT_PREFIX],
     }
+}
+
+/// The one command subject an uploaded module's forms may request. It
+/// answers any method of the service's Twitch client, writes included (a
+/// shoutout, adding a moderator), so only its `list` reads are open.
+const TWITCHAPI_SUBJECT: &str = "twitchapi";
+const TWITCHAPI_READ_PREFIX: &str = "list";
+
+/// Keep an uploaded module's forms off the engine's command subjects.
+///
+/// A field's `source` and a button's `action` name a subject and a payload,
+/// and the api sends that request verbatim when the form renders or the
+/// button is pressed. Without this, a field could switch OBS scenes or add a
+/// moderator just by being looked at. The system module's forms are the
+/// engine's own and may read its subjects (`engine.obs.options`).
+fn validate_internal_requests(
+    manifest: &ModuleManifest,
+    provenance: InstallProvenance,
+) -> Result<()> {
+    if provenance == InstallProvenance::System {
+        return Ok(());
+    }
+    for (i, t) in manifest.triggers.iter().enumerate() {
+        if let Some(fields) = &t.schema {
+            check_field_requests(fields, &format!("trigger #{i} ({}): `schema`", t.id))?;
+        }
+    }
+    for (i, a) in manifest.actions.iter().enumerate() {
+        check_field_requests(&a.schema, &format!("action #{i} ({}): `schema`", a.id))?;
+    }
+    for (i, w) in manifest.widgets.iter().enumerate() {
+        if let Some(fields) = &w.settings_schema {
+            check_field_requests(fields, &format!("widget #{i} ({}): `settingsSchema`", w.id))?;
+        }
+    }
+    for (i, r) in manifest.resources.iter().enumerate() {
+        check_field_requests(&r.schema, &format!("resource #{i} ({}): `schema`", r.kind))?;
+    }
+    for (i, setting) in manifest.settings.iter().enumerate() {
+        check_internal_request(
+            &setting.action,
+            &format!("setting #{i} ({}): `action`", setting.id),
+        )?;
+    }
+    Ok(())
+}
+
+fn check_field_requests(fields: &[ManifestConfigField], context: &str) -> Result<()> {
+    for (i, field) in fields.iter().enumerate() {
+        let label = format!("{context} field #{i} ({})", field.id);
+        if let Some(source) = &field.source {
+            check_internal_request(source, &format!("{label}: `source`"))?;
+        }
+        if let Some(action) = &field.action {
+            check_internal_request(action, &format!("{label}: `action`"))?;
+        }
+        if let Some(item_fields) = &field.item_fields {
+            check_field_requests(item_fields, &format!("{label}: `itemFields`"))?;
+        }
+    }
+    Ok(())
+}
+
+fn check_internal_request(descriptor: &serde_json::Value, context: &str) -> Result<()> {
+    let Some(event) = descriptor
+        .pointer("/request/event")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return Ok(());
+    };
+    let Some(prefix) = USER_RESERVED_EVENT_PREFIXES
+        .iter()
+        .find(|p| event.starts_with(**p))
+    else {
+        return Ok(());
+    };
+    if event == TWITCHAPI_SUBJECT {
+        let command = descriptor
+            .pointer("/request/payload/command")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if command.starts_with(TWITCHAPI_READ_PREFIX) {
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "{context}: requests {TWITCHAPI_SUBJECT} command {command:?}; a form may only request its `{TWITCHAPI_READ_PREFIX}` reads"
+        ));
+    }
+    Err(anyhow!(
+        "{context}: requests {event:?}, which uses the reserved prefix {prefix:?}"
+    ))
 }
 
 /// Enforce what each trigger transport may declare.
@@ -2062,6 +2154,78 @@ mod tests {
             "",
         );
         assert!(err.contains("reserved prefix"), "{err}");
+    }
+
+    fn action_with_field_source(event: &str, payload: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{{ "id": "pick", "label": "Pick", "type": "select",
+                    "source": {{ "kind": "internal", "request": {{ "event": "{event}", "payload": {payload} }} }} }}] }}]}}"#
+        ))
+    }
+
+    #[test]
+    fn rejects_an_upload_field_source_on_a_command_subject() {
+        for event in [
+            "engine.obs.command",
+            "engine.obs.options",
+            "slobs",
+            "message.send",
+            "workflow.execute",
+        ] {
+            let err = validate(&action_with_field_source(event, "{}"))
+                .expect_err("a field source must not reach an engine command subject")
+                .to_string();
+            assert!(err.contains("reserved prefix"), "{event}: {err}");
+            assert!(err.contains("`source`"), "{event}: {err}");
+        }
+    }
+
+    #[test]
+    fn limits_an_upload_field_source_on_twitchapi_to_list_reads() {
+        validate(&action_with_field_source(
+            "twitchapi",
+            r#"{ "command": "listChannelPointRewards" }"#,
+        ))
+        .expect("a list read is what the twitch platform module's reward picker asks for");
+        for payload in [r#"{ "command": "addChannelModerator" }"#, "{}"] {
+            let err = validate(&action_with_field_source("twitchapi", payload))
+                .expect_err("a write must not be reachable from a form")
+                .to_string();
+            assert!(err.contains("`list` reads"), "{payload}: {err}");
+        }
+    }
+
+    #[test]
+    fn accepts_an_upload_field_source_on_an_ordinary_subject() {
+        validate(&action_with_field_source(
+            "barkloader.module.field_options",
+            r#"{ "moduleId": "mod", "functionId": "f" }"#,
+        ))
+        .expect("the module's own field-options function is not a command subject");
+    }
+
+    #[test]
+    fn rejects_an_upload_settings_button_on_a_command_subject() {
+        let m = parse(
+            r#"{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "settings": [{ "id": "go", "label": "Go", "type": "button",
+                "action": { "kind": "internal", "request": { "event": "engine.obs.command" } } }]}"#,
+        );
+        let err = validate(&m)
+            .expect_err("a button is a form request too")
+            .to_string();
+        assert!(err.contains("setting #0 (go): `action`"), "{err}");
+    }
+
+    #[test]
+    fn accepts_the_system_modules_obs_field_sources() {
+        let mut m = action_with_field_source("engine.obs.options", r#"{ "list": "scenes" }"#);
+        m.id = SYSTEM_MODULE_ID.to_string();
+        validate_with_provenance(&m, InstallProvenance::System)
+            .expect("the system module's forms may read engine subjects");
     }
 
     fn system_module_with_trigger_event(event: &str) -> ModuleManifest {
