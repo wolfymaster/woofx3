@@ -35,7 +35,12 @@ describe("twitch.* action parameters", () => {
 
   test.each([
     ["twitch.shoutout", {}, "tasks[0].parameters.userName", "userName or userId is required"],
-    ["twitch.shoutout", { userId: "1", skipIfRateLimited: "maybe" }, "tasks[0].parameters.skipIfRateLimited", "true or false"],
+    [
+      "twitch.shoutout",
+      { userId: "1", skipIfRateLimited: "maybe" },
+      "tasks[0].parameters.skipIfRateLimited",
+      "true or false",
+    ],
     ["twitch.marker", { description: "d".repeat(141) }, "tasks[0].parameters.description", "at most 140"],
     ["twitch.update_stream", { title: "", category: "  " }, "tasks[0].parameters", "set at least one"],
     ["twitch.update_stream", { title: "t".repeat(141) }, "tasks[0].parameters.title", "at most 140"],
@@ -43,9 +48,19 @@ describe("twitch.* action parameters", () => {
     ["twitch.update_stream", { tags: "a,b,c,d,e,f,g,h,i,j,k" }, "tasks[0].parameters.tags", "at most 10"],
     ["twitch.update_stream", { tags: "Chill,chill" }, "tasks[0].parameters.tags", "listed twice"],
     ["twitch.timeout", { userName: "x" }, "tasks[0].parameters.durationSeconds", "required"],
-    ["twitch.timeout", { userName: "x", durationSeconds: 0 }, "tasks[0].parameters.durationSeconds", "from 1 to 1209600"],
+    [
+      "twitch.timeout",
+      { userName: "x", durationSeconds: 0 },
+      "tasks[0].parameters.durationSeconds",
+      "from 1 to 1209600",
+    ],
     ["twitch.timeout", { userName: "x", durationSeconds: 1.5 }, "tasks[0].parameters.durationSeconds", "whole number"],
-    ["twitch.timeout", { userName: "x", durationSeconds: 60, reason: "r".repeat(501) }, "tasks[0].parameters.reason", "at most 500"],
+    [
+      "twitch.timeout",
+      { userName: "x", durationSeconds: 60, reason: "r".repeat(501) },
+      "tasks[0].parameters.reason",
+      "at most 500",
+    ],
   ])("refuses %s %j", (action, parameters, path, message) => {
     const errors = errorsOf(action, parameters);
     expect(errors.some((e) => e.path === path && e.message.includes(message))).toBe(true);

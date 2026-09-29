@@ -46,13 +46,7 @@ function text(params: Params, field: string, prefix: string, errors: ValidationE
   return value.trim();
 }
 
-function maxLength(
-  value: string,
-  max: number,
-  field: string,
-  prefix: string,
-  errors: ValidationError[]
-): void {
+function maxLength(value: string, max: number, field: string, prefix: string, errors: ValidationError[]): void {
   if (value && !isExpression(value) && characterCount(value) > max) {
     errors.push({ path: `${prefix}.${field}`, message: `at most ${max} characters (got ${characterCount(value)})` });
   }
@@ -138,7 +132,13 @@ const CHECKS: Record<string, Check> = {
   },
   "twitch.clip": () => {},
   "twitch.marker": (params, prefix, errors) => {
-    maxLength(text(params, "description", prefix, errors), MARKER_DESCRIPTION_MAX_LENGTH, "description", prefix, errors);
+    maxLength(
+      text(params, "description", prefix, errors),
+      MARKER_DESCRIPTION_MAX_LENGTH,
+      "description",
+      prefix,
+      errors
+    );
   },
   "twitch.update_stream": (params, prefix, errors) => {
     const title = text(params, "title", prefix, errors);
