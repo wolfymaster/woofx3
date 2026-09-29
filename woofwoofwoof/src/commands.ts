@@ -79,12 +79,7 @@ export type ChatWatcherFunction = (msg: string, user?: string) => Promise<void>;
  */
 export type CommandResponse =
   | string
-  | ((
-      msg: string,
-      user?: string,
-      vars?: Record<string, unknown>,
-      invocation?: CommandInvocation
-    ) => Promise<string>);
+  | ((msg: string, user?: string, vars?: Record<string, unknown>, invocation?: CommandInvocation) => Promise<string>);
 
 export interface CommandInvocation {
   rawMessage: string;

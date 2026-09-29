@@ -348,27 +348,30 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return "";
     });
 
-    ctx.commander.add("vanish", async (_text: string, user?: string, _vars?: Record<string, unknown>, invocation?: CommandInvocation) => {
-      const membership = invocation?.membership;
-      if (membership?.isBroadcaster || membership?.isModerator) {
-        return `@${user} is too important to vanish`;
+    ctx.commander.add(
+      "vanish",
+      async (_text: string, user?: string, _vars?: Record<string, unknown>, invocation?: CommandInvocation) => {
+        const membership = invocation?.membership;
+        if (membership?.isBroadcaster || membership?.isModerator) {
+          return `@${user} is too important to vanish`;
+        }
+        // The id, because the name a chat message carries is the display name,
+        // which is not always the login Twitch looks users up by.
+        const chatterId = invocation?.chatterId;
+        try {
+          await this.requestTwitch(
+            ctx,
+            ctx.events.TwitchApi().timeout({
+              ...(chatterId ? { userId: chatterId } : { userName: user }),
+              durationSeconds: 1 + Math.floor(Math.random() * 600),
+            })
+          );
+          return `/me *poof* @${user} is gone`;
+        } catch (err) {
+          return failureReply(`make @${user} vanish`, err);
+        }
       }
-      // The id, because the name a chat message carries is the display name,
-      // which is not always the login Twitch looks users up by.
-      const chatterId = invocation?.chatterId;
-      try {
-        await this.requestTwitch(
-          ctx,
-          ctx.events.TwitchApi().timeout({
-            ...(chatterId ? { userId: chatterId } : { userName: user }),
-            durationSeconds: 1 + Math.floor(Math.random() * 600),
-          })
-        );
-        return `/me *poof* @${user} is gone`;
-      } catch (err) {
-        return failureReply(`make @${user} vanish`, err);
-      }
-    });
+    );
 
     ctx.commander.add("follow", async (text: string) => {
       const username = text.replace("@", "").trim();
