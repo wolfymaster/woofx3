@@ -15,8 +15,7 @@ import (
 // SQLite has no `uuid_generate_v4()`, so ids are supplied by the service on
 // insert rather than defaulted by the column.
 //
-// The timestamps are declared DATETIME rather than the TEXT other tables use:
-// the driver hands back a time.Time only for a column declared as a date or
+// The timestamps are declared DATETIME rather than TEXT: the driver hands back a time.Time only for a column declared as a date or
 // time type, and a string for TEXT, which GORM cannot scan into a time.Time.
 func RebuildUserEventsAsFactLog() *gormigrate.Migration {
 	return &gormigrate.Migration{
