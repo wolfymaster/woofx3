@@ -10,7 +10,7 @@ use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
-use lib_sandbox::extensions::{ChatExtension, TwitchExtension};
+use lib_sandbox::extensions::{ChatExtension, ObsExtension, TwitchExtension};
 use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
@@ -114,13 +114,14 @@ async fn setup() -> Result<AppContext> {
             info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
         }
 
-        // Platform integrations (twitch / chat) are bound through the
+        // Platform integrations (twitch / obs / chat) are bound through the
         // extension registry. Each extension owns its own Arc<dyn …> of the
         // relevant transport, so the runtime adapters stay agnostic to which
         // platforms exist.
         ctx.extensions = Arc::new(
             ExtensionRegistry::new()
-                .with(Arc::new(TwitchExtension::new(requester)))
+                .with(Arc::new(TwitchExtension::new(requester.clone())))
+                .with(Arc::new(ObsExtension::new(requester)))
                 .with(Arc::new(ChatExtension::new(chat_sender))),
         );
 

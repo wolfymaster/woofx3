@@ -1,5 +1,6 @@
-import OBSWebSocket, { type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
 import type { Logger } from "@woofx3/common/runtime";
+import OBSWebSocket, { type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
+import type { ObsSession } from "./connection";
 import Scene, { type SceneArgs } from "./scene";
 import Source from "./source";
 
@@ -47,7 +48,7 @@ export default class Manager {
     return this.scenes.find((s) => s.name === sceneName);
   }
 
-  request<T extends keyof OBSRequestTypes>(cmd: T, args: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]> {
+  request<T extends keyof OBSRequestTypes>(cmd: T, args?: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]> {
     return this.ws.call(cmd, args);
   }
 }
@@ -55,32 +56,56 @@ export default class Manager {
 const OBS_CONNECT_TIMEOUT_MS = 3_000;
 
 /**
- * Best-effort connect: if OBS isn't running, log a warning and return
- * `null` so the alert overlay still works without OBS being open. We
- * race the connect against a short timeout because obs-websocket-js
- * doesn't surface a timeout for a stalled TCP handshake.
+ * Open one OBS WebSocket session and load its scenes, or throw. Retrying
+ * is the caller's business (see `obs/connection.ts`).
+ *
+ * The connect is raced against a timeout because obs-websocket-js does
+ * not surface one for a stalled TCP handshake.
  */
-export async function connectObs(config: { url: string; token?: string }, logger: Logger): Promise<Manager | null> {
+export async function openObsSession(
+  config: { url: string; token?: string },
+  logger: Logger
+): Promise<ObsSession<Manager>> {
   const ws = new OBSWebSocket();
+  // Listened for from the start and latched: the socket can close while the
+  // scenes are still loading, before the caller has registered anything, and
+  // a close nobody heard would leave a dead session looking connected.
+  let closed = false;
+  let closeListener: (() => void) | null = null;
+  ws.once("ConnectionClosed", () => {
+    closed = true;
+    closeListener?.();
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
       ws.connect(config.url, config.token),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`timeout after ${OBS_CONNECT_TIMEOUT_MS}ms`)), OBS_CONNECT_TIMEOUT_MS)
-      ),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`timeout after ${OBS_CONNECT_TIMEOUT_MS}ms`)),
+          OBS_CONNECT_TIMEOUT_MS
+        );
+      }),
     ]);
-    logger.info("Connected to OBS", { url: config.url });
     const manager = new Manager(ws, logger);
     await manager.init();
-    return manager;
+    return {
+      client: manager,
+      onClose: (listener) => {
+        if (closed) {
+          queueMicrotask(listener);
+          return;
+        }
+        closeListener = listener;
+      },
+      close: () => ws.disconnect(),
+    };
   } catch (err) {
-    logger.warn("OBS connection failed; continuing without OBS control", {
-      url: config.url,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    // Don't await disconnect — if the underlying connect is still
-    // hanging, awaiting here would hang too. Fire-and-forget cleanup.
+    // Not awaited: if the underlying connect is still hanging, awaiting
+    // its teardown would hang too.
     void ws.disconnect().catch(() => undefined);
-    return null;
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }

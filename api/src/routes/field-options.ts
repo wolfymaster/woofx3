@@ -2,6 +2,22 @@ import { routeModule } from "./context";
 import type { FieldOptionsDescriptor } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 
+/**
+ * The reason a worker gave for not listing options, when its reply is the
+ * field-options failure shape `{ error: string }` (what `twitchapi` answers
+ * with, and what a module's field-options function returns when it cannot
+ * list, such as OBS not being connected), else null. Relayed as a failed
+ * request so the UI can say why a picker is empty rather than showing no
+ * options at all.
+ */
+export function fieldOptionsReplyError(data: unknown): string | null {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  const error = (data as { error?: unknown }).error;
+  return typeof error === "string" && error !== "" ? error : null;
+}
+
 export const fieldOptionsRoutes = routeModule({
   async dispatchFieldOptionsRequest(
     descriptor: FieldOptionsDescriptor,
@@ -107,12 +123,12 @@ export const fieldOptionsRoutes = routeModule({
         });
 
         if (this.webhookClient) {
-          await this.webhookClient.send({
-            type: EngineEventType.ENGINE_RESPONSE_RECEIVED,
-            correlationKey,
-            status: "success",
-            data,
-          });
+          const error = fieldOptionsReplyError(data);
+          await this.webhookClient.send(
+            error === null
+              ? { type: EngineEventType.ENGINE_RESPONSE_RECEIVED, correlationKey, status: "success", data }
+              : { type: EngineEventType.ENGINE_RESPONSE_RECEIVED, correlationKey, status: "error", error }
+          );
         }
       })
       .catch(async (err) => {

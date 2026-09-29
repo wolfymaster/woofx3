@@ -13,6 +13,8 @@ import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
 import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { handleLegacySlobsCommand } from "./obs/commands";
+import { answerObsCommand } from "./obs/control";
+import { answerObsOptions } from "./obs/options";
 import type Manager from "./obs/manager";
 import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
@@ -20,7 +22,8 @@ import type { OverlayTokenResolver } from "./scene/token-resolver";
 
 interface InitArgs {
   nats: NATSClient | null;
-  obs: Manager | null;
+  /** The live OBS session, re-read per message: it comes and goes as OBS does. */
+  obs: { current(): Manager | null; recycle(reason: string): void };
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
@@ -240,7 +243,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
       return;
     }
-    handleLegacySlobsCommand(obs, body, logger).catch((err) => {
+    handleLegacySlobsCommand(obs.current(), body, logger).catch((err) => {
       logger.error("Legacy slobs command failed", {
         command: body.command,
         error: err instanceof Error ? err.message : String(err),
@@ -248,6 +251,16 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     });
   });
   logger.info("Subscribed to slobs (legacy OBS bridge)");
+
+  // Engine OBS control, request/reply: barkloader's `ctx.obs` waits on this
+  // answer to succeed or fail.
+  await nats.subscribe("engine.obs.command", (msg) => answerObsCommand(obs, msg, logger));
+  logger.info("Subscribed to engine.obs.command");
+
+  // OBS names for `ctx.obs.listScenes` / `listSources` / `listInputs`,
+  // request/reply.
+  await nats.subscribe("engine.obs.options", (msg) => answerObsOptions(obs, msg, logger));
+  logger.info("Subscribed to engine.obs.options");
 
   await nats.subscribe("db.scene.updated.*", (msg) => {
     let envelope: SceneUpdatedEnvelope;

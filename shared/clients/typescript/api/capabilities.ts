@@ -19,6 +19,11 @@ export const ENGINE_CAPABILITIES = {
   analyticsAggregates: "analytics.aggregates",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
+  /**
+   * The `ctx.obs` host extension and the `obs.control` manifest permission, which
+   * a module that changes OBS or lists its names needs to install and run.
+   */
+  obsControl: "obs.control",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
 } as const;

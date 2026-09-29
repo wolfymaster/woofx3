@@ -140,7 +140,7 @@ describe("alert queue control subjects", () => {
     const { handlers, nats } = fakeNats();
     await initSubscriptions({
       nats: nats as any,
-      obs: null,
+      obs: { current: () => null, recycle: () => {} },
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
