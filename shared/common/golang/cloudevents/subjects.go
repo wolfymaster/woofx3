@@ -38,13 +38,6 @@ const (
 	// Slobs / OBS events
 	SubjectSlobs Subject = "slobs"
 
-	// Engine-issued OBS control, request/reply. The workflow engine's `obs.*`
-	// actions send one command and wait for the scene manager, which holds the
-	// OBS WebSocket connection, to answer `{ ok, error? }`. The command shape
-	// must match ObsControlCommand in
-	// shared/common/typescript/cloudevents/Obs/commands.ts.
-	SubjectObsCommand Subject = "engine.obs.command"
-
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 

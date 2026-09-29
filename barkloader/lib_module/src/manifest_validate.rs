@@ -577,7 +577,9 @@ const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
 /// `FIELD_OPTIONS_SUBJECT` for its own functions and the `twitchapi` reads in
 /// `TWITCHAPI_FORM_READS`: an allowlist, because a new command subject should
 /// stay closed to forms until someone decides otherwise. The system module's
-/// forms are the engine's own and may read its subjects (`engine.obs.options`).
+/// forms are the engine's own and may read its subjects. A module that lists
+/// engine-held names, such as OBS's scenes, does it from its own function
+/// through a host extension (`ctx.obs.listScenes`), not from a form.
 ///
 /// For every provenance, a request inside a `list` row is refused: the api
 /// and the UI resolve sources only on top-level fields, so a nested one would
@@ -2618,7 +2620,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_the_system_modules_obs_field_sources() {
+    fn the_system_modules_forms_may_read_engine_subjects() {
         let mut m = action_with_field_source("engine.obs.options", r#"{ "list": "scenes" }"#);
         m.id = SYSTEM_MODULE_ID.to_string();
         validate_with_provenance(&m, InstallProvenance::System)

@@ -248,9 +248,6 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
       if (t.condition) {
         validateConditions([t.condition], `${p}.condition`, errors);
       }
-      if (t.type === "action" && typeof t.action === "string" && Object.hasOwn(OBS_ACTION_PARAMS, t.action)) {
-        validateObsActionParams(OBS_ACTION_PARAMS[t.action], t.parameters, `${p}.parameters`, errors);
-      }
 
       (t.dependsOn ?? []).forEach((d, j) => {
         if (!ids.has(d)) {
@@ -274,60 +271,6 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
     return { ok: false, errors };
   }
   return { ok: true, value: input as WorkflowDefinition };
-}
-
-type ObsParamRule = "requiredString" | "optionalString" | "optionalBoolean";
-
-/**
- * Parameters of the engine's native `obs.*` actions. Mirrors `obsActions` in
- * workflow/obs_actions.go, so a step the engine would refuse at run time is
- * refused when it is saved, with the path the editor can point at. The
- * booleans are optional: the engine defaults an absent one to true.
- */
-const OBS_ACTION_PARAMS: Record<string, Record<string, ObsParamRule>> = {
-  "obs.switch_scene": { sceneName: "requiredString" },
-  "obs.set_source_visibility": {
-    sceneName: "optionalString",
-    sourceName: "requiredString",
-    visible: "optionalBoolean",
-  },
-  "obs.set_input_mute": { inputName: "requiredString", muted: "optionalBoolean" },
-};
-
-// A value built from an expression is only known once the run resolves it,
-// so its type is the engine's to check then.
-function isExpression(value: unknown): boolean {
-  return typeof value === "string" && value.includes("${");
-}
-
-function validateObsActionParams(
-  rules: Record<string, ObsParamRule>,
-  parameters: Record<string, unknown> | undefined,
-  prefix: string,
-  errors: ValidationError[]
-): void {
-  const params = parameters ?? {};
-  for (const [field, rule] of Object.entries(rules)) {
-    const value = params[field];
-    const path = `${prefix}.${field}`;
-    if (rule === "requiredString" && (typeof value !== "string" || value.length === 0)) {
-      errors.push({ path, message: "required non-empty string" });
-    }
-    if (rule === "optionalString" && value !== undefined && value !== null && typeof value !== "string") {
-      errors.push({ path, message: "must be a string when set" });
-    }
-    if (
-      rule === "optionalBoolean" &&
-      value !== undefined &&
-      value !== null &&
-      typeof value !== "boolean" &&
-      value !== "true" &&
-      value !== "false" &&
-      !isExpression(value)
-    ) {
-      errors.push({ path, message: "must be true or false" });
-    }
-  }
 }
 
 /**
