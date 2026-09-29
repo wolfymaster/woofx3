@@ -3,15 +3,48 @@ pub mod noop;
 #[cfg(test)]
 pub(crate) mod recording;
 
-pub use extension::{ExtensionRegistry, HandlerFn, HostExtension, HostFunction};
+pub use extension::{
+    CallScope, ExtensionRegistry, HandlerFn, HostError, HostExtension, HostFunction,
+    PERMISSION_DENIED,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// How long an invocation may run: the longest wait of any barkloader client
+/// (shared/clients/golang/barkloader/client.go). A caller may ask for less
+/// with `InvokeRequest::timeout_ms`, never more, since host calls past the
+/// point every caller has given up only hold a blocking thread.
+pub const MAX_INVOCATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub trait NatsPublisher: Send + Sync {
     fn publish(&self, subject: &str, data: Value) -> Result<(), String>;
+}
+
+/// Why a bus request got no reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestError {
+    /// Something is subscribed but did not answer in time. The request may
+    /// still have been acted on.
+    TimedOut,
+    /// Nothing is subscribed to the subject.
+    NoResponders,
+    /// The request could not be sent or its reply could not be read.
+    Failed(String),
+}
+
+/// A request/reply on the message bus, for host functions that return what
+/// the answering service said.
+///
+/// Called from the sandbox's blocking thread; implementations block until the
+/// reply arrives or `timeout` passes, and never run past `timeout`.
+pub trait NatsRequester: Send + Sync {
+    /// Send `data` as JSON on `subject` and return the reply decoded as JSON.
+    fn request(&self, subject: &str, data: Value, timeout: Duration)
+    -> Result<Value, RequestError>;
 }
 
 /// How a module wants a stored value treated, beyond its bytes.
@@ -185,6 +218,19 @@ pub struct InvocationContext {
     pub module_name: String,
     /// Semver version string from the manifest (e.g. "1.0.0").
     pub module_version: String,
+    /// The permissions the invoking module's manifest declares; see
+    /// `crate::permissions`. Empty for builtin invocations.
+    pub permissions: HashSet<String>,
+    /// When the caller stops waiting for the result. Host calls that wait on
+    /// another service are bounded by it.
+    pub deadline: Instant,
+}
+
+impl InvocationContext {
+    /// The scope every host function bound into this invocation shares.
+    pub fn call_scope(&self) -> CallScope {
+        CallScope::new(self.permissions.clone(), self.deadline)
+    }
 }
 
 #[cfg(test)]

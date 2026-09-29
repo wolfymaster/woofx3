@@ -37,6 +37,18 @@ export default class TwitchEvents {
     return this.encodeEvent(TwitchEvent.EventType.Redeem, event);
   }
 
+  adBreakUpcoming(event: TwitchEvent.AdBreakUpcoming): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.AdBreakUpcoming, event);
+  }
+
+  adBreakBegin(event: TwitchEvent.AdBreakBegin): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.AdBreakBegin, event);
+  }
+
+  adBreakEnd(event: TwitchEvent.AdBreakEnd): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.AdBreakEnd, event);
+  }
+
   streamOnline(event: TwitchEvent.StreamOnline): EventTuple {
     return this.encodeEvent(TwitchEvent.EventType.StreamOnline, event);
   }

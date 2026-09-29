@@ -10,6 +10,7 @@ const TOKEN_JSON = JSON.stringify({
 });
 
 let lastRefreshingAuthCredentials: unknown;
+let lastOnRefresh: ((userId: string, token: Record<string, unknown>) => Promise<void>) | undefined;
 const addUserForToken = mock(async (_token: unknown, _scopes: string[]) => "42");
 
 mock.module("@twurple/auth", () => ({
@@ -18,7 +19,9 @@ mock.module("@twurple/auth", () => ({
       lastRefreshingAuthCredentials = credentials;
     }
 
-    onRefresh = mock(() => {});
+    onRefresh = mock((handler: (userId: string, token: Record<string, unknown>) => Promise<void>) => {
+      lastOnRefresh = handler;
+    });
     onRefreshFailure = mock(() => {});
     addUserForToken = addUserForToken;
   },
@@ -244,5 +247,71 @@ describe("TwitchClient before and after a Twitch account is linked", () => {
     await client.init(credentials);
 
     expect(() => client.ChatClient()).toThrow("ChatClient needs a channel");
+  });
+});
+
+describe("token relink", () => {
+  const OLD = { accessToken: "a1", refreshToken: "r1", expiresIn: 3600, obtainmentTimestamp: 1000, userId: "42" };
+  const RELINKED = { accessToken: "a2", refreshToken: "r2", expiresIn: 3600, obtainmentTimestamp: 5000, userId: "42" };
+
+  /** A settings store the tests can change underneath the client, as a relink does. */
+  function store(initial: object) {
+    const state = { value: JSON.stringify(initial) };
+    const getSetting = mock(async (_key: string) => state.value);
+    const setSetting = mock(async (_key: string, value: string) => {
+      state.value = value;
+    });
+    return { state, getSetting, setSetting };
+  }
+
+  test("a refresh of the loaded token is persisted", async () => {
+    const { state, getSetting, setSetting } = store(OLD);
+    const client = new TwitchClient({ channel: "c", getSetting, setSetting });
+    await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
+
+    await lastOnRefresh?.("42", { ...OLD, accessToken: "a1b", refreshToken: "r1b", obtainmentTimestamp: 2000 });
+
+    expect(JSON.parse(state.value).refreshToken).toBe("r1b");
+
+    // The next refresh builds on the one just persisted.
+    await lastOnRefresh?.("42", { ...OLD, accessToken: "a1c", refreshToken: "r1c", obtainmentTimestamp: 3000 });
+    expect(JSON.parse(state.value).refreshToken).toBe("r1c");
+  });
+
+  test("a refresh of the old token does not overwrite a relinked one", async () => {
+    const { state, getSetting, setSetting } = store(OLD);
+    const client = new TwitchClient({ channel: "c", getSetting, setSetting });
+    await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
+
+    state.value = JSON.stringify(RELINKED);
+    await lastOnRefresh?.("42", { ...OLD, accessToken: "a1b", refreshToken: "r1b", obtainmentTimestamp: 2000 });
+
+    expect(JSON.parse(state.value)).toEqual(RELINKED);
+    expect(setSetting).not.toHaveBeenCalled();
+  });
+
+  test("reloadToken hands the relinked token to the auth provider", async () => {
+    const { state, getSetting, setSetting } = store(OLD);
+    const client = new TwitchClient({ channel: "c", getSetting, setSetting });
+    await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
+
+    state.value = JSON.stringify(RELINKED);
+    expect(await client.reloadToken()).toEqual({ userId: "42", userChanged: false });
+    expect(addUserForToken.mock.calls.at(-1)?.[0]).toEqual(RELINKED);
+
+    // Refreshes of the relinked token are now the ones persisted.
+    await lastOnRefresh?.("42", { ...RELINKED, refreshToken: "r2b", obtainmentTimestamp: 6000 });
+    expect(JSON.parse(state.value).refreshToken).toBe("r2b");
+  });
+
+  test("reloadToken reports a relink to a different account", async () => {
+    const { state, getSetting } = store(OLD);
+    const client = new TwitchClient({ channel: "c", getSetting });
+    await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
+
+    state.value = JSON.stringify({ ...RELINKED, userId: "99" });
+    addUserForToken.mockImplementationOnce(async () => "99");
+
+    expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true });
   });
 });

@@ -8,7 +8,8 @@ use super::canonical_id::CanonicalId;
 use super::db_proxy::CreateModuleFunctionJson;
 use super::db_proxy_client::ModuleDbProxy;
 use super::manifest_validate::{
-    self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest, WorkflowTriggerRef,
+    self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest, SystemOnlyActions,
+    WorkflowTriggerRef,
 };
 use super::module_file::ModuleFile;
 use super::module_manifest::{
@@ -1072,8 +1073,9 @@ fn check_theme_files(manifest: &ModuleManifest, files: &[ModuleFile]) -> Result<
     Ok(())
 }
 
-/// The provenance-free entry point, because every caller but the bundled-module
-/// reconciler is a user upload.
+/// A user-provenance install that knows of no `systemOnly` actions, so it
+/// refuses no reference as reserved. Uploads go through
+/// `ModuleService::execute_plan`, which carries the bundled set.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_install<R: Repository>(
     manifest: &ModuleManifest,
@@ -1095,6 +1097,7 @@ pub async fn run_install<R: Repository>(
         composite_module_key,
         client_id,
         InstallProvenance::User,
+        &SystemOnlyActions::default(),
     )
     .await
 }
@@ -1117,6 +1120,7 @@ pub async fn run_install_with_provenance<R: Repository>(
     composite_module_key: &str,
     client_id: &str,
     provenance: InstallProvenance,
+    system_only: &SystemOnlyActions,
 ) -> Result<()> {
     // `module_key` here is the manifest id (used for file paths and as the
     // module_name-style ref passed to child resource registrations).
@@ -1148,6 +1152,8 @@ pub async fn run_install_with_provenance<R: Repository>(
     // failure here aborts the install with no DB or filesystem state
     // touched.
     let resolved = manifest_validate::validate_with_provenance(manifest, provenance)
+        .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
+    manifest_validate::refuse_system_only_references(&resolved, provenance, system_only)
         .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
 
     // Build the full install plan (graph + cross-module validation +
@@ -1301,6 +1307,7 @@ mod tests {
             &mid,
             "",
             InstallProvenance::System,
+            &SystemOnlyActions::default(),
         )
         .await
         .expect("system install succeeds");

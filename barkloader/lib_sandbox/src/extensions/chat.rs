@@ -12,7 +12,7 @@ impl ChatExtension {
             let text = match args {
                 Value::String(s) => s,
                 Value::Null => {
-                    return Err("chat.sendMessage requires a string argument".to_string());
+                    return Err("chat.sendMessage requires a string argument".into());
                 }
                 other => other.to_string(),
             };
