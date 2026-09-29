@@ -19,6 +19,7 @@ import * as storage from "@woofx3/db/storage.pb";
 import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
+import * as user_event from "@woofx3/db/user_event.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
@@ -524,6 +525,16 @@ export class DbClient {
   async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<stream_session.StreamSession[]> {
     const response = await stream_session.ListStreamSessions(req, this.config);
     return unwrap("listStreamSessions", response, response.sessions ?? []);
+  }
+
+  /**
+   * Records one platform event. Idempotent on the CloudEvent's source and id,
+   * so a retry after an ambiguous failure cannot double-count.
+   */
+  async recordUserEvent(req: user_event.RecordUserEventRequest): Promise<user_event.RecordUserEventResponse> {
+    const response = await user_event.RecordUserEvent(req, this.config);
+    unwrapVoid("recordUserEvent", response);
+    return response;
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {

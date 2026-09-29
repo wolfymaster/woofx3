@@ -54,5 +54,6 @@ func All() []*gormigrate.Migration {
 		ResourceInstanceSettings(),
 		AddWidgetTaxonomy(),
 		DropApplications(),
+		RebuildUserEventsAsFactLog(),
 	}
 }
