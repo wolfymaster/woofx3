@@ -195,6 +195,27 @@ describe("TwitchApi before Twitch is linked", () => {
     const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
     expect(new TextDecoder().decode(payload)).toContain("not linked");
   });
+
+  // The sandbox's ctx.twitch and the chatbot publish the request without a
+  // CloudEvent around it; it must reach the dispatcher all the same.
+  test("reads a bare { command, args } request as well as a CloudEvent one", async () => {
+    reset();
+    const { ctx, handlers } = context(CREDENTIALS);
+    await new TwitchApiApplication().init(ctx);
+    const respond = mock(() => true);
+
+    await handlers.get("twitchapi")?.({
+      reply: "inbox.1",
+      json: () => ({ command: "getStreamInfo", args: {} }),
+      respond,
+    });
+    await Bun.sleep(0);
+
+    const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
+    const body = new TextDecoder().decode(payload);
+    expect(body).not.toContain("Missing command");
+    expect(body).toContain("not linked");
+  });
 });
 
 describe("TwitchApi relinked while connected", () => {

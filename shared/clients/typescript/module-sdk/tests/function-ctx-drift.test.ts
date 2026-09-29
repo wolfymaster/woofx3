@@ -93,8 +93,12 @@ const KNOWN_DATA_FIELDS: Record<string, string[]> = {
   module: ["id", "name", "version", "settings"],
 };
 
+// Set on the Error a host function throws (`throw_host_error`, quickjs.rs);
+// declared on `CtxHostError`, optional in both typings.
+const KNOWN_ERROR_FIELDS = ["code"];
+
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
-  twitch: ["clip", "timeout", "updateStream", "addModerator", "shoutout"],
+  twitch: ["clip", "shoutout", "createMarker", "timeout", "updateStream"],
   chat: ["sendMessage"],
   // platform.alerts and platform.chat — the dotted namespace is built
   // by `ensure_namespace_object` (quickjs.rs:209-229).
@@ -114,6 +118,7 @@ describe("function ctx drift guard", () => {
     for (const ks of Object.values(KNOWN_NESTED)) for (const k of ks) documented.add(k);
     for (const ks of Object.values(KNOWN_DATA_FIELDS)) for (const k of ks) documented.add(k);
     for (const ks of Object.values(KNOWN_EXTENSIONS)) for (const k of ks) documented.add(k);
+    for (const k of KNOWN_ERROR_FIELDS) documented.add(k);
 
     const undocumented: string[] = [];
     for (const p of props) {
@@ -190,6 +195,32 @@ describe("function ctx drift guard", () => {
         if (!dts.includes(`${m}(`)) {
           throw new Error(`function-ctx.d.ts is missing ${ns}.${m}`);
         }
+      }
+    }
+  });
+
+  it("both typings declare every field of a thrown host error", () => {
+    for (const f of KNOWN_ERROR_FIELDS) {
+      if (!new RegExp(`\\b${f}\\?:\\s`).test(dts)) {
+        throw new Error(`function-ctx.d.ts CtxHostError is missing ${f}`);
+      }
+      if (!new RegExp(`@field\\s+${f}\\?`).test(lua)) {
+        throw new Error(`function-ctx.lua CtxHostError is missing ${f}`);
+      }
+    }
+  });
+
+  it("ctx.twitch declares exactly the commands the twitch extension binds", () => {
+    const twitch = readRust("barkloader/lib_sandbox/src/extensions/twitch.rs");
+    const table = twitch.slice(
+      twitch.indexOf("const COMMANDS"),
+      twitch.indexOf("];", twitch.indexOf("const COMMANDS"))
+    );
+    const bound = [...table.matchAll(/\("([a-zA-Z]+)",\s*(?:None|Some)/g)].map((m) => m[1]);
+    expect(bound).toEqual(KNOWN_EXTENSIONS.twitch!);
+    for (const m of bound) {
+      if (!lua.includes(`@field ${m} fun(`)) {
+        throw new Error(`function-ctx.lua is missing twitch.${m}`);
       }
     }
   });

@@ -17,4 +17,8 @@ pub struct InvokeRequest {
     /// workflow engine can see a loop that runs through a module function.
     #[serde(default, rename = "workflowChain")]
     pub workflow_chain: Option<String>,
+    /// How long the caller waits for the result. Absent or above
+    /// `host::MAX_INVOCATION_TIMEOUT` means that maximum.
+    #[serde(default, rename = "timeoutMs")]
+    pub timeout_ms: Option<u64>,
 }
