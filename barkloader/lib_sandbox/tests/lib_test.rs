@@ -87,6 +87,7 @@ fn test_sandbox() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -108,6 +109,7 @@ fn test_lua_adapter() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -125,6 +127,7 @@ fn test_quickjs_adapter() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -142,6 +145,7 @@ fn test_null_event() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -189,6 +193,7 @@ fn test_js_instruction_limit() {
         user: None,
         params: serde_json::Value::Null,
         workflow_chain: None,
+        timeout_ms: None,
     });
 
     assert!(result.is_err());
@@ -250,6 +255,7 @@ function isolation(ctx) {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -260,6 +266,7 @@ function isolation(ctx) {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -320,6 +327,7 @@ fn test_ctx_event_data() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -386,6 +394,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -501,6 +510,7 @@ fn invoke_with_twitch(
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .map_err(|e| e.to_string())
 }
@@ -715,6 +725,7 @@ fn test_quickjs_nested_namespace_platform_alerts() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -746,6 +757,7 @@ fn test_unregistered_extension_namespace_is_undefined() {
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .unwrap();
 
@@ -767,6 +779,7 @@ fn invoke_probe(
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
+            timeout_ms: None,
         })
         .map_err(|e| e.to_string())
 }
@@ -859,6 +872,7 @@ fn invoke_announcer(
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: workflow_chain.map(String::from),
+            timeout_ms: None,
         })
         .map_err(|err| err.to_string());
     (result, nats)

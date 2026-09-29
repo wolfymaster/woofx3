@@ -503,19 +503,19 @@ fn bind_extensions(
         "__tostring",
         lua.create_function(|_, err: mlua::Table| err.get::<String>("message"))?,
     )?;
-    let granted = std::sync::Arc::new(invocation.permissions.clone());
+    let scope = std::sync::Arc::new(invocation.call_scope());
     for ext in invocation.host.extensions.iter() {
         let target = ensure_namespace_table(lua, ctx, ext.namespace())?;
         for func in ext.functions() {
             let name = func.name.clone();
             let func = func.clone();
             let namespace = ext.namespace().to_string();
-            let granted = granted.clone();
+            let scope = scope.clone();
             let error_meta = error_meta.clone();
             let call = lua.create_function(move |lua, arg: LuaValue| {
                 let value: Value = serde_json::to_value(&arg)
                     .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                match func.call(&namespace, &granted, value) {
+                match func.call(&namespace, &scope, value) {
                     Ok(result) => Ok((true, lua.to_value(&result)?)),
                     Err(err) => Ok((
                         false,
@@ -559,6 +559,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = LuaAdapter::new().unwrap();
         let code = r#"
@@ -601,6 +602,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and a table
         // argument; the assertion is just that none of these throw and the
@@ -629,6 +631,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
             function run(ctx)
@@ -687,6 +690,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
         let code = r#"
@@ -718,6 +722,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
         let code = r#"
@@ -756,6 +761,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
             function run(ctx)
@@ -791,6 +797,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
             function run(ctx)

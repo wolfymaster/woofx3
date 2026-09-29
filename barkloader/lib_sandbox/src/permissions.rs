@@ -2,8 +2,9 @@
 //!
 //! A permission opens a privileged host function to that module's code. Most
 //! of what a module can reach needs none; a permission is for an action that
-//! changes the channel or acts on its chatters, which the streamer should see
-//! the module ask for before installing it. Install validation accepts only
+//! changes the channel or acts on its chatters. Permissions are declared by
+//! the module and enforced by the engine, and shown on the module install page
+//! (woofx3-ui feat/module-permissions-review). Install validation accepts only
 //! the ids listed here, and a call to a function that requires one the
 //! invoking module did not declare is refused before anything is sent.
 

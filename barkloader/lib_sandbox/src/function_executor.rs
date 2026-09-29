@@ -97,6 +97,7 @@ mod tests {
             module_name: String::new(),
             module_version: String::new(),
             permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
     }
 

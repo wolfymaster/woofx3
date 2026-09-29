@@ -1,11 +1,12 @@
 use crate::error::{Error, InvokeBlockingError};
 use crate::function_executor::FunctionExecutor;
 use crate::function_result::resolve_function_result;
-use crate::host::{HostContext, InvocationContext};
+use crate::host::{HostContext, InvocationContext, MAX_INVOCATION_TIMEOUT};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, warn};
 use woofx3_cloudevents::{BaseEvent, now_iso8601};
 
@@ -81,6 +82,12 @@ impl Sandbox {
 
     pub fn invoke(&mut self, request: InvokeRequest) -> Result<Value, Error> {
         debug!("Invoking function function={}", request.function);
+        let timeout = request
+            .timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(MAX_INVOCATION_TIMEOUT)
+            .min(MAX_INVOCATION_TIMEOUT);
+        let deadline = Instant::now() + timeout;
 
         let function = self.registry.get_function(&request.function)?;
         debug!(
@@ -105,6 +112,7 @@ impl Sandbox {
             module_name: meta.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
             module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
             permissions,
+            deadline,
         };
 
         let result = self

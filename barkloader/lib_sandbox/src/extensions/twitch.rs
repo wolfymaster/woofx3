@@ -6,36 +6,56 @@
 //! marker's position) or an error it can handle, instead of firing and
 //! hoping. The twitch service owns every Twitch rule and answers a refusal
 //! with its own message, which is thrown to the module unchanged.
+//!
+//! A waiting call holds one of the runtime's blocking threads, so every call
+//! is bounded three ways: by what is left of the invocation's deadline, by a
+//! per-invocation call count, and by a limit on requests in flight at once.
 
-use crate::host::{HostError, HostExtension, HostFunction, NatsRequester, RequestError};
+use crate::host::{CallScope, HostError, HostExtension, HostFunction, NatsRequester, RequestError};
 use crate::permissions::{TWITCH_CHANNEL, TWITCH_MODERATION};
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 const SUBJECT: &str = "twitchapi";
+const NAMESPACE: &str = "twitch";
 
 /// The reply type the twitch service answers a refused request with; must
 /// match `respondError` in twitch/src/application.ts.
 const ERROR_REPLY_TYPE: &str = "twitchapi.error";
 
-/// How long a call waits for the twitch service. Twitch itself answers in
-/// well under a second; this bounds a hung service, and stays inside the
-/// 30 second limit callers put on a whole function invocation.
+/// The longest one call waits for the twitch service. Twitch itself answers
+/// in well under a second; this bounds a hung service. A call never waits
+/// past the invocation's deadline either.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How many `ctx.twitch` calls one invocation may make. A function that acts
+/// on the channel does a handful; more is a loop.
+pub const MAX_CALLS_PER_INVOCATION: u32 = 10;
+
+/// How many `ctx.twitch` requests may wait on the twitch service at once,
+/// across every invocation. Each holds a blocking thread, so this keeps a
+/// slow twitch service from starving everything else the sandbox runs.
+pub const MAX_IN_FLIGHT: usize = 32;
+
+/// How long a call waits for an in-flight slot before giving up.
+pub const IN_FLIGHT_WAIT: Duration = Duration::from_secs(2);
 
 /// `code`s a module can branch on, besides `PERMISSION_DENIED` and whatever
 /// `code` the twitch service puts on a refusal.
 pub const TIMEOUT: &str = "timeout";
 pub const UNAVAILABLE: &str = "unavailable";
 pub const REQUEST_FAILED: &str = "request_failed";
+pub const CALL_LIMIT: &str = "call_limit";
+pub const BUSY: &str = "busy";
 
 /// The commands module code may call, each the twitch service's own command
 /// name, and the manifest permission it needs. Clips, shoutouts and markers
 /// are visible and harmless, so any module may use them. Timing a chatter
 /// out and changing the channel's title, category or tags need a permission
-/// the module declares, which the streamer sees before installing it.
-/// Moderator changes are not reachable from modules at all.
+/// the module declares and the engine enforces; the module install page shows
+/// them (woofx3-ui feat/module-permissions-review). Moderator changes are not
+/// reachable from modules at all.
 const COMMANDS: &[(&str, Option<&str>)] = &[
     ("clip", None),
     ("shoutout", None),
@@ -44,22 +64,94 @@ const COMMANDS: &[(&str, Option<&str>)] = &[
     ("updateStream", Some(TWITCH_CHANNEL)),
 ];
 
+/// The limits every call is held to.
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    pub request_timeout: Duration,
+    pub max_calls_per_invocation: u32,
+    pub max_in_flight: usize,
+    pub in_flight_wait: Duration,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            request_timeout: REQUEST_TIMEOUT,
+            max_calls_per_invocation: MAX_CALLS_PER_INVOCATION,
+            max_in_flight: MAX_IN_FLIGHT,
+            in_flight_wait: IN_FLIGHT_WAIT,
+        }
+    }
+}
+
+/// A counting semaphore for blocking threads. The in-flight limit is one per
+/// extension, and the engine builds one `TwitchExtension` per process
+/// (barkloader/app/src/main.rs), so it bounds the whole process.
+struct InFlight {
+    count: Mutex<usize>,
+    released: Condvar,
+    max: usize,
+}
+
+struct InFlightSlot<'a>(&'a InFlight);
+
+impl InFlight {
+    fn new(max: usize) -> Self {
+        assert!(
+            max > 0,
+            "the in-flight limit must allow at least one request"
+        );
+        Self {
+            count: Mutex::new(0),
+            released: Condvar::new(),
+            max,
+        }
+    }
+
+    fn acquire(&self, wait: Duration) -> Option<InFlightSlot<'_>> {
+        let count = self.count.lock().expect("in-flight mutex poisoned");
+        let (mut count, _) = self
+            .released
+            .wait_timeout_while(count, wait, |count| *count >= self.max)
+            .expect("in-flight mutex poisoned");
+        if *count >= self.max {
+            return None;
+        }
+        *count += 1;
+        Some(InFlightSlot(self))
+    }
+}
+
+impl Drop for InFlightSlot<'_> {
+    fn drop(&mut self) {
+        let mut count = self.0.count.lock().expect("in-flight mutex poisoned");
+        assert!(
+            *count > 0,
+            "released an in-flight slot that was never taken"
+        );
+        *count -= 1;
+        self.0.released.notify_one();
+    }
+}
+
 pub struct TwitchExtension {
     functions: Vec<HostFunction>,
 }
 
 impl TwitchExtension {
     pub fn new(nats: Arc<dyn NatsRequester>) -> Self {
-        Self::with_timeout(nats, REQUEST_TIMEOUT)
+        Self::with_limits(nats, Limits::default())
     }
 
-    pub fn with_timeout(nats: Arc<dyn NatsRequester>, timeout: Duration) -> Self {
+    pub fn with_limits(nats: Arc<dyn NatsRequester>, limits: Limits) -> Self {
+        let in_flight = Arc::new(InFlight::new(limits.max_in_flight));
         let functions = COMMANDS
             .iter()
             .map(|&(command, permission)| {
                 let nats = nats.clone();
-                HostFunction::new(command, move |args: Value| {
-                    request(nats.as_ref(), command, args, timeout)
+                let in_flight = in_flight.clone();
+                HostFunction::scoped(command, move |scope: &CallScope, args: Value| {
+                    request(nats.as_ref(), &in_flight, &limits, scope, command, args)
                 })
                 .requiring(permission)
             })
@@ -70,7 +162,7 @@ impl TwitchExtension {
 
 impl HostExtension for TwitchExtension {
     fn namespace(&self) -> &str {
-        "twitch"
+        NAMESPACE
     }
 
     fn functions(&self) -> &[HostFunction] {
@@ -80,9 +172,11 @@ impl HostExtension for TwitchExtension {
 
 fn request(
     nats: &dyn NatsRequester,
+    in_flight: &InFlight,
+    limits: &Limits,
+    scope: &CallScope,
     command: &str,
     args: Value,
-    timeout: Duration,
 ) -> Result<Value, HostError> {
     let args = match args {
         Value::Null => json!({}),
@@ -93,13 +187,47 @@ fn request(
             )));
         }
     };
+
+    let made = scope.record_call(NAMESPACE);
+    if made > limits.max_calls_per_invocation {
+        return Err(HostError::with_code(
+            format!(
+                "ctx.twitch.{command}: a function may make at most {} ctx.twitch calls per run",
+                limits.max_calls_per_invocation
+            ),
+            CALL_LIMIT,
+        ));
+    }
+
+    let spent = || {
+        HostError::with_code(
+            format!("ctx.twitch.{command}: the function has run out of time"),
+            TIMEOUT,
+        )
+    };
+    if scope.remaining().is_zero() {
+        return Err(spent());
+    }
+    let Some(_slot) = in_flight.acquire(limits.in_flight_wait.min(scope.remaining())) else {
+        return Err(HostError::with_code(
+            format!(
+                "ctx.twitch.{command}: too many twitch requests are waiting; try again shortly"
+            ),
+            BUSY,
+        ));
+    };
+    let timeout = limits.request_timeout.min(scope.remaining());
+    if timeout.is_zero() {
+        return Err(spent());
+    }
+
     let payload = json!({ "command": command, "args": args });
     match nats.request(SUBJECT, payload, timeout) {
         Ok(reply) => read_reply(command, reply),
         Err(RequestError::TimedOut) => Err(HostError::with_code(
             format!(
-                "ctx.twitch.{command}: the twitch service did not answer within {}s; it may still have acted",
-                timeout.as_secs()
+                "ctx.twitch.{command}: the twitch service did not answer within {:.1}s; it may still have acted",
+                timeout.as_secs_f64()
             ),
             TIMEOUT,
         )),
@@ -136,8 +264,7 @@ fn read_reply(command: &str, reply: Value) -> Result<Value, HostError> {
 mod tests {
     use super::*;
     use crate::host::PERMISSION_DENIED;
-    use std::collections::HashSet;
-    use std::sync::Mutex;
+    use std::time::Instant;
 
     /// Answers every request with `reply` and records what was asked.
     struct FakeTwitch {
@@ -173,8 +300,17 @@ mod tests {
         ext.functions().iter().find(|f| f.name == name).unwrap()
     }
 
-    fn granted(ids: &[&str]) -> HashSet<String> {
-        ids.iter().map(|id| id.to_string()).collect()
+    fn granted(ids: &[&str]) -> CallScope {
+        CallScope::new(
+            ids.iter().map(|id| id.to_string()).collect(),
+            Instant::now() + Duration::from_secs(30),
+        )
+    }
+
+    fn limits(change: impl FnOnce(&mut Limits)) -> Limits {
+        let mut limits = Limits::default();
+        change(&mut limits);
+        limits
     }
 
     #[test]
@@ -304,7 +440,11 @@ mod tests {
     #[test]
     fn transport_failures_map_to_codes() {
         for (failure, code, says) in [
-            (RequestError::TimedOut, TIMEOUT, "did not answer within 3s"),
+            (
+                RequestError::TimedOut,
+                TIMEOUT,
+                "did not answer within 3.0s",
+            ),
             (RequestError::NoResponders, UNAVAILABLE, "not running"),
             (
                 RequestError::Failed("connection closed".to_string()),
@@ -312,9 +452,9 @@ mod tests {
                 "connection closed",
             ),
         ] {
-            let ext = TwitchExtension::with_timeout(
+            let ext = TwitchExtension::with_limits(
                 FakeTwitch::answering(Err(failure)),
-                Duration::from_secs(3),
+                limits(|l| l.request_timeout = Duration::from_secs(3)),
             );
             let err = function(&ext, "clip")
                 .call("twitch", &granted(&[]), Value::Null)
@@ -323,5 +463,114 @@ mod tests {
             assert!(err.message.starts_with("ctx.twitch.clip: "), "{err}");
             assert!(err.message.contains(says), "{err}");
         }
+    }
+
+    #[test]
+    fn a_call_after_the_invocation_deadline_is_refused_without_sending() {
+        let nats = FakeTwitch::answering(Ok(json!({ "type": "x", "data": {} })));
+        let ext = TwitchExtension::new(nats.clone());
+        let spent = CallScope::new(Default::default(), Instant::now());
+        let err = function(&ext, "clip")
+            .call("twitch", &spent, Value::Null)
+            .unwrap_err();
+        assert_eq!(err.code.as_deref(), Some(TIMEOUT));
+        assert!(err.message.contains("run out of time"), "{err}");
+        assert!(nats.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_call_waits_no_longer_than_the_invocation_has_left() {
+        let nats = FakeTwitch::answering(Ok(json!({ "type": "x", "data": {} })));
+        let ext = TwitchExtension::new(nats.clone());
+        let short = CallScope::new(Default::default(), Instant::now() + Duration::from_secs(2));
+        function(&ext, "clip")
+            .call("twitch", &short, Value::Null)
+            .unwrap();
+        let waited = nats.requests.lock().unwrap()[0].2;
+        assert!(waited <= Duration::from_secs(2), "{waited:?}");
+        assert!(waited > Duration::ZERO);
+    }
+
+    #[test]
+    fn an_invocation_may_make_only_so_many_calls() {
+        let nats = FakeTwitch::answering(Ok(json!({ "type": "x", "data": {} })));
+        let ext = TwitchExtension::new(nats.clone());
+        let scope = granted(&[]);
+        for _ in 0..MAX_CALLS_PER_INVOCATION {
+            function(&ext, "createMarker")
+                .call("twitch", &scope, Value::Null)
+                .unwrap();
+        }
+        let err = function(&ext, "clip")
+            .call("twitch", &scope, Value::Null)
+            .unwrap_err();
+        assert_eq!(err.code.as_deref(), Some(CALL_LIMIT));
+        assert!(err.message.contains("at most 10"), "{err}");
+        assert_eq!(
+            nats.requests.lock().unwrap().len(),
+            MAX_CALLS_PER_INVOCATION as usize
+        );
+
+        function(&ext, "clip")
+            .call("twitch", &granted(&[]), Value::Null)
+            .expect("the limit is per invocation");
+    }
+
+    #[test]
+    fn an_in_flight_slot_is_refused_while_all_are_taken_and_returned_on_drop() {
+        let in_flight = InFlight::new(1);
+        let held = in_flight.acquire(Duration::ZERO).expect("a free slot");
+        assert!(in_flight.acquire(Duration::from_millis(10)).is_none());
+        drop(held);
+        assert!(in_flight.acquire(Duration::ZERO).is_some());
+    }
+
+    /// Holds every request until released, so a test can keep one in flight.
+    struct HeldTwitch {
+        started: Mutex<std::sync::mpsc::Sender<()>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl NatsRequester for HeldTwitch {
+        fn request(&self, _: &str, _: Value, _: Duration) -> Result<Value, RequestError> {
+            self.started.lock().unwrap().send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
+            Ok(json!({ "type": "x", "data": {} }))
+        }
+    }
+
+    #[test]
+    fn a_call_is_refused_as_busy_while_the_in_flight_limit_is_reached() {
+        let (started_tx, started) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let ext = Arc::new(TwitchExtension::with_limits(
+            Arc::new(HeldTwitch {
+                started: Mutex::new(started_tx),
+                release: Mutex::new(release_rx),
+            }),
+            limits(|l| {
+                l.max_in_flight = 1;
+                l.in_flight_wait = Duration::from_millis(20);
+            }),
+        ));
+
+        let waiting = {
+            let ext = ext.clone();
+            std::thread::spawn(move || {
+                function(&ext, "clip").call("twitch", &granted(&[]), Value::Null)
+            })
+        };
+        started
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the first call is in flight");
+
+        let err = function(&ext, "clip")
+            .call("twitch", &granted(&[]), Value::Null)
+            .unwrap_err();
+        assert_eq!(err.code.as_deref(), Some(BUSY));
+        assert!(err.message.contains("too many twitch requests"), "{err}");
+
+        release.send(()).unwrap();
+        waiting.join().unwrap().expect("the held call completes");
     }
 }

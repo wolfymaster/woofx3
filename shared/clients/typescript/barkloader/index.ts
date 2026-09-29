@@ -117,7 +117,9 @@ export default class BarkloaderClient {
   // Sends an `invoke` request and awaits its correlated `result`/`error`
   // reply, rather than firing-and-forgetting like `send()`. Rejects after
   // INVOKE_TIMEOUT_MS if no reply arrives (e.g. the connection dropped
-  // mid-flight), cleaning up the pending entry either way.
+  // mid-flight), cleaning up the pending entry either way. The timeout is
+  // sent along so barkloader stops host calls that wait on another service
+  // once this caller has given up.
   //
   // `event` becomes `ctx.event` verbatim in the sandboxed function — same
   // `function`/`event` wire shape the Go client already uses
@@ -151,7 +153,13 @@ export default class BarkloaderClient {
       });
 
       try {
-        this.send(JSON.stringify({ type: "invoke", id, data: { function: func, event, workflowChain } }));
+        this.send(
+          JSON.stringify({
+            type: "invoke",
+            id,
+            data: { function: func, event, workflowChain, timeoutMs: INVOKE_TIMEOUT_MS },
+          })
+        );
       } catch (err) {
         this.pendingInvokes.delete(id);
         clearTimeout(timer);

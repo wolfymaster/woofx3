@@ -83,7 +83,10 @@ mod tests {
         });
         let ext =
             SubjectExtension::new("x", "subj", &[("withArgs", "with_args_cmd")], nats.clone());
-        (ext.functions()[0].handler)(json!({"n": 1})).unwrap();
+        let scope = crate::host::CallScope::new(Default::default(), std::time::Instant::now());
+        ext.functions()[0]
+            .call("x", &scope, json!({"n": 1}))
+            .unwrap();
         let published = nats.published.lock().unwrap();
         assert_eq!(
             published[0],

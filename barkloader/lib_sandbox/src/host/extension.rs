@@ -1,7 +1,8 @@
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// Why a host function refused or failed. `code`, when present, is a short
 /// machine-readable reason module code can branch on without parsing the
@@ -50,7 +51,46 @@ impl fmt::Display for HostError {
 /// The `code` of a call refused for a permission the module did not declare.
 pub const PERMISSION_DENIED: &str = "permission_denied";
 
-pub type HandlerFn = dyn Fn(Value) -> Result<Value, HostError> + Send + Sync;
+/// What a host function knows about the invocation calling it. One scope is
+/// shared by every host function bound into an invocation, so a limit it
+/// tracks holds across all of the invocation's calls.
+pub struct CallScope {
+    granted: HashSet<String>,
+    deadline: Instant,
+    calls: Mutex<HashMap<String, u32>>,
+}
+
+impl CallScope {
+    pub fn new(granted: HashSet<String>, deadline: Instant) -> Self {
+        Self {
+            granted,
+            deadline,
+            calls: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The permissions the invoking module's manifest declares.
+    pub fn granted(&self) -> &HashSet<String> {
+        &self.granted
+    }
+
+    /// How long until the invocation's caller stops waiting for it; zero once
+    /// that moment has passed.
+    pub fn remaining(&self) -> Duration {
+        self.deadline.saturating_duration_since(Instant::now())
+    }
+
+    /// Counts one more call into `namespace` and returns how many the
+    /// invocation has made there, this one included.
+    pub fn record_call(&self, namespace: &str) -> u32 {
+        let mut calls = self.calls.lock().expect("call counter mutex poisoned");
+        let count = calls.entry(namespace.to_string()).or_insert(0);
+        *count += 1;
+        *count
+    }
+}
+
+pub type HandlerFn = dyn Fn(&CallScope, Value) -> Result<Value, HostError> + Send + Sync;
 
 #[derive(Clone)]
 pub struct HostFunction {
@@ -66,6 +106,15 @@ impl HostFunction {
     pub fn new<F>(name: impl Into<String>, handler: F) -> Self
     where
         F: Fn(Value) -> Result<Value, HostError> + Send + Sync + 'static,
+    {
+        Self::scoped(name, move |_: &CallScope, args| handler(args))
+    }
+
+    /// A function whose handler also sees the calling invocation's scope, for
+    /// one that must respect the invocation's deadline or limits.
+    pub fn scoped<F>(name: impl Into<String>, handler: F) -> Self
+    where
+        F: Fn(&CallScope, Value) -> Result<Value, HostError> + Send + Sync + 'static,
     {
         Self {
             name: name.into(),
@@ -86,17 +135,18 @@ impl HostFunction {
         self
     }
 
-    /// Run the handler for a module holding `granted`, refusing before the
-    /// handler sees anything when the function needs a permission the module
-    /// did not declare. `namespace` only names the function in the refusal.
+    /// Run the handler for the invocation `scope` describes, refusing before
+    /// the handler sees anything when the function needs a permission the
+    /// module did not declare. `namespace` only names the function in the
+    /// refusal.
     pub fn call(
         &self,
         namespace: &str,
-        granted: &HashSet<String>,
+        scope: &CallScope,
         args: Value,
     ) -> Result<Value, HostError> {
         if let Some(permission) = self.permission {
-            if !granted.contains(permission) {
+            if !scope.granted().contains(permission) {
                 return Err(HostError::with_code(
                     format!(
                         "ctx.{namespace}.{} requires the {permission:?} permission; declare it in the module manifest's \"permissions\"",
@@ -106,7 +156,7 @@ impl HostFunction {
                 ));
             }
         }
-        (self.handler)(args)
+        (self.handler)(scope, args)
     }
 }
 
@@ -149,6 +199,13 @@ mod tests {
     use crate::permissions::TWITCH_MODERATION;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    fn scope(granted: &[&str]) -> CallScope {
+        CallScope::new(
+            granted.iter().map(|id| id.to_string()).collect(),
+            Instant::now() + Duration::from_secs(30),
+        )
+    }
+
     fn counting(calls: Arc<AtomicUsize>) -> HostFunction {
         HostFunction::new("timeout", move |_| {
             calls.fetch_add(1, Ordering::SeqCst);
@@ -161,7 +218,7 @@ mod tests {
     fn a_privileged_function_refuses_an_undeclared_permission_without_running() {
         let calls = Arc::new(AtomicUsize::new(0));
         let err = counting(calls.clone())
-            .call("twitch", &HashSet::new(), Value::Null)
+            .call("twitch", &scope(&[]), Value::Null)
             .unwrap_err();
         assert_eq!(err.code.as_deref(), Some(PERMISSION_DENIED));
         assert!(err.message.contains("ctx.twitch.timeout"), "{err}");
@@ -172,11 +229,25 @@ mod tests {
     #[test]
     fn a_privileged_function_runs_for_a_module_that_declared_it() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let granted: HashSet<String> = [TWITCH_MODERATION.to_string()].into_iter().collect();
         counting(calls.clone())
-            .call("twitch", &granted, Value::Null)
+            .call("twitch", &scope(&[TWITCH_MODERATION]), Value::Null)
             .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_scope_counts_calls_per_namespace() {
+        let scope = scope(&[]);
+        assert_eq!(scope.record_call("twitch"), 1);
+        assert_eq!(scope.record_call("twitch"), 2);
+        assert_eq!(scope.record_call("chat"), 1);
+    }
+
+    #[test]
+    fn a_scope_past_its_deadline_has_nothing_remaining() {
+        let spent = CallScope::new(HashSet::new(), Instant::now());
+        assert_eq!(spent.remaining(), Duration::ZERO);
+        assert!(scope(&[]).remaining() > Duration::from_secs(29));
     }
 
     #[test]
