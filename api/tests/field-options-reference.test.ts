@@ -29,6 +29,12 @@ const MANIFEST = {
           type: "select",
           source: { kind: "internal", request: { event: "barkloader.module.field_options" } },
         },
+        {
+          id: "queue",
+          label: "Queue",
+          type: "list",
+          itemFields: [{ id: "device", label: "Device", type: "select", source: REWARDS_SOURCE }],
+        },
       ],
     },
   ],
@@ -154,6 +160,19 @@ describe("fieldOptionsDescriptorFor", () => {
     ).toThrow(/no field "missing"/);
   });
 
+  test("refuses a field inside a list, saying sources are top-level only", () => {
+    for (const fieldId of ["device", "queue.device"]) {
+      expect(() =>
+        fieldOptionsDescriptorFor(MANIFEST, {
+          moduleId: "twitch",
+          declaration: "action",
+          declarationId: "song_request",
+          fieldId,
+        })
+      ).toThrow(/points into list field "queue", and internal sources are only supported on top-level fields/);
+    }
+  });
+
   test("refuses a field that declares no internal request", () => {
     for (const fieldId of ["clientId", "connect"]) {
       expect(() =>
@@ -185,11 +204,12 @@ function routeHost() {
     webhookClient: { send },
     logger,
     db: {
-      async listModules() {
-        return [
-          { moduleId: "other", manifest: "{}" },
-          { moduleId: "twitch", manifest: JSON.stringify(MANIFEST) },
+      async findModuleByModuleId(moduleId: string) {
+        const installed = [
+          { moduleId: "twitch", state: "active", manifest: JSON.stringify(MANIFEST) },
+          { moduleId: "twitch_off", state: "disabled", manifest: JSON.stringify(MANIFEST) },
         ];
+        return installed.find((m) => m.moduleId === moduleId) ?? null;
       },
     },
   };
@@ -225,9 +245,22 @@ describe("dispatchFieldOptionsRequest", () => {
     await expect(
       dispatch({ moduleId: "twitch", declaration: "trigger", declarationId: "channelpoints_redeem", fieldId: "x" }, "k")
     ).rejects.toThrow(/no field "x"/);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  test("refuses a module that is not installed without sending anything", async () => {
+    const { dispatch, request } = routeHost();
     await expect(
       dispatch({ moduleId: "missing", declaration: "setting", fieldId: "testConnection" }, "k")
-    ).rejects.toThrow(/not installed/);
+    ).rejects.toThrow(/module "missing" is not installed/);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  test("refuses a disabled module without sending anything", async () => {
+    const { dispatch, request } = routeHost();
+    await expect(
+      dispatch({ moduleId: "twitch_off", declaration: "setting", fieldId: "testConnection" }, "k")
+    ).rejects.toThrow(/module "twitch_off" is disabled/);
     expect(request).not.toHaveBeenCalled();
   });
 

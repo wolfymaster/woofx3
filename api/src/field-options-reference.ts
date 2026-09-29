@@ -112,6 +112,29 @@ function asInternalDescriptor(value: unknown): FieldOptionsDescriptor | null {
   };
 }
 
+/**
+ * The id of the `list` field a field id points into, either as one of its
+ * `itemFields` ids or as a `<list>.<row field>` path, or null. Row fields are
+ * not resolvable: list rows render plain controls, and barkloader refuses an
+ * internal source inside `itemFields` at install.
+ */
+function listHoldingField(fields: Record<string, unknown>[], fieldId: string): string | null {
+  const pathHead = fieldId.split(".")[0];
+  for (const f of fields) {
+    if (f.type !== "list" || typeof f.id !== "string") {
+      continue;
+    }
+    if (f.id === pathHead) {
+      return f.id;
+    }
+    const items = Array.isArray(f.itemFields) ? f.itemFields : [];
+    if (items.some((item) => asRecord(item)?.id === fieldId)) {
+      return f.id;
+    }
+  }
+  return null;
+}
+
 function describe(reference: FieldOptionsReference): string {
   const owner =
     reference.declaration === "setting"
@@ -139,8 +162,16 @@ export function fieldOptionsDescriptorFor(
       `dispatchFieldOptionsRequest: module "${reference.moduleId}" declares no ${reference.declaration} "${reference.declarationId}"`
     );
   }
-  const field = fields.map(asRecord).find((f) => f !== null && f.id === reference.fieldId);
+  const records = fields.map(asRecord).filter((f): f is Record<string, unknown> => f !== null);
+  const field = records.find((f) => f.id === reference.fieldId);
   if (!field) {
+    const list = listHoldingField(records, reference.fieldId);
+    if (list !== null) {
+      throw new Error(
+        `dispatchFieldOptionsRequest: no top-level ${describe(reference)}; it points into list field "${list}", ` +
+          "and internal sources are only supported on top-level fields"
+      );
+    }
     throw new Error(`dispatchFieldOptionsRequest: no ${describe(reference)}`);
   }
   const declared = field.type === "button" ? field.action : field.source;

@@ -24,11 +24,15 @@ export const fieldOptionsRoutes = routeModule({
       throw new Error("dispatchFieldOptionsRequest: correlationKey is required");
     }
     const parsed = parseFieldOptionsReference(reference);
-    const modules = await this.db.listModules();
-    const installed = modules.find((m) => m.moduleId === parsed.moduleId);
+    const installed = await this.db.findModuleByModuleId(parsed.moduleId);
     const manifest = installed ? parseStoredManifest(installed.manifest) : null;
-    if (manifest === null) {
+    if (installed === null || manifest === null) {
       throw new Error(`dispatchFieldOptionsRequest: module "${parsed.moduleId}" is not installed`);
+    }
+    if (installed.state === "disabled") {
+      throw new Error(
+        `dispatchFieldOptionsRequest: module "${parsed.moduleId}" is disabled; enable it to use its field requests`
+      );
     }
     const descriptor = fieldOptionsDescriptorFor(manifest, parsed);
 
