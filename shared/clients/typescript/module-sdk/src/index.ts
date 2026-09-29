@@ -20,6 +20,7 @@ export type {
   WidgetHostStorage,
   WidgetStatusReport,
   WidgetSurface,
+  WidgetTheme,
 } from "./widget-host";
 
 export type {
@@ -63,6 +64,7 @@ export {
   WIDGET_PROTOCOL,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
+  isWidgetTheme,
 } from "./widget-protocol";
 
 export type {

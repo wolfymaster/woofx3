@@ -113,6 +113,34 @@ describe("installWidgetHostShim — boot + handshake", () => {
     expect(Object.isFrozen(host!.settings)).toBe(true);
   });
 
+  it("host.theme is null for a widget without a theme contract", () => {
+    const host = install(makeHarness(makeBoot()))!;
+    expect(host.theme).toBeNull();
+  });
+
+  it("host.theme carries the boot payload's theme, frozen", () => {
+    const theme = {
+      id: "neonpack:theme:neon",
+      contractVersion: 1,
+      variables: { accent: "#ff2bd6" },
+      assets: { background: "https://engine.test/grid.webm", endSound: null },
+      defaultAssets: { background: null, endSound: null },
+      fallback: null,
+    };
+    const host = install(makeHarness(makeBoot({ theme })))!;
+    expect(host.theme).toEqual(theme);
+    expect(Object.isFrozen(host.theme)).toBe(true);
+    expect(Object.isFrozen(host.theme!.variables)).toBe(true);
+  });
+
+  it("rejects a boot payload whose theme is malformed", () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const bad = { id: 7, contractVersion: 1, variables: {}, assets: {}, defaultAssets: {}, fallback: null };
+    const host = install(makeHarness(makeBoot({ theme: bad as never })));
+    expect(host).toBeNull();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("getResourceUrl joins the boot payload's resourceBaseUrl and a path, tolerating extra/missing slashes", () => {
     const h = makeHarness(makeBoot({ resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/" }));
     const host = install(h)!;
