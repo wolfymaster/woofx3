@@ -161,9 +161,10 @@ Every push to `master` that semantic-release finds a release in is published by 
 1. semantic-release picks the next version (e.g. `v1.2.3`) from the Conventional Commits since the last tag
 2. CI builds and pushes:
    - `ghcr.io/wolfymaster/woofx3:v1.2.3` and `:latest`
-3. CI tags the commit and attaches to a GitHub Release:
+3. CI creates a GitHub Release and attaches:
    - `woofx3-v1.2.3-linux-amd64.zip` (extracted from the image `/app` layout)
    - `woofx3-v1.2.3-windows-amd64.zip` (cross-compiled via `./main.sh --target windows-amd64`)
+4. semantic-release commits the release's entry to `CHANGELOG.md` on `master`; the tag points at that commit
 
 Pull the image:
 
