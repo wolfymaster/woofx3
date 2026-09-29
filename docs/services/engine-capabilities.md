@@ -34,6 +34,7 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `analytics.aggregates` | Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard` |
 | `analytics.gauges` | Per-minute viewer, follower and subscriber series for a session: `getStreamSessionGauges` |
 | `analytics.sessions` | Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals` |
+| `config.bundles` | Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig` |
 | `widgets.themes` | Theme presets a widget declares, for the theme settings picker: `listWidgetThemes` |
 
 A test in `api/tests/engine-capabilities.test.ts` fails if an id in `ENGINE_CAPABILITIES` has no row here.

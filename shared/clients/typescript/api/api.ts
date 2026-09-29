@@ -1,6 +1,13 @@
 // Shared API Types for woofx3 UI and Backend
 
 import type { EngineCapabilities } from "./capabilities";
+import type {
+  ConfigBundle,
+  ConfigExportOptions,
+  ConfigImportOptions,
+  ConfigImportPlan,
+  ConfigImportResult,
+} from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
@@ -631,6 +638,42 @@ export interface RecentActivity {
   amount: number | null;
   /** ISO 8601. When the event happened. */
   timestamp: string;
+}
+
+// ==================== Alert queue controls ====================
+
+/**
+ * Outcome of `skipCurrentAlert`. `ok` is false only when the request could not
+ * act at all (no overlay is open, or the scene manager did not answer), and
+ * `reason` then says why. With `ok` true, `skipped` counts the distinct alerts
+ * that were playing and were ended; 0 means nothing was playing.
+ */
+export interface AlertSkipResult {
+  ok: boolean;
+  skipped: number;
+  reason?: string;
+}
+
+/**
+ * Outcome of `clearAlertQueue`. `cleared` counts the distinct alerts that were
+ * waiting to play and were dropped; the alert playing when the request arrived
+ * keeps playing. `ok`/`reason` as for `AlertSkipResult`.
+ */
+export interface AlertClearResult {
+  ok: boolean;
+  cleared: number;
+  reason?: string;
+}
+
+/**
+ * Outcome of `replayAlert`. With `ok` true the alert was queued on at least
+ * one open overlay under the fresh envelope id `replayEnvelopeId`; otherwise
+ * `reason` says why it will not play.
+ */
+export interface AlertReplayResult {
+  ok: boolean;
+  replayEnvelopeId?: string;
+  reason?: string;
 }
 
 // ==================== Module lifecycle response types ====================
@@ -1428,30 +1471,30 @@ export interface Woofx3EngineApi {
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
 
-  // Alert log replay — re-publishes a previously recorded alert
-  // envelope to `ui.notify.alert` with a fresh envelope id, so it
-  // flows through the queue manager as a new dispatch. The
-  // original row is marked `replayed`. Returns `false` when the id
-  // doesn't exist or the stored payload is malformed; throws on
-  // transport failures (NATS / db proxy unreachable).
-  replayAlert(id: string): Promise<boolean>;
-
-  // Operator controls (Phase 3) over the backend-authoritative
-  // alert queue (`api/src/alert-queue-manager.ts`).
+  // Alert queue controls. Alerts queue and play in each open overlay; the
+  // scene manager carries these requests to every overlay that is open.
 
   /**
-   * Mark the currently-playing alert (if any) as `skipped`,
-   * advance the queue to the next pending envelope. No-op when
-   * nothing is in flight. Returns whether an alert was skipped.
+   * Play a recorded alert again. Re-dispatches the stored envelope under a
+   * fresh envelope id, recorded as a new alert-log row, and marks the original
+   * row `replayed`. Asking again for the same row while that replay is under
+   * way, or within 30 s of it succeeding, returns the same result and plays
+   * nothing, so a retry after a timeout cannot play the alert twice.
    */
-  skipCurrentAlert(): Promise<{ skipped: boolean }>;
+  replayAlert(id: string): Promise<AlertReplayResult>;
 
   /**
-   * Mark every pending (not-yet-dispatched) alert as `skipped`.
-   * Does not touch the in-flight lease; pair with `skipCurrentAlert`
-   * for a full clear. Returns the number of pending alerts dropped.
+   * End the alert playing on every open overlay now, mark it `skipped`, and
+   * let the next queued alert start.
    */
-  clearAlertQueue(): Promise<{ cleared: number }>;
+  skipCurrentAlert(): Promise<AlertSkipResult>;
+
+  /**
+   * Drop every alert waiting to play on every open overlay and mark each
+   * `skipped`. The alert playing now keeps playing; pair with
+   * `skipCurrentAlert` to stop everything.
+   */
+  clearAlertQueue(): Promise<AlertClearResult>;
 
   // Overlay Tokens
   //
@@ -1625,6 +1668,33 @@ export interface Woofx3EngineApi {
     triggerId?: string,
     triggeredBy?: string
   ): Promise<{ success: boolean; message: string }>;
+
+  // ==================== Config bundles ====================
+  // Backup, move and share a creator's configuration. Format and import rules:
+  // docs/services/config-bundles.md.
+
+  /**
+   * The creator's workflows, chat commands, command groups and module
+   * resource instances as a versioned bundle. Secrets, tokens, module
+   * settings and live resource values are never included; group members and
+   * per-user command grants only with `includeMembers`.
+   */
+  exportConfig(options?: ConfigExportOptions): Promise<ConfigBundle>;
+
+  /**
+   * What `importConfig` would do with `bundle` under the same options,
+   * without writing anything. Throws when the bundle is malformed, too large,
+   * or of an unsupported version.
+   */
+  previewImport(bundle: ConfigBundle, options?: ConfigImportOptions): Promise<ConfigImportPlan>;
+
+  /**
+   * Apply `bundle` through the same paths a save in the UI takes, so every
+   * item is validated and announced by the usual webhooks. Re-plans against
+   * the engine's current state rather than trusting an earlier preview.
+   * Best-effort per item: the result reports each item's outcome.
+   */
+  importConfig(bundle: ConfigBundle, options?: ConfigImportOptions): Promise<ConfigImportResult>;
 }
 
 // ==================== Widgets ====================

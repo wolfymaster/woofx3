@@ -45,8 +45,8 @@ function toError(err: unknown, op: string): Error {
  *
  * Scenes are read-only here; authoring them stays on the `api` service. What
  * this client does write is what sceneManager alone observes — widget status,
- * scene event delivery and completion, and the outcome of an alert it was
- * asked to play.
+ * scene event delivery and completion, the outcome of an alert it was
+ * asked to play, and an operator's replay of a recorded alert.
  */
 export class DbClient {
   private config: ClientConfiguration;
@@ -118,6 +118,20 @@ export class DbClient {
   // failed.
   async updateAlertLifecycle(req: alert.UpdateAlertLifecycleRequest): Promise<alert.AlertResponse> {
     return alert.UpdateAlertLifecycle(req, this.config);
+  }
+
+  // Replay reads a recorded alert, records the replay as a row of its own, and
+  // marks the original `replayed`.
+  async getAlert(req: alert.GetAlertRequest): Promise<alert.AlertResponse> {
+    return alert.GetAlert(req, this.config);
+  }
+
+  async createAlert(req: alert.CreateAlertRequest): Promise<alert.AlertResponse> {
+    return alert.CreateAlert(req, this.config);
+  }
+
+  async updateAlertStatus(req: alert.UpdateAlertStatusRequest): Promise<alert.AlertResponse> {
+    return alert.UpdateAlertStatus(req, this.config);
   }
 
   async getSetting(key: string): Promise<string | null> {

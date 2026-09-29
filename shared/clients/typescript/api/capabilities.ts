@@ -17,6 +17,8 @@ export const ENGINE_CAPABILITIES = {
   analyticsGauges: "analytics.gauges",
   /** Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard`. */
   analyticsAggregates: "analytics.aggregates",
+  /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
+  configBundles: "config.bundles",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
 } as const;

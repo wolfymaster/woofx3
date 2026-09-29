@@ -330,19 +330,19 @@ const (
 
 | Subject | Direction | Payload | Pattern |
 |---------|-----------|---------|---------|
-| `ui.notify.alert` | workflow → streamware | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
+| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
 | `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
 | `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
-| `widget.queue.skip` | api → streamware | `{}` | NATS request/reply |
-| `widget.queue.clear` | api → streamware | `{}` | NATS request/reply |
-| `widget.queue.replay` | api → streamware | `{ id }` (alert row id) | NATS request/reply |
+| `widget.queue.skip` | api → sceneManager | `{}`; reply `{ ok, skipped, reason? }` | NATS request/reply |
+| `widget.queue.clear` | api → sceneManager | `{}`; reply `{ ok, cleared, reason? }` | NATS request/reply |
+| `widget.queue.replay` | api → sceneManager | `{ id }` (alert row id); reply `{ ok, replayEnvelopeId?, reason? }` | NATS request/reply |
 
 Routing rules for `widget.event` are handled in `streamware/src/events/handlers.ts`. Dispatch is keyed on `data.key`:
 
 - `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `EventQueueManager.handleStatus` (state transitions on the in-flight alert lease).
 - Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(instanceId, key)`).
 
-See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract.
+See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract, and [Skip, clear and replay](./widget-events.md#skip-clear-and-replay) for the `widget.queue.*` requests.
 
 ## Go — DB-Outbox Subjects (engine → api)
 
