@@ -29,6 +29,10 @@ argument reports `dev`.
   orchestrator and every service binary, and starts through `start.sh` /
   `start.bat`, which migrate the database before starting the orchestrator, as
   the image's entrypoint does.
+- The release's entry in `CHANGELOG.md`, committed to `master` as
+  `chore(release): v… [skip ci]`. The `v…` git tag points at that commit, whose
+  parent is the commit the image and archives were built from; the two differ
+  only in `CHANGELOG.md`.
 
 ## Cutting a release
 
@@ -60,6 +64,38 @@ version its tag no longer matches, and the next run releases both.
 
 When the workflow finishes, check the release notes carry the digest, and that
 `docker pull ghcr.io/wolfymaster/woofx3@<digest>` works.
+
+## Release pull requests
+
+A pull request into `master` whose title starts with `Release:` gets a comment
+from `.github/workflows/release-preview.yml` naming the version merging it
+releases, with the release notes that go into the GitHub release and
+`CHANGELOG.md`. It is updated on every push and title edit. semantic-release
+refuses to run anywhere but the tip of `master`, so the preview runs its commit
+analyzer and notes generator, configured from `.releaserc.json`, over the pull
+request's merge ref.
+
+Merge a release pull request with a **merge commit**. A squash merge replaces
+its commits with one named after the pull request, and semantic-release reads
+only commit messages: a `Release: …` title releases nothing.
+
+## The release app
+
+The `WolfyMasterOnly` ruleset lets nothing onto `master` but a pull request, and
+the workflow's `GITHUB_TOKEN` cannot bypass a ruleset. The `CHANGELOG.md` commit
+is pushed with a token for a GitHub App instead. Setting it up is a one-time
+step:
+
+1. Create a GitHub App owned by the repository owner, with repository
+   permission **Contents: read and write** and no webhook, and install it on
+   `wolfymaster/woofx3` only.
+2. In the ruleset, add the app to the bypass list, **Always allow**.
+3. In the repository's Actions settings, add the app's client ID as the variable
+   `RELEASE_APP_CLIENT_ID` and a private key as the secret
+   `RELEASE_APP_PRIVATE_KEY`.
+
+Without them the release workflow fails in its first job, before anything is
+built.
 
 ## Visibility
 

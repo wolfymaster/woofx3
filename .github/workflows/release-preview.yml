@@ -1,0 +1,66 @@
+name: Release preview
+
+# A pull request into master titled "Release: ..." gets one comment, kept up to
+# date, saying which version merging it releases and with which notes. The
+# preview runs over the pull request's merge ref, which is master with the
+# pull request merged, so it sees exactly the commits release.yml will.
+
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: release-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  preview:
+    name: Preview the release
+    # startsWith is case-insensitive.
+    if: startsWith(github.event.pull_request.title, 'Release:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Must match the versions release.yml runs, or the preview can disagree
+      # with the release.
+      - name: Install semantic-release
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/semantic-release" \
+            semantic-release@25.0.9 \
+            conventional-changelog-conventionalcommits@9.3.1
+
+      - name: Work out the release
+        run: node .github/scripts/release-preview.mjs "$RUNNER_TEMP/semantic-release/node_modules" > "$RUNNER_TEMP/preview.md"
+
+      - name: Post or update the comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          comment="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- release-preview -->"))) | .id' \
+            | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment}" -F body=@"$RUNNER_TEMP/preview.md" > /dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@"$RUNNER_TEMP/preview.md" > /dev/null
+          fi
