@@ -10,6 +10,7 @@ import type {
 } from "@woofx3/api";
 import type * as stream_gauge from "@woofx3/db/stream_gauge.pb";
 import type * as user_event from "@woofx3/db/user_event.pb";
+import type { DbClient } from "../db-client";
 import { timestampToEpochMs } from "../stream-session-resolver";
 import { routeModule } from "./context";
 
@@ -124,27 +125,36 @@ function toEntry(entry: user_event.LeaderboardEntry): LeaderboardEntry {
   };
 }
 
+/**
+ * A session's totals, or null when the session does not exist. Shared by the
+ * RPC and the session summary, so the UI's stored summary and a live read of
+ * the same session can never disagree about what a figure means.
+ */
+export async function readStreamSessionTotals(
+  db: Pick<DbClient, "findStreamSessionEventTotals" | "findStreamGaugeSamples">,
+  sessionId: string
+): Promise<StreamSessionTotals | null> {
+  const id = readId(sessionId, "sessionId");
+  const [totals, samples] = await Promise.all([db.findStreamSessionEventTotals(id), db.findStreamGaugeSamples(id)]);
+  if (totals === null || samples === null) {
+    return null;
+  }
+  return {
+    sessionId: id,
+    bits: count(totals.bits, "bits"),
+    cheers: count(totals.cheers, "cheers"),
+    subs: count(totals.subs, "subs"),
+    giftedSubs: count(totals.giftedSubs, "giftedSubs"),
+    follows: count(totals.follows, "follows"),
+    raids: count(totals.raids, "raids"),
+    raiders: count(totals.raiders, "raiders"),
+    ...viewerFigures(samples.map(toSample)),
+  };
+}
+
 export const analyticsRoutes = routeModule({
   async getStreamSessionTotals(sessionId: string): Promise<StreamSessionTotals | null> {
-    const id = readId(sessionId, "sessionId");
-    const [totals, samples] = await Promise.all([
-      this.db.findStreamSessionEventTotals(id),
-      this.db.findStreamGaugeSamples(id),
-    ]);
-    if (totals === null || samples === null) {
-      return null;
-    }
-    return {
-      sessionId: id,
-      bits: count(totals.bits, "bits"),
-      cheers: count(totals.cheers, "cheers"),
-      subs: count(totals.subs, "subs"),
-      giftedSubs: count(totals.giftedSubs, "giftedSubs"),
-      follows: count(totals.follows, "follows"),
-      raids: count(totals.raids, "raids"),
-      raiders: count(totals.raiders, "raiders"),
-      ...viewerFigures(samples.map(toSample)),
-    };
+    return readStreamSessionTotals(this.db, sessionId);
   },
 
   async getViewerTotals(query: ViewerTotalsQuery): Promise<ViewerTotals | null> {

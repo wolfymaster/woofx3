@@ -54,6 +54,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initOverlayTokenHandlers },
       { initSceneHandlers },
       { initCommandHandlers },
+      { SessionSummaryEmitter },
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
       { StreamSessionResolver },
@@ -81,6 +82,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./overlay-token-handlers"),
       import("./scene-event-handlers"),
       import("./command-event-handlers"),
+      import("./session-summary-emitter"),
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
       import("./stream-session-resolver"),
@@ -187,6 +189,11 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
       await storageChangeEmitter.start();
+
+      // Subscribed before the resolver starts, so no `session.ended` it
+      // publishes can be missed.
+      const sessionSummaryEmitter = new SessionSummaryEmitter(natsClient, db, webhookClient, logger);
+      await sessionSummaryEmitter.start();
 
       const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
       await streamSessionResolver.start();

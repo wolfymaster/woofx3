@@ -1,5 +1,6 @@
 import type { PaginatedStreamSessions, StreamSession, StreamSessionSegment, StreamSessionsQuery } from "@woofx3/api";
 import type * as stream_session from "@woofx3/db/stream_session.pb";
+import type { DbClient } from "../db-client";
 import { timestampToEpochMs } from "../stream-session-resolver";
 import { routeModule } from "./context";
 
@@ -82,6 +83,18 @@ function readPaging(query: StreamSessionsQuery | undefined): { limit: number; of
   return { limit, offset };
 }
 
+/** A session with its segments, or null when no session has that id. */
+export async function readStreamSession(
+  db: Pick<DbClient, "findStreamSession">,
+  id: string
+): Promise<StreamSession | null> {
+  const found = await db.findStreamSession({ id });
+  if (!found) {
+    return null;
+  }
+  return toSession(found.session, found.segments);
+}
+
 export const streamSessionsRoutes = routeModule({
   async listStreamSessions(query?: StreamSessionsQuery): Promise<PaginatedStreamSessions> {
     const paging = readPaging(query);
@@ -96,10 +109,6 @@ export const streamSessionsRoutes = routeModule({
   },
 
   async getStreamSession(id: string): Promise<StreamSession | null> {
-    const found = await this.db.findStreamSession({ id });
-    if (!found) {
-      return null;
-    }
-    return toSession(found.session, found.segments);
+    return readStreamSession(this.db, id);
   },
 });
