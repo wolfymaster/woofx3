@@ -43,3 +43,12 @@ When designing anything module code can reach (a sandbox binding, a manifest fie
 ## Requests the dashboard asks for
 
 A manifest field's `source` and a settings button's `action` (`kind: "internal"`) are requests the api sends on the dashboard's behalf, when a form renders or a button is pressed. The dashboard never supplies them: it names the field (module id, declaration, declaration id, field id) and the api reads the request from the installed module's stored manifest, refusing a field that does not exist or a request descriptor sent in place of a reference. So a signed-in dashboard user can ask only for requests an installed module declared, never an arbitrary command on an arbitrary subject. See [dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind).
+
+## Reserved subjects
+
+Workflows are user- and module-authored too, and a `publish_event` step publishes on the subject its `eventType` names. The reserved names live in one place, `shared/common/golang/cloudevents/reserved.go`:
+
+- `CommandSubjectPrefixes`: subjects the engine treats as commands. Barkloader refuses an uploaded module that declares one of these as an event (`USER_RESERVED_EVENT_PREFIXES` in `barkloader/lib_module/src/manifest_validate.rs` must match; a test compares them).
+- `EngineEventSubjectPrefixes`: facts engine services assert (platform events, sessions, module and run lifecycle). A workflow may not publish these either. Modules are not held to this tier, since a platform module declares the platform events it brings.
+
+An entry ending in `.` reserves a namespace, any other exactly that name. The workflow engine refuses a workflow that publishes under either tier when it registers it (and unregisters the version a refused update would replace), and refuses the publish at run time when the event type came from an expression. The api repeats the check when a workflow is saved (`api/src/workflow/reserved-subjects.ts`, compared against the Go list by a test).
