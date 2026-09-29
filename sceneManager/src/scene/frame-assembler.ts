@@ -24,12 +24,15 @@ export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body><
 /** Capabilities advertised in every boot payload. */
 export const FRAME_CAPABILITIES = ["storage", "events", "status"] as const;
 
+/** The widget host shim's file name under sceneManager's public directory. */
+export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
+
 /** Absolute shim src — sceneManager serves it at a fixed top-level
  *  path regardless of how deep the frame URL is, so no relative-path
  *  arithmetic is needed (streamware used a relative `../assets/...`
  *  path that depended on frame-URL depth; not worth the fragility
  *  here). */
-export const SHIM_SRC = "/assets/widget-host-shim.js";
+export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
 
 const FRAME_HEADERS: Record<string, string> = {
   "Content-Type": "text/html; charset=utf-8",

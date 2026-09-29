@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	gsqlite "github.com/glebarez/sqlite"
 	"github.com/go-gormigrate/gormigrate/v2"
+	gsqlite "github.com/libtnb/sqlite"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )

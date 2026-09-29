@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "bun run src/server.ts",
-    "dev": "bun run --watch src/server.ts",
+    "start": "bun run build:shim && bun run src/server.ts",
+    "dev": "bun run build:shim && bun run --watch src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "build:client": "bun build public/scene-manager/index.ts --outdir public/scene-manager --format esm --target browser",
+    "build:client": "bun run build:shim && bun build public/scene-manager/index.ts --outdir public/scene-manager --format esm --target browser",
     "build:shim": "bun run --cwd ../shared/clients/typescript/module-sdk build:shim && cp ../shared/clients/typescript/module-sdk/dist/widget-host-shim.iife.js public/widget-host-shim.js"
   },
   "dependencies": {

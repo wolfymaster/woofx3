@@ -20,7 +20,7 @@ ARG CADDY_SHA512=8220d1f013b6f27510247b2360c9e0ca9f018feebd82515f07635318b34ff97
 
 FROM oven/bun:${BUN_VERSION} AS bun-toolchain
 
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

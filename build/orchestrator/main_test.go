@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func discardLogger() *slog.Logger {
@@ -65,5 +67,32 @@ func TestAPrebuiltBinaryThatIsInstalledRuns(t *testing.T) {
 
 	if len(got) != 1 || got[0].Name != "edge" {
 		t.Fatalf("services to run = %v, want [edge]", got)
+	}
+}
+
+// A service that takes a while to shut down, as db-proxy does while it
+// flushes module storage, is waited for rather than killed mid-shutdown.
+func TestStopAllWaitsForAServiceToExitAfterSIGTERM(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows cannot deliver SIGTERM")
+	}
+	marker := filepath.Join(t.TempDir(), "exited-cleanly")
+	script := `trap 'sleep 1; touch "$0"; exit 0' TERM; while true; do sleep 0.05; done`
+
+	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor.AddService(Service{Name: "slow", Args: []string{"-c", script, marker}})
+	if err := supervisor.startServiceProcess(supervisor.services["slow"], "/bin/sh"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	started := time.Now()
+	supervisor.StopAll()
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("service was killed before it finished shutting down: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > stopGracePeriod/2 {
+		t.Errorf("StopAll took %s for a service that exited in about 1s", elapsed)
 	}
 }

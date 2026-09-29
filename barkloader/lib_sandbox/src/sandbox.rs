@@ -6,7 +6,7 @@ use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 use woofx3_cloudevents::{BaseEvent, now_iso8601};
 
 #[derive(Clone)]
@@ -80,10 +80,10 @@ impl Sandbox {
     }
 
     pub fn invoke(&mut self, request: InvokeRequest) -> Result<Value, Error> {
-        info!("Invoking function function={}", request.function);
+        debug!("Invoking function function={}", request.function);
 
         let function = self.registry.get_function(&request.function)?;
-        info!(
+        debug!(
             "Executing sandbox function={} entry_point={}",
             request.function,
             function.resolved_entry_point()
@@ -124,7 +124,7 @@ impl Sandbox {
                         request.function
                     );
                 }
-                info!(
+                debug!(
                     "Function invoke succeeded function={} result={}",
                     request.function, value
                 );

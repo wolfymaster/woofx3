@@ -5,8 +5,20 @@ import (
 )
 
 type DatabaseEnvConfig struct {
-	DatabaseURL       string `env:"WOOFX3_DATABASE_URL,required"`
-	BadgerPath        string `env:"WOOFX3_BADGER_PATH,required"`
+	DatabaseURL string `env:"WOOFX3_DATABASE_URL,required"`
+	// StoragePath is the SQLite file that holds module storage (`ctx.storage`).
+	StoragePath string `env:"WOOFX3_STORAGE_PATH,required"`
+	// StorageReplicaURL, when set, streams module storage to S3-compatible
+	// object storage with Litestream and restores it from there when the file
+	// is missing. Unset is local mode: the file on disk is the only copy.
+	StorageReplicaURL string `env:"WOOFX3_STORAGE_REPLICA_URL"`
+	// S3 credentials for the replica. When unset, the standard AWS credential
+	// sources (AWS_ACCESS_KEY_ID, ...) apply.
+	StorageReplicaAccessKeyID     string `env:"WOOFX3_STORAGE_REPLICA_ACCESS_KEY_ID"`
+	StorageReplicaSecretAccessKey string `env:"WOOFX3_STORAGE_REPLICA_SECRET_ACCESS_KEY"`
+	// BadgerPath is where module storage lived before it moved to SQLite.
+	// Read only to import it once; see services.ImportBadgerStorage.
+	BadgerPath        string `env:"WOOFX3_BADGER_PATH"`
 	DatabaseProxyPort string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
 	// DatabaseProxyHost is the interface db-proxy listens on. db-proxy has no
 	// authentication, so it stays on loopback unless a deployment runs its

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
 use tokio::task::AbortHandle;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Internal host-managed scheduler for module background tasks.
 ///
@@ -78,7 +78,7 @@ impl BackgroundTaskScheduler {
 
                     let now = Utc::now();
                     let delay = (next - now).to_std().unwrap_or_default();
-                    info!(
+                    debug!(
                         "Background task {}/{} scheduled next fire at {}",
                         module_key_owned,
                         task_id,
@@ -91,7 +91,7 @@ impl BackgroundTaskScheduler {
                     let m = module_key_owned.clone();
                     let t = task_id.clone();
 
-                    info!("Background task {}/{} firing", m, t);
+                    debug!("Background task {}/{} firing", m, t);
                     let fire_start = std::time::Instant::now();
 
                     // invoke_blocking offloads onto Tokio's blocking thread pool
@@ -112,7 +112,7 @@ impl BackgroundTaskScheduler {
                     let elapsed_ms = fire_start.elapsed().as_millis();
                     match result {
                         Ok(_) => {
-                            info!("Background task {}/{} completed in {}ms", m, t, elapsed_ms);
+                            debug!("Background task {}/{} completed in {}ms", m, t, elapsed_ms);
                         }
                         Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
                             error!(
