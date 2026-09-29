@@ -2,6 +2,16 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import type { OverlayHost } from "./scene-host";
+import {
+  type FrameTheme,
+  buildThemeStyle,
+  hostTheme,
+  injectThemeStylesheet,
+  originOf,
+  parseFrameTheme,
+  selectedThemeId,
+  themeContentSecurityPolicy,
+} from "./widget-theme";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -14,12 +24,15 @@ export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body><
 /** Capabilities advertised in every boot payload. */
 export const FRAME_CAPABILITIES = ["storage", "events", "status"] as const;
 
+/** The widget host shim's file name under sceneManager's public directory. */
+export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
+
 /** Absolute shim src — sceneManager serves it at a fixed top-level
  *  path regardless of how deep the frame URL is, so no relative-path
  *  arithmetic is needed (streamware used a relative `../assets/...`
  *  path that depended on frame-URL depth; not worth the fragility
  *  here). */
-export const SHIM_SRC = "/assets/widget-host-shim.js";
+export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
 
 const FRAME_HEADERS: Record<string, string> = {
   "Content-Type": "text/html; charset=utf-8",
@@ -32,12 +45,15 @@ const NONCE_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 export interface BarkloaderFrameInfo {
   entryHtml: string;
   resourceBaseUrl: string;
+  /** `null` for a widget that declares no theme contract. */
+  theme: FrameTheme | null;
 }
 
 /** The slice of Barkloader's HTTP surface the assembler depends on
- *  (injectable for tests). */
+ *  (injectable for tests). `themeId` is the theme the placement's settings
+ *  select; barkloader resolves it, falling back to the contract defaults. */
 export interface BarkloaderFrameClient {
-  fetchWidgetFrame(moduleKey: string, manifestId: string): Promise<BarkloaderFrameInfo | null>;
+  fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null>;
 }
 
 /** Real implementation — calls barkloader's `GET
@@ -49,10 +65,11 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     private readonly fetchFn: typeof fetch = fetch
   ) {}
 
-  async fetchWidgetFrame(moduleKey: string, manifestId: string): Promise<BarkloaderFrameInfo | null> {
+  async fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null> {
+    const query = themeId === undefined ? "" : `?theme=${encodeURIComponent(themeId)}`;
     const url =
       `${this.barkloaderUrl.replace(/\/+$/, "")}/widgets/` +
-      `${encodeURIComponent(moduleKey)}/${encodeURIComponent(manifestId)}/frame`;
+      `${encodeURIComponent(moduleKey)}/${encodeURIComponent(manifestId)}/frame${query}`;
     const response = await this.fetchFn(url);
     if (!response.ok) {
       // A non-OK response is not a transport error (loadFrameInfo's
@@ -68,7 +85,7 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
       });
       return null;
     }
-    const body = (await response.json()) as { entryHtml?: unknown; resourceBaseUrl?: unknown };
+    const body = (await response.json()) as { entryHtml?: unknown; resourceBaseUrl?: unknown; theme?: unknown };
     if (typeof body.entryHtml !== "string" || typeof body.resourceBaseUrl !== "string") {
       this.logger.warn("barkloader widget frame response missing entryHtml/resourceBaseUrl", {
         moduleKey,
@@ -78,7 +95,11 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
       });
       return null;
     }
-    return { entryHtml: body.entryHtml, resourceBaseUrl: body.resourceBaseUrl };
+    return {
+      entryHtml: body.entryHtml,
+      resourceBaseUrl: body.resourceBaseUrl,
+      theme: parseFrameTheme(body.theme),
+    };
   }
 }
 
@@ -90,6 +111,9 @@ export interface FrameAssemblerOptions {
 export interface FrameScaffold {
   boot: WidgetBootPayload;
   baseHref: string;
+  /** Variables and asset slots of a themeable widget, set before any of
+   *  the widget's own styles or scripts. */
+  theme?: FrameTheme | null;
 }
 
 /** What a frame is assembled for: a scene placement, or one widget of an alert layout. */
@@ -116,7 +140,8 @@ export function buildFrameScaffold(scaffold: FrameScaffold): string {
   return (
     `<script>window.__WOOFX3_WIDGET_BOOT__ = ${bootJson};</script>` +
     `<script src="${SHIM_SRC}"></script>` +
-    `<base href="${escapeHtmlAttribute(scaffold.baseHref)}">`
+    `<base href="${escapeHtmlAttribute(scaffold.baseHref)}">` +
+    (scaffold.theme ? buildThemeStyle(scaffold.theme) : "")
   );
 }
 
@@ -260,6 +285,17 @@ export class FrameAssembler {
       });
     }
 
+    const theme = frameInfo.theme;
+    if (theme?.fallback) {
+      this.logger.warn("widget theme unavailable; rendering the widget's defaults", {
+        sceneId,
+        instanceId: target.instanceId,
+        widgetCanonicalId: target.widgetCanonicalId,
+        selectedTheme: selectedThemeId(target.settings),
+        reason: theme.fallback,
+      });
+    }
+
     const boot: WidgetBootPayload = {
       v: 1,
       nonce,
@@ -270,15 +306,32 @@ export class FrameAssembler {
       settings: target.settings,
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
+      theme: theme ? hostTheme(theme) : null,
     };
-    const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl });
-    const assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
-    return new Response(assembled, { status: 200, headers: { ...FRAME_HEADERS } });
+    const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
+    let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
+    const headers: Record<string, string> = { ...FRAME_HEADERS };
+    if (theme) {
+      if (theme.stylesheetUrl) {
+        assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
+      }
+      // Every widget that opted into themes runs under the policy, themed or
+      // not, so a theme can never be the thing that changes what loads.
+      headers["Content-Security-Policy"] = themeContentSecurityPolicy([
+        originOf(frameInfo.resourceBaseUrl),
+        ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
+      ]);
+    }
+    return new Response(assembled, { status: 200, headers });
   }
 
   private async loadFrameInfo(target: FrameTarget): Promise<BarkloaderFrameInfo | null> {
     try {
-      return await this.opts.barkloader.fetchWidgetFrame(target.moduleId, target.manifestId);
+      return await this.opts.barkloader.fetchWidgetFrame(
+        target.moduleId,
+        target.manifestId,
+        selectedThemeId(target.settings)
+      );
     } catch (err) {
       this.logger.warn("barkloader frame fetch failed", {
         widgetCanonicalId: target.widgetCanonicalId,

@@ -579,10 +579,7 @@ async fn delete_handler(
                     "Module {} deleted successfully (id={}, key={})",
                     module_name_task, resolved.module_id, resolved.module_key
                 );
-                registry_loader::unregister_background_tasks(
-                    &ctx_clone.scheduler,
-                    &resolved.manifest_id,
-                );
+                registry_loader::unregister_schedule(&ctx_clone.scheduler, &resolved.manifest_id);
                 notify_delete(
                     &db_proxy,
                     &resolved.module_id,
@@ -664,9 +661,11 @@ async fn state_handler(
         }
     };
 
+    let enabled = matches!(new_state, lib_sandbox::ModuleState::Active);
     ctx.registry
         .set_module_state(&module_name, new_state)
         .map_err(|e| actix_web::error::ErrorNotFound(e.to_string()))?;
+    ctx.scheduler.set_enabled(&module_name, enabled);
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,

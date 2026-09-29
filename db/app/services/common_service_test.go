@@ -3,7 +3,7 @@ package services
 import (
 	"testing"
 
-	"github.com/glebarez/sqlite"
+	"github.com/libtnb/sqlite"
 	"gorm.io/gorm"
 )
 

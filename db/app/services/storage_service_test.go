@@ -2,22 +2,39 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"io"
+	"log/slog"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database/replication"
 )
+
+// openStorageTestFile opens a fresh module storage file, as db-proxy does in
+// local mode.
+func openStorageTestFile(t *testing.T) *sql.DB {
+	t.Helper()
+	store, err := replication.Open(context.Background(), replication.Config{
+		Path:   filepath.Join(t.TempDir(), "module-storage.db"),
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("open module storage: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close(context.Background()) })
+	if err := EnsureStorageSchema(context.Background(), store.DB()); err != nil {
+		t.Fatalf("EnsureStorageSchema: %v", err)
+	}
+	return store.DB()
+}
 
 func newStorageTestService(t *testing.T) *storageService {
 	t.Helper()
-	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true).WithLoggingLevel(badger.ERROR))
-	if err != nil {
-		t.Fatalf("open in-memory badger: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return NewStorageService(db)
+	return NewStorageService(openStorageTestFile(t))
 }
 
 func TestStorageService_GetSet_RoundTrip(t *testing.T) {

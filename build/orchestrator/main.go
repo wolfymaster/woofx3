@@ -191,7 +191,6 @@ const (
 type ServiceProcess struct {
 	Service    Service
 	Cmd        *os.Process
-	Stop       chan bool
 	Restart    chan bool
 	Status     ServiceStatus
 	LastHealth time.Time
@@ -217,7 +216,6 @@ func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 func (s *Supervisor) AddService(service Service) {
 	s.services[service.Name] = &ServiceProcess{
 		Service:  service,
-		Stop:     make(chan bool),
 		Restart:  make(chan bool),
 		Status:   StatusStopped,
 		CanStart: make(chan bool, 1),
@@ -296,8 +294,6 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 
 	for {
 		select {
-		case <-serviceProcess.Stop:
-			return
 		case <-ticker.C:
 			if s.stopping {
 				return
@@ -327,23 +323,49 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 	}
 }
 
+// stopGracePeriod is how long every service has, after SIGTERM, to exit on
+// its own before it is killed. It must cover db-proxy's final flush of module
+// storage to its replica (closeTimeout in db/app/services/module_storage_service.go);
+// a kill mid-flush loses the writes since the last sync.
+const stopGracePeriod = 25 * time.Second
+
+// StopAll asks every running service to stop, waits for them to exit, and
+// kills whatever is still running once the grace period is over.
 func (s *Supervisor) StopAll() {
 	s.stopping = true
 	for name, serviceProcess := range s.services {
+		process := serviceProcess.Cmd
+		if process == nil {
+			continue
+		}
 		s.logger.Info("Stopping service", "service", name)
-		select {
-		case serviceProcess.Stop <- true:
-		default:
+		if err := process.Signal(syscall.SIGTERM); err != nil {
+			// Windows cannot deliver SIGTERM; a kill is the only stop there.
+			s.logger.Warn("Could not signal service, killing it", "service", name, "error", err)
+			process.Kill()
 		}
 	}
 
-	time.Sleep(2 * time.Second)
+	deadline := time.Now().Add(stopGracePeriod)
+	for s.anyRunning() && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
 
+	for name, serviceProcess := range s.services {
+		if process := serviceProcess.Cmd; process != nil {
+			s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
+			process.Kill()
+		}
+	}
+}
+
+func (s *Supervisor) anyRunning() bool {
 	for _, serviceProcess := range s.services {
 		if serviceProcess.Cmd != nil {
-			serviceProcess.Cmd.Kill()
+			return true
 		}
 	}
+	return false
 }
 
 func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
@@ -352,14 +374,6 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 
 	for {
 		select {
-		case <-serviceProcess.Stop:
-			if serviceProcess.Cmd != nil {
-				s.logger.Info("Gracefully stopping service", "service", service.Name)
-				serviceProcess.Cmd.Signal(syscall.SIGTERM)
-				time.Sleep(5 * time.Second)
-				serviceProcess.Cmd.Kill()
-			}
-			return
 		case <-serviceProcess.Restart:
 			if serviceProcess.Cmd != nil {
 				s.logger.Info("Restarting service", "service", service.Name)

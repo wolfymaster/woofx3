@@ -33,6 +33,12 @@ import type { ConditionOperator } from "./workflow-definition";
  * `text` and `toggle` are the spellings — not `string` and `boolean`, which
  * described the stored value rather than the control and only ever appeared on
  * module settings.
+ *
+ * `theme` is never declared by a manifest: barkloader adds it, as the field
+ * `THEME_SETTING_ID`, to a widget that declares a theme contract. Its value is
+ * a theme's canonical id (`{moduleId}:theme:{id}`), or absent for the widget's
+ * own look. Mirrors `CONFIG_FIELD_TYPES` in barkloader's module_manifest.rs,
+ * which checks the two lists match.
  */
 export const CONFIG_FIELD_TYPES = [
   "number",
@@ -47,9 +53,13 @@ export const CONFIG_FIELD_TYPES = [
   "button",
   "layout",
   "list",
+  "theme",
 ] as const;
 
 export type ConfigFieldType = (typeof CONFIG_FIELD_TYPES)[number];
+
+/** The settings key of the theme picker barkloader adds to a themeable widget. */
+export const THEME_SETTING_ID = "theme";
 
 /**
  * The types a `list` field's `itemFields` may use: controls that fit in one

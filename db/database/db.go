@@ -5,10 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
-	"github.com/glebarez/sqlite"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/libtnb/sqlite"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -121,9 +120,4 @@ func openSQLite(path string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm.
 	}
 
 	return db, nil
-}
-
-func InitializeBadgerDB(path string) (*badger.DB, error) {
-	opts := badger.DefaultOptions(path).WithSyncWrites(true)
-	return badger.Open(opts)
 }

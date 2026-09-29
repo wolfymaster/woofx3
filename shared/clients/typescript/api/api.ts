@@ -38,6 +38,35 @@ export interface ModuleSettingsResponse {
   settings: ModuleSetting[];
 }
 
+/** One installed theme a widget's `theme` settings field can select. */
+export interface WidgetThemeOption {
+  /** Theme canonical id `{moduleId}:theme:{id}` — the value the field stores. */
+  id: string;
+  name: string;
+  description: string;
+  /** The module that ships the theme. */
+  moduleId: string;
+  moduleVersion: string;
+  contractVersion: number;
+  /**
+   * False when the theme no longer fits the widget's current contract (the
+   * widget's module was upgraded past it). A frame selecting it renders the
+   * widget's defaults, so a picker should not offer it, and should flag it
+   * when it is the stored value.
+   */
+  compatible: boolean;
+  previewUrl: string | null;
+}
+
+export interface WidgetThemes {
+  /** The widget canonical id the list is for. */
+  widget: string;
+  /** The widget's contract version, or null when it cannot be themed. */
+  contractVersion: number | null;
+  /** Ordered by name. Empty when nothing installed targets the widget. */
+  themes: WidgetThemeOption[];
+}
+
 /**
  * An inbound HTTP request the control plane relays to a module's webhook
  * handler. See `Woofx3EngineApi.handleInboundWebhook`.
@@ -956,6 +985,14 @@ export interface Woofx3EngineApi {
    * with that id is installed, or its stored manifest fails to parse.
    */
   getModuleManifest(moduleId: string): Promise<Record<string, unknown> | null>;
+
+  /**
+   * The installed themes made for one widget, for the picker behind a
+   * `theme` settings field. `widgetCanonicalId` is `{moduleId}:widget:{id}`.
+   * Themes come and go only with module installs, so a picker refreshes on
+   * `module.installed` and `module.deleted`.
+   */
+  listWidgetThemes(widgetCanonicalId: string): Promise<WidgetThemes>;
 
   /**
    * Creates a runtime instance of a module-declared resource kind (e.g. a
