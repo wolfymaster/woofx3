@@ -646,7 +646,7 @@ All configuration via environment variables. Key variables:
 |----------|---------|---------|
 | `ENGINE_ID` | Unique engine instance ID | Required |
 | `DATABASE_URL` | System database connection | `sqlite://db.sqlite` |
-| `BADGER_PATH` | Module KV storage path | `./badger` |
+| `STORAGE_PATH` | Module KV storage (SQLite) file | Required |
 | `NATS_URL` | NATS server URL | `nats://localhost:4222` |
 | `TWITCH_CLIENT_ID` | Twitch OAuth client ID | - |
 | `TWITCH_CLIENT_SECRET` | Twitch OAuth secret | - |

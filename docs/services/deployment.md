@@ -63,6 +63,87 @@ mounts a root-owned volume there must start the container as root (Railway:
 `RAILWAY_RUN_UID=0`); the entrypoint then hands `/app/data` to 65532 and drops
 privileges before migrating or starting anything.
 
+## Module storage
+
+Module storage (`ctx.storage`) is an embedded SQLite file owned by db-proxy,
+separate from the system database. It is the one piece of engine state that
+lives on the engine's own disk, so it is the piece that decides how an engine
+survives a redeploy or a move to another host.
+
+| Key (`.woofx3.json` / variable) | Required | Meaning |
+|---|---|---|
+| `storagePath` / `WOOFX3_STORAGE_PATH` | yes | The SQLite file, e.g. `/app/data/module-storage.db`. |
+| `storageReplicaUrl` / `WOOFX3_STORAGE_REPLICA_URL` | no | Litestream replica URL. Unset is local mode. |
+| `storageReplicaAccessKeyId` / `WOOFX3_STORAGE_REPLICA_ACCESS_KEY_ID` | no | S3 access key for the replica. |
+| `storageReplicaSecretAccessKey` / `WOOFX3_STORAGE_REPLICA_SECRET_ACCESS_KEY` | no | S3 secret key for the replica. |
+| `badgerPath` / `WOOFX3_BADGER_PATH` | no | A Badger directory from before module storage moved to SQLite; imported once, see below. |
+
+Set the credentials as variables on the host, never in the baked
+`.woofx3.json`. When they are unset, the replica client falls back to the
+standard AWS sources (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, instance
+roles).
+
+### Local mode
+
+With no replica URL, db-proxy opens the file and serves. SQLite's automatic
+checkpointing keeps the write-ahead log bounded, every commit is synced to disk
+before it is acknowledged, and the file on disk is the only copy: back up
+`/app/data` the way you back up anything else on that machine.
+
+### Replicated mode
+
+With a replica URL, db-proxy embeds [Litestream](https://litestream.io) and
+streams every commit to S3-compatible object storage (S3, R2, B2, MinIO, or a
+`file://` directory):
+
+```
+s3://<bucket>/engines/<engine-id>/storage?endpoint=https://<account>.r2.cloudflarestorage.com&region=auto
+```
+
+- **Restore before serving.** When the storage file is missing, db-proxy
+  restores it from the replica before it listens at all. A replica with no
+  backup yet (a new engine) starts an empty file. A restore that fails, for
+  any other reason, leaves db-proxy not serving and retrying; it never starts
+  with an empty store in place of the real one. `GET /ready` stays `503`
+  throughout, because db-proxy does not answer until storage is open.
+- **Durability.** A graceful shutdown flushes everything to the replica
+  before db-proxy exits. A crash can lose up to about one second of writes,
+  Litestream's sync interval.
+- **Moving between modes** needs no tooling. Local to replicated: start with a
+  replica URL; Litestream uploads the existing file as its first snapshot.
+  Replicated to local: start once with the URL on a host with no file, so it
+  restores, then remove the URL.
+
+**One writer per replica path.** Two engines writing the same bucket path can
+leave a replica that cannot be restored. Give every engine its own path, and
+never run two containers of one engine at once. Railway does not overlap
+deploys of a service that has a volume attached; without a volume, that
+guarantee is gone and an engine would need a lease before opening storage.
+
+**Keep the volume.** Replication makes a volume optional, but with one a
+redeploy reopens the local file instead of restoring it, which is faster and
+does not depend on the bucket being reachable at boot. Without one, every boot
+restores from the bucket (seconds at per-streamer sizes, growing with the
+database).
+
+### Shutdown
+
+On SIGTERM the orchestrator signals every service and waits up to 25 seconds
+for them to exit before killing them. db-proxy stops serving first, then closes
+module storage, which makes the final flush to the replica (bounded at 15
+seconds). The host must allow at least that long between SIGTERM and SIGKILL;
+on Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
+
+### Importing Badger data
+
+Module storage used to be a Badger directory (`badgerPath`). When db-proxy
+starts with `badgerPath` pointing at a Badger store, it copies every live item
+into the SQLite file, skipping expired items and any address the file already
+holds (restored or written since, so newer), then renames the directory to
+`<badgerPath>.imported-<UTC timestamp>`. The next start finds nothing to import.
+Once an engine has started on this release, `badgerPath` can be removed; the
+archived directory can be deleted once you no longer want it as a fallback.
+
 ## Readiness and version
 
 `GET /ready` (served by the api, reachable through the edge) answers `200`

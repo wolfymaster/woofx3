@@ -39,7 +39,9 @@ type HTTPServerService struct {
 
 func NewHTTPServerService(app interface{}, httpHost string, httpPort string, logger *slog.Logger, routeSetup RouteSetupFunc) *HTTPServerService {
 	return &HTTPServerService{
-		BaseService: runtime.NewBaseService[*http.Server]("http", "server", nil, false), // HTTP server doesn't need external heartbeat monitoring
+		// Depending on module storage orders shutdown: the server stops
+		// taking requests before storage closes and makes its final flush.
+		BaseService: runtime.NewBaseServiceWithDeps[*http.Server]("http", "server", nil, false, []string{ModuleStorageServiceName}),
 		logger:      logger,
 		httpHost:    httpHost,
 		httpPort:    httpPort,

@@ -129,7 +129,7 @@ Details: **`CLAUDE.md`** (same principles, expanded).
 
 - **Microservices** communicating over a **message bus** (NATS client API, local deployment).
 - Events follow **CloudEvents** (`shared/clients/cloudevents` and related).
-- **Only the DB layer** talks to databases. Other services use **gRPC clients** to the **db proxy** (Postgres/Sqlite system DB; BadgerDB for module KV).
+- **Only the DB layer** talks to databases. Other services use **gRPC clients** to the **db proxy** (Postgres/Sqlite system DB; an embedded SQLite file for module KV).
 
 ## Related repository
 

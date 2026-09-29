@@ -2,51 +2,38 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 )
 
 // StorageService backs `ctx.storage` for sandboxed module functions (see
 // barkloader's CtxStorage / storage.proto). A value is addressed by namespace
-// and key (badger key = "<namespace>\x00<key>"): the namespace -- the owning
-// module's manifest id -- keeps modules apart, so two modules using the same
-// key never read each other's values.
+// and key: the namespace -- the owning module's manifest id -- keeps modules
+// apart, so two modules using the same key never read each other's values.
+//
+// Values live in the module_storage table of their own SQLite file (see
+// EnsureStorageSchema). Every operation is a single statement, so each is
+// atomic without an explicit transaction.
 type storageService struct {
-	db *badger.DB
+	db *sql.DB
 }
 
-func NewStorageService(db *badger.DB) *storageService {
+func NewStorageService(db *sql.DB) *storageService {
 	return &storageService{db: db}
 }
 
-// storedItem is the JSON envelope persisted in badger. Mirrors StorageItem
-// minus the key, which the badger key already holds.
+// storedItem is one module_storage row minus its address.
 type storedItem struct {
-	Value             string `json:"value"`
-	CreatedAt         int64  `json:"createdAt"`
-	ExpiresAt         int64  `json:"expiresAt"`
-	Namespace         string `json:"namespace"`
-	ClearOnSessionEnd bool   `json:"clearOnSessionEnd"`
-}
-
-func storageKey(namespace, key string) []byte {
-	return []byte(namespace + "\x00" + key)
-}
-
-// splitStorageKey recovers the namespace and key from a badger key, for the
-// bulk operations that report what they touched.
-func splitStorageKey(raw []byte) (namespace, key string) {
-	parts := strings.SplitN(string(raw), "\x00", 2)
-	if len(parts) != 2 {
-		return "", string(raw)
-	}
-	return parts[0], parts[1]
+	Value             string
+	CreatedAt         int64
+	ExpiresAt         int64
+	ClearOnSessionEnd bool
 }
 
 // requireAddress refuses a read or write that does not say whose value it is.
@@ -58,28 +45,6 @@ func requireAddress(namespace, key, prefix string) error {
 		return twirp.RequiredArgumentError(prefix + "namespace")
 	}
 	return nil
-}
-
-// readItem returns the live item at a badger key, or nil when there is none or
-// it has expired.
-func readItem(txn *badger.Txn, key []byte) (*storedItem, error) {
-	entry, err := txn.Get(key)
-	if err == badger.ErrKeyNotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var decoded storedItem
-	if err := entry.Value(func(val []byte) error {
-		return json.Unmarshal(val, &decoded)
-	}); err != nil {
-		return nil, err
-	}
-	if isExpired(decoded.ExpiresAt) {
-		return nil, nil
-	}
-	return &decoded, nil
 }
 
 func toStorageItem(namespace, key string, item *storedItem) *client.StorageItem {
@@ -94,9 +59,36 @@ func toStorageItem(namespace, key string, item *storedItem) *client.StorageItem 
 }
 
 // isExpired reports whether a stored item is past its expiry. expiresAt == 0
-// means "never expires" (proto contract).
-func isExpired(expiresAt int64) bool {
-	return expiresAt != 0 && expiresAt <= time.Now().Unix()
+// means "never expires" (proto contract). Must agree with liveCondition.
+func isExpired(expiresAt int64, now int64) bool {
+	return expiresAt != 0 && expiresAt <= now
+}
+
+// liveCondition is isExpired, negated, for a WHERE clause; its one parameter
+// is the current unix time.
+const liveCondition = `(expires_at = 0 OR expires_at > ?)`
+
+const itemColumns = `value, created_at, expires_at, clear_on_session_end`
+
+func scanItem(row *sql.Row) (*storedItem, error) {
+	var item storedItem
+	err := row.Scan(&item.Value, &item.CreatedAt, &item.ExpiresAt, &item.ClearOnSessionEnd)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// readItem returns the live item at an address, or nil when there is none or
+// it has expired.
+func (s *storageService) readItem(ctx context.Context, namespace, key string, now int64) (*storedItem, error) {
+	return scanItem(s.db.QueryRowContext(ctx,
+		`SELECT `+itemColumns+` FROM module_storage WHERE namespace = ? AND key = ? AND `+liveCondition,
+		namespace, key, now,
+	))
 }
 
 func (s *storageService) Get(ctx context.Context, req *client.GetRequest) (*client.GetResponse, error) {
@@ -104,12 +96,7 @@ func (s *storageService) Get(ctx context.Context, req *client.GetRequest) (*clie
 		return nil, err
 	}
 
-	var item *storedItem
-	err := s.db.View(func(txn *badger.Txn) error {
-		var err error
-		item, err = readItem(txn, storageKey(req.Namespace, req.Key))
-		return err
-	})
+	item, err := s.readItem(ctx, req.Namespace, req.Key, time.Now().Unix())
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("get storage item: %w", err))
 	}
@@ -117,6 +104,22 @@ func (s *storageService) Get(ctx context.Context, req *client.GetRequest) (*clie
 		return &client.GetResponse{}, nil
 	}
 	return &client.GetResponse{Item: toStorageItem(req.Namespace, req.Key, item)}, nil
+}
+
+// upsertColumns and upsertAssignments write every stored field of an item;
+// the values are bound by upsertArgs, in this order.
+const (
+	upsertColumns     = `(namespace, key, value, created_at, expires_at, clear_on_session_end)`
+	upsertPlaceholder = `(?, ?, ?, ?, ?, ?)`
+	upsertAssignments = `value = excluded.value, created_at = excluded.created_at, ` +
+		`expires_at = excluded.expires_at, clear_on_session_end = excluded.clear_on_session_end`
+)
+
+// upsertArgs binds an item for a write. created_at is server-authoritative:
+// callers (the sandbox `ctx.storage` binding) have no way to set it
+// meaningfully.
+func upsertArgs(item *client.StorageItem, now int64) []any {
+	return []any{item.Namespace, item.Key, item.Value, now, item.ExpiresAt, item.ClearOnSessionEnd}
 }
 
 func (s *storageService) Set(ctx context.Context, req *client.SetRequest) (*client.SetResponse, error) {
@@ -127,39 +130,25 @@ func (s *storageService) Set(ctx context.Context, req *client.SetRequest) (*clie
 		return nil, err
 	}
 
-	encoded, err := encodeItem(req.Item)
-	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("encode storage item: %w", err))
-	}
-
-	err = s.db.Update(func(txn *badger.Txn) error {
-		return txn.Set(storageKey(req.Item.Namespace, req.Item.Key), encoded)
-	})
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO module_storage `+upsertColumns+` VALUES `+upsertPlaceholder+
+			` ON CONFLICT (namespace, key) DO UPDATE SET `+upsertAssignments,
+		upsertArgs(req.Item, time.Now().Unix())...,
+	)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("set storage item: %w", err))
 	}
 	return &client.SetResponse{}, nil
 }
 
-// encodeItem is the envelope persisted for a write. created_at is
-// server-authoritative: callers (the sandbox `ctx.storage` binding) have no way
-// to set it meaningfully.
-func encodeItem(item *client.StorageItem) ([]byte, error) {
-	return json.Marshal(storedItem{
-		Value:             item.Value,
-		CreatedAt:         time.Now().Unix(),
-		ExpiresAt:         item.ExpiresAt,
-		Namespace:         item.Namespace,
-		ClearOnSessionEnd: item.ClearOnSessionEnd,
-	})
-}
-
 // CompareAndSet writes only if the key holds what the caller expects, in one
-// transaction.
+// statement.
 //
-// Badger detects a concurrent write to the same key at commit and refuses the
-// later transaction; that refusal is reported as a failed swap with the value
-// now stored, which is exactly what the caller retries from.
+// Expect-value is an UPDATE guarded by the expected value and liveness;
+// expect-absent is an INSERT whose conflict branch overwrites only an expired
+// row, since an expired item counts as absent. Either way SQLite returns the
+// written row, or nothing when the guard refused. A refusal reads the value
+// now stored, which is what the caller retries from.
 func (s *storageService) CompareAndSet(ctx context.Context, req *client.CompareAndSetRequest) (*client.CompareAndSetResponse, error) {
 	if req.Item == nil {
 		return nil, twirp.RequiredArgumentError("item")
@@ -167,52 +156,43 @@ func (s *storageService) CompareAndSet(ctx context.Context, req *client.CompareA
 	if err := requireAddress(req.Item.Namespace, req.Item.Key, "item."); err != nil {
 		return nil, err
 	}
-	key := storageKey(req.Item.Namespace, req.Item.Key)
+	item := req.Item
+	now := time.Now().Unix()
 
-	encoded, err := encodeItem(req.Item)
-	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("encode storage item: %w", err))
+	var row *sql.Row
+	if req.ExpectAbsent {
+		row = s.db.QueryRowContext(ctx,
+			`INSERT INTO module_storage `+upsertColumns+` VALUES `+upsertPlaceholder+
+				` ON CONFLICT (namespace, key) DO UPDATE SET `+upsertAssignments+
+				` WHERE module_storage.expires_at <> 0 AND module_storage.expires_at <= ?`+
+				` RETURNING `+itemColumns,
+			append(upsertArgs(item, now), now)...,
+		)
+	} else {
+		row = s.db.QueryRowContext(ctx,
+			`UPDATE module_storage SET value = ?, created_at = ?, expires_at = ?, clear_on_session_end = ?`+
+				` WHERE namespace = ? AND key = ? AND value = ? AND `+liveCondition+
+				` RETURNING `+itemColumns,
+			item.Value, now, item.ExpiresAt, item.ClearOnSessionEnd,
+			item.Namespace, item.Key, req.ExpectedValue, now,
+		)
 	}
 
-	var current *storedItem
-	swapped := false
-	err = s.db.Update(func(txn *badger.Txn) error {
-		existing, err := readItem(txn, key)
-		if err != nil {
-			return err
-		}
-		matches := existing == nil && req.ExpectAbsent ||
-			existing != nil && !req.ExpectAbsent && existing.Value == req.ExpectedValue
-		if !matches {
-			current = existing
-			return nil
-		}
-		if err := txn.Set(key, encoded); err != nil {
-			return err
-		}
-		var written storedItem
-		if err := json.Unmarshal(encoded, &written); err != nil {
-			return err
-		}
-		current = &written
-		swapped = true
-		return nil
-	})
-	if err == badger.ErrConflict {
-		swapped = false
-		err = s.db.View(func(txn *badger.Txn) error {
-			var readErr error
-			current, readErr = readItem(txn, key)
-			return readErr
-		})
-	}
+	written, err := scanItem(row)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("compare and set storage item: %w", err))
 	}
+	if written != nil {
+		return &client.CompareAndSetResponse{Swapped: true, Current: toStorageItem(item.Namespace, item.Key, written)}, nil
+	}
 
-	response := &client.CompareAndSetResponse{Swapped: swapped}
+	current, err := s.readItem(ctx, item.Namespace, item.Key, now)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("compare and set storage item: %w", err))
+	}
+	response := &client.CompareAndSetResponse{Swapped: false}
 	if current != nil {
-		response.Current = toStorageItem(req.Item.Namespace, req.Item.Key, current)
+		response.Current = toStorageItem(item.Namespace, item.Key, current)
 	}
 	return response, nil
 }
@@ -222,97 +202,56 @@ func (s *storageService) Delete(ctx context.Context, req *client.DeleteRequest) 
 		return nil, err
 	}
 
-	err := s.db.Update(func(txn *badger.Txn) error {
-		err := txn.Delete(storageKey(req.Namespace, req.Key))
-		if err == badger.ErrKeyNotFound {
-			return nil
-		}
-		return err
-	})
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM module_storage WHERE namespace = ? AND key = ?`, req.Namespace, req.Key,
+	); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("delete storage item: %w", err))
 	}
 	return &client.DeleteResponse{}, nil
-}
-
-// deleteWhere scans every key, deletes the ones `shouldDelete` accepts, and
-// reports each one it removed as (namespace, key). Shared by ClearNamespace /
-// ClearExpired / ClearSessionScoped — none of these are hot-path operations,
-// so a full scan (rather than a secondary index) keeps this simple.
-func (s *storageService) deleteWhere(shouldDelete func(item storedItem) bool) ([]*client.StorageItem, error) {
-	var deleted []*client.StorageItem
-	err := s.db.Update(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		var keysToDelete [][]byte
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			var decoded storedItem
-			err := item.Value(func(val []byte) error {
-				return json.Unmarshal(val, &decoded)
-			})
-			if err != nil {
-				return err
-			}
-			if shouldDelete(decoded) {
-				key := make([]byte, len(item.Key()))
-				copy(key, item.Key())
-				keysToDelete = append(keysToDelete, key)
-			}
-		}
-		for _, key := range keysToDelete {
-			if err := txn.Delete(key); err != nil {
-				return err
-			}
-			namespace, itemKey := splitStorageKey(key)
-			deleted = append(deleted, &client.StorageItem{
-				Key:       itemKey,
-				Namespace: namespace,
-			})
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return deleted, nil
 }
 
 func (s *storageService) ClearNamespace(ctx context.Context, req *client.ClearNamespaceRequest) (*client.ClearNamespaceResponse, error) {
 	if strings.TrimSpace(req.Namespace) == "" {
 		return nil, twirp.RequiredArgumentError("namespace")
 	}
-	_, err := s.deleteWhere(func(item storedItem) bool {
-		return item.Namespace == req.Namespace
-	})
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM module_storage WHERE namespace = ?`, req.Namespace); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("clear namespace: %w", err))
 	}
 	return &client.ClearNamespaceResponse{}, nil
 }
 
 func (s *storageService) ClearExpired(ctx context.Context, req *client.ClearExpiredRequest) (*client.ClearExpiredResponse, error) {
-	_, err := s.deleteWhere(func(item storedItem) bool {
-		return isExpired(item.ExpiresAt)
-	})
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM module_storage WHERE expires_at <> 0 AND expires_at <= ?`, time.Now().Unix(),
+	); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("clear expired: %w", err))
 	}
 	return &client.ClearExpiredResponse{}, nil
 }
 
-// ClearSessionScoped drops every key flagged
-// `clear_on_session_end`. Called by the engine when a stream session ends.
+// ClearSessionScoped drops every key flagged `clear_on_session_end`, expired
+// or not, and reports each one it dropped. Called by the engine when a stream
+// session ends; the engine announces each cleared key as changed.
 //
 // Clearing is the engine's job rather than a module's: the sandbox exposes only
 // `get` and `set`, so a module declares that a key is session-scoped and the
 // engine acts on the declaration.
 func (s *storageService) ClearSessionScoped(ctx context.Context, req *client.ClearSessionScopedRequest) (*client.ClearSessionScopedResponse, error) {
-	cleared, err := s.deleteWhere(func(item storedItem) bool {
-		return item.ClearOnSessionEnd
-	})
+	rows, err := s.db.QueryContext(ctx, `DELETE FROM module_storage WHERE clear_on_session_end = 1 RETURNING namespace, key`)
 	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("clear session scoped: %w", err))
+	}
+	defer rows.Close()
+
+	var cleared []*client.StorageItem
+	for rows.Next() {
+		var item client.StorageItem
+		if err := rows.Scan(&item.Namespace, &item.Key); err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("clear session scoped: %w", err))
+		}
+		cleared = append(cleared, &item)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("clear session scoped: %w", err))
 	}
 	return &client.ClearSessionScopedResponse{Cleared: int32(len(cleared)), ClearedItems: cleared}, nil

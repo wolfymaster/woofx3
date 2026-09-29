@@ -9,7 +9,7 @@ import (
 )
 
 func StorageRoutes(mux *http.ServeMux, app *types.App) {
-	storageService := svc.NewStorageService(app.BadgerDB)
+	storageService := svc.NewStorageService(app.ModuleStorage)
 	storageHandler := client.NewStorageServiceServer(storageService)
 	mux.Handle(storageHandler.PathPrefix(), storageHandler)
 }
