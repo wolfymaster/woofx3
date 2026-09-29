@@ -57,7 +57,7 @@ var EngineEventSubjectPrefixes = []string{
 	"stream.online",
 	"user.message",
 	"widget.event",
-	"woofwoofwoof",
+	"workflow.health.",
 	"workflow.run.",
 }
 

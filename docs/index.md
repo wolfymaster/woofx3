@@ -18,7 +18,9 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Asset delivery](/services/asset-delivery)** - How module and user assets reach the browser: URL shape, the sceneManager relay, and barkloader's presigned redirects
 - **[Engine settings the UI configures](/services/engine-settings-ui)** - DB-backed settings (asset base URLs, etc.) surfaced through `getEngineInfo()` / `set*()` on `Woofx3EngineApi`
 - **[Chat commands & groups: the UI contract](/services/commands-ui)** - Endpoints and webhook callbacks for managing chat commands and the user groups that gate them
+- **[Twitch channel controls](/services/twitch-channel)** - The `twitchapi` commands (title, category, tags, markers, timeouts), what modules reach through `ctx.twitch`, and the chatbot's `!title`, `!category` and `!marker`
 - **[Module settings: the UI contract](/services/module-settings-ui)** - Endpoints for reading and writing a module's engine-typed configuration values (`ctx.module.settings`)
+- **[Config bundles](/services/config-bundles)** - Export, preview and import a creator's workflows, commands, groups and resource instances as one portable file
 - **[Stream sessions](/services/stream-sessions)** - The logical span a broadcast belongs to: the partition key every event is stamped with
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that
 

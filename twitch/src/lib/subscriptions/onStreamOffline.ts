@@ -13,5 +13,6 @@ export default function onStreamOffline(ctx: Context, listener: EventSubWsListen
       broadcasterUserName: event.broadcasterName,
     });
     ctx.messageBus.publish(topic, data);
+    ctx.onStreamLiveChange?.(false);
   });
 }

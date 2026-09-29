@@ -48,6 +48,7 @@ export const EngineEventType = {
   WORKFLOW_RUN_STARTED: "workflow.run.started",
   WORKFLOW_RUN_COMPLETED: "workflow.run.completed",
   WORKFLOW_RUN_FAILED: "workflow.run.failed",
+  WORKFLOW_RUN_CANCELLED: "workflow.run.cancelled",
   WORKFLOW_HEALTH_CHANGED: "workflow.health.changed",
   WORKFLOW_HEALTH_SNAPSHOT: "workflow.health.snapshot",
   // Persisted run history, projected from the db-proxy outbox. Distinct from
@@ -1001,6 +1002,20 @@ export interface WorkflowRunFailedEvent {
 }
 
 /**
+ * Fired when a run ends because somebody cancelled it. `reason` is the
+ * engine's own wording, "cancelled: <reason given>".
+ */
+export interface WorkflowRunCancelledEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_CANCELLED;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  reason: string;
+  occurredAt: string;
+}
+
+/**
  * Fired when one workflow's health changes: an error appears, its reason
  * changes, or it clears. Sent on change only, never on every retry, so each
  * one is news. An `"ok"` also arrives when an errored workflow is disabled or
@@ -1045,6 +1060,12 @@ export interface WorkflowRunSnapshot {
   triggeredBy?: string;
   /** JSON of the originating CloudEvent. */
   triggerEvent?: string;
+  /**
+   * True for a dry run: its side-effecting steps recorded what they would
+   * have done (`{ dryRun: true, wouldDo }` in their outputs) instead of doing
+   * it. Absent for a real run.
+   */
+  dryRun?: boolean;
   error?: string;
   startedAt?: string;
   completedAt?: string;
@@ -1360,6 +1381,7 @@ export type CallbackEvent =
   | WorkflowRunStartedEvent
   | WorkflowRunCompletedEvent
   | WorkflowRunFailedEvent
+  | WorkflowRunCancelledEvent
   | WorkflowHealthChangedEvent
   | WorkflowHealthSnapshotEvent
   | WorkflowRunRecordedEvent
@@ -1420,6 +1442,7 @@ export type CallbackEventByType = {
   [EngineEventType.WORKFLOW_RUN_STARTED]: WorkflowRunStartedEvent;
   [EngineEventType.WORKFLOW_RUN_COMPLETED]: WorkflowRunCompletedEvent;
   [EngineEventType.WORKFLOW_RUN_FAILED]: WorkflowRunFailedEvent;
+  [EngineEventType.WORKFLOW_RUN_CANCELLED]: WorkflowRunCancelledEvent;
   [EngineEventType.WORKFLOW_HEALTH_CHANGED]: WorkflowHealthChangedEvent;
   [EngineEventType.WORKFLOW_HEALTH_SNAPSHOT]: WorkflowHealthSnapshotEvent;
   [EngineEventType.WORKFLOW_RUN_RECORDED]: WorkflowRunRecordedEvent;

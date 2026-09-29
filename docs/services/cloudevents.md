@@ -91,6 +91,9 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 | `streamOnline` | `stream.online` | The stream went online |
 | `subscribe` | `channel.subscribe` | A viewer subscribed |
 | `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
+| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the twitch service; see [Twitch ad breaks](/services/twitch-channel)) |
+| `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
+| `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
 
 ### Payloads
 
@@ -210,10 +213,10 @@ workflow id this run does not have.
 
 ## Twitch API Commands
 
-`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject.
+`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the twitch service reads the bare envelope and a CloudEvent carrying it as `data` alike.
 
 ```typescript
-// shared/clients/typescript/cloudevents/Twitch/commands.ts
+// shared/common/typescript/cloudevents/Twitch/commands.ts
 // subject: "twitchapi"
 // payload: { command: string; args: Record<string, unknown> }
 ```
@@ -223,30 +226,35 @@ workflow id this run does not have.
 | Method | Command string | Description |
 |--------|----------------|-------------|
 | `timeout` | `timeout` | Time out a user in chat |
-| `updateStream` | `update_stream` | Update stream title or category |
-
-#### TimeoutArgs
+| `updateStream` | `updateStream` | Change the title, category or tags |
+| `createMarker` | `createMarker` | Place a stream marker (live only) |
 
 ```typescript
 interface TimeoutArgs {
-    user?: string;
-    duration: number;   // timeout duration in seconds
+  userId?: string;          // or userName
+  userName?: string;
+  durationSeconds: number;  // 1 to 1209600
+  reason?: string;          // at most 500 characters
 }
-```
 
-#### UpdateStreamArgs
-
-```typescript
 interface UpdateStreamArgs {
-    category?: string;
-    title?: string;
+  title?: string;           // at most 140 characters (not UTF-16 units)
+  category?: string;        // free text, resolved through Twitch's category search
+  categoryId?: string;      // used as given; "" clears the category
+  tags?: string[];          // at most 10, each at most 25 letters or numbers
+}
+
+interface CreateMarkerArgs {
+  description?: string;     // at most 140 characters
 }
 ```
+
+The twitch service serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
 
 ### Usage
 
 ```typescript
-const [subject, payload] = factory.TwitchApi().timeout({ user: 'bad_actor', duration: 600 });
+const [subject, payload] = factory.TwitchApi().timeout({ userName: 'bad_actor', durationSeconds: 600 });
 nats.publish(subject, payload);
 ```
 
@@ -325,19 +333,19 @@ const (
 
 | Subject | Direction | Payload | Pattern |
 |---------|-----------|---------|---------|
-| `ui.notify.alert` | workflow → streamware | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
+| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
 | `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
 | `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
-| `widget.queue.skip` | api → streamware | `{}` | NATS request/reply |
-| `widget.queue.clear` | api → streamware | `{}` | NATS request/reply |
-| `widget.queue.replay` | api → streamware | `{ id }` (alert row id) | NATS request/reply |
+| `widget.queue.skip` | api → sceneManager | `{}`; reply `{ ok, skipped, reason? }` | NATS request/reply |
+| `widget.queue.clear` | api → sceneManager | `{}`; reply `{ ok, cleared, reason? }` | NATS request/reply |
+| `widget.queue.replay` | api → sceneManager | `{ id }` (alert row id); reply `{ ok, replayEnvelopeId?, reason? }` | NATS request/reply |
 
 Routing rules for `widget.event` are handled in `streamware/src/events/handlers.ts`. Dispatch is keyed on `data.key`:
 
 - `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `EventQueueManager.handleStatus` (state transitions on the in-flight alert lease).
 - Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(instanceId, key)`).
 
-See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract.
+See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract, and [Skip, clear and replay](./widget-events.md#skip-clear-and-replay) for the `widget.queue.*` requests.
 
 ## Go — DB-Outbox Subjects (engine → api)
 

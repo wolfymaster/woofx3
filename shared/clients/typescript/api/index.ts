@@ -1,6 +1,7 @@
 export * from "./api";
 export * from "./capabilities";
 export * from "./client";
+export * from "./config-bundle";
 export * from "./overlay-events";
 export * from "./rpc";
 export * from "./stream-events";

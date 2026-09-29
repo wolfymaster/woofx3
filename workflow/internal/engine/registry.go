@@ -14,6 +14,9 @@ type WorkflowRegistry struct {
 	workflows map[string]*types.WorkflowDefinition
 	registrar triggers.Registrar
 	logger    logger
+	// validate refuses a definition before it replaces anything, so a
+	// rejected update leaves the previous version registered. Nil accepts all.
+	validate func(def *types.WorkflowDefinition) error
 }
 
 // logger is the minimal interface the registry needs; engine.Engine passes its own.
@@ -48,15 +51,23 @@ func (r *WorkflowRegistry) SetLogger(l logger) {
 	r.logger = l
 }
 
+// Register stores a definition and subscribes its trigger. Every path that
+// loads a workflow (startup, lifecycle events, the reconciler) goes through
+// here, so a definition the engine would refuse to run is refused here too.
+// A refused definition also unregisters whatever was registered under its id:
+// the db already holds the refused version, so keeping the old one firing would
+// run a workflow nobody can see or edit any more.
 func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
-	if def.ID == "" {
-		return fmt.Errorf("workflow ID is required")
+	if err := checkDefinition(def); err != nil {
+		if def.ID != "" {
+			_ = r.Remove(def.ID)
+		}
+		return err
 	}
-	if def.Name == "" {
-		return fmt.Errorf("workflow name is required")
-	}
-	if len(def.Tasks) == 0 {
-		return fmt.Errorf("workflow must have at least one task")
+	if r.validate != nil {
+		if err := r.validate(def); err != nil {
+			return fmt.Errorf("workflow %s: %w", def.ID, err)
+		}
 	}
 
 	r.mu.Lock()
@@ -84,6 +95,20 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 		}
 	}
 	return nil
+}
+
+// checkDefinition refuses a definition the engine can't run.
+func checkDefinition(def *types.WorkflowDefinition) error {
+	if def.ID == "" {
+		return fmt.Errorf("workflow ID is required")
+	}
+	if def.Name == "" {
+		return fmt.Errorf("workflow name is required")
+	}
+	if len(def.Tasks) == 0 {
+		return fmt.Errorf("workflow must have at least one task")
+	}
+	return validatePublishSteps(def)
 }
 
 func (r *WorkflowRegistry) Get(id string) (*types.WorkflowDefinition, error) {

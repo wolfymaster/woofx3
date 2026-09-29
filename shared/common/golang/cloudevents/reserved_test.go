@@ -78,7 +78,6 @@ func TestSubjectsConsumedOutsideGoAreReserved(t *testing.T) {
 		"db.ack.>":                             "db/app/workers/ack_worker.go",
 		"setting.integration.token.updated":    "api/src/routes/commands.ts",
 		"barkloader.module.field_options":      "barkloader/app/src/services/field_options.rs",
-		"woofwoofwoof":                         "barkloader/lib_sandbox/src/extensions/platform_chat.rs",
 		"reward":                               "reward/src/index.ts",
 		"webhook.woofx3_throne.throne_webhook": "webhook trigger events the engine fires",
 	}

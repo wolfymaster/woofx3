@@ -82,6 +82,31 @@ func TestPublishingAReservedSubjectFailsAtRunTime(t *testing.T) {
 	}
 }
 
+// A dry run must fail where the real run would, not describe a publish the
+// engine would refuse.
+func TestDryRunOfAReservedSubjectFails(t *testing.T) {
+	engine := newExecEngine(t)
+	publisher := &loopbackPublisher{engine: engine}
+	engine.SetPublisher(publisher)
+
+	spec, err := engine.actionRegistry.Spec("publish_event")
+	if err != nil {
+		t.Fatalf("publish_event spec: %v", err)
+	}
+	if spec.DryRun == nil {
+		t.Fatalf("publish_event has no dry-run description")
+	}
+	if _, err := spec.DryRun(map[string]any{"eventType": "widget.queue.skip"}); err == nil || !strings.Contains(err.Error(), "reserved for the engine") {
+		t.Fatalf("err = %v, want a reserved-subject refusal", err)
+	}
+	if _, err := spec.DryRun(map[string]any{"eventType": "badge.awarded"}); err != nil {
+		t.Fatalf("badge.awarded: %v", err)
+	}
+	if len(publisher.published) != 0 {
+		t.Fatalf("published %d events, want none", len(publisher.published))
+	}
+}
+
 // The db holds the refused version, so the one it replaced must stop firing
 // rather than run on unseen.
 func TestARefusedReplacementUnregistersTheWorkflow(t *testing.T) {
@@ -97,5 +122,23 @@ func TestARefusedReplacementUnregistersTheWorkflow(t *testing.T) {
 	}
 	if got := engine.Registry().GetByEvent("thing.happened"); len(got) != 0 {
 		t.Fatalf("%d workflows still fire on the trigger, want none", len(got))
+	}
+}
+
+// The reconciler registers through the registry directly, not through
+// RegisterWorkflow, so the registry itself must refuse a reserved subject and
+// drop the version it replaces.
+func TestTheRegistryRefusesAReservedSubjectForEveryCaller(t *testing.T) {
+	engine := newExecEngine(t)
+	if err := engine.RegisterWorkflow(publishingWorkflow("badge.awarded")); err != nil {
+		t.Fatalf("register the allowed version: %v", err)
+	}
+
+	err := engine.Registry().Register(publishingWorkflow("widget.queue.clear"))
+	if err == nil || !strings.Contains(err.Error(), `reserved for the engine ("widget.queue.")`) {
+		t.Fatalf("err = %v, want the reserved-subject refusal", err)
+	}
+	if _, getErr := engine.GetWorkflow("wf-publish"); getErr == nil {
+		t.Fatal("the previously registered version is still registered after its replacement was refused")
 	}
 }
