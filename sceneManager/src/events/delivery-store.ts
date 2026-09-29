@@ -20,7 +20,23 @@ interface OpenDelivery {
   key: string;
   value: unknown;
   lastAttemptAt: number;
+  /**
+   * When a page last said it started this delivery, or null. In memory
+   * only: after a restart every page reloads and reports again.
+   */
+  startedAt: number | null;
 }
+
+/** An open delivery as a caller outside the store needs to see it. */
+export interface OpenDeliveryRef {
+  eventId: string;
+  type: string;
+  key: string;
+  startedAt: number | null;
+}
+
+/** SSE event name telling a scene's pages to drop deliveries the server closed. */
+export const CANCEL_EVENT = "cancel";
 
 type SseController = ReadableStreamDefaultController<Uint8Array>;
 
@@ -100,6 +116,7 @@ export class DeliveryStore {
         key: event.key,
         value: event.value,
         lastAttemptAt: 0,
+        startedAt: null,
       });
     }
     this.logger.info("delivery-store: hydrated open deliveries", { count: deliveries.length });
@@ -140,8 +157,18 @@ export class DeliveryStore {
   }
 
   private deleteOpen(sceneId: string, eventId: string, instanceId: string): void {
-    const byInstance = this.open.get(sceneId)?.get(eventId);
-    byInstance?.delete(instanceId);
+    const byEvent = this.open.get(sceneId);
+    const byInstance = byEvent?.get(eventId);
+    if (!byEvent || !byInstance) {
+      return;
+    }
+    byInstance.delete(instanceId);
+    if (byInstance.size === 0) {
+      byEvent.delete(eventId);
+    }
+    if (byEvent.size === 0) {
+      this.open.delete(sceneId);
+    }
   }
 
   private *openDeliveriesFor(sceneId: string): Generator<OpenDelivery> {
@@ -198,6 +225,7 @@ export class DeliveryStore {
         key: params.key,
         value: params.value,
         lastAttemptAt: Date.now(),
+        startedAt: null,
       });
       this.push(params.sceneId, { eventId, instanceId, type: params.type, key: params.key, value: params.value });
     }
@@ -269,6 +297,94 @@ export class DeliveryStore {
         this.connections.delete(sceneId);
       }
     };
+  }
+
+  /** Scenes holding at least one open delivery — diagnostic and test use. */
+  scenesWithOpenDeliveries(): string[] {
+    return [...this.open.keys()];
+  }
+
+  /**
+   * A scene's open deliveries of one `type`, grouped by target instance,
+   * each group oldest first.
+   */
+  openDeliveriesByInstance(sceneId: string, type: string): Map<string, OpenDeliveryRef[]> {
+    const byInstance = new Map<string, OpenDeliveryRef[]>();
+    for (const delivery of this.openDeliveriesFor(sceneId)) {
+      if (delivery.type !== type) {
+        continue;
+      }
+      let group = byInstance.get(delivery.instanceId);
+      if (!group) {
+        group = [];
+        byInstance.set(delivery.instanceId, group);
+      }
+      group.push({
+        eventId: delivery.eventId,
+        type: delivery.type,
+        key: delivery.key,
+        startedAt: delivery.startedAt,
+      });
+    }
+    return byInstance;
+  }
+
+  /**
+   * A page started playing an event on these instances. Returns the
+   * deliveries this is the first start report for, so the caller can
+   * record the start once however many pages report it.
+   */
+  markStarted(sceneId: string, eventId: string, instanceIds: string[], now: number = Date.now()): OpenDeliveryRef[] {
+    const byInstance = this.open.get(sceneId)?.get(eventId);
+    const firsts: OpenDeliveryRef[] = [];
+    for (const instanceId of instanceIds) {
+      const delivery = byInstance?.get(instanceId);
+      if (!delivery) {
+        continue;
+      }
+      if (delivery.startedAt === null) {
+        firsts.push({ eventId, type: delivery.type, key: delivery.key, startedAt: now });
+      }
+      delivery.startedAt = now;
+    }
+    return firsts;
+  }
+
+  /**
+   * Close deliveries to one instance without waiting for a page to finish
+   * them, and tell every open page of the scene to drop them.
+   *
+   * Everything a later request could observe happens before this returns:
+   * the deliveries leave the open set and the cancel frame is pushed. Only
+   * the db writes are left in the returned promise, so callers can close
+   * many instances in one synchronous pass and a concurrent request plans
+   * against the result rather than a half-applied one. The writes record
+   * the deliveries as completed, which is what ends redelivery after a
+   * restart; scene_event_log therefore shows a cancelled delivery as
+   * `completed`, and the reason it ended is the caller's to record.
+   */
+  cancel(sceneId: string, instanceId: string, eventIds: string[]): Promise<void> {
+    if (eventIds.length === 0) {
+      return Promise.resolve();
+    }
+    for (const eventId of eventIds) {
+      this.deleteOpen(sceneId, eventId, instanceId);
+    }
+    this.broadcast(sceneId, CANCEL_EVENT, { instanceId, eventIds });
+    return Promise.all(
+      eventIds.map(async (eventId) => {
+        try {
+          await this.db.recordSceneEventCompletion({ sceneEventId: eventId, instanceId });
+        } catch (err) {
+          this.logger.warn("delivery-store: recording a cancelled delivery failed", {
+            sceneId,
+            eventId,
+            instanceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })
+    ).then(() => undefined);
   }
 
   /** Every sceneId with at least one open SSE connection right now —

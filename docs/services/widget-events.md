@@ -143,6 +143,68 @@ holds the alert until it calls `complete()`; one that completes on handler retur
 none. Once every timed widget is done, or after 5 seconds when none is timed, the page
 removes the frames, acks the scene event, and plays the alert widget's next alert.
 
+#### Skip, clear and replay
+
+An operator can act on the alerts queued in open overlays through the api's
+`skipCurrentAlert`, `clearAlertQueue` and `replayAlert`. The api forwards each as a NATS
+request (`widget.queue.skip`, `widget.queue.clear`, `widget.queue.replay`) and the scene
+manager answers it, because the queues are the ones it streams to
+(`sceneManager/src/events/alert-controls.ts`). Every answer carries `ok`, and `reason`
+when `ok` is false.
+
+| Request | Reply | Effect |
+|---------|-------|--------|
+| `widget.queue.skip` `{}` | `{ ok, skipped, reason? }` | Ends the alert each alert widget on an open overlay is playing; the next one starts. |
+| `widget.queue.clear` `{}` | `{ ok, cleared, reason? }` | Drops every alert waiting behind the playing one; the playing one keeps playing. |
+| `widget.queue.replay` `{ id }` | `{ ok, replayEnvelopeId?, reason? }` | Plays the alert-log row `id` again. |
+
+`skipped` and `cleared` count distinct alerts: one alert playing on two alert widgets
+counts once. With no overlay open, every request answers
+`{ ok: false, reason: "no overlay is open" }`; an api that gets no answer at all returns
+`ok: false` with `the scene manager did not answer: ...`.
+
+A request that arrives as a plain publish, with no reply subject, is ignored: the api
+always sends a request, and a workflow's `publish_event` must not be able to skip, clear
+or replay alerts.
+
+Skip and clear act on the scene manager's open deliveries and on what the pages report.
+An alert widget's page posts `POST /scene/{sceneId}/events/{eventId}/started` when it
+starts an alert and `.../completed` when it finishes one, each as its own request rather
+than batched. The first start report also moves the alert's row to `playing`.
+
+- **Skip** ends, on each alert widget, the open delivery a page most recently reported
+  starting. An earlier started delivery still open is one that finished but whose
+  completion has not landed, and is left alone.
+- **Clear** ends every open delivery no page has reported starting.
+
+The scene manager closes the chosen deliveries, pushes a `cancel` frame
+(`{ instanceId, eventIds }`) to every page of the scene, and marks each alert `skipped`.
+It picks and closes every delivery in one synchronous pass before any db write, so two
+overlapping requests (a double-clicked Skip) each see the other's effect whole. The page
+drops the cancelled deliveries from the widget's queue, takes an alert on screen down at
+once, and ignores a cancelled delivery that arrives later.
+
+Limits, as the server sees the pages:
+
+- "Started" and "finished" are the last reports from **any** page of the scene. An OBS
+  source and a dashboard preview of the same scene share one set of deliveries, so the
+  one further ahead decides what counts as playing.
+- An alert started so recently that its start report is still on the wire is not yet
+  playing: a Skip in that moment ends nothing on that widget, and a Clear drops it.
+- A delivery addressed to an alert widget the scene no longer has (removed after the
+  alert was recorded) is neither cancelled nor counted; no page will register it.
+- A cancelled delivery is recorded as completed in `scene_event_deliveries`, since that
+  is what ends redelivery, so `scene_event_log` shows it as `completed`. The alert's
+  row carries `skipped`.
+
+Replay reads the row, gives its stored envelope a fresh id, records that as a new row,
+and dispatches it exactly as `ui.notify.alert` would, so a layout or target that no
+longer matches anything is refused with the same reason. The original row is marked
+`replayed` only once the replay was queued on at least one scene. A repeat replay of the
+same row while one is in flight, or within 30 s of one that succeeded, gets that replay's
+answer and plays nothing, so an api retry after a timeout (15 s for replay) cannot play
+it twice. A refused replay is not remembered.
+
 ## End-to-end flow
 
 ```

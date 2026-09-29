@@ -298,8 +298,12 @@ var TICK_MS = 250;
 
 class AlertWidget {
   opts;
+  playing = new Map;
   constructor(opts) {
     this.opts = opts;
+  }
+  stop(eventId) {
+    this.playing.get(eventId)?.();
   }
   play(item) {
     const delivery = parseDelivery(item.value);
@@ -362,19 +366,24 @@ class AlertWidget {
       bridge.attach(iframe);
       children.push(bridge);
     }
-    const timer = setInterval(() => {
-      if (!timeline.isOver(Date.now())) {
-        return;
-      }
+    const tearDown = () => {
       clearInterval(timer);
+      this.playing.delete(eventId);
       for (const bridge of children) {
         bridge.dispose();
         bridge.detach();
         bridges.delete(bridge);
       }
       stage.remove();
+    };
+    const timer = setInterval(() => {
+      if (!timeline.isOver(Date.now())) {
+        return;
+      }
+      tearDown();
       this.opts.onFinished(eventId);
     }, TICK_MS);
+    this.playing.set(eventId, tearDown);
   }
 }
 function parseDelivery(value) {
@@ -689,13 +698,15 @@ class InstanceQueue {
   config;
   deliver;
   onTimeout;
+  onCancel;
   pending = [];
   inFlight = new Map;
   finished = new Set;
-  constructor(config, deliver, onTimeout) {
+  constructor(config, deliver, onTimeout, onCancel) {
     this.config = config;
     this.deliver = deliver;
     this.onTimeout = onTimeout;
+    this.onCancel = onCancel;
   }
   enqueue(item) {
     if (this.inFlight.has(item.eventId) || this.finished.has(item.eventId) || this.pending.some((pending) => pending.eventId === item.eventId)) {
@@ -723,6 +734,26 @@ class InstanceQueue {
       this.rememberFinished(eventId);
       this.pump();
     }
+  }
+  cancel(eventIds) {
+    const cancelled = new Set(eventIds);
+    for (let i = this.pending.length - 1;i >= 0; i -= 1) {
+      if (cancelled.has(this.pending[i].eventId)) {
+        this.pending.splice(i, 1);
+      }
+    }
+    for (const eventId of cancelled) {
+      if (this.inFlight.has(eventId)) {
+        const timer = this.inFlight.get(eventId);
+        if (timer) {
+          clearTimeout(timer);
+        }
+        this.inFlight.delete(eventId);
+        this.onCancel(eventId);
+      }
+      this.rememberFinished(eventId);
+    }
+    this.pump();
   }
   size() {
     return this.pending.length + this.inFlight.size;
@@ -772,9 +803,9 @@ class InstanceQueue {
 class EventQueueManager {
   queues = new Map;
   subToInstance = new Map;
-  register(subId, instanceId, config, deliver, onTimeout) {
+  register(subId, instanceId, config, deliver, onTimeout, onCancel = () => {}) {
     this.subToInstance.set(subId, instanceId);
-    this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout));
+    this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout, onCancel));
   }
   unregister(subId) {
     const instanceId = this.subToInstance.get(subId);
@@ -790,6 +821,9 @@ class EventQueueManager {
     }
     queue.enqueue(item);
     return true;
+  }
+  cancel(instanceId, eventIds) {
+    this.queues.get(instanceId)?.cancel(eventIds);
   }
   complete(subId, eventId) {
     const instanceId = this.subToInstance.get(subId);
@@ -1023,6 +1057,10 @@ function parseSseChunk(rawEvent) {
   if (eventName === "scene-updated") {
     return { kind: "scene-updated" };
   }
+  if (eventName === "cancel") {
+    const { instanceId, eventIds } = parsed;
+    return typeof instanceId === "string" && Array.isArray(eventIds) && eventIds.every((id) => typeof id === "string") ? { kind: "cancel", frame: { instanceId, eventIds } } : null;
+  }
   if (eventName === "module-state") {
     return typeof parsed.moduleId === "string" && typeof parsed.key === "string" ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } } : null;
   }
@@ -1146,6 +1184,8 @@ class SceneEventSource {
             this.sink?.onModuleState?.(parsed.frame);
           } else if (parsed.kind === "scene-updated") {
             this.sink?.onSceneUpdated?.();
+          } else if (parsed.kind === "cancel") {
+            this.sink?.onCancel?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }
@@ -1412,6 +1452,14 @@ function main() {
       })
     }).catch(() => {});
   }
+  function postAlertAck(kind, eventId, instanceId) {
+    fetch(`${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instanceIds: [instanceId] })
+    }).catch(() => {});
+  }
   const mountAlertWidget = (instance) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -1427,10 +1475,13 @@ function main() {
       postStatus,
       onFinished: (eventId) => {
         queueManager.complete(subId, eventId);
-        completedBatcher.add(eventId, instance.id);
+        postAlertAck("completed", eventId, instance.id);
       }
     });
-    queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => alertWidget.play(item), () => {});
+    queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => {
+      postAlertAck("started", item.eventId, instance.id);
+      return alertWidget.play(item);
+    }, () => {}, (eventId) => alertWidget.stop(eventId));
   };
   for (const instance of sceneData.widgets) {
     if (instance.hostsSurface === "alert") {
@@ -1522,6 +1573,7 @@ function main() {
       });
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
+    onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
     onSceneUpdated: () => location.reload(),
     onHello: (bootId) => {

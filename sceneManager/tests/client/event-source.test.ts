@@ -348,3 +348,17 @@ describe("SceneEventSource", () => {
     source.stop();
   });
 });
+
+describe("parseSseChunk cancel frames", () => {
+  it("parses a cancel frame", () => {
+    expect(parseSseChunk('event: cancel\ndata: {"instanceId":"inst-1","eventIds":["evt-1","evt-2"]}')).toEqual({
+      kind: "cancel",
+      frame: { instanceId: "inst-1", eventIds: ["evt-1", "evt-2"] },
+    });
+  });
+
+  it("returns null for a cancel frame whose event ids are not all strings", () => {
+    expect(parseSseChunk('event: cancel\ndata: {"instanceId":"inst-1","eventIds":["evt-1",2]}')).toBeNull();
+    expect(parseSseChunk('event: cancel\ndata: {"eventIds":["evt-1"]}')).toBeNull();
+  });
+});

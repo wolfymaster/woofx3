@@ -1,6 +1,9 @@
-import type { HttpDeps } from "../http";
-import { readSessionCookie } from "../scene/session-cookie";
+import type { Logger } from "@woofx3/common/runtime";
+import type { AlertLifecycleWriter } from "../events/alert-dispatch";
 import { handleStatusReport } from "../events/handlers";
+import type { HttpDeps } from "../http";
+import { ALERT_EVENT_TYPE } from "../scene/alert-layout";
+import { readSessionCookie } from "../scene/session-cookie";
 
 /**
  * SSE comment-frame heartbeat interval. Must stay comfortably below
@@ -120,6 +123,49 @@ export async function handleEventDeliveredRoute(
   }
   await deps.deliveryStore.ackDelivered(sceneId, eventId, instanceIds);
   return Response.json({ status: "ok" });
+}
+
+/**
+ * `POST /scene/{sceneId}/events/{eventId}/started` — same body shape. A page
+ * started playing the event on these instances. Sent by alert widgets only,
+ * and unbatched: it is how a skip finds the alert on screen (see
+ * events/alert-controls.ts), and it moves the alert's row to `playing`.
+ */
+export async function handleEventStartedRoute(
+  req: Request,
+  sceneId: string,
+  eventId: string,
+  deps: HttpDeps
+): Promise<Response> {
+  if (!(await verifySession(req, sceneId, deps))) {
+    return unauthorized();
+  }
+  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  if (!instanceIds) {
+    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+  }
+  const firsts = deps.deliveryStore.markStarted(sceneId, eventId, instanceIds);
+  await reportAlertsPlaying(deps.ctx.services.db.client, deps.ctx.logger, firsts);
+  return Response.json({ status: "ok" });
+}
+
+/** The first start report for an alert moves its row to `playing`, best-effort. */
+export async function reportAlertsPlaying(
+  db: AlertLifecycleWriter,
+  logger: Logger,
+  started: Array<{ type: string; key: string }>
+): Promise<void> {
+  const alertIds = new Set(started.filter((delivery) => delivery.type === ALERT_EVENT_TYPE).map((d) => d.key));
+  for (const alertId of alertIds) {
+    try {
+      await db.updateAlertLifecycle({ envelopeId: alertId, status: "playing", error: "" });
+    } catch (err) {
+      logger.debug("alert start not recorded", {
+        alertId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 /** `POST /scene/{sceneId}/events/{eventId}/completed` — same body shape. */
