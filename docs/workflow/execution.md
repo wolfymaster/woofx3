@@ -321,6 +321,68 @@ The service listens for CloudEvents on the workflow change subject. When a workf
 
 This allows workflows to be managed via the database without restarting the service.
 
+A periodic reconciler (every 5 minutes) lists enabled workflows from the DB proxy and
+loads any the engine is missing, which covers lifecycle events the service never received.
+
+## Workflow Health
+
+The engine can refuse a stored workflow: its JSON may not parse, registration may reject
+it, or its trigger may not register (an invalid cron expression, an event trigger with no
+event, an unsupported trigger type, a subject the bus will not subscribe to). A refused
+workflow still appears in the workflow list, but it does not fire as saved. The
+`WorkflowHealthTracker` in `workflow/health.go` records the outcome of every load so the
+creator can see why.
+
+Every path that loads a stored workflow records its outcome: the start-up load, the
+create/update lifecycle event, and the reconciler.
+
+| Outcome | Health | In the registry? |
+|---------|--------|------------------|
+| Loaded | `{ status: "ok" }` | yes |
+| Unreadable JSON, or refused by registration validation | `{ status: "error", reason }` | no (a refused update leaves the previous version) |
+| Trigger could not be registered | `{ status: "error", reason }` | yes: it can be run manually by id, but never fires on its own |
+| Disabled or deleted (including ones the reconciler finds gone) | entry removed | no |
+
+`reason` is the engine's error verbatim; trigger refusals use the registrar's own wording,
+for example `schedule "* * *" is not a valid cron expression: ...`. Each entry carries
+`since`, when its current status and reason began.
+
+**Retries.** Every reconcile pass (every 5 minutes) retries every enabled workflow in
+error. A workflow refused before it was stored is absent from the registry, so it is
+re-added. One stored with a refused trigger is registered again, because a trigger can
+fail for a passing reason, such as the bus refusing a subscribe while it restarts. The
+tracker logs and publishes only when the status or reason differs from what it last
+recorded, so a workflow that stays broken produces one `workflow not running` log line
+and one event, not one per pass. A new reason for the same workflow counts as a change.
+
+**Ordering.** The start-up load, each lifecycle event, and each reconcile pass run one at
+a time (`WorkflowManager.loadMu`), each from its own read of the database. A reconcile
+pass that listed workflows just before a save therefore cannot apply that stale row over
+the lifecycle event for the save: whichever runs second read the database second.
+
+**Published events.** See [CloudEvents](../services/cloudevents.md#workflow-health).
+
+- `workflow.health.snapshot`, once, when the first complete load finishes (the start-up
+  load, or the first successful reconcile pass if that load failed). It lists every
+  workflow in error and is authoritative: a client replaces its whole view with it, and
+  any workflow not listed is ok. Nothing is published per workflow before it, so a start
+  with many workflows sends one message, not one per workflow.
+- `workflow.health.changed` for each change after that: a new error, a changed reason, a
+  recovery, or an errored workflow being disabled or deleted (published as `"ok"`). A
+  workflow that loads fine and never had an error sends nothing.
+
+**Querying.** The service answers `workflow.health.get` with every tracked entry and a
+`loaded` flag, false until the first complete load. The api serves it as the
+`getWorkflowHealth()` RPC (rejecting until `loaded`), asking the workflow service each
+time rather than caching events. The api also resends it as a snapshot webhook when the
+api starts and whenever its bus connection comes back, so errors that cleared while it
+was down or disconnected do not linger in a client.
+
+Save-time validation in the api (`assertValidWorkflowDefinition`) refuses what the api can
+check on its own and returns every reason in the error. Refusals that need the engine's
+knowledge, such as an action no installed module provides, arrive as workflow health once
+the engine tries to load the saved workflow.
+
 ## Error Handling
 
 Each task can specify `onError`:

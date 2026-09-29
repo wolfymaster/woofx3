@@ -9,6 +9,8 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
+const reconcileListTimeout = 30 * time.Second
+
 // Reconciler periodically diffs the in-memory workflow registry against the
 // canonical DB proxy list and applies adds/removes. It is the safety net that
 // converges state when NATS lifecycle events are missed.
@@ -30,6 +32,9 @@ type reconcilerRegistry interface {
 
 // newReconciler wires a reconciler. An interval of zero defaults to 5 minutes.
 func newReconciler(manager *WorkflowManager, registry reconcilerRegistry, dbClient dbv1.WorkflowService, logger tasks.Logger, interval time.Duration) *Reconciler {
+	if manager == nil {
+		panic("reconciler requires a workflow manager: it records every load outcome as workflow health")
+	}
 	if interval == 0 {
 		interval = 5 * time.Minute
 	}
@@ -62,7 +67,15 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 		return
 	}
 
-	resp, err := r.dbClient.ListWorkflows(ctx, &dbv1.ListWorkflowsRequest{
+	// Held for the whole pass, list included; see WorkflowManager.loadMu.
+	r.manager.loadMu.Lock()
+	defer r.manager.loadMu.Unlock()
+
+	// Bounded because the pass holds loadMu: a hung list would otherwise
+	// stall every lifecycle event behind it.
+	listCtx, cancel := context.WithTimeout(ctx, reconcileListTimeout)
+	defer cancel()
+	resp, err := r.dbClient.ListWorkflows(listCtx, &dbv1.ListWorkflowsRequest{
 		IncludeDisabled: false,
 		PageSize:        1000,
 	})
@@ -71,14 +84,17 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 		return
 	}
 
+	health := r.manager.Health()
 	desired := make(map[string]*types.WorkflowDefinition, len(resp.Workflows))
+	enabled := make(map[string]struct{}, len(resp.Workflows))
 	for _, dbwf := range resp.Workflows {
 		if !dbwf.GetEnabled() {
 			continue
 		}
+		enabled[dbwf.GetId()] = struct{}{}
 		def, err := convertDBWorkflowToEngineWorkflow(dbwf)
 		if err != nil {
-			r.logger.Error("reconcile: convert failed", "workflow_id", dbwf.GetId(), "error", err)
+			health.Record(dbwf.GetId(), err)
 			continue
 		}
 		desired[def.ID] = def
@@ -91,9 +107,27 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 	}
 
 	toAdd, toRemove := reconcileDiff(inMem, desired)
+	// Failing workflows are retried on every pass; the health tracker logs
+	// and publishes only a change, so a retry that fails the same way is
+	// silent. A workflow refused before it was stored (unreadable, or failed
+	// registration validation) is absent from the registry and lands in
+	// toAdd. One whose trigger was refused is stored, so it is not in toAdd
+	// and is retried here instead: a trigger can fail for a passing reason,
+	// such as the bus refusing a subscribe while it restarts.
+	added := 0
 	for _, def := range toAdd {
-		if err := r.registry.Register(def); err != nil {
-			r.logger.Error("reconcile: register failed", "workflow_id", def.ID, "error", err)
+		err := r.registry.Register(def)
+		health.Record(def.ID, err)
+		if err == nil {
+			added++
+		}
+	}
+	for id, def := range desired {
+		if _, stored := inMem[id]; !stored {
+			continue
+		}
+		if entry, tracked := health.Status(id); tracked && entry.Status == WorkflowHealthError {
+			health.Record(id, r.registry.Register(def))
 		}
 	}
 	for _, id := range toRemove {
@@ -101,8 +135,10 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 			r.logger.Error("reconcile: remove failed", "workflow_id", id, "error", err)
 		}
 	}
-	if len(toAdd) > 0 || len(toRemove) > 0 {
-		r.logger.Info("reconcile applied", "added", len(toAdd), "removed", len(toRemove))
+	health.Retain(enabled)
+	health.AnnounceSnapshot()
+	if added > 0 || len(toRemove) > 0 {
+		r.logger.Info("reconcile applied", "added", added, "removed", len(toRemove))
 	}
 }
 

@@ -203,6 +203,31 @@ export interface WorkflowRunsQuery {
   limit?: number;
 }
 
+/**
+ * Whether the engine could load a stored workflow. `"error"` means the saved
+ * definition is not running as saved: usually it never fires (unreadable,
+ * refused, or its trigger could not be registered), though a refused update
+ * can leave an earlier version running.
+ */
+export type WorkflowHealthStatus = "ok" | "error";
+
+/**
+ * One workflow's health, as returned by getWorkflowHealth and carried by the
+ * `workflow.health.changed` and `workflow.health.snapshot` webhooks.
+ *
+ * A workflow with no entry is ok as far as the engine knows: disabled,
+ * deleted, and healthy workflows all look the same here. Only an `"error"`
+ * entry needs showing.
+ */
+export interface WorkflowHealth {
+  workflowId: string;
+  status: WorkflowHealthStatus;
+  /** The engine's refusal, verbatim. Present only when status is "error". */
+  reason?: string;
+  /** ISO 8601. When the current status (and reason) began. */
+  since: string;
+}
+
 // ==================== Twitch ====================
 
 /**
@@ -1331,6 +1356,15 @@ export interface Woofx3EngineApi {
     correlationKey?: string
   ): Promise<{ id: string; isEnabled: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
+  /**
+   * Health of every enabled workflow the engine has loaded. Authoritative:
+   * a client replaces its whole view with the answer, and any workflow not
+   * listed with `"error"` is ok. Answered live by the workflow service, so it
+   * reflects the engine now rather than the last webhook received. Rejects
+   * while the engine is still loading its workflows, when the list would be
+   * partial.
+   */
+  getWorkflowHealth(): Promise<WorkflowHealth[]>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
   // command.created / command.updated / command.deleted webhooks on success)

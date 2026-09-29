@@ -131,6 +131,16 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		return alertDbClient
 	})
 
+	// Attached before the first load, so a workflow that fails to load at
+	// start-up is announced like one that fails later.
+	publisher := NewNATSEventPublisher(natsClient, a.logger)
+	a.manager.Health().SetPublisher(publisher)
+	if _, err := natsClient.SubscribeWithReply(string(cloudevents.SubjectWorkflowHealthGet), func(natsclient.Msg) []byte {
+		return a.manager.Health().HandleHealthRequest()
+	}); err != nil {
+		a.logger.Error("Failed to subscribe to workflow health requests", "error", err)
+	}
+
 	// Dynamic per-workflow trigger subscriptions: the registry drives
 	// subscribe/unsubscribe as workflows enter and leave the engine.
 	subscriber := newNatsSubscriber(natsClient)
@@ -170,7 +180,6 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	go reconciler.Run(ctx)
 	a.logger.Info("Reconciler started", "interval", reconciler.interval)
 
-	publisher := NewNATSEventPublisher(natsClient, a.logger)
 	a.engine.SetPublisher(publisher)
 	a.logger.Info("Event publisher configured with NATS")
 
