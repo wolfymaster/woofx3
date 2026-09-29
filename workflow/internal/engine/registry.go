@@ -14,6 +14,9 @@ type WorkflowRegistry struct {
 	workflows map[string]*types.WorkflowDefinition
 	registrar triggers.Registrar
 	logger    logger
+	// validate refuses a definition before it replaces anything, so a
+	// rejected update leaves the previous version registered. Nil accepts all.
+	validate func(def *types.WorkflowDefinition) error
 }
 
 // logger is the minimal interface the registry needs; engine.Engine passes its own.
@@ -40,23 +43,26 @@ func (r *WorkflowRegistry) SetRegistrar(reg triggers.Registrar) {
 	r.registrar = reg
 }
 
-// SetLogger wires a logger for recording registrar errors. Errors are non-fatal:
-// a failed subscribe should not unregister the workflow.
+// SetLogger wires a logger for registrar unregister failures, which are
+// non-fatal. Register failures are returned to the caller instead.
 func (r *WorkflowRegistry) SetLogger(l logger) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.logger = l
 }
 
+// Register stores a definition and subscribes its trigger. Every path that
+// loads a workflow (startup, lifecycle events, the reconciler) goes through
+// here, so a definition the engine would refuse to run is refused here too.
+// A refused definition also unregisters whatever was registered under its id:
+// the db already holds the refused version, so keeping the old one firing would
+// run a workflow nobody can see or edit any more.
 func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
-	if def.ID == "" {
-		return fmt.Errorf("workflow ID is required")
-	}
-	if def.Name == "" {
-		return fmt.Errorf("workflow name is required")
-	}
-	if len(def.Tasks) == 0 {
-		return fmt.Errorf("workflow must have at least one task")
+	if err := r.check(def); err != nil {
+		if def.ID != "" {
+			_ = r.Remove(def.ID)
+		}
+		return err
 	}
 
 	r.mu.Lock()
@@ -74,12 +80,44 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 			logger.Error("triggers: unregister failed during update", "workflow_id", def.ID, "error", err)
 		}
 	}
+	// A trigger that cannot be registered leaves the workflow stored, so it
+	// can still be run by id, but it will never fire on its own. The error is
+	// returned rather than logged so the caller can report it as the
+	// workflow's health; it is the registrar's own readable reason.
 	if def.Trigger != nil {
-		if err := registrar.Register(def.ID, def.Trigger); err != nil && logger != nil {
-			logger.Error("triggers: register failed", "workflow_id", def.ID, "error", err)
+		if err := registrar.Register(def.ID, def.Trigger); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// check runs the registry's own checks, then the engine's validator when one
+// is set; a bare registry has none.
+func (r *WorkflowRegistry) check(def *types.WorkflowDefinition) error {
+	if err := checkDefinition(def); err != nil {
+		return err
+	}
+	if r.validate != nil {
+		if err := r.validate(def); err != nil {
+			return fmt.Errorf("workflow %s: %w", def.ID, err)
+		}
+	}
+	return nil
+}
+
+// checkDefinition refuses a definition the engine can't run.
+func checkDefinition(def *types.WorkflowDefinition) error {
+	if def.ID == "" {
+		return fmt.Errorf("workflow ID is required")
+	}
+	if def.Name == "" {
+		return fmt.Errorf("workflow name is required")
+	}
+	if len(def.Tasks) == 0 {
+		return fmt.Errorf("workflow must have at least one task")
+	}
+	return validatePublishSteps(def)
 }
 
 func (r *WorkflowRegistry) Get(id string) (*types.WorkflowDefinition, error) {

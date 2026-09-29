@@ -20,8 +20,14 @@ import type { Context } from "src/types";
  * a shared-chat session; prefer it when present so a shared-chat message is
  * attributed with the chatter's badges in their own channel rather than this
  * one.
+ *
+ * Broadcaster and moderator are authority over a channel, and a partner
+ * channel's broadcaster or moderators are neither here. They are false for a
+ * message that originated in another channel, or its sender would pass every
+ * check that trusts those roles on this one: the chat built-ins that change
+ * the stream, and the built-in moderator and broadcaster groups.
  */
-function readMembership(event: EventSubChannelChatMessageEvent): ChatterMembership {
+export function readMembership(event: EventSubChannelChatMessageEvent, broadcasterId: string): ChatterMembership {
   const hasBadge = (name: string): boolean => {
     if (event.sourceBadges !== null && event.sourceBadges !== undefined) {
       return event.hasSourceBadge(name) ?? false;
@@ -29,9 +35,11 @@ function readMembership(event: EventSubChannelChatMessageEvent): ChatterMembersh
     return event.hasBadge(name);
   };
 
+  const fromThisChannel = (event.sourceBroadcasterId ?? broadcasterId) === broadcasterId;
+
   return {
-    isBroadcaster: hasBadge("broadcaster"),
-    isModerator: hasBadge("moderator"),
+    isBroadcaster: fromThisChannel && hasBadge("broadcaster"),
+    isModerator: fromThisChannel && hasBadge("moderator"),
     // "founder" is the badge long-term subscribers keep in place of the
     // subscriber badge; both mean an active subscription.
     isSubscriber: hasBadge("subscriber") || hasBadge("founder"),
@@ -50,7 +58,7 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
       // they come from Helix. The enricher bounds how long that may take and
       // leaves the fields absent when it does not resolve: a chat message
       // must never wait on a permissions lookup.
-      const badged = readMembership(event);
+      const badged = readMembership(event, ctx.broadcaster.id);
       const membership = ctx.membershipEnricher
         ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
         : badged;

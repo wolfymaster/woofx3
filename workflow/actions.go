@@ -351,3 +351,44 @@ func buildModuleInvokeEvent(trigger *types.Event, params map[string]any) map[str
 	}
 	return event
 }
+
+// functionActionSpec skips module code in a dry run. The function is end-user
+// code that cannot be trusted to honour a dry-run flag, so it is never told
+// about one: it is simply not called.
+var functionActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	DryRun: func(params map[string]any) (string, error) {
+		canonicalID, ok := params["function"].(string)
+		if !ok || canonicalID == "" {
+			return "", fmt.Errorf("function parameter (canonical function id) is required")
+		}
+		return fmt.Sprintf("would call module function %s", canonicalID), nil
+	},
+}
+
+// alertActionSpec checks the alert as the real action would, so a dry run
+// fails on the same broken layout a real run would.
+var alertActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	DryRun: func(params map[string]any) (string, error) {
+		if err := validateAlertParams(params); err != nil {
+			return "", fmt.Errorf("alert cannot be published: %w", err)
+		}
+		return "would show an alert on the overlay", nil
+	},
+}
+
+var chatReplyActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	DryRun: func(params map[string]any) (string, error) {
+		message, _ := params["message"].(string)
+		if message == "" {
+			return "", fmt.Errorf("message parameter is required")
+		}
+		platform, _ := params["platform"].(string)
+		if platform == "" {
+			platform = "twitch"
+		}
+		return fmt.Sprintf("would send %q to %s chat", message, platform), nil
+	},
+}

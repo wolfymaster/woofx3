@@ -510,6 +510,7 @@ impl State {
             user: None,
             params: json!({}),
             workflow_chain: None,
+            timeout_ms: None,
         };
         if matches!(key, EntryKey::Deadline { .. }) {
             self.remove_entry(&key);

@@ -71,7 +71,7 @@ function increment(ctx) {
 
 The `ctx` surface includes built-in namespaces (`events`, `storage`,
 `http`, `env`, `resources`) plus optional extension namespaces
-(`twitch`, `chat`, `platform.alerts`, `platform.chat`) registered per
+(`twitch`, `chat`) registered per
 deployment. See `src/function-ctx.d.ts` for the full reference.
 
 ### Lua function (mlua sandbox)

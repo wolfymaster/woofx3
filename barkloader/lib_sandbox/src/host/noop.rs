@@ -11,6 +11,21 @@ impl NatsPublisher for NoopNatsPublisher {
     }
 }
 
+/// Answers every request as if nothing were subscribed: with no message bus
+/// configured, no service is there to reply.
+pub struct NoopNatsRequester;
+
+impl NatsRequester for NoopNatsRequester {
+    fn request(
+        &self,
+        _subject: &str,
+        _data: Value,
+        _timeout: std::time::Duration,
+    ) -> Result<Value, RequestError> {
+        Err(RequestError::NoResponders)
+    }
+}
+
 pub struct NoopStorageClient;
 
 impl StorageClient for NoopStorageClient {

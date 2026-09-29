@@ -5,6 +5,7 @@ pub mod function_result;
 pub mod host;
 pub mod models;
 pub mod module_registry;
+pub mod permissions;
 mod runtime;
 mod sandbox;
 

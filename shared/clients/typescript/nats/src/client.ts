@@ -114,6 +114,34 @@ export default class NATSClient {
     return subscription;
   }
 
+  /**
+   * Call `handler` each time the connection comes back after a drop. Messages
+   * published while it was down were not delivered, so a consumer that
+   * mirrors state from events uses this to resynchronise.
+   */
+  async onReconnect(handler: () => void): Promise<void> {
+    if (!this.connection) {
+      await this.connect();
+    }
+
+    if (!this.connection) {
+      throw new Error("NATS connection not available");
+    }
+
+    const status = this.connection.status();
+    (async () => {
+      try {
+        for await (const event of status) {
+          if (event.type === "reconnect") {
+            handler();
+          }
+        }
+      } catch (error) {
+        this.logger.error?.("Connection status watch error:", error);
+      }
+    })();
+  }
+
   async close(): Promise<void> {
     if (this.connection) {
       await this.connection.close();

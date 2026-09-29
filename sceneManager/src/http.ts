@@ -22,6 +22,7 @@ import {
 import {
   handleEventCompletedRoute,
   handleEventDeliveredRoute,
+  handleEventStartedRoute,
   handleEventsStreamRoute,
   handleWidgetStatusRoute,
 } from "./routes/events";
@@ -177,6 +178,12 @@ export function createHttpServer(deps: HttpDeps) {
           const deliveredMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/delivered$/.exec(url.pathname);
           if (deliveredMatch && req.method === "POST") {
             return withCors(await handleEventDeliveredRoute(req, deliveredMatch[1]!, deliveredMatch[2]!, deps));
+          }
+
+          // POST /scene/{sceneId}/events/{eventId}/started
+          const startedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/started$/.exec(url.pathname);
+          if (startedMatch && req.method === "POST") {
+            return withCors(await handleEventStartedRoute(req, startedMatch[1]!, startedMatch[2]!, deps));
           }
 
           // POST /scene/{sceneId}/events/{eventId}/completed

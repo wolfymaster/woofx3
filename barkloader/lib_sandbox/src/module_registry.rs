@@ -25,6 +25,9 @@ pub struct RegisteredModule {
     /// The `event` of every eventbus trigger the module declares: the only
     /// event types its functions may ask the engine to publish.
     pub event_types: HashSet<String>,
+    /// The manifest's `permissions`: the privileged host functions this
+    /// module's code may call. See `crate::permissions`.
+    pub permissions: HashSet<String>,
 }
 
 pub struct ModuleRegistry {
@@ -131,6 +134,16 @@ impl ModuleRegistry {
             .map(|m| m.event_types.clone())
             .unwrap_or_default()
     }
+
+    /// The permissions the module declares; none for a module that is not
+    /// registered.
+    pub fn permissions(&self, name: &str) -> HashSet<String> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.permissions.clone())
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
@@ -160,6 +173,7 @@ mod tests {
             functions,
             state: ModuleState::Active,
             event_types: Default::default(),
+            permissions: Default::default(),
         }
     }
 
