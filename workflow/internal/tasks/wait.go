@@ -64,6 +64,7 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 
 		state.Aggregation = &types.AggregationState{
 			Strategy:    waitConfig.Aggregation.Strategy,
+			Field:       waitConfig.Aggregation.Field,
 			Count:       0,
 			Sum:         0,
 			Threshold:   waitConfig.Aggregation.Threshold,
@@ -164,29 +165,38 @@ func (t *WaitTask) processAggregation(event *types.Event, waitState *types.WaitS
 	return false, nil
 }
 
+// The number this event contributes to the aggregate, read from the configured
+// `field` — a dot path rooted at the event, as in `data.amount`.
+//
+// With no field configured the conventional payload keys are tried, so a sum
+// over events that carry an obvious amount keeps working without one. What is
+// deliberately not kept is a fallback to 1 for an unreadable value: a `sum`
+// that cannot find its number is a misconfigured workflow, and counting 1 per
+// event silently turns it into a `count` that looks like it is working.
 func (t *WaitTask) extractNumericValue(event *types.Event, waitState *types.WaitState) (float64, error) {
-	if waitState.Aggregation == nil {
+	agg := waitState.Aggregation
+	if agg == nil {
 		return 0, fmt.Errorf("no aggregation config")
 	}
 
-	eventData := map[string]any{
-		"data": event.Data,
-	}
-
-	value, err := expression.ResolvePath(eventData, "data."+waitState.Aggregation.Strategy)
-	if err != nil {
-		if event.Data != nil {
-			if v, ok := event.Data["amount"]; ok {
-				return toFloat64(v)
-			}
-			if v, ok := event.Data["value"]; ok {
-				return toFloat64(v)
-			}
+	if agg.Field != "" {
+		value, err := expression.ResolvePath(map[string]any{"data": event.Data}, agg.Field)
+		if err != nil {
+			return 0, fmt.Errorf("aggregation field %q not found on %q event", agg.Field, event.Type)
 		}
-		return 1, nil
+		return toFloat64(value)
 	}
 
-	return toFloat64(value)
+	for _, key := range []string{"amount", "value"} {
+		if value, ok := event.Data[key]; ok {
+			return toFloat64(value)
+		}
+	}
+
+	return 0, fmt.Errorf(
+		"aggregation strategy %q needs a `field`: %q event carries no `amount` or `value`",
+		agg.Strategy, event.Type,
+	)
 }
 
 func toFloat64(v any) (float64, error) {
