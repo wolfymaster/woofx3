@@ -1,11 +1,16 @@
 # Twitch channel controls
 
 The twitch service (`twitch/`) is the one place the engine talks to Twitch's
-Helix API on the streamer's behalf. Every other surface — the UI through the
-engine API, the chatbot's built-in commands, a workflow action, and, for a
-few commands, a module's `ctx.twitch` — asks it to act by sending a command on the `twitchapi` NATS
+Helix API on the streamer's behalf. Every other engine surface (the chatbot's
+built-in commands, a module function's `ctx.twitch`, and a manifest field's
+options source) asks it to act by sending a command on the `twitchapi` NATS
 subject. It validates the request against Twitch's rules, performs it with the
 linked account's token, and answers with the result or an error.
+
+The generic engine API has no Twitch methods. Twitch actions a streamer puts
+in a workflow come from the Twitch platform module, whose functions call
+`ctx.twitch` (see [Modules](#modules)), and the UI's dashboard widgets talk
+to Helix themselves.
 
 ## The `twitchapi` subject
 
@@ -64,24 +69,18 @@ so a bad tag never lets the title through on its own.
   out.
 - **Category search:** `query` is required; `first` is 1 to 100, default 10.
 
-## Engine API
+## Field options
 
-The UI reaches these through `Woofx3EngineApi`
-(`shared/clients/typescript/api/api.ts`). Each is a NATS request to
-`twitchapi` with a 10 second timeout, and rejects with the twitch service's
-message; when the twitch service is not running it rejects with
-`The Twitch service is not running`.
-
-| RPC | Command |
-|---|---|
-| `getStreamInfo(): TwitchStreamInfo` | `getStreamInfo` |
-| `updateStreamInfo(input: UpdateStreamInfoInput): UpdateStreamInfoResult` | `updateStream` |
-| `createStreamMarker(input?: { description? }): TwitchStreamMarker` | `createMarker` |
-| `searchTwitchCategories(input: { query, first? }): TwitchCategory[]` | `searchCategories` |
-
-`getStreamStatus()` is separate: it reads whether the stream is live, its
-uptime and viewer count, where `getStreamInfo()` reads the channel settings
-that apply whether or not it is live.
+A manifest field can list options from the twitch service with an
+[`internal` source](../barkloader/modules.md#dynamic-source-select-fields-source-kind),
+as `channelpoints.redeem`'s reward picker does with
+`listChannelPointRewards`. The descriptor's `payload` is static: it is sent
+as written, and nothing the streamer types reaches it. That rules out
+search-as-you-type over `searchCategories`, so a module action that sets the
+category takes a free-text field and passes it to `updateStream` as
+`category`, which resolves it through the category search as described
+above. `searchCategories` stays a command for the services that resolve text
+themselves.
 
 ## Chatbot built-ins
 
@@ -113,12 +112,50 @@ is only ever reached through a grant.
 
 ## Modules
 
-A module's `ctx.twitch` reaches only `clip`, `shoutout` and `createMarker`
-(`barkloader/lib_sandbox/src/extensions/twitch.rs`). Module code is end-user
-code that runs with no per-module grant, so it gets only actions that are
-visible, reversible and leave the channel's settings and its chatters alone.
-Timing chatters out, editing the title, category or tags, and promoting
-moderators are for the streamer, through the chat built-ins, the engine API
-and workflow actions. Opening one of them to modules would take a capability
-the manifest declares and the streamer approves, not a new entry in the
-extension's table. See [Engine integrity](./engine-integrity.md).
+A module function reaches the twitch service through `ctx.twitch`
+(`barkloader/lib_sandbox/src/extensions/twitch.rs`). Each call is a request
+on `twitchapi` made while the function runs: it waits up to 10 seconds, and
+never past the time the function's caller gives it (30 seconds at most), and
+returns the command's result, or throws. A function may make at most 10
+`ctx.twitch` calls per run, and at most 32 requests wait on the twitch service
+at once across the engine, since each one holds a sandbox thread.
+
+| Call | Returns | Manifest permission |
+|---|---|---|
+| `clip()` | `{ id, url }` | none |
+| `shoutout({ userId \| userName })` | `{ ok, userId }` | none |
+| `createMarker({ description? })` | `{ id, createdAt, description, positionSeconds }` | none |
+| `timeout({ userId \| userName, durationSeconds, reason? })` | `{ ok, userId, durationSeconds }` | `twitch.moderation` |
+| `updateStream({ title?, category?, categoryId?, tags? })` | `{ ok, title?, categoryId?, categoryName?, tags? }` | `twitch.channel` |
+
+Clips, shoutouts and markers are visible and harmless, so any module may
+call them. Timing chatters out and changing the title, category or tags act
+on the channel and its chatters, so the module has to declare the permission
+in its manifest (`"permissions": ["twitch.moderation", "twitch.channel"]`).
+Permissions are declared by the module and enforced by the engine, and shown
+on the module install page (woofx3-ui feat/module-permissions-review); see
+[Module format → Permissions](../barkloader/modules.md#permissions-permissions).
+A workflow step or command that names another module's action runs that
+module's code with that module's permissions, so an uploaded module doing so
+must declare every permission the other module declares, or it does not
+install.
+An undeclared call throws before anything is sent. Moderator changes are not
+reachable from modules at all.
+
+A failed call throws an `Error` (Lua: raises a table `{ message, code? }`)
+with the twitch service's own message, so the rules above reach the module
+unchanged. `code` is:
+
+| `code` | When |
+|---|---|
+| `permission_denied` | The manifest does not declare the permission the call needs. Nothing was sent. |
+| `timeout` | The function's run is out of time, or the twitch service did not answer within 10 seconds. The action may still have happened. |
+| `call_limit` | The run already made 10 `ctx.twitch` calls. Nothing was sent. |
+| `busy` | 32 twitch requests were already waiting and none finished within 2 seconds. Nothing was sent. |
+| `unavailable` | The twitch service is not running. |
+| `request_failed` | The request could not be sent or the reply could not be read. |
+| absent | The twitch service refused: invalid input, Twitch not linked yet, or Twitch's own error. Its refusals carry a message only. |
+
+A platform module exposes these to workflows as actions backed by functions,
+the same way `twitch.shoutout` is. See
+[Engine integrity](./engine-integrity.md).

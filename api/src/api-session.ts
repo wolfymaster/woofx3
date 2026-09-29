@@ -102,6 +102,7 @@ export class ApiSession extends RpcTarget {
 export const RPC_METHODS = [
   "ping",
   "getEngineInfo",
+  "getEngineCapabilities",
   "setOverlayPublicUrl",
   "getStorageConfig",
   "setStorageConfig",
@@ -165,10 +166,6 @@ export const RPC_METHODS = [
   "updateScene",
   "deleteScene",
   "getStreamStatus",
-  "getStreamInfo",
-  "updateStreamInfo",
-  "createStreamMarker",
-  "searchTwitchCategories",
   "listStreamSessions",
   "getStreamSession",
   "getStreamSessionTotals",

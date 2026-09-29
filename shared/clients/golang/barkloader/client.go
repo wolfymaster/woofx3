@@ -68,7 +68,13 @@ type InvokeData struct {
 	// WorkflowChain is stamped on every event the function announces; see
 	// Invoke. Omitted when the caller is not a workflow run.
 	WorkflowChain string `json:"workflowChain,omitempty"`
+	// TimeoutMs is how long the caller waits for the result, so host calls
+	// that wait on another service stop when the caller does.
+	TimeoutMs int64 `json:"timeoutMs"`
 }
+
+// invokeTimeout is how long Invoke waits for a result.
+const invokeTimeout = 30 * time.Second
 
 type Client struct {
 	config             Config
@@ -248,6 +254,7 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}, workf
 			Function:      functionName,
 			Event:         event,
 			WorkflowChain: workflowChain,
+			TimeoutMs:     invokeTimeout.Milliseconds(),
 		},
 	}
 
@@ -262,7 +269,7 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}, workf
 	}
 
 	// Wait for response with timeout
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(invokeTimeout)
 	select {
 	case response := <-responseChan:
 		if response.Type == "error" {

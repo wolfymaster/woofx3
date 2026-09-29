@@ -13,8 +13,8 @@ use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
 use lib_sandbox::extensions::{
     ChatExtension, PlatformAlertsExtension, PlatformChatExtension, TwitchExtension,
 };
-use lib_sandbox::host::noop::{NoopChatSender, noop_host_context};
-use lib_sandbox::host::{ChatSender, ExtensionRegistry};
+use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
+use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -85,6 +85,7 @@ async fn setup() -> Result<AppContext> {
         ctx.schedule = scheduler.clone();
 
         let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
+        let mut requester: Arc<dyn NatsRequester> = Arc::new(NoopNatsRequester);
 
         let messagebus_url =
             get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
@@ -101,6 +102,7 @@ async fn setup() -> Result<AppContext> {
                         nats.clone(),
                         "twitch",
                     ));
+                    requester = nats.clone();
                     ctx.nats = nats;
                 }
                 Err(e) => {
@@ -120,7 +122,7 @@ async fn setup() -> Result<AppContext> {
         // stay agnostic to which platforms exist.
         ctx.extensions = Arc::new(
             ExtensionRegistry::new()
-                .with(Arc::new(TwitchExtension::new(ctx.nats.clone())))
+                .with(Arc::new(TwitchExtension::new(requester)))
                 .with(Arc::new(PlatformAlertsExtension::new(ctx.nats.clone())))
                 .with(Arc::new(PlatformChatExtension::new(ctx.nats.clone())))
                 .with(Arc::new(ChatExtension::new(chat_sender))),

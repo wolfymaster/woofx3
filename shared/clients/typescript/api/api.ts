@@ -1,5 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { EngineCapabilities } from "./capabilities";
 import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
@@ -679,62 +680,6 @@ export interface EngineModuleSummary {
   manifest: Record<string, unknown> | null;
 }
 
-// ==================== Twitch channel ====================
-
-/** The channel's current title, category and tags, read from Twitch. */
-export interface TwitchStreamInfo {
-  title: string;
-  /** Empty when no category is set. */
-  categoryId: string;
-  categoryName: string;
-  tags: string[];
-  language: string;
-}
-
-/**
- * A change to the channel's information. Every field is optional, but at
- * least one is required. Validated against Twitch's rules before anything
- * is sent: title at most 140 characters; at most 10 tags, each at most 25
- * letters or numbers with no spaces or punctuation.
- */
-export interface UpdateStreamInfoInput {
-  title?: string;
-  /** Free text, resolved through Twitch's category search: an exact name
-   *  match (ignoring case) wins, else the most relevant result. */
-  category?: string;
-  /** A Twitch category id, used as given; "" clears the category. Not
-   *  together with `category`. */
-  categoryId?: string;
-  /** Replaces every tag on the channel; [] removes them all. */
-  tags?: string[];
-}
-
-/** The values that were applied. `categoryName` is present when the
- *  category was resolved from free text. */
-export interface UpdateStreamInfoResult {
-  ok: true;
-  title?: string;
-  categoryId?: string;
-  categoryName?: string;
-  tags?: string[];
-}
-
-export interface TwitchStreamMarker {
-  id: string;
-  /** ISO 8601. */
-  createdAt: string;
-  description: string;
-  /** How far into the broadcast the marker sits. */
-  positionSeconds: number;
-}
-
-export interface TwitchCategory {
-  id: string;
-  name: string;
-  /** The box art URL Twitch's category search returned. */
-  boxArtUrl: string;
-}
-
 // ==================== Stream / workflow response types ====================
 
 export interface StreamStatus {
@@ -1028,6 +973,14 @@ export interface Woofx3EngineApi {
    * the UI must re-fetch.
    */
   getEngineInfo(): Promise<EngineInfo>;
+
+  /**
+   * The capability ids this engine supports (see `ENGINE_CAPABILITIES` and
+   * docs/services/engine-capabilities.md). Clients gate newer features on
+   * these ids rather than on the engine version, which is an image tag. An
+   * engine without this method predates capabilities and supports none.
+   */
+  getEngineCapabilities(): Promise<EngineCapabilities>;
 
   /**
    * Set the `overlayPublicUrl` that `getEngineInfo()` returns — the
@@ -1384,20 +1337,6 @@ export interface Woofx3EngineApi {
    *  this takes no scope -- the parameter it used to accept was documented
    *  as unused and ignored. */
   getStreamStatus(): Promise<StreamStatus>;
-
-  // Twitch channel. Each goes to the twitch service over NATS and rejects
-  // with its error: invalid input, Twitch not linked yet, or Twitch's own
-  // refusal.
-  /** The channel's current title, category and tags. */
-  getStreamInfo(): Promise<TwitchStreamInfo>;
-  /** Change the channel's title, category or tags. */
-  updateStreamInfo(input: UpdateStreamInfoInput): Promise<UpdateStreamInfoResult>;
-  /** Place a stream marker now. Rejects while the channel is offline:
-   *  Twitch only marks a live stream. Description at most 140 characters. */
-  createStreamMarker(input?: { description?: string }): Promise<TwitchStreamMarker>;
-  /** Twitch categories matching `query`, most relevant first. `first` is
-   *  1 to 100, default 10. */
-  searchTwitchCategories(input: { query: string; first?: number }): Promise<TwitchCategory[]>;
 
   // Stream sessions
   /** Past and current stream sessions with their segments, newest first. */

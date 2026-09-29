@@ -953,6 +953,11 @@ pub struct ModuleManifest {
     /// [`ManifestTheme`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub themes: Vec<ManifestTheme>,
+    /// Privileged host functions this module's code may call, by permission
+    /// id (`lib_sandbox::permissions`). Only known ids install; a call to a
+    /// privileged function the module did not declare is refused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permissions: Vec<String>,
 }
 
 impl ModuleManifest {
