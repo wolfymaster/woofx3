@@ -48,7 +48,7 @@
             "request": {
               "event": "barkloader.module.field_options",
               "payload": {
-                "moduleId": "spotify",
+                "moduleId": "woofx3_spotify",
                 "functionId": "get_devices"
               }
             },

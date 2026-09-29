@@ -341,6 +341,9 @@ otherwise validated like any field list, so their ids must be unique within
 the row. A module setting cannot be a `list`, because `settings` declares no
 `itemFields`.
 
+A row field may not carry an `internal` `source` or `action`: the api and the
+UI resolve those on top-level fields only.
+
 #### Picker field types
 
 These three `type` values render dedicated pickers in the UI rather than freeform inputs. The engine treats their values opaquely (canonical id strings) and forwards them to the function at runtime.
@@ -416,7 +419,14 @@ The worker's reply data is a list of options: strings, or `{value, label, group?
 
 The field's `type` decides whether a value outside the options can be saved. `select` is strict: only a listed option can be picked. `text` is a text box that offers the options as suggestions, and flags a typed value that is not among them rather than refusing it; use it when the value may also be typed while the source cannot answer, or built from a `${...}` variable. The OBS name fields of the bundled `obs.*` actions are the worked example (see [OBS control](../services/obs.md#name-pickers-engine-obs-options)).
 
-The request is sent verbatim, so for an uploaded module barkloader refuses a `source` (or a button's `action`) whose `request.event` starts with a reserved event prefix (`engine.`, `db.`, `slobs`, `message.send`, `workflow.execute` and the rest listed in [Engine integrity](../services/engine-integrity.md)). The one exception is `twitchapi`, which answers any method of the Twitch client, writes included, and is open only to commands starting with `list`.
+The request is sent verbatim, so for an uploaded module barkloader accepts an `internal` `source` (or a button's `action`) only on these subjects, and refuses the install otherwise (see [Engine integrity](../services/engine-integrity.md)):
+
+- `barkloader.module.field_options`, for the module's own functions: `payload.moduleId` must be the manifest's `id`, and `payload.functionId` a function it declares. The responder runs that function with its module's permissions, so naming another module is refused.
+- `twitchapi`, for the reads in `TWITCHAPI_FORM_READS` (`barkloader/lib_module/src/manifest_validate.rs`), today only `listChannelPointRewards`. The subject answers any method of the Twitch client, writes included.
+
+The bundled system module's forms may also read engine subjects such as `engine.obs.options`.
+
+An `internal` source or action is supported on top-level fields only. The api and the UI do not resolve one inside a `list` field's `itemFields`, so barkloader refuses it there, for every module.
 
 A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
 

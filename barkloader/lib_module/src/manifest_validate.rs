@@ -329,7 +329,7 @@ pub fn validate_with_provenance(
     )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
     validate_trigger_transports(manifest, provenance)?;
-    validate_internal_requests(manifest, provenance)?;
+    validate_internal_requests(manifest, &module_id, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
     Ok(ResolvedManifest {
@@ -466,44 +466,64 @@ fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static 
     }
 }
 
-/// The one command subject an uploaded module's forms may request. It
-/// answers any method of the service's Twitch client, writes included (a
-/// shoutout, adding a moderator), so only its `list` reads are open.
-const TWITCHAPI_SUBJECT: &str = "twitchapi";
-const TWITCHAPI_READ_PREFIX: &str = "list";
+/// The subject barkloader's field-options responder answers. It runs
+/// `{payload.moduleId}:function:{payload.functionId}` with that module's
+/// permissions, so a form may name only its own module. Must match `SUBJECT`
+/// in barkloader/app/src/services/field_options.rs.
+const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
 
-/// Keep an uploaded module's forms off the engine's command subjects.
+/// The Twitch service's request subject. It answers any method of its Twitch
+/// client, writes included (a shoutout, adding a moderator), so a form may
+/// request only the reads listed in `TWITCHAPI_FORM_READS`.
+const TWITCHAPI_SUBJECT: &str = "twitchapi";
+
+/// The `twitchapi` commands an uploaded module's forms may request. Each is a
+/// read a picker needs; opening another read to uploads means adding it here.
+const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
+
+/// Keep an uploaded module's forms to the requests they need.
 ///
 /// A field's `source` and a button's `action` name a subject and a payload,
 /// and the api sends that request verbatim when the form renders or the
 /// button is pressed. Without this, a field could switch OBS scenes or add a
-/// moderator just by being looked at. The system module's forms are the
-/// engine's own and may read its subjects (`engine.obs.options`).
+/// moderator just by being looked at, or run another module's function with
+/// that module's permissions. An upload's forms may therefore request only
+/// `FIELD_OPTIONS_SUBJECT` for its own functions and the `twitchapi` reads in
+/// `TWITCHAPI_FORM_READS`: an allowlist, because a new command subject should
+/// stay closed to forms until someone decides otherwise. The system module's
+/// forms are the engine's own and may read its subjects (`engine.obs.options`).
+///
+/// For every provenance, a request inside a `list` row is refused: the api
+/// and the UI resolve sources only on top-level fields, so a nested one would
+/// install and then never load.
 fn validate_internal_requests(
     manifest: &ModuleManifest,
+    module_id: &str,
     provenance: InstallProvenance,
 ) -> Result<()> {
-    if provenance == InstallProvenance::System {
-        return Ok(());
-    }
+    let forms = FormRequests {
+        manifest,
+        module_id,
+        provenance,
+    };
     for (i, t) in manifest.triggers.iter().enumerate() {
         if let Some(fields) = &t.schema {
-            check_field_requests(fields, &format!("trigger #{i} ({}): `schema`", t.id))?;
+            forms.check_fields(fields, &format!("trigger #{i} ({}): `schema`", t.id))?;
         }
     }
     for (i, a) in manifest.actions.iter().enumerate() {
-        check_field_requests(&a.schema, &format!("action #{i} ({}): `schema`", a.id))?;
+        forms.check_fields(&a.schema, &format!("action #{i} ({}): `schema`", a.id))?;
     }
     for (i, w) in manifest.widgets.iter().enumerate() {
         if let Some(fields) = &w.settings_schema {
-            check_field_requests(fields, &format!("widget #{i} ({}): `settingsSchema`", w.id))?;
+            forms.check_fields(fields, &format!("widget #{i} ({}): `settingsSchema`", w.id))?;
         }
     }
     for (i, r) in manifest.resources.iter().enumerate() {
-        check_field_requests(&r.schema, &format!("resource #{i} ({}): `schema`", r.kind))?;
+        forms.check_fields(&r.schema, &format!("resource #{i} ({}): `schema`", r.kind))?;
     }
     for (i, setting) in manifest.settings.iter().enumerate() {
-        check_internal_request(
+        forms.check_request(
             &setting.action,
             &format!("setting #{i} ({}): `action`", setting.id),
         )?;
@@ -511,50 +531,115 @@ fn validate_internal_requests(
     Ok(())
 }
 
-fn check_field_requests(fields: &[ManifestConfigField], context: &str) -> Result<()> {
+struct FormRequests<'a> {
+    manifest: &'a ModuleManifest,
+    module_id: &'a str,
+    provenance: InstallProvenance,
+}
+
+impl FormRequests<'_> {
+    fn check_fields(&self, fields: &[ManifestConfigField], context: &str) -> Result<()> {
+        for (i, field) in fields.iter().enumerate() {
+            let label = format!("{context} field #{i} ({})", field.id);
+            if let Some(source) = &field.source {
+                self.check_request(source, &format!("{label}: `source`"))?;
+            }
+            if let Some(action) = &field.action {
+                self.check_request(action, &format!("{label}: `action`"))?;
+            }
+            if let Some(item_fields) = &field.item_fields {
+                reject_nested_requests(item_fields, &format!("{label}: `itemFields`"))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_request(&self, descriptor: &serde_json::Value, context: &str) -> Result<()> {
+        if self.provenance == InstallProvenance::System || !is_internal_request(descriptor) {
+            return Ok(());
+        }
+        let Some(event) = descriptor
+            .pointer("/request/event")
+            .and_then(serde_json::Value::as_str)
+        else {
+            return Err(anyhow!(
+                "{context}: an `internal` request needs a `request.event` subject"
+            ));
+        };
+        match event {
+            FIELD_OPTIONS_SUBJECT => self.check_field_options_request(descriptor, context),
+            TWITCHAPI_SUBJECT => check_twitchapi_request(descriptor, context),
+            _ => Err(anyhow!(
+                "{context}: requests {event:?}; an uploaded module's forms may request only \
+                 {FIELD_OPTIONS_SUBJECT} (its own functions) or {TWITCHAPI_SUBJECT} (the reads {TWITCHAPI_FORM_READS:?})"
+            )),
+        }
+    }
+
+    fn check_field_options_request(
+        &self,
+        descriptor: &serde_json::Value,
+        context: &str,
+    ) -> Result<()> {
+        let module_id = self.module_id;
+        let requested_module = descriptor
+            .pointer("/request/payload/moduleId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if requested_module != module_id {
+            return Err(anyhow!(
+                "{context}: requests {FIELD_OPTIONS_SUBJECT} for module {requested_module:?}; \
+                 a form may run only its own module's functions, so `payload.moduleId` must be {module_id:?}"
+            ));
+        }
+        let function_id = descriptor
+            .pointer("/request/payload/functionId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if !self.manifest.functions.iter().any(|f| f.id == function_id) {
+            return Err(anyhow!(
+                "{context}: requests {FIELD_OPTIONS_SUBJECT} for function {function_id:?}, \
+                 which this module does not declare"
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn check_twitchapi_request(descriptor: &serde_json::Value, context: &str) -> Result<()> {
+    let command = descriptor
+        .pointer("/request/payload/command")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if TWITCHAPI_FORM_READS.contains(&command) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "{context}: requests {TWITCHAPI_SUBJECT} command {command:?}; a form may request only {TWITCHAPI_FORM_READS:?}"
+    ))
+}
+
+fn reject_nested_requests(fields: &[ManifestConfigField], context: &str) -> Result<()> {
     for (i, field) in fields.iter().enumerate() {
         let label = format!("{context} field #{i} ({})", field.id);
-        if let Some(source) = &field.source {
-            check_internal_request(source, &format!("{label}: `source`"))?;
-        }
-        if let Some(action) = &field.action {
-            check_internal_request(action, &format!("{label}: `action`"))?;
+        for (key, descriptor) in [("source", &field.source), ("action", &field.action)] {
+            if descriptor.as_ref().is_some_and(is_internal_request) {
+                return Err(anyhow!(
+                    "{label}: `{key}`: internal sources are only supported on top-level fields"
+                ));
+            }
         }
         if let Some(item_fields) = &field.item_fields {
-            check_field_requests(item_fields, &format!("{label}: `itemFields`"))?;
+            reject_nested_requests(item_fields, &format!("{label}: `itemFields`"))?;
         }
     }
     Ok(())
 }
 
-fn check_internal_request(descriptor: &serde_json::Value, context: &str) -> Result<()> {
-    let Some(event) = descriptor
-        .pointer("/request/event")
-        .and_then(serde_json::Value::as_str)
-    else {
-        return Ok(());
-    };
-    let Some(prefix) = USER_RESERVED_EVENT_PREFIXES
-        .iter()
-        .find(|p| event.starts_with(**p))
-    else {
-        return Ok(());
-    };
-    if event == TWITCHAPI_SUBJECT {
-        let command = descriptor
-            .pointer("/request/payload/command")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        if command.starts_with(TWITCHAPI_READ_PREFIX) {
-            return Ok(());
-        }
-        return Err(anyhow!(
-            "{context}: requests {TWITCHAPI_SUBJECT} command {command:?}; a form may only request its `{TWITCHAPI_READ_PREFIX}` reads"
-        ));
-    }
-    Err(anyhow!(
-        "{context}: requests {event:?}, which uses the reserved prefix {prefix:?}"
-    ))
+/// A descriptor the api sends as a bus request. Must match the `kind` check
+/// in api/src/routes/field-options.ts.
+fn is_internal_request(descriptor: &serde_json::Value) -> bool {
+    descriptor.get("kind").and_then(serde_json::Value::as_str) == Some("internal")
 }
 
 /// Enforce what each trigger transport may declare.
@@ -2167,44 +2252,158 @@ mod tests {
     }
 
     #[test]
-    fn rejects_an_upload_field_source_on_a_command_subject() {
+    fn rejects_an_upload_field_source_outside_the_form_allowlist() {
         for event in [
             "engine.obs.command",
             "engine.obs.options",
             "slobs",
             "message.send",
             "workflow.execute",
+            "some.service.command",
         ] {
             let err = validate(&action_with_field_source(event, "{}"))
-                .expect_err("a field source must not reach an engine command subject")
+                .expect_err("an upload's forms may request only allowlisted subjects")
                 .to_string();
-            assert!(err.contains("reserved prefix"), "{event}: {err}");
+            assert!(err.contains("may request only"), "{event}: {err}");
             assert!(err.contains("`source`"), "{event}: {err}");
         }
     }
 
     #[test]
-    fn limits_an_upload_field_source_on_twitchapi_to_list_reads() {
+    fn limits_an_upload_field_source_on_twitchapi_to_allowlisted_reads() {
         validate(&action_with_field_source(
             "twitchapi",
             r#"{ "command": "listChannelPointRewards" }"#,
         ))
-        .expect("a list read is what the twitch platform module's reward picker asks for");
-        for payload in [r#"{ "command": "addChannelModerator" }"#, "{}"] {
+        .expect("the twitch platform module's reward picker asks for this read");
+        for payload in [
+            r#"{ "command": "addChannelModerator" }"#,
+            r#"{ "command": "listModerators" }"#,
+            "{}",
+        ] {
             let err = validate(&action_with_field_source("twitchapi", payload))
-                .expect_err("a write must not be reachable from a form")
+                .expect_err("only an allowlisted read is reachable from a form")
                 .to_string();
-            assert!(err.contains("`list` reads"), "{payload}: {err}");
+            assert!(err.contains("listChannelPointRewards"), "{payload}: {err}");
         }
     }
 
     #[test]
-    fn accepts_an_upload_field_source_on_an_ordinary_subject() {
+    fn accepts_an_upload_field_source_on_its_own_function() {
         validate(&action_with_field_source(
             "barkloader.module.field_options",
             r#"{ "moduleId": "mod", "functionId": "f" }"#,
         ))
-        .expect("the module's own field-options function is not a command subject");
+        .expect("a module's forms may run its own field-options function");
+    }
+
+    // The responder runs `{moduleId}:function:{functionId}` with that
+    // module's permissions, so naming another module would borrow them.
+    #[test]
+    fn rejects_an_upload_field_source_on_another_modules_function() {
+        for payload in [
+            r#"{ "moduleId": "other_mod", "functionId": "f" }"#,
+            r#"{ "functionId": "f" }"#,
+        ] {
+            let err = validate(&action_with_field_source(
+                "barkloader.module.field_options",
+                payload,
+            ))
+            .expect_err("a form must not run another module's function")
+            .to_string();
+            assert!(
+                err.contains("its own module's functions"),
+                "{payload}: {err}"
+            );
+            assert!(err.contains(r#"must be "mod""#), "{payload}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_an_upload_field_source_on_an_undeclared_function() {
+        let err = validate(&action_with_field_source(
+            "barkloader.module.field_options",
+            r#"{ "moduleId": "mod", "functionId": "missing" }"#,
+        ))
+        .expect_err("the field would never load")
+        .to_string();
+        assert!(err.contains("does not declare"), "{err}");
+    }
+
+    #[test]
+    fn rejects_an_internal_upload_source_without_a_subject() {
+        let err = validate(&action_with_field_source_descriptor(
+            r#"{ "kind": "internal" }"#,
+        ))
+        .expect_err("an internal source names the subject it requests")
+        .to_string();
+        assert!(err.contains("`request.event`"), "{err}");
+    }
+
+    #[test]
+    fn ignores_sources_the_api_does_not_send_as_requests() {
+        validate(&action_with_field_source_descriptor(
+            r#"{ "kind": "commands" }"#,
+        ))
+        .expect("a commands source resolves in the UI, not on the bus");
+    }
+
+    fn action_with_field_source_descriptor(descriptor: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{{ "id": "pick", "label": "Pick", "type": "select", "source": {descriptor} }}] }}],
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}]}}"#
+        ))
+    }
+
+    fn action_with_list_row(row_field: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{{ "id": "rows", "label": "Rows", "type": "list",
+                    "itemFields": [{row_field}] }}] }}]}}"#
+        ))
+    }
+
+    // The api and the UI resolve sources only on top-level fields, so a
+    // request in a list row would install and then never load. This holds for
+    // the system module too, and for a request that would pass on its own.
+    #[test]
+    fn rejects_an_internal_source_inside_a_list_row() {
+        let m = action_with_list_row(
+            r#"{ "id": "pick", "label": "Pick", "type": "select",
+                "source": { "kind": "internal", "request": {
+                    "event": "barkloader.module.field_options",
+                    "payload": { "moduleId": "mod", "functionId": "f" } } } }"#,
+        );
+        let err = validate(&m)
+            .expect_err("a nested source is not resolved")
+            .to_string();
+        assert!(
+            err.contains("internal sources are only supported on top-level fields"),
+            "{err}"
+        );
+        assert!(
+            err.contains("`itemFields` field #0 (pick): `source`"),
+            "{err}"
+        );
+
+        let mut system = m.clone();
+        system.id = SYSTEM_MODULE_ID.to_string();
+        let err = validate_with_provenance(&system, InstallProvenance::System)
+            .expect_err("the system module's rows are resolved the same way")
+            .to_string();
+        assert!(err.contains("only supported on top-level fields"), "{err}");
+    }
+
+    #[test]
+    fn accepts_a_list_row_with_a_ui_resolved_source() {
+        validate(&action_with_list_row(
+            r#"{ "id": "cmd", "label": "Command", "type": "select", "source": { "kind": "commands" } }"#,
+        ))
+        .expect("only bus requests are limited to top-level fields");
     }
 
     #[test]
