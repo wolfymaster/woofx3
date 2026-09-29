@@ -65,6 +65,20 @@ version its tag no longer matches, and the next run releases both.
 When the workflow finishes, check the release notes carry the digest, and that
 `docker pull ghcr.io/wolfymaster/woofx3@<digest>` works.
 
+## Release pull requests
+
+A pull request into `master` whose title starts with `Release:` gets a comment
+from `.github/workflows/release-preview.yml` naming the version merging it
+releases, with the release notes that go into the GitHub release and
+`CHANGELOG.md`. It is updated on every push and title edit. semantic-release
+refuses to run anywhere but the tip of `master`, so the preview runs its commit
+analyzer and notes generator, configured from `.releaserc.json`, over the pull
+request's merge ref.
+
+Merge a release pull request with a **merge commit**. A squash merge replaces
+its commits with one named after the pull request, and semantic-release reads
+only commit messages: a `Release: …` title releases nothing.
+
 ## The release app
 
 The `WolfyMasterOnly` ruleset lets nothing onto `master` but a pull request, and
