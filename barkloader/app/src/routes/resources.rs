@@ -1,12 +1,13 @@
 //! Generic user-asset upload and processing.
 //!
-//! Three endpoints, all under the `user/` key prefix that
+//! Five endpoints, all under the `user/` key prefix that
 //! `routes::assets` already serves reads from:
 //!
-//!   `POST /assets/upload-url`     ask for permission to upload
-//!   `PUT  /assets/upload/{token}` send the bytes (file backend only)
-//!   `POST /assets/process`        derive a thumbnail, asynchronously
-//!   `DELETE /assets/resource`     purge one resource's stored bytes
+//!   `POST /assets/upload-url`        ask for permission to upload
+//!   `POST /assets/poster-upload-url` ask for permission to upload a video's poster frame
+//!   `PUT  /assets/upload/{token}`    send the bytes (file backend only)
+//!   `POST /assets/process`           derive a thumbnail, asynchronously
+//!   `DELETE /assets/resource`        purge one resource's stored bytes
 //!
 //! The upload-url response is deliberately identical whichever storage
 //! backend is live. On S3 the `uploadUrl` is a genuine presigned PUT
@@ -92,6 +93,15 @@ struct UploadHeader {
 }
 
 #[derive(Deserialize)]
+struct PosterUploadUrlRequest {
+    /// The video's `repository_key` exactly as stored. The poster key is
+    /// derived from it, so the caller cannot aim the grant elsewhere.
+    repository_key: String,
+    content_type: String,
+    ttl_seconds: Option<u64>,
+}
+
+#[derive(Deserialize)]
 struct ProcessRequest {
     repository_key: String,
     content_type: Option<String>,
@@ -144,9 +154,55 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
         }
     };
 
+    issue_upload_grant(
+        &ctx,
+        key,
+        request.content_type.as_deref(),
+        request.ttl_seconds,
+    )
+    .await
+}
+
+/// Issue an upload grant for the poster frame of one stored video: an image
+/// the client captured, which `/assets/process` turns into the thumbnail.
+#[post("/assets/poster-upload-url")]
+async fn poster_upload_url_handler(
+    ctx: Data<AppContext>,
+    body: Json<PosterUploadUrlRequest>,
+) -> HttpResponse {
+    let request = body.into_inner();
+
+    if let Err(message) = resource_directory_for_key(&request.repository_key) {
+        return HttpResponse::BadRequest().json(error_body(&message));
+    }
+    if !request
+        .content_type
+        .to_ascii_lowercase()
+        .starts_with("image/")
+    {
+        return HttpResponse::BadRequest().json(error_body("a poster must be an image"));
+    }
+    let key = match thumbnail::poster_key_for(&request.repository_key) {
+        Ok(key) => key,
+        Err(err) => {
+            return HttpResponse::BadRequest().json(error_body(&err.to_string()));
+        }
+    };
+
+    issue_upload_grant(&ctx, key, Some(&request.content_type), request.ttl_seconds).await
+}
+
+/// Mint the grant for one already-validated `user/` key: presigned at the
+/// backend when direct uploads are enabled and supported, relayed through
+/// `upload_handler` otherwise.
+async fn issue_upload_grant(
+    ctx: &AppContext,
+    key: String,
+    content_type: Option<&str>,
+    ttl_seconds: Option<u64>,
+) -> HttpResponse {
     let ttl = Duration::from_secs(
-        request
-            .ttl_seconds
+        ttl_seconds
             .unwrap_or(DEFAULT_UPLOAD_TTL_SECONDS)
             .clamp(1, MAX_UPLOAD_TTL_SECONDS),
     );
@@ -154,11 +210,11 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
     let expires_at = now.saturating_add(ttl.as_secs() as i64);
 
     let repository = ctx.repository.current();
-    let endpoint = if direct_upload_enabled(&ctx).await {
+    let endpoint = if direct_upload_enabled(ctx).await {
         repository
             .presign_upload(UploadRequest {
                 key: &key,
-                content_type: request.content_type.as_deref(),
+                content_type,
                 ttl,
             })
             .await
@@ -179,15 +235,14 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
             // presign at all (local disk): mint our own grant and point the
             // caller at the PUT endpoint below. Same shape, same single request.
             let secret = upload_secret();
-            let issued =
-                upload_token::issue(&secret, &key, request.content_type.as_deref(), ttl, now);
+            let issued = upload_token::issue(&secret, &key, content_type, ttl, now);
             let Ok((token, _)) = issued else {
                 error!("Failed to issue upload token for {}", key);
                 return HttpResponse::InternalServerError()
                     .json(error_body("could not issue an upload grant"));
             };
             let base = ctx.public_url_resolver.resolve().await;
-            let headers = match request.content_type.as_deref() {
+            let headers = match content_type {
                 Some(content_type) => vec![UploadHeader {
                     name: "Content-Type".to_string(),
                     value: content_type.to_string(),
@@ -601,6 +656,7 @@ async fn delete_resource_handler(
 
 pub fn configure(cfg: &mut ServiceConfig) {
     cfg.service(upload_url_handler);
+    cfg.service(poster_upload_url_handler);
     cfg.service(upload_handler);
     cfg.service(process_handler);
     cfg.service(delete_resource_handler);
