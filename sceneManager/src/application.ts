@@ -44,6 +44,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { openObsSession } = await import("./obs/manager");
     const { ObsConnection } = await import("./obs/connection");
     const { readObsConnectionConfig } = await import("./obs/settings");
+    const { obsStatusReply } = await import("./obs/status");
     const { initSubscriptions } = await import("./nats-subscriptions");
     const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
 
@@ -85,9 +86,15 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     }
     // Started only once the server is listening (below), so the first
     // session's overlay refresh can never land before /scene is served.
+    // Where the latest attempt looked for OBS, for the status reply. The
+    // password stays inside the attempt.
+    let lastObsUrl: string | null = null;
     const obs = new ObsConnection({
-      open: async () =>
-        openObsSession(await readObsConnectionConfig(db, ctx.runtimeConfig.obs, ctx.logger), ctx.logger),
+      open: async () => {
+        const config = await readObsConnectionConfig(db, ctx.runtimeConfig.obs, ctx.logger);
+        lastObsUrl = config.url;
+        return openObsSession(config, ctx.logger);
+      },
       // Refresh overlays on the first session only. It exists to recover
       // overlays after *this process* restarted; after a mere reconnect their
       // streams are intact, and a refresh would cut off whatever is playing.
@@ -102,7 +109,17 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     });
     this.obs = obs;
 
-    await initSubscriptions({ nats, obs, db, host, deliveryStore, moduleState, resolver, logger: ctx.logger });
+    await initSubscriptions({
+      nats,
+      obs,
+      obsStatus: () => obsStatusReply(obs, lastObsUrl),
+      db,
+      host,
+      deliveryStore,
+      moduleState,
+      resolver,
+      logger: ctx.logger,
+    });
 
     this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore, moduleState, bootId });
     ctx.logger.info("sceneManager listening", {

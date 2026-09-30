@@ -370,4 +370,18 @@ describe("ObsConnection", () => {
     expect(obs.opened()).toBe(1);
     expect(conn.status()).toBe("stopped");
   });
+
+  it("reports the last failure until it connects", async () => {
+    const obs = fakeObs(1);
+    const { conn, timers } = connection(obs);
+    expect(conn.lastFailure()).toBeNull();
+    conn.start();
+    await settle();
+    expect(conn.lastFailure()).toBe("unreachable");
+
+    await timers.fire();
+
+    expect(conn.status()).toBe("connected");
+    expect(conn.lastFailure()).toBeNull();
+  });
 });

@@ -36,6 +36,7 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `analytics.sessions` | Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals` |
 | `config.bundles` | Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig` |
 | `obs.control` | The `ctx.obs` host extension and the `obs.control` manifest permission, which a module that changes OBS or lists its names needs to install and run |
+| `obs.status` | The OBS connection's state and last failure: `getObsStatus` |
 | `widgets.themes` | Theme presets a widget declares, for the theme settings picker: `listWidgetThemes` |
 
 A test in `api/tests/engine-capabilities.test.ts` fails if an id in `ENGINE_CAPABILITIES` has no row here.

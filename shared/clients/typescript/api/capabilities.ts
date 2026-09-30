@@ -24,6 +24,8 @@ export const ENGINE_CAPABILITIES = {
    * a module that changes OBS or lists its names needs to install and run.
    */
   obsControl: "obs.control",
+  /** The OBS connection's state and last failure: `getObsStatus`. */
+  obsStatus: "obs.status",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
 } as const;
