@@ -157,6 +157,7 @@ export const RPC_METHODS = [
   "listPermissions",
   "requestUploadUrl",
   "completeUpload",
+  "requestPosterUploadUrl",
   "createFolder",
   "getResource",
   "listResources",

@@ -573,6 +573,9 @@ export interface UploadGrant {
   expiresAt: number;
 }
 
+/** A grant to upload a video's captured frame; it creates no resource of its own. */
+export type PosterUploadGrant = Omit<UploadGrant, "resource">;
+
 export interface RequestUploadUrlInput {
   name: string;
   contentType: string;
@@ -1449,6 +1452,9 @@ export interface Woofx3EngineApi {
   // ask for a grant, PUT straight to storage, then report completion.
   requestUploadUrl(input: RequestUploadUrlInput): Promise<UploadGrant>;
   completeUpload(resourceId: string, size?: number): Promise<Resource>;
+  // The engine decodes no video: a video's thumbnail comes from a frame
+  // the caller captures and PUTs to this grant before requestProcessing.
+  requestPosterUploadUrl(resourceId: string, contentType: string, ttlSeconds?: number): Promise<PosterUploadGrant>;
   createFolder(name: string, parentId?: string | null): Promise<Resource>;
   getResource(id: string): Promise<Resource>;
   listResources(query?: ResourcesQuery): Promise<PaginatedResources>;
@@ -1456,7 +1462,8 @@ export interface Woofx3EngineApi {
   deleteResource(id: string): Promise<{ deleted: boolean }>;
   // Asynchronous. Completion lands on the resource as `thumbnailUrl`;
   // a resource the utility cannot apply to (audio has no frame to
-  // render) simply keeps a null thumbnail rather than failing.
+  // render, nor does a video with no poster uploaded) simply keeps a
+  // null thumbnail rather than failing.
   requestProcessing(resourceId: string, utility?: string): Promise<{ accepted: boolean }>;
 
   // Twitch token persistence — bridges the UI's OAuth callback to the

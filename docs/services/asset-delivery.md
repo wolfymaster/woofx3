@@ -131,6 +131,36 @@ grant was spent, which makes a grant single-use without a table of spent
 tokens. Bytes are written to a staging file and renamed into place, so a
 key never names a half-written object.
 
+## Thumbnails
+
+`api.requestProcessing(resourceId)` asks barkloader to derive
+`thumbnail.png` beside the upload. It returns once the work is accepted;
+the result lands on the resource as `thumbnailUrl`.
+
+An image is decoded, bounded to 512 px on its longest edge and re-encoded
+as PNG. Audio has nothing to show and keeps a null thumbnail.
+
+The engine carries no video decoder, so a video's thumbnail is made from a
+frame the caller captures — a browser can already play the clip. The
+caller uploads that frame as the video's poster, then asks for processing:
+
+```
+browser
+  ├─> capture one frame of the video as an image
+  ├─> api.requestPosterUploadUrl(resourceId, contentType)
+  │     └─> POST {barkloaderUrl}/assets/poster-upload-url
+  ├─> PUT {uploadUrl}  (the frame, exactly the grant's headers)
+  └─> api.requestProcessing(resourceId)
+```
+
+The poster grant has the same shape and rules as an upload grant, minus
+the resource: a poster is not a resource and no row points at it.
+Barkloader runs it through the image path, so what is stored as the
+thumbnail is always the engine's own re-encoding, and then deletes the
+poster whether or not it decoded, which frees the grant's key for a
+replacement. A video
+processed with no poster keeps a null thumbnail, as audio does.
+
 ## The `<base>` tag
 
 A widget document references its sibling files (`style.css`, `logo.png`,

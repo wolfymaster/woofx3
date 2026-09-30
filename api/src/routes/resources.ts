@@ -34,6 +34,9 @@ export interface UploadGrant {
   expiresAt: number;
 }
 
+/** A grant to upload a video's captured frame; it creates no resource of its own. */
+export type PosterUploadGrant = Omit<UploadGrant, "resource">;
+
 /** Completion payload barkloader POSTs back once processing finishes. */
 interface ProcessingCallbackBody {
   resource_id?: string;
@@ -196,6 +199,57 @@ export const resourcesRoutes = routeModule({
     return resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), response);
   },
 
+  /**
+   * Hand back a grant to upload the poster frame of a stored video.
+   *
+   * The engine carries no video decoder, so a video's thumbnail is made
+   * from a frame the caller captured. The poster is not a resource: it is
+   * consumed by the next `requestProcessing`, which turns it into the
+   * video's thumbnail.
+   */
+  async requestPosterUploadUrl(
+    resourceId: string,
+    contentType: string,
+    ttlSeconds?: number
+  ): Promise<PosterUploadGrant> {
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      throw new Error("A poster must be an image");
+    }
+
+    const row = await this.db.getResource({ id: resourceId });
+    if (row.kind !== "video") {
+      throw new Error("Only video resources take a poster");
+    }
+    const repositoryKey = row.repositoryKey ?? "";
+    if (repositoryKey.length === 0) {
+      throw new Error("Resource has no stored object to attach a poster to");
+    }
+
+    const response = await this.barkloaderRequest("/assets/poster-upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        repository_key: repositoryKey,
+        content_type: contentType,
+        ttl_seconds: ttlSeconds,
+      }),
+    });
+    const grant = (await response.json()) as {
+      uploadUrl: string;
+      method: string;
+      headers: Array<{ name: string; value: string }>;
+      expiresAt: number;
+    };
+
+    this.logger.info("Issued poster upload grant", { resourceId });
+    return {
+      uploadUrl: grant.uploadUrl,
+      method: grant.method,
+      headers: grant.headers,
+      expiresAt: grant.expiresAt,
+    };
+  },
+
   async createFolder(name: string, parentId?: string | null): Promise<ResourceItem> {
     if (name.length === 0) {
       throw new Error("name is required");
@@ -343,7 +397,8 @@ export const resourcesRoutes = routeModule({
    * Record the outcome of an async processing job.
    *
    * "not_applicable" is a success, not a failure: audio has no frame to
-   * render. It is recorded by leaving the thumbnail key empty and
+   * render, and neither does a video nobody uploaded a poster for. It is
+   * recorded by leaving the thumbnail key empty and
    * returning normally, so nothing upstream retries work that can never
    * succeed.
    */
