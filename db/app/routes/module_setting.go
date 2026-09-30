@@ -11,7 +11,12 @@ import (
 
 func ModuleSettingRoutes(mux *http.ServeMux, app *types.App) {
 	settingRepo := repo.NewModuleSettingRepository(app.Db)
-	settingService := svc.NewModuleSettingService(settingRepo, app.Secrets)
+	// A nil *EventPublisher stored in the interface would not read as nil.
+	var publisher svc.SettingChangePublisher
+	if app.EventPublisher != nil {
+		publisher = app.EventPublisher
+	}
+	settingService := svc.NewModuleSettingService(settingRepo, app.Secrets, publisher)
 	handler := client.NewModuleSettingServiceServer(settingService)
 	mux.Handle(handler.PathPrefix(), handler)
 }

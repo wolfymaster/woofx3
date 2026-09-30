@@ -7,6 +7,7 @@ import (
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/secrets"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
@@ -16,16 +17,24 @@ import (
 // ListModuleSettings; only GetModuleSecretValues opens it.
 const SecretSettingType = "secret"
 
-type ModuleSettingService struct {
-	repo    repo.ModuleSettingRepository
-	secrets *secrets.Box
+// SettingChangePublisher announces a written setting on the outbox.
+type SettingChangePublisher interface {
+	Publish(opts workers.PublishOptions) error
 }
 
-func NewModuleSettingService(r repo.ModuleSettingRepository, box *secrets.Box) *ModuleSettingService {
+type ModuleSettingService struct {
+	repo      repo.ModuleSettingRepository
+	secrets   *secrets.Box
+	publisher SettingChangePublisher
+}
+
+// NewModuleSettingService builds the service. A nil publisher writes settings
+// without announcing them.
+func NewModuleSettingService(r repo.ModuleSettingRepository, box *secrets.Box, publisher SettingChangePublisher) *ModuleSettingService {
 	if box == nil {
 		panic("module settings need a secrets box: secret values must never be stored in plain text")
 	}
-	return &ModuleSettingService{repo: r, secrets: box}
+	return &ModuleSettingService{repo: r, secrets: box, publisher: publisher}
 }
 
 func (s *ModuleSettingService) ListModuleSettings(ctx context.Context, req *client.ListModuleSettingsRequest) (*client.ListModuleSettingsResponse, error) {
@@ -68,15 +77,41 @@ func (s *ModuleSettingService) SetModuleSetting(ctx context.Context, req *client
 	if err != nil {
 		return nil, err
 	}
-	if saved, ok := findSetting(rows, req.Key); ok {
-		return toProtoSetting(saved), nil
+	saved, ok := findSetting(rows, req.Key)
+	if !ok {
+		return nil, fmt.Errorf("setting key %q not found after upsert", req.Key)
 	}
-	return nil, fmt.Errorf("setting key %q not found after upsert", req.Key)
+	s.publishChange(saved)
+	return toProtoSetting(saved), nil
 }
 
-// GetModuleSecretValues opens the module's secret settings. Its only caller
-// is barkloader, building `ctx.module.settings` for the owning module's own
-// functions.
+// publishChange announces a written setting as `db.module.setting.updated`,
+// so a service that acts on a module's settings, such as the scene manager's
+// OBS connection, applies a change without a restart. The payload names the
+// setting and never carries its value: a secret must not reach the bus.
+func (s *ModuleSettingService) publishChange(setting models.ModuleSetting) {
+	if s.publisher == nil {
+		return
+	}
+	err := s.publisher.Publish(workers.PublishOptions{
+		EntityType:      "module.setting",
+		EntityID:        setting.ModuleID + "/" + setting.Key,
+		Operation:       "updated",
+		Data:            map[string]string{"moduleId": setting.ModuleID, "key": setting.Key},
+		AutoAcknowledge: true,
+	})
+	if err != nil {
+		// The write already succeeded; a lost announcement only delays the
+		// change until the listening service next reads the setting.
+		log.Printf("module %s: announcing setting %q failed: %v", setting.ModuleID, setting.Key, err)
+	}
+}
+
+// GetModuleSecretValues opens the module's secret settings. Its callers are
+// barkloader, building `ctx.module.settings` for the owning module's own
+// functions, and the scene manager, reading the OBS module's WebSocket
+// password to open the connection the module's functions reach through
+// `ctx.obs`.
 func (s *ModuleSettingService) GetModuleSecretValues(ctx context.Context, req *client.GetModuleSecretValuesRequest) (*client.GetModuleSecretValuesResponse, error) {
 	rows, err := s.repo.ListByModule(req.ModuleId)
 	if err != nil {
