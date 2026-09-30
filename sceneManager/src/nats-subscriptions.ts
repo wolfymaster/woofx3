@@ -1,3 +1,4 @@
+import { OBS_STATUS_SUBJECT } from "@woofx3/common/cloudevents/Obs/commands";
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { DbClient } from "./db";
@@ -17,6 +18,7 @@ import { answerObsCommand } from "./obs/control";
 import { answerObsOptions } from "./obs/options";
 import type Manager from "./obs/manager";
 import { OBS_MODULE_ID } from "./obs/settings";
+import type { ObsStatusReply } from "./obs/status";
 import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
@@ -25,6 +27,8 @@ interface InitArgs {
   nats: NATSClient | null;
   /** The live OBS session, re-read per message: it comes and goes as OBS does. */
   obs: { current(): Manager | null; recycle(reason: string): void; reconnectNow(reason: string): void };
+  /** The OBS connection's state for `engine.obs.status`; see obs/status.ts. */
+  obsStatus: () => ObsStatusReply;
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
@@ -108,7 +112,7 @@ interface WidgetEventEnvelope {
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, obs, db, host, deliveryStore, moduleState, resolver, logger } = args;
+  const { nats, obs, obsStatus, db, host, deliveryStore, moduleState, resolver, logger } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -266,6 +270,11 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // request/reply.
   await nats.subscribe("engine.obs.options", (msg) => answerObsOptions(obs, msg, logger));
   logger.info("Subscribed to engine.obs.options");
+
+  // Answered from the connection's own state, so it replies at once whether
+  // or not OBS is up; the api asks it for the OBS module's page.
+  await answer(OBS_STATUS_SUBJECT, async () => obsStatus());
+  logger.info(`Answering ${OBS_STATUS_SUBJECT}`);
 
   // db-proxy announces every module setting write, naming the setting but
   // never its value. A change to the OBS module's connection reconnects with

@@ -171,6 +171,28 @@ suggestions rather than a strict select: a name can still be typed while OBS is
 closed, or built from a `${...}` variable, and a typed name OBS does not have is
 flagged rather than refused.
 
+## Connection status (`engine.obs.status`)
+
+The api's `getObsStatus()` (capability `obs.status`) asks the scene manager how
+its connection is doing, for the OBS module's page. The scene manager answers
+`engine.obs.status` from its own state, without touching OBS, so the reply is
+immediate whether OBS is up or not:
+
+```json
+{ "state": "retrying", "failure": "authentication", "address": "192.168.1.20:4455" }
+```
+
+- `state`: `connecting` (first attempt), `connected`, `retrying` or `stopped`.
+- `failure`: why the last attempt failed. `authentication` means OBS refused
+  the password (close code 4009); `unreachable` means nothing answered at
+  `address`, or an open connection was lost. It is null while connected.
+- `address`: the `host:port` the latest attempt used. The password is never in
+  the reply.
+
+A scene manager that does not answer within 3 seconds comes back from the api
+as `{ "state": "unanswered", "failure": null, "address": null }`. That says
+nothing about OBS itself.
+
 ## The legacy `slobs` subject
 
 The chatbot's `scene_change` and `source_change` commands still arrive on

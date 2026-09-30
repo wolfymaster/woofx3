@@ -63,6 +63,13 @@ export type ObsControlReply =
  * A subject apart from `engine.obs.command`, so that reading OBS's names
  * never needs the permission that changing OBS does.
  */
+/**
+ * Request/reply subject the api asks the scene manager's OBS connection state
+ * on. The reply is the api's `ObsStatus` without `unanswered`, which only the
+ * api can observe.
+ */
+export const OBS_STATUS_SUBJECT = "engine.obs.status";
+
 export type ObsOptionsRequest = { list: ObsOptionsList };
 
 export const OBS_OPTIONS_LISTS = ["scenes", "sources", "inputs"] as const;

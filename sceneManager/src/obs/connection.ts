@@ -64,7 +64,7 @@ export function obsRetryDelay(attempt: number, backoff: ObsBackoff, random: numb
 /** obs-websocket v5 WebSocketCloseCode.AuthenticationFailed. */
 const OBS_AUTHENTICATION_FAILED = 4009;
 
-type ObsFailureKind = "authentication" | "unreachable";
+export type ObsFailureKind = "authentication" | "unreachable";
 
 /**
  * A wrong or missing password closes the socket with 4009, which obs-websocket-js
@@ -179,6 +179,15 @@ export class ObsConnection<TClient> {
 
   status(): ObsConnectionState {
     return this.state;
+  }
+
+  /**
+   * Why OBS cannot be reached, as last seen: `authentication` for a refused
+   * password, `unreachable` for nothing answering or a lost connection. Null
+   * while connected and before any attempt has failed.
+   */
+  lastFailure(): ObsFailureKind | null {
+    return this.state === "connected" ? null : this.lastFailureKind;
   }
 
   // A method rather than an inline comparison: `stop()` can change the state

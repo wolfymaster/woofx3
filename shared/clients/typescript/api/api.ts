@@ -690,6 +690,28 @@ export interface RecentActivity {
   timestamp: string;
 }
 
+// ==================== OBS ====================
+
+/** The scene manager's connection to OBS. Mirrors ObsConnectionState in sceneManager/src/obs/connection.ts. */
+export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stopped";
+
+/**
+ * Outcome of `getObsStatus`.
+ *
+ * - `state`: the connection's state, or `unanswered` when the scene manager did
+ *   not reply, which says nothing about OBS itself.
+ * - `failure`: why the last connect attempt failed: `authentication` when OBS
+ *   refused the password, `unreachable` when nothing answered at `address` or
+ *   the connection was lost. Null while connected and before any attempt failed.
+ * - `address`: the `host:port` the scene manager last tried. Never includes the
+ *   password.
+ */
+export interface ObsStatus {
+  state: ObsConnectionState | "unanswered";
+  failure: "authentication" | "unreachable" | null;
+  address: string | null;
+}
+
 // ==================== Alert queue controls ====================
 
 /**
@@ -1644,6 +1666,12 @@ export interface Woofx3EngineApi {
    * `skipCurrentAlert` to stop everything.
    */
   clearAlertQueue(): Promise<AlertClearResult>;
+
+  /**
+   * How the scene manager's connection to OBS is doing, for the OBS module's
+   * page. Requires the `obs.status` capability.
+   */
+  getObsStatus(): Promise<ObsStatus>;
 
   // Overlay Tokens
   //

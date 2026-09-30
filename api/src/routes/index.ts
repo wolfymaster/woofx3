@@ -18,6 +18,7 @@ import { scenesRoutes } from "./scenes";
 import { dashboardStatsRoutes } from "./dashboard-stats";
 import { triggersRoutes } from "./triggers";
 import { alertsRoutes } from "./alerts";
+import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
 import { resourcesRoutes } from "./resources";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
@@ -45,6 +46,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof dashboardStatsRoutes &
   typeof triggersRoutes &
   typeof alertsRoutes &
+  typeof obsRoutes &
   typeof overlayTokenRoutes &
   typeof resourcesRoutes &
   typeof inboundWebhooksRoutes &
@@ -100,6 +102,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(dashboardStatsRoutes),
     instrumentRoutes(triggersRoutes),
     instrumentRoutes(alertsRoutes),
+    instrumentRoutes(obsRoutes),
     instrumentRoutes(overlayTokenRoutes),
     instrumentRoutes(resourcesRoutes),
     instrumentRoutes(inboundWebhooksRoutes),

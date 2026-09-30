@@ -141,6 +141,7 @@ describe("alert queue control subjects", () => {
     await initSubscriptions({
       nats: nats as any,
       obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
+      obsStatus: () => ({ state: "connected", failure: null, address: "127.0.0.1:4455" }),
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
@@ -225,6 +226,7 @@ describe("module setting changes", () => {
         },
       } as any,
       obs: { current: () => null, recycle: () => {}, reconnectNow: (reason: string) => reconnects.push(reason) },
+      obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
@@ -252,5 +254,40 @@ describe("module setting changes", () => {
     const { deliver, reconnects } = await wire();
     await deliver({ moduleId: "woofx3_spotify", key: "clientId" });
     expect(reconnects).toEqual([]);
+  });
+
+  it("answers engine.obs.status with the connection's state", async () => {
+    const handlers = new Map<string, (msg: unknown) => unknown>();
+    await initSubscriptions({
+      nats: {
+        subscribe: async (subject: string, handler: (msg: unknown) => unknown) => {
+          handlers.set(subject, handler);
+          return {};
+        },
+      } as never,
+      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
+      obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
+      db: {} as never,
+      host: {} as never,
+      deliveryStore: {} as never,
+      moduleState: {} as never,
+      resolver: {} as never,
+      logger: fakeLogger(),
+    });
+    const handler = handlers.get("engine.obs.status");
+    if (!handler) {
+      throw new Error("engine.obs.status is not answered");
+    }
+    let reply: unknown = null;
+    await handler({
+      subject: "engine.obs.status",
+      reply: "_INBOX.test",
+      json: () => ({}),
+      respond: (data: Uint8Array) => {
+        reply = JSON.parse(new TextDecoder().decode(data));
+        return true;
+      },
+    });
+    expect(reply).toEqual({ state: "retrying", failure: "authentication", address: "obs.lan:4455" });
   });
 });
