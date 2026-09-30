@@ -96,3 +96,42 @@ func TestStopAllWaitsForAServiceToExitAfterSIGTERM(t *testing.T) {
 		t.Errorf("StopAll took %s for a service that exited in about 1s", elapsed)
 	}
 }
+
+// A service that depends on another is still shutting down when it needs that
+// other one: the one depended on must not be asked to stop until it is done.
+func TestStopAllStopsDependentsBeforeWhatTheyDependOn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows cannot deliver SIGTERM")
+	}
+	directory := t.TempDir()
+	dependentExited := filepath.Join(directory, "dependent-exited")
+	stoppedInOrder := filepath.Join(directory, "stopped-in-order")
+	dependentScript := `trap 'sleep 1; touch "$0"; exit 0' TERM; while true; do sleep 0.05; done`
+	// Records, at the moment it is asked to stop, whether the dependent had
+	// already finished.
+	foundationScript := `trap '[ -f "$0" ] && touch "$1"; exit 0' TERM; while true; do sleep 0.05; done`
+
+	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor.AddService(Service{Name: "foundation", Args: []string{"-c", foundationScript, dependentExited, stoppedInOrder}})
+	supervisor.AddService(Service{
+		Name:         "dependent",
+		Args:         []string{"-c", dependentScript, dependentExited},
+		Dependencies: []string{"foundation"},
+	})
+	for _, name := range []string{"foundation", "dependent"} {
+		if err := supervisor.startServiceProcess(supervisor.services[name], "/bin/sh"); err != nil {
+			t.Fatalf("start %s: %v", name, err)
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	started := time.Now()
+	supervisor.StopAll()
+
+	if _, err := os.Stat(stoppedInOrder); err != nil {
+		t.Fatalf("the foundation was asked to stop before its dependent had exited: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > dependentStopPeriod {
+		t.Errorf("StopAll took %s: it waited out the dependents' whole share although they exited in about 1s", elapsed)
+	}
+}

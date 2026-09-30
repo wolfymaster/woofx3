@@ -128,11 +128,21 @@ database).
 
 ### Shutdown
 
-On SIGTERM the orchestrator signals every service and waits up to 25 seconds
-for them to exit before killing them. db-proxy stops serving first, then closes
-module storage, which makes the final flush to the replica (bounded at 15
-seconds). The host must allow at least that long between SIGTERM and SIGKILL;
-on Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
+On SIGTERM the orchestrator stops the services in two phases and kills whatever
+is still running after 25 seconds.
+
+1. The services that depend on others are signalled first and get up to 8
+   seconds. This is when the workflow engine lets runs in flight finish, and
+   records the ones it has to abandon as failed (see
+   [Stopping the Engine](../workflow/execution.md#stopping-the-engine)). db-proxy
+   and the message bus are still up, so those outcomes can be written and
+   announced.
+2. db-proxy and the message bus are signalled once those services have exited,
+   or their 8 seconds are up. db-proxy stops serving, then closes module
+   storage, which makes the final flush to the replica (bounded at 15 seconds).
+
+The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
+Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
 
 ### Importing Badger data
 
