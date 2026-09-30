@@ -55,13 +55,29 @@ v5).
    WebSocket server**, and note the port (4455 by default).
 2. Leave **Enable Authentication** on and copy the password with **Show
    Connect Info**.
-3. Give the scene manager the address and password:
+3. Enter the address, port and password in the OBS module's settings
+   (`woofx3_obs`: `host`, `port`, `password`).
+
+The scene manager reads those settings from db-proxy on every connect attempt:
+`host` and `port` with `ListModuleSettings`, and `password`, a `secret`
+setting, with `GetModuleSecretValues`. Anything the module does not supply
+comes from the scene manager's own configuration: an engine without the
+module, an empty setting, or a port that is not a number from 1 to 65535.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS |
-| `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port |
-| `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password |
+| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS, when the module does not say |
+| `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port, when the module does not say |
+| `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password, when the module does not say |
+
+Installing the module registers its defaults (`127.0.0.1` and `4455`), so from
+then on the module's host and port are used; the variables still supply a
+password the module leaves empty.
+
+Saving a module setting publishes `db.module.setting.updated.system` with the
+module id and the key, never the value. On one for `woofx3_obs` the scene
+manager reconnects at once with the new details, closing the open session or
+skipping a pending retry's wait.
 
 The scene manager keeps itself connected. If OBS is not running when it
 starts, or the connection drops (OBS closed or restarted), it retries in the
@@ -84,7 +100,8 @@ function returns it as `{ error }` shows it as the reason it has nothing to
 offer.
 
 A wrong or missing password is logged separately, as `OBS refused the
-connection: check the OBS WebSocket password (WOOFX3_OBS_RPC_TOKEN)`, once
+connection: check the WebSocket password in the OBS module's settings (or
+WOOFX3_OBS_RPC_TOKEN without the module)`, once
 each time the reason for failing changes.
 
 A command OBS has not answered within 3.5 seconds fails with `OBS did not

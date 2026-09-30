@@ -272,12 +272,102 @@ describe("ObsConnection", () => {
       "OBS refused the connection",
       "OBS not reachable; retrying in the background",
     ]);
-    expect(log.loud()[0].message).toContain("check the OBS WebSocket password");
+    expect(log.loud()[0].message).toContain("check the WebSocket password in the OBS module's settings");
   });
 
   it("refuses to start twice", () => {
     const { conn } = connection(fakeObs(0));
     conn.start();
     expect(() => conn.start()).toThrow();
+  });
+
+  it("reconnects at once when told, closing the open session", async () => {
+    const obs = fakeObs(0);
+    const firsts: boolean[] = [];
+    const { conn, timers, log } = connection(obs, { onConnected: (first) => firsts.push(first) });
+    conn.start();
+    await settle();
+
+    conn.reconnectNow("OBS module settings changed");
+    await settle();
+
+    expect(obs.closed).toEqual([1]);
+    expect(obs.opened()).toBe(2);
+    expect(conn.status()).toBe("connected");
+    expect(firsts).toEqual([true, false]);
+    expect(timers.count()).toBe(0);
+    expect(log.loud().map((l) => l.message)).toContain("OBS module settings changed; reconnecting to OBS");
+  });
+
+  it("skips a scheduled retry's backoff when told to reconnect", async () => {
+    const obs = fakeObs(1);
+    const { conn, timers } = connection(obs);
+    conn.start();
+    await settle();
+    expect(conn.status()).toBe("retrying");
+    expect(timers.count()).toBe(1);
+
+    conn.reconnectNow("OBS module settings changed");
+    await settle();
+
+    expect(timers.count()).toBe(0);
+    expect(conn.status()).toBe("connected");
+    expect(obs.opened()).toBe(1);
+  });
+
+  it("discards an attempt still in flight when told to reconnect", async () => {
+    let release: () => void = () => {
+      throw new Error("the first attempt never started");
+    };
+    const closed: string[] = [];
+    const session = (name: string): ObsSession<ObsControlClient> => ({
+      client: { name } as unknown as ObsControlClient,
+      onClose: () => {},
+      close: async () => {
+        closed.push(name);
+      },
+    });
+    let calls = 0;
+    const timers = manualTimers();
+    const conn = new ObsConnection<ObsControlClient>({
+      open: async () => {
+        calls += 1;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return session("stale");
+        }
+        return session("fresh");
+      },
+      logger: recordingLogger().logger,
+      random: () => 1,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    conn.start();
+    await settle();
+
+    conn.reconnectNow("OBS module settings changed");
+    await settle();
+    release();
+    await settle();
+
+    expect((conn.current() as unknown as { name: string }).name).toBe("fresh");
+    expect(closed).toEqual(["stale"]);
+  });
+
+  it("does nothing once stopped", async () => {
+    const obs = fakeObs(0);
+    const { conn } = connection(obs);
+    conn.start();
+    await settle();
+    await conn.stop();
+
+    conn.reconnectNow("OBS module settings changed");
+    await settle();
+
+    expect(obs.opened()).toBe(1);
+    expect(conn.status()).toBe("stopped");
   });
 });

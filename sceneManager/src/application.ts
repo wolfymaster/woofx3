@@ -43,6 +43,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { createMessageBus } = await import("@woofx3/nats");
     const { openObsSession } = await import("./obs/manager");
     const { ObsConnection } = await import("./obs/connection");
+    const { readObsConnectionConfig } = await import("./obs/settings");
     const { initSubscriptions } = await import("./nats-subscriptions");
     const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
 
@@ -85,7 +86,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     // Started only once the server is listening (below), so the first
     // session's overlay refresh can never land before /scene is served.
     const obs = new ObsConnection({
-      open: () => openObsSession(ctx.runtimeConfig.obs, ctx.logger),
+      open: async () =>
+        openObsSession(await readObsConnectionConfig(db, ctx.runtimeConfig.obs, ctx.logger), ctx.logger),
       // Refresh overlays on the first session only. It exists to recover
       // overlays after *this process* restarted; after a mere reconnect their
       // streams are intact, and a refresh would cut off whatever is playing.

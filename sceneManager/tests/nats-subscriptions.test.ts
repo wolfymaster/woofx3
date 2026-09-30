@@ -140,7 +140,7 @@ describe("alert queue control subjects", () => {
     const { handlers, nats } = fakeNats();
     await initSubscriptions({
       nats: nats as any,
-      obs: { current: () => null, recycle: () => {} },
+      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
@@ -210,5 +210,47 @@ describe("alert queue control subjects", () => {
     const handlers = await wire({ connectedSceneIds: () => ["scene-1"] });
 
     expect(await request(handlers, "widget.queue.replay", null)).toEqual({ ok: false, reason: "alert id is required" });
+  });
+});
+
+describe("module setting changes", () => {
+  async function wire() {
+    const handlers = new Map<string, (msg: any) => unknown>();
+    const reconnects: string[] = [];
+    await initSubscriptions({
+      nats: {
+        subscribe: async (subject: string, handler: (msg: any) => unknown) => {
+          handlers.set(subject, handler);
+          return {};
+        },
+      } as any,
+      obs: { current: () => null, recycle: () => {}, reconnectNow: (reason: string) => reconnects.push(reason) },
+      db: {} as any,
+      host: {} as any,
+      deliveryStore: {} as any,
+      moduleState: {} as any,
+      resolver: {} as any,
+      logger: fakeLogger(),
+    });
+    const deliver = (data: unknown) => {
+      const handler = handlers.get("db.module.setting.updated.*");
+      if (!handler) {
+        throw new Error("db.module.setting.updated.* is not subscribed");
+      }
+      return handler({ subject: "db.module.setting.updated.system", json: () => ({ data }) });
+    };
+    return { deliver, reconnects };
+  }
+
+  it("reconnects to OBS when the OBS module's settings change", async () => {
+    const { deliver, reconnects } = await wire();
+    await deliver({ moduleId: "woofx3_obs", key: "password" });
+    expect(reconnects).toEqual(["OBS module settings changed"]);
+  });
+
+  it("ignores other modules' settings", async () => {
+    const { deliver, reconnects } = await wire();
+    await deliver({ moduleId: "woofx3_spotify", key: "clientId" });
+    expect(reconnects).toEqual([]);
   });
 });

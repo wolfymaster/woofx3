@@ -87,6 +87,11 @@ export class ObsConnection<TClient> {
   private generation = 0;
   /** Why the last attempt failed; null until one has, and after a success. */
   private lastFailureKind: ObsFailureKind | null = null;
+  /**
+   * Bumped per attempt, so an attempt overtaken by `reconnectNow` discards
+   * whatever it opens rather than installing a session made with old details.
+   */
+  private attemptSeq = 0;
 
   private readonly backoff: ObsBackoff;
   private readonly random: () => number;
@@ -141,6 +146,32 @@ export class ObsConnection<TClient> {
     void session.close().catch(() => undefined);
   }
 
+  /**
+   * Reconnect straight away, for a change to where OBS is or how to sign in
+   * to it: an open session was made with the old details, and a scheduled
+   * retry would wait out its backoff with them.
+   */
+  reconnectNow(reason: string): void {
+    if (this.isStopped()) {
+      return;
+    }
+    if (this.timer !== null) {
+      this.clearTimer(this.timer);
+      this.timer = null;
+    }
+    const session = this.session;
+    if (session) {
+      this.generation += 1;
+      this.session = null;
+      void session.close().catch(() => undefined);
+    }
+    this.state = this.hasConnected ? "retrying" : "connecting";
+    this.failures = 0;
+    this.lastFailureKind = null;
+    this.options.logger.info(`${reason}; reconnecting to OBS`);
+    void this.attempt();
+  }
+
   /** The open session's client, or null while not connected. */
   current(): TClient | null {
     return this.session?.client ?? null;
@@ -161,14 +192,18 @@ export class ObsConnection<TClient> {
     if (this.isStopped()) {
       return;
     }
+    this.attemptSeq += 1;
+    const seq = this.attemptSeq;
     let session: ObsSession<TClient>;
     try {
       session = await this.options.open();
     } catch (err) {
-      this.onAttemptFailed(err);
+      if (seq === this.attemptSeq) {
+        this.onAttemptFailed(err);
+      }
       return;
     }
-    if (this.isStopped()) {
+    if (this.isStopped() || seq !== this.attemptSeq) {
       await session.close().catch(() => undefined);
       return;
     }
@@ -231,7 +266,7 @@ export class ObsConnection<TClient> {
       this.lastFailureKind = kind;
       if (kind === "authentication") {
         this.options.logger.warn(
-          "OBS refused the connection: check the OBS WebSocket password (WOOFX3_OBS_RPC_TOKEN); retrying in the background",
+          "OBS refused the connection: check the WebSocket password in the OBS module's settings (or WOOFX3_OBS_RPC_TOKEN without the module); retrying in the background",
           { error }
         );
       } else {

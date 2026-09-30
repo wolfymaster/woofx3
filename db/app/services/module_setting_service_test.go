@@ -9,6 +9,7 @@ import (
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/secrets"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 )
 
@@ -52,7 +53,16 @@ func newSettingService(t *testing.T) (*ModuleSettingService, *memorySettingRepo)
 		t.Fatalf("NewBox: %v", err)
 	}
 	repo := newMemorySettingRepo()
-	return NewModuleSettingService(repo, box), repo
+	return NewModuleSettingService(repo, box, nil), repo
+}
+
+type recordingPublisher struct {
+	published []workers.PublishOptions
+}
+
+func (p *recordingPublisher) Publish(opts workers.PublishOptions) error {
+	p.published = append(p.published, opts)
+	return nil
 }
 
 func register(t *testing.T, s *ModuleSettingService, key, valueType string) {
@@ -202,5 +212,47 @@ func TestRegisterKeepsAValueWhoseTypeIsUnchanged(t *testing.T) {
 
 	if row := stored(repo, "clientId"); row.Value != "abc" {
 		t.Errorf("stored row = %+v", row)
+	}
+}
+
+func TestSettingWriteIsAnnouncedWithoutItsValue(t *testing.T) {
+	box, err := secrets.NewBox(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatalf("NewBox: %v", err)
+	}
+	publisher := &recordingPublisher{}
+	s := NewModuleSettingService(newMemorySettingRepo(), box, publisher)
+	register(t, s, "password", SecretSettingType)
+
+	set(t, s, "password", "s3cr3t", SecretSettingType)
+
+	if len(publisher.published) != 1 {
+		t.Fatalf("published %d events, want 1", len(publisher.published))
+	}
+	event := publisher.published[0]
+	if event.EntityType != "module.setting" || event.Operation != "updated" {
+		t.Errorf("event = %s.%s", event.EntityType, event.Operation)
+	}
+	data, ok := event.Data.(map[string]string)
+	if !ok {
+		t.Fatalf("data = %T", event.Data)
+	}
+	if data["moduleId"] != "example_store" || data["key"] != "password" || len(data) != 2 {
+		t.Errorf("data = %v", data)
+	}
+}
+
+func TestRegisteringSettingsAnnouncesNothing(t *testing.T) {
+	box, err := secrets.NewBox(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatalf("NewBox: %v", err)
+	}
+	publisher := &recordingPublisher{}
+	s := NewModuleSettingService(newMemorySettingRepo(), box, publisher)
+
+	register(t, s, "host", "text")
+
+	if len(publisher.published) != 0 {
+		t.Errorf("published %d events on register, want 0", len(publisher.published))
 	}
 }
