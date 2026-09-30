@@ -4,6 +4,7 @@ import * as alert from "@woofx3/db/alert.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as scene_event from "@woofx3/db/scene_event.pb";
+import * as module_setting from "@woofx3/db/module_setting.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
@@ -105,6 +106,26 @@ export class DbClient {
   async getModuleKeyForModuleId(moduleId: string): Promise<string | null> {
     const resp = await GetModuleByModuleId({ moduleId }, this.config);
     return resp.module?.moduleKey || null;
+  }
+
+  // A module's settings, read for the OBS module's connection details
+  // (obs/settings.ts). A secret's value is never in these records.
+  async listModuleSettings(moduleId: string): Promise<module_setting.ModuleSettingRecord[]> {
+    const resp = await module_setting.ListModuleSettings({ moduleId }, this.config);
+    return resp.settings;
+  }
+
+  // Opens a module's secret settings. sceneManager reads only the OBS
+  // module's WebSocket password, and never logs or forwards it.
+  async getModuleSecretValues(moduleId: string): Promise<Record<string, string>> {
+    const resp = await module_setting.GetModuleSecretValues({ moduleId }, this.config);
+    const values: Record<string, string> = {};
+    for (const [key, value] of Object.entries(resp.values)) {
+      if (value !== undefined) {
+        values[key] = value;
+      }
+    }
+    return values;
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
