@@ -16,6 +16,7 @@ import { handleLegacySlobsCommand } from "./obs/commands";
 import { answerObsCommand } from "./obs/control";
 import { answerObsOptions } from "./obs/options";
 import type Manager from "./obs/manager";
+import { OBS_MODULE_ID } from "./obs/settings";
 import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
@@ -23,7 +24,7 @@ import type { OverlayTokenResolver } from "./scene/token-resolver";
 interface InitArgs {
   nats: NATSClient | null;
   /** The live OBS session, re-read per message: it comes and goes as OBS does. */
-  obs: { current(): Manager | null; recycle(reason: string): void };
+  obs: { current(): Manager | null; recycle(reason: string): void; reconnectNow(reason: string): void };
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
@@ -34,6 +35,10 @@ interface InitArgs {
 
 interface StorageChangedEnvelope {
   data?: { moduleId?: unknown; key?: unknown; value?: unknown };
+}
+
+interface ModuleSettingUpdatedEnvelope {
+  data?: { moduleId?: unknown };
 }
 
 interface SceneUpdatedEnvelope {
@@ -261,6 +266,25 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // request/reply.
   await nats.subscribe("engine.obs.options", (msg) => answerObsOptions(obs, msg, logger));
   logger.info("Subscribed to engine.obs.options");
+
+  // db-proxy announces every module setting write, naming the setting but
+  // never its value. A change to the OBS module's connection reconnects with
+  // the new details (obs/settings.ts reads them on each attempt).
+  await nats.subscribe("db.module.setting.updated.*", (msg) => {
+    let envelope: ModuleSettingUpdatedEnvelope;
+    try {
+      envelope = msg.json<ModuleSettingUpdatedEnvelope>();
+    } catch (err) {
+      logger.error("db.module.setting.updated: malformed JSON envelope", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    if (envelope.data?.moduleId === OBS_MODULE_ID) {
+      obs.reconnectNow("OBS module settings changed");
+    }
+  });
+  logger.info("Subscribed to db.module.setting.updated.*");
 
   await nats.subscribe("db.scene.updated.*", (msg) => {
     let envelope: SceneUpdatedEnvelope;

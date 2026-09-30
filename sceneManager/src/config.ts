@@ -47,8 +47,13 @@ export interface SceneManagerRuntimeConfig {
   publicDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
+  /**
+   * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
+   * the module is not installed, or a setting is empty.
+   */
   obs: {
-    url: string;
+    host: string;
+    port: string;
     token?: string;
   };
   nats: {
@@ -155,7 +160,8 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     databaseProxyUrl,
     barkloaderUrl,
     obs: {
-      url: `ws://${obsHost}:${obsPort}`,
+      host: obsHost,
+      port: obsPort,
       token: obsToken,
     },
     nats: {
