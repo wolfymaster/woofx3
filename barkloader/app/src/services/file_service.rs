@@ -1,6 +1,6 @@
 use actix_multipart::{Field, Multipart};
 use actix_web::Error;
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use futures::{StreamExt, TryStreamExt};
 use std::fs;
 use std::io::Write;
@@ -110,8 +110,10 @@ impl FileService {
                     .temp_dir_path
                     .to_str()
                     .expect("Temporary file path should always be set");
-                let archive_file = format!("{}/{}", &dir_path, &metadata.file_name);
-                Self::decompress_file(&archive_file, "zip")?;
+                Self::extract_zip(
+                    &metadata.temp_dir_path.join(&metadata.file_name),
+                    &metadata.temp_dir_path,
+                )?;
                 // DEBUG: walk entire extracted tree
                 info!("=== RAW DIRECTORY LISTING after unzip: {} ===", dir_path);
                 fn walk_dir(path: &Path, prefix: &str) {
@@ -188,31 +190,29 @@ impl FileService {
         Ok(metadatas)
     }
 
-    fn decompress_file(file_path: &str, compression_type: &str) -> Result<String, std::io::Error> {
-        use std::process::Command;
+    /// Extracts in-process so installs do not depend on an `unzip` binary
+    /// being present on the host.
+    fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<()> {
+        let file = fs::File::open(archive_path)
+            .with_context(|| format!("open archive {}", archive_path.display()))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .with_context(|| format!("read archive {}", archive_path.display()))?;
 
-        let output_path =
-            file_path.trim_end_matches(&['.', 'g', 'z', 'i', 'p', 't', 'a', 'r', 'b', '2']);
-
-        match compression_type {
-            "gzip" => {
-                Command::new("gunzip").args(["-k", file_path]).output()?;
-            }
-            "zip" => {
-                let output_dir = Path::new(file_path).parent().unwrap_or(Path::new("./"));
-                Command::new("unzip")
-                    .args(["-o", file_path, "-d", output_dir.to_str().unwrap()])
-                    .output()?;
-            }
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("Unsupported compression type: {}", compression_type),
-                ));
+        // A symlink entry could point outside the extraction root, and the
+        // files collected afterwards are read through it.
+        for i in 0..archive.len() {
+            let entry = archive
+                .by_index(i)
+                .with_context(|| format!("read archive entry {}", i))?;
+            if entry.is_symlink() {
+                bail!("archive entry {} is a symlink", entry.name());
             }
         }
 
-        Ok(output_path.to_string())
+        archive
+            .extract(dest_dir)
+            .with_context(|| format!("extract archive {}", archive_path.display()))?;
+        Ok(())
     }
 
     async fn handle_file_field(
@@ -266,5 +266,86 @@ impl FileService {
             client_id: None,
             module_key: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zip::write::SimpleFileOptions;
+
+    fn write_zip(path: &Path, build: impl FnOnce(&mut zip::ZipWriter<fs::File>)) {
+        let mut writer = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        build(&mut writer);
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn extract_zip_writes_nested_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("module.zip");
+        write_zip(&archive_path, |writer| {
+            writer
+                .start_file("manifest.json", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"{}").unwrap();
+            writer
+                .start_file("functions/hello.js", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"export default 1;").unwrap();
+        });
+
+        FileService::extract_zip(&archive_path, dir.path()).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("manifest.json")).unwrap(),
+            "{}"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("functions/hello.js")).unwrap(),
+            "export default 1;"
+        );
+    }
+
+    #[test]
+    fn extract_zip_rejects_entry_escaping_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest_dir = dir.path().join("dest");
+        fs::create_dir(&dest_dir).unwrap();
+        let archive_path = dir.path().join("module.zip");
+        write_zip(&archive_path, |writer| {
+            writer
+                .start_file("../escaped.txt", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"x").unwrap();
+        });
+
+        assert!(FileService::extract_zip(&archive_path, &dest_dir).is_err());
+        assert!(!dir.path().join("escaped.txt").exists());
+    }
+
+    #[test]
+    fn extract_zip_rejects_symlink_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest_dir = dir.path().join("dest");
+        fs::create_dir(&dest_dir).unwrap();
+        let archive_path = dir.path().join("module.zip");
+        write_zip(&archive_path, |writer| {
+            writer
+                .add_symlink("link", "/etc/passwd", SimpleFileOptions::default())
+                .unwrap();
+        });
+
+        assert!(FileService::extract_zip(&archive_path, &dest_dir).is_err());
+        assert!(!dest_dir.join("link").exists());
+    }
+
+    #[test]
+    fn extract_zip_rejects_file_that_is_not_an_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("module.zip");
+        fs::write(&archive_path, b"not a zip").unwrap();
+
+        assert!(FileService::extract_zip(&archive_path, dir.path()).is_err());
     }
 }

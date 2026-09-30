@@ -6,20 +6,20 @@
 //!
 //! Three media families, three different answers:
 //!   - images: decode, downscale, re-encode as PNG in-process.
-//!   - video: hand a temp file to `ffmpeg` and pull one random frame.
-//!     Shelling out matches how `file_service` already handles
-//!     zip/gunzip, and avoids linking a media stack into the engine.
+//!   - video: the engine carries no video decoder. The uploading client,
+//!     which can already play the clip, captures one frame and uploads it
+//!     as the resource's poster (see `poster_key_for`). That poster goes
+//!     through the image path, so client bytes are never stored as the
+//!     thumbnail unprocessed. A video with no poster has no thumbnail.
 //!   - audio: there is nothing to show. That is a *result*, not a
 //!     failure -- see `ThumbnailOutcome::NotApplicable`.
 
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result, anyhow};
 use image::ImageFormat;
 use image::imageops::FilterType;
 use lib_repository::{CreateFileRequest, Repository, RepositoryImpl};
-use rand::Rng;
 use tracing::{info, warn};
 
 /// Longest edge of a generated thumbnail, in pixels. Aspect ratio is
@@ -31,6 +31,11 @@ pub const THUMBNAIL_MAX_EDGE: u32 = 512;
 /// on what the original happened to be.
 const THUMBNAIL_FILE_NAME: &str = "thumbnail.png";
 const THUMBNAIL_CONTENT_TYPE: &str = "image/png";
+
+/// The leading dot keeps a poster from ever sharing a key with an upload:
+/// `routes::resources::user_resource_key` strips leading dots from upload
+/// file names.
+const POSTER_FILE_NAME: &str = ".poster";
 
 /// What generating a thumbnail produced.
 ///
@@ -95,6 +100,16 @@ pub fn classify(content_type: Option<&str>, key: &str) -> MediaKind {
 /// plus a fixed file name. Derived rather than passed in, so a caller
 /// cannot aim a thumbnail write at some unrelated part of the store.
 pub fn thumbnail_key_for(source_key: &str) -> Result<String> {
+    sibling_key(source_key, THUMBNAIL_FILE_NAME)
+}
+
+/// The key a client uploads a video's captured frame to. Derived from the
+/// source key for the same reason as `thumbnail_key_for`.
+pub fn poster_key_for(source_key: &str) -> Result<String> {
+    sibling_key(source_key, POSTER_FILE_NAME)
+}
+
+fn sibling_key(source_key: &str, file_name: &str) -> Result<String> {
     let (directory, _) = source_key
         .rsplit_once('/')
         .ok_or_else(|| anyhow!("resource key {} has no directory component", source_key))?;
@@ -104,12 +119,13 @@ pub fn thumbnail_key_for(source_key: &str) -> Result<String> {
             source_key
         ));
     }
-    Ok(format!("{}/{}", directory, THUMBNAIL_FILE_NAME))
+    Ok(format!("{}/{}", directory, file_name))
 }
 
-/// Read `source_key` from the repository, generate a thumbnail, and
-/// write it back. Audio returns `NotApplicable` without touching the
-/// store.
+/// Generate the thumbnail for `source_key` and write it back: from the
+/// resource itself for an image, from its uploaded poster for a video.
+/// Audio, and a video with no poster, return `NotApplicable` without
+/// writing anything.
 pub async fn generate(
     repository: &RepositoryImpl,
     source_key: &str,
@@ -130,18 +146,41 @@ pub async fn generate(
         });
     }
 
-    let bytes = repository
-        .read_file(source_key)
-        .await
-        .with_context(|| format!("reading resource {} for thumbnailing", source_key))?;
-
-    let (png, width, height) = match kind {
-        MediaKind::Image => encode_image_thumbnail(&bytes)?,
-        MediaKind::Video => encode_video_thumbnail(&bytes, source_key)?,
+    let image_key = match kind {
+        MediaKind::Image => source_key.to_string(),
+        MediaKind::Video => {
+            let poster_key = poster_key_for(source_key)?;
+            let has_poster = repository
+                .exists(&poster_key)
+                .await
+                .with_context(|| format!("checking for poster {}", poster_key))?;
+            if !has_poster {
+                return Ok(ThumbnailOutcome::NotApplicable {
+                    reason: "no poster frame was uploaded for this video".to_string(),
+                });
+            }
+            poster_key
+        }
         // Both handled above; kept explicit rather than a catch-all so
         // adding a MediaKind forces a decision here.
         MediaKind::Audio | MediaKind::Other => unreachable!("audio and other returned early"),
     };
+
+    let bytes = repository
+        .read_file(&image_key)
+        .await
+        .with_context(|| format!("reading {} for thumbnailing", image_key))?;
+    let encoded = encode_image_thumbnail(&bytes);
+
+    // A poster is consumed whether or not it decoded: an upload grant is
+    // refused while its key holds an object, so a poster left in place
+    // would block the client from sending a replacement.
+    if kind == MediaKind::Video
+        && let Err(err) = repository.delete_prefix(&image_key).await
+    {
+        warn!("Failed to remove consumed poster {}: {}", image_key, err);
+    }
+    let (png, width, height) = encoded?;
 
     let key = thumbnail_key_for(source_key)?;
     let mut failed = Vec::new();
@@ -194,111 +233,38 @@ pub fn encode_image_thumbnail(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     Ok((out.into_inner(), width, height))
 }
 
-/// Extract one frame from a video and encode it as a PNG thumbnail.
-///
-/// The frame is picked at random rather than taken from the start:
-/// the first frames of a clip are very often black, a fade-in, or a
-/// title card, all of which make useless previews.
-fn encode_video_thumbnail(bytes: &[u8], source_key: &str) -> Result<(Vec<u8>, u32, u32)> {
-    let extension = Path::new(source_key)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("mp4");
-
-    let workspace = tempfile::tempdir().context("creating video thumbnail workspace")?;
-    let input_path = workspace.path().join(format!("source.{}", extension));
-    let frame_path = workspace.path().join("frame.png");
-    std::fs::write(&input_path, bytes).context("staging video for ffmpeg")?;
-
-    let duration = probe_duration_seconds(&input_path);
-    let seek_seconds = random_seek_offset(duration);
-
-    // -ss before -i seeks by keyframe, which is both fast and safe on a
-    // file we do not control the encoding of.
-    let output = Command::new("ffmpeg")
-        .args([
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-ss",
-            &format!("{:.3}", seek_seconds),
-            "-i",
-        ])
-        .arg(&input_path)
-        .args(["-frames:v", "1", "-vsync", "0", "-y"])
-        .arg(&frame_path)
-        .output()
-        .context("running ffmpeg; is it installed and on PATH?")?;
-
-    if !output.status.success() {
-        return Err(anyhow!(
-            "ffmpeg failed to extract a frame from {}: {}",
-            source_key,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
-    let frame = std::fs::read(&frame_path).context("reading extracted video frame")?;
-    if frame.is_empty() {
-        return Err(anyhow!("ffmpeg produced an empty frame for {}", source_key));
-    }
-    // Reuse the image path so a video thumbnail and an image thumbnail
-    // are bounded and encoded identically.
-    encode_image_thumbnail(&frame)
-}
-
-/// Duration in seconds via `ffprobe`. Returns `None` when ffprobe is
-/// absent or the container carries no duration -- the caller then seeks
-/// to the start rather than failing, since a thumbnail from frame zero
-/// still beats no thumbnail.
-fn probe_duration_seconds(path: &Path) -> Option<f64> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(path)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        warn!("ffprobe could not read a duration from {}", path.display());
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let parsed = text.trim().parse::<f64>().ok()?;
-    if parsed.is_finite() && parsed > 0.0 {
-        Some(parsed)
-    } else {
-        None
-    }
-}
-
-/// Pick a seek point inside the clip.
-///
-/// Bounded to the middle 80% so the choice never lands on the leading
-/// or trailing frames, which are the ones most likely to be blank. An
-/// unknown duration seeks to 0: the only safe offset for a clip whose
-/// length we could not determine.
-fn random_seek_offset(duration: Option<f64>) -> f64 {
-    let Some(duration) = duration else {
-        return 0.0;
-    };
-    let lower = duration * 0.1;
-    let upper = duration * 0.9;
-    if upper <= lower {
-        return 0.0;
-    }
-    rand::thread_rng().gen_range(lower..upper)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use image::{ImageBuffer, Rgba};
+    use lib_repository::{FileRepository, FileRepositoryConfig};
+
+    const VIDEO_KEY: &str = "user/res-1/clip.mp4";
+    const POSTER_KEY: &str = "user/res-1/.poster";
+
+    fn file_repo(root: &Path) -> RepositoryImpl {
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: root.to_path_buf(),
+        });
+        repo.setup().expect("repo setup");
+        RepositoryImpl::File(repo)
+    }
+
+    async fn store(repository: &RepositoryImpl, key: &str, content: Vec<u8>) {
+        let mut failed = Vec::new();
+        repository
+            .create(
+                [CreateFileRequest {
+                    content: Some(content),
+                    extension: None,
+                    file_name: key.to_string(),
+                }],
+                &mut failed,
+            )
+            .await
+            .expect("store fixture");
+        assert!(failed.is_empty());
+    }
 
     fn png_bytes(width: u32, height: u32) -> Vec<u8> {
         let buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(width, height, |x, y| {
@@ -348,6 +314,74 @@ mod tests {
     }
 
     #[test]
+    fn poster_key_sits_beside_the_source() {
+        assert_eq!(poster_key_for(VIDEO_KEY).unwrap(), POSTER_KEY);
+        assert!(poster_key_for("clip.mp4").is_err());
+    }
+
+    #[tokio::test]
+    async fn video_thumbnail_is_made_from_the_poster_which_is_then_consumed() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let repository = file_repo(root.path());
+        store(
+            &repository,
+            VIDEO_KEY,
+            b"not decoded by the engine".to_vec(),
+        )
+        .await;
+        store(&repository, POSTER_KEY, png_bytes(1600, 800)).await;
+
+        let outcome = generate(&repository, VIDEO_KEY, Some("video/mp4"))
+            .await
+            .expect("generate");
+
+        assert_eq!(
+            outcome,
+            ThumbnailOutcome::Generated {
+                repository_key: "user/res-1/thumbnail.png".to_string(),
+                content_type: "image/png".to_string(),
+                width: THUMBNAIL_MAX_EDGE,
+                height: THUMBNAIL_MAX_EDGE / 2,
+            }
+        );
+        assert!(root.path().join("user/res-1/thumbnail.png").exists());
+        assert!(!root.path().join(POSTER_KEY).exists());
+        assert!(root.path().join(VIDEO_KEY).exists());
+    }
+
+    #[tokio::test]
+    async fn video_without_a_poster_is_not_applicable() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let repository = file_repo(root.path());
+        store(
+            &repository,
+            VIDEO_KEY,
+            b"not decoded by the engine".to_vec(),
+        )
+        .await;
+
+        let outcome = generate(&repository, VIDEO_KEY, Some("video/mp4"))
+            .await
+            .expect("generate");
+
+        assert!(matches!(outcome, ThumbnailOutcome::NotApplicable { .. }));
+        assert!(!root.path().join("user/res-1/thumbnail.png").exists());
+    }
+
+    #[tokio::test]
+    async fn undecodable_poster_fails_and_is_removed_so_it_can_be_replaced() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let repository = file_repo(root.path());
+        store(&repository, POSTER_KEY, b"this is not an image".to_vec()).await;
+
+        let outcome = generate(&repository, VIDEO_KEY, Some("video/mp4")).await;
+
+        assert!(outcome.is_err());
+        assert!(!root.path().join(POSTER_KEY).exists());
+        assert!(!root.path().join("user/res-1/thumbnail.png").exists());
+    }
+
+    #[test]
     fn image_thumbnail_fits_inside_the_bounding_box_and_keeps_aspect() {
         let source = png_bytes(1600, 800);
         let (png, width, height) = encode_image_thumbnail(&source).expect("thumbnail");
@@ -374,19 +408,5 @@ mod tests {
     #[test]
     fn undecodable_bytes_fail_rather_than_producing_a_blank_thumbnail() {
         assert!(encode_image_thumbnail(b"this is not an image").is_err());
-    }
-
-    #[test]
-    fn seek_offset_stays_inside_the_middle_of_the_clip() {
-        for _ in 0..64 {
-            let offset = random_seek_offset(Some(100.0));
-            assert!(
-                (10.0..90.0).contains(&offset),
-                "offset {offset} escaped the middle 80%"
-            );
-        }
-        // Unknown or degenerate durations seek to the start.
-        assert_eq!(random_seek_offset(None), 0.0);
-        assert_eq!(random_seek_offset(Some(0.0)), 0.0);
     }
 }
