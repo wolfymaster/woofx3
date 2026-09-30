@@ -53,6 +53,10 @@ type runControl struct {
 	finalStatus     types.ExecutionStatus
 	cancelRequested bool
 	reason          string
+	// stopped marks a run the engine abandoned because it was stopping. Such a
+	// run unwinds the way a cancelled one does, but nobody asked for it to
+	// stop, so it settles as failed rather than cancelled.
+	stopped bool
 }
 
 // claimSettle marks the run settled with `status`, or reports that it already
@@ -68,10 +72,44 @@ func (c *runControl) claimSettle(status types.ExecutionStatus, err error) (types
 	if c.cancelRequested && status != types.ExecutionStatusCancelled {
 		status = types.ExecutionStatusCancelled
 		err = cancelError(c.reason)
+	} else if c.stopped && !c.cancelRequested && status == types.ExecutionStatusCancelled {
+		// Only the abandonment is renamed. A run that finished or failed on its
+		// own while the engine was stopping keeps the outcome it reached.
+		status = types.ExecutionStatusFailed
+		err = errEngineStopped
 	}
 	c.settled = true
 	c.finalStatus = status
 	return status, err, true
+}
+
+// abandonedBy is what a task the run gave up on reports: the engine stopping,
+// or a cancel.
+func (c *runControl) abandonedBy() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stopped && !c.cancelRequested {
+		return errEngineStopped
+	}
+	return errRunCancelled
+}
+
+// markStopped records that the engine gave up on the run, and reports whether
+// this call was the one that did.
+func (c *runControl) markStopped() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stopped || c.settled {
+		return false
+	}
+	c.stopped = true
+	return true
+}
+
+func (c *runControl) isSettled() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.settled
 }
 
 func cancelError(reason string) error {
@@ -90,7 +128,8 @@ func isTerminalStatus(status types.ExecutionStatus) bool {
 //
 // Each run's context derives from Background rather than the engine's own:
 // Stop ends the engine, and it is not a request to cancel every run in flight,
-// which would record as cancelled runs nobody asked to stop.
+// which would record as cancelled runs nobody asked to stop. Stop gives runs
+// time to finish and abandons the rest one by one (see abandonRun).
 func (e *Engine[TServices]) registerRunLocked(executionID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.controls[executionID] = &runControl{ctx: ctx, cancel: cancel}
@@ -156,31 +195,44 @@ func (e *Engine[TServices]) Cancel(executionID, reason string) (CancelResult, er
 	ctl.reason = reason
 	ctl.mu.Unlock()
 
+	e.logger.Info("Cancelling workflow run", "workflow", execution.WorkflowID, "execution", executionID, "reason", reason)
+
+	e.abandonRun(execution, ctl, func(childID string) {
+		if _, err := e.Cancel(childID, "parent run cancelled"); err != nil {
+			e.logger.Warn("Sub-workflow run not cancelled", "execution", childID, "error", err)
+		}
+	})
+
+	return CancelResult{Outcome: CancelOutcomeCancelled, Status: types.ExecutionStatusCancelled}, nil
+}
+
+// abandonRun makes a run stop where it is, for a cancel or for the engine
+// stopping; the run's control already says which. A run paused at a wait or
+// on a sub-workflow has no goroutine to notice, so it is claimed and settled
+// here. abandonChild is called for each sub-workflow a paused run was waiting
+// on, and may be nil when the caller deals with those runs itself.
+func (e *Engine[TServices]) abandonRun(execution *types.WorkflowExecution, ctl *runControl, abandonChild func(childID string)) {
 	// Cancelled before any wait is claimed. A wait is armed under the same lock
 	// the claim takes, and arming checks this context, so a run reaching a wait
 	// concurrently either is claimed below or refuses to pause.
 	ctl.cancel()
 
-	e.logger.Info("Cancelling workflow run", "workflow", execution.WorkflowID, "execution", executionID, "reason", reason)
-
-	if waits := e.claimWaits(executionID); len(waits) > 0 {
+	if waits := e.claimWaits(execution.ID); len(waits) > 0 {
 		for _, w := range waits {
 			e.cancelPendingTask(execution, w.TaskID, w.CurrentIndex)
 		}
 		e.settleCancelled(execution)
-	} else if waiters := e.claimSubWorkflowWaiters(executionID); len(waiters) > 0 {
+	} else if waiters := e.claimSubWorkflowWaiters(execution.ID); len(waiters) > 0 {
 		for childID, w := range waiters {
 			e.cancelPendingTask(execution, w.TaskID, w.CurrentIndex)
-			if _, err := e.Cancel(childID, "parent run cancelled"); err != nil {
-				e.logger.Warn("Sub-workflow run not cancelled", "execution", childID, "error", err)
+			if abandonChild != nil {
+				abandonChild(childID)
 			}
 		}
 		e.settleCancelled(execution)
 	}
 	// Otherwise a goroutine is running the run's tasks. It sees the context
 	// done, abandons the task in flight, and settles the run itself.
-
-	return CancelResult{Outcome: CancelOutcomeCancelled, Status: types.ExecutionStatusCancelled}, nil
 }
 
 // claimWaits claims every wait the run has armed, event or delay, and returns
@@ -234,21 +286,27 @@ func (e *Engine[TServices]) claimSubWorkflowWaiters(executionID string) map[stri
 	return claimed
 }
 
-// cancelPendingTask settles a task the run was cancelled during and records it.
+// cancelPendingTask settles a task the run was abandoned during and records it.
 func (e *Engine[TServices]) cancelPendingTask(execution *types.WorkflowExecution, taskID string, index int) {
 	taskExec := execution.Tasks[taskID]
 	if taskExec == nil {
 		taskExec = &types.TaskExecution{TaskID: taskID, StartedAt: time.Now()}
 		execution.Tasks[taskID] = taskExec
 	}
+	reason := errRunCancelled
+	if ctl := e.control(execution.ID); ctl != nil {
+		reason = ctl.abandonedBy()
+	}
 	now := time.Now()
 	taskExec.Status = types.TaskStatusCancelled
-	taskExec.Error = errRunCancelled.Error()
+	taskExec.Error = reason.Error()
 	taskExec.CompletedAt = &now
 	e.recordStep(execution, taskID, index, nil, taskExec)
 }
 
-// settleCancelled ends a run as cancelled and releases anything waiting on it.
+// settleCancelled ends an abandoned run and releases anything waiting on it.
+// The run settles as cancelled, unless it was the engine stopping that
+// abandoned it: claimSettle then records it as failed.
 func (e *Engine[TServices]) settleCancelled(execution *types.WorkflowExecution) {
 	reason := "cancelled by user"
 	if ctl := e.control(execution.ID); ctl != nil {
@@ -257,7 +315,7 @@ func (e *Engine[TServices]) settleCancelled(execution *types.WorkflowExecution) 
 		ctl.mu.Unlock()
 	}
 	e.setExecutionStatus(execution, types.ExecutionStatusCancelled, cancelError(reason))
-	e.logger.Info("Workflow run cancelled", "workflow", execution.WorkflowID, "execution", execution.ID)
+	e.logger.Info("Workflow run abandoned", "workflow", execution.WorkflowID, "execution", execution.ID, "status", execution.Status)
 	e.checkSubWorkflowCompletion(execution.ID)
 }
 
