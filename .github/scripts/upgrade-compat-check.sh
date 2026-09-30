@@ -219,11 +219,9 @@ echo "  note  the database has $applied_count migrations applied, up to $new_lat
 # --- and works there -------------------------------------------------------
 if [ -n "$OLD_CHECKOUT" ]; then
   echo "Running the previous release's edge checks against it"
-  # The SSE hold proves nothing about a schema, so it is cut short.
   if BASE_URL="$BASE_URL" \
      REGISTRATION_TOKEN="$REGISTRATION_TOKEN" \
      EXPECTED_VERSION="$OLD_VERSION" \
-     SSE_HOLD_SECONDS=5 \
      bun "$OLD_CHECKOUT/.github/scripts/engine-edge-check.ts"; then
     pass "the previous release passes its own edge checks"
   else
