@@ -40,7 +40,6 @@ base64 = "0.22"
 # features drag in AVIF (rav1e/ravif), which roughly triples build
 # time for a format nothing here reads.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
-rand = "0.8"
 
 [dev-dependencies]
 tokio = { version = "1.45.0", features = ["macros", "test-util"] }

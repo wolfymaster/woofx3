@@ -382,6 +382,56 @@ describe("processing", () => {
     await expect(api.requestProcessing("res-1")).rejects.toThrow("no stored object");
   });
 
+  test("requestPosterUploadUrl asks barkloader for a grant keyed on the video's stored key", async () => {
+    const grant = {
+      repositoryKey: "user/res-1/.poster",
+      uploadUrl: "http://127.0.0.1:9101/assets/upload/token",
+      method: "PUT",
+      headers: [{ name: "Content-Type", value: "image/png" }],
+      expiresAt: 1_700_000_300,
+    };
+    const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(JSON.stringify(grant)));
+    const api = host({
+      db: {
+        getResource: mock(async (_req: any) =>
+          readyRow({ name: "clip.mp4", kind: "video", contentType: "video/mp4", repositoryKey: "user/res-1/clip.mp4" })
+        ),
+      },
+      barkloaderRequest,
+    });
+
+    const result = await api.requestPosterUploadUrl("res-1", "image/png");
+
+    const [path, init] = barkloaderRequest.mock.calls[0];
+    expect(path).toBe("/assets/poster-upload-url");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      repository_key: "user/res-1/clip.mp4",
+      content_type: "image/png",
+    });
+    expect(result).toEqual({
+      uploadUrl: grant.uploadUrl,
+      method: "PUT",
+      headers: grant.headers,
+      expiresAt: grant.expiresAt,
+    });
+  });
+
+  test("a poster is refused for a resource that is not a video", async () => {
+    const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response("{}"));
+    const api = host({ db: { getResource: mock(async (_req: any) => readyRow()) }, barkloaderRequest });
+
+    await expect(api.requestPosterUploadUrl("res-1", "image/png")).rejects.toThrow("Only video resources");
+    expect(barkloaderRequest).not.toHaveBeenCalled();
+  });
+
+  test("a poster that is not an image is refused before the row is read", async () => {
+    const getResource = mock(async (_req: any) => readyRow({ kind: "video" }));
+    const api = host({ db: { getResource } });
+
+    await expect(api.requestPosterUploadUrl("res-1", "video/mp4")).rejects.toThrow("must be an image");
+    expect(getResource).not.toHaveBeenCalled();
+  });
+
   test("a completed job records the thumbnail key", async () => {
     const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
@@ -424,7 +474,7 @@ describe("processing", () => {
       resource_id: "res-1",
       utility: "thumbnail",
       status: "failed",
-      error: "ffmpeg exited 1",
+      error: "decoding source image",
     });
 
     expect(updateResource).not.toHaveBeenCalled();
