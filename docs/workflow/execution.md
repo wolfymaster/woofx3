@@ -135,7 +135,7 @@ Claiming happens under one lock, so an event and a timer racing for the same wai
 
 An event the wait cannot process (for example a non-numeric value for a `sum`) is logged and skipped; the wait keeps listening.
 
-Waits are held in memory only. `Stop` drops every armed wait, and nothing is persisted to re-arm on the next start: a run paused across a restart stays recorded as it was when it paused and does not resume.
+Waits are held in memory only, and nothing is persisted to re-arm on the next start, so a paused run cannot continue after a restart. `Stop` fails every paused run with "engine stopped" rather than leaving it recorded as running (see [Stopping the Engine](#stopping-the-engine)).
 
 ### Sub-Workflows
 
@@ -267,6 +267,35 @@ finish. The api then settles that run's history row as `cancelled` itself.
 
 `Engine.Stop` is not a cancel. Runs in flight are not recorded as cancelled
 when the engine shuts down.
+
+## Stopping the Engine
+
+A run's state lives only in the workflow process, so a run that has not finished
+when the process exits cannot be continued by the next one. `Engine.Stop` makes
+sure no run is left without a recorded outcome:
+
+1. Nothing new starts. `HandleEvent` and `FireByWorkflowID` refuse with
+   "engine stopped".
+2. A run paused at a wait is abandoned at once: nothing resumes a wait in a
+   stopped engine.
+3. A run executing tasks gets 5 seconds (`DefaultStopDrainTimeout`) to finish on
+   its own. One that does keeps the outcome it reached.
+4. Whatever is still running is abandoned. Its task in flight is given up on,
+   not undone, as for a cancelled run, and no later step starts.
+5. `Stop` waits up to 2 seconds (`DefaultStopSettleTimeout`) for the abandoned
+   runs to unwind and for their outcomes to be recorded, then returns.
+
+An abandoned run settles as `failed` with the error `engine stopped`, and the
+step it was on is recorded as `cancelled` with the same error. A parent waiting
+on a sub-workflow and the sub-workflow are each abandoned in their own right. A
+run somebody cancelled stays `cancelled`.
+
+Because the run is recorded as failed, it can be resumed from its last recorded
+step once the engine is back. Nothing resumes it automatically.
+
+A process that is killed rather than stopped records nothing, and its runs stay
+`running` in the history until someone cancels them (see
+[Cancelling a Run](#cancelling-a-run)).
 
 ## Loops
 

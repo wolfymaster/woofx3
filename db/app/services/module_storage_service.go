@@ -95,8 +95,9 @@ func (s *ModuleStorageService) prepare(ctx context.Context, db *sql.DB) error {
 }
 
 // closeTimeout bounds Disconnect. It covers replication's own shutdown sync
-// timeout with room to spare, and must stay below the grace period the
-// orchestrator gives a service between SIGTERM and SIGKILL.
+// timeout with room to spare, and must stay below what the orchestrator leaves
+// db-proxy between SIGTERM and SIGKILL: stopGracePeriod less
+// dependentStopPeriod, in build/orchestrator/main.go.
 const closeTimeout = 15 * time.Second
 
 // Disconnect closes the pool and, when replicated, flushes to the replica.

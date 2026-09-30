@@ -323,18 +323,60 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 	}
 }
 
-// stopGracePeriod is how long every service has, after SIGTERM, to exit on
-// its own before it is killed. It must cover db-proxy's final flush of module
-// storage to its replica (closeTimeout in db/app/services/module_storage_service.go);
-// a kill mid-flush loses the writes since the last sync.
+// stopGracePeriod is how long the services have, after the orchestrator is
+// asked to stop, to exit on their own before whatever is left is killed. A
+// host that stops the engine must allow more than this before it kills the
+// container.
 const stopGracePeriod = 25 * time.Second
 
-// StopAll asks every running service to stop, waits for them to exit, and
-// kills whatever is still running once the grace period is over.
+// dependentStopPeriod is the part of stopGracePeriod the services that depend
+// on others get to themselves, before the services they depend on are asked
+// to stop. It must cover the workflow engine's Stop (DefaultStopDrainTimeout
+// plus DefaultStopSettleTimeout in workflow/internal/engine/engine.go), which
+// records through db-proxy the runs it could not finish. What is left of
+// stopGracePeriod must cover db-proxy's final flush of module storage to its
+// replica (closeTimeout in db/app/services/module_storage_service.go); a kill
+// mid-flush loses the writes since the last sync.
+const dependentStopPeriod = 8 * time.Second
+
+// StopAll stops the services in two phases and kills whatever is still running
+// once the grace period is over.
+//
+// Services that depend on others are stopped first, and the services with no
+// dependencies (db-proxy and the message bus) only once those have exited or
+// used up their share of the time. A service shutting down still has work to
+// write down and announce, and it can do neither after the database proxy and
+// the bus have gone.
 func (s *Supervisor) StopAll() {
 	s.stopping = true
+	deadline := time.Now().Add(stopGracePeriod)
+
+	var dependents, foundations []string
 	for name, serviceProcess := range s.services {
-		process := serviceProcess.Cmd
+		if len(serviceProcess.Service.Dependencies) > 0 {
+			dependents = append(dependents, name)
+		} else {
+			foundations = append(foundations, name)
+		}
+	}
+
+	s.signalStop(dependents)
+	s.waitForExit(dependents, time.Now().Add(dependentStopPeriod))
+	s.signalStop(foundations)
+	s.waitForExit(append(dependents, foundations...), deadline)
+
+	for name, serviceProcess := range s.services {
+		if process := serviceProcess.Cmd; process != nil {
+			s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
+			process.Kill()
+		}
+	}
+}
+
+// signalStop asks each named service that is running to stop.
+func (s *Supervisor) signalStop(names []string) {
+	for _, name := range names {
+		process := s.services[name].Cmd
 		if process == nil {
 			continue
 		}
@@ -345,23 +387,19 @@ func (s *Supervisor) StopAll() {
 			process.Kill()
 		}
 	}
+}
 
-	deadline := time.Now().Add(stopGracePeriod)
-	for s.anyRunning() && time.Now().Before(deadline) {
+// waitForExit returns once none of the named services is running, or at the
+// deadline.
+func (s *Supervisor) waitForExit(names []string, deadline time.Time) {
+	for s.anyRunning(names) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
-	}
-
-	for name, serviceProcess := range s.services {
-		if process := serviceProcess.Cmd; process != nil {
-			s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
-			process.Kill()
-		}
 	}
 }
 
-func (s *Supervisor) anyRunning() bool {
-	for _, serviceProcess := range s.services {
-		if serviceProcess.Cmd != nil {
+func (s *Supervisor) anyRunning(names []string) bool {
+	for _, name := range names {
+		if s.services[name].Cmd != nil {
 			return true
 		}
 	}

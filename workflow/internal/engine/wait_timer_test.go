@@ -287,9 +287,10 @@ func TestDelayIgnoresEvents(t *testing.T) {
 	h.recorder.awaitSettled(t, 2*time.Second)
 }
 
-// Waits live only in memory, so Stop drops them rather than resuming a run it
-// has no way to finish.
-func TestStopDisarmsPendingWaits(t *testing.T) {
+// Waits live only in memory, so Stop cannot resume a paused run later. It
+// fails the run instead, so the run is recorded as over rather than left
+// reading as running.
+func TestStopFailsRunsPausedAtAWait(t *testing.T) {
 	h := newWaitHarness(t)
 	h.fire(t, &types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: 30})
 	h.awaitArmed(t)
@@ -300,9 +301,41 @@ func TestStopDisarmsPendingWaits(t *testing.T) {
 	if h.armedWaitCount() != 0 {
 		t.Fatal("Stop left a wait armed")
 	}
+	// Already recorded when Stop returns: the process exits right after it.
+	select {
+	case execution := <-h.recorder.settled:
+		if execution.Status != types.ExecutionStatusFailed || execution.Error != "engine stopped" {
+			t.Fatalf("run = %s (%q), want failed with engine stopped", execution.Status, execution.Error)
+		}
+	default:
+		t.Fatal("Stop returned before the paused run's outcome was recorded")
+	}
+	if step, ok := h.recorder.step("pause"); !ok || step.Error != "engine stopped" {
+		t.Errorf("pause step = %+v (recorded %v), want it recorded as stopped", step, ok)
+	}
 	h.recorder.expectNoMoreSettles(t, 100*time.Millisecond)
 	if h.timesMarked("after") != 0 {
 		t.Fatal("a delay resumed its run after Stop")
+	}
+}
+
+// A wait's timer can fire in the instant the engine stops, taking the wait
+// before Stop can claim it. The run is still settled, by whoever took it.
+func TestWaitExpiringAsTheEngineStopsFailsItsRun(t *testing.T) {
+	h := newWaitHarness(t)
+	h.fire(t, &types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: 30})
+	h.awaitArmed(t)
+
+	// The engine's context alone, without Stop: the timer is left to find the
+	// engine stopped.
+	h.engine.cancel()
+
+	execution := h.recorder.awaitSettled(t, 2*time.Second)
+	if execution.Status != types.ExecutionStatusFailed || execution.Error != "engine stopped" {
+		t.Fatalf("run = %s (%q), want failed with engine stopped", execution.Status, execution.Error)
+	}
+	if h.timesMarked("after") != 0 {
+		t.Fatal("the run continued in a stopped engine")
 	}
 }
 

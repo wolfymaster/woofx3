@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -87,11 +88,31 @@ type Engine[TServices any] struct {
 	// maxConcurrency caps how many independent tasks run at once. Zero means
 	// DefaultMaxConcurrentTasks.
 	maxConcurrency int
+	// settling counts runs between claiming their outcome and having recorded
+	// it, so Stop can tell a run whose outcome is decided from one whose
+	// outcome has been written down.
+	settling atomic.Int32
+	// stopDrainTimeout and stopSettleTimeout bound the two waits in Stop.
+	stopDrainTimeout  time.Duration
+	stopSettleTimeout time.Duration
 }
 
-// errEngineStopped fails a run that reaches a wait after Stop: the engine will
-// never settle a wait armed then, so pausing would leave the run waiting forever.
+// errEngineStopped fails a run the engine gave up on because it was stopping:
+// one still executing when Stop ran out of patience, or one paused at a wait,
+// which nothing in a stopped engine would ever resume.
 var errEngineStopped = errors.New("engine stopped")
+
+const (
+	// DefaultStopDrainTimeout is how long Stop lets executing runs finish on
+	// their own. With DefaultStopSettleTimeout it must fit inside the time the
+	// orchestrator gives this service before it stops db-proxy, which the
+	// outcomes are recorded through (dependentStopPeriod in
+	// build/orchestrator/main.go).
+	DefaultStopDrainTimeout = 5 * time.Second
+	// DefaultStopSettleTimeout is how long Stop then waits for the runs it
+	// abandoned to unwind and record their outcome.
+	DefaultStopSettleTimeout = 2 * time.Second
+)
 
 type SubWorkflowWaiter struct {
 	ParentExecutionID string
@@ -135,6 +156,8 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 		logger:             logger,
 		ctx:                ctx,
 		cancel:             cancel,
+		stopDrainTimeout:   DefaultStopDrainTimeout,
+		stopSettleTimeout:  DefaultStopSettleTimeout,
 	}
 
 	engine.registerBuiltInTasks()
@@ -400,6 +423,11 @@ func (e *Engine[TServices]) registerPublishAction() {
 }
 
 func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
+	// A stopping engine starts nothing: a run begun now would be abandoned
+	// within seconds.
+	if e.ctx.Err() != nil {
+		return errEngineStopped
+	}
 	e.processWaitingExecutions(event)
 
 	workflows := e.workflowRegistry.GetByEvent(event.Type)
@@ -450,6 +478,9 @@ func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
 // and so bypass GetByEvent / evaluateTrigger. Dispatch mirrors HandleEvent:
 // launch executeWorkflow in a goroutine so callers never block on task execution.
 func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Event) error {
+	if e.ctx.Err() != nil {
+		return errEngineStopped
+	}
 	def, err := e.workflowRegistry.Get(workflowID)
 	if err != nil {
 		return fmt.Errorf("FireByWorkflowID: %w", err)
@@ -1422,6 +1453,11 @@ func (e *Engine[TServices]) setExecutionStatus(
 	err error,
 ) {
 	if isTerminalStatus(status) {
+		// Counted from before the claim, so there is no moment at which the
+		// run reads as settled while its outcome is neither counted here nor
+		// recorded.
+		e.settling.Add(1)
+		defer e.settling.Add(-1)
 		if ctl := e.control(execution.ID); ctl != nil {
 			var claimed bool
 			status, err, claimed = ctl.claimSettle(status, err)
@@ -1886,15 +1922,24 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 // resumeWait continues a run whose wait has been settled, by re-entering the
 // wait task so runTasksFrom applies the outcome the wait state records.
 func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
-	if e.ctx.Err() != nil {
-		return
-	}
-
 	e.executionsMu.RLock()
 	execution := e.executions[w.ExecutionID]
+	ctl := e.controls[w.ExecutionID]
 	e.executionsMu.RUnlock()
 
 	if execution == nil {
+		return
+	}
+
+	// An event or a timer claimed this wait as the engine was stopping. The
+	// run is not continued, and whoever claimed the wait took it from Stop, so
+	// it is settled here or it never would be.
+	if e.ctx.Err() != nil {
+		if ctl != nil {
+			ctl.markStopped()
+		}
+		e.cancelPendingTask(execution, w.TaskID, w.CurrentIndex)
+		e.settleCancelled(execution)
 		return
 	}
 
@@ -2031,16 +2076,106 @@ func (e *Engine[TServices]) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop ends the engine. Paused waits are dropped rather than resumed: their
-// state lives only in this process, so there is nothing to finish them with.
+// Stop ends the engine, leaving no run without a recorded outcome.
+//
+// A run's state lives only in this process, so a run that is not finished when
+// the process exits cannot be continued by the next one. What Stop can do is
+// make sure it is written down as failed rather than left reading as running
+// forever, which also makes it a run that can be resumed from its last
+// recorded step:
+//
+//   - A run paused at a wait is abandoned at once. Nothing resumes a wait in a
+//     stopped engine.
+//   - A run executing tasks gets stopDrainTimeout to finish on its own.
+//   - Whatever is still running after that is abandoned too. Its task in
+//     flight is given up on, not undone, exactly as for a cancelled run.
+//
+// An abandoned run settles as failed with errEngineStopped.
 func (e *Engine[TServices]) Stop() error {
 	e.cancel()
-	e.waitingMu.Lock()
-	for w := range e.armedWaits {
-		e.disarmWaitLocked(w)
+
+	e.abandonRuns(e.pausedAtWait())
+	e.waitForRuns(e.stopDrainTimeout, func(unsettled []*abandonedRun) bool { return len(unsettled) == 0 })
+
+	// Runs are abandoned on every pass, not once: a run can still be
+	// registered while this is waiting, by a caller that does not go through
+	// HandleEvent.
+	settled := e.waitForRuns(e.stopSettleTimeout, func(unsettled []*abandonedRun) bool {
+		e.abandonRuns(unsettled)
+		return len(unsettled) == 0 && e.settling.Load() == 0
+	})
+	if !settled {
+		e.logger.Warn("Workflow engine stopped with runs whose outcome was not recorded", "runs", len(e.unsettledRuns()))
 	}
-	e.waitingExecutions = make(map[string][]*WaitingExecution)
-	e.waitingMu.Unlock()
+
 	e.logger.Info("Workflow engine stopped")
 	return nil
 }
+
+// abandonedRun is a run Stop may have to give up on.
+type abandonedRun struct {
+	execution *types.WorkflowExecution
+	control   *runControl
+}
+
+// unsettledRuns lists the runs that have no outcome yet.
+func (e *Engine[TServices]) unsettledRuns() []*abandonedRun {
+	e.executionsMu.RLock()
+	defer e.executionsMu.RUnlock()
+
+	var unsettled []*abandonedRun
+	for id, ctl := range e.controls {
+		if execution := e.executions[id]; execution != nil && !ctl.isSettled() {
+			unsettled = append(unsettled, &abandonedRun{execution: execution, control: ctl})
+		}
+	}
+	return unsettled
+}
+
+// pausedAtWait lists the unsettled runs that have a wait armed.
+func (e *Engine[TServices]) pausedAtWait() []*abandonedRun {
+	e.waitingMu.RLock()
+	waiting := make(map[string]bool, len(e.armedWaits))
+	for w := range e.armedWaits {
+		waiting[w.ExecutionID] = true
+	}
+	e.waitingMu.RUnlock()
+
+	var paused []*abandonedRun
+	for _, run := range e.unsettledRuns() {
+		if waiting[run.execution.ID] {
+			paused = append(paused, run)
+		}
+	}
+	return paused
+}
+
+// abandonRuns gives up on runs because the engine is stopping. Sub-workflows
+// are not abandoned through their parents: each is a run of its own and is in
+// the list in its own right.
+func (e *Engine[TServices]) abandonRuns(runs []*abandonedRun) {
+	for _, run := range runs {
+		if !run.control.markStopped() {
+			continue
+		}
+		e.logger.Warn("Abandoning workflow run: engine stopping", "workflow", run.execution.WorkflowID, "execution", run.execution.ID)
+		e.abandonRun(run.execution, run.control, nil)
+	}
+}
+
+// waitForRuns polls until done reports true for the runs still unsettled, or
+// the timeout passes, and reports which.
+func (e *Engine[TServices]) waitForRuns(timeout time.Duration, done func(unsettled []*abandonedRun) bool) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if done(e.unsettledRuns()) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(stopPollInterval)
+	}
+}
+
+const stopPollInterval = 20 * time.Millisecond
