@@ -97,6 +97,43 @@ step:
 Without them the release workflow fails in its first job, before anything is
 built.
 
+## Rollback compatibility
+
+A managed engine is upgraded by deploying the new release's image onto its
+existing database and data volume. If the new release does not come up, the
+maintenance API redeploys the previous image in its place. No down migration
+runs: the previous release's migrate tool ignores applied migrations it does
+not know, and `/ready` counts only the migrations it knows, so it boots and
+reports ready on the newer schema. Whether it then works there is what the
+rule below guarantees.
+
+**Release N must leave a database and a data volume that release N-1 runs on.**
+
+- **Migrations expand first and contract later.** Adding a table, a nullable
+  column or an index is safe. Dropping or renaming a table or column, changing
+  a column's type, or adding a constraint that rows written by N-1 would break
+  ships at least one release after nothing reads or writes the old shape. The
+  same holds for the Postgres and the SQLite chains.
+- **Data on the volume stays readable.** What N writes to Badger, to the SQLite
+  database and to file-backed storage must still be readable by N-1.
+- **A release that cannot meet this says so in its release notes**, and must not
+  be offered to managed engines (the maintenance API's `ENGINE_VERSION`) while a
+  failed upgrade to it would be rolled back automatically.
+
+`.github/workflows/upgrade-compat.yml` checks the rule. On a pull request that
+touches `db/database/migrate/`, it builds the image, lets it migrate an empty
+database and write a fresh volume, stops it, and starts the newest published
+release on the same database and volume. That release must report ready under
+its own version and pass its own edge checks
+(`.github/scripts/engine-edge-check.ts` at its tag). The same check runs when a
+release is published, against the release before it, and can be started by hand
+for any two tags.
+
+What it cannot see is a change the previous release's edge checks do not
+exercise: a renamed column in a table they never read passes. The rule is the
+author's to keep; the check catches what breaks startup, readiness and the
+paths those checks cover.
+
 ## Visibility
 
 Managed engines are deployed by pulling the image anonymously, so the GHCR
