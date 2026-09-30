@@ -1,0 +1,226 @@
+name: Upgrade compatibility
+
+# Checks the rollback rule in docs/operations/releases.md: the previous release
+# must still run on a database and data volume this one has migrated. A failed
+# upgrade of a managed engine is rolled back by redeploying the previous image,
+# with no down migration, so a migration that breaks the previous release turns
+# every failed upgrade into an outage.
+#
+# The check itself is .github/scripts/upgrade-compat-check.sh, which can also
+# be run by hand.
+#
+# It runs on every pull request, not only those that touch migrations, so it
+# can be a required check: a workflow filtered out by `paths` never reports,
+# and a required check that never reports blocks the merge. The `scope` job
+# decides whether there is anything to check, and a skipped `check` job counts
+# as passing.
+
+on:
+  pull_request:
+    branches:
+      - master
+  # A published release is checked against the one before it, from the images
+  # as published, before anyone is offered it.
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      new:
+        description: "Release tag to check. Empty builds the image from this ref."
+        required: false
+        type: string
+      old:
+        description: "Release tag to roll back to. Empty picks the newest release before it."
+        required: false
+        type: string
+
+concurrency:
+  group: upgrade-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  BUN_VERSION: "1.3.14"
+  IMAGE_NAME: ghcr.io/wolfymaster/woofx3
+  BUILT_IMAGE: woofx3:upgrade-compat
+  PORT: "8080"
+  POSTGRES_PASSWORD: upgrade-compat
+  DATABASE_NAME: woofx3_upgrade_compat
+
+jobs:
+  scope:
+    name: Decide whether to check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Look at what the pull request changes
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Migrations are what can change the schema under the previous
+          # release; the check's own files are here so a change to them is
+          # exercised before it merges.
+          changed="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST}/files" --paginate --jq '.[].filename')"
+          if echo "$changed" | grep --quiet --extended-regexp \
+            '^(db/database/migrate/|\.github/workflows/upgrade-compat\.yml$|\.github/scripts/upgrade-compat-check\.sh$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No migration changed; nothing to check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    name: Previous release runs after this one
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: woofx3
+          POSTGRES_PASSWORD: upgrade-compat
+          POSTGRES_DB: woofx3_upgrade_compat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U woofx3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Settle which two releases this run compares
+        id: releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_NEW: ${{ inputs.new }}
+          INPUT_OLD: ${{ inputs.old }}
+        run: |
+          set -euo pipefail
+          new_tag=""
+          if [ "$EVENT_NAME" = "release" ]; then
+            new_tag="$RELEASE_TAG"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            new_tag="$INPUT_NEW"
+          fi
+
+          # The previous release is the newest one that has an image: a
+          # release whose image was never published runs nowhere, so no engine
+          # can be rolled back to it.
+          old_tag="${INPUT_OLD:-}"
+          if [ -z "$old_tag" ]; then
+            for tag in $(gh release list --exclude-drafts --exclude-pre-releases --limit 30 --json tagName --jq '.[].tagName'); do
+              if [ "$tag" = "$new_tag" ]; then
+                continue
+              fi
+              if docker manifest inspect "${IMAGE_NAME}:${tag}" >/dev/null 2>&1; then
+                old_tag="$tag"
+                break
+              fi
+              echo "::warning::Release ${tag} has no image at ${IMAGE_NAME}:${tag}; looking at the release before it."
+            done
+          fi
+          if [ -z "$old_tag" ]; then
+            echo "::error::No earlier release with a published image was found."
+            exit 1
+          fi
+
+          echo "new_tag=${new_tag}" >> "$GITHUB_OUTPUT"
+          echo "old_tag=${old_tag}" >> "$GITHUB_OUTPUT"
+          if [ -n "$new_tag" ]; then
+            echo "new_image=${IMAGE_NAME}:${new_tag}" >> "$GITHUB_OUTPUT"
+            echo "Checking ${new_tag} against ${old_tag}"
+          else
+            echo "new_image=${BUILT_IMAGE}" >> "$GITHUB_OUTPUT"
+            echo "Checking this ref against ${old_tag}"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.releases.outputs.new_tag == ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        if: steps.releases.outputs.new_tag == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.production
+          load: true
+          tags: ${{ env.BUILT_IMAGE }}
+          build-args: |
+            BUN_VERSION=${{ env.BUN_VERSION }}
+            WOOFX3_VERSION=upgrade-compat-${{ github.sha }}
+            BUILD_JOBS=4
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A release is published a moment before its image is tagged, so the tag
+      # is waited for rather than expected.
+      - name: Pull the release being checked
+        if: steps.releases.outputs.new_tag != ''
+        env:
+          NEW_IMAGE: ${{ steps.releases.outputs.new_image }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            if docker pull --quiet "$NEW_IMAGE"; then
+              exit 0
+            fi
+            echo "Attempt ${attempt}: ${NEW_IMAGE} is not published yet"
+            sleep 15
+          done
+          echo "::error::${NEW_IMAGE} was never published."
+          exit 1
+
+      # The previous release's own edge checks, and the client package they
+      # import, at the commit that release was built from. Checked out only
+      # after the build, so it is never part of the image's build context.
+      - name: Checkout the previous release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.releases.outputs.old_tag }}
+          path: previous-release
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the previous release's engine client
+        run: bun install --frozen-lockfile
+        working-directory: previous-release/shared/clients/typescript/api
+
+      - name: Pull the previous release
+        run: docker pull --quiet "${IMAGE_NAME}:${{ steps.releases.outputs.old_tag }}"
+
+      - name: Run the previous release after this one
+        env:
+          NEW_IMAGE: ${{ steps.releases.outputs.new_image }}
+          OLD_IMAGE: ${{ env.IMAGE_NAME }}:${{ steps.releases.outputs.old_tag }}
+          OLD_VERSION: ${{ steps.releases.outputs.old_tag }}
+          OLD_CHECKOUT: previous-release
+          PORT: ${{ env.PORT }}
+          DATABASE_URL: postgres://woofx3:${{ env.POSTGRES_PASSWORD }}@127.0.0.1:5432/${{ env.DATABASE_NAME }}?sslmode=disable
+        run: .github/scripts/upgrade-compat-check.sh
