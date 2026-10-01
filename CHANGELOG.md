@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.1](https://github.com/wolfymaster/woofx3/compare/v0.6.0...v0.6.1) (2026-10-01)
+
+### Bug Fixes
+
+* **release:** check the release against the built commit, not HEAD ([f265d3b](https://github.com/wolfymaster/woofx3/commit/f265d3b5c7da441b542bb22dbdd32e74e31c0903))
+
 ## [0.6.0](https://github.com/wolfymaster/woofx3/compare/v0.5.0...v0.6.0) (2026-09-30)
 
 ### Features
