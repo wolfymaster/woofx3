@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.2](https://github.com/wolfymaster/woofx3/compare/v0.6.1...v0.6.2) (2026-10-01)
+
+### Bug Fixes
+
+* **twitch:** read the ad-break lead time from the Twitch module's settings ([f999d6a](https://github.com/wolfymaster/woofx3/commit/f999d6a1f85c4d86eccf552fb21ff392555d3218))
+
 ## [0.6.1](https://github.com/wolfymaster/woofx3/compare/v0.6.0...v0.6.1) (2026-10-01)
 
 ### Bug Fixes
