@@ -98,8 +98,22 @@ pub trait StorageClient: Send + Sync {
     ) -> Result<CompareAndSetOutcome, String>;
 }
 
+/// The HTTP request a module makes, and where its module may connect.
+pub struct HttpRequest<'a> {
+    /// The invoking module's manifest-local id, for the log line a refusal
+    /// writes.
+    pub module_id: &'a str,
+    /// The invocation's grants: its declared permissions, including `net:`
+    /// hosts, plus the `origin:` grants of its `url` settings. See
+    /// `crate::net`.
+    pub grants: &'a HashSet<String>,
+    pub url: &'a str,
+    pub method: &'a str,
+    pub opts: Value,
+}
+
 pub trait HttpClient: Send + Sync {
-    fn request(&self, url: &str, method: &str, opts: Value) -> Result<Value, String>;
+    fn request(&self, request: HttpRequest<'_>) -> Result<Value, String>;
 }
 
 pub trait ChatSender: Send + Sync {
@@ -213,9 +227,15 @@ pub struct InvocationContext {
     pub module_name: String,
     /// Semver version string from the manifest (e.g. "1.0.0").
     pub module_version: String,
-    /// The permissions the invoking module's manifest declares; see
-    /// `crate::permissions`. Empty for builtin invocations.
+    /// The invocation's grants: the permissions the invoking module's
+    /// manifest declares (see `crate::permissions`), plus the `origin:`
+    /// grants of its `url` settings (see `crate::net`). Empty for builtin
+    /// invocations.
     pub permissions: HashSet<String>,
+    /// The ids of the module's `url` settings. Module code may not write
+    /// them (`ctx.module.setSetting`): a value there grants `ctx.http` its
+    /// origin, so only the streamer may set it.
+    pub url_settings: HashSet<String>,
     /// When the caller stops waiting for the result. Host calls that wait on
     /// another service are bounded by it.
     pub deadline: Instant,

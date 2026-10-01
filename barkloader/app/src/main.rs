@@ -1,4 +1,4 @@
-use crate::services::http_client::ReqwestHttpClient;
+use crate::services::http_client::{HttpPolicy, ReqwestHttpClient};
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::sandbox_resources::HttpResourceClient;
 use crate::util::{
@@ -152,7 +152,16 @@ async fn setup() -> Result<AppContext> {
             );
         }
 
-        ctx.http = Arc::new(ReqwestHttpClient::new());
+        let http_policy = HttpPolicy::from_settings(
+            &get_env_or_default("WOOFX3_MODULE_HTTP", "log"),
+            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", "false"),
+        )
+        .unwrap_or_else(|reason| panic!("{reason}"));
+        info!(
+            "ctx.http policy: mode={:?} allow_private={}",
+            http_policy.mode, http_policy.allow_private
+        );
+        ctx.http = Arc::new(ReqwestHttpClient::new(http_policy));
 
         ctx
     };

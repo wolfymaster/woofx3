@@ -64,6 +64,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
+        url_settings: Default::default(),
     };
 
     registry
@@ -180,6 +181,7 @@ fn test_js_instruction_limit() {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
+        url_settings: Default::default(),
     };
 
     registry
@@ -241,6 +243,7 @@ function isolation(ctx) {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
+        url_settings: Default::default(),
     };
 
     registry
@@ -313,6 +316,7 @@ fn test_ctx_event_data() {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
+        url_settings: Default::default(),
     };
 
     registry
@@ -377,6 +381,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
+        url_settings: Default::default(),
     };
     registry
         .register_module("chat_test".to_string(), module)
@@ -447,6 +452,7 @@ fn extension_test_module(
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
+        url_settings: Default::default(),
     };
     registry.register_module(name.to_string(), module).unwrap();
     registry
@@ -983,4 +989,97 @@ fn test_ctx_result_events_carry_the_calling_workflow_chain() {
         published[0].1.get("workflowChain").is_none(),
         "an event no workflow caused starts no chain"
     );
+}
+
+/// Records the grants each `ctx.http` request carries, and answers 200.
+struct RecordingHttp {
+    grants: Mutex<Vec<std::collections::HashSet<String>>>,
+}
+
+impl lib_sandbox::host::HttpClient for RecordingHttp {
+    fn request(
+        &self,
+        request: lib_sandbox::host::HttpRequest<'_>,
+    ) -> Result<serde_json::Value, String> {
+        self.grants.lock().unwrap().push(request.grants.clone());
+        Ok(serde_json::json!({ "status": 200, "body": null }))
+    }
+}
+
+struct FixedSettings(HashMap<String, serde_json::Value>);
+
+impl lib_sandbox::host::SettingsClient for FixedSettings {
+    fn list_by_module(
+        &self,
+        _module_id: &str,
+    ) -> Result<HashMap<String, serde_json::Value>, String> {
+        Ok(self.0.clone())
+    }
+    fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_url_settings_origin_is_granted_to_the_invocation() {
+    let registry = Arc::new(ModuleRegistry::new());
+    let mut functions = HashMap::new();
+    functions.insert(
+        "call".to_string(),
+        Function::new(
+            "call".to_string(),
+            "call.js".to_string(),
+            r#"function call(ctx) { ctx.http.request(ctx.module.settings.server, "GET", {}); return {}; }"#
+                .to_string(),
+            false,
+        ),
+    );
+    registry
+        .register_module(
+            "homeassistant".to_string(),
+            RegisteredModule {
+                metadata: ModuleMetadata {
+                    name: "homeassistant".to_string(),
+                    version: "1.0.0".to_string(),
+                    installed_at: 0,
+                    updated_at: 0,
+                },
+                functions,
+                state: ModuleState::Active,
+                event_types: Default::default(),
+                permissions: ["net:api.example.com".to_string()].into(),
+                url_settings: ["server".to_string()].into(),
+            },
+        )
+        .unwrap();
+
+    let http = Arc::new(RecordingHttp {
+        grants: Mutex::new(Vec::new()),
+    });
+    let mut host = noop_host_context();
+    host.http = http.clone();
+    host.settings = Arc::new(FixedSettings(HashMap::from([(
+        "server".to_string(),
+        serde_json::json!("http://homeassistant.local:8123/api/states"),
+    )])));
+    let mut sandbox = Sandbox::new(registry, host).unwrap();
+
+    sandbox
+        .invoke(InvokeRequest {
+            function: "homeassistant:function:call".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+            workflow_chain: None,
+            timeout_ms: None,
+        })
+        .unwrap();
+
+    let grants = http.grants.lock().unwrap();
+    let expected: std::collections::HashSet<String> = [
+        "net:api.example.com".to_string(),
+        "origin:http://homeassistant.local:8123".to_string(),
+    ]
+    .into();
+    assert_eq!(grants.as_slice(), &[expected]);
 }

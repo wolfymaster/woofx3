@@ -61,7 +61,7 @@ impl StorageClient for NoopStorageClient {
 pub struct NoopHttpClient;
 
 impl HttpClient for NoopHttpClient {
-    fn request(&self, _url: &str, _method: &str, _opts: Value) -> Result<Value, String> {
+    fn request(&self, _request: HttpRequest<'_>) -> Result<Value, String> {
         Err("HTTP not available".to_string())
     }
 }

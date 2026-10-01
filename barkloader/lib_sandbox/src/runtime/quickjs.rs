@@ -449,12 +449,20 @@ fn build_http_namespace<'js>(
     let http = Object::new(ctx.clone()).map_err(map)?;
 
     let client = invocation.host.http.clone();
+    let module_id = invocation.module_id.clone();
+    let grants = invocation.permissions.clone();
     let request_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, url: String, method: String, opts: rquickjs::Value<'_>| {
             let json_opts = js_to_json(&opts).map_err(|e| host_err(e.to_string()))?;
             let response = client
-                .request(&url, &method, json_opts)
+                .request(crate::host::HttpRequest {
+                    module_id: &module_id,
+                    grants: &grants,
+                    url: &url,
+                    method: &method,
+                    opts: json_opts,
+                })
                 .map_err(|e| host_err(e))?;
             json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))
         },
@@ -671,14 +679,20 @@ fn build_module_namespace<'js>(
     // invocation), this takes effect immediately; a value set mid-invocation
     // is not reflected back into the already-built `settings` object. Does
     // not require `key` to be manifest-declared.
-    let client = invocation.host.settings.clone();
+    let host_for_set = invocation.host.clone();
     let module_id_for_set = invocation.module_id.clone();
+    let url_settings = invocation.url_settings.clone();
     let set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, key: String, value: String| -> rquickjs::Result<()> {
-            client
-                .set(&module_id_for_set, &key, &value)
-                .map_err(host_err)?;
+            super::host_bindings::set_module_setting(
+                &host_for_set,
+                &module_id_for_set,
+                &url_settings,
+                &key,
+                &value,
+            )
+            .map_err(host_err)?;
             Ok(())
         },
     )
@@ -820,6 +834,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = QuickJSAdapter::new().unwrap();
@@ -845,6 +860,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = QuickJSAdapter::new().unwrap();
@@ -888,6 +904,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         for (code, expected) in [
@@ -919,6 +936,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return { id: ctx.module.id, name: ctx.module.name, version: ctx.module.version }; }";
@@ -939,6 +957,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and an object
@@ -971,6 +990,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { ctx.log.info('data', { foo: 1 }); return { ok: true }; }";
@@ -989,6 +1009,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return ctx.response(false, 'nope'); }";
@@ -1034,6 +1055,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
@@ -1061,6 +1083,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.

@@ -34,7 +34,8 @@ use super::module_manifest::{
     ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
     ManifestDataShape, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
     ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE,
-    THEME_FIELD_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE,
+    WIDGET_SURFACES,
 };
 use super::theme::{self, InstalledModule};
 
@@ -1666,12 +1667,18 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
         if setting.label.trim().is_empty() {
             return Err(anyhow!("setting #{i} ({id}): `label` must be non-empty"));
         }
-        // `secret` is a settings-only type: no trigger, action or widget field
-        // holds one, so it stays out of CONFIG_FIELD_TYPES.
+        // `secret` and `url` are settings-only types: no trigger, action or
+        // widget field holds one, so they stay out of CONFIG_FIELD_TYPES.
         if setting.setting_type == SECRET_SETTING_TYPE {
             if setting.default_value.is_some() {
                 return Err(anyhow!(
                     "setting #{i} ({id}): a `secret` setting cannot declare `defaultValue`; the manifest would ship the secret"
+                ));
+            }
+        } else if setting.setting_type == URL_SETTING_TYPE {
+            if setting.default_value.is_some() {
+                return Err(anyhow!(
+                    "setting #{i} ({id}): a `url` setting cannot declare `defaultValue`; its origin is a destination the streamer chooses, and a manifest destination goes in `permissions` as `net:<host>`"
                 ));
             }
         } else {
@@ -3803,6 +3810,35 @@ mod tests {
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("permissions[1]"), "{err}");
         assert!(err.contains("twitch.everything"), "{err}");
+    }
+
+    #[test]
+    fn a_net_host_permission_installs_and_a_malformed_one_does_not() {
+        let m = minimal(r#", "permissions": ["net:api.spotify.com", "net:accounts.spotify.com"]"#);
+        validate(&m).expect("net: hosts install");
+        for bad in [
+            "net:",
+            "net:*.spotify.com",
+            "net:localhost",
+            "net:10.0.0.1",
+            "net:API.spotify.com",
+            "net:api.spotify.com:443",
+        ] {
+            let m = minimal(&format!(r#", "permissions": ["{bad}"]"#));
+            let err = validate(&m).unwrap_err().to_string();
+            assert!(err.contains("unknown permission"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_url_setting_installs_without_a_default() {
+        let m = minimal(r#", "settings": [{ "id": "server", "label": "Server", "type": "url" }]"#);
+        validate(&m).expect("url setting installs");
+        let m = minimal(
+            r#", "settings": [{ "id": "server", "label": "Server", "type": "url", "defaultValue": "https://evil.example.com" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("cannot declare `defaultValue`"), "{err}");
     }
 
     #[test]

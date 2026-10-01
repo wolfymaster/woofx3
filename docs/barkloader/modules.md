@@ -904,7 +904,7 @@ types have nothing to bind to.
 | `id` | string | yes | Manifest-local setting key, e.g. `clientId`. Combined with the module id to key the `module_settings` row (`module_id` + `key`, unique). This is the key a function reads via `ctx.module.settings.<id>`. |
 | `label` | string | yes | Display label for the settings UI. |
 | `description` | string | no | Defaults to `""`. |
-| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button` — or `secret` for a credential. `secret` is valid only here, never on a trigger, action or widget field. Validated at install. |
+| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button` — or `secret` for a credential, or `url` for a URL the streamer enters, whose origin `ctx.http` may then reach (see [Where `ctx.http` may connect](#where-ctx-http-may-connect)). `secret` and `url` are valid only here, never on a trigger, action or widget field, and neither may declare `defaultValue`. Validated at install. |
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
 | `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. Rejected on `type: "secret"`: the manifest would ship the secret. |
 | `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
@@ -1168,8 +1168,31 @@ if its manifest asks for them by permission id:
 |---|---|
 | `twitch.moderation` | `ctx.twitch.timeout`: time a chatter out |
 | `twitch.channel` | `ctx.twitch.updateStream`: change the stream title, category or tags |
+| `net:<host>` | `ctx.http` to `https://<host>` on port 443, e.g. `net:api.spotify.com` |
 
-The ids are fixed by the engine (`barkloader/lib_sandbox/src/permissions.rs`).
+The ids are fixed by the engine (`barkloader/lib_sandbox/src/permissions.rs`),
+except `net:`, which names a host: an exact lowercase DNS name with no IP
+address, port or wildcard. Declaring a host does not declare its subdomains,
+so a module that calls `api.spotify.com` and `accounts.spotify.com` lists both.
+
+#### Where `ctx.http` may connect
+
+Module code reaches only the destinations its module was granted
+(`barkloader/lib_sandbox/src/net.rs`):
+
+- a `net:<host>` permission, over `https` on port 443;
+- the origin (scheme, host and port) of a URL the streamer entered in a
+  [`url` setting](#module-level-settings-settings). Module code cannot write a
+  `url` setting (`ctx.module.setSetting` refuses it), and a manifest cannot
+  give one a default.
+
+Every redirect is checked like the first request, and every address a host
+name resolves to must not be loopback, private, link-local or otherwise local
+unless the engine sets `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE=true` (a self-hosted
+engine whose modules talk to its own network). `WOOFX3_MODULE_HTTP` decides
+what happens to anything else: `log` (the default) logs it and sends the
+request, so modules written before host permissions can be found and updated;
+`enforce` refuses it with `permission_denied`.
 An unknown id or one listed twice fails the install. At runtime barkloader
 reads the permissions from the installed manifest, and a call to a function
 whose permission the invoking module did not declare throws before anything is
