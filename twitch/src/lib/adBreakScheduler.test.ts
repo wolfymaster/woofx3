@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { AdBreakScheduler, parseAdBreakLeadSeconds, type SchedulerClock } from "./adBreakScheduler";
+import { AdBreakScheduler, type SchedulerClock } from "./adBreakScheduler";
 import { type AdSchedule, TwitchApiError } from "./twitch";
 
 /** Timers fire only when a test advances time past them. */
@@ -86,13 +86,14 @@ function schedule(nextAdAtMs: number | null): AdSchedule {
   };
 }
 
-function harness(opts: { leadSeconds?: number[]; live?: boolean } = {}) {
+function harness(opts: { leadSeconds?: number; live?: boolean } = {}) {
   const clock = new FakeClock(T0);
   const published: AdBreakUpcoming[] = [];
   const warnings: Record<string, unknown>[] = [];
   const state = {
     live: opts.live ?? true,
     fetches: 0,
+    leadSeconds: opts.leadSeconds ?? 60,
     next: schedule(T0 + 5 * 60_000) as AdSchedule | Error,
   };
   const scheduler = new AdBreakScheduler({
@@ -105,7 +106,7 @@ function harness(opts: { leadSeconds?: number[]; live?: boolean } = {}) {
     },
     publishUpcoming: (event) => published.push(event),
     logger: { ...silentLogger, warn: (_msg: string, meta: Record<string, unknown>) => warnings.push(meta) } as never,
-    leadSeconds: opts.leadSeconds,
+    readLeadSeconds: async () => state.leadSeconds,
     clock,
   });
   // Live, with its own poll loop cancelled: the tests drive polls through
@@ -118,7 +119,7 @@ function harness(opts: { leadSeconds?: number[]; live?: boolean } = {}) {
 }
 
 describe("AdBreakScheduler", () => {
-  test("announces the next ad once, 60 seconds ahead by default", async () => {
+  test("announces the next ad once, the lead time ahead", async () => {
     const { clock, published, scheduler } = harness();
 
     await scheduler.pollOnce();
@@ -134,17 +135,32 @@ describe("AdBreakScheduler", () => {
     expect(published).toHaveLength(1);
   });
 
-  test("fires each configured lead time", async () => {
-    const { clock, published, scheduler } = harness({ leadSeconds: [120, 30] });
+  test("a changed lead time applies at the next read", async () => {
+    const { clock, published, state, scheduler } = harness();
 
     await scheduler.pollOnce();
-    clock.advance(5 * 60_000);
+    state.leadSeconds = 180;
+    await scheduler.pollOnce();
+    clock.advance(2 * 60_000);
 
-    expect(published.map((e) => e.secondsUntil)).toEqual([120, 30]);
+    expect(published).toEqual([{ nextAdAt: iso(T0 + 5 * 60_000), secondsUntil: 180, durationSeconds: 90 }]);
+  });
+
+  test("raising the lead time after an announcement does not announce the ad again", async () => {
+    const { clock, published, state, scheduler } = harness();
+
+    await scheduler.pollOnce();
+    clock.advance(4 * 60_000);
+    expect(published).toHaveLength(1);
+
+    state.leadSeconds = 120;
+    await scheduler.pollOnce();
+    clock.advance(30_000);
+    expect(published).toHaveLength(1);
   });
 
   test("an ad first seen inside its lead window is announced once, right away", async () => {
-    const { published, state, scheduler } = harness({ leadSeconds: [120, 60] });
+    const { published, state, scheduler } = harness({ leadSeconds: 120 });
     state.next = schedule(T0 + 40_000);
 
     await scheduler.pollOnce();
@@ -249,6 +265,7 @@ describe("AdBreakScheduler", () => {
       },
       publishUpcoming: () => {},
       logger: silentLogger,
+      readLeadSeconds: async () => 60,
       clock,
     });
 
@@ -279,27 +296,12 @@ describe("AdBreakScheduler", () => {
     expect(raced.state.fetches).toBe(1);
   });
 
-  test("rejects lead times that are not positive whole seconds", () => {
-    for (const leadSeconds of [[], [0], [-5], [1.5]]) {
-      expect(() => harness({ leadSeconds })).toThrow("positive whole seconds");
-    }
-  });
-});
-
-describe("parseAdBreakLeadSeconds", () => {
-  test("defaults to one announcement a minute ahead", () => {
-    expect(parseAdBreakLeadSeconds(undefined)).toEqual([60]);
-    expect(parseAdBreakLeadSeconds("")).toEqual([60]);
-  });
-
-  test("reads a number or a comma-separated list", () => {
-    expect(parseAdBreakLeadSeconds(90)).toEqual([90]);
-    expect(parseAdBreakLeadSeconds("120, 60")).toEqual([120, 60]);
-  });
-
-  test("fails fast on anything but positive whole seconds", () => {
-    for (const bad of ["abc", "0", "-30", "1.5", "60,x"]) {
-      expect(() => parseAdBreakLeadSeconds(bad)).toThrow("WOOFX3_TWITCH_AD_BREAK_LEAD_SECONDS");
+  test("a lead time that is not positive whole seconds fails the poll and arms nothing", async () => {
+    for (const leadSeconds of [0, -5, 1.5]) {
+      const { clock, published, scheduler } = harness({ leadSeconds });
+      await expect(scheduler.pollOnce()).rejects.toThrow("positive whole seconds");
+      clock.advance(5 * 60_000);
+      expect(published).toEqual([]);
     }
   });
 });

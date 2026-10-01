@@ -2,8 +2,6 @@ import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
-export const DEFAULT_AD_BREAK_LEAD_SECONDS: readonly number[] = [60];
-
 const POLL_INTERVAL_MS = 60_000;
 
 /**
@@ -34,31 +32,12 @@ export interface AdBreakSchedulerDeps {
   fetchSchedule(): Promise<AdSchedule>;
   publishUpcoming(event: AdBreakUpcoming): void;
   logger: SharedLogger;
-  /** Seconds before an ad to announce it; each fires at most once per ad. */
-  leadSeconds?: readonly number[];
+  /**
+   * Seconds before an ad to announce it, read on every poll so a changed
+   * setting applies within a minute. Must resolve to positive whole seconds.
+   */
+  readLeadSeconds(): Promise<number>;
   clock?: SchedulerClock;
-}
-
-/**
- * Parses the configured lead times: a number, or a comma-separated list of
- * them. Throws on anything that is not positive whole seconds, because a
- * typo would otherwise silently disable the heads-up a streamer configured.
- */
-export function parseAdBreakLeadSeconds(raw: unknown): number[] {
-  if (raw === undefined || raw === null || String(raw).trim() === "") {
-    return [...DEFAULT_AD_BREAK_LEAD_SECONDS];
-  }
-  const leads = String(raw)
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part !== "")
-    .map(Number);
-  if (leads.length === 0 || leads.some((lead) => !Number.isInteger(lead) || lead <= 0)) {
-    throw new Error(
-      `twitchAdBreakLeadSeconds (WOOFX3_TWITCH_AD_BREAK_LEAD_SECONDS) must be positive whole seconds, got "${String(raw)}"`
-    );
-  }
-  return leads;
 }
 
 /**
@@ -72,22 +51,21 @@ export function parseAdBreakLeadSeconds(raw: unknown): number[] {
  * `stream.offline` subscriptions plus one Helix read at connect (EventSub
  * does not replay an online event that happened before the service started).
  *
- * The schedule is read once a minute; each lead time is then armed as its
- * own timer so the announcement lands on time rather than up to a minute
- * late. Every read re-arms from scratch, so a snooze (which moves
+ * The schedule is read once a minute and the announcement is then armed as
+ * a timer, so it lands on time rather than up to a minute late. Every read re-arms from scratch, so a snooze (which moves
  * `nextAdAt`) cancels the old announcement and schedules a new one: an
  * announcement is keyed by the ad's time, and a moved ad is a new ad.
  *
  * Assumes one twitch service per engine, as the engine is deployed today.
- * The "announced" set lives in memory, so two instances would each announce
+ * Which ad was announced lives in memory, so two instances would each announce
  * every ad, and a restart inside a lead window announces that ad again.
  */
 export class AdBreakScheduler {
-  private readonly leadSeconds: readonly number[];
   private readonly clock: SchedulerClock;
   private pollTimer: unknown = null;
-  private leadTimers: unknown[] = [];
-  private announced = new Set<string>();
+  private leadTimer: unknown = null;
+  /** The `nextAdAt` of the ad already announced: each ad is announced once. */
+  private announcedAdAt: string | null = null;
   private backoffUntil = 0;
   private rateLimitStreak = 0;
   private lastFailureCode: TwitchApiErrorCode | null = null;
@@ -103,11 +81,6 @@ export class AdBreakScheduler {
   private stopped = false;
 
   constructor(private deps: AdBreakSchedulerDeps) {
-    const leads = deps.leadSeconds ?? DEFAULT_AD_BREAK_LEAD_SECONDS;
-    if (leads.length === 0 || leads.some((lead) => !Number.isInteger(lead) || lead <= 0)) {
-      throw new Error(`AdBreakScheduler: lead times must be positive whole seconds, got [${leads.join(", ")}]`);
-    }
-    this.leadSeconds = [...new Set(leads)].sort((a, b) => b - a);
     this.clock = deps.clock ?? REAL_CLOCK;
   }
 
@@ -145,9 +118,7 @@ export class AdBreakScheduler {
     this.live = live;
     this.liveEpoch += 1;
     if (live) {
-      this.deps.logger.info("AdBreakScheduler: stream live; watching the ad schedule", {
-        leadSeconds: this.leadSeconds,
-      });
+      this.deps.logger.info("AdBreakScheduler: stream live; watching the ad schedule");
       this.schedulePoll(0, this.liveEpoch);
       return;
     }
@@ -155,8 +126,8 @@ export class AdBreakScheduler {
       this.clock.clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
-    this.clearLeadTimers();
-    this.announced.clear();
+    this.clearLeadTimer();
+    this.announcedAdAt = null;
   }
 
   /**
@@ -203,17 +174,21 @@ export class AdBreakScheduler {
     this.rateLimitStreak = 0;
     this.backoffUntil = 0;
 
-    this.arm(schedule);
+    const leadSeconds = await this.deps.readLeadSeconds();
+    if (!Number.isInteger(leadSeconds) || leadSeconds <= 0) {
+      throw new Error(`AdBreakScheduler: lead time must be positive whole seconds, got ${leadSeconds}`);
+    }
+    this.arm(schedule, leadSeconds);
   }
 
-  private arm(schedule: AdSchedule): void {
-    this.clearLeadTimers();
+  private arm(schedule: AdSchedule, leadSeconds: number): void {
+    this.clearLeadTimer();
     // The stream may have gone offline while the read was in flight.
     if (!this.live) {
       return;
     }
     if (schedule.nextAdAt === null) {
-      this.announced.clear();
+      this.announcedAdAt = null;
       return;
     }
     const nextAdAtMs = Date.parse(schedule.nextAdAt);
@@ -222,45 +197,30 @@ export class AdBreakScheduler {
       return;
     }
     const nextAdAt = new Date(nextAdAtMs).toISOString();
-    for (const key of this.announced) {
-      if (!key.startsWith(`${nextAdAt}|`)) {
-        this.announced.delete(key);
-      }
-    }
-
     const now = this.clock.now();
-    if (now >= nextAdAtMs) {
+    if (this.announcedAdAt === nextAdAt || now >= nextAdAtMs) {
       return;
     }
 
-    // Leads whose moment has already passed (the ad was scheduled, or first
-    // seen, closer than they ask for) collapse into one announcement now,
-    // rather than a burst of several for the same ad.
-    const overdue = this.leadSeconds.filter(
-      (lead) => nextAdAtMs - lead * 1000 <= now && !this.announced.has(keyOf(nextAdAt, lead))
-    );
-    if (overdue.length > 0) {
-      for (const lead of overdue) {
-        this.announced.add(keyOf(nextAdAt, lead));
-      }
-      this.announce(nextAdAt, nextAdAtMs, schedule.durationSeconds);
+    // An ad scheduled, or first seen, closer than the lead time asks for is
+    // announced right away with the real time left.
+    const fireAtMs = nextAdAtMs - leadSeconds * 1000;
+    if (fireAtMs <= now) {
+      this.announceOnce(nextAdAt, nextAdAtMs, schedule.durationSeconds);
+      return;
     }
+    this.leadTimer = this.clock.setTimeout(() => {
+      this.leadTimer = null;
+      this.announceOnce(nextAdAt, nextAdAtMs, schedule.durationSeconds);
+    }, fireAtMs - now);
+  }
 
-    for (const lead of this.leadSeconds) {
-      const key = keyOf(nextAdAt, lead);
-      const fireAtMs = nextAdAtMs - lead * 1000;
-      if (fireAtMs <= now || this.announced.has(key)) {
-        continue;
-      }
-      const handle = this.clock.setTimeout(() => {
-        if (this.announced.has(key)) {
-          return;
-        }
-        this.announced.add(key);
-        this.announce(nextAdAt, nextAdAtMs, schedule.durationSeconds);
-      }, fireAtMs - now);
-      this.leadTimers.push(handle);
+  private announceOnce(nextAdAt: string, nextAdAtMs: number, durationSeconds: number): void {
+    if (this.announcedAdAt === nextAdAt) {
+      return;
     }
+    this.announcedAdAt = nextAdAt;
+    this.announce(nextAdAt, nextAdAtMs, durationSeconds);
   }
 
   private announce(nextAdAt: string, nextAdAtMs: number, durationSeconds: number): void {
@@ -301,14 +261,10 @@ export class AdBreakScheduler {
     this.lastFailureCode = code;
   }
 
-  private clearLeadTimers(): void {
-    for (const handle of this.leadTimers) {
-      this.clock.clearTimeout(handle);
+  private clearLeadTimer(): void {
+    if (this.leadTimer !== null) {
+      this.clock.clearTimeout(this.leadTimer);
+      this.leadTimer = null;
     }
-    this.leadTimers = [];
   }
-}
-
-function keyOf(nextAdAt: string, lead: number): string {
-  return `${nextAdAt}|${lead}`;
 }

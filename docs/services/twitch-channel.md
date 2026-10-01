@@ -247,24 +247,25 @@ clients by `subscribeStreamEvents`.
 
 Twitch has no EventSub topic for an ad that is about to run, so the twitch
 service makes one. `AdBreakScheduler` reads the ad schedule from Helix once a
-minute while the stream is live and arms a timer for each configured lead
-time before `nextAdAt`. Offline, it does not call Twitch at all.
+minute while the stream is live and arms a timer for the lead time before
+`nextAdAt`. Offline, it does not call Twitch at all.
 
 - **Live state** comes from the service's own `stream.online` and
   `stream.offline` subscriptions. EventSub does not replay an online event
   from before the service connected, so at connect it also asks Helix once
   whether the stream is live; an EventSub event that arrives first wins.
-- **Lead times** come from `WOOFX3_TWITCH_AD_BREAK_LEAD_SECONDS`
-  (`twitchAdBreakLeadSeconds` in `.woofx3.json`): a number or a
-  comma-separated list such as `120,60`. The default is `60`. Anything other
-  than positive whole seconds fails the twitch service at startup.
-- **Once per ad, per lead time.** An announcement is keyed by the ad's
-  `nextAdAt`. Snoozing moves `nextAdAt`, so a snoozed ad is announced again
-  at its new time.
-- **Late discovery.** If the ad is first seen inside a lead window (the stream
-  just went live, or the schedule changed), the passed lead times collapse
-  into one announcement right away, and `secondsUntil` is the real time
-  left rather than the configured lead.
+- **Lead time** is the Twitch module's `adBreakLeadSeconds` setting
+  (`woofx3_twitch`), set on the module's page. It is read with each schedule
+  read, so a change applies within a minute. The default is `60`, which also
+  applies when the module is not installed, the value is not positive whole
+  seconds (logged as a warning), or db-proxy cannot be read.
+- **Once per ad.** An announcement is keyed by the ad's `nextAdAt`, so
+  changing the lead time after an ad was announced does not announce it
+  again. Snoozing moves `nextAdAt`, so a snoozed ad is announced again at its
+  new time.
+- **Late discovery.** If the ad is first seen inside the lead window (the
+  stream just went live, or the schedule changed), it is announced right
+  away, and `secondsUntil` is the real time left rather than the lead time.
 - **Backoff.** A missing scope pauses reads for 15 minutes, an invalid token
   for 5, and a rate limit for 2 minutes, doubling on each consecutive 429 up
   to 30. Each failure kind is logged when it first appears, not on every poll.
