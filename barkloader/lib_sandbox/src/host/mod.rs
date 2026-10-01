@@ -98,10 +98,6 @@ pub trait StorageClient: Send + Sync {
     ) -> Result<CompareAndSetOutcome, String>;
 }
 
-pub trait EnvReader: Send + Sync {
-    fn get(&self, key: &str) -> Option<String>;
-}
-
 pub trait HttpClient: Send + Sync {
     fn request(&self, url: &str, method: &str, opts: Value) -> Result<Value, String>;
 }
@@ -197,7 +193,6 @@ pub trait ScheduleClient: Send + Sync {
 pub struct HostContext {
     pub nats: Arc<dyn NatsPublisher>,
     pub storage: Arc<dyn StorageClient>,
-    pub env: Arc<dyn EnvReader>,
     pub http: Arc<dyn HttpClient>,
     pub resources: Arc<dyn ResourceClient>,
     pub settings: Arc<dyn SettingsClient>,

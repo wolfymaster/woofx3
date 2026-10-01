@@ -214,18 +214,6 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     }
     ctx.set("http", http)?;
 
-    // env namespace
-    let env = lua.create_table()?;
-    {
-        let reader = invocation.host.env.clone();
-        let get_fn =
-            lua.create_function(move |_, key: String| -> mlua::Result<Option<String>> {
-                Ok(reader.get(&key))
-            })?;
-        env.set("get", get_fn)?;
-    }
-    ctx.set("env", env)?;
-
     // resources namespace — runtime-instance lifecycle for kinds the
     // calling module declared in its manifest's `resources[]` block.
     // `owning_module_name` is bound from `invocation.module_id`.
@@ -545,6 +533,30 @@ mod tests {
     use super::*;
     use crate::host::{InvocationContext, noop::noop_host_context};
     use crate::runtime::RuntimeAdapter;
+
+    /// The engine's environment holds its own credentials, and module code is
+    /// end-user code: nothing in `ctx` may read it.
+    #[test]
+    fn lua_ctx_has_no_env_namespace() {
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        let adapter = LuaAdapter::new().unwrap();
+        let code = r#"
+            function run(ctx)
+                return { env = type(ctx.env) }
+            end
+        "#;
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result, serde_json::json!({ "env": "nil" }));
+    }
 
     #[test]
     fn lua_ctx_schedule_reaches_the_scheduler_and_throws_a_refusal() {

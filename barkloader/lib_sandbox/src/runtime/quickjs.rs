@@ -244,7 +244,6 @@ fn build_ctx_object<'js>(
     build_crypto_namespace(ctx, &ctx_obj)?;
     build_storage_namespace(ctx, &ctx_obj, invocation)?;
     build_http_namespace(ctx, &ctx_obj, invocation)?;
-    build_env_namespace(ctx, &ctx_obj, invocation)?;
     build_resources_namespace(ctx, &ctx_obj, invocation)?;
     build_schedule_namespace(ctx, &ctx_obj, invocation)?;
     build_module_namespace(ctx, &ctx_obj, invocation)?;
@@ -464,31 +463,6 @@ fn build_http_namespace<'js>(
     http.set("request", request_fn).map_err(map)?;
 
     ctx_obj.set("http", http).map_err(map)?;
-    Ok(())
-}
-
-fn build_env_namespace<'js>(
-    ctx: &Ctx<'js>,
-    ctx_obj: &Object<'js>,
-    invocation: &InvocationContext,
-) -> Result<(), Error> {
-    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
-    let env = Object::new(ctx.clone()).map_err(map)?;
-
-    let reader = invocation.host.env.clone();
-    let get_fn = JsFunction::new(ctx.clone(), move |ctx, key: String| {
-        match reader.get(&key) {
-            Some(v) => {
-                let s = rquickjs::String::from_str(ctx, &v).map_err(|e| host_err(e.to_string()))?;
-                Ok::<_, rquickjs::Error>(s.into())
-            }
-            None => Ok(rquickjs::Value::new_null(ctx)),
-        }
-    })
-    .map_err(map)?;
-    env.set("get", get_fn).map_err(map)?;
-
-    ctx_obj.set("env", env).map_err(map)?;
     Ok(())
 }
 
@@ -833,6 +807,30 @@ mod tests {
     use super::*;
     use crate::host::{InvocationContext, noop::noop_host_context};
     use crate::runtime::RuntimeAdapter;
+
+    /// The engine's environment holds its own credentials, and module code is
+    /// end-user code: nothing in `ctx` may read it.
+    #[test]
+    fn quickjs_ctx_has_no_env_namespace() {
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = r#"
+            function run(ctx) {
+                return { env: typeof ctx.env };
+            }
+        "#;
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result, serde_json::json!({ "env": "undefined" }));
+    }
 
     #[test]
     fn quickjs_ctx_schedule_reaches_the_scheduler_and_throws_a_refusal() {

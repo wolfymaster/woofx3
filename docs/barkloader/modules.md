@@ -981,9 +981,9 @@ if (!clientId || !clientSecret || !refreshToken) {
 }
 ```
 
-This replaced an earlier pattern of reading credentials from process environment
-variables via `ctx.env`; new modules needing per-install configuration should use
-`ctx.module.settings`, not `ctx.env`.
+Module code cannot read the engine's environment: it holds the engine's own
+credentials, and module code is end-user code. Per-install configuration belongs in
+`ctx.module.settings`.
 
 See [Sandbox runtime → `ctx.module`](./sandbox.md#ctxmodule) for the full sandbox-side
 contract, and [Module settings: the UI contract](../services/module-settings-ui.md)

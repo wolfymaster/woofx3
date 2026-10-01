@@ -58,14 +58,6 @@ impl StorageClient for NoopStorageClient {
     }
 }
 
-pub struct NoopEnvReader;
-
-impl EnvReader for NoopEnvReader {
-    fn get(&self, _key: &str) -> Option<String> {
-        None
-    }
-}
-
 pub struct NoopHttpClient;
 
 impl HttpClient for NoopHttpClient {
@@ -151,7 +143,6 @@ pub fn noop_host_context() -> HostContext {
     HostContext {
         nats: Arc::new(NoopNatsPublisher),
         storage: Arc::new(NoopStorageClient),
-        env: Arc::new(NoopEnvReader),
         http: Arc::new(NoopHttpClient),
         resources: Arc::new(NoopResourceClient),
         settings: Arc::new(NoopSettingsClient),
