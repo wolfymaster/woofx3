@@ -2186,6 +2186,41 @@ struct SetModuleSettingBody {
 /// yet) — callers can change `value` but not `valueType`, the same rule the
 /// Node engine's `updateModuleSetting` RPC applies. Does not require the key
 /// to have been registered via `register_module_settings` first.
+/// Writes a module setting the engine keeps for itself, such as the tokens
+/// `ctx.oauth` holds (`lib_sandbox::oauth`). Written as `secret`, so db-proxy
+/// seals it at rest and the settings API reports only whether it is set; a
+/// row that already exists keeps its type, which for these keys is `secret`
+/// from the first write because module code and manifests cannot create them.
+pub async fn set_secret_module_setting(
+    url: &str,
+    module_id: &str,
+    key: &str,
+    value: &str,
+) -> Result<()> {
+    let body = SetModuleSettingBody {
+        module_id: module_id.to_string(),
+        key: key.to_string(),
+        value: value.to_string(),
+        value_type: "secret".to_string(),
+    };
+    let endpoint = format!(
+        "{}/twirp/module_setting.ModuleSettingService/SetModuleSetting",
+        url
+    );
+    let response = HTTP_CLIENT
+        .clone()
+        .post(&endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("set_secret_module_setting request: {}", e))?;
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("set_secret_module_setting failed: {}", text));
+    }
+    Ok(())
+}
+
 pub async fn set_module_setting(url: &str, module_id: &str, key: &str, value: &str) -> Result<()> {
     let existing = get_module_settings(url, module_id)
         .await

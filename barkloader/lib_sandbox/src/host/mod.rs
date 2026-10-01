@@ -245,6 +245,7 @@ impl InvocationContext {
     /// The scope every host function bound into this invocation shares.
     pub fn call_scope(&self) -> CallScope {
         CallScope::new(self.permissions.clone(), self.deadline)
+            .with_module_id(self.module_id.clone())
     }
 }
 

@@ -240,6 +240,11 @@ pub fn set_module_setting(
     key: &str,
     value: &str,
 ) -> Result<(), String> {
+    if crate::oauth::is_reserved_setting_key(key) {
+        return Err(format!(
+            "ctx.module.setSetting: {key:?} is reserved for the tokens ctx.oauth keeps"
+        ));
+    }
     if url_settings.contains(key) {
         return Err(format!(
             "ctx.module.setSetting: {key:?} is a url setting, which only the streamer sets"
@@ -248,8 +253,12 @@ pub fn set_module_setting(
     host.settings.set(module_id, key, value)
 }
 
+/// `ctx.module.settings`: the module's settings, without the tokens
+/// `ctx.oauth` keeps among them (`crate::oauth`), which module code never sees.
 pub fn module_settings_snapshot(host: &HostContext, module_id: &str) -> HashMap<String, Value> {
-    host.settings.list_by_module(module_id).unwrap_or_default()
+    let mut settings = host.settings.list_by_module(module_id).unwrap_or_default();
+    settings.retain(|key, _| !crate::oauth::is_reserved_setting_key(key));
+    settings
 }
 
 /// `ctx.log.*` value stringification: strings are logged verbatim,
@@ -467,6 +476,34 @@ mod tests {
         assert_eq!(v["v"], 1);
         assert_eq!(v["success"], true);
         assert_eq!(v["message"], "ok");
+    }
+
+    struct TokenHoldingSettings;
+
+    impl crate::host::SettingsClient for TokenHoldingSettings {
+        fn list_by_module(&self, _module_id: &str) -> Result<HashMap<String, Value>, String> {
+            Ok(HashMap::from([
+                ("clientId".to_string(), Value::String("abc".to_string())),
+                (
+                    "oauth.spotify".to_string(),
+                    Value::String("{\"accessToken\":\"t\"}".to_string()),
+                ),
+            ]))
+        }
+        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn module_code_never_sees_or_writes_the_tokens_ctx_oauth_keeps() {
+        let mut host = noop_host_context();
+        host.settings = std::sync::Arc::new(TokenHoldingSettings);
+        let snapshot = module_settings_snapshot(&host, "spotify");
+        assert_eq!(snapshot.keys().collect::<Vec<_>>(), vec!["clientId"]);
+        let err = set_module_setting(&host, "spotify", &Default::default(), "oauth.spotify", "{}")
+            .unwrap_err();
+        assert!(err.contains("reserved"), "{err}");
     }
 
     #[test]

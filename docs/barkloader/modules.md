@@ -198,6 +198,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `requires` | object | no | Other modules this one needs installed: module id to a semver range, e.g. `{ "timerpro": "^1.2.0" }`. See [Themes](#themes). |
 | `themes` | array | no | Data-only appearance variants for widgets that declare a `theme` contract. See [Themes](#themes). |
 | `permissions` | array of string | no | Privileged host functions this module's code may call, e.g. `["twitch.moderation"]`. See [Permissions](#permissions-permissions). |
+| `oauth` | array of object | no | OAuth providers the module's code calls through `ctx.oauth`, with tokens the engine keeps. See [OAuth integrations](#oauth-integrations-oauth). |
 
 ### Trigger entry (`triggers[]`)
 
@@ -1200,6 +1201,52 @@ whose permission the invoking module did not declare throws before anything is
 sent, with `code` `permission_denied`. Permissions are declared by the module
 and enforced by the engine, and shown on the module install page (woofx3-ui
 feat/module-permissions-review).
+
+### OAuth integrations (`oauth[]`)
+
+A module that calls an OAuth API (Spotify, say) declares the provider, and the
+engine holds the credentials: module code never sees the client secret or the
+streamer's tokens.
+
+```json
+"settings": [
+  { "id": "clientId", "label": "Spotify client ID", "type": "text" },
+  { "id": "clientSecret", "label": "Spotify client secret", "type": "secret" },
+  { "id": "connect", "label": "Connect Spotify", "type": "button",
+    "action": { "kind": "integration", "integration": "spotify" } }
+],
+"oauth": [{
+  "id": "spotify",
+  "authorizeUrl": "https://accounts.spotify.com/authorize",
+  "tokenUrl": "https://accounts.spotify.com/api/token",
+  "scopes": ["user-read-playback-state", "user-modify-playback-state"],
+  "clientIdSetting": "clientId",
+  "clientSecretSetting": "clientSecret",
+  "hosts": ["api.spotify.com"]
+}]
+```
+
+| Field | Notes |
+|---|---|
+| `id` | 1-40 lowercase letters, digits, `_` or `-`; named by `ctx.oauth.request` and by the connect button's `integration` |
+| `authorizeUrl`, `tokenUrl` | `https` |
+| `scopes` | Asked for when the streamer connects |
+| `clientIdSetting` | A `text` setting holding the OAuth client id. The dashboard may supply its own app's id instead, for a provider woofx3 has an app with |
+| `clientSecretSetting` | Optional: a `secret` setting holding the client secret. Without it the client is public; the flow always uses PKCE |
+| `hosts` | The hosts the token may go to, as for `net:` permissions: `https` on port 443 |
+
+The streamer connects from the module's settings: the dashboard sends them to
+`authorizeUrl` and receives the callback, and the engine exchanges the code
+(`completeModuleOAuth`), with the client secret when there is one. The tokens
+are kept in the module's settings under the reserved key `oauth.<id>`, sealed
+at rest like a `secret` setting; `ctx.module.settings` leaves them out,
+`ctx.module.setSetting` refuses them, and no manifest setting may take an id
+starting with `oauth.`. Module code then calls the provider with
+`ctx.oauth.request({ integration, url, method?, headers?, query?, body? })`:
+the engine attaches the access token, refreshes it when it is about to expire
+or the provider answers 401, and sends it only to `hosts`, through the same
+checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)).
+It throws while the integration is not connected.
 
 A workflow step or command action that names another module's action runs that
 module's function, with that module's permissions. So an uploaded module whose

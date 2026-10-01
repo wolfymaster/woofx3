@@ -55,6 +55,7 @@ pub const PERMISSION_DENIED: &str = "permission_denied";
 /// shared by every host function bound into an invocation, so a limit it
 /// tracks holds across all of the invocation's calls.
 pub struct CallScope {
+    module_id: String,
     granted: HashSet<String>,
     deadline: Instant,
     calls: Mutex<HashMap<String, u32>>,
@@ -63,10 +64,22 @@ pub struct CallScope {
 impl CallScope {
     pub fn new(granted: HashSet<String>, deadline: Instant) -> Self {
         Self {
+            module_id: String::new(),
             granted,
             deadline,
             calls: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The scope of a call by `module_id`'s code.
+    pub fn with_module_id(mut self, module_id: String) -> Self {
+        self.module_id = module_id;
+        self
+    }
+
+    /// The invoking module's manifest-local id; empty for a builtin call.
+    pub fn module_id(&self) -> &str {
+        &self.module_id
     }
 
     /// The permissions the invoking module's manifest declares.

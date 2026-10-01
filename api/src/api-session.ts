@@ -194,6 +194,7 @@ export const RPC_METHODS = [
   "skipCurrentAlert",
   "clearAlertQueue",
   "getObsStatus",
+  "completeModuleOAuth",
   "mintOverlayToken",
   "revokeOverlayToken",
   "rotateOverlayToken",

@@ -345,6 +345,9 @@ async fn build_registered_module<R: Repository>(
         event_types: eventbus_event_types(module),
         permissions: declared_permissions(module),
         url_settings: url_setting_ids(module),
+        oauth: stored_manifest(module)
+            .map(|manifest| manifest.oauth)
+            .unwrap_or_default(),
     })
 }
 

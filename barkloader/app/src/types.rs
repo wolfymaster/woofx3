@@ -54,6 +54,8 @@ pub struct AppContext {
     pub db_proxy_url: Option<String>,
     pub scheduler: Arc<ModuleScheduler>,
     pub public_url_resolver: Arc<PublicUrlResolver>,
+    /// `ctx.oauth`, for completing a connect; absent without a host context.
+    pub oauth: Option<Arc<crate::services::oauth::OAuthService>>,
 }
 
 pub struct SafeTempDir {

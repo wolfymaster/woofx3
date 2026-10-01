@@ -708,6 +708,22 @@ export interface RecentActivity {
 /** The scene manager's connection to OBS. Mirrors ObsConnectionState in sceneManager/src/obs/connection.ts. */
 export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stopped";
 
+/** What the dashboard collected when the streamer approved a module's OAuth integration. */
+export interface ModuleOAuthAuthorization {
+  code: string;
+  /** The PKCE verifier the authorize request's challenge was made from. */
+  codeVerifier: string;
+  /** The redirect URI the authorize request named; the provider checks it matches. */
+  redirectUri: string;
+  /** The OAuth client to exchange as, when the dashboard supplies the app; otherwise the module's own. */
+  clientId?: string;
+}
+
+export interface ModuleOAuthConnected {
+  connected: true;
+  scope: string[];
+}
+
 /**
  * Outcome of `getObsStatus`.
  *
@@ -1689,6 +1705,19 @@ export interface Woofx3EngineApi {
    * page. Requires the `obs.status` capability.
    */
   getObsStatus(): Promise<ObsStatus>;
+
+  /**
+   * Finish connecting a module's OAuth integration (the manifest's `oauth[]`):
+   * the engine exchanges the code the dashboard collected and keeps the
+   * tokens where module code cannot read them, for `ctx.oauth.request`.
+   * Answers with the scopes granted, never a token. Requires the
+   * `modules.oauth` capability.
+   */
+  completeModuleOAuth(
+    moduleId: string,
+    integration: string,
+    authorization: ModuleOAuthAuthorization
+  ): Promise<ModuleOAuthConnected>;
 
   // Overlay Tokens
   //

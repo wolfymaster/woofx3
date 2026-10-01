@@ -456,11 +456,31 @@ export interface CtxChatExtension {
   sendMessage(text: string): null;
 }
 
+/**
+ * `ctx.oauth.*` — requests to a provider the manifest declares under
+ * `oauth[]`, with the streamer's token, which module code never sees. The
+ * engine attaches the token, refreshes it, and sends it only to the
+ * integration's `hosts`. Throws when the integration is not connected yet.
+ */
+export interface CtxOAuthExtension {
+  request(args: {
+    /** The `id` of an integration in the manifest's `oauth[]`. */
+    integration: string;
+    url: string;
+    /** Defaults to `GET`. */
+    method?: string;
+    headers?: Record<string, string>;
+    query?: Record<string, string>;
+    body?: unknown;
+  }): CtxHttpResponse;
+}
+
 /** Aggregated extension surface. Each namespace optional. */
 export interface CtxExtensions {
   twitch?: CtxTwitchExtension;
   obs?: CtxObsExtension;
   chat?: CtxChatExtension;
+  oauth?: CtxOAuthExtension;
 }
 
 /**
