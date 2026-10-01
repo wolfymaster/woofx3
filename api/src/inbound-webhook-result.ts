@@ -23,6 +23,25 @@ const EVENT_KEYS = new Set(["type", "data"]);
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9a-z-]+$/;
 
 /**
+ * Content types a browser renders as an active document. The dashboard serves
+ * a handler's answer from its own site origin, so module code, which is
+ * end-user code, may not put a page there. Must match ACTIVE_CONTENT_TYPES in
+ * woofx3-ui convex/lib/inboundWebhookRelay.ts.
+ */
+const ACTIVE_CONTENT_TYPES = new Set([
+  "text/html",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "text/xml",
+  "application/xml",
+]);
+
+function isActiveContentType(value: string): boolean {
+  const mediaType = value.split(";")[0]?.trim().toLowerCase() ?? "";
+  return ACTIVE_CONTENT_TYPES.has(mediaType) || mediaType.endsWith("+xml");
+}
+
+/**
  * Check what a webhook handler returned before the engine acts on any of it.
  *
  * Fail closed: a result that breaks any rule is rejected whole, so a handler
@@ -86,6 +105,9 @@ function checkHeaders(raw: unknown): Checked<Record<string, string>> {
     }
     if (typeof value !== "string") {
       return { ok: false, reason: `header ${JSON.stringify(name)} must be a string` };
+    }
+    if (lower === "content-type" && isActiveContentType(value)) {
+      return { ok: false, reason: `content-type ${JSON.stringify(value)} is a page; a handler answers with data` };
     }
     headers[lower] = value;
   }

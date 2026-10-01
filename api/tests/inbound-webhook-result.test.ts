@@ -40,10 +40,10 @@ describe("validateWebhookHandlerResult", () => {
 
   test("keeps a content-type the handler chose and lowercases header names", () => {
     const checked = validateWebhookHandlerResult(
-      { status: 200, body: "<ok/>", headers: { "Content-Type": "application/xml", "X-Delivery": "d-1" } },
+      { status: 200, body: "a,b", headers: { "Content-Type": "text/csv", "X-Delivery": "d-1" } },
       ALLOWED
     );
-    expect(checked.ok && checked.response.headers).toEqual({ "content-type": "application/xml", "x-delivery": "d-1" });
+    expect(checked.ok && checked.response.headers).toEqual({ "content-type": "text/csv", "x-delivery": "d-1" });
   });
 
   test("passes declared events through", () => {
@@ -81,6 +81,19 @@ describe("validateWebhookHandlerResult", () => {
       expect(reason({ status: 200, headers: { [name]: "v" } })).toContain("not allowed");
     }
     expect(reason({ status: 200, headers: { "x-a": 1 } })).toContain("must be a string");
+  });
+
+  test("rejects a page: the dashboard serves the answer from its own origin", () => {
+    for (const type of [
+      "text/html",
+      "TEXT/HTML; charset=utf-8",
+      "application/xhtml+xml",
+      "image/svg+xml",
+      "application/xml",
+      "application/atom+xml",
+    ]) {
+      expect(reason({ status: 200, body: "<x/>", headers: { "content-type": type } })).toContain("is a page");
+    }
   });
 
   test("rejects an oversized or unsupported body", () => {
