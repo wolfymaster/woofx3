@@ -273,8 +273,8 @@ jobs:
           set -euo pipefail
           git fetch --force --tags origin
           released="$(git rev-parse "${TAG}^{commit}")"
-          test "$(git rev-parse "${released}^")" = "$(git rev-parse HEAD)"
-          test "$(git diff --name-only HEAD "$released")" = "CHANGELOG.md"
+          test "$(git rev-parse "${released}^")" = "${GITHUB_SHA}"
+          test "$(git diff --name-only "${GITHUB_SHA}" "$released")" = "CHANGELOG.md"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > published
           printf '%s\n' "woofx3-${TAG}-linux-amd64.zip" "woofx3-${TAG}-windows-amd64.zip" | sort > expected
           diff expected published
