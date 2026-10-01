@@ -8,8 +8,10 @@ export const TwitchEnvSchema = z.object({
   // can start before its streamer has linked an account.
   woofx3TwitchChannelName: z.string().optional(),
   woofx3DatabaseProxyUrl: z.string().min(1, "woofx3DatabaseProxyUrl is required"),
-  woofx3TwitchClientId: z.string().min(1, "twitchClientId is required"),
-  woofx3TwitchClientSecret: z.string().min(1, "twitchClientSecret is required"),
+  // An engine's own Twitch app, for refreshing tokens itself. Absent when its
+  // Twitch token comes from a dashboard, which owns the app and refreshes.
+  woofx3TwitchClientId: z.string().optional(),
+  woofx3TwitchClientSecret: z.string().optional(),
   woofx3TwitchRedirectUrl: z.string().default("http://localhost"),
   woofx3RootPath: z.string().optional(),
 

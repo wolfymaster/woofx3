@@ -3,6 +3,7 @@ import BarkloaderClient from "@woofx3/barkloader";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
 import MessageBus from "@woofx3/nats";
+import { requestTokenOverNats, type TwitchAuthCredentials } from "@woofx3/twitch";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
 import { WoofEnvSchema } from "./config";
 import BarkloaderClientService from "./services/barkloader";
@@ -13,6 +14,19 @@ import TwitchChatClientService from "./services/twitchChat";
 export interface WoofWoofWoofRequestMessage {
   command: string;
   args: Record<string, string>;
+}
+
+/**
+ * The engine's own Twitch app, when it has one: an engine whose Twitch token
+ * comes from a dashboard has none, and asks the dashboard for tokens instead.
+ */
+function twitchAppCredentials(config: typeof loadedConfig): TwitchAuthCredentials | undefined {
+  const clientId = config.getConfig("woofx3TwitchClientId") as string | undefined;
+  const clientSecret = config.getConfig("woofx3TwitchClientSecret") as string | undefined;
+  if (!clientId || !clientSecret) {
+    return undefined;
+  }
+  return { clientId, clientSecret, redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string };
 }
 
 const loadedConfig = loadRuntimeEnv({
@@ -58,11 +72,8 @@ const runtime = createRuntime({
       "twitchChat",
       new TwitchChatClientService({
         channel: (config.getConfig("woofx3TwitchChannelName") as string | undefined) || undefined,
-        credentials: {
-          clientId: config.getConfig("woofx3TwitchClientId") as string,
-          clientSecret: config.getConfig("woofx3TwitchClientSecret") as string,
-          redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string,
-        },
+        credentials: twitchAppCredentials(config),
+        requestToken: requestTokenOverNats((subject, data, opts) => bus.request(subject, data, opts)),
         getSetting: async (key) => {
           const response = await dbService.client.getSetting({ key });
           return response.setting.value.stringValue ?? undefined;

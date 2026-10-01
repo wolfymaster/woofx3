@@ -1,8 +1,8 @@
+import { EngineEventType } from "@woofx3/api/webhooks";
+import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
+import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "../module-event-handlers";
 import { getStreamStatus, type StreamStatus } from "../twitch-stream-status";
 import { routeModule } from "./context";
-import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
-import { EngineEventType } from "@woofx3/api/webhooks";
-import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "../module-event-handlers";
 
 /**
  * Subscriptions that stay on `Api`/`ApiRouteHost` rather than living in
@@ -88,7 +88,7 @@ export const subscriptionsRoutes = routeModule({
         // useful (the UI polls every minute as backup).
         let enrichment: StreamStatus | null = null;
         try {
-          enrichment = await getStreamStatus(this.db, this.logger);
+          enrichment = await getStreamStatus(this.twitchToken, this.logger);
         } catch (err) {
           this.logger.warn("stream.online enrichment failed", {
             error: err instanceof Error ? err.message : String(err),

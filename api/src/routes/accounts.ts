@@ -4,6 +4,6 @@ import { routeModule } from "./context";
 
 export const accountsRoutes = routeModule({
   async getStreamStatus(): Promise<StreamStatus> {
-    return getStreamStatus(this.db, this.logger as SharedLogger);
+    return getStreamStatus(this.twitchToken, this.logger as SharedLogger);
   },
 });

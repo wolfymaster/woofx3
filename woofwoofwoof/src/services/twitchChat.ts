@@ -2,6 +2,7 @@ import type { Service } from "@woofx3/common/runtime";
 import TwitchClient, {
   type ChatClient,
   type GetSettingFn,
+  type RequestDashboardToken,
   type SetSettingFn,
   type TwitchAuthCredentials,
 } from "@woofx3/twitch";
@@ -20,7 +21,12 @@ export interface TwitchChatConfig {
    * whoever linked Twitch, so it can start before any account is linked.
    */
   channel?: string;
-  credentials: TwitchAuthCredentials;
+  /**
+   * The engine's own Twitch app, for refreshing tokens itself. Absent when
+   * the token comes from a dashboard, which `requestToken` asks instead.
+   */
+  credentials?: TwitchAuthCredentials;
+  requestToken: RequestDashboardToken;
   getSetting: GetSettingFn;
   setSetting?: SetSettingFn;
 }
@@ -61,6 +67,7 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
       channel: this.config.channel,
       getSetting: this.config.getSetting,
       setSetting: this.config.setSetting,
+      requestToken: this.config.requestToken,
     });
 
     try {

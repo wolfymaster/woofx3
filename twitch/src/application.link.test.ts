@@ -83,6 +83,9 @@ class MockTwitchClient {
 
 mock.module("@woofx3/twitch", () => ({
   default: MockTwitchClient,
+  requestTokenOverNats: () => async () => {
+    throw new Error("no dashboard in this test");
+  },
   TWITCH_NOT_LINKED: "TwitchNotLinked",
 }));
 

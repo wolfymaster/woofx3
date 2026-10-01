@@ -1,9 +1,9 @@
-import { routeModule } from "./context";
 import type {
   ActionStep,
   AvailableFunction,
   CommandSnapshot,
   CreateCommandInput,
+  TwitchAccessToken,
   UpdateCommandInput,
 } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
@@ -18,6 +18,7 @@ import {
 } from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
 import { isPermissionDenied } from "../db-client";
+import { routeModule } from "./context";
 import { commandToSnapshot, parseActions } from "./helpers";
 
 // The factories hold nothing but the CloudEvent `source`, so one instance each
@@ -269,7 +270,12 @@ export const commandsRoutes = routeModule({
   /**
    * Persist the broadcaster's Twitch OAuth token in the engine's
    * settings table. The Twitch service reads this on bootstrap (see
-   * `shared/clients/typescript/twitch/index.ts:88`).
+   * `shared/clients/typescript/twitch/index.ts`).
+   *
+   * A token carrying the Twitch app's `clientId` comes from a dashboard that
+   * keeps the refresh token itself. It is stored with the engine client id of
+   * that dashboard (`context.clientId`, the session's), which is the one
+   * asked for the next token (`TwitchTokenSource`).
    *
    * `convexUserId` (when supplied) is the Convex user that initiated the
    * connect flow; we resolve it to the engine-side user UUID via
@@ -279,22 +285,21 @@ export const commandsRoutes = routeModule({
    * `AccessTokenWithUserId` on bootstrap.
    */
   async setTwitchToken(
-    token: {
-      accessToken: string;
-      refreshToken: string;
-      scope: string[];
-      expiresIn: number;
-      obtainmentTimestamp: number;
-      userId: string;
-    },
-    convexUserId?: string
+    token: TwitchAccessToken,
+    convexUserId?: string,
+    context?: { clientId: string }
   ): Promise<{ ok: true }> {
     let engineUserId: string | undefined;
     if (convexUserId) {
       const engineUser = await this.db.findOrCreateByWoofx3UIUserId(convexUserId);
       engineUserId = engineUser.id;
     }
-    await this.db.setSetting("twitch_token", JSON.stringify(token), engineUserId);
+    const fromDashboard = token.clientId !== undefined && token.clientId !== "";
+    if (fromDashboard && !context?.clientId) {
+      throw new Error("A Twitch token from a dashboard needs the session's client id to renew it");
+    }
+    const stored = fromDashboard ? { ...token, dashboardClientId: context?.clientId } : token;
+    await this.db.setSetting("twitch_token", JSON.stringify(stored), engineUserId);
     this.logger.info("Twitch token written to settings", {
       twitchUserId: token.userId,
       engineUserId: engineUserId ?? "(unscoped)",

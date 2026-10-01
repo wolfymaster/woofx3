@@ -1,4 +1,4 @@
-import type { ConfigBundle, ConfigImportOptions, Woofx3EngineApi } from "@woofx3/api";
+import type { ConfigBundle, ConfigImportOptions, TwitchAccessToken, Woofx3EngineApi } from "@woofx3/api";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 
@@ -43,6 +43,10 @@ export class ApiSession extends RpcTarget {
       moduleKey,
       ...ctx,
     });
+  }
+
+  async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
+    return this.api.setTwitchToken(token, convexUserId, { clientId: this.clientId });
   }
 
   async uninstallModule(moduleKey: string) {

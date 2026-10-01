@@ -315,3 +315,50 @@ describe("token relink", () => {
     expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true });
   });
 });
+
+describe("a token from a dashboard", () => {
+  const FROM_DASHBOARD = {
+    accessToken: "a1",
+    scope: ["chat:read"],
+    expiresIn: 3600,
+    obtainmentTimestamp: Date.now(),
+    userId: "42",
+    clientId: "woofx3-app",
+  };
+
+  test("is served by a provider that asks the dashboard, with no app credentials", async () => {
+    const requestToken = mock(async () => ({ ...FROM_DASHBOARD, refreshToken: null }));
+    const client = new TwitchClient({ getSetting: createGetSetting(JSON.stringify(FROM_DASHBOARD)), requestToken });
+    const provider = await client.init();
+
+    expect(provider.clientId).toBe("woofx3-app");
+    expect(lastRefreshingAuthCredentials).toBeUndefined();
+    expect(addUserForToken).not.toHaveBeenCalled();
+    expect((await client.broadcaster()).id).toBe("42");
+  });
+
+  test("needs a way to ask the dashboard", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(JSON.stringify(FROM_DASHBOARD)) });
+    await expect(client.init()).rejects.toThrow("no requestToken");
+  });
+
+  test("a relinked dashboard token replaces the one the provider holds", async () => {
+    const state = { value: JSON.stringify(FROM_DASHBOARD) };
+    const client = new TwitchClient({
+      getSetting: mock(async () => state.value),
+      requestToken: mock(async () => ({ ...FROM_DASHBOARD, refreshToken: null })),
+    });
+    const provider = await client.init();
+
+    state.value = JSON.stringify({ ...FROM_DASHBOARD, accessToken: "a2", userId: "99" });
+    expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true });
+    expect((await provider.getAnyAccessToken()).accessToken).toBe("a2");
+  });
+});
+
+describe("a token not from a dashboard", () => {
+  test("needs Twitch app credentials to refresh it", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(TOKEN_JSON) });
+    await expect(client.init()).rejects.toThrow("no Twitch app credentials");
+  });
+});

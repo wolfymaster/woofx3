@@ -1,5 +1,5 @@
 import type { SharedLogger } from "@woofx3/common/logging";
-import type { DbClient } from "./db-client";
+import type { TwitchCredentials } from "./twitch-token-source";
 
 export interface StreamStatus {
   isLive: boolean;
@@ -13,8 +13,7 @@ export interface StreamStatus {
 
 /**
  * Resolve the broadcaster's live stream state from Twitch Helix
- * `GET /helix/streams`, using the OAuth token stored in the `twitch_token`
- * setting (the same source `twitchBootstrap.ts` reads).
+ * `GET /helix/streams`, with the linked account's token (`TwitchCredentials`).
  *
  * A module rather than a route method because two callers need it: the
  * `getStreamStatus` RPC and the stream-online/offline NATS subscriptions.
@@ -26,32 +25,16 @@ export interface StreamStatus {
  * sees an exception merely because the stream is down or a token is
  * briefly stale; the polling cron retries a minute later.
  */
-export async function getStreamStatus(db: DbClient, logger: SharedLogger): Promise<StreamStatus> {
+export async function getStreamStatus(twitch: TwitchCredentials, logger: SharedLogger): Promise<StreamStatus> {
   const offline = { isLive: false as const, uptime: "00:00:00", viewerCount: 0 };
 
-  const clientId = process.env.WOOFX3_TWITCH_CLIENT_ID;
-  if (!clientId) {
-    logger.warn("getStreamStatus: WOOFX3_TWITCH_CLIENT_ID not set");
+  const credentials = await twitch.helix();
+  if (typeof credentials === "string") {
+    logger.debug("getStreamStatus: no Twitch credentials", { reason: credentials });
     return offline;
   }
-
-  let token: { accessToken?: string; userId?: string };
-  try {
-    const raw = await db.getSetting("twitch_token");
-    if (!raw) {
-      return offline;
-    }
-    token = JSON.parse(raw);
-  } catch (err) {
-    logger.warn("getStreamStatus: failed to read twitch_token", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return offline;
-  }
-
-  if (!token.accessToken || !token.userId) {
-    return offline;
-  }
+  const token = { accessToken: credentials.accessToken, userId: credentials.broadcasterId };
+  const clientId = credentials.clientId;
 
   let response: Response;
   try {

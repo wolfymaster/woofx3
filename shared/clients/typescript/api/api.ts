@@ -238,11 +238,21 @@ export interface WorkflowHealth {
  */
 export interface TwitchAccessToken {
   accessToken: string;
-  refreshToken: string;
+  /**
+   * Absent when the dashboard keeps the refresh token itself and the engine
+   * asks it for fresh tokens (`twitch.token.requested`).
+   */
+  refreshToken?: string;
   scope: string[];
   expiresIn: number;
   obtainmentTimestamp: number;
   userId: string;
+  /**
+   * The Twitch app that issued the token. Present when the token comes from a
+   * dashboard: the engine then refreshes through that dashboard rather than
+   * with Twitch app credentials of its own.
+   */
+  clientId?: string;
 }
 
 // ==================== Actions ====================

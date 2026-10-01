@@ -22,6 +22,10 @@ mock.module("@woofx3/twitch", () => ({
 
 const { default: TwitchChatClientService } = await import("./twitchChat");
 
+const noDashboard = async (): Promise<never> => {
+  throw new Error("no dashboard in this test");
+};
+
 describe("TwitchChatClientService", () => {
   beforeEach(() => {
     initMock.mockClear();
@@ -34,6 +38,7 @@ describe("TwitchChatClientService", () => {
     const svc = new TwitchChatClientService({
       channel: "chan",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+      requestToken: noDashboard,
       getSetting: async () => undefined,
     });
 
@@ -48,6 +53,7 @@ describe("TwitchChatClientService", () => {
     const svc = new TwitchChatClientService({
       channel: "mychannel",
       credentials: { clientId: "cid", clientSecret: "sec", redirectUri: "http://r" },
+      requestToken: noDashboard,
       getSetting,
     });
 
@@ -56,6 +62,7 @@ describe("TwitchChatClientService", () => {
     expect(lastConstructedArgs).toEqual({
       channel: "mychannel",
       getSetting,
+      requestToken: noDashboard,
     });
     expect(initMock).toHaveBeenCalledWith({
       clientId: "cid",
@@ -71,6 +78,7 @@ describe("TwitchChatClientService", () => {
     const svc = new TwitchChatClientService({
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+      requestToken: noDashboard,
       getSetting: async () => undefined,
     });
 
@@ -85,6 +93,7 @@ describe("TwitchChatClientService", () => {
     const svc = new TwitchChatClientService({
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+      requestToken: noDashboard,
       getSetting: async () => undefined,
     });
     await svc.connect();
@@ -100,6 +109,7 @@ describe("TwitchChatClientService", () => {
     const svc = new TwitchChatClientService({
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+      requestToken: noDashboard,
       getSetting: async () => undefined,
     });
 
@@ -112,6 +122,7 @@ describe("TwitchChatClientService", () => {
     const svc = new TwitchChatClientService({
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+      requestToken: noDashboard,
       getSetting: async () => undefined,
     });
     await svc.connect();
@@ -127,6 +138,7 @@ describe("TwitchChatClientService", () => {
 describe("TwitchChatClientService before and after Twitch is linked", () => {
   const config = {
     credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+    requestToken: noDashboard,
     getSetting: async () => undefined,
   };
 
