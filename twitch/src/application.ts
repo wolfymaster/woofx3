@@ -3,11 +3,13 @@ import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import { type Span, type SharedLogger, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
+import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
+import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
@@ -226,6 +228,13 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
     const events = new EventFactory({ source: "twitch" });
     const messageBus = ctx.services.messageBus.client;
+    const adBreakLeadSetting = new AdBreakLeadSetting(
+      {
+        listModuleSettings: async (moduleId) =>
+          (await ListModuleSettings({ moduleId }, { baseURL: dbBaseURL })).settings,
+      },
+      ctx.logger
+    );
     const adBreakScheduler = new AdBreakScheduler({
       fetchSchedule: () => twitchApi.getAdSchedule({}),
       publishUpcoming: (event) => {
@@ -233,7 +242,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
         messageBus.publish(topic, data);
       },
       logger: ctx.logger,
-      leadSeconds: ctx.config.getConfig("woofx3TwitchAdBreakLeadSeconds") as number[] | undefined,
+      readLeadSeconds: () => adBreakLeadSetting.read(),
     });
 
     const eventBusCtx = {
