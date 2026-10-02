@@ -2,6 +2,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import type { ApiGateway } from "./gateway";
+import type { Health } from "./health";
 import type { Readiness } from "./readiness";
 
 export interface HttpDeps {
@@ -9,6 +10,8 @@ export interface HttpDeps {
   hostname: string;
   /** Answers `GET /ready`; see readiness.ts. */
   readiness: () => Promise<Readiness>;
+  /** Answers `GET /health`; see health.ts. */
+  health: () => Health;
   logger: SharedLogger;
   gateway: ApiGateway;
   /**
@@ -140,7 +143,7 @@ class BunWebSocketAdapter {
  * ambiently, matching `sceneManager/src/http.ts`'s `createHttpServer`.
  */
 export function createHttpServer(deps: HttpDeps) {
-  const { port, hostname, readiness, logger, gateway, onProcessingCallback } = deps;
+  const { port, hostname, readiness, health, logger, gateway, onProcessingCallback } = deps;
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
   const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
@@ -266,11 +269,12 @@ export function createHttpServer(deps: HttpDeps) {
         });
       }
 
-      // Health check endpoint
+      // Liveness: 200 as soon as the api process answers; see /ready for
+      // whether the engine can serve.
       if (url.pathname === "/health") {
         logger.debug("Health check request");
-        return new Response(JSON.stringify({ status: "ok" }), {
-          headers: { "Content-Type": "application/json" },
+        return new Response(JSON.stringify(health()), {
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         });
       }
 

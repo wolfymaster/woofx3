@@ -177,8 +177,26 @@ only once the engine can be depended on, and `503` until then:
 - `version` — the image's `WOOFX3_VERSION` build argument (the release tag), or
   `dev` for an unversioned build. `getEngineInfo` returns it too.
 
-`GET /health` stays a liveness check: it answers as soon as the api process
-does.
+`GET /health` stays a liveness check: it answers `200` as soon as the api
+process does, whatever its dependencies are doing. It is public, so its body
+holds only descriptive facts that are safe for anyone to read:
+
+```json
+{
+  "status": "ok",
+  "name": "eng-0a1b2c3d",
+  "version": "v0.1.0",
+  "startedAt": "2026-10-01T12:00:00.000Z",
+  "uptimeSeconds": 3725
+}
+```
+
+- `name` — `WOOFX3_ENGINE_NAME`, which the provisioner sets to the engine's
+  `eng-<id8>` service name; `null` when unset, as on a local engine.
+- `version` — the same release `/ready` reports.
+- `startedAt` — when the api process started. A deploy starts a new process,
+  so this is the last deploy or the last restart, whichever came later.
+- `uptimeSeconds` — whole seconds since then, from a monotonic clock.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
