@@ -241,8 +241,9 @@ and names the function that handles requests to it:
   `eventbus` trigger this module declares; that trigger is what workflows bind to. A handler
   never publishes anything itself ([Engine integrity](../services/engine-integrity.md)).
 - **Limits:** 5 s per request; response body at most 64 KiB, with only `content-type` and
-  `x-*` headers; at most 16 events, each `data` at most 64 KiB. A result that breaks any rule
-  is a 500 and publishes nothing.
+  `x-*` headers, and a `content-type` that is not a page (HTML, XHTML, SVG or XML): the
+  dashboard serves the answer from its own origin; at most 16 events, each `data` at most
+  64 KiB. A result that breaks any rule is a 500 and publishes nothing.
 
 ### Taxonomy
 
