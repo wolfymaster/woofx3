@@ -88,6 +88,11 @@ pub const WEBHOOK_EVENT_PREFIX: &str = "webhook.";
 /// db-proxy seals it at rest and never returns it to the UI.
 pub const SECRET_SETTING_TYPE: &str = "secret";
 
+/// `ManifestSetting::setting_type` of a URL the end user enters. Its origin is
+/// a destination the module's `ctx.http` may reach (`lib_sandbox::net`), so
+/// the manifest cannot ship a value for it and module code cannot write it.
+pub const URL_SETTING_TYPE: &str = "url";
+
 /// Action implementation — discriminated by `type` (matches an engine
 /// action handler). Each variant carries the handler-specific config at
 /// the same JSON object level as `type`, mirroring how `TaskDefinition`

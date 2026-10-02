@@ -157,7 +157,13 @@ export interface CtxStorageSetOptions {
   clearOnSessionEnd?: boolean;
 }
 
-/** `ctx.http` — outbound HTTP client. */
+/**
+ * `ctx.http` — outbound HTTP client. It reaches only hosts the manifest
+ * declares as `"permissions": ["net:<host>"]` (https, port 443) and the
+ * origins of URLs the streamer entered in `type: "url"` settings; anything
+ * else throws `permission_denied` on an engine that enforces it. Redirects
+ * are followed and checked the same way.
+ */
 export interface CtxHttp {
   request(url: string, method: string, opts?: CtxHttpOptions): CtxHttpResponse;
 }

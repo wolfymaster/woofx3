@@ -200,12 +200,20 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     let http = lua.create_table()?;
     {
         let client = invocation.host.http.clone();
+        let module_id = invocation.module_id.clone();
+        let grants = invocation.permissions.clone();
         let request_fn = lua.create_function(
             move |lua, (url, method, opts): (String, String, LuaValue)| {
                 let json_opts: Value = serde_json::to_value(&opts)
                     .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
                 let result = client
-                    .request(&url, &method, json_opts)
+                    .request(crate::host::HttpRequest {
+                        module_id: &module_id,
+                        grants: &grants,
+                        url: &url,
+                        method: &method,
+                        opts: json_opts,
+                    })
                     .map_err(mlua::Error::RuntimeError)?;
                 lua.to_value(&result)
             },
@@ -335,12 +343,18 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         // The `settings` snapshot is taken once per invocation, so a value
         // written here is not reflected back into an object the function
         // already holds. `key` does not have to be manifest-declared.
-        let settings_client = invocation.host.settings.clone();
+        let host_for_set = invocation.host.clone();
         let module_id_for_set = invocation.module_id.clone();
+        let url_settings = invocation.url_settings.clone();
         let set_setting_fn = lua.create_function(move |_, (key, value): (String, String)| {
-            settings_client
-                .set(&module_id_for_set, &key, &value)
-                .map_err(mlua::Error::RuntimeError)?;
+            super::host_bindings::set_module_setting(
+                &host_for_set,
+                &module_id_for_set,
+                &url_settings,
+                &key,
+                &value,
+            )
+            .map_err(mlua::Error::RuntimeError)?;
             Ok(())
         })?;
         module_tbl.set("setSetting", set_setting_fn)?;
@@ -546,6 +560,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = LuaAdapter::new().unwrap();
@@ -571,6 +586,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = LuaAdapter::new().unwrap();
@@ -614,6 +630,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and a table
@@ -643,6 +660,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
@@ -702,6 +720,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
@@ -734,6 +753,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
@@ -773,6 +793,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
@@ -809,6 +830,7 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
+            url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"

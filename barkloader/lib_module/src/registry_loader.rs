@@ -344,6 +344,7 @@ async fn build_registered_module<R: Repository>(
         state: registry_state_from_db(&module.state),
         event_types: eventbus_event_types(module),
         permissions: declared_permissions(module),
+        url_settings: url_setting_ids(module),
     })
 }
 
@@ -367,6 +368,21 @@ fn eventbus_event_types(module: &ModuleRecord) -> HashSet<String> {
 fn declared_permissions(module: &ModuleRecord) -> HashSet<String> {
     stored_manifest(module)
         .map(|manifest| manifest.permissions.into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// The ids of the module's `url` settings, whose values' origins its
+/// `ctx.http` may reach.
+fn url_setting_ids(module: &ModuleRecord) -> HashSet<String> {
+    stored_manifest(module)
+        .map(|manifest| {
+            manifest
+                .settings
+                .into_iter()
+                .filter(|setting| setting.setting_type == crate::module_manifest::URL_SETTING_TYPE)
+                .map(|setting| setting.id)
+                .collect()
+        })
         .unwrap_or_default()
 }
 

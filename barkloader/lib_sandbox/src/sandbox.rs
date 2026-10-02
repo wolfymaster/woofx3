@@ -103,7 +103,27 @@ impl Sandbox {
         let module_id = request.function.split(':').next().unwrap_or("").to_string();
 
         let meta = self.registry.get_module_metadata(&module_id);
-        let permissions = self.registry.permissions(&module_id);
+        let mut permissions = self.registry.permissions(&module_id);
+        // A URL the streamer entered in a `url` setting is a destination they
+        // chose, so its origin is granted for this invocation. Read per
+        // invocation: the streamer can change it at any time.
+        let url_settings = self.registry.url_settings(&module_id);
+        if !url_settings.is_empty() {
+            let values = self
+                .host_ctx
+                .settings
+                .list_by_module(&module_id)
+                .unwrap_or_default();
+            for id in &url_settings {
+                if let Some(grant) = values
+                    .get(id)
+                    .and_then(Value::as_str)
+                    .and_then(crate::net::origin_grant)
+                {
+                    permissions.insert(grant);
+                }
+            }
+        }
         let invocation = InvocationContext {
             event: request.event,
             user: request.user.unwrap_or(Value::Null),
@@ -112,6 +132,7 @@ impl Sandbox {
             module_name: meta.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
             module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
             permissions,
+            url_settings,
             deadline,
         };
 

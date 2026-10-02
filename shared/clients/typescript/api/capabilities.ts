@@ -26,6 +26,12 @@ export const ENGINE_CAPABILITIES = {
   obsControl: "obs.control",
   /** The OBS connection's state and last failure: `getObsStatus`. */
   obsStatus: "obs.status",
+  /**
+   * A Twitch token that carries the app's `clientId` is renewed by asking the
+   * dashboard that sent it (`twitch.token.requested`), not with a refresh
+   * token, so the dashboard need not send one.
+   */
+  twitchDashboardTokens: "twitch.dashboardTokens",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
 } as const;

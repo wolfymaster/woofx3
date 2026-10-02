@@ -22,6 +22,11 @@ pub const OBS_CONTROL: &str = "obs.control";
 
 pub const KNOWN_PERMISSIONS: &[&str] = &[TWITCH_MODERATION, TWITCH_CHANNEL, OBS_CONTROL];
 
+/// Whether a manifest may declare `id`: one of `KNOWN_PERMISSIONS`, or a
+/// `net:<host>` naming a host `ctx.http` may reach (see `crate::net`).
 pub fn is_known_permission(id: &str) -> bool {
+    if let Some(host) = crate::net::net_permission_host(id) {
+        return crate::net::is_valid_net_host(host);
+    }
     KNOWN_PERMISSIONS.contains(&id)
 }
