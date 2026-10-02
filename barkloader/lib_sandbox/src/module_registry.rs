@@ -28,6 +28,9 @@ pub struct RegisteredModule {
     /// The manifest's `permissions`: the privileged host functions this
     /// module's code may call. See `crate::permissions`.
     pub permissions: HashSet<String>,
+    /// The ids of the module's `url` settings, whose values' origins
+    /// `ctx.http` may reach. See `crate::net`.
+    pub url_settings: HashSet<String>,
 }
 
 pub struct ModuleRegistry {
@@ -144,6 +147,16 @@ impl ModuleRegistry {
             .map(|m| m.permissions.clone())
             .unwrap_or_default()
     }
+
+    /// The ids of the module's `url` settings; none for a module that is not
+    /// registered.
+    pub fn url_settings(&self, name: &str) -> HashSet<String> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.url_settings.clone())
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
@@ -174,6 +187,7 @@ mod tests {
             state: ModuleState::Active,
             event_types: Default::default(),
             permissions: Default::default(),
+            url_settings: Default::default(),
         }
     }
 

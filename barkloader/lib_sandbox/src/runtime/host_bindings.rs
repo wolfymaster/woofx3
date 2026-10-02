@@ -230,6 +230,24 @@ fn require_schedule_identity(module_id: &str, deadline_id: &str, key: &str) -> R
 /// their own per-invocation caching (each engine already has an
 /// `Rc<RefCell<Option<_>>>` for that, since the cache needs to live
 /// inside a closure captured by that engine's accessor/metatable hook).
+/// `ctx.module.setSetting(key, value)` — write one of the module's own
+/// settings. Refused for a `url` setting: its value grants `ctx.http` the
+/// URL's origin (`crate::net`), so only the streamer may set it.
+pub fn set_module_setting(
+    host: &HostContext,
+    module_id: &str,
+    url_settings: &std::collections::HashSet<String>,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if url_settings.contains(key) {
+        return Err(format!(
+            "ctx.module.setSetting: {key:?} is a url setting, which only the streamer sets"
+        ));
+    }
+    host.settings.set(module_id, key, value)
+}
+
 pub fn module_settings_snapshot(host: &HostContext, module_id: &str) -> HashMap<String, Value> {
     host.settings.list_by_module(module_id).unwrap_or_default()
 }
@@ -449,6 +467,23 @@ mod tests {
         assert_eq!(v["v"], 1);
         assert_eq!(v["success"], true);
         assert_eq!(v["message"], "ok");
+    }
+
+    #[test]
+    fn module_code_cannot_write_a_url_setting() {
+        let host = noop_host_context();
+        let url_settings: std::collections::HashSet<String> = ["server".to_string()].into();
+        let err = set_module_setting(
+            &host,
+            "mymod",
+            &url_settings,
+            "server",
+            "https://evil.example.com",
+        )
+        .unwrap_err();
+        assert!(err.contains("only the streamer sets"), "{err}");
+        set_module_setting(&host, "mymod", &url_settings, "token", "x")
+            .expect("other settings stay writable");
     }
 
     #[test]
