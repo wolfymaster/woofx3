@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0](https://github.com/wolfymaster/woofx3/compare/v0.8.0...v0.9.0) (2026-10-02)
+
+### Features
+
+* **barkloader:** ctx.oauth, OAuth for modules without holding the tokens ([896b8c6](https://github.com/wolfymaster/woofx3/commit/896b8c68193ee539acb5448d0248608e7fba460a))
+
+### Bug Fixes
+
+* **webhooks:** refuse a handler answer that is a page ([ba170b5](https://github.com/wolfymaster/woofx3/commit/ba170b5338509105b857d5cb4feea858a0dfec4f))
+
 ## [0.8.0](https://github.com/wolfymaster/woofx3/compare/v0.7.0...v0.8.0) (2026-10-02)
 
 ### Features
