@@ -123,7 +123,7 @@ Signature primitives for verifying inbound webhook requests. Pure computation ov
 
 ## `ctx.module`
 
-Alongside `event`, `user`, `crypto`, `storage`, `http`, `env`, and `resources`, both
+Alongside `event`, `user`, `crypto`, `storage`, `http`, and `resources`, both
 the QuickJS and Lua adapters build a `module` namespace on `ctx`
 (`build_module_namespace` in `barkloader/lib_sandbox/src/runtime/quickjs.rs:429-456`;
 mirrored in `barkloader/lib_sandbox/src/runtime/lua.rs:186-207`), giving every

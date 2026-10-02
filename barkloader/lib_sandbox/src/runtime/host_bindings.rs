@@ -14,7 +14,7 @@
 //! and marshal the `Value` result back out.
 //!
 //! Deliberately does *not* wrap every namespace method: `storage.get`,
-//! `http.request`, `env.get`, and
+//! `http.request` and
 //! `module.setSetting` are pure 1:1 passthroughs to a `HostContext` trait
 //! method with no logic of their own — wrapping those here would just add
 //! a layer, not close a gap. Adapters call `invocation.host.*` directly

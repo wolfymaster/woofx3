@@ -162,11 +162,6 @@ export interface CtxHttp {
   request(url: string, method: string, opts?: CtxHttpOptions): CtxHttpResponse;
 }
 
-/** `ctx.env` — read environment variables the engine has been told it can expose. */
-export interface CtxEnv {
-  get(key: string): string | null;
-}
-
 /**
  * `ctx.log` — forwards to the host's log, prefixed with the calling
  * module's id. There is no `console` global in this sandbox; this is the
@@ -464,7 +459,7 @@ export interface CtxExtensions {
 
 /**
  * The `ctx` object passed to every function invocation. Combines the
- * built-in surface (event, user, events, storage, http, env, resources,
+ * built-in surface (event, user, events, storage, http, resources,
  * schedule, module, log, response, result) with any extension namespaces the host registered.
  *
  * `event` and `user` are typed as `unknown` because their shape is
@@ -481,7 +476,6 @@ export interface Ctx extends CtxExtensions {
   crypto: CtxCrypto;
   storage: CtxStorage;
   http: CtxHttp;
-  env: CtxEnv;
   resources: CtxResources;
   schedule: CtxSchedule;
   module: CtxModule;

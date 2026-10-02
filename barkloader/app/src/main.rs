@@ -1,4 +1,3 @@
-use crate::services::env_reader::OsEnvReader;
 use crate::services::http_client::ReqwestHttpClient;
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::sandbox_resources::HttpResourceClient;
@@ -153,7 +152,6 @@ async fn setup() -> Result<AppContext> {
             );
         }
 
-        ctx.env = Arc::new(OsEnvReader);
         ctx.http = Arc::new(ReqwestHttpClient::new());
 
         ctx
