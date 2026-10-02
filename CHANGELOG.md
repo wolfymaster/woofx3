@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.2](https://github.com/wolfymaster/woofx3/compare/v0.9.1...v0.9.2) (2026-10-02)
+
+### Bug Fixes
+
+* **sceneManager:** paint the scene's background colour in the overlay ([dffda41](https://github.com/wolfymaster/woofx3/commit/dffda416d647aa62d33ad1e9b01a96daab4efbb2))
+
 ## [0.9.1](https://github.com/wolfymaster/woofx3/compare/v0.9.0...v0.9.1) (2026-10-02)
 
 ### Bug Fixes
