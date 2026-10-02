@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.1](https://github.com/wolfymaster/woofx3/compare/v0.9.0...v0.9.1) (2026-10-02)
+
+### Bug Fixes
+
+* **edge:** route /health to the api instead of sceneManager ([6c85760](https://github.com/wolfymaster/woofx3/commit/6c85760f13ce7a1f325c2ca3770ce7c07164f5e4))
+
 ## [0.9.0](https://github.com/wolfymaster/woofx3/compare/v0.8.0...v0.9.0) (2026-10-02)
 
 ### Features
