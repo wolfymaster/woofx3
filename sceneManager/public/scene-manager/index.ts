@@ -19,6 +19,7 @@ import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
 import { applyPreviewLayout, parsePreviewLayout } from "./preview-layout";
+import { applySceneBackground } from "./scene-background";
 
 interface WidgetInstanceConfig {
   id: string;
@@ -84,6 +85,7 @@ function main(): void {
   if (!sceneData || !container) {
     return;
   }
+  applySceneBackground(document.body, sceneData.layout);
   const sceneId = sceneData.id;
   // Absolute, never relative: the shell is served at /scene/{sceneId}
   // with no trailing slash, so a `./`-relative URL resolves against
