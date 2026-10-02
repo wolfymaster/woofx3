@@ -30,12 +30,12 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP, LIST_ITEM_FIELD_TYPES,
-    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
-    ManifestDataShape, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
-    ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE,
-    THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE,
-    WIDGET_SURFACES,
+    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
+    LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand,
+    ManifestConfigField, ManifestDataShape, ManifestFunction, ManifestResourceKind,
+    ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWorkflow, ModuleManifest,
+    ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
+    WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
 };
 use super::theme::{self, InstalledModule};
 
@@ -1611,6 +1611,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             )?;
         }
         validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
+        validate_operators(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
         if let Some(any_text) = &field.any_text
@@ -1633,6 +1634,46 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
         }
     }
     Ok(())
+}
+
+/// `operators` offers the user a choice of comparison for a number, so it
+/// needs a number to compare, a real choice, and a default (`operator`) that
+/// is one of the choices.
+fn validate_operators(field: &ManifestConfigField, context: &str) -> Result<()> {
+    let Some(operators) = &field.operators else {
+        return Ok(());
+    };
+    if field.field_type != "number" {
+        return Err(anyhow!(
+            "{context}: `operators` is only allowed on a `number` field"
+        ));
+    }
+    if operators.len() < 2 {
+        return Err(anyhow!(
+            "{context}: `operators` must offer at least two comparisons; for one, use `operator` alone"
+        ));
+    }
+    let mut seen: HashSet<&str> = HashSet::with_capacity(operators.len());
+    for operator in operators {
+        if !COMPARISON_OPERATORS.contains(&operator.as_str()) {
+            return Err(anyhow!(
+                "{context}: unknown comparison {operator:?} in `operators`; expected one of {}",
+                COMPARISON_OPERATORS.join(", ")
+            ));
+        }
+        if !seen.insert(operator) {
+            return Err(anyhow!("{context}: `operators` lists {operator:?} twice"));
+        }
+    }
+    match &field.operator {
+        Some(default) if operators.contains(default) => Ok(()),
+        Some(default) => Err(anyhow!(
+            "{context}: `operator` {default:?} must be one of `operators`, as it is the default choice"
+        )),
+        None => Err(anyhow!(
+            "{context}: `operators` needs an `operator` naming the default choice"
+        )),
+    }
 }
 
 /// A `list` field declares the fields of one row, and only a `list` does.
@@ -3375,6 +3416,70 @@ mod tests {
         let msg = bad_err(&trigger_field(r#""missingText": " ""#));
         assert!(msg.contains("trigger #0 (t1)"), "{msg}");
         assert!(msg.contains("`missingText`"), "{msg}");
+    }
+
+    fn number_trigger_field(comparison: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{{ "id": "amount", "label": "Bits", "type": "number",
+                    "eventPath": "amount", {comparison} }}] }}]"#
+        ))
+    }
+
+    #[test]
+    fn accepts_a_choice_of_comparisons() {
+        validate(&number_trigger_field(
+            r#""operator": "gte", "operators": ["gte", "eq"]"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_operators_on_a_field_that_is_not_a_number() {
+        let msg = bad_err(&trigger_field(
+            r#""operator": "eq", "operators": ["eq", "ne"]"#,
+        ));
+        assert!(msg.contains("trigger #0 (t1)"), "{msg}");
+        assert!(msg.contains("only allowed on a `number`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_operators_offering_one_comparison() {
+        let msg = bad_err(&number_trigger_field(
+            r#""operator": "gte", "operators": ["gte"]"#,
+        ));
+        assert!(msg.contains("at least two"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_operator_that_cannot_compare_amounts() {
+        let msg = bad_err(&number_trigger_field(
+            r#""operator": "gte", "operators": ["gte", "contains"]"#,
+        ));
+        assert!(msg.contains("\"contains\""), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_repeated_operator() {
+        let msg = bad_err(&number_trigger_field(
+            r#""operator": "gte", "operators": ["gte", "eq", "gte"]"#,
+        ));
+        assert!(msg.contains("twice"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_operators_without_a_default() {
+        let msg = bad_err(&number_trigger_field(r#""operators": ["gte", "eq"]"#));
+        assert!(msg.contains("needs an `operator`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_default_outside_the_choices() {
+        let msg = bad_err(&number_trigger_field(
+            r#""operator": "lte", "operators": ["gte", "eq"]"#,
+        ));
+        assert!(msg.contains("must be one of `operators`"), "{msg}");
     }
 
     // ---------------------------------------------------------------

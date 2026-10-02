@@ -294,6 +294,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `action` | object | no | Required for `button` — the request the button fires. See [module-level settings](#module-level-settings-settings). |
 | `eventPath` | string | no | Trigger `schema` only. Dot path into the event payload this field maps to. |
 | `operator` | string | no | Trigger `schema` only. Comparison emitted with this field's value (e.g. `gte`, `eq`). |
+| `operators` | string[] | no | Trigger `schema` only, `number` fields only. Comparisons the user chooses between, e.g. `["gte", "eq"]` for "at least" or "exactly". At least two of `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, no repeats; `operator` is required alongside and names the default. |
 | `description` | string | no | Short prose rendered as muted helper text below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
