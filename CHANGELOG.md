@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.0](https://github.com/wolfymaster/woofx3/compare/v0.9.2...v0.10.0) (2026-10-02)
+
+### Features
+
+* **barkloader:** let a number trigger field offer a choice of comparison ([5723ec5](https://github.com/wolfymaster/woofx3/commit/5723ec567e9f58155cfb4aabece0ee9ae0f481f3))
+
 ## [0.9.2](https://github.com/wolfymaster/woofx3/compare/v0.9.1...v0.9.2) (2026-10-02)
 
 ### Bug Fixes
