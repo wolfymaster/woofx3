@@ -6,6 +6,12 @@ export interface ApiConfig {
   /** The running release (`WOOFX3_VERSION`); see UNVERSIONED. */
   version: string;
   /**
+   * The name the provisioner gave this engine (`WOOFX3_ENGINE_NAME`, e.g.
+   * `eng-0a1b2c3d`), or null for an engine nobody named, such as a local one.
+   * Reported publicly by `GET /health`.
+   */
+  engineName: string | null;
+  /**
    * Secret a caller must present to register (`WOOFX3_REGISTRATION_TOKEN`),
    * or null when registration is open.
    */
@@ -51,6 +57,7 @@ export const ApiEnvSchema = z
     woofx3ApiHost: z.string().optional(),
     apiHost: z.string().optional(),
     woofx3Version: z.union([z.string(), z.number()]).optional(),
+    woofx3EngineName: z.string().optional(),
     woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
@@ -101,6 +108,7 @@ export function loadConfig(): ApiConfig {
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
+  const engineName = String(config.woofx3EngineName ?? "").trim() || null;
   const registrationToken =
     config.woofx3RegistrationToken === undefined || String(config.woofx3RegistrationToken).trim() === ""
       ? null
@@ -150,6 +158,7 @@ export function loadConfig(): ApiConfig {
 
   return {
     version,
+    engineName,
     registrationToken,
     port,
     host,

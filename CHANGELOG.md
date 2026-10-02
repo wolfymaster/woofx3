@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.0](https://github.com/wolfymaster/woofx3/compare/v0.7.0...v0.8.0) (2026-10-02)
+
+### Features
+
+* **barkloader:** limit ctx.http to destinations the streamer approved ([2236de8](https://github.com/wolfymaster/woofx3/commit/2236de832b7a38b55e06d76c5669a4c537235ea2))
+* **capabilities:** report that Twitch tokens are renewed through the dashboard ([460f8ce](https://github.com/wolfymaster/woofx3/commit/460f8ce60166ea808d20799642b506df5c10826b))
+
+## [0.7.0](https://github.com/wolfymaster/woofx3/compare/v0.6.2...v0.7.0) (2026-10-02)
+
+### Features
+
+* **api:** describe the engine on GET /health ([07b92ab](https://github.com/wolfymaster/woofx3/commit/07b92abac89ed6fb6a961abc0ae702feeda39f3e))
+* **twitch:** renew a dashboard's Twitch token through the dashboard ([9c01390](https://github.com/wolfymaster/woofx3/commit/9c013907aa0ed8ae2419b56ea4e6144f7b092d70))
+
+### Bug Fixes
+
+* **barkloader:** give module code no access to the engine's environment ([42efeea](https://github.com/wolfymaster/woofx3/commit/42efeeae294870890ce8943e5c4fb4f051688371))
+
 ## [0.6.2](https://github.com/wolfymaster/woofx3/compare/v0.6.1...v0.6.2) (2026-10-01)
 
 ### Bug Fixes
