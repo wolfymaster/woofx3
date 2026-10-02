@@ -71,6 +71,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
+      { describeHealth },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -101,6 +102,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("@woofx3/barkloader"),
       import("./readiness"),
       import("./message-bus"),
+      import("./health"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -249,6 +251,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
           heartbeats,
           now: Date.now,
         }),
+      // timeOrigin and process.uptime() both measure from process start, so
+      // startedAt plus uptimeSeconds always lands on the current time.
+      health: () =>
+        describeHealth(
+          { name: config.engineName, version: config.version, startedAt: performance.timeOrigin },
+          process.uptime()
+        ),
       logger,
       gateway,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
