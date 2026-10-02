@@ -35,6 +35,7 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `analytics.gauges` | Per-minute viewer, follower and subscriber series for a session: `getStreamSessionGauges` |
 | `analytics.sessions` | Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals` |
 | `config.bundles` | Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig` |
+| `modules.oauth` | A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a connect with `completeModuleOAuth` |
 | `obs.control` | The `ctx.obs` host extension and the `obs.control` manifest permission, which a module that changes OBS or lists its names needs to install and run |
 | `obs.status` | The OBS connection's state and last failure: `getObsStatus` |
 | `twitch.dashboardTokens` | A Twitch token that carries the app's `clientId` is renewed by asking the dashboard that sent it (`twitch.token.requested`), not with a refresh token, so the dashboard need not send one. See [Twitch channel → Who renews the token](./twitch-channel.md#who-renews-the-token) |

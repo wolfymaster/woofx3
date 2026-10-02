@@ -65,6 +65,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        oauth: Default::default(),
     };
 
     registry
@@ -182,6 +183,7 @@ fn test_js_instruction_limit() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        oauth: Default::default(),
     };
 
     registry
@@ -244,6 +246,7 @@ function isolation(ctx) {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        oauth: Default::default(),
     };
 
     registry
@@ -317,6 +320,7 @@ fn test_ctx_event_data() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        oauth: Default::default(),
     };
 
     registry
@@ -382,6 +386,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        oauth: Default::default(),
     };
     registry
         .register_module("chat_test".to_string(), module)
@@ -453,6 +458,7 @@ fn extension_test_module(
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        oauth: Default::default(),
     };
     registry.register_module(name.to_string(), module).unwrap();
     registry
@@ -1049,6 +1055,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
                 event_types: Default::default(),
                 permissions: ["net:api.example.com".to_string()].into(),
                 url_settings: ["server".to_string()].into(),
+                oauth: Default::default(),
             },
         )
         .unwrap();

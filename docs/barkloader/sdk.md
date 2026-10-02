@@ -67,6 +67,7 @@ v0.1.0):
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip()`, `shoutout({ userId \| userName })`, `createMarker({ description? })`, `timeout({ userId \| userName, durationSeconds, reason? })`, `updateStream({ title?, category?, categoryId?, tags? })`. Each waits for the twitch service and returns its result, or throws its message with an optional `code`. `timeout` needs the manifest permission `twitch.moderation` and `updateStream` needs `twitch.channel`; see [Twitch channel controls](../services/twitch-channel.md#modules) |
 | `ctx.chat?` | `sendMessage(text)` |
+| `ctx.oauth?` | `request({ integration, url, method?, headers?, query?, body? })` — a provider the manifest declares under `oauth[]`, with the streamer's token, which the engine attaches and refreshes; see [Module format → OAuth integrations](./modules.md#oauth-integrations-oauth) |
 
 `ctx.storage.set` takes an optional third argument. Passing
 `{ clearOnSessionEnd: true }` declares the key as belonging to the current

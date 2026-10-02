@@ -8,6 +8,7 @@ pub mod http_storage_client;
 pub mod module_drift;
 pub mod module_settings_client;
 pub mod nats;
+pub mod oauth;
 pub mod public_url;
 pub mod sandbox_resources;
 pub mod scheduler;

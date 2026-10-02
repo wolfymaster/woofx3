@@ -31,6 +31,8 @@ pub struct RegisteredModule {
     /// The ids of the module's `url` settings, whose values' origins
     /// `ctx.http` may reach. See `crate::net`.
     pub url_settings: HashSet<String>,
+    /// The OAuth providers the module's code calls through `ctx.oauth`.
+    pub oauth: Vec<crate::oauth::OAuthIntegration>,
 }
 
 pub struct ModuleRegistry {
@@ -148,6 +150,21 @@ impl ModuleRegistry {
             .unwrap_or_default()
     }
 
+    /// The module's OAuth integration `id`, if it declares one.
+    pub fn oauth_integration(
+        &self,
+        name: &str,
+        id: &str,
+    ) -> Option<crate::oauth::OAuthIntegration> {
+        let modules = self.modules.read().unwrap();
+        modules.get(name).and_then(|m| {
+            m.oauth
+                .iter()
+                .find(|integration| integration.id == id)
+                .cloned()
+        })
+    }
+
     /// The ids of the module's `url` settings; none for a module that is not
     /// registered.
     pub fn url_settings(&self, name: &str) -> HashSet<String> {
@@ -188,6 +205,7 @@ mod tests {
             event_types: Default::default(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            oauth: Default::default(),
         }
     }
 

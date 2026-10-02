@@ -27,6 +27,11 @@ export const ENGINE_CAPABILITIES = {
   /** The OBS connection's state and last failure: `getObsStatus`. */
   obsStatus: "obs.status",
   /**
+   * A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a
+   * connect with `completeModuleOAuth`.
+   */
+  modulesOAuth: "modules.oauth",
+  /**
    * A Twitch token that carries the app's `clientId` is renewed by asking the
    * dashboard that sent it (`twitch.token.requested`), not with a refresh
    * token, so the dashboard need not send one.

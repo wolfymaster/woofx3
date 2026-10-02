@@ -99,6 +99,7 @@ const KNOWN_EXTENSIONS: Record<string, string[]> = {
   twitch: ["clip", "shoutout", "createMarker", "timeout", "updateStream"],
   obs: ["switchScene", "setSourceVisibility", "setInputMute", "listScenes", "listSources", "listInputs"],
   chat: ["sendMessage"],
+  oauth: ["request"],
 };
 
 describe("function ctx drift guard", () => {

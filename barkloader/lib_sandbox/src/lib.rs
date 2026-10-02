@@ -6,6 +6,7 @@ pub mod host;
 pub mod models;
 pub mod module_registry;
 pub mod net;
+pub mod oauth;
 pub mod permissions;
 mod runtime;
 mod sandbox;

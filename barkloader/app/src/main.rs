@@ -1,5 +1,6 @@
 use crate::services::http_client::{HttpPolicy, ReqwestHttpClient};
 use crate::services::http_storage_client::HttpStorageClient;
+use crate::services::oauth::{OAuthExtension, OAuthService, sealed_setting_writer};
 use crate::services::sandbox_resources::HttpResourceClient;
 use crate::util::{
     get_config_value, get_env_or_default, get_env_or_default_with_key, validate_required_config,
@@ -77,6 +78,7 @@ async fn setup() -> Result<AppContext> {
         services::scheduler::SystemClock,
     )));
 
+    let mut oauth_service: Option<Arc<OAuthService>> = None;
     let host_ctx = {
         let mut ctx = noop_host_context();
         ctx.schedule = scheduler.clone();
@@ -113,17 +115,6 @@ async fn setup() -> Result<AppContext> {
             info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
         }
 
-        // Platform integrations (twitch / obs / chat) are bound through the
-        // extension registry. Each extension owns its own Arc<dyn …> of the
-        // relevant transport, so the runtime adapters stay agnostic to which
-        // platforms exist.
-        ctx.extensions = Arc::new(
-            ExtensionRegistry::new()
-                .with(Arc::new(TwitchExtension::new(requester.clone())))
-                .with(Arc::new(ObsExtension::new(requester)))
-                .with(Arc::new(ChatExtension::new(chat_sender))),
-        );
-
         // Resource-instance lifecycle (`ctx.resources.*`) and module storage
         // (`ctx.storage.*`) — both backed by db-proxy via Twirp.
         let resource_proxy_url = get_config_value("databaseProxyUrl", "");
@@ -145,7 +136,7 @@ async fn setup() -> Result<AppContext> {
                     resource_proxy_url.clone(),
                 ),
             );
-            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url));
+            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url.clone()));
         } else {
             info!(
                 "databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients"
@@ -162,6 +153,26 @@ async fn setup() -> Result<AppContext> {
             http_policy.mode, http_policy.allow_private
         );
         ctx.http = Arc::new(ReqwestHttpClient::new(http_policy));
+
+        let oauth = Arc::new(OAuthService::new(
+            registry.clone(),
+            ctx.settings.clone(),
+            sealed_setting_writer(resource_proxy_url),
+            ctx.http.clone(),
+        ));
+        oauth_service = Some(oauth.clone());
+
+        // Platform integrations (twitch / obs / chat) and `ctx.oauth` are
+        // bound through the extension registry. Each extension owns its own
+        // Arc<dyn …> of the relevant transport, so the runtime adapters stay
+        // agnostic to which platforms exist.
+        ctx.extensions = Arc::new(
+            ExtensionRegistry::new()
+                .with(Arc::new(TwitchExtension::new(requester.clone())))
+                .with(Arc::new(ObsExtension::new(requester)))
+                .with(Arc::new(ChatExtension::new(chat_sender)))
+                .with(Arc::new(OAuthExtension::new(oauth))),
+        );
 
         ctx
     };
@@ -269,6 +280,7 @@ async fn setup() -> Result<AppContext> {
         db_proxy_url: Some(db_proxy_url),
         scheduler,
         public_url_resolver,
+        oauth: oauth_service,
     };
 
     Ok(ctx)
@@ -339,6 +351,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::echo::configure)
             .configure(routes::websocket::configure)
             .configure(routes::functions::configure)
+            .configure(routes::oauth::configure)
             .configure(routes::widgets::configure)
     })
     .bind(bind_addr)?

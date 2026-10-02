@@ -292,6 +292,7 @@ pub fn validate_with_provenance(
 
     validate_deadlines(manifest)?;
     validate_permissions(manifest)?;
+    validate_oauth(manifest)?;
 
     // Step ids are the names an author's own `${id.field}` references and
     // `dependsOn` entries resolve against. A duplicate makes a reference
@@ -882,6 +883,81 @@ fn validate_permissions(manifest: &ModuleManifest) -> Result<()> {
         }
         if !seen.insert(permission.as_str()) {
             return Err(anyhow!("permissions[{i}]: {permission:?} is listed twice"));
+        }
+    }
+    Ok(())
+}
+
+/// `oauth[]`: each integration names its OAuth endpoints, the settings that
+/// hold its client credentials, and the hosts its token may go to.
+fn validate_oauth(manifest: &ModuleManifest) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (i, integration) in manifest.oauth.iter().enumerate() {
+        let id = integration.id.as_str();
+        let context = format!("oauth[{i}] ({id})");
+        let id_ok = !id.is_empty()
+            && id.len() <= 40
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
+        if !id_ok {
+            return Err(anyhow!(
+                "{context}: `id` must be 1-40 lowercase letters, digits, `_` or `-`"
+            ));
+        }
+        if !seen.insert(id) {
+            return Err(anyhow!("{context}: `id` is listed twice"));
+        }
+        for (field, url) in [
+            ("authorizeUrl", &integration.authorize_url),
+            ("tokenUrl", &integration.token_url),
+        ] {
+            let parsed = url::Url::parse(url)
+                .map_err(|e| anyhow!("{context}: `{field}` is not a URL: {e}"))?;
+            if parsed.scheme() != "https" {
+                return Err(anyhow!("{context}: `{field}` must be https"));
+            }
+        }
+        if integration.hosts.is_empty() {
+            return Err(anyhow!(
+                "{context}: `hosts` must name at least one host its token may go to"
+            ));
+        }
+        for host in &integration.hosts {
+            if !lib_sandbox::net::is_valid_net_host(host) {
+                return Err(anyhow!(
+                    "{context}: host {host:?} must be an exact lowercase DNS name, with no IP address, port or wildcard"
+                ));
+            }
+        }
+        let setting_type = |setting_id: &str| {
+            manifest
+                .settings
+                .iter()
+                .find(|s| s.id == setting_id)
+                .map(|s| s.setting_type.as_str())
+        };
+        match setting_type(&integration.client_id_setting) {
+            Some("text") => {}
+            Some(other) => {
+                return Err(anyhow!(
+                    "{context}: `clientIdSetting` {:?} must be a `text` setting, not `{other}`",
+                    integration.client_id_setting
+                ));
+            }
+            None => {
+                return Err(anyhow!(
+                    "{context}: `clientIdSetting` {:?} is not a setting this module declares",
+                    integration.client_id_setting
+                ));
+            }
+        }
+        if let Some(secret_setting) = &integration.client_secret_setting {
+            if setting_type(secret_setting) != Some(SECRET_SETTING_TYPE) {
+                return Err(anyhow!(
+                    "{context}: `clientSecretSetting` {secret_setting:?} must be a `secret` setting this module declares"
+                ));
+            }
         }
     }
     Ok(())
@@ -1666,6 +1742,11 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
         }
         if setting.label.trim().is_empty() {
             return Err(anyhow!("setting #{i} ({id}): `label` must be non-empty"));
+        }
+        if lib_sandbox::oauth::is_reserved_setting_key(id) {
+            return Err(anyhow!(
+                "setting #{i} ({id}): ids starting with `oauth.` are reserved for the tokens the engine keeps"
+            ));
         }
         // `secret` and `url` are settings-only types: no trigger, action or
         // widget field holds one, so they stay out of CONFIG_FIELD_TYPES.
@@ -3839,6 +3920,92 @@ mod tests {
         );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("cannot declare `defaultValue`"), "{err}");
+    }
+
+    const SPOTIFY_SETTINGS: &str = r#", "settings": [
+        { "id": "clientId", "label": "Client ID", "type": "text" },
+        { "id": "clientSecret", "label": "Client secret", "type": "secret" }
+    ]"#;
+
+    fn with_oauth(integration: &str) -> ModuleManifest {
+        minimal(&format!(r#"{SPOTIFY_SETTINGS}, "oauth": [{integration}]"#))
+    }
+
+    const SPOTIFY: &str = r#"{ "id": "spotify", "authorizeUrl": "https://accounts.spotify.com/authorize",
+        "tokenUrl": "https://accounts.spotify.com/api/token", "scopes": ["user-read-playback-state"],
+        "clientIdSetting": "clientId", "clientSecretSetting": "clientSecret", "hosts": ["api.spotify.com"] }"#;
+
+    #[test]
+    fn an_oauth_integration_installs() {
+        validate(&with_oauth(SPOTIFY)).expect("spotify integration installs");
+    }
+
+    #[test]
+    fn an_oauth_integration_needs_https_endpoints_hosts_and_its_settings() {
+        let cases = [
+            (
+                SPOTIFY.replace(
+                    "https://accounts.spotify.com/api/token",
+                    "http://accounts.spotify.com/api/token",
+                ),
+                "must be https",
+            ),
+            (
+                SPOTIFY.replace(r#"["api.spotify.com"]"#, "[]"),
+                "at least one host",
+            ),
+            (
+                SPOTIFY.replace(r#"["api.spotify.com"]"#, r#"["10.0.0.1"]"#),
+                "exact lowercase DNS name",
+            ),
+            (
+                SPOTIFY.replace(
+                    r#""clientIdSetting": "clientId""#,
+                    r#""clientIdSetting": "nope""#,
+                ),
+                "not a setting",
+            ),
+            (
+                SPOTIFY.replace(
+                    r#""clientIdSetting": "clientId""#,
+                    r#""clientIdSetting": "clientSecret""#,
+                ),
+                "must be a `text` setting",
+            ),
+            (
+                SPOTIFY.replace(
+                    r#""clientSecretSetting": "clientSecret""#,
+                    r#""clientSecretSetting": "clientId""#,
+                ),
+                "must be a `secret` setting",
+            ),
+            (
+                SPOTIFY.replace(r#""id": "spotify""#, r#""id": "Spot ify""#),
+                "lowercase letters",
+            ),
+        ];
+        for (integration, expected) in cases {
+            let err = validate(&with_oauth(&integration)).unwrap_err().to_string();
+            assert!(err.contains(expected), "{expected}: {err}");
+        }
+        let twice = minimal(&format!(
+            r#"{SPOTIFY_SETTINGS}, "oauth": [{SPOTIFY}, {SPOTIFY}]"#
+        ));
+        assert!(
+            validate(&twice)
+                .unwrap_err()
+                .to_string()
+                .contains("listed twice")
+        );
+    }
+
+    #[test]
+    fn a_setting_may_not_take_a_reserved_token_key() {
+        let m = minimal(
+            r#", "settings": [{ "id": "oauth.spotify", "label": "Token", "type": "text" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("reserved"), "{err}");
     }
 
     #[test]

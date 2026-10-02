@@ -963,6 +963,10 @@ pub struct ModuleManifest {
     /// privileged function the module did not declare is refused.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub permissions: Vec<String>,
+    /// OAuth providers the module's code calls through `ctx.oauth`; the
+    /// engine keeps their tokens (`lib_sandbox::oauth`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub oauth: Vec<lib_sandbox::oauth::OAuthIntegration>,
 }
 
 impl ModuleManifest {

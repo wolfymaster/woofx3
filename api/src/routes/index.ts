@@ -1,31 +1,32 @@
 import { SpanKind, withSpan } from "@woofx3/common/logging";
-import { engineRoutes } from "./engine";
-import { subscriptionsRoutes } from "./subscriptions";
-import { streamEventsRoutes } from "./stream-events";
-import { triggerSubscriptionRoutes } from "./trigger-subscription";
-import { workflowsExecutionRoutes } from "./workflows-execution";
-import { actionsRoutes } from "./actions";
-import { commandsRoutes } from "./commands";
-import { groupsRoutes } from "./groups";
-import { fieldOptionsRoutes } from "./field-options";
-import { userActionsRoutes } from "./user-actions";
-import { eventsRoutes } from "./events";
-import { dashboardRoutes } from "./dashboard";
 import { accountsRoutes } from "./accounts";
-import { modulesRoutes } from "./modules";
-import { workflowsRoutes } from "./workflows";
-import { scenesRoutes } from "./scenes";
-import { dashboardStatsRoutes } from "./dashboard-stats";
-import { triggersRoutes } from "./triggers";
+import { actionsRoutes } from "./actions";
 import { alertsRoutes } from "./alerts";
+import { analyticsRoutes } from "./analytics";
+import { commandsRoutes } from "./commands";
+import { configBundlesRoutes } from "./config-bundles";
+import type { ApiRouteHost } from "./context";
+import { dashboardRoutes } from "./dashboard";
+import { dashboardStatsRoutes } from "./dashboard-stats";
+import { engineRoutes } from "./engine";
+import { eventsRoutes } from "./events";
+import { fieldOptionsRoutes } from "./field-options";
+import { groupsRoutes } from "./groups";
+import { inboundWebhooksRoutes } from "./inbound-webhooks";
+import { moduleOAuthRoutes } from "./module-oauth";
+import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
 import { resourcesRoutes } from "./resources";
-import { inboundWebhooksRoutes } from "./inbound-webhooks";
+import { scenesRoutes } from "./scenes";
+import { streamEventsRoutes } from "./stream-events";
 import { streamSessionsRoutes } from "./stream-sessions";
-import { analyticsRoutes } from "./analytics";
-import { configBundlesRoutes } from "./config-bundles";
-import type { ApiRouteHost } from "./context";
+import { subscriptionsRoutes } from "./subscriptions";
+import { triggerSubscriptionRoutes } from "./trigger-subscription";
+import { triggersRoutes } from "./triggers";
+import { userActionsRoutes } from "./user-actions";
+import { workflowsRoutes } from "./workflows";
+import { workflowsExecutionRoutes } from "./workflows-execution";
 
 export type RegisteredApiRoutes = typeof engineRoutes &
   typeof subscriptionsRoutes &
@@ -52,7 +53,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof inboundWebhooksRoutes &
   typeof streamSessionsRoutes &
   typeof analyticsRoutes &
-  typeof configBundlesRoutes;
+  typeof configBundlesRoutes &
+  typeof moduleOAuthRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -108,6 +110,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(inboundWebhooksRoutes),
     instrumentRoutes(streamSessionsRoutes),
     instrumentRoutes(analyticsRoutes),
-    instrumentRoutes(configBundlesRoutes)
+    instrumentRoutes(configBundlesRoutes),
+    instrumentRoutes(moduleOAuthRoutes)
   );
 }
