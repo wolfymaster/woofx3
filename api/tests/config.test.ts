@@ -41,3 +41,18 @@ describe("api listener", () => {
     expect(loadConfig().host).toBe("0.0.0.0");
   });
 });
+
+describe("engine name", () => {
+  test("is the name WOOFX3_ENGINE_NAME gives", () => {
+    withEnv({ WOOFX3_ENGINE_NAME: "eng-0a1b2c3d" });
+
+    expect(loadConfig().engineName).toBe("eng-0a1b2c3d");
+  });
+
+  test("is null when unset", () => {
+    delete process.env.WOOFX3_ENGINE_NAME;
+    withEnv({});
+
+    expect(loadConfig().engineName).toBeNull();
+  });
+});
