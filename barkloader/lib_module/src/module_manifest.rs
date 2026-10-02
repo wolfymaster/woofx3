@@ -239,6 +239,12 @@ pub struct ManifestConfigField {
     /// Trigger config only - the comparison emitted with this field's value.
     #[serde(default)]
     pub operator: Option<String>,
+    /// Trigger config only, `number` fields only - the comparisons the user
+    /// chooses between (`["gte", "eq"]` offers "at least" and "exactly"). The
+    /// chosen one is emitted instead of `operator`, which names the default
+    /// and must be one of these. Each is one of `COMPARISON_OPERATORS`.
+    #[serde(default)]
+    pub operators: Option<Vec<String>>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -292,6 +298,12 @@ pub const CONFIG_FIELD_TYPES: [&str; 13] = [
     "list",
     "theme",
 ];
+
+/// The comparisons a `number` field's `operators` may offer: the ones that
+/// read as a phrase beside an amount ("at least 100 bits"). Mirrors
+/// `COMPARISON_OPERATORS` in `shared/clients/typescript/api/ui-schema.ts` -
+/// the two must not drift.
+pub const COMPARISON_OPERATORS: [&str; 6] = ["eq", "ne", "gt", "gte", "lt", "lte"];
 
 /// The field type, and the settings key, of the theme picker the engine adds
 /// to a widget that declares a `theme` contract. The stored value is a theme's
@@ -385,6 +397,7 @@ fn theme_setting_field() -> ManifestConfigField {
         item_fields: None,
         event_path: None,
         operator: None,
+        operators: None,
         description: Some(
             "How this widget looks. Lists the installed themes made for it; none uses its own look."
                 .to_string(),
@@ -2616,27 +2629,44 @@ mod tests {
         assert_eq!(reparsed.settings[0].action["integration"], "spotify");
     }
 
-    /// `CONFIG_FIELD_TYPES` and its TypeScript mirror must list the same
-    /// tokens in the same order. Read at run time rather than with
-    /// `include_str!`, so a checkout without the TypeScript clients fails this
-    /// one test instead of the whole test binary.
-    #[test]
-    fn config_field_types_match_the_typescript_mirror() {
+    /// The tokens of `export const {name} = [...] as const;` in the
+    /// TypeScript mirror. Read at run time rather than with `include_str!`, so
+    /// a checkout without the TypeScript clients fails the mirror tests
+    /// instead of the whole test binary.
+    fn typescript_mirror(name: &str) -> Vec<String> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../shared/clients/typescript/api/ui-schema.ts");
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let start = source
-            .find("export const CONFIG_FIELD_TYPES = [")
-            .expect("ui-schema.ts declares CONFIG_FIELD_TYPES");
+            .find(&format!("export const {name} = ["))
+            .unwrap_or_else(|| panic!("ui-schema.ts declares {name}"));
         let body = &source[start..];
-        let end = body.find("] as const;").expect("CONFIG_FIELD_TYPES ends");
+        let end = body
+            .find("] as const;")
+            .unwrap_or_else(|| panic!("{name} ends"));
         let body = &body[body.find('[').expect("array opens") + 1..end];
-        let mirrored: Vec<&str> = body
-            .split(',')
-            .map(|entry| entry.trim().trim_matches('"'))
+        body.split(',')
+            .map(|entry| entry.trim().trim_matches('"').to_string())
             .filter(|entry| !entry.is_empty())
-            .collect();
-        assert_eq!(mirrored, CONFIG_FIELD_TYPES.to_vec());
+            .collect()
+    }
+
+    /// `CONFIG_FIELD_TYPES` and its TypeScript mirror must list the same
+    /// tokens in the same order.
+    #[test]
+    fn config_field_types_match_the_typescript_mirror() {
+        assert_eq!(
+            typescript_mirror("CONFIG_FIELD_TYPES"),
+            CONFIG_FIELD_TYPES.to_vec()
+        );
+    }
+
+    #[test]
+    fn comparison_operators_match_the_typescript_mirror() {
+        assert_eq!(
+            typescript_mirror("COMPARISON_OPERATORS"),
+            COMPARISON_OPERATORS.to_vec()
+        );
     }
 }

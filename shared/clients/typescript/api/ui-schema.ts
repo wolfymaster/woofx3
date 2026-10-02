@@ -81,6 +81,20 @@ export function isWidgetSurface(raw: unknown): raw is WidgetSurface {
   return typeof raw === "string" && (WIDGET_SURFACES as readonly string[]).includes(raw);
 }
 
+/**
+ * The comparisons a `number` field's `operators` may offer: the ones that read
+ * as a phrase beside an amount ("at least 100 bits"). Mirrors
+ * `COMPARISON_OPERATORS` in barkloader's module_manifest.rs, which checks the
+ * two lists match.
+ */
+export const COMPARISON_OPERATORS = ["eq", "ne", "gt", "gte", "lt", "lte"] as const;
+
+export type ComparisonOperator = (typeof COMPARISON_OPERATORS)[number];
+
+export function isComparisonOperator(raw: unknown): raw is ComparisonOperator {
+  return typeof raw === "string" && (COMPARISON_OPERATORS as readonly string[]).includes(raw);
+}
+
 export interface ConfigFieldOption {
   value: string;
   label: string;
@@ -139,6 +153,13 @@ export interface ConfigField {
   eventPath?: string;
   /** Trigger config only — the comparison emitted with this field's value. */
   operator?: ConditionOperator;
+  /**
+   * Trigger config only, `number` fields only — the comparisons the user
+   * chooses between, e.g. `["gte", "eq"]` for "at least" or "exactly". The
+   * chosen one is emitted instead of `operator`, which names the default and
+   * is one of these. Barkloader requires at least two.
+   */
+  operators?: ComparisonOperator[];
   description?: string;
   hint?: string;
   /**
