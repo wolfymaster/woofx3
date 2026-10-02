@@ -12,7 +12,7 @@ and it listens on `$PORT` (default `8080`):
 | Path | Goes to |
 |---|---|
 | `/api`, `/api/*` | the api (capnweb HTTP batch and WebSocket) |
-| `/ready` | the api |
+| `/health`, `/ready` | the api |
 | everything else | sceneManager (overlays, the `/events` SSE stream, assets, the upload relay) |
 
 Responses are proxied unbuffered, so SSE events and capnweb frames arrive as

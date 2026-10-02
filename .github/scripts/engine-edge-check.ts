@@ -130,12 +130,15 @@ await check("capnweb WebSocket: an authenticated call on /api", async () => {
   }
 });
 
-// --- sceneManager, on everything that is not /api -------------------------
-
-await check("sceneManager answers /health through the edge", async () => {
+await check("the api answers /health through the edge", async () => {
   const response = await fetch(`${BASE_URL}/health`);
   assertEqual(response.status, 200, "GET /health status");
+  const body = (await response.json()) as { status?: string; version?: string };
+  assertEqual(body.status, "ok", "GET /health body status");
+  assertEqual(body.version, EXPECTED_VERSION, "GET /health version");
 });
+
+// --- sceneManager, on everything that is not /api -------------------------
 
 await check("sceneManager serves its own static files through the edge", async () => {
   const response = await fetch(`${BASE_URL}/assets/widget-host-shim.js`);
