@@ -13,8 +13,10 @@ export const WoofEnvSchema = z.object({
   woofx3BarkloaderWsUrl: z.string().min(1, "barkloaderWsUrl is required in .woofx3.json"),
   woofx3BarkloaderKey: z.string().min(1, "barkloaderKey is required in .woofx3.json"),
   woofx3DatabaseProxyUrl: z.string().min(1, "databaseProxyUrl is required in .woofx3.json"),
-  woofx3TwitchClientId: z.string().min(1, "TWITCH_WOLFY_CLIENT_ID is required"),
-  woofx3TwitchClientSecret: z.string().min(1, "TWITCH_WOLFY_CLIENT_SECRET is required"),
+  // An engine's own Twitch app, for refreshing tokens itself. Absent when its
+  // Twitch token comes from a dashboard, which owns the app and refreshes.
+  woofx3TwitchClientId: z.string().optional(),
+  woofx3TwitchClientSecret: z.string().optional(),
   woofx3RootPath: z.string().optional(),
   twitchRedirectUrl: z.string().default("http://localhost"),
 });

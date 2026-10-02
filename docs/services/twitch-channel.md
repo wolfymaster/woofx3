@@ -228,11 +228,30 @@ new token to the `twitch_token` setting and publishes
 If the relink is to a different Twitch account and no channel is configured,
 the broadcaster itself changes, so the service reconnects from scratch.
 
-The auth provider refreshes tokens in the background and writes each refresh
-back to `twitch_token`. It does not do so when the stored token has changed
-since it was loaded (different refresh token, or a later obtainment time):
-that is a relink the service has not applied yet, and writing a refresh of
-the old token over it would silently undo the relink and its scopes.
+### Who renews the token
+
+Renewing a Twitch token takes the Twitch app's client secret. Which component
+holds it decides how the token is renewed:
+
+- **A token from a dashboard** carries the app's `clientId` and no refresh
+  token. The dashboard (woofx3-ui) owns the app, its secret and the refresh
+  token, and an engine never receives them, because an engine may be
+  self-hosted. `setTwitchToken` stores the token with the engine client id of
+  the dashboard that sent it. When it is about to expire, or Twitch refuses
+  it, the api service sends that dashboard a `twitch.token.requested` request
+  (`TwitchTokenSource`, `api/src/twitch-token-source.ts`) and stores the
+  access token it answers with. The twitch service and woofwoofwoof ask the
+  api service on the `engine.twitch.token` NATS subject
+  (`DashboardAuthProvider`, `shared/clients/typescript/twitch`), and need no
+  Twitch app credentials of their own.
+- **Any other token** is renewed by the engine itself, with its own Twitch app
+  (`WOOFX3_TWITCH_CLIENT_ID` and `WOOFX3_TWITCH_CLIENT_SECRET`), for an engine
+  run without a dashboard. The auth provider refreshes in the background and
+  writes each refresh back to `twitch_token`. It does not do so when the
+  stored token has changed since it was loaded (different refresh token, or a
+  later obtainment time): that is a relink the service has not applied yet,
+  and writing a refresh of the old token over it would silently undo the
+  relink and its scopes.
 
 ### Events
 

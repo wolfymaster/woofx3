@@ -1,5 +1,5 @@
-import type { CallbackEvent } from "@woofx3/api/webhooks";
-import { makeCallbackEnvelope } from "@woofx3/api/webhooks";
+import type { CallbackEvent, EngineRequest } from "@woofx3/api/webhooks";
+import { makeCallbackEnvelope, makeRequestEnvelope } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 
@@ -17,22 +17,22 @@ export type {
   ModuleActionRegisteredEvent,
   ModuleAssetDeregisteredEvent,
   ModuleAssetRegisteredEvent,
-  ModuleResourceInstanceCreatedEvent,
-  ModuleResourceInstanceDeletedEvent,
-  ModuleResourceInstanceUpdatedEvent,
-  ResourceInstanceDefinition,
   ModuleDeletedEvent,
   ModuleDeleteFailedEvent,
   ModuleFunctionDeregisteredEvent,
   ModuleFunctionRegisteredEvent,
   ModuleInstalledEvent,
   ModuleInstallFailedEvent,
+  ModuleResourceInstanceCreatedEvent,
+  ModuleResourceInstanceDeletedEvent,
+  ModuleResourceInstanceUpdatedEvent,
   ModuleResourceUsage,
   ModuleTriggerDeregisteredEvent,
   ModuleTriggerRegisteredEvent,
   ModuleUsageRef,
   ModuleWidgetDeregisteredEvent,
   ModuleWidgetRegisteredEvent,
+  ResourceInstanceDefinition,
   TriggerDefinition,
   WidgetDefinition,
 } from "@woofx3/api/webhooks";
@@ -113,6 +113,39 @@ export class WebhookClient {
     const fulfilled = results.filter((r) => r.status === "fulfilled").length;
     const rejected = results.filter((r) => r.status === "rejected").length;
     this.logger.info("WebhookClient dispatch complete", { eventType, envelopeId: envelope.id, fulfilled, rejected });
+  }
+
+  /**
+   * Send a request to one dashboard and return its answer, the parsed JSON
+   * response body. Unlike `send`, a request is not retried and does not fail
+   * quietly: the caller is waiting on the answer, so a missing dashboard, a
+   * non-2xx status or a body that is not JSON rejects.
+   */
+  async request(request: EngineRequest, targetClientId: string): Promise<unknown> {
+    const instance = this.instances.find((i) => i.clientId === targetClientId);
+    if (!instance) {
+      throw new Error(`no registered dashboard with client id ${targetClientId}`);
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (instance.callbackToken) {
+        headers.Authorization = `Bearer ${instance.callbackToken}`;
+      }
+      const response = await fetch(instance.callbackUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(makeRequestEnvelope(request)),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`${request.type}: dashboard answered HTTP ${response.status}`);
+      }
+      return await response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private async sendToUrl(url: string, payload: object, instanceName: string, callbackToken: string): Promise<void> {

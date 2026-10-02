@@ -18,12 +18,17 @@ describe("WoofEnvSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  test("rejects configuration when required Twitch or infrastructure fields are missing", () => {
+  test("rejects configuration when required infrastructure fields are missing", () => {
     const parsed = WoofEnvSchema.safeParse({
       ...baseValid,
-      woofx3TwitchClientId: "",
+      woofx3DatabaseProxyUrl: "",
     });
     expect(parsed.success).toBe(false);
+  });
+
+  test("accepts no Twitch app: a dashboard renews the token", () => {
+    const { woofx3TwitchClientId: _id, woofx3TwitchClientSecret: _secret, ...withoutApp } = baseValid;
+    expect(WoofEnvSchema.safeParse(withoutApp).success).toBe(true);
   });
 
   test("accepts no channel: the bot joins whoever links Twitch", () => {

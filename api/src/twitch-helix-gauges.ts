@@ -1,4 +1,4 @@
-import type { DbClient } from "./db-client";
+import type { TwitchCredentials } from "./twitch-token-source";
 
 /**
  * The outcome of one Helix read, kept apart so the sampler can tell a value it
@@ -26,33 +26,26 @@ export interface HelixGauges {
   subscriptions(): Promise<HelixRead<SubscriptionTotals>>;
 }
 
-interface Credentials {
-  clientId: string;
-  accessToken: string;
-  broadcasterId: string;
-}
-
 type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 const HELIX = "https://api.twitch.tv/helix";
 
 /**
  * Reads the broadcaster's viewer count, follower total and subscriber totals
- * from Twitch Helix, with the OAuth token stored in the `twitch_token` setting
- * (the same source `getStreamStatus` and `twitchBootstrap.ts` read). The token
- * already carries `moderator:read:followers` and `channel:read:subscriptions`.
+ * from Twitch Helix, with the linked account's token (`TwitchCredentials`).
+ * The token already carries `moderator:read:followers` and
+ * `channel:read:subscriptions`.
  *
- * Credentials are read on every call rather than cached, because the Twitch
- * service refreshes the token in that setting underneath this process.
+ * Credentials are asked for on every call rather than cached, because the
+ * token is renewed underneath this class.
  *
  * Never throws: every failure is a `HelixRead`, so one bad endpoint cannot
  * cost the sample the values the other two returned.
  */
 export class TwitchHelixGauges implements HelixGauges {
   constructor(
-    private db: DbClient,
-    private fetchFn: Fetch = (input, init) => fetch(input, init),
-    private clientId: () => string | undefined = () => process.env.WOOFX3_TWITCH_CLIENT_ID
+    private twitch: TwitchCredentials,
+    private fetchFn: Fetch = (input, init) => fetch(input, init)
   ) {}
 
   async viewerCount(): Promise<HelixRead<number>> {
@@ -99,7 +92,7 @@ export class TwitchHelixGauges implements HelixGauges {
     path: (broadcasterId: string) => string,
     parse: (body: Record<string, unknown>) => HelixRead<T>
   ): Promise<HelixRead<T>> {
-    const credentials = await this.credentials();
+    const credentials = await this.twitch.helix();
     if (typeof credentials === "string") {
       return { kind: "failed", reason: credentials };
     }
@@ -134,33 +127,6 @@ export class TwitchHelixGauges implements HelixGauges {
       return { kind: "failed", reason: "helix returned a body that is not an object" };
     }
     return parse(body as Record<string, unknown>);
-  }
-
-  /** The credentials to call Helix with, or why there are none. */
-  private async credentials(): Promise<Credentials | string> {
-    const clientId = this.clientId();
-    if (!clientId) {
-      return "WOOFX3_TWITCH_CLIENT_ID is not set";
-    }
-    let token: { accessToken?: unknown; userId?: unknown };
-    try {
-      const raw = await this.db.getSetting("twitch_token");
-      if (!raw) {
-        return "no twitch_token setting";
-      }
-      token = JSON.parse(raw);
-    } catch (err) {
-      return `failed to read twitch_token: ${err instanceof Error ? err.message : String(err)}`;
-    }
-    if (
-      typeof token.accessToken !== "string" ||
-      typeof token.userId !== "string" ||
-      !token.accessToken ||
-      !token.userId
-    ) {
-      return "twitch_token has no accessToken or userId";
-    }
-    return { clientId, accessToken: token.accessToken, broadcasterId: token.userId };
   }
 }
 

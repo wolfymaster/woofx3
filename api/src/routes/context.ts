@@ -21,10 +21,11 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
-import type { WebhookClient } from "../webhook-client";
-import type { WorkflowItem } from "./types";
-import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
+import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
+import type { WebhookClient } from "../webhook-client";
+import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
+import type { WorkflowItem } from "./types";
 
 /**
  * How long a request to the engine waits for its answer. The engine answers
@@ -66,6 +67,11 @@ export class ApiRouteHost extends RpcTarget {
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected authInvalidate: (() => void) | null = null;
+  /**
+   * The linked Twitch account's token. An instance property, not a method,
+   * so capnweb never offers it to a client.
+   */
+  readonly twitchToken: TwitchTokenSource;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -302,6 +308,7 @@ export class ApiRouteHost extends RpcTarget {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
     this.db = opts.db;
+    this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient);
     this.nats = opts.nats;
     this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;

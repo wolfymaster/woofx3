@@ -1,9 +1,9 @@
-import type { ApplicationContext, Application as RuntimeApplication, IApplication } from "@woofx3/common/runtime";
 import type { SharedLogger } from "@woofx3/common/logging";
+import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
+import type { Msg } from "@woofx3/nats/src/types";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
-import type { Msg } from "@woofx3/nats/src/types";
 
 export type ApiServices = {
   db: DbService;
@@ -60,6 +60,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamSessionResolver },
       { StreamGaugeSampler },
       { TwitchHelixGauges },
+      { serveTwitchToken },
       { UserEventRecorder },
       { WebhookClient },
       { initWidgetStatusHandlers },
@@ -90,6 +91,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-session-resolver"),
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
+      import("./twitch-token-source"),
       import("./user-event-recorder"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
@@ -207,7 +209,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       // Inside the bus block because segments open and close only through the
       // resolver above; without a bus, "is a segment open" would go stale.
-      this.gaugeSampler = new StreamGaugeSampler(db, new TwitchHelixGauges(db), logger);
+      this.gaugeSampler = new StreamGaugeSampler(db, new TwitchHelixGauges(api.twitchToken), logger);
       this.gaugeSampler.start();
 
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
@@ -215,6 +217,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       api.setStreamEventBroadcaster(streamEventBroadcaster);
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
+      await serveTwitchToken(natsClient, api.twitchToken, logger);
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);

@@ -1,12 +1,15 @@
 import { ApiClient, type HelixUser } from "@twurple/api";
-import type { AccessTokenWithUserId } from "@twurple/auth";
+import type { AccessTokenWithUserId, AuthProvider } from "@twurple/auth";
 import { RefreshingAuthProvider } from "@twurple/auth";
 import { ChatClient } from "@twurple/chat";
 import { EventSubWsListener } from "@twurple/eventsub-ws";
+import { DashboardAuthProvider, type DashboardToken, type RequestDashboardToken } from "./dashboard-auth-provider";
 
 export type { ApiClient } from "@twurple/api";
 export type { ChatClient, ChatMessage } from "@twurple/chat";
 export type { EventSubWsListener } from "@twurple/eventsub-ws";
+export type { DashboardToken, RequestDashboardToken } from "./dashboard-auth-provider";
+export { requestTokenOverNats, TWITCH_TOKEN_SUBJECT } from "./dashboard-auth-provider";
 
 export type GetSettingFn = (key: string) => Promise<string | undefined>;
 export type SetSettingFn = (key: string, value: string) => Promise<void>;
@@ -28,6 +31,12 @@ export type TwitchClientArgs = {
    * pre-refresh token and Twurple has to refresh again from scratch.
    */
   setSetting?: SetSettingFn;
+  /**
+   * How to get a current token when the stored one came from a dashboard
+   * (it carries the dashboard's `clientId`). The dashboard owns the refresh
+   * token and the app secret, so the engine asks it rather than refreshing.
+   */
+  requestToken?: RequestDashboardToken;
 };
 
 export type TwitchAuthCredentials = {
@@ -51,7 +60,7 @@ export class TwitchNotLinkedError extends Error {
 }
 
 export default class TwitchClient {
-  private authProvider: RefreshingAuthProvider | null;
+  private authProvider: AuthProvider | null;
   /** Twitch user id of whoever linked Twitch, from the stored token. */
   private linkedUserId: string | null = null;
   /**
@@ -69,7 +78,11 @@ export default class TwitchClient {
     this.eventListener = null;
   }
 
-  async init(credentials: TwitchAuthCredentials): Promise<RefreshingAuthProvider> {
+  /**
+   * Authenticate with the stored token. A token from a dashboard needs
+   * `requestToken`; any other token is refreshed here, with `credentials`.
+   */
+  async init(credentials?: TwitchAuthCredentials): Promise<AuthProvider> {
     this.authProvider = await this.authenticate(credentials);
     return this.authProvider;
   }
@@ -172,9 +185,21 @@ export default class TwitchClient {
     }
     const token = await this.getBroadcasterToken();
     const previous = this.linkedUserId;
-    const userId = await this.authProvider.addUserForToken(token, ["chat"]);
+    let userId: string;
+    if (this.authProvider instanceof DashboardAuthProvider) {
+      const dashboardToken = asDashboardToken(token);
+      if (!dashboardToken) {
+        throw new Error("The relinked twitch_token did not come from a dashboard; restart to load it");
+      }
+      this.authProvider.replace(dashboardToken);
+      userId = dashboardToken.userId;
+    } else if (this.authProvider instanceof RefreshingAuthProvider) {
+      userId = await this.authProvider.addUserForToken(token, ["chat"]);
+      this.knownRefreshToken = token.refreshToken ?? null;
+    } else {
+      throw new Error("Must initialize TwitchClient before use");
+    }
     this.linkedUserId = userId;
-    this.knownRefreshToken = token.refreshToken ?? null;
     return { userId, userChanged: previous !== null && previous !== userId };
   }
 
@@ -221,7 +246,21 @@ export default class TwitchClient {
     return JSON.parse(token) satisfies AccessTokenWithUserId;
   }
 
-  private async authenticate(credentials: TwitchAuthCredentials): Promise<RefreshingAuthProvider> {
+  private async authenticate(credentials: TwitchAuthCredentials | undefined): Promise<AuthProvider> {
+    const stored = await this.getBroadcasterToken();
+    const dashboardToken = asDashboardToken(stored);
+    if (dashboardToken) {
+      if (!this.args.requestToken) {
+        throw new Error("twitch_token came from a dashboard, but TwitchClient was given no requestToken to renew it");
+      }
+      this.linkedUserId = dashboardToken.userId;
+      return new DashboardAuthProvider(dashboardToken, this.args.requestToken);
+    }
+    if (!credentials?.clientId || !credentials.clientSecret) {
+      throw new Error(
+        "twitch_token did not come from a dashboard, and no Twitch app credentials are configured to refresh it"
+      );
+    }
     const authProvider = new RefreshingAuthProvider(credentials);
 
     authProvider.onRefresh(async (userId, token) => {
@@ -237,10 +276,17 @@ export default class TwitchClient {
       console.error(error);
     });
 
-    const response = await this.getBroadcasterToken();
-    this.linkedUserId = await authProvider.addUserForToken(response, ["chat"]);
-    this.knownRefreshToken = response.refreshToken ?? null;
+    this.linkedUserId = await authProvider.addUserForToken(stored, ["chat"]);
+    this.knownRefreshToken = stored.refreshToken ?? null;
 
     return authProvider;
   }
+}
+
+/** The stored token as a dashboard's, or null when it carries no dashboard client id. */
+function asDashboardToken(token: AccessTokenWithUserId & { clientId?: unknown }): DashboardToken | null {
+  if (typeof token.clientId !== "string" || token.clientId === "") {
+    return null;
+  }
+  return { ...token, refreshToken: null, clientId: token.clientId };
 }

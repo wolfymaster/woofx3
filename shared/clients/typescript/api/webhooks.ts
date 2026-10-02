@@ -13,14 +13,13 @@
 // adding or renaming event types.
 
 import type { StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
-import type { WorkflowDefinition } from "./workflow-definition";
-
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
  * code so renames surface as compile errors instead of silent string drift.
  */
 import type { ConfigField, WidgetSurface } from "./ui-schema";
+import type { WorkflowDefinition } from "./workflow-definition";
 
 export const EngineEventType = {
   MODULE_INSTALLED: "module.installed",
@@ -1517,5 +1516,81 @@ export function makeCallbackEnvelope<E extends CallbackEvent>(
     time,
     datacontenttype: "application/json",
     data: event,
+  };
+}
+
+// ==================== Requests ====================
+//
+// A request travels to the dashboard the way a callback does (same URL, same
+// Bearer token, same envelope), but the engine waits for the dashboard's
+// answer in the response body instead of treating any 2xx as delivered.
+
+export const EngineRequestType = {
+  /**
+   * The engine needs a current Twitch access token for the linked account.
+   * The dashboard owns the Twitch app and the refresh token: it refreshes
+   * when needed and answers with the access token alone.
+   */
+  TWITCH_TOKEN_REQUESTED: "twitch.token.requested",
+} as const;
+
+export type EngineRequestType = (typeof EngineRequestType)[keyof typeof EngineRequestType];
+
+export interface TwitchTokenRequestedEvent {
+  type: typeof EngineRequestType.TWITCH_TOKEN_REQUESTED;
+}
+
+export type EngineRequest = TwitchTokenRequestedEvent;
+
+/**
+ * A Twitch access token as the dashboard hands it to an engine. It carries
+ * the client id of the Twitch app that issued it, because Helix rejects a
+ * token presented with any other app's id, and no refresh token: only the
+ * dashboard refreshes.
+ */
+export interface TwitchTokenGrant {
+  userId: string;
+  accessToken: string;
+  scope: string[];
+  /** Seconds the token was valid for at `obtainmentTimestamp`. */
+  expiresIn: number;
+  /** Milliseconds since the epoch. */
+  obtainmentTimestamp: number;
+  clientId: string;
+}
+
+/**
+ * The dashboard's answer to `twitch.token.requested`. `not_linked`: no Twitch
+ * account is linked to this instance. `relink_required`: the dashboard can no
+ * longer refresh the token, and the streamer has to link Twitch again.
+ */
+export type TwitchTokenRequestedResponse =
+  | { token: TwitchTokenGrant }
+  | { token: null; reason: "not_linked" | "relink_required" };
+
+export interface RequestEnvelope {
+  specversion: "1.0";
+  id: string;
+  source: string;
+  type: EngineRequestType;
+  time: string;
+  datacontenttype?: string;
+  data: EngineRequest;
+}
+
+export function makeRequestEnvelope<E extends EngineRequest>(
+  request: E,
+  source = "engine",
+  id: string = globalThis.crypto?.randomUUID() ?? "",
+  time: string = new Date().toISOString()
+): RequestEnvelope {
+  return {
+    specversion: "1.0",
+    id,
+    source,
+    type: request.type,
+    time,
+    datacontenttype: "application/json",
+    data: request,
   };
 }

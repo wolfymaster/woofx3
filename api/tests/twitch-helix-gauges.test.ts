@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { TwitchHelixGauges } from "../src/twitch-helix-gauges";
+import { TwitchTokenSource } from "../src/twitch-token-source";
 
 const TOKEN = JSON.stringify({ accessToken: "tok", userId: "4242" });
 
@@ -12,9 +13,10 @@ function gauges(
   token: string | null = TOKEN,
   clientId: () => string | undefined = () => "cid"
 ) {
-  const db = { getSetting: mock(async () => token) } as any;
+  const db = { getSetting: mock(async () => token), setSetting: mock(async () => {}) };
   const fetchFn = mock(async (url: string, _init: RequestInit) => respond(url));
-  return { helix: new TwitchHelixGauges(db, fetchFn, clientId), fetchFn };
+  const twitch = new TwitchTokenSource(db, () => null, clientId);
+  return { helix: new TwitchHelixGauges(twitch, fetchFn), fetchFn };
 }
 
 describe("TwitchHelixGauges", () => {

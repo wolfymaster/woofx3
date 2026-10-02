@@ -1,18 +1,18 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
-import { type Span, type SharedLogger, SpanKind, withSpan } from "@woofx3/common/logging";
+import { type SharedLogger, type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
-import TwitchClient from "@woofx3/twitch";
+import TwitchClient, { requestTokenOverNats } from "@woofx3/twitch";
 import chalk from "chalk";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
+import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
-import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
 import type MessageBusService from "./services/messageBus";
@@ -202,14 +202,21 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       setSetting: async (key, value) => {
         await SetSetting({ key, value: { stringValue: value }, userId: "" }, { baseURL: dbBaseURL });
       },
+      requestToken: requestTokenOverNats((subject, data, opts) =>
+        ctx.services.messageBus.client.request(subject, data, opts)
+      ),
     });
 
+    // Only an engine that refreshes Twitch tokens itself has an app of its
+    // own; one whose token comes from a dashboard asks the dashboard instead.
+    const clientId = ctx.config.getConfig("woofx3TwitchClientId") as string | undefined;
+    const clientSecret = ctx.config.getConfig("woofx3TwitchClientSecret") as string | undefined;
     try {
-      await twitchClient.init({
-        clientId: ctx.config.getConfig("woofx3TwitchClientId") as string,
-        clientSecret: ctx.config.getConfig("woofx3TwitchClientSecret") as string,
-        redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string,
-      });
+      await twitchClient.init(
+        clientId && clientSecret
+          ? { clientId, clientSecret, redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string }
+          : undefined
+      );
     } catch (err) {
       if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
         this.link = "waiting";
