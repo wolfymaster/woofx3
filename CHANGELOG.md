@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/wolfymaster/woofx3/compare/v0.7.0...v0.8.0) (2026-10-02)
+
+### Features
+
+* **barkloader:** limit ctx.http to destinations the streamer approved ([2236de8](https://github.com/wolfymaster/woofx3/commit/2236de832b7a38b55e06d76c5669a4c537235ea2))
+* **capabilities:** report that Twitch tokens are renewed through the dashboard ([460f8ce](https://github.com/wolfymaster/woofx3/commit/460f8ce60166ea808d20799642b506df5c10826b))
+
 ## [0.7.0](https://github.com/wolfymaster/woofx3/compare/v0.6.2...v0.7.0) (2026-10-02)
 
 ### Features
