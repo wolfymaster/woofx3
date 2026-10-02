@@ -1396,6 +1396,22 @@ function applyPreviewLayout(elements, layout) {
   }
 }
 
+// public/scene-manager/scene-background.ts
+function sceneBackground(layout) {
+  const value = layout.backgroundColor;
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+function applySceneBackground(element, layout) {
+  const background = sceneBackground(layout);
+  if (background !== null) {
+    element.style.backgroundColor = background;
+  }
+}
+
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 function generateNonce() {
@@ -1422,6 +1438,7 @@ function main() {
   if (!sceneData || !container) {
     return;
   }
+  applySceneBackground(document.body, sceneData.layout);
   const sceneId = sceneData.id;
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
   const bridges = new Set;
