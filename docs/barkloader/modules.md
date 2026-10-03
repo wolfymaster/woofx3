@@ -1323,6 +1323,23 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
+| `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
+
+`ctx.resources.run` is how a module drives a resource another module provides. The
+action runs as the providing module — its function, its storage, the events it
+announces — on the caller's thread, within the caller's time. Before running it the
+engine checks that:
+
+- the instance belongs to the calling module, or one of the calling module's
+  settings holds its canonical id: the streamer chose it, typically through a
+  [linked `resource_ref` setting](#linking-a-resource);
+- it exists and is of the kind its id names;
+- the providing module declares `{kind}.{verb}` as a `type: "function"` action;
+- the calling module declares every permission the providing module does, since the
+  action runs with them.
+
+Runs may nest (an action that runs another), up to four deep; deeper is refused as a
+loop. A failure throws, carrying the reason from wherever in the chain it happened.
 
 **Where an instance's value lives:** at `state:<canonicalId>` in the owning module's storage (e.g. `state:woofx3:counter:death_count`). This is the contract, not a suggestion: the engine's `getResourceValues` reads it, and the dashboard's value mirror keys on it, so a kind that stores its value anywhere else shows nothing on its first-party page.
 

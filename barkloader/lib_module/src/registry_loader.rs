@@ -348,7 +348,33 @@ async fn build_registered_module<R: Repository>(
         oauth: stored_manifest(module)
             .map(|manifest| manifest.oauth)
             .unwrap_or_default(),
+        actions: function_actions(module),
     })
+}
+
+/// Action id to the function it runs, for the module's function actions, read
+/// from its stored manifest: what `ctx.resources.run` may run. A cross-module
+/// function reference is left out, since `run` runs only the code the
+/// providing module ships, and so is a `systemOnly` action, which module code
+/// may not reach by any route (see docs/services/engine-integrity.md).
+fn function_actions(module: &ModuleRecord) -> HashMap<String, String> {
+    stored_manifest(module)
+        .map(|manifest| {
+            manifest
+                .actions
+                .into_iter()
+                .filter(|action| !action.system_only)
+                .filter_map(|action| match action.implementation {
+                    crate::module_manifest::ManifestActionImpl::Function { function }
+                        if !function.contains(':') =>
+                    {
+                        Some((action.id, function))
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The events of the module's eventbus triggers, read from its stored
@@ -457,7 +483,7 @@ pub fn unregister_schedule<S: ScheduleRegistrar>(scheduler: &S, module_key: &str
 mod tests {
     use super::{
         BackgroundTaskJson, ModuleRecord, declared_permissions, eventbus_event_types,
-        functions_failed_to_load, module_schedule,
+        function_actions, functions_failed_to_load, module_schedule,
     };
 
     fn module_with_manifest(manifest_json: Option<&str>) -> ModuleRecord {
@@ -483,6 +509,25 @@ mod tests {
         assert_eq!(
             events,
             ["counter.changed".to_string()].into_iter().collect()
+        );
+    }
+
+    // What `ctx.resources.run` may run: the module's own function actions,
+    // never a `systemOnly` one or another module's function.
+    #[test]
+    fn runnable_actions_are_the_modules_own_function_actions_but_not_system_only_ones() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3",
+            "functions": [{ "id": "timer.add", "name": "Add", "runtime": "js", "path": "f.js" }],
+            "actions": [
+                { "id": "timer.add", "name": "Add", "type": "function", "function": "timer.add" },
+                { "id": "danger", "name": "Danger", "type": "function", "function": "timer.add", "systemOnly": true },
+                { "id": "borrowed", "name": "Borrowed", "type": "function", "function": "other:function:x" },
+                { "id": "alert", "name": "Alert", "type": "native", "handler": "alert" }
+            ] }"#;
+        let actions = function_actions(&module_with_manifest(Some(manifest)));
+        assert_eq!(
+            actions,
+            [("timer.add".to_string(), "timer.add".to_string())].into_iter().collect()
         );
     }
 

@@ -26,7 +26,8 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | `ctx.result(value, events)` | Returns a tagged value; barkloader checks each event against the module's declared eventbus triggers, publishes them itself, and hands `value` to the caller | Yes |
 | Webhook handler result | Returns `{ status, headers?, body?, events? }`; the engine checks it, publishes the events itself, then answers the request | Yes |
 | `ctx.storage.set` | Writes module storage; the engine emits `module.storage.changed` itself | Yes |
-| `ctx.resources.*` | Engine-defined create / delete / list operations | Yes |
+| `ctx.resources.*` | Engine-defined create / get / delete / list operations | Yes |
+| `ctx.resources.run` | Runs the providing module's `{kind}.{verb}` function action on an instance the module owns or its settings link to; the caller must declare the provider's permissions, and a `systemOnly` action is never runnable | Yes: the streamer chose the instance, and the action is one the provider declared |
 | `ctx.twitch.*` | Fixed subject and command table defined by the engine; the module supplies arguments and gets the twitch service's answer. Commands that act on the channel or its chatters need a permission the manifest declares | Yes: a capability, not a channel |
 | `ctx.obs.*` | Fixed subjects (`engine.obs.command`, `engine.obs.options`) and function table defined by the engine; the module supplies names and gets the scene manager's answer. Changing OBS needs the `obs.control` permission the manifest declares; listing names needs none | Yes: a capability, not a channel |
 | `ctx.chat.sendMessage` | Engine-defined chat sender | Yes |
