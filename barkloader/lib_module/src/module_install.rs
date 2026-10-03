@@ -12,6 +12,7 @@ use super::manifest_validate::{
     WorkflowTriggerRef,
 };
 use super::module_file::ModuleFile;
+use super::theme::InstalledModule;
 use super::module_manifest::{
     ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger, WEBHOOK_EVENT_PREFIX,
     resolve_zip_file,
@@ -312,6 +313,29 @@ async fn prune_removed_resources(
     }
 }
 
+/// The installed module that declares resource `kind`, which owns the
+/// instances made of it. More than one declaring it leaves no single owner to
+/// create under, so the install says so rather than guessing.
+fn kind_owner(installed: &[InstalledModule], installing: &str, kind: &str) -> Result<String> {
+    let mut owners: Vec<&str> = installed
+        .iter()
+        .filter(|m| m.module_id != installing && m.manifest.resources.iter().any(|r| r.kind == kind))
+        .map(|m| m.module_id.as_str())
+        .collect();
+    owners.sort_unstable();
+    owners.dedup();
+    match owners.as_slice() {
+        [owner] => Ok((*owner).to_string()),
+        [] => Err(anyhow!(
+            "no installed module provides `{kind}` resources; install the module that does first"
+        )),
+        many => Err(anyhow!(
+            "several installed modules provide `{kind}` resources ({}), so there is no single one to create it under",
+            many.join(", ")
+        )),
+    }
+}
+
 /// Mutable state threaded through a single install's step execution:
 /// values every step's own code needs, plus values later steps need that
 /// an earlier step computed (`db_record_id` from `CreateModule`,
@@ -359,6 +383,9 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 self.execute_register_background_tasks(db_proxy).await
             }
             InstallStep::RegisterSettings => self.execute_register_settings(db_proxy).await,
+            InstallStep::LinkResourceSettings => {
+                self.execute_link_resource_settings(db_proxy).await
+            }
             InstallStep::RegisterAssets => self.execute_register_assets(db_proxy).await,
             InstallStep::RegisterWorkflow(canonical_id) => {
                 self.execute_register_workflow(canonical_id, db_proxy).await
@@ -721,6 +748,68 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .register_module_settings(self.module_key, setting_inputs)
             .await
             .map_err(|e| anyhow!("register settings: {}", e))?;
+        Ok(())
+    }
+
+    /// Links every `resource_ref` setting that declares `create` and is still
+    /// empty: the instance is `{declaring module}:{kind}:{instanceId}`, made
+    /// when it does not exist yet and reused when it does, so a reinstall or a
+    /// second module asking for the same instance links rather than fails.
+    ///
+    /// A setting that already holds a value is left alone, whether install
+    /// linked it before or the streamer picked another instance since.
+    async fn execute_link_resource_settings(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let current: HashMap<String, String> = db_proxy
+            .get_module_settings(self.module_key)
+            .await
+            .map_err(|e| anyhow!("link resource settings: read settings: {e}"))?
+            .into_iter()
+            .map(|s| (s.key, s.value))
+            .collect();
+        let mut installed: Option<Vec<InstalledModule>> = None;
+        for setting in &self.manifest.settings {
+            let (Some(create), Some(kind)) = (&setting.create, setting.resource_kind.as_deref()) else {
+                continue;
+            };
+            if current.get(&setting.id).is_some_and(|v| !v.trim().is_empty()) {
+                continue;
+            }
+            let owner = if self.manifest.resources.iter().any(|r| r.kind == kind) {
+                self.manifest.id.clone()
+            } else {
+                if installed.is_none() {
+                    let records = db_proxy
+                        .list_modules()
+                        .await
+                        .map_err(|e| anyhow!("link resource settings: list modules: {e}"))?;
+                    installed = Some(records.into_iter().filter_map(InstalledModule::from_record).collect());
+                }
+                kind_owner(installed.as_deref().unwrap_or_default(), &self.manifest.id, kind)
+                    .map_err(|e| anyhow!("setting `{}`: {e}", setting.id))?
+            };
+            let canonical_id = format!("{owner}:{kind}:{}", create.instance_id);
+            let existing = db_proxy
+                .get_resource_instance(&canonical_id)
+                .await
+                .map_err(|e| anyhow!("setting `{}`: look up {canonical_id}: {e}", setting.id))?;
+            if existing.is_none() {
+                let settings_json = create
+                    .settings
+                    .as_ref()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "{}".to_string());
+                db_proxy
+                    .create_resource_instance(&owner, kind, &create.instance_id, &create.display_name, &settings_json)
+                    .await
+                    .map_err(|e| anyhow!("setting `{}`: create {canonical_id}: {e}", setting.id))?;
+                info!("Created {} for module {}'s setting {}", canonical_id, self.module_key, setting.id);
+            }
+            db_proxy
+                .set_module_setting(self.module_key, &setting.id, &canonical_id)
+                .await
+                .map_err(|e| anyhow!("setting `{}`: link {canonical_id}: {e}", setting.id))?;
+            info!("Linked module {}'s setting {} to {}", self.module_key, setting.id, canonical_id);
+        }
         Ok(())
     }
 
@@ -2497,5 +2586,135 @@ mod tests {
             message.contains("o1"),
             "the error must name the offending id: {message}"
         );
+    }
+}
+
+#[cfg(test)]
+mod link_resource_settings_tests {
+    use super::super::db_proxy::ModuleRecord;
+    use super::super::db_proxy_client::FakeDbProxyClient;
+    use super::*;
+    use crate::module_file::{ModuleFileKind, ModuleValidManifestKind};
+    use lib_repository::{FileRepository, FileRepositoryConfig};
+
+    const LINKED: &str = "woofx3:timer:hype_board_subathon";
+
+    fn linking_manifest() -> (ModuleManifest, Vec<u8>) {
+        let json = serde_json::json!({
+            "id": "hype_board",
+            "name": "Hype Board",
+            "version": "1.0.0",
+            "settings": [{
+                "id": "timer",
+                "label": "Subathon timer",
+                "type": "resource_ref",
+                "resourceKind": "timer",
+                "create": {
+                    "instanceId": "hype_board_subathon",
+                    "displayName": "Hype Board subathon",
+                    "settings": { "duration": 3600 }
+                }
+            }]
+        })
+        .to_string()
+        .into_bytes();
+        let manifest: ModuleManifest = serde_json::from_slice(&json).expect("manifest");
+        (manifest, json)
+    }
+
+    fn provider(module_id: &str) -> ModuleRecord {
+        let manifest = serde_json::json!({
+            "id": module_id, "name": module_id, "version": "1.0.0",
+            "resources": [{ "kind": "timer", "name": "Timer" }],
+        });
+        serde_json::from_value(serde_json::json!({
+            "id": format!("row-{module_id}"),
+            "module_id": module_id,
+            "module_key": format!("{module_id}:1.0.0:abc1234"),
+            "name": module_id,
+            "version": "1.0.0",
+            "state": "active",
+            "manifest": manifest.to_string(),
+        }))
+        .expect("module record")
+    }
+
+    async fn install(db_proxy: &FakeDbProxyClient) -> Result<()> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+        let (manifest, json) = linking_manifest();
+        let files = vec![ModuleFile::new(
+            "module.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            json.clone(),
+        )];
+        let key = manifest.compute_module_key(&json);
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/hype_board.zip",
+            Some(db_proxy as &dyn ModuleDbProxy),
+            true,
+            &key,
+            "",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn install_creates_the_instance_under_the_kinds_module_and_links_it() {
+        let db = FakeDbProxyClient::new().with_installed([provider("woofx3")]);
+        install(&db).await.expect("install");
+
+        let instances = db.instances();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].canonical_id, LINKED);
+        assert_eq!(instances[0].display_name, "Hype Board subathon");
+        assert_eq!(instances[0].settings_json, r#"{"duration":3600}"#);
+        assert_eq!(db.settings().get("timer").map(String::as_str), Some(LINKED));
+    }
+
+    #[tokio::test]
+    async fn an_instance_that_already_exists_is_linked_not_created_again() {
+        let db = FakeDbProxyClient::new()
+            .with_installed([provider("woofx3")])
+            .with_instance(LINKED);
+        install(&db).await.expect("install");
+
+        assert_eq!(db.instances().len(), 1);
+        assert!(!db.calls().contains(&"create_resource_instance".to_string()));
+        assert_eq!(db.settings().get("timer").map(String::as_str), Some(LINKED));
+    }
+
+    #[tokio::test]
+    async fn a_setting_the_streamer_already_chose_is_left_alone() {
+        let db = FakeDbProxyClient::new()
+            .with_installed([provider("woofx3")])
+            .with_setting("timer", "woofx3:timer:my_own");
+        install(&db).await.expect("install");
+
+        assert!(db.instances().is_empty());
+        assert_eq!(
+            db.settings().get("timer").map(String::as_str),
+            Some("woofx3:timer:my_own")
+        );
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_no_installed_module_provides_the_kind() {
+        let db = FakeDbProxyClient::new();
+        let err = install(&db).await.expect_err("nothing provides timers");
+        assert!(err.to_string().contains("no installed module provides `timer`"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_several_modules_provide_the_kind() {
+        let db = FakeDbProxyClient::new().with_installed([provider("woofx3"), provider("timerpro")]);
+        let err = install(&db).await.expect_err("ambiguous owner");
+        assert!(err.to_string().contains("timerpro, woofx3"), "{err}");
     }
 }

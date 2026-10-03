@@ -986,6 +986,9 @@ pub enum InstallStep {
     RegisterWidgets,
     RegisterBackgroundTasks,
     RegisterSettings,
+    /// Links each empty `resource_ref` setting that declares `create` to its
+    /// instance, creating the instance when it does not exist yet.
+    LinkResourceSettings,
     RegisterAssets,
     RegisterWorkflow(CanonicalId),
     RegisterCommand(CanonicalId),
@@ -1129,6 +1132,15 @@ pub async fn build_install_plan(
             InstallStep::RegisterSettings,
             (2, 4, 0),
             &[&InstallStep::CreateModule],
+        );
+    }
+    if manifest.settings.iter().any(|s| s.create.is_some()) {
+        add_step(
+            &mut nodes,
+            &mut index_of,
+            InstallStep::LinkResourceSettings,
+            (2, 4, 1),
+            &[&InstallStep::RegisterSettings],
         );
     }
     if !resolved.assets.is_empty() {
@@ -1817,8 +1829,44 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
         if setting.setting_type == "button" && setting.action.is_null() {
             return Err(anyhow!("setting #{i} ({id}): `button` needs an `action`"));
         }
+        validate_resource_ref_setting(setting, &format!("setting #{i} ({id})"))?;
         if !seen.insert(id) {
             return Err(anyhow!("duplicate setting `id` {id:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// A `resource_ref` setting names the kind it links to, and may say what
+/// install creates when it is empty. Neither field means anything elsewhere.
+fn validate_resource_ref_setting(setting: &ManifestSetting, context: &str) -> Result<()> {
+    if setting.setting_type != "resource_ref" {
+        if setting.resource_kind.is_some() {
+            return Err(anyhow!("{context}: `resourceKind` is only for a `resource_ref` setting"));
+        }
+        if setting.create.is_some() {
+            return Err(anyhow!("{context}: `create` is only for a `resource_ref` setting"));
+        }
+        return Ok(());
+    }
+    let Some(kind) = setting.resource_kind.as_deref() else {
+        return Err(anyhow!("{context}: `resource_ref` needs `resourceKind`"));
+    };
+    validate_segment(kind, &format!("{context}: `resourceKind`"))?;
+    // The value is an instance's canonical id, which only an existing
+    // instance has; a manifest cannot know it ahead of install.
+    if setting.default_value.is_some() {
+        return Err(anyhow!(
+            "{context}: a `resource_ref` setting cannot declare `defaultValue`; use `create` to link an instance at install"
+        ));
+    }
+    if let Some(create) = &setting.create {
+        validate_segment(&create.instance_id, &format!("{context}: `create.instanceId`"))?;
+        if create.display_name.trim().is_empty() {
+            return Err(anyhow!("{context}: `create.displayName` must be non-empty"));
+        }
+        if create.settings.as_ref().is_some_and(|s| !s.is_object()) {
+            return Err(anyhow!("{context}: `create.settings` must be an object"));
         }
     }
     Ok(())
@@ -3122,6 +3170,70 @@ mod tests {
         let m = minimal(r#", "settings": [{ "id": "goals", "label": "Goals", "type": "list" }]"#);
         let err = validate(&m).expect_err("a list setting");
         assert!(err.to_string().contains("cannot be a `list`"), "{err}");
+    }
+
+    #[test]
+    fn accepts_a_resource_ref_setting_that_links_an_instance_at_install() {
+        let m = minimal(
+            r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref",
+                "resourceKind": "timer",
+                "create": { "instanceId": "subathon", "displayName": "Subathon", "settings": { "duration": 60 } } }]"#,
+        );
+        validate(&m).expect("a linking resource_ref setting");
+    }
+
+    #[test]
+    fn rejects_a_resource_ref_setting_without_a_kind() {
+        let m = minimal(r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref" }]"#);
+        assert!(bad_err(&m).contains("`resource_ref` needs `resourceKind`"));
+    }
+
+    #[test]
+    fn rejects_resource_kind_and_create_on_any_other_setting() {
+        let kind = minimal(r#", "settings": [{ "id": "n", "label": "N", "type": "text", "resourceKind": "timer" }]"#);
+        assert!(bad_err(&kind).contains("`resourceKind` is only for a `resource_ref` setting"));
+        let create = minimal(
+            r#", "settings": [{ "id": "n", "label": "N", "type": "text",
+                "create": { "instanceId": "x", "displayName": "X" } }]"#,
+        );
+        assert!(bad_err(&create).contains("`create` is only for a `resource_ref` setting"));
+    }
+
+    #[test]
+    fn rejects_a_default_value_on_a_resource_ref_setting() {
+        let m = minimal(
+            r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref",
+                "resourceKind": "timer", "defaultValue": "woofx3:timer:x" }]"#,
+        );
+        assert!(bad_err(&m).contains("cannot declare `defaultValue`"));
+    }
+
+    #[test]
+    fn rejects_a_malformed_create() {
+        let id = minimal(
+            r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref",
+                "resourceKind": "timer", "create": { "instanceId": "a:b", "displayName": "X" } }]"#,
+        );
+        assert!(bad_err(&id).contains("`create.instanceId`"));
+        let settings = minimal(
+            r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref",
+                "resourceKind": "timer", "create": { "instanceId": "x", "displayName": "X", "settings": 5 } }]"#,
+        );
+        assert!(bad_err(&settings).contains("`create.settings` must be an object"));
+    }
+
+    #[tokio::test]
+    async fn plans_the_link_after_settings_are_registered() {
+        let m = minimal(
+            r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref",
+                "resourceKind": "timer", "create": { "instanceId": "x", "displayName": "X" } }]"#,
+        );
+        let resolved = validate(&m).expect("validate");
+        let db = super::super::db_proxy_client::FakeDbProxyClient::new();
+        let plan = build_install_plan(&m, &resolved, &db).await.expect("plan");
+        let settings = plan.iter().position(|s| *s == InstallStep::RegisterSettings).expect("settings step");
+        let link = plan.iter().position(|s| *s == InstallStep::LinkResourceSettings).expect("link step");
+        assert!(settings < link, "{plan:?}");
     }
 
     #[test]

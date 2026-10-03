@@ -911,6 +911,8 @@ types have nothing to bind to.
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
 | `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. Rejected on `type: "secret"`: the manifest would ship the secret. |
 | `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
+| `resourceKind` | string | no | Required for `type: "resource_ref"`, and only allowed there: the kind of resource instance the setting links to (`timer`). Its value is that instance's canonical id. A `resource_ref` setting takes no `defaultValue`. See [Linking a resource](#linking-a-resource). |
+| `create` | object | no | Only on a `resource_ref` setting: `{ instanceId, displayName, settings? }`, the instance install creates and links while the setting is empty. See [Linking a resource](#linking-a-resource). |
 
 Example — credentials for a Spotify integration. The client id is plain configuration;
 the client secret and refresh token are credentials, so they are `secret`:
@@ -952,6 +954,38 @@ manifest `default` (or type-based zero value) written. The one exception is a
 setting whose declared `type` changed: its row takes the new type, and a value that
 becomes `secret` is sealed in place, while a secret that stops being one is cleared
 rather than decrypted into plain text.
+
+#### Linking a resource
+
+A module that works on a resource another module provides — a subathon board
+adding time to a timer — links it with a `resource_ref` setting. The streamer
+picks the instance in the module's settings, and the module's functions read its
+canonical id from `ctx.module.settings` and drive it with
+[`ctx.resources.run`](#ctxresources-surface).
+
+```json
+{
+  "id": "timer",
+  "label": "Subathon timer",
+  "type": "resource_ref",
+  "resourceKind": "timer",
+  "create": { "instanceId": "hype_board_subathon", "displayName": "Hype Board subathon", "settings": { "duration": 3600 } }
+}
+```
+
+With `create`, the module works without the streamer making an instance first.
+After registering settings, install links every such setting that is still
+empty: the instance is `{module}:{resourceKind}:{instanceId}`, where `{module}`
+is the module that declares the kind — this one, or else the one installed
+module that does. It is created with `displayName` and `settings` when it does
+not exist and reused when it does, so a reinstall, or a second module asking for
+the same instance, links rather than fails. A setting that already holds a value
+is left alone, whether install linked it earlier or the streamer chose another
+instance since. Install fails when no installed module provides the kind, or
+when several do and none of them is the installing module.
+
+Uninstalling the module leaves the instance in place: it belongs to the module
+that provides the kind, and the streamer may have put it to other uses.
 
 #### Reading settings at runtime — `ctx.module`
 
