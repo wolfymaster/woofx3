@@ -29,6 +29,7 @@ use super::canonical_id::{
     CANONICAL_ID_SEPARATOR, CanonicalId, ResourceKind, looks_like_canonical_id, validate_segment,
 };
 use super::db_proxy_client::ModuleDbProxy;
+use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
     COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
     LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand,
@@ -293,6 +294,7 @@ pub fn validate_with_provenance(
     validate_deadlines(manifest)?;
     validate_permissions(manifest)?;
     validate_oauth(manifest)?;
+    validate_local(manifest)?;
 
     // Step ids are the names an author's own `${id.field}` references and
     // `dependsOn` entries resolve against. A duplicate makes a reference
@@ -890,17 +892,22 @@ fn validate_permissions(manifest: &ModuleManifest) -> Result<()> {
 
 /// `oauth[]`: each integration names its OAuth endpoints, the settings that
 /// hold its client credentials, and the hosts its token may go to.
+/// 1-40 lowercase letters, digits, `_` or `-`: the id of an `oauth[]` or
+/// `local[]` entry, and a `discover.known` discoverer name.
+fn is_short_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 40
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
 fn validate_oauth(manifest: &ModuleManifest) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::new();
     for (i, integration) in manifest.oauth.iter().enumerate() {
         let id = integration.id.as_str();
         let context = format!("oauth[{i}] ({id})");
-        let id_ok = !id.is_empty()
-            && id.len() <= 40
-            && id
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
-        if !id_ok {
+        if !is_short_id(id) {
             return Err(anyhow!(
                 "{context}: `id` must be 1-40 lowercase letters, digits, `_` or `-`"
             ));
@@ -959,6 +966,133 @@ fn validate_oauth(manifest: &ModuleManifest) -> Result<()> {
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+const MAX_LOCAL_NAME_CHARS: usize = 80;
+
+/// `_service._tcp` or `_service._udp`, the DNS-SD form the companion browses.
+fn is_mdns_service_type(value: &str) -> bool {
+    let Some((service, proto)) = value.rsplit_once('.') else {
+        return false;
+    };
+    let service_ok = service.len() >= 2
+        && service.len() <= 16
+        && service.starts_with('_')
+        && service[1..]
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    service_ok && (proto == "_tcp" || proto == "_udp")
+}
+
+/// A module's `local[]` endpoints. Each must name settings that exist with the
+/// types the platform writes into them, because the companion fills those
+/// settings in and the endpoint dialer reads them back.
+fn validate_local(manifest: &ModuleManifest) -> Result<()> {
+    let mut ids: HashSet<&str> = HashSet::new();
+    let mut named: HashSet<&str> = HashSet::new();
+    for (i, endpoint) in manifest.local.iter().enumerate() {
+        let id = endpoint.id.as_str();
+        let context = format!("local[{i}] ({id})");
+        if !is_short_id(id) {
+            return Err(anyhow!(
+                "{context}: `id` must be 1-40 lowercase letters, digits, `_` or `-`"
+            ));
+        }
+        if !ids.insert(id) {
+            return Err(anyhow!("{context}: `id` is listed twice"));
+        }
+        let name_chars = endpoint.name.trim().chars().count();
+        if name_chars == 0 || name_chars > MAX_LOCAL_NAME_CHARS {
+            return Err(anyhow!(
+                "{context}: `name` must be 1-{MAX_LOCAL_NAME_CHARS} characters"
+            ));
+        }
+        require_local_setting(
+            manifest,
+            &context,
+            "hostSetting",
+            &endpoint.host_setting,
+            "text",
+            &mut named,
+        )?;
+        require_local_setting(
+            manifest,
+            &context,
+            "portSetting",
+            &endpoint.port_setting,
+            "number",
+            &mut named,
+        )?;
+        if let Some(password) = &endpoint.password_setting {
+            require_local_setting(
+                manifest,
+                &context,
+                "passwordSetting",
+                password,
+                SECRET_SETTING_TYPE,
+                &mut named,
+            )?;
+        }
+        match &endpoint.discover {
+            None => {}
+            Some(LocalDiscover {
+                mdns: Some(m),
+                known: None,
+            }) => {
+                if !is_mdns_service_type(m) {
+                    return Err(anyhow!(
+                        "{context}: `discover.mdns` must be a DNS-SD service type such as `_elg._tcp`, not `{m}`"
+                    ));
+                }
+            }
+            Some(LocalDiscover {
+                mdns: None,
+                known: Some(k),
+            }) => {
+                if !is_short_id(k) {
+                    return Err(anyhow!(
+                        "{context}: `discover.known` must be 1-40 lowercase letters, digits, `_` or `-`, not `{k}`"
+                    ));
+                }
+            }
+            Some(_) => {
+                return Err(anyhow!(
+                    "{context}: `discover` must have exactly one of `mdns` or `known`"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A setting a local endpoint field names: declared, of the wanted type, and
+/// named by no other local endpoint field. Two endpoints sharing a port
+/// setting would overwrite each other's discovered values.
+fn require_local_setting<'m>(
+    manifest: &'m ModuleManifest,
+    context: &str,
+    field: &str,
+    value: &'m str,
+    wanted: &str,
+    named: &mut HashSet<&'m str>,
+) -> Result<()> {
+    let Some(setting) = manifest.settings.iter().find(|s| s.id == value) else {
+        return Err(anyhow!(
+            "{context}: `{field}` names `{value}`, which is not a declared setting"
+        ));
+    };
+    if setting.setting_type != wanted {
+        return Err(anyhow!(
+            "{context}: `{field}` must be a `{wanted}` setting, `{value}` is `{}`",
+            setting.setting_type
+        ));
+    }
+    if !named.insert(value) {
+        return Err(anyhow!(
+            "{context}: `{field}` names `{value}`, which another local endpoint field already names"
+        ));
     }
     Ok(())
 }
@@ -4102,6 +4236,156 @@ mod tests {
                 .to_string()
                 .contains("listed twice")
         );
+    }
+
+    const OBS_SETTINGS: &str = r#", "settings": [
+        { "id": "host", "label": "Host", "type": "text" },
+        { "id": "port", "label": "Port", "type": "number" },
+        { "id": "password", "label": "Password", "type": "secret" }
+    ]"#;
+
+    const OBS_LOCAL: &str = r#""local": [{
+        "id": "obs", "name": "OBS WebSocket", "protocol": "websocket",
+        "hostSetting": "host", "portSetting": "port", "passwordSetting": "password",
+        "discover": { "known": "obs-websocket" }
+    }]"#;
+
+    fn with_local(local: &str) -> ModuleManifest {
+        minimal(&format!("{OBS_SETTINGS}, {local}"))
+    }
+
+    #[test]
+    fn a_local_endpoint_installs_and_is_stored() {
+        let manifest = with_local(OBS_LOCAL);
+        validate(&manifest).expect("valid");
+        let stored = serde_json::to_value(&manifest).expect("serializes");
+        assert_eq!(stored["local"][0]["hostSetting"], "host");
+        assert_eq!(stored["local"][0]["protocol"], "websocket");
+        assert_eq!(stored["local"][0]["discover"]["known"], "obs-websocket");
+        assert!(stored["local"][0]["discover"].get("mdns").is_none());
+    }
+
+    #[test]
+    fn a_manifest_without_local_endpoints_stores_no_local_key() {
+        let manifest = minimal(OBS_SETTINGS);
+        validate(&manifest).expect("valid");
+        let stored = serde_json::to_value(&manifest).expect("serializes");
+        assert!(stored.get("local").is_none());
+    }
+
+    #[test]
+    fn a_local_endpoint_may_be_found_by_mdns_or_not_at_all() {
+        let mdns = OBS_LOCAL.replace(
+            r#""discover": { "known": "obs-websocket" }"#,
+            r#""discover": { "mdns": "_elg._tcp" }"#,
+        );
+        validate(&with_local(&mdns)).expect("mdns discovery installs");
+        let none = OBS_LOCAL.replace(
+            r#",
+        "discover": { "known": "obs-websocket" }"#,
+            "",
+        );
+        validate(&with_local(&none)).expect("no discovery installs");
+        let no_password = OBS_LOCAL.replace(r#", "passwordSetting": "password""#, "");
+        validate(&with_local(&no_password)).expect("no password installs");
+    }
+
+    #[test]
+    fn a_local_endpoint_names_settings_of_the_right_types() {
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                r#""hostSetting": "host""#,
+                r#""hostSetting": "missing""#,
+                "not a declared setting",
+            ),
+            (
+                r#""hostSetting": "host""#,
+                r#""hostSetting": "port""#,
+                "must be a `text` setting",
+            ),
+            (
+                r#""portSetting": "port""#,
+                r#""portSetting": "host""#,
+                "must be a `number` setting",
+            ),
+            (
+                r#""passwordSetting": "password""#,
+                r#""passwordSetting": "host""#,
+                "must be a `secret` setting",
+            ),
+            (r#""id": "obs""#, r#""id": "OBS""#, "`id` must be 1-40"),
+            (
+                r#""name": "OBS WebSocket""#,
+                r#""name": "  ""#,
+                "`name` must be 1-80",
+            ),
+            (
+                r#""discover": { "known": "obs-websocket" }"#,
+                r#""discover": {}"#,
+                "exactly one of",
+            ),
+            (
+                r#""discover": { "known": "obs-websocket" }"#,
+                r#""discover": { "known": "obs-websocket", "mdns": "_elg._tcp" }"#,
+                "exactly one of",
+            ),
+            (
+                r#""discover": { "known": "obs-websocket" }"#,
+                r#""discover": { "mdns": "elg.tcp" }"#,
+                "mdns",
+            ),
+            (
+                r#""discover": { "known": "obs-websocket" }"#,
+                r#""discover": { "known": "OBS" }"#,
+                "discover.known",
+            ),
+        ];
+        for (find, replace, expected) in cases {
+            let manifest = with_local(&OBS_LOCAL.replace(find, replace));
+            let err = validate(&manifest).expect_err(replace).to_string();
+            assert!(err.contains(expected), "{replace}: {err}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_local_protocol_or_field_does_not_parse() {
+        for local in [
+            OBS_LOCAL.replace(r#""protocol": "websocket""#, r#""protocol": "udp""#),
+            OBS_LOCAL.replace(r#""id": "obs""#, r#""id": "obs", "address": "10.0.0.1""#),
+        ] {
+            let json =
+                format!(r#"{{"id":"m","name":"M","version":"1.0.0"{OBS_SETTINGS},{local}}}"#);
+            assert!(
+                serde_json::from_str::<ModuleManifest>(&json).is_err(),
+                "{local}"
+            );
+        }
+    }
+
+    #[test]
+    fn two_endpoints_may_not_share_a_setting_or_an_id() {
+        let settings = r#", "settings": [
+            { "id": "host", "label": "Host", "type": "text" },
+            { "id": "port", "label": "Port", "type": "number" },
+            { "id": "host2", "label": "Host 2", "type": "text" },
+            { "id": "port2", "label": "Port 2", "type": "number" }
+        ]"#;
+        let twice = minimal(&format!(
+            r#"{settings}, "local": [
+                {{ "id": "a", "name": "A", "protocol": "http", "hostSetting": "host", "portSetting": "port" }},
+                {{ "id": "a", "name": "A", "protocol": "http", "hostSetting": "host2", "portSetting": "port2" }}
+            ]"#
+        ));
+        let err = validate(&twice).unwrap_err().to_string();
+        assert!(err.contains("listed twice"), "{err}");
+        let shared = minimal(&format!(
+            r#"{settings}, "local": [
+                {{ "id": "a", "name": "A", "protocol": "http", "hostSetting": "host", "portSetting": "port" }},
+                {{ "id": "b", "name": "B", "protocol": "http", "hostSetting": "host2", "portSetting": "port" }}
+            ]"#
+        ));
+        let err = validate(&shared).unwrap_err().to_string();
+        assert!(err.contains("already names"), "{err}");
     }
 
     #[test]
