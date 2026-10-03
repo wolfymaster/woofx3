@@ -1,9 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
 import {
+  linkedResources,
   MODULE_STATE_EVENT,
   type ModuleStateDb,
   ModuleStateWatch,
   resourceReading,
+  storageModuleFor,
 } from "../../src/scene/module-state";
 
 const logger = {
@@ -145,6 +147,39 @@ describe("resourceReading of a timer", () => {
   });
 });
 
+describe("storageModuleFor", () => {
+  const settings = (rows: Record<string, { key: string; value: string; valueType: string }[]>) => ({
+    listModuleSettings: async (moduleId: string) => rows[moduleId] ?? [],
+  });
+
+  it("reads a module's own keys and own instances from its own storage", async () => {
+    const db = settings({});
+    expect(await storageModuleFor(db, "woofx3", COUNTER_KEY)).toBe("woofx3");
+    expect(await storageModuleFor(db, "hype_board", "board")).toBe("hype_board");
+  });
+
+  it("reads an instance the module's settings link from its owner's storage", async () => {
+    const db = settings({ hype_board: [{ key: "counter", value: COUNTER, valueType: "resource_ref" }] });
+    expect(await storageModuleFor(db, "hype_board", COUNTER_KEY)).toBe("woofx3");
+  });
+
+  it("keeps an instance nothing links in the module's own storage, where nothing is", async () => {
+    const db = settings({ hype_board: [{ key: "counter", value: "woofx3:counter:other", valueType: "resource_ref" }] });
+    expect(await storageModuleFor(db, "hype_board", COUNTER_KEY)).toBe("hype_board");
+  });
+
+  it("lists only resource_ref settings that hold a value as linked", async () => {
+    const db = settings({
+      hype_board: [
+        { key: "counter", value: COUNTER, valueType: "resource_ref" },
+        { key: "empty", value: "", valueType: "resource_ref" },
+        { key: "note", value: "woofx3:counter:x", valueType: "text" },
+      ],
+    });
+    expect(await linkedResources(db, "hype_board")).toEqual({ counter: COUNTER });
+  });
+});
+
 describe("ModuleStateWatch.read", () => {
   it("reads a counter with its goals", async () => {
     const db = fakeDb(
@@ -218,6 +253,32 @@ describe("ModuleStateWatch.publish", () => {
 
     expect(scenes.pushed.map((p) => p.data)).toEqual([
       { moduleId: "woofx3", key: COUNTER_KEY, value: { value: 2, reached: {}, goals: [] } },
+    ]);
+  });
+
+  it("pushes a linked instance's change as the module of the widget that read it", async () => {
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = new ModuleStateWatch(fakeDb({}, {}), scenes, logger);
+    await watch.read("scene-1", "woofx3", COUNTER_KEY, "hype_board");
+
+    await watch.publish("woofx3", COUNTER_KEY, { value: 5, reached: {} });
+
+    expect(scenes.pushed.map((p) => p.data)).toEqual([
+      { moduleId: "hype_board", key: COUNTER_KEY, value: { value: 5, reached: {} } },
+    ]);
+  });
+
+  it("pushes to the owner's own widget and to a linking one alike", async () => {
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = new ModuleStateWatch(fakeDb({}, {}), scenes, logger);
+    await watch.read("scene-1", "woofx3", COUNTER_KEY);
+    await watch.read("scene-1", "woofx3", COUNTER_KEY, "hype_board");
+
+    await watch.publish("woofx3", COUNTER_KEY, 1);
+
+    expect(scenes.pushed.map((p) => (p.data as { moduleId: string }).moduleId).sort()).toEqual([
+      "hype_board",
+      "woofx3",
     ]);
   });
 

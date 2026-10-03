@@ -742,6 +742,7 @@ interface WidgetHost {
   readonly settings: Readonly<Record<string, unknown>>; // resolved from settingsSchema
   readonly surface: "scene" | "alert";    // placed on a scene, or playing in an alert
   readonly theme: WidgetTheme | null;     // null unless the widget declares a theme contract
+  readonly linkedResources: Readonly<Record<string, string>>; // setting id -> instance its module links
   readonly storage: WidgetHostStorage;    // get / subscribe over module storage
 
   onEvent(handler: (event: WidgetEvent) => void): () => void;
@@ -986,6 +987,16 @@ when several do and none of them is the installing module.
 
 Uninstalling the module leaves the instance in place: it belongs to the module
 that provides the kind, and the streamer may have put it to other uses.
+
+The module's widgets can show a linked instance. `widgetHost.linkedResources` maps
+each linked `resource_ref` setting to its canonical id, and a widget subscribes to
+`"state:" + canonicalId` as it would to one of its own module's instances. The scene
+manager serves that key from the owning module's storage only after checking, at
+every read, that one of the widget module's `resource_ref` settings holds that id; any
+other instance reads from the widget's own storage, where nothing is. A bundled kind
+reads as it does everywhere else (a timer as `{ running, remainingMs, durationMs }`).
+`linkedResources` is fixed when the frame loads, so choosing another instance in the
+settings takes effect when the scene next loads.
 
 #### Reading settings at runtime — `ctx.module`
 
