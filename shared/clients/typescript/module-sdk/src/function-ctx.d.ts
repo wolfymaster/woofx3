@@ -370,8 +370,18 @@ export interface TwitchUserTarget {
 export interface CtxTwitchExtension {
   /** Clip the live stream. */
   clip(): { id: string; url: string };
-  /** Twitch's own shoutout of another channel. */
-  shoutout(args: TwitchUserTarget): { ok: true; userId: string };
+  /**
+   * Twitch's own shoutout of another channel. It joins the dashboard's
+   * shoutout queue, which sends one every 2 minutes and retries refusals, so
+   * `queued` with the 1-based `position` (and `alreadyQueued` when the user was
+   * waiting already). An engine with no dashboard queue sends it at once
+   * instead (`queued: false`), and Twitch's rate limit throws `rate_limited`.
+   */
+  shoutout(
+    args: TwitchUserTarget
+  ):
+    | { ok: true; userId: string; queued: true; position: number; alreadyQueued: boolean }
+    | { ok: true; userId: string; queued: false };
   /** Place a stream marker. Throws while the channel is offline: Twitch
    *  only marks a live stream. Description at most 140 characters. */
   createMarker(args?: { description?: string }): {

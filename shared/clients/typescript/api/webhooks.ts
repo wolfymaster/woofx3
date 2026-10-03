@@ -1532,6 +1532,13 @@ export const EngineRequestType = {
    * when needed and answers with the access token alone.
    */
   TWITCH_TOKEN_REQUESTED: "twitch.token.requested",
+  /**
+   * Add a Twitch shoutout to the dashboard's shoutout queue. Twitch allows one
+   * shoutout per channel every 2 minutes, so every shoutout the engine is
+   * asked for joins the same queue the dashboard's shoutout widget feeds,
+   * which spaces them out and retries refusals, instead of competing with it.
+   */
+  SHOUTOUT_ENQUEUE_REQUESTED: "shoutout.enqueue.requested",
 } as const;
 
 export type EngineRequestType = (typeof EngineRequestType)[keyof typeof EngineRequestType];
@@ -1540,7 +1547,32 @@ export interface TwitchTokenRequestedEvent {
   type: typeof EngineRequestType.TWITCH_TOKEN_REQUESTED;
 }
 
-export type EngineRequest = TwitchTokenRequestedEvent;
+/**
+ * Who to shout out, already looked up by the twitch service so the dashboard
+ * can queue them without asking Twitch again.
+ */
+export interface ShoutoutEnqueueRequestedEvent {
+  type: typeof EngineRequestType.SHOUTOUT_ENQUEUE_REQUESTED;
+  twitchUserId: string;
+  /** Lowercase login. */
+  login: string;
+  displayName: string;
+  profileImageUrl?: string;
+  /** "partner", "affiliate" or "" for neither. */
+  broadcasterType?: string;
+}
+
+/**
+ * The dashboard's answer to `shoutout.enqueue.requested`. `position` is
+ * 1-based. `alreadyQueued`: that user was waiting already, and stays where
+ * they were rather than being queued twice. `not_linked`: no Twitch account is
+ * linked to this instance, so nothing can send the queue.
+ */
+export type ShoutoutEnqueueRequestedResponse =
+  | { queued: true; position: number; alreadyQueued: boolean }
+  | { queued: false; reason: "not_linked" };
+
+export type EngineRequest = TwitchTokenRequestedEvent | ShoutoutEnqueueRequestedEvent;
 
 /**
  * A Twitch access token as the dashboard hands it to an engine. It carries

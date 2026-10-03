@@ -1,5 +1,6 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import type { CreateMarkerArgs, TimeoutArgs, UpdateStreamArgs } from "@woofx3/common/cloudevents/Twitch/commands";
+import type { EnqueueShoutout } from "./shoutoutQueue";
 
 /**
  * Each Twitch API method returns a plain data shape — the dispatcher in
@@ -73,6 +74,15 @@ const TAG_PATTERN = /^[\p{L}\p{M}\p{N}]+$/u;
 function characterCount(text: string): number {
   return [...text].length;
 }
+
+/**
+ * `queued`: the shoutout joined the dashboard's shoutout queue, which sends
+ * it in turn; `position` (1-based) and `alreadyQueued` say where. Otherwise
+ * it was sent directly, because this engine has no dashboard queue.
+ */
+export type ShoutoutResult =
+  | { ok: true; userId: string; queued: true; position: number; alreadyQueued: boolean }
+  | { ok: true; userId: string; queued: false };
 
 export interface TimeoutResult {
   ok: true;
@@ -339,9 +349,14 @@ function wholeSeconds(raw: number | string | undefined): number {
 }
 
 export default class TwitchApi {
+  /**
+   * `enqueueShoutout` hands shoutouts to the dashboard's queue; without it,
+   * every shoutout is sent directly.
+   */
   constructor(
     private apiClient: ApiClient,
-    private broadcaster: HelixUser
+    private broadcaster: HelixUser,
+    private enqueueShoutout?: EnqueueShoutout
   ) {}
 
   async clip(_args: unknown): Promise<ClipResult> {
@@ -384,15 +399,35 @@ export default class TwitchApi {
    * action has whichever the trigger gave them — a raid carries the raider's
    * id, a chat command carries what someone typed.
    *
-   * Twitch rate-limits shoutouts (one every 2 minutes, and one per target per
-   * 60 minutes) and answers a refusal with a 429. That refusal is routine on
-   * a busy raid night, so it carries the `rate_limited` code: a workflow can
-   * skip the shoutout instead of failing the run.
+   * Twitch allows one shoutout every 2 minutes, and one per target every 60
+   * minutes, per channel. So a shoutout joins the dashboard's shoutout queue,
+   * the same one its shoutout widget feeds, which spaces them out and retries
+   * refusals; sending directly as well would spend the 2 minutes the queue is
+   * counting on. Only an engine with no dashboard queue sends directly, and
+   * there a refusal carries the `rate_limited` code.
    */
-  async shoutout(args: { userId?: string; userName?: string }): Promise<{ ok: true; userId: string }> {
-    const target = await this.resolveUserId("shoutout", args);
+  async shoutout(args: { userId?: string; userName?: string }): Promise<ShoutoutResult> {
+    const user = await this.resolveUser("shoutout", args);
+    if (this.enqueueShoutout) {
+      const outcome = await this.enqueueShoutout({
+        twitchUserId: user.id,
+        login: user.name,
+        displayName: user.displayName,
+        profileImageUrl: user.profilePictureUrl || undefined,
+        broadcasterType: user.broadcasterType,
+      });
+      if (outcome.kind === "queued") {
+        return {
+          ok: true,
+          userId: user.id,
+          queued: true,
+          position: outcome.position,
+          alreadyQueued: outcome.alreadyQueued,
+        };
+      }
+    }
     try {
-      await this.apiClient.chat.shoutoutUser(this.broadcaster, target);
+      await this.apiClient.chat.shoutoutUser(this.broadcaster, user.id);
     } catch (err) {
       if (httpStatusOf(err) === 429) {
         throw new TwitchApiError(
@@ -402,7 +437,7 @@ export default class TwitchApi {
       }
       throw err;
     }
-    return { ok: true, userId: target };
+    return { ok: true, userId: user.id, queued: false };
   }
 
   /**

@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
+import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
@@ -232,7 +233,11 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const listener = twitchClient.EventBusListener();
     const broadcaster = await twitchClient.broadcaster();
 
-    const twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
+    const twitchApi = new TwitchApiClientImpl(
+      apiClient,
+      broadcaster,
+      enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts))
+    );
     const events = new EventFactory({ source: "twitch" });
     const messageBus = ctx.services.messageBus.client;
     const adBreakLeadSetting = new AdBreakLeadSetting(
