@@ -114,8 +114,9 @@ function counterReading(settings: Record<string, unknown>, stored: unknown): Cou
   return { value: numberOr(stored, initial), reached: {}, goals };
 }
 
-// A day, the longest a timer can hold.
-const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
+// The latest moment a Date can hold: a timer has no limit of its own, this
+// only keeps a corrupt value from reading as an impossible time.
+const MAX_DATE_MS = 8.64e15;
 
 function timerReading(settings: Record<string, unknown>, stored: unknown, now: number): TimerReading {
   const durationMs = clampTimerMs(numberOr(settings.duration, 300) * 1000);
@@ -130,7 +131,7 @@ function timerReading(settings: Record<string, unknown>, stored: unknown, now: n
 }
 
 function clampTimerMs(ms: number): number {
-  return Math.min(MAX_TIMER_MS, Math.max(0, Math.round(ms)));
+  return Math.min(MAX_DATE_MS, Math.max(0, Math.round(ms)));
 }
 
 function parseGoals(raw: unknown): CounterGoal[] {

@@ -31,9 +31,16 @@ const DEADLINE = "timer_end";
 // something is writing this key continuously, which is worth failing loudly.
 const MAX_ATTEMPTS = 25;
 
-// A day. Far beyond any stream, and a bound on what a workflow adding time on
-// every event can build up.
-const MAX_REMAINING_MS = 24 * 60 * 60 * 1000;
+// How far ahead the scheduler will arm a deadline, less a day of margin
+// (barkloader's DEADLINE_HORIZON_MS is 30 days). A timer has no limit of its
+// own — a subathon can run for weeks — so one ending further out is armed at
+// this edge instead; that firing finds time left and arms itself again, until
+// the real end is in range.
+const ARM_AHEAD_MS = 29 * 24 * 60 * 60 * 1000;
+
+// The latest moment a Date can hold. Not a product limit: only what keeps
+// `endsAt` a real instant however much time a workflow piles on.
+const MAX_DATE_MS = 8.64e15;
 
 // The engine's limit on events one invocation may return. A reconcile that
 // finds more timers than this already run out arms the rest to fire at once,
@@ -150,13 +157,15 @@ function endedEvent(timer) {
   return { type: "timer.ended", data: { target: timer.target } };
 }
 
-// Arms the timer's deadline for `endsAt`. A refusal (the deadline holding its
+// Arms the timer's deadline for `endsAt`, or for the furthest the scheduler
+// reaches when that is sooner (see ARM_AHEAD_MS). A refusal (the deadline holding its
 // `maxPending` entries) is logged rather than thrown: the timer's value has
 // already been written, and the reconcile task ends a running timer whose
 // deadline was never armed, up to a minute late.
 function arm(ctx, timer, endsAt) {
+  const at = Math.min(Number(endsAt), Date.now() + ARM_AHEAD_MS);
   try {
-    ctx.schedule.at(DEADLINE, timer.target, Number(endsAt), { target: timer.target });
+    ctx.schedule.at(DEADLINE, timer.target, at, { target: timer.target });
     return true;
   } catch (err) {
     ctx.log.error(`timer: could not arm the end of ${timer.target}: ${err && err.message ? err.message : err}`);
@@ -199,7 +208,7 @@ function timerFromInstance(instance) {
   return {
     target: instance.canonical_id,
     key: `state:${instance.canonical_id}`,
-    durationMs: clampRemaining(numberOr(settings.duration, 300) * 1000),
+    durationMs: clampRemaining(numberOr(settings.duration, 300) * 1000, Date.now()),
     options: { clearOnSessionEnd: settings.lifetime === "session" },
   };
 }
@@ -229,7 +238,7 @@ function update(ctx, timer, next, { announcePause = false } = {}) {
     const now = Date.now();
     const previous = readTimer(timer, stored, now);
     const wanted = next(previous.remainingMs, previous.running);
-    const remainingMs = clampRemaining(wanted.remainingMs);
+    const remainingMs = clampRemaining(wanted.remainingMs, now);
     const value = wanted.running ? { running: true, endsAt: now + remainingMs } : { running: false, remainingMs };
     const result = ctx.storage.compareAndSet(timer.key, stored === undefined ? null : stored, value, timer.options);
     if (result.swapped) {
@@ -261,8 +270,8 @@ function update(ctx, timer, next, { announcePause = false } = {}) {
   throw new Error(`timer: ${timer.target} changed ${MAX_ATTEMPTS} times while updating it`);
 }
 
-function clampRemaining(ms) {
-  return Math.min(MAX_REMAINING_MS, Math.max(0, Math.round(ms)));
+function clampRemaining(ms, now) {
+  return Math.min(MAX_DATE_MS - now, Math.max(0, Math.round(ms)));
 }
 
 // Whole seconds, rounded up, so a timer with any time left never reads as 0.

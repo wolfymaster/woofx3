@@ -135,6 +135,14 @@ describe("resourceReading of a timer", () => {
       durationMs: 60_000,
     });
   });
+
+  it("reads a subathon days long in full", () => {
+    const nineDays = 9 * 24 * 60 * 60 * 1000;
+    const now = 1_700_000_000_000;
+    expect(
+      resourceReading("woofx3", "timer", { duration: 9 * 24 * 60 * 60 }, { running: true, endsAt: now + nineDays }, now)
+    ).toEqual({ running: true, remainingMs: nineDays, durationMs: nineDays });
+  });
 });
 
 describe("ModuleStateWatch.read", () => {
