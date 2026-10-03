@@ -84,6 +84,22 @@ function timerSet(ctx) {
   return update(ctx, timer, (_, running) => ({ running, remainingMs: seconds * 1000 }));
 }
 
+// Reads the time left and whether the timer runs, without writing anything —
+// what a workflow or another module (through `ctx.resources.run`) checks
+// before deciding to change it.
+function timerGet(ctx) {
+  const timer = loadTimer(ctx);
+  const stored = ctx.storage.get(timer.key);
+  const now = Date.now();
+  const current = readTimer(timer, stored, now);
+  return {
+    target: timer.target,
+    running: current.running,
+    remaining: toSeconds(current.remainingMs),
+    endsAt: current.running ? Number(stored.endsAt) : null,
+  };
+}
+
 // Runs when a timer's `timer_end` entry comes due. Ends the timer only when
 // storage still says it is running and out of time, and announces `timer.ended`
 // only when this call's write is the one that stopped it, so a stale or repeated
