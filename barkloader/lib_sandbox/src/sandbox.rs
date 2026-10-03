@@ -1,7 +1,9 @@
 use crate::error::{Error, InvokeBlockingError};
 use crate::function_executor::FunctionExecutor;
 use crate::function_result::resolve_function_result;
-use crate::host::{ActionRunner, HostContext, InvocationContext, MAX_INVOCATION_TIMEOUT, RunCaller};
+use crate::host::{
+    ActionRunner, HostContext, InvocationContext, MAX_INVOCATION_TIMEOUT, RunCaller,
+};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
 use serde_json::Value;
@@ -333,7 +335,9 @@ impl SandboxActionRunner {
             .get(canonical_id)
             .map_err(|e| format!("ctx.resources.run: look up {canonical_id}: {e}"))?
             .ok_or_else(|| {
-                format!("ctx.resources.run: {canonical_id} does not exist — it may have been deleted")
+                format!(
+                    "ctx.resources.run: {canonical_id} does not exist — it may have been deleted"
+                )
             })?;
         if found.kind != kind {
             return Err(format!(
@@ -343,9 +347,10 @@ impl SandboxActionRunner {
         }
 
         let action = format!("{kind}.{verb}");
-        let function = self.registry.action_function(owner, &action).ok_or_else(|| {
-            format!("ctx.resources.run: {owner} has no `{action}` action")
-        })?;
+        let function = self
+            .registry
+            .action_function(owner, &action)
+            .ok_or_else(|| format!("ctx.resources.run: {owner} has no `{action}` action"))?;
 
         // The action runs with the providing module's grants, so the caller
         // must already hold them: running it is no way to borrow them.
@@ -374,7 +379,10 @@ impl SandboxActionRunner {
             Value::Null => serde_json::Map::new(),
             _ => return Err("ctx.resources.run: params must be an object".to_string()),
         };
-        parameters.insert("target".to_string(), Value::String(canonical_id.to_string()));
+        parameters.insert(
+            "target".to_string(),
+            Value::String(canonical_id.to_string()),
+        );
         let request = InvokeRequest {
             function: format!("{owner}:function:{function}"),
             event: serde_json::json!({ "parameters": parameters }),

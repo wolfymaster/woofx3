@@ -37,7 +37,12 @@ function spin(ctx) {
 }
 "#;
 
-fn module(name: &str, functions: &[(&str, &str)], actions: &[(&str, &str)], permissions: &[&str]) -> RegisteredModule {
+fn module(
+    name: &str,
+    functions: &[(&str, &str)],
+    actions: &[(&str, &str)],
+    permissions: &[&str],
+) -> RegisteredModule {
     RegisteredModule {
         metadata: ModuleMetadata {
             name: name.to_string(),
@@ -80,14 +85,25 @@ impl SettingsClient for Settings {
 struct Instances(Vec<ResourceInstance>);
 
 impl ResourceClient for Instances {
-    fn create(&self, _: &str, _: &str, _: &str, _: &str, _: &Value) -> Result<ResourceInstance, String> {
+    fn create(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &Value,
+    ) -> Result<ResourceInstance, String> {
         Err("not in these tests".into())
     }
     fn delete(&self, _: &str) -> Result<(), String> {
         Ok(())
     }
     fn get(&self, canonical_id: &str) -> Result<Option<ResourceInstance>, String> {
-        Ok(self.0.iter().find(|i| i.canonical_id == canonical_id).cloned())
+        Ok(self
+            .0
+            .iter()
+            .find(|i| i.canonical_id == canonical_id)
+            .cloned())
     }
     fn list_by_kind(&self, _: &str) -> Result<Vec<ResourceInstance>, String> {
         Ok(self.0.clone())
@@ -129,7 +145,12 @@ fn world(linked: bool, provider_permissions: &[&str], consumer_permissions: &[&s
     registry
         .register_module(
             "consumer".into(),
-            module("consumer", &[("drive", DRIVE_JS)], &[], consumer_permissions),
+            module(
+                "consumer",
+                &[("drive", DRIVE_JS)],
+                &[],
+                consumer_permissions,
+            ),
         )
         .unwrap();
 
@@ -143,7 +164,10 @@ fn world(linked: bool, provider_permissions: &[&str], consumer_permissions: &[&s
     let runner = SandboxActionRunner::new(registry.clone());
     let mut host = noop_host_context();
     host.settings = Arc::new(Settings(settings));
-    host.resources = Arc::new(Instances(vec![instance(COUNTER), instance("elsewhere:counter:other")]));
+    host.resources = Arc::new(Instances(vec![
+        instance(COUNTER),
+        instance("elsewhere:counter:other"),
+    ]));
     host.actions = runner.clone();
     runner.bind(host.clone());
     World { registry, host }
@@ -167,21 +191,30 @@ fn call(world: &World, function: &str, target: &str, verb: &str) -> Result<Value
 fn runs_the_providers_action_as_the_provider_on_a_linked_resource() {
     let w = world(true, &[], &[]);
     let result = call(&w, "consumer:function:drive", COUNTER, "bump").expect("run");
-    assert_eq!(result, json!({ "target": COUNTER, "by": 2, "ranAs": "provider" }));
+    assert_eq!(
+        result,
+        json!({ "target": COUNTER, "by": 2, "ranAs": "provider" })
+    );
 }
 
 #[test]
 fn refuses_a_resource_the_module_neither_owns_nor_links() {
     let w = world(false, &[], &[]);
     let err = call(&w, "consumer:function:drive", COUNTER, "bump").expect_err("not linked");
-    assert!(err.contains("may act only on a resource it owns or one its settings link to"), "{err}");
+    assert!(
+        err.contains("may act only on a resource it owns or one its settings link to"),
+        "{err}"
+    );
 }
 
 #[test]
 fn refuses_an_action_the_provider_does_not_declare() {
     let w = world(true, &[], &[]);
     let err = call(&w, "consumer:function:drive", COUNTER, "explode").expect_err("no such action");
-    assert!(err.contains("provider has no `counter.explode` action"), "{err}");
+    assert!(
+        err.contains("provider has no `counter.explode` action"),
+        "{err}"
+    );
 }
 
 #[test]

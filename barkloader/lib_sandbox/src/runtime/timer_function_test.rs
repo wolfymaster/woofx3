@@ -170,10 +170,15 @@ fn a_timer_ending_beyond_the_scheduler_horizon_is_armed_within_it() {
     let harness = timer(json!({}));
     let forty_days = 40 * 24 * 60 * 60;
     let result = harness
-        .run("timerSet", json!({ "target": TARGET, "seconds": forty_days }))
+        .run(
+            "timerSet",
+            json!({ "target": TARGET, "seconds": forty_days }),
+        )
         .unwrap();
     assert_eq!(result["running"], false);
-    harness.run("timerStart", json!({ "target": TARGET })).unwrap();
+    harness
+        .run("timerStart", json!({ "target": TARGET }))
+        .unwrap();
     let calls = harness.take_schedule_calls();
     let armed: i64 = calls
         .last()
@@ -561,14 +566,18 @@ fn starting_an_ended_timer_runs_it_again_from_its_full_duration() {
 #[test]
 fn get_reads_a_timer_without_changing_it() {
     let harness = timer(json!({ "duration": 90 }));
-    let fresh = harness.run("timerGet", json!({ "target": TARGET })).unwrap();
+    let fresh = harness
+        .run("timerGet", json!({ "target": TARGET }))
+        .unwrap();
     assert_eq!(fresh["running"], false);
     assert_eq!(fresh["remaining"], 90);
     assert_eq!(fresh["endsAt"], Value::Null);
     assert!(harness.stored().is_none(), "reading wrote a value");
 
     harness.store(running_for(60_000));
-    let running = harness.run("timerGet", json!({ "target": TARGET })).unwrap();
+    let running = harness
+        .run("timerGet", json!({ "target": TARGET }))
+        .unwrap();
     assert_eq!(running["running"], true);
     assert!(running["remaining"].as_i64().unwrap() <= 60);
     assert_eq!(running["endsAt"], harness.stored().unwrap()["endsAt"]);

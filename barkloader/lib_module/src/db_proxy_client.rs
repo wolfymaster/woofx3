@@ -190,7 +190,10 @@ pub trait ModuleDbProxy: Send + Sync {
     async fn get_module_settings(&self, module_id: &str) -> Result<Vec<ModuleSettingJson>>;
     async fn set_module_setting(&self, module_id: &str, key: &str, value: &str) -> Result<()>;
     /// `None` when no instance has the id.
-    async fn get_resource_instance(&self, canonical_id: &str) -> Result<Option<ResourceInstanceJson>>;
+    async fn get_resource_instance(
+        &self,
+        canonical_id: &str,
+    ) -> Result<Option<ResourceInstanceJson>>;
     /// Creates an instance owned by the module named `module_name` (its
     /// manifest id).
     async fn create_resource_instance(
@@ -567,7 +570,10 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::set_module_setting(&self.base_url, module_id, key, value).await
     }
 
-    async fn get_resource_instance(&self, canonical_id: &str) -> Result<Option<ResourceInstanceJson>> {
+    async fn get_resource_instance(
+        &self,
+        canonical_id: &str,
+    ) -> Result<Option<ResourceInstanceJson>> {
         db_proxy::get_resource_instance(&self.base_url, canonical_id).await
     }
 
@@ -698,11 +704,17 @@ mod test_support {
         }
 
         pub fn settings(&self) -> std::collections::BTreeMap<String, String> {
-            self.settings.lock().expect("settings mutex poisoned").clone()
+            self.settings
+                .lock()
+                .expect("settings mutex poisoned")
+                .clone()
         }
 
         pub fn instances(&self) -> Vec<ResourceInstanceJson> {
-            self.instances.lock().expect("instances mutex poisoned").clone()
+            self.instances
+                .lock()
+                .expect("instances mutex poisoned")
+                .clone()
         }
 
         pub fn registered_commands(&self) -> Vec<(String, String)> {
@@ -1086,7 +1098,10 @@ mod test_support {
             Ok(())
         }
 
-        async fn get_resource_instance(&self, canonical_id: &str) -> Result<Option<ResourceInstanceJson>> {
+        async fn get_resource_instance(
+            &self,
+            canonical_id: &str,
+        ) -> Result<Option<ResourceInstanceJson>> {
             self.record("get_resource_instance")?;
             Ok(self
                 .instances
@@ -1106,11 +1121,18 @@ mod test_support {
             settings_json: &str,
         ) -> Result<ResourceInstanceJson> {
             self.record("create_resource_instance")?;
-            let instance = fake_instance(module_name, kind, instance_id, display_name, settings_json);
+            let instance =
+                fake_instance(module_name, kind, instance_id, display_name, settings_json);
             let mut instances = self.instances.lock().expect("instances mutex poisoned");
             // Like the db's unique index on (module, kind, instance_id).
-            if instances.iter().any(|i| i.canonical_id == instance.canonical_id) {
-                return Err(anyhow!("FakeDbProxyClient: {} already exists", instance.canonical_id));
+            if instances
+                .iter()
+                .any(|i| i.canonical_id == instance.canonical_id)
+            {
+                return Err(anyhow!(
+                    "FakeDbProxyClient: {} already exists",
+                    instance.canonical_id
+                ));
             }
             instances.push(instance.clone());
             Ok(instance)

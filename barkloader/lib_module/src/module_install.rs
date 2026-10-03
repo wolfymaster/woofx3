@@ -12,11 +12,11 @@ use super::manifest_validate::{
     WorkflowTriggerRef,
 };
 use super::module_file::ModuleFile;
-use super::theme::InstalledModule;
 use super::module_manifest::{
     ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger, WEBHOOK_EVENT_PREFIX,
     resolve_zip_file,
 };
+use super::theme::InstalledModule;
 
 /// `module_name` is the version-free manifest id — the value stored as
 /// `created_by_ref`, and what every delete-by-module-id call matches on.
@@ -319,7 +319,9 @@ async fn prune_removed_resources(
 fn kind_owner(installed: &[InstalledModule], installing: &str, kind: &str) -> Result<String> {
     let mut owners: Vec<&str> = installed
         .iter()
-        .filter(|m| m.module_id != installing && m.manifest.resources.iter().any(|r| r.kind == kind))
+        .filter(|m| {
+            m.module_id != installing && m.manifest.resources.iter().any(|r| r.kind == kind)
+        })
         .map(|m| m.module_id.as_str())
         .collect();
     owners.sort_unstable();
@@ -768,10 +770,14 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .collect();
         let mut installed: Option<Vec<InstalledModule>> = None;
         for setting in &self.manifest.settings {
-            let (Some(create), Some(kind)) = (&setting.create, setting.resource_kind.as_deref()) else {
+            let (Some(create), Some(kind)) = (&setting.create, setting.resource_kind.as_deref())
+            else {
                 continue;
             };
-            if current.get(&setting.id).is_some_and(|v| !v.trim().is_empty()) {
+            if current
+                .get(&setting.id)
+                .is_some_and(|v| !v.trim().is_empty())
+            {
                 continue;
             }
             let owner = if self.manifest.resources.iter().any(|r| r.kind == kind) {
@@ -782,10 +788,19 @@ impl<'a, R: Repository> SagaState<'a, R> {
                         .list_modules()
                         .await
                         .map_err(|e| anyhow!("link resource settings: list modules: {e}"))?;
-                    installed = Some(records.into_iter().filter_map(InstalledModule::from_record).collect());
+                    installed = Some(
+                        records
+                            .into_iter()
+                            .filter_map(InstalledModule::from_record)
+                            .collect(),
+                    );
                 }
-                kind_owner(installed.as_deref().unwrap_or_default(), &self.manifest.id, kind)
-                    .map_err(|e| anyhow!("setting `{}`: {e}", setting.id))?
+                kind_owner(
+                    installed.as_deref().unwrap_or_default(),
+                    &self.manifest.id,
+                    kind,
+                )
+                .map_err(|e| anyhow!("setting `{}`: {e}", setting.id))?
             };
             let canonical_id = format!("{owner}:{kind}:{}", create.instance_id);
             let existing = db_proxy
@@ -799,16 +814,28 @@ impl<'a, R: Repository> SagaState<'a, R> {
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "{}".to_string());
                 db_proxy
-                    .create_resource_instance(&owner, kind, &create.instance_id, &create.display_name, &settings_json)
+                    .create_resource_instance(
+                        &owner,
+                        kind,
+                        &create.instance_id,
+                        &create.display_name,
+                        &settings_json,
+                    )
                     .await
                     .map_err(|e| anyhow!("setting `{}`: create {canonical_id}: {e}", setting.id))?;
-                info!("Created {} for module {}'s setting {}", canonical_id, self.module_key, setting.id);
+                info!(
+                    "Created {} for module {}'s setting {}",
+                    canonical_id, self.module_key, setting.id
+                );
             }
             db_proxy
                 .set_module_setting(self.module_key, &setting.id, &canonical_id)
                 .await
                 .map_err(|e| anyhow!("setting `{}`: link {canonical_id}: {e}", setting.id))?;
-            info!("Linked module {}'s setting {} to {}", self.module_key, setting.id, canonical_id);
+            info!(
+                "Linked module {}'s setting {} to {}",
+                self.module_key, setting.id, canonical_id
+            );
         }
         Ok(())
     }
@@ -2708,12 +2735,17 @@ mod link_resource_settings_tests {
     async fn install_fails_when_no_installed_module_provides_the_kind() {
         let db = FakeDbProxyClient::new();
         let err = install(&db).await.expect_err("nothing provides timers");
-        assert!(err.to_string().contains("no installed module provides `timer`"), "{err}");
+        assert!(
+            err.to_string()
+                .contains("no installed module provides `timer`"),
+            "{err}"
+        );
     }
 
     #[tokio::test]
     async fn install_fails_when_several_modules_provide_the_kind() {
-        let db = FakeDbProxyClient::new().with_installed([provider("woofx3"), provider("timerpro")]);
+        let db =
+            FakeDbProxyClient::new().with_installed([provider("woofx3"), provider("timerpro")]);
         let err = install(&db).await.expect_err("ambiguous owner");
         assert!(err.to_string().contains("timerpro, woofx3"), "{err}");
     }

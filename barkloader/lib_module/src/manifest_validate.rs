@@ -1842,10 +1842,14 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
 fn validate_resource_ref_setting(setting: &ManifestSetting, context: &str) -> Result<()> {
     if setting.setting_type != "resource_ref" {
         if setting.resource_kind.is_some() {
-            return Err(anyhow!("{context}: `resourceKind` is only for a `resource_ref` setting"));
+            return Err(anyhow!(
+                "{context}: `resourceKind` is only for a `resource_ref` setting"
+            ));
         }
         if setting.create.is_some() {
-            return Err(anyhow!("{context}: `create` is only for a `resource_ref` setting"));
+            return Err(anyhow!(
+                "{context}: `create` is only for a `resource_ref` setting"
+            ));
         }
         return Ok(());
     }
@@ -1861,7 +1865,10 @@ fn validate_resource_ref_setting(setting: &ManifestSetting, context: &str) -> Re
         ));
     }
     if let Some(create) = &setting.create {
-        validate_segment(&create.instance_id, &format!("{context}: `create.instanceId`"))?;
+        validate_segment(
+            &create.instance_id,
+            &format!("{context}: `create.instanceId`"),
+        )?;
         if create.display_name.trim().is_empty() {
             return Err(anyhow!("{context}: `create.displayName` must be non-empty"));
         }
@@ -3184,13 +3191,17 @@ mod tests {
 
     #[test]
     fn rejects_a_resource_ref_setting_without_a_kind() {
-        let m = minimal(r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref" }]"#);
+        let m = minimal(
+            r#", "settings": [{ "id": "timer", "label": "Timer", "type": "resource_ref" }]"#,
+        );
         assert!(bad_err(&m).contains("`resource_ref` needs `resourceKind`"));
     }
 
     #[test]
     fn rejects_resource_kind_and_create_on_any_other_setting() {
-        let kind = minimal(r#", "settings": [{ "id": "n", "label": "N", "type": "text", "resourceKind": "timer" }]"#);
+        let kind = minimal(
+            r#", "settings": [{ "id": "n", "label": "N", "type": "text", "resourceKind": "timer" }]"#,
+        );
         assert!(bad_err(&kind).contains("`resourceKind` is only for a `resource_ref` setting"));
         let create = minimal(
             r#", "settings": [{ "id": "n", "label": "N", "type": "text",
@@ -3231,8 +3242,14 @@ mod tests {
         let resolved = validate(&m).expect("validate");
         let db = super::super::db_proxy_client::FakeDbProxyClient::new();
         let plan = build_install_plan(&m, &resolved, &db).await.expect("plan");
-        let settings = plan.iter().position(|s| *s == InstallStep::RegisterSettings).expect("settings step");
-        let link = plan.iter().position(|s| *s == InstallStep::LinkResourceSettings).expect("link step");
+        let settings = plan
+            .iter()
+            .position(|s| *s == InstallStep::RegisterSettings)
+            .expect("settings step");
+        let link = plan
+            .iter()
+            .position(|s| *s == InstallStep::LinkResourceSettings)
+            .expect("link step");
         assert!(settings < link, "{plan:?}");
     }
 

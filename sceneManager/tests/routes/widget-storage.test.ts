@@ -17,9 +17,7 @@ function placement(id: string, moduleId: string, hostsSurface = "") {
 
 type SettingRow = { key: string; value: string; valueType: string };
 
-function deps(
-  opts: { read?: (...args: unknown[]) => Promise<unknown>; settings?: Record<string, SettingRow[]> } = {}
-) {
+function deps(opts: { read?: (...args: unknown[]) => Promise<unknown>; settings?: Record<string, SettingRow[]> } = {}) {
   const read = mock(opts.read ?? (async () => ({ value: 3, reached: {} })));
   const d = {
     ctx: { logger },

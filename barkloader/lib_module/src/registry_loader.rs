@@ -527,7 +527,9 @@ mod tests {
         let actions = function_actions(&module_with_manifest(Some(manifest)));
         assert_eq!(
             actions,
-            [("timer.add".to_string(), "timer.add".to_string())].into_iter().collect()
+            [("timer.add".to_string(), "timer.add".to_string())]
+                .into_iter()
+                .collect()
         );
     }
 
