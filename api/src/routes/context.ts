@@ -15,11 +15,18 @@ import type {
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
+import {
+  RELAY_CONFIG_SETTING,
+  RELAY_CONFIG_UPDATED_SUBJECT,
+  readStoredRelayConfig,
+  type StoredRelayConfig,
+} from "@woofx3/common/cloudevents/Relay/relay";
 import { encode } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
+import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
@@ -72,6 +79,8 @@ export class ApiRouteHost extends RpcTarget {
    * so capnweb never offers it to a client.
    */
   readonly twitchToken: TwitchTokenSource;
+  /** The companion bridge's credential. An instance property for the same reason as `twitchToken`. */
+  readonly relayCredential: RelayCredentialSource;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -171,6 +180,31 @@ export class ApiRouteHost extends RpcTarget {
       await this.webhookClient.send(event);
     } catch (err) {
       this.logger.error("Failed to send scene webhook", { type: event.type, err });
+    }
+  }
+
+  private async writeRelayConfig(config: StoredRelayConfig): Promise<void> {
+    if (!(await this.db.trySetSetting(RELAY_CONFIG_SETTING, JSON.stringify(config)))) {
+      throw new Error(`could not store ${RELAY_CONFIG_SETTING}`);
+    }
+    await this.announceRelayConfig();
+  }
+
+  private async deleteRelayConfig(): Promise<void> {
+    await this.db.deleteSetting(RELAY_CONFIG_SETTING);
+    await this.announceRelayConfig();
+  }
+
+  /**
+   * Engine `settings` writes publish no event of their own. Best effort: the
+   * setting is already written, and sceneManager re-reads it on every connect
+   * attempt, so a missed announcement only delays the switch.
+   */
+  private async announceRelayConfig(): Promise<void> {
+    try {
+      await this.publishEvent(RELAY_CONFIG_UPDATED_SUBJECT, { at: new Date().toISOString() });
+    } catch (err) {
+      this.logger.warn(`Failed to publish ${RELAY_CONFIG_UPDATED_SUBJECT}`, { err });
     }
   }
 
@@ -309,6 +343,13 @@ export class ApiRouteHost extends RpcTarget {
     }
     this.db = opts.db;
     this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient);
+    this.relayCredential = new RelayCredentialSource({
+      dashboard: () => this.webhookClient,
+      readConfig: async () => readStoredRelayConfig(await this.db.getSetting(RELAY_CONFIG_SETTING)),
+      writeConfig: (config) => this.writeRelayConfig(config),
+      clearConfig: () => this.deleteRelayConfig(),
+      now: () => Date.now(),
+    });
     this.nats = opts.nats;
     this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;

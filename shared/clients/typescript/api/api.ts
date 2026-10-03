@@ -741,6 +741,21 @@ export interface ObsStatus {
   address: string | null;
 }
 
+// ==================== Local endpoints ====================
+
+/** Where a cloud engine reaches the companion's bridge, and which endpoints go through it. */
+export interface RelayConfig {
+  /** `https://c-xxxxxxxxxxxx.woofx3.tv`; the dialer opens `wss://…/bridge/<moduleId>/<endpointId>`. */
+  bridgeOrigin: string;
+  endpoints: RelayEndpoint[];
+}
+
+/** A module's `local[]` endpoint, named by the module's manifest id and the endpoint's `id`. */
+export interface RelayEndpoint {
+  moduleId: string;
+  endpointId: string;
+}
+
 // ==================== Alert queue controls ====================
 
 /**
@@ -1718,6 +1733,15 @@ export interface Woofx3EngineApi {
     integration: string,
     authorization: ModuleOAuthAuthorization
   ): Promise<ModuleOAuthConnected>;
+
+  /**
+   * Route the listed local endpoints through the companion's bridge, or stop
+   * (null). Stored, so a restart keeps it. The bridge credential is not part
+   * of it: the engine asks the dashboard that called this for one with the
+   * `relay.credential.requested` request. Requires the
+   * `modules.localEndpoints` capability.
+   */
+  setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
 
   // Overlay Tokens
   //

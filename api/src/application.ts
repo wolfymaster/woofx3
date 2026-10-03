@@ -61,6 +61,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamGaugeSampler },
       { TwitchHelixGauges },
       { serveTwitchToken },
+      { serveRelayCredential },
       { UserEventRecorder },
       { WebhookClient },
       { initWidgetStatusHandlers },
@@ -92,6 +93,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
       import("./twitch-token-source"),
+      import("./relay-credential-source"),
       import("./user-event-recorder"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
@@ -218,6 +220,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await serveTwitchToken(natsClient, api.twitchToken, logger);
+      await serveRelayCredential(natsClient, api.relayCredential, logger);
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);
