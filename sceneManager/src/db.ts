@@ -108,8 +108,14 @@ export class DbClient {
     return resp.module?.moduleKey || null;
   }
 
+  /** A module's stored manifest JSON (as barkloader re-serialized it at install), or null when it is not installed. */
+  async getModuleManifest(moduleId: string): Promise<string | null> {
+    const resp = await GetModuleByModuleId({ moduleId }, this.config);
+    return resp.module?.manifest || null;
+  }
+
   // A module's settings, read for the OBS module's connection details
-  // (obs/settings.ts). A secret's value is never in these records.
+  // (endpoints/dialer.ts). A secret's value is never in these records.
   async listModuleSettings(moduleId: string): Promise<module_setting.ModuleSettingRecord[]> {
     const resp = await module_setting.ListModuleSettings({ moduleId }, this.config);
     return resp.settings;

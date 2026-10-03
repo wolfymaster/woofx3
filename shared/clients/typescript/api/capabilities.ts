@@ -27,6 +27,12 @@ export const ENGINE_CAPABILITIES = {
   /** The OBS connection's state and last failure: `getObsStatus`. */
   obsStatus: "obs.status",
   /**
+   * A manifest's `local[]` endpoints, `setRelayConfig`, the
+   * `relay.credential.requested` callback, and sceneManager's endpoint dialer
+   * reaching OBS through the companion's bridge.
+   */
+  modulesLocalEndpoints: "modules.localEndpoints",
+  /**
    * A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a
    * connect with `completeModuleOAuth`.
    */

@@ -13,15 +13,29 @@ export interface ObsConnectionView {
   lastFailure(): ObsFailureKind | null;
 }
 
-/** `host:port` from a connect URL, so the reply never carries anything but where OBS was looked for. */
-export function obsAddressOf(url: string): string {
-  return url.replace(/^wss?:\/\//, "").replace(/\/+$/, "");
+/** Where the latest connect attempt looked for OBS, and how. */
+export interface ObsLastRoute {
+  route: "direct" | "companion";
+  address: string;
 }
 
-export function obsStatusReply(connection: ObsConnectionView, lastUrl: string | null): ObsStatusReply {
-  return {
+/**
+ * `host:port` from a connect URL, so the reply never carries anything but
+ * where OBS was looked for: no path, and no query, where a bridge ticket
+ * would be.
+ */
+export function obsAddressOf(url: string): string {
+  return url.replace(/^wss?:\/\//, "").replace(/[/?#].*$/, "");
+}
+
+export function obsStatusReply(connection: ObsConnectionView, last: ObsLastRoute | null): ObsStatusReply {
+  const reply: ObsStatusReply = {
     state: connection.status(),
     failure: connection.lastFailure(),
-    address: lastUrl === null ? null : obsAddressOf(lastUrl),
+    address: last === null ? null : obsAddressOf(last.address),
   };
+  if (last !== null) {
+    reply.route = last.route;
+  }
+  return reply;
 }

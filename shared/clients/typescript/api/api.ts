@@ -732,13 +732,20 @@ export interface ModuleOAuthConnected {
  * - `failure`: why the last connect attempt failed: `authentication` when OBS
  *   refused the password, `unreachable` when nothing answered at `address` or
  *   the connection was lost. Null while connected and before any attempt failed.
+ *   `relay` when the endpoint is routed through the companion and the relay
+ *   could not open the bridge (the companion is not connected, or the relay
+ *   refused).
  * - `address`: the `host:port` the scene manager last tried. Never includes the
- *   password.
+ *   password. Through the companion it is the bridge's host, never a ticket.
+ * - `route`: how the last attempt reached OBS: straight to the address in the
+ *   module's settings, or through the companion's bridge. Absent before any
+ *   attempt, and from engines without the `modules.localEndpoints` capability.
  */
 export interface ObsStatus {
   state: ObsConnectionState | "unanswered";
-  failure: "authentication" | "unreachable" | null;
+  failure: "authentication" | "unreachable" | "relay" | null;
   address: string | null;
+  route?: "direct" | "companion";
 }
 
 // ==================== Local endpoints ====================
