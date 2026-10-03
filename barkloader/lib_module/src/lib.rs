@@ -5,6 +5,7 @@ pub mod canonical_id;
 pub mod cron_schedule;
 pub mod db_proxy;
 pub mod db_proxy_client;
+pub mod local_endpoint;
 pub mod manifest_validate;
 pub mod module_delete;
 mod module_file;

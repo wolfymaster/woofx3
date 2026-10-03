@@ -12,7 +12,7 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
-import type { StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
+import type { RelayConfig, StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -1532,6 +1532,12 @@ export const EngineRequestType = {
    * when needed and answers with the access token alone.
    */
   TWITCH_TOKEN_REQUESTED: "twitch.token.requested",
+  /**
+   * The engine needs a short-lived credential for the companion's bridge.
+   * The dashboard mints it, and answers with the relay configuration it is
+   * valid for.
+   */
+  RELAY_CREDENTIAL_REQUESTED: "relay.credential.requested",
 } as const;
 
 export type EngineRequestType = (typeof EngineRequestType)[keyof typeof EngineRequestType];
@@ -1540,7 +1546,11 @@ export interface TwitchTokenRequestedEvent {
   type: typeof EngineRequestType.TWITCH_TOKEN_REQUESTED;
 }
 
-export type EngineRequest = TwitchTokenRequestedEvent;
+export interface RelayCredentialRequestedEvent {
+  type: typeof EngineRequestType.RELAY_CREDENTIAL_REQUESTED;
+}
+
+export type EngineRequest = TwitchTokenRequestedEvent | RelayCredentialRequestedEvent;
 
 /**
  * A Twitch access token as the dashboard hands it to an engine. It carries
@@ -1567,6 +1577,17 @@ export interface TwitchTokenGrant {
 export type TwitchTokenRequestedResponse =
   | { token: TwitchTokenGrant }
   | { token: null; reason: "not_linked" | "relink_required" };
+
+/**
+ * The dashboard's answer to `relay.credential.requested`: a short-lived
+ * credential for the bridge, with the configuration it is valid for.
+ * `expiresAt` is in milliseconds since the epoch. `relay: null` means the
+ * instance no longer routes anything through a companion; the engine clears
+ * its relay configuration.
+ */
+export type RelayCredentialRequestedResponse =
+  | { relay: RelayConfig & { credential: string; expiresAt: number } }
+  | { relay: null };
 
 export interface RequestEnvelope {
   specversion: "1.0";

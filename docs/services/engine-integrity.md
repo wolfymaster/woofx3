@@ -66,6 +66,22 @@ When designing anything module code can reach (a sandbox binding, a manifest fie
 4. Never add a binding that takes a subject, event type, or workflow id from module code and publishes or dispatches it verbatim.
 5. When a capability acts on something the streamer would want to approve (the channel's settings, its chatters), require a manifest permission for it (see [Module format → Permissions](../barkloader/modules.md#permissions-permissions)). Permissions are declared by the module and enforced by the engine, and shown on the module install page (woofx3-ui feat/module-permissions-review). The host refuses an undeclared call before anything is sent, and an upload that names another module's action must declare that module's permissions, so what a module can do is fixed at install rather than discovered at runtime.
 
+## Reach into the streamer's network
+
+What a module reaches on the streamer's own network is declared in its
+manifest's `local[]` (see [Module format → Local endpoints](../barkloader/modules.md#local-endpoints-local)),
+shown on the module install page beside its permissions, and fixed at install
+like them. An entry names settings that hold an address; it never carries an
+address the platform dials on the module's say-so.
+
+When an endpoint goes through the woofx3 companion, the engine names only
+`(moduleId, endpointId)` on the bridge. The engine never tells the companion an
+address: the companion dials only an address it discovered itself or the
+streamer confirmed in its own window, and only for endpoints of modules
+installed on its instance. So neither a module's settings nor a compromised
+engine can point the companion at another device on the network. See
+[Local endpoints](./local-endpoints.md).
+
 ## Requests the dashboard asks for
 
 A manifest field's `source` and a settings button's `action` (`kind: "internal"`) are requests the api sends on the dashboard's behalf, when a form renders or a button is pressed. The dashboard never supplies them: it names the field (module id, declaration, declaration id, field id) and the api reads the request from the installed module's stored manifest, refusing a field that does not exist or a request descriptor sent in place of a reference. So a signed-in dashboard user can ask only for requests an installed module declared, never an arbitrary command on an arbitrary subject. See [dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind).

@@ -74,6 +74,17 @@ Installing the module registers its defaults (`127.0.0.1` and `4455`), so from
 then on the module's host and port are used; the variables still supply a
 password the module leaves empty.
 
+A connect attempt goes through the engine's endpoint dialer, which picks the
+route: straight to that address, or, when the dashboard routed OBS through the
+woofx3 companion on the streamer's PC, through the companion's bridge. A cloud
+engine needs the bridge, because it cannot reach `127.0.0.1` on the
+streamer's PC. Through the bridge the companion supplies the address, and the
+module's `password` still signs in to OBS end to end. See
+[Local endpoints and the companion bridge](./local-endpoints.md). A change to
+the relay configuration (`engine.relay.config.updated`) that moves OBS to
+another route makes the scene manager reconnect at once, like a settings
+change.
+
 Saving a module setting publishes `db.module.setting.updated.system` with the
 module id and the key, never the value. On one for `woofx3_obs` the scene
 manager reconnects at once with the new details, closing the open session or
@@ -179,15 +190,20 @@ its connection is doing, for the OBS module's page. The scene manager answers
 immediate whether OBS is up or not:
 
 ```json
-{ "state": "retrying", "failure": "authentication", "address": "192.168.1.20:4455" }
+{ "state": "retrying", "failure": "authentication", "address": "192.168.1.20:4455", "route": "direct" }
 ```
 
 - `state`: `connecting` (first attempt), `connected`, `retrying` or `stopped`.
 - `failure`: why the last attempt failed. `authentication` means OBS refused
   the password (close code 4009); `unreachable` means nothing answered at
-  `address`, or an open connection was lost. It is null while connected.
-- `address`: the `host:port` the latest attempt used. The password is never in
-  the reply.
+  `address`, or an open connection was lost; `relay` means OBS is routed
+  through the companion and the bridge could not be opened (the companion is
+  not connected or could not reach OBS, or the relay refused). It is null
+  while connected.
+- `address`: the `host:port` the latest attempt used; through the companion,
+  the bridge's host. The password and the bridge ticket are never in the reply.
+- `route`: `direct` or `companion`, how the latest attempt reached OBS. Absent
+  before any attempt.
 
 A scene manager that does not answer within 3 seconds comes back from the api
 as `{ "state": "unanswered", "failure": null, "address": null }`. That says
