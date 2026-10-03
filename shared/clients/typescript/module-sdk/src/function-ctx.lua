@@ -187,6 +187,7 @@
 ---@field clip fun(): { id: string, url: string }
 ---@field shoutout fun(args: { userId?: string, userName?: string }): { ok: boolean, userId: string }
 ---@field createMarker fun(args?: { description?: string }): { id: string, createdAt: string, description: string, positionSeconds: number }
+---@field getUser fun(args: { userId?: string, userName?: string }): { userId: string, login: string, displayName: string, description: string, profileImageUrl: string, broadcasterType: string, createdAt: string, title: string, categoryId: string, categoryName: string, tags: string[], language: string, isLive: boolean, stream: { title: string, categoryName: string, viewerCount: number, startedAt: string }? }
 ---@field timeout fun(args: { userId?: string, userName?: string, durationSeconds: number, reason?: string }): { ok: boolean, userId: string, durationSeconds: number }
 ---@field updateStream fun(args: { title?: string, category?: string, categoryId?: string, tags?: string[] }): { ok: boolean, title?: string, categoryId?: string, categoryName?: string, tags?: string[] }
 

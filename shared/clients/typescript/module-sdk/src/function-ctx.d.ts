@@ -382,6 +382,31 @@ export interface CtxTwitchExtension {
     /** How far into the broadcast the marker sits. */
     positionSeconds: number;
   };
+  /**
+   * Look a Twitch user up: their profile, what their channel is set to, and
+   * their stream while they are live. The category is the channel's current
+   * one, which Twitch keeps after a stream ends, so it is what they last
+   * streamed. Throws when no user has that id or name.
+   */
+  getUser(args: TwitchUserTarget): {
+    userId: string;
+    login: string;
+    displayName: string;
+    description: string;
+    profileImageUrl: string;
+    /** "partner", "affiliate" or "" for neither. */
+    broadcasterType: string;
+    /** When the account was created, ISO 8601. */
+    createdAt: string;
+    title: string;
+    categoryId: string;
+    categoryName: string;
+    tags: string[];
+    language: string;
+    isLive: boolean;
+    /** Null while offline. `startedAt` is ISO 8601. */
+    stream: { title: string; categoryName: string; viewerCount: number; startedAt: string } | null;
+  };
   /** Time a chatter out for 1 to 1209600 seconds. Needs `twitch.moderation`. */
   timeout(args: TwitchUserTarget & { durationSeconds: number; reason?: string }): {
     ok: true;

@@ -115,6 +115,36 @@ export interface StreamInfo {
   language: string;
 }
 
+export interface GetUserArgs {
+  userId?: string;
+  /** Login name, used when `userId` is absent. */
+  userName?: string;
+}
+
+/**
+ * A Twitch user and their channel. The category is the channel's current
+ * one, which Twitch keeps after the stream ends, so it is what they were last
+ * streaming. `stream` is null while they are offline.
+ */
+export interface TwitchUserInfo {
+  userId: string;
+  login: string;
+  displayName: string;
+  description: string;
+  profileImageUrl: string;
+  /** "partner", "affiliate" or "" for neither. */
+  broadcasterType: string;
+  /** When the account was created, ISO 8601. */
+  createdAt: string;
+  title: string;
+  categoryId: string;
+  categoryName: string;
+  tags: string[];
+  language: string;
+  isLive: boolean;
+  stream: { title: string; categoryName: string; viewerCount: number; startedAt: string } | null;
+}
+
 /** Throws unless `title` is a title Twitch will accept. */
 export function validateTitle(title: unknown): string {
   if (typeof title !== "string") {
@@ -178,6 +208,7 @@ export const TWITCH_API_COMMANDS = [
   "createMarker",
   "searchCategories",
   "getStreamInfo",
+  "getUser",
   "getAdSchedule",
   "snoozeNextAd",
 ] as const satisfies readonly (keyof TwitchApi)[];
@@ -540,6 +571,38 @@ export default class TwitchApi {
     };
   }
 
+  /** Who a user is, what their channel is set to, and whether they are live. Needs no scope. */
+  async getUser(args: GetUserArgs): Promise<TwitchUserInfo> {
+    const user = await this.resolveUser("getUser", args);
+    const [channel, stream] = await Promise.all([
+      this.apiClient.channels.getChannelInfoById(user.id),
+      this.apiClient.streams.getStreamByUserId(user.id),
+    ]);
+    return {
+      userId: user.id,
+      login: user.name,
+      displayName: user.displayName,
+      description: user.description,
+      profileImageUrl: user.profilePictureUrl,
+      broadcasterType: user.broadcasterType,
+      createdAt: user.creationDate.toISOString(),
+      title: channel?.title ?? "",
+      categoryId: channel?.gameId ?? "",
+      categoryName: channel?.gameName ?? "",
+      tags: channel?.tags ?? [],
+      language: channel?.language ?? "",
+      isLive: stream !== null,
+      stream: stream
+        ? {
+            title: stream.title,
+            categoryName: stream.gameName,
+            viewerCount: stream.viewers,
+            startedAt: stream.startDate.toISOString(),
+          }
+        : null,
+    };
+  }
+
   /**
    * Push the next ad back by five minutes, spending one snooze. Twitch
    * answers a snooze with none left, or with no ad scheduled, with a 400,
@@ -587,6 +650,24 @@ export default class TwitchApi {
       throw new Error(`updateStream: no Twitch category matches "${query}"`);
     }
     return match;
+  }
+
+  /** The user named by whichever of id/name the caller had. */
+  private async resolveUser(command: string, args: GetUserArgs): Promise<HelixUser> {
+    const userId = args?.userId?.trim();
+    const userName = args?.userName?.trim().replace(/^@/, "");
+    if (!userId && !userName) {
+      throw new Error(`${command}: userId or userName is required`);
+    }
+    const user = userId
+      ? await this.apiClient.users.getUserById(userId)
+      : await this.apiClient.users.getUserByName(userName as string);
+    if (!user) {
+      throw new Error(
+        userId ? `${command}: no Twitch user with id ${userId}` : `${command}: no Twitch user named "${userName}"`
+      );
+    }
+    return user;
   }
 
   /** A user id from whichever of id/name the caller had. */

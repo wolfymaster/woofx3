@@ -45,6 +45,7 @@ Only the commands below are served (`TWITCH_API_COMMANDS` in
 | `updateStream` | `{ title?, category?, categoryId?, tags? }` | `{ ok, title?, categoryId?, categoryName?, tags? }` | `channel:manage:broadcast` |
 | `createMarker` | `{ description? }` | `{ id, createdAt, description, positionSeconds }` | `channel:manage:broadcast` |
 | `searchCategories` | `{ query, first? }` | `[{ id, name, boxArtUrl }]` | none |
+| `getUser` | `{ userId \| userName }` | `{ userId, login, displayName, description, profileImageUrl, broadcasterType, createdAt, title, categoryId, categoryName, tags, language, isLive, stream }` | none |
 | `timeout` | `{ userId \| userName, durationSeconds, reason? }` | `{ ok, userId, durationSeconds }` | `moderator:manage:banned_users` |
 | `shoutout` | `{ userId \| userName }` | `{ ok, userId }` | `moderator:manage:shoutouts` |
 | `clip` | none | `{ id, url }` | `clips:edit` |
@@ -133,11 +134,12 @@ at once across the engine, since each one holds a sandbox thread.
 | `clip()` | `{ id, url }` | none |
 | `shoutout({ userId \| userName })` | `{ ok, userId }` | none |
 | `createMarker({ description? })` | `{ id, createdAt, description, positionSeconds }` | none |
+| `getUser({ userId \| userName })` | `{ userId, login, displayName, …, categoryName, isLive, stream }` | none |
 | `timeout({ userId \| userName, durationSeconds, reason? })` | `{ ok, userId, durationSeconds }` | `twitch.moderation` |
 | `updateStream({ title?, category?, categoryId?, tags? })` | `{ ok, title?, categoryId?, categoryName?, tags? }` | `twitch.channel` |
 
-Clips, shoutouts and markers are visible and harmless, so any module may
-call them. Timing chatters out and changing the title, category or tags act
+Clips, shoutouts and markers are visible and harmless, and `getUser` reads
+only what Twitch shows anyone, so any module may call them. Timing chatters out and changing the title, category or tags act
 on the channel and its chatters, so the module has to declare the permission
 in its manifest (`"permissions": ["twitch.moderation", "twitch.channel"]`).
 Permissions are declared by the module and enforced by the engine, and shown

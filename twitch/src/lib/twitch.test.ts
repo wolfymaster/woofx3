@@ -553,3 +553,92 @@ describe("getStreamInfo", () => {
     });
   });
 });
+
+describe("getUser", () => {
+  const USER = {
+    id: "user-1",
+    name: "wolfymaster",
+    displayName: "WolfyMaster",
+    description: "Code and chaos",
+    profilePictureUrl: "https://img/user-1.png",
+    broadcasterType: "affiliate",
+    creationDate: new Date("2015-03-01T12:00:00Z"),
+  };
+  const CHANNEL = {
+    title: "Building bots",
+    gameId: "1469308723",
+    gameName: "Software and Game Development",
+    tags: ["English"],
+    language: "en",
+  };
+
+  function client(stream: unknown) {
+    const getUserById = mock(async (..._args: unknown[]) => USER);
+    const getUserByName = mock(async (..._args: unknown[]) => USER);
+    const getChannelInfoById = mock(async (..._args: unknown[]) => CHANNEL);
+    const getStreamByUserId = mock(async (..._args: unknown[]) => stream);
+    const apiClient = {
+      users: { getUserById, getUserByName },
+      channels: { getChannelInfoById },
+      streams: { getStreamByUserId },
+    } as unknown as ApiClient;
+    return { apiClient, getUserById, getUserByName, getChannelInfoById, getStreamByUserId };
+  }
+
+  test("reads the profile and the channel's last category while offline", async () => {
+    const { apiClient, getUserByName, getChannelInfoById, getStreamByUserId } = client(null);
+    const api = new TwitchApi(apiClient, BROADCASTER);
+
+    expect(await api.getUser({ userName: "@wolfymaster" })).toEqual({
+      userId: "user-1",
+      login: "wolfymaster",
+      displayName: "WolfyMaster",
+      description: "Code and chaos",
+      profileImageUrl: "https://img/user-1.png",
+      broadcasterType: "affiliate",
+      createdAt: "2015-03-01T12:00:00.000Z",
+      title: "Building bots",
+      categoryId: "1469308723",
+      categoryName: "Software and Game Development",
+      tags: ["English"],
+      language: "en",
+      isLive: false,
+      stream: null,
+    });
+    expect(getUserByName.mock.calls[0]).toEqual(["wolfymaster"]);
+    expect(getChannelInfoById.mock.calls[0]).toEqual(["user-1"]);
+    expect(getStreamByUserId.mock.calls[0]).toEqual(["user-1"]);
+  });
+
+  test("adds the live stream when they are live", async () => {
+    const { apiClient, getUserById, getUserByName } = client({
+      title: "Raid train",
+      gameName: "Just Chatting",
+      viewers: 42,
+      startDate: new Date("2026-10-03T18:00:00Z"),
+    });
+    const api = new TwitchApi(apiClient, BROADCASTER);
+
+    const info = await api.getUser({ userId: "user-1" });
+    expect(info.isLive).toBe(true);
+    expect(info.stream).toEqual({
+      title: "Raid train",
+      categoryName: "Just Chatting",
+      viewerCount: 42,
+      startedAt: "2026-10-03T18:00:00.000Z",
+    });
+    expect(getUserById.mock.calls[0]).toEqual(["user-1"]);
+    expect(getUserByName).not.toHaveBeenCalled();
+  });
+
+  test("says which user it could not find, and needs one", async () => {
+    const { apiClient, getUserByName, getUserById } = client(null);
+    getUserByName.mockImplementation(async () => null as never);
+    getUserById.mockImplementation(async () => null as never);
+    const api = new TwitchApi(apiClient, BROADCASTER);
+
+    await expect(api.getUser({ userName: "ghost" })).rejects.toThrow('getUser: no Twitch user named "ghost"');
+    await expect(api.getUser({ userId: "404" })).rejects.toThrow("getUser: no Twitch user with id 404");
+    await expect(api.getUser({ userName: " " })).rejects.toThrow("userId or userName is required");
+  });
+});
