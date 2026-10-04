@@ -82,7 +82,7 @@ RUN apt-get update \
 COPY --from=builder --chown=65532:65532 /src/build/dist/linux-amd64/ /app/
 COPY --chown=65532:65532 --chmod=0755 build/entrypoint.sh /app/entrypoint.sh
 
-# State (Badger, a sqlite database, file-backed storage) lives here. Created
+# State (sqlite databases, file-backed storage) lives here. Created
 # owned by the image user so the image works unprivileged with no volume; a
 # host that mounts a root-owned volume here runs the entrypoint as root, which
 # fixes ownership and drops privileges (see build/entrypoint.sh).

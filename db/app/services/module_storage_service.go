@@ -23,9 +23,6 @@ type ModuleStorageConfig struct {
 	ReplicaURL      string
 	AccessKeyID     string
 	SecretAccessKey string
-	// BadgerPath is a Badger directory from before module storage moved to
-	// SQLite; its values are imported once on connect. Empty means none.
-	BadgerPath string
 }
 
 // ModuleStorageService owns the module storage file for the life of the
@@ -49,9 +46,9 @@ func NewModuleStorageService(cfg ModuleStorageConfig, logger *slog.Logger) *Modu
 	}
 }
 
-// Connect opens module storage and imports any Badger data. Any failure,
-// a failed restore included, leaves the service unconnected, so db-proxy
-// serves nothing rather than serving an empty store.
+// Connect opens module storage and ensures its schema. Any failure, a failed
+// restore included, leaves the service unconnected, so db-proxy serves
+// nothing rather than serving an empty store.
 func (s *ModuleStorageService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -70,28 +67,13 @@ func (s *ModuleStorageService) Connect(ctx context.Context, appCtx *runtime.Appl
 		return err
 	}
 
-	if err := s.prepare(ctx, store.DB()); err != nil {
+	if err := EnsureStorageSchema(ctx, store.DB()); err != nil {
 		return errors.Join(err, store.Close(context.WithoutCancel(ctx)))
 	}
 
 	s.store = store
 	s.SetClient(store.DB())
 	return s.BaseService.Connect(ctx, appCtx)
-}
-
-func (s *ModuleStorageService) prepare(ctx context.Context, db *sql.DB) error {
-	if err := EnsureStorageSchema(ctx, db); err != nil {
-		return err
-	}
-	result, err := ImportBadgerStorage(ctx, db, s.cfg.BadgerPath, time.Now())
-	if err != nil {
-		return err
-	}
-	if result.ArchivedTo != "" {
-		s.logger.Info("Imported module storage from Badger",
-			"imported", result.Imported, "skipped", result.Skipped, "archivedTo", result.ArchivedTo)
-	}
-	return nil
 }
 
 // closeTimeout bounds Disconnect. It covers replication's own shutdown sync

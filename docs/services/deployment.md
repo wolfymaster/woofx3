@@ -76,7 +76,6 @@ survives a redeploy or a move to another host.
 | `storageReplicaUrl` / `WOOFX3_STORAGE_REPLICA_URL` | no | Litestream replica URL. Unset is local mode. |
 | `storageReplicaAccessKeyId` / `WOOFX3_STORAGE_REPLICA_ACCESS_KEY_ID` | no | S3 access key for the replica. |
 | `storageReplicaSecretAccessKey` / `WOOFX3_STORAGE_REPLICA_SECRET_ACCESS_KEY` | no | S3 secret key for the replica. |
-| `badgerPath` / `WOOFX3_BADGER_PATH` | no | A Badger directory from before module storage moved to SQLite; imported once, see below. |
 
 Set the credentials as variables on the host, never in the baked
 `.woofx3.json`. When they are unset, the replica client falls back to the
@@ -143,16 +142,6 @@ is still running after 25 seconds.
 
 The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
 Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
-
-### Importing Badger data
-
-Module storage used to be a Badger directory (`badgerPath`). When db-proxy
-starts with `badgerPath` pointing at a Badger store, it copies every live item
-into the SQLite file, skipping expired items and any address the file already
-holds (restored or written since, so newer), then renames the directory to
-`<badgerPath>.imported-<UTC timestamp>`. The next start finds nothing to import.
-Once an engine has started on this release, `badgerPath` can be removed; the
-archived directory can be deleted once you no longer want it as a fallback.
 
 ## Readiness and version
 

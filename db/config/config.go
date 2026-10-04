@@ -16,10 +16,7 @@ type DatabaseEnvConfig struct {
 	// sources (AWS_ACCESS_KEY_ID, ...) apply.
 	StorageReplicaAccessKeyID     string `env:"WOOFX3_STORAGE_REPLICA_ACCESS_KEY_ID"`
 	StorageReplicaSecretAccessKey string `env:"WOOFX3_STORAGE_REPLICA_SECRET_ACCESS_KEY"`
-	// BadgerPath is where module storage lived before it moved to SQLite.
-	// Read only to import it once; see services.ImportBadgerStorage.
-	BadgerPath        string `env:"WOOFX3_BADGER_PATH"`
-	DatabaseProxyPort string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
+	DatabaseProxyPort             string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
 	// DatabaseProxyHost is the interface db-proxy listens on. db-proxy has no
 	// authentication, so it stays on loopback unless a deployment runs its
 	// clients in separate network namespaces and says otherwise.
