@@ -33,7 +33,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
-      "Set-Cookie": serializeSessionCookie(sessionToken, SESSION_TOKEN_TTL_SECONDS),
+      "Set-Cookie": serializeSessionCookie(state.sceneId, sessionToken, SESSION_TOKEN_TTL_SECONDS),
     },
   });
 }
@@ -45,7 +45,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
  * can read it.
  */
 export async function handleSceneConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   if (!claims || claims.sceneId !== sceneId) {
     return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
@@ -67,7 +67,7 @@ export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
  * Authorized like `/config`.
  */
 export async function handleSceneDraftConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   if (!claims || claims.sceneId !== sceneId) {
     return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });

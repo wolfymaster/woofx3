@@ -13,7 +13,7 @@ import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
  * retrying.
  */
 export async function handleSessionRefreshRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   if (!claims || claims.sceneId !== sceneId) {
     return new Response(JSON.stringify({ error: "invalid_session" }), {
@@ -28,7 +28,7 @@ export async function handleSessionRefreshRoute(req: Request, sceneId: string, d
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
-      "Set-Cookie": serializeSessionCookie(fresh, SESSION_TOKEN_TTL_SECONDS),
+      "Set-Cookie": serializeSessionCookie(sceneId, fresh, SESSION_TOKEN_TTL_SECONDS),
     },
   });
 }

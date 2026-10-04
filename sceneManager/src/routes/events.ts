@@ -20,7 +20,7 @@ function unauthorized(): Response {
 }
 
 async function verifySession(req: Request, sceneId: string, deps: HttpDeps): Promise<boolean> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   return !!claims && claims.sceneId === sceneId;
 }
@@ -203,7 +203,7 @@ export async function handleWidgetStatusRoute(
   instanceId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   if (!claims || claims.sceneId !== sceneId) {
     return unauthorized();

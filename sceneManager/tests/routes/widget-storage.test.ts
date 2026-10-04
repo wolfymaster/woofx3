@@ -45,7 +45,7 @@ function deps(opts: { read?: (...args: unknown[]) => Promise<unknown>; settings?
 function request(instanceId: string, key: string | null, cookie = "good"): Request {
   const query = key === null ? "" : `?key=${encodeURIComponent(key)}`;
   return new Request(`http://scene.test/scene/scene-1/widget/${instanceId}/storage${query}`, {
-    headers: { Cookie: `sm_session=${cookie}` },
+    headers: { Cookie: `sm_session_scene-1=${cookie}` },
   });
 }
 

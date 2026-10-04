@@ -25,7 +25,7 @@ function deps() {
 
 function request(sceneId: string, cookie: string | null): Request {
   return new Request(`http://scene.test/scene/${sceneId}/config`, {
-    headers: cookie === null ? {} : { Cookie: `sm_session=${cookie}` },
+    headers: cookie === null ? {} : { Cookie: `sm_session_${sceneId}=${cookie}` },
   });
 }
 
