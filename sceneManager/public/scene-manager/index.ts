@@ -18,7 +18,13 @@ import { SceneEventSource, type DeliveryFrame } from "./event-source";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
-import { applyPreviewLayout, parsePreviewLayout, type PreviewWidgetLayout } from "./preview-layout";
+import {
+  applyPreviewLayout,
+  draftFrameKey,
+  parsePreviewLayout,
+  parsePreviewPlacements,
+  type PreviewWidgetLayout,
+} from "./preview-layout";
 import { applySceneBackground } from "./scene-background";
 import { parseSceneConfig, planSceneUpdate, type SceneConfig, type WidgetPlacementConfig } from "./scene-update";
 
@@ -30,6 +36,10 @@ declare global {
 
 const REFRESH_INTERVAL_MS = 50_000;
 
+// Typing into a text setting posts a draft per keystroke, and a settings
+// change reloads the widget's frame; waiting for a pause reloads it once.
+const DRAFT_SETTLE_MS = 400;
+
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -37,6 +47,13 @@ function generateNonce(): string {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
+}
+
+/** A frame's URL with the bridge nonce added; a draft frame's URL already has a query. */
+function withNonce(frameUrl: string, nonce: string): string {
+  const url = new URL(frameUrl, location.href);
+  url.searchParams.set("nonce", nonce);
+  return url.pathname + url.search;
 }
 
 function placeAt(element: HTMLElement, position: WidgetPlacementConfig["position"]): void {
@@ -225,7 +242,7 @@ function main(): void {
       sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
+    iframe.src = withNonce(instance.frameUrl, nonce);
 
     bridges.add(bridge);
     container.appendChild(iframe);
@@ -266,6 +283,12 @@ function main(): void {
   // The editor's draft layout, kept so a scene update -- which places every
   // widget where it was saved -- doesn't undo a drag the editor has not saved.
   let previewLayout: PreviewWidgetLayout[] | null = null;
+  // The editor's unsaved placements, once it has sent any. From then on they
+  // are what the page shows: a save the editor made matches them, and a save
+  // must not undo an edit made since.
+  let draftPlacements: unknown[] | null = null;
+  let draftKey = "";
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
 
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
@@ -285,6 +308,21 @@ function main(): void {
       if (layout) {
         previewLayout = layout;
         applyPreviewLayout(widgetElements, layout);
+      }
+      const placements = parsePreviewPlacements(event.data);
+      if (placements) {
+        draftPlacements = placements;
+        const key = draftFrameKey(placements);
+        if (key !== draftKey) {
+          draftKey = key;
+          if (draftTimer !== null) {
+            clearTimeout(draftTimer);
+          }
+          draftTimer = setTimeout(() => {
+            draftTimer = null;
+            void updateScene();
+          }, DRAFT_SETTLE_MS);
+        }
       }
     });
   }
@@ -316,17 +354,42 @@ function main(): void {
     }
   }
 
-  async function fetchSceneConfig(): Promise<SceneConfig | null> {
+  type Target = { kind: "apply"; config: SceneConfig } | { kind: "reload" } | { kind: "keep" };
+
+  // The saved scene, or the editor's draft once it has sent one. A failed
+  // saved fetch reloads, which renders the saved scene too and re-mints the
+  // session when a lapsed one is why it failed. A failed draft fetch keeps
+  // what is on screen instead: the editor posts its draft again on every
+  // load, so reloading for a draft the server keeps refusing would loop.
+  async function fetchTarget(): Promise<Target> {
+    const draft = draftPlacements;
+    let resp: Response;
     try {
-      const resp = await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
-      return resp.ok ? parseSceneConfig(await resp.json()) : null;
+      resp = draft
+        ? await fetch(`${sceneBase}/draft-config`, {
+            method: "POST",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ widgets: draft }),
+          })
+        : await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
     } catch {
-      return null;
+      return draft ? { kind: "keep" } : { kind: "reload" };
     }
+    const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
+    if (config && config.id === sceneId) {
+      return { kind: "apply", config };
+    }
+    if (draft && resp.status !== 401) {
+      console.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });
+      return { kind: "keep" };
+    }
+    return { kind: "reload" };
   }
 
-  // One update at a time: saves that land while one is applying collapse
-  // into a single fetch of the newest config once it is done.
+  // One update at a time: saves and drafts that land while one is applying
+  // collapse into a single fetch of the newest target once it is done.
   let updating = false;
   let updateRequested = false;
   async function updateScene(): Promise<void> {
@@ -338,14 +401,14 @@ function main(): void {
     try {
       while (updateRequested) {
         updateRequested = false;
-        const next = await fetchSceneConfig();
-        if (!next || next.id !== sceneId) {
-          // A reload renders the saved scene too, and re-mints the session
-          // when a lapsed one is why the fetch failed.
+        const target = await fetchTarget();
+        if (target.kind === "reload") {
           location.reload();
           return;
         }
-        applySceneConfig(next);
+        if (target.kind === "apply") {
+          applySceneConfig(target.config);
+        }
       }
     } finally {
       updating = false;

@@ -1391,6 +1391,22 @@ function parsePreviewLayout(data) {
   }
   return widgets;
 }
+function parsePreviewPlacements(data) {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const message = data;
+  if (message.type !== PREVIEW_LAYOUT_MESSAGE || !Array.isArray(message.placements)) {
+    return null;
+  }
+  return message.placements;
+}
+function draftFrameKey(placements) {
+  return JSON.stringify(placements.map((raw) => {
+    const placement = typeof raw === "object" && raw !== null ? raw : {};
+    return [placement.id, placement.widgetCanonicalId, placement.settings];
+  }));
+}
 function applyPreviewLayout(elements, layout) {
   const byId = new Map(layout.map((widget) => [widget.id, widget]));
   for (const [id, element] of elements) {
@@ -1444,7 +1460,7 @@ function planSceneUpdate(current, next) {
   return plan;
 }
 function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && sameValue(a.settings, b.settings);
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && sameValue(a.settings, b.settings);
 }
 function sameValue(a, b) {
   if (a === b) {
@@ -1486,10 +1502,16 @@ function parseSceneConfig(body) {
 
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
+var DRAFT_SETTLE_MS = 400;
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function withNonce(frameUrl, nonce) {
+  const url = new URL(frameUrl, location.href);
+  url.searchParams.set("nonce", nonce);
+  return url.pathname + url.search;
 }
 function placeAt(element, position) {
   element.style.left = `${position.x}px`;
@@ -1618,7 +1640,7 @@ function main() {
       sendStorageValue: (key, value) => bridge.sendStorageValue(key, value)
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
+    iframe.src = withNonce(instance.frameUrl, nonce);
     bridges.add(bridge);
     container.appendChild(iframe);
     widgetElements.set(instance.id, iframe);
@@ -1649,6 +1671,9 @@ function main() {
   }
   stack(sceneData.widgets.map((instance) => instance.id));
   let previewLayout = null;
+  let draftPlacements = null;
+  let draftKey = "";
+  let draftTimer = null;
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
       bridge.handleMessage(event);
@@ -1663,6 +1688,21 @@ function main() {
       if (layout) {
         previewLayout = layout;
         applyPreviewLayout(widgetElements, layout);
+      }
+      const placements = parsePreviewPlacements(event.data);
+      if (placements) {
+        draftPlacements = placements;
+        const key = draftFrameKey(placements);
+        if (key !== draftKey) {
+          draftKey = key;
+          if (draftTimer !== null) {
+            clearTimeout(draftTimer);
+          }
+          draftTimer = setTimeout(() => {
+            draftTimer = null;
+            updateScene();
+          }, DRAFT_SETTLE_MS);
+        }
       }
     });
   }
@@ -1689,13 +1729,29 @@ function main() {
       applyPreviewLayout(widgetElements, previewLayout);
     }
   }
-  async function fetchSceneConfig() {
+  async function fetchTarget() {
+    const draft = draftPlacements;
+    let resp;
     try {
-      const resp = await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
-      return resp.ok ? parseSceneConfig(await resp.json()) : null;
+      resp = draft ? await fetch(`${sceneBase}/draft-config`, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ widgets: draft })
+      }) : await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
     } catch {
-      return null;
+      return draft ? { kind: "keep" } : { kind: "reload" };
     }
+    const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
+    if (config && config.id === sceneId) {
+      return { kind: "apply", config };
+    }
+    if (draft && resp.status !== 401) {
+      console.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });
+      return { kind: "keep" };
+    }
+    return { kind: "reload" };
   }
   let updating = false;
   let updateRequested = false;
@@ -1708,12 +1764,14 @@ function main() {
     try {
       while (updateRequested) {
         updateRequested = false;
-        const next = await fetchSceneConfig();
-        if (!next || next.id !== sceneId) {
+        const target = await fetchTarget();
+        if (target.kind === "reload") {
           location.reload();
           return;
         }
-        applySceneConfig(next);
+        if (target.kind === "apply") {
+          applySceneConfig(target.config);
+        }
       }
     } finally {
       updating = false;

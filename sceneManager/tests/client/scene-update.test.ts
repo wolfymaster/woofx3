@@ -48,6 +48,15 @@ describe("planSceneUpdate", () => {
     expect(plan.mount).toEqual([]);
   });
 
+  it("keeps a frame when only its source changes, as when a save matches the draft on screen", () => {
+    const plan = planSceneUpdate(
+      [placement("a", { frameUrl: "/scene/s1/draft-widget/a?draft=abc" })],
+      [placement("a")]
+    );
+    expect(plan.mount).toEqual([]);
+    expect(plan.place.map((p) => p.id)).toEqual(["a"]);
+  });
+
   it("mounts again a placement pointed at another widget", () => {
     const plan = planSceneUpdate([placement("a")], [placement("a", { widgetCanonicalId: "woofx3:widget:timer" })]);
     expect(plan.remove).toEqual(["a"]);

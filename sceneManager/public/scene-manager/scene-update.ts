@@ -64,14 +64,15 @@ export function planSceneUpdate(
 /**
  * Whether two placements render the same frame. Settings are part of it: the
  * server writes them into the frame document, so a frame never sees a change
- * to them without loading again.
+ * to them without loading again. The frame URL is not: a saved frame and a
+ * draft frame of the same placement and settings render the same thing, so a
+ * save that matches the draft on screen reloads nothing.
  */
 function sameFrame(a: WidgetPlacementConfig, b: WidgetPlacementConfig): boolean {
   return (
     a.widgetCanonicalId === b.widgetCanonicalId &&
     a.moduleId === b.moduleId &&
     a.hostsSurface === b.hostsSurface &&
-    a.frameUrl === b.frameUrl &&
     sameValue(a.settings, b.settings)
   );
 }
