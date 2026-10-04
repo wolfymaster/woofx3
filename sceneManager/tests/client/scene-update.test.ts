@@ -16,6 +16,7 @@ function placement(id: string, overrides: Partial<WidgetPlacementConfig> = {}): 
     settings: { label: "Deaths", style: { color: "#fff", size: 12 } },
     hostsSurface: "",
     frameUrl: `/scene/s1/widget/${id}`,
+    visible: true,
     ...overrides,
   };
 }

@@ -1,4 +1,5 @@
 import { OBS_STATUS_SUBJECT } from "@woofx3/common/cloudevents/Obs/commands";
+import { SCENE_COMMAND_SUBJECT } from "@woofx3/common/cloudevents/Scene/commands";
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { DbClient } from "./db";
@@ -20,6 +21,8 @@ import type Manager from "./obs/manager";
 import { OBS_MODULE_ID } from "./obs/settings";
 import type { ObsStatusReply } from "./obs/status";
 import type { ModuleStateWatch } from "./scene/module-state";
+import type { PlacementVisibility } from "./scene/placement-visibility";
+import { answerSceneCommand } from "./scene/scene-command";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 
@@ -33,6 +36,7 @@ interface InitArgs {
   host: OverlayHost;
   deliveryStore: DeliveryStore;
   moduleState: ModuleStateWatch;
+  visibility: PlacementVisibility;
   resolver: OverlayTokenResolver;
   logger: Logger;
 }
@@ -112,7 +116,7 @@ interface WidgetEventEnvelope {
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, obs, obsStatus, db, host, deliveryStore, moduleState, resolver, logger } = args;
+  const { nats, obs, obsStatus, db, host, deliveryStore, moduleState, visibility, resolver, logger } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -265,6 +269,21 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // answer to succeed or fail.
   await nats.subscribe("engine.obs.command", (msg) => answerObsCommand(obs, msg, logger));
   logger.info("Subscribed to engine.obs.command");
+
+  // Live scene changes from workflow steps, request/reply: the step waits on
+  // this answer to succeed or fail.
+  await nats.subscribe(SCENE_COMMAND_SUBJECT, (msg) =>
+    answerSceneCommand(
+      {
+        loadSceneById: (sceneId) => host.loadSceneById(sceneId),
+        visibility,
+        broadcast: (sceneId, event, data) => deliveryStore.broadcast(sceneId, event, data),
+      },
+      msg,
+      logger
+    )
+  );
+  logger.info(`Subscribed to ${SCENE_COMMAND_SUBJECT}`);
 
   // OBS names for `ctx.obs.listScenes` / `listSources` / `listInputs`,
   // request/reply.

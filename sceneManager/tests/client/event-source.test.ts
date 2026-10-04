@@ -362,3 +362,17 @@ describe("parseSseChunk cancel frames", () => {
     expect(parseSseChunk('event: cancel\ndata: {"eventIds":["evt-1"]}')).toBeNull();
   });
 });
+
+describe("parseSseChunk placement-visibility frames", () => {
+  it("parses a placement-visibility frame", () => {
+    expect(parseSseChunk('event: placement-visibility\ndata: {"instanceId":"inst-1","visible":false}')).toEqual({
+      kind: "placement-visibility",
+      frame: { instanceId: "inst-1", visible: false },
+    });
+  });
+
+  it("returns null for a frame whose visibility is not a boolean", () => {
+    expect(parseSseChunk('event: placement-visibility\ndata: {"instanceId":"inst-1","visible":"false"}')).toBeNull();
+    expect(parseSseChunk('event: placement-visibility\ndata: {"visible":true}')).toBeNull();
+  });
+});

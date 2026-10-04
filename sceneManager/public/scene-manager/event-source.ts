@@ -43,16 +43,24 @@ export interface CancelFrame {
   eventIds: string[];
 }
 
-/** The stream carries five frame kinds: per-event deliveries, module
+/** A workflow step showed or hid one placement. */
+export interface PlacementVisibilityFrame {
+  instanceId: string;
+  visible: boolean;
+}
+
+/** The stream carries six frame kinds: per-event deliveries, module
  *  storage changes, the `hello` control frame the server opens every
  *  stream with, `scene-updated` when the scene's saved config changes,
- *  and `cancel` when an operator skips or clears alerts. */
+ *  `cancel` when an operator skips or clears alerts, and
+ *  `placement-visibility` when a workflow shows or hides a widget. */
 export type SceneFrame =
   | { kind: "delivery"; frame: DeliveryFrame }
   | { kind: "module-state"; frame: ModuleStateFrame }
   | { kind: "hello"; bootId: string }
   | { kind: "scene-updated" }
-  | { kind: "cancel"; frame: CancelFrame };
+  | { kind: "cancel"; frame: CancelFrame }
+  | { kind: "placement-visibility"; frame: PlacementVisibilityFrame };
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
@@ -65,6 +73,8 @@ export interface SceneEventSink {
   onSceneUpdated?(): void;
   /** The server closed deliveries the page may still be holding. */
   onCancel?(frame: CancelFrame): void;
+  /** A workflow step showed or hid a placement. */
+  onPlacementVisibility?(frame: PlacementVisibilityFrame): void;
   /** The server rejected our session cookie. Unlike every other
    *  failure here, retrying cannot fix this -- see the note on
    *  SESSION_REJECTED_STATUSES. */
@@ -128,6 +138,12 @@ export function parseSseChunk(rawEvent: string): SceneFrame | null {
       Array.isArray(eventIds) &&
       eventIds.every((id): id is string => typeof id === "string")
       ? { kind: "cancel", frame: { instanceId, eventIds } }
+      : null;
+  }
+
+  if (eventName === "placement-visibility") {
+    return typeof parsed.instanceId === "string" && typeof parsed.visible === "boolean"
+      ? { kind: "placement-visibility", frame: { instanceId: parsed.instanceId, visible: parsed.visible } }
       : null;
   }
 
@@ -291,6 +307,8 @@ export class SceneEventSource {
             this.sink?.onSceneUpdated?.();
           } else if (parsed.kind === "cancel") {
             this.sink?.onCancel?.(parsed.frame);
+          } else if (parsed.kind === "placement-visibility") {
+            this.sink?.onPlacementVisibility?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }

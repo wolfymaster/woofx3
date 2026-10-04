@@ -39,6 +39,12 @@ export const ENGINE_CAPABILITIES = {
   twitchDashboardTokens: "twitch.dashboardTokens",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
+  /**
+   * The `scene.widget.visibility` workflow action, a placement's saved
+   * `hidden`, and the `scenes` / `scenePlacements` field sources its form
+   * uses.
+   */
+  workflowWidgetVisibility: "workflow.widgetVisibility",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

@@ -40,5 +40,6 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `obs.status` | The OBS connection's state and last failure: `getObsStatus` |
 | `twitch.dashboardTokens` | A Twitch token that carries the app's `clientId` is renewed by asking the dashboard that sent it (`twitch.token.requested`), not with a refresh token, so the dashboard need not send one. See [Twitch channel → Who renews the token](./twitch-channel.md#who-renews-the-token) |
 | `widgets.themes` | Theme presets a widget declares, for the theme settings picker: `listWidgetThemes` |
+| `workflow.widgetVisibility` | The `scene.widget.visibility` workflow action, a placement's saved `hidden`, and the `scenes` / `scenePlacements` field sources its form uses. See [Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility) |
 
 A test in `api/tests/engine-capabilities.test.ts` fails if an id in `ENGINE_CAPABILITIES` has no row here.

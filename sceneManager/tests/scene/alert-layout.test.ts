@@ -151,6 +151,8 @@ describe("alert widget targeting", () => {
       hostsSurface,
       frameUrl: "",
       resolved: true,
+      hidden: false,
+      visible: true,
     };
   }
 

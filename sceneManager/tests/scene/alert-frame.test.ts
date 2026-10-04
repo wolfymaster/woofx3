@@ -90,6 +90,8 @@ describe("FrameAssembler.assemble — surfaces", () => {
           hostsSurface,
           frameUrl: "",
           resolved: true,
+          hidden: false,
+          visible: true,
         },
       ],
     };

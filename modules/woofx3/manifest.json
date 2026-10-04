@@ -330,6 +330,45 @@
       ]
     },
     {
+      "id": "scene.widget.visibility",
+      "name": "Set widget visibility",
+      "description": "Show or hide a widget on a scene, on every overlay showing that scene. The change lasts until it is changed again or the engine restarts, which puts every widget back to the visibility saved with its scene.",
+      "type": "native",
+      "handler": "scene.widget.visibility",
+      "schema": [
+        {
+          "id": "sceneId",
+          "label": "Scene",
+          "type": "text",
+          "required": true,
+          "source": {
+            "kind": "scenes"
+          }
+        },
+        {
+          "id": "placementId",
+          "label": "Widget",
+          "type": "text",
+          "required": true,
+          "source": {
+            "kind": "scenePlacements",
+            "sceneField": "sceneId"
+          },
+          "description": "The widget on the chosen scene. A widget placed twice is two choices, one per placement."
+        },
+        {
+          "id": "visible",
+          "label": "Visible",
+          "type": "toggle",
+          "defaultValue": true,
+          "description": "On shows the widget, off hides it. A hidden widget keeps running, so it shows again instantly and as it was."
+        }
+      ],
+      "taxonomy": [
+        "system.workflow"
+      ]
+    },
+    {
       "id": "print",
       "name": "Print",
       "description": "Log the step's parameters to the workflow service log. Useful for debugging workflow shape and expression resolution.",

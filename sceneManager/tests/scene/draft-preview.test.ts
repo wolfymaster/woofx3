@@ -52,6 +52,8 @@ function instance(settings: Record<string, unknown>): OverlayWidgetInstance {
     hostsSurface: "",
     frameUrl: "/scene/scene-1/widget/text-1",
     resolved: true,
+    hidden: false,
+    visible: true,
   };
 }
 

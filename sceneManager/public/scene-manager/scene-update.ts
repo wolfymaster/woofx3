@@ -15,6 +15,8 @@ export interface WidgetPlacementConfig {
   /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
   hostsSurface: string;
   frameUrl: string;
+  /** Whether the placement is on screen; a workflow step can change it live. */
+  visible: boolean;
 }
 
 export interface SceneConfig {

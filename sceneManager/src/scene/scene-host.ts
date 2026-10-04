@@ -4,6 +4,7 @@ import type * as module_widget from "@woofx3/db/module_widget.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
+import type { PlacementVisibility } from "./placement-visibility";
 
 export interface OverlayWidgetPosition {
   x: number;
@@ -49,6 +50,10 @@ export interface OverlayWidgetInstance {
    * someone wondered why their alerts stopped.
    */
   resolved: boolean;
+  /** The placement's saved starting visibility: hidden until a workflow shows it. */
+  hidden: boolean;
+  /** Whether the placement is on screen now; see `PlacementVisibility`. */
+  visible: boolean;
 }
 
 export interface OverlaySceneLayout {
@@ -86,6 +91,8 @@ export interface OverlayHostOptions {
   /** Widget-catalog cache TTL in milliseconds (default 30s). */
   widgetCacheTtlMs?: number;
   now?: () => number;
+  /** Runtime show/hide overrides; without it every placement shows its saved default. */
+  visibility?: PlacementVisibility;
 }
 
 const WIDGET_CACHE_TTL_MS = 30_000;
@@ -123,6 +130,7 @@ export class OverlayHost {
   private widgetCache: { rows: OverlayWidgetDefinition[]; expiresAt: number } | null = null;
   private readonly widgetCacheTtlMs: number;
   private readonly now: () => number;
+  private readonly visibility: PlacementVisibility | null;
   private readonly bundleUrlWarned = new Set<string>();
 
   constructor(
@@ -133,6 +141,7 @@ export class OverlayHost {
   ) {
     this.widgetCacheTtlMs = opts.widgetCacheTtlMs ?? WIDGET_CACHE_TTL_MS;
     this.now = opts.now ?? Date.now;
+    this.visibility = opts.visibility ?? null;
   }
 
   /**
@@ -174,7 +183,7 @@ export class OverlayHost {
       sceneId: s.id,
       name: s.name,
       layout: parseLayout(s.layoutJson),
-      instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
+      instances: this.withVisibility(s.id, await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id)),
     };
   }
 
@@ -261,7 +270,7 @@ export class OverlayHost {
       sceneId: s.id,
       name: s.name,
       layout: parseLayout(s.layoutJson),
-      instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
+      instances: this.withVisibility(s.id, await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id)),
     };
   }
 
@@ -278,7 +287,7 @@ export class OverlayHost {
     if (!saved) {
       return { scene: null };
     }
-    const instances = await this.resolveDraftPlacements(sceneId, draftPlacements);
+    const instances = this.withVisibility(sceneId, await this.resolveDraftPlacements(sceneId, draftPlacements));
     return sceneConfigOf({
       ...saved,
       instances: instances.map((instance) => ({
@@ -286,6 +295,14 @@ export class OverlayHost {
         frameUrl: draftFrameUrl(sceneId, instance) ?? instance.frameUrl,
       })),
     });
+  }
+
+  private withVisibility(sceneId: string, instances: OverlayWidgetInstance[]): OverlayWidgetInstance[] {
+    const visibility = this.visibility;
+    if (!visibility) {
+      return instances;
+    }
+    return instances.map((instance) => ({ ...instance, visible: visibility.visibleOf(sceneId, instance) }));
   }
 
   /** Unsaved placements, parsed and resolved like saved ones. */
@@ -495,6 +512,8 @@ export class OverlayHost {
       // Assumed until the catalog says otherwise; `resolveInstances` is what
       // decides, since parsing alone cannot know what exists.
       resolved: true,
+      hidden: w.hidden === true,
+      visible: w.hidden !== true,
     };
   }
 }
@@ -553,6 +572,8 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         hostsSurface: w.hostsSurface,
         frameUrl: w.frameUrl,
         resolved: w.resolved,
+        hidden: w.hidden,
+        visible: w.visible,
       })),
     },
   };

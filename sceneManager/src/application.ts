@@ -40,6 +40,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { SessionTokenService } = await import("./scene/session-token");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
+    const { PlacementVisibility } = await import("./scene/placement-visibility");
     const { createMessageBus } = await import("@woofx3/nats");
     const { openObsSession } = await import("./obs/manager");
     const { ObsConnection } = await import("./obs/connection");
@@ -55,7 +56,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
 
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, ctx.logger);
-    const host = new OverlayHost(resolver, db, ctx.logger);
+    const visibility = new PlacementVisibility();
+    const host = new OverlayHost(resolver, db, ctx.logger, { visibility });
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
     const frameAssembler = new FrameAssembler(host, ctx.logger, {
       barkloader,
@@ -120,6 +122,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       host,
       deliveryStore,
       moduleState,
+      visibility,
       resolver,
       logger: ctx.logger,
     });

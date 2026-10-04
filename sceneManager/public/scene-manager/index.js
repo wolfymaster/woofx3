@@ -1091,6 +1091,9 @@ function parseSseChunk(rawEvent) {
     const { instanceId, eventIds } = parsed;
     return typeof instanceId === "string" && Array.isArray(eventIds) && eventIds.every((id) => typeof id === "string") ? { kind: "cancel", frame: { instanceId, eventIds } } : null;
   }
+  if (eventName === "placement-visibility") {
+    return typeof parsed.instanceId === "string" && typeof parsed.visible === "boolean" ? { kind: "placement-visibility", frame: { instanceId: parsed.instanceId, visible: parsed.visible } } : null;
+  }
   if (eventName === "module-state") {
     return typeof parsed.moduleId === "string" && typeof parsed.key === "string" ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } } : null;
   }
@@ -1216,6 +1219,8 @@ class SceneEventSource {
             this.sink?.onSceneUpdated?.();
           } else if (parsed.kind === "cancel") {
             this.sink?.onCancel?.(parsed.frame);
+          } else if (parsed.kind === "placement-visibility") {
+            this.sink?.onPlacementVisibility?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }
@@ -1525,6 +1530,18 @@ function applyPreviewLayout(elements, layout) {
   }
 }
 
+// public/scene-manager/placement-visibility.ts
+var DIMMED_OPACITY = "0.35";
+function applyPlacementVisibility(element, visible, framedByEditor) {
+  if (framedByEditor) {
+    element.style.visibility = "";
+    element.style.opacity = visible ? "" : DIMMED_OPACITY;
+    return;
+  }
+  element.style.opacity = "";
+  element.style.visibility = visible ? "" : "hidden";
+}
+
 // public/scene-manager/scene-background.ts
 function sceneBackground(layout) {
   const value = layout.backgroundColor;
@@ -1697,9 +1714,17 @@ function main() {
       iframe.remove();
     };
   };
+  const framedByEditor = window.parent !== window;
+  function showVisibility(instance) {
+    const element = widgetElements.get(instance.id);
+    if (element) {
+      applyPlacementVisibility(element, instance.visible, framedByEditor);
+    }
+  }
   function mount(instance) {
     const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
     mounted.set(instance.id, { config: instance, unmount });
+    showVisibility(instance);
   }
   function stack(order) {
     order.forEach((id, index) => {
@@ -1737,7 +1762,7 @@ function main() {
     }
     return true;
   }
-  if (window.parent !== window) {
+  if (framedByEditor) {
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent) {
         return;
@@ -1793,6 +1818,7 @@ function main() {
       if (entry && element) {
         entry.config = instance;
         placeAt(element, instance.position);
+        showVisibility(instance);
       }
     }
     for (const instance of plan.mount) {
@@ -1878,6 +1904,13 @@ function main() {
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
+    onPlacementVisibility: (frame) => {
+      const entry = mounted.get(frame.instanceId);
+      if (entry) {
+        entry.config = { ...entry.config, visible: frame.visible };
+        showVisibility(entry.config);
+      }
+    },
     onConnectionChange: (connected) => status.set("stream", connected),
     onSceneUpdated: () => void updateScene(),
     onHello: (bootId) => {
@@ -1887,6 +1920,7 @@ function main() {
       }
       if (serverBootId !== null) {
         moduleState.refresh();
+        updateScene();
       }
       serverBootId = bootId;
     },

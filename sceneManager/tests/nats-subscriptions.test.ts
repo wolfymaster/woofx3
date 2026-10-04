@@ -146,6 +146,7 @@ describe("alert queue control subjects", () => {
       host: {} as any,
       deliveryStore: deliveryStore as any,
       moduleState: {} as any,
+      visibility: {} as any,
       resolver: {} as any,
       logger: fakeLogger(),
     });
@@ -231,6 +232,7 @@ describe("module setting changes", () => {
       host: {} as any,
       deliveryStore: {} as any,
       moduleState: {} as any,
+      visibility: {} as any,
       resolver: {} as any,
       logger: fakeLogger(),
     });
@@ -271,6 +273,7 @@ describe("module setting changes", () => {
       host: {} as never,
       deliveryStore: {} as never,
       moduleState: {} as never,
+      visibility: {} as never,
       resolver: {} as never,
       logger: fakeLogger(),
     });

@@ -165,6 +165,44 @@ Returns:
 |-------|------|-------------|
 | `published` | `boolean` | Always `true` on success |
 
+#### `scene.widget.visibility`
+
+Shows or hides one widget on a scene, on every overlay showing that scene. The step asks the scene manager over `engine.scene.command` and waits for its answer, so a step naming a scene or widget that no longer exists fails with that reason instead of reporting success.
+
+```json
+{
+  "id": "show-hype-board",
+  "type": "action",
+  "action": "scene.widget.visibility",
+  "parameters": {
+    "sceneId": "b9e34157-70d0-4c20-b313-08fb0884f62d",
+    "placementId": "w-1791078000000",
+    "visible": true
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"scene.widget.visibility"`. Set at the task top level. |
+| `parameters.sceneId` | `string` | Yes | The scene the widget is placed on. |
+| `parameters.placementId` | `string` | Yes | The placement's `id` in the scene's widgets. A widget placed twice is two placements. |
+| `parameters.visible` | `boolean` | No | `true` shows the widget, `false` hides it. Defaults to `true`; `"true"` and `"false"` are accepted, since a value from an expression arrives as text. |
+
+A hidden widget is hidden, not removed: it keeps running, so showing it again is instant and it comes back with its state and timers as they were. The editor's preview dims a hidden widget rather than hiding it, so it can still be placed.
+
+Each placement also saves where it starts, as `hidden` in the scene's widgets (`true` for a widget meant to stay out of sight until a workflow shows it). A step's change lasts until another step changes it or the scene manager restarts, which puts every widget back to its saved `hidden`. Changing a widget's saved `hidden` in the editor drops any step's change to it, since the edit is the newer intent.
+
+To show a widget for a while, follow this step with a [`wait`](#delay) and a second step with `visible: false`.
+
+Returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sceneId` | `string` | The scene changed |
+| `placementId` | `string` | The placement changed |
+| `visible` | `boolean` | Whether it is now shown |
+
 #### `publish_event`
 
 Publishes an event to the NATS message bus.

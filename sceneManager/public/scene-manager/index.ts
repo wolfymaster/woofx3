@@ -26,6 +26,7 @@ import {
   settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
+import { applyPlacementVisibility } from "./placement-visibility";
 import { applySceneBackground } from "./scene-background";
 import {
   canChangeSettingsLive,
@@ -275,9 +276,19 @@ function main(): void {
     };
   };
 
+  const framedByEditor = window.parent !== window;
+
+  function showVisibility(instance: WidgetPlacementConfig): void {
+    const element = widgetElements.get(instance.id);
+    if (element) {
+      applyPlacementVisibility(element, instance.visible, framedByEditor);
+    }
+  }
+
   function mount(instance: WidgetPlacementConfig): void {
     const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
     mounted.set(instance.id, { config: instance, unmount });
+    showVisibility(instance);
   }
 
   // Stacked by z-index rather than by document order: moving an iframe in
@@ -337,7 +348,7 @@ function main(): void {
   // Only a page that frames this overlay can move its widgets, and it can
   // only move them on its own screen: nothing here is saved or sent on. OBS
   // loads the overlay top-level, where `window.parent` is the window itself.
-  if (window.parent !== window) {
+  if (framedByEditor) {
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent) {
         return;
@@ -401,6 +412,7 @@ function main(): void {
       if (entry && element) {
         entry.config = instance;
         placeAt(element, instance.position);
+        showVisibility(instance);
       }
     }
     for (const instance of plan.mount) {
@@ -520,6 +532,13 @@ function main(): void {
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
+    onPlacementVisibility: (frame) => {
+      const entry = mounted.get(frame.instanceId);
+      if (entry) {
+        entry.config = { ...entry.config, visible: frame.visible };
+        showVisibility(entry.config);
+      }
+    },
     onConnectionChange: (connected) => status.set("stream", connected),
     // The scene was saved. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.
@@ -530,7 +549,11 @@ function main(): void {
         return;
       }
       if (serverBootId !== null) {
+        // A resumed stream missed whatever was pushed while it was down: a
+        // storage change, or a widget shown or hidden. Both are state the
+        // page can ask for again.
         moduleState.refresh();
+        void updateScene();
       }
       serverBootId = bootId;
     },

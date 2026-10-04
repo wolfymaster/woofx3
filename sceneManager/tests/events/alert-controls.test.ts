@@ -113,6 +113,8 @@ function alertInstance(id: string, name: string): OverlayWidgetInstance {
     hostsSurface: "alert",
     frameUrl: "",
     resolved: true,
+    hidden: false,
+    visible: true,
   };
 }
 

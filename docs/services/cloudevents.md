@@ -318,6 +318,18 @@ code holding the `obs.control` permission. Unlike `slobs`, every request is
 answered with `{ ok, error? }`. `ctx.obs.listScenes` and its siblings read OBS
 over the separate, read-only `engine.obs.options`. See [OBS control](./obs.md).
 
+### Scene control (`engine.scene.command`)
+
+The workflow engine's `scene.widget.visibility` action changes a live scene
+with a request/reply CloudEvent on `engine.scene.command`, answered by the
+scene manager with `{ ok, error? }`. Its `data` is
+`{ command: "set_placement_visibility", sceneId, placementId, visible }`
+(`shared/common/typescript/cloudevents/Scene/commands.ts`). A message with no
+reply subject changes nothing. The scene manager pushes the change to the
+scene's overlays as a `placement-visibility` SSE frame,
+`{ instanceId, visible }`. See
+[Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility).
+
 ---
 
 ## Go — Widget & Alert Subjects
