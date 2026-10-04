@@ -57,6 +57,7 @@ Supported environment variables:
 - `WOOFX3_LOG_DIR`
 - `WOOFX3_LOG_ALLOW_RUNTIME_LEVEL`
 - `WOOFX3_LOG_REDACT_KEYS` (comma-separated)
+- `WOOFX3_LOG_PRETTY` (default `true`; `false` writes one JSON record per terminal line)
 
 ## OpenTelemetry
 

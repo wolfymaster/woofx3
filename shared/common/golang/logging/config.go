@@ -15,6 +15,7 @@ const (
 	envOTelExporterEndpoint = "WOOFX3_OTEL_EXPORTER_ENDPOINT"
 	envOTelTracingEnabled   = "WOOFX3_OTEL_TRACING_ENABLED"
 	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
+	envPrettyTerminal       = "WOOFX3_LOG_PRETTY"
 )
 
 type Fields map[string]any
@@ -28,6 +29,11 @@ type Config struct {
 	AddSource               bool
 	AllowRuntimeLevelChange bool
 	RedactKeys              []string
+
+	// PrettyTerminal is tri-state: nil defers to WOOFX3_LOG_PRETTY. A log
+	// collector that counts lines (Railway, journald) needs it off, since
+	// pretty output spreads one record over many lines.
+	PrettyTerminal *bool
 
 	// OTel switches are tri-state: nil defers to the matching WOOFX3_OTEL_*
 	// environment variable, a non-nil value overrides it.
@@ -46,6 +52,7 @@ type resolvedConfig struct {
 	AddSource               bool
 	AllowRuntimeLevelChange bool
 	RedactKeys              map[string]struct{}
+	PrettyTerminal          bool
 
 	OTelEnabled          bool
 	OTelExporterEndpoint string
@@ -111,6 +118,11 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		}
 	}
 
+	prettyTerminal, err := resolveBool(cfg.PrettyTerminal, envPrettyTerminal, true)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
 	otelExporterEndpoint := strings.TrimSpace(cfg.OTelExporterEndpoint)
 	if otelExporterEndpoint == "" {
 		otelExporterEndpoint = strings.TrimSpace(os.Getenv(envOTelExporterEndpoint))
@@ -142,6 +154,7 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		AddSource:               cfg.AddSource,
 		AllowRuntimeLevelChange: allowRuntimeLevelChange,
 		RedactKeys:              redactKeys,
+		PrettyTerminal:          prettyTerminal,
 		OTelEnabled:             otelEnabled,
 		OTelExporterEndpoint:    otelExporterEndpoint,
 		OTelTracingEnabled:      otelTracingEnabled,

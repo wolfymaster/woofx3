@@ -90,6 +90,9 @@ RUN install -d -o 65532 -g 65532 /app/data
 
 WORKDIR /app
 ENV WOOFX3_ROOT=/app
+# Log collectors count lines, not records: pretty JSON spreads one record over
+# a dozen lines and trips per-line rate limits (Railway drops past 500/sec).
+ENV WOOFX3_LOG_PRETTY=false
 
 # The release this image is, reported by GET /ready and getEngineInfo. The
 # release workflow passes the tag; "dev" must match UNVERSIONED in
