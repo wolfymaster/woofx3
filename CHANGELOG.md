@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.1](https://github.com/wolfymaster/woofx3/compare/v0.10.0...v0.10.1) (2026-10-04)
+
+### Bug Fixes
+
+* **db:** create a module's bundled workflows enabled ([4647097](https://github.com/wolfymaster/woofx3/commit/464709765f8622c4d4bf304cd1d489992b09c325))
+
 ## [0.10.0](https://github.com/wolfymaster/woofx3/compare/v0.9.2...v0.10.0) (2026-10-02)
 
 ### Features
