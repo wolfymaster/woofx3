@@ -472,6 +472,7 @@ mod tests {
             .register_module(
                 "spotify".to_string(),
                 RegisteredModule {
+                    actions: Default::default(),
                     metadata: ModuleMetadata {
                         name: "spotify".to_string(),
                         version: "1.0.0".to_string(),

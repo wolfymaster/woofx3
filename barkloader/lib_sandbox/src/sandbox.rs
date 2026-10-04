@@ -1,7 +1,9 @@
 use crate::error::{Error, InvokeBlockingError};
 use crate::function_executor::FunctionExecutor;
 use crate::function_result::resolve_function_result;
-use crate::host::{HostContext, InvocationContext, MAX_INVOCATION_TIMEOUT};
+use crate::host::{
+    ActionRunner, HostContext, InvocationContext, MAX_INVOCATION_TIMEOUT, RunCaller,
+};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
 use serde_json::Value;
@@ -207,5 +209,191 @@ impl Sandbox {
             }
         }
         Ok(value)
+    }
+}
+
+/// How deep `ctx.resources.run` may nest: an action that runs an action that
+/// runs an action. Real chains are one level; the cap stops a loop between two
+/// modules' actions from exhausting the stack.
+const MAX_RUN_DEPTH: u32 = 4;
+
+thread_local! {
+    /// `ctx.resources.run` calls in flight on this thread. A nested run
+    /// executes on the caller's thread, so this counts the chain.
+    static RUN_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Why the deepest failed run in the current chain failed. Each level of
+    /// a chain that fails would otherwise wrap the error below it, and the
+    /// runtimes cut long messages short, losing the one reason that matters.
+    static RUN_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The engine's `ActionRunner`: resolves the action from the providing
+/// module's manifest and invokes its function in a fresh sandbox on the
+/// caller's thread, as that module.
+///
+/// Built before the `HostContext` it runs with — which holds it — so the
+/// context is bound afterwards with `bind`.
+pub struct SandboxActionRunner {
+    registry: Arc<ModuleRegistry>,
+    host: std::sync::OnceLock<HostContext>,
+}
+
+impl SandboxActionRunner {
+    pub fn new(registry: Arc<ModuleRegistry>) -> Arc<Self> {
+        Arc::new(Self {
+            registry,
+            host: std::sync::OnceLock::new(),
+        })
+    }
+
+    /// Hands the runner the context nested runs use. Only the first call
+    /// takes effect.
+    pub fn bind(&self, host: HostContext) {
+        let _ = self.host.set(host);
+    }
+}
+
+impl ActionRunner for SandboxActionRunner {
+    fn run(
+        &self,
+        caller: &RunCaller<'_>,
+        canonical_id: &str,
+        verb: &str,
+        params: Value,
+    ) -> Result<Value, String> {
+        let depth = RUN_DEPTH.with(|d| d.get());
+        if depth == 0 {
+            RUN_FAILURE.with(|f| f.replace(None));
+        }
+        let result = if depth >= MAX_RUN_DEPTH {
+            Err(format!(
+                "ctx.resources.run: actions nested more than {MAX_RUN_DEPTH} deep; is there a loop?"
+            ))
+        } else {
+            RUN_DEPTH.with(|d| d.set(depth + 1));
+            let result = self.run_inner(caller, canonical_id, verb, params);
+            RUN_DEPTH.with(|d| d.set(depth));
+            result
+        };
+        match result {
+            Ok(value) => {
+                // Whatever failed further down was handled on the way up.
+                RUN_FAILURE.with(|f| f.replace(None));
+                Ok(value)
+            }
+            Err(err) => {
+                let reason = RUN_FAILURE.with(|f| f.borrow().clone()).unwrap_or(err);
+                RUN_FAILURE.with(|f| f.replace(Some(reason.clone())));
+                Err(reason)
+            }
+        }
+    }
+}
+
+impl SandboxActionRunner {
+    fn run_inner(
+        &self,
+        caller: &RunCaller<'_>,
+        canonical_id: &str,
+        verb: &str,
+        params: Value,
+    ) -> Result<Value, String> {
+        let host = self
+            .host
+            .get()
+            .ok_or_else(|| "ctx.resources.run: the engine is still starting".to_string())?;
+        let mut parts = canonical_id.splitn(3, ':');
+        let (owner, kind, instance) = (
+            parts.next().unwrap_or_default(),
+            parts.next().unwrap_or_default(),
+            parts.next().unwrap_or_default(),
+        );
+        if owner.is_empty() || kind.is_empty() || instance.is_empty() {
+            return Err(format!(
+                "ctx.resources.run: {canonical_id:?} is not a resource instance id"
+            ));
+        }
+        if verb.is_empty() || verb.contains(':') {
+            return Err(format!("ctx.resources.run: {verb:?} is not an action name"));
+        }
+
+        if caller.module_id != owner {
+            let settings = host
+                .settings
+                .list_by_module(caller.module_id)
+                .map_err(|e| format!("ctx.resources.run: read settings: {e}"))?;
+            if !settings.values().any(|v| v.as_str() == Some(canonical_id)) {
+                return Err(format!(
+                    "ctx.resources.run: {} may act only on a resource it owns or one its settings link to, and {canonical_id} is neither",
+                    caller.module_id
+                ));
+            }
+        }
+
+        let found = host
+            .resources
+            .get(canonical_id)
+            .map_err(|e| format!("ctx.resources.run: look up {canonical_id}: {e}"))?
+            .ok_or_else(|| {
+                format!(
+                    "ctx.resources.run: {canonical_id} does not exist — it may have been deleted"
+                )
+            })?;
+        if found.kind != kind {
+            return Err(format!(
+                "ctx.resources.run: {canonical_id} is a {}, not a {kind}",
+                found.kind
+            ));
+        }
+
+        let action = format!("{kind}.{verb}");
+        let function = self
+            .registry
+            .action_function(owner, &action)
+            .ok_or_else(|| format!("ctx.resources.run: {owner} has no `{action}` action"))?;
+
+        // The action runs with the providing module's grants, so the caller
+        // must already hold them: running it is no way to borrow them.
+        let mut missing: Vec<String> = self
+            .registry
+            .permissions(owner)
+            .into_iter()
+            .filter(|p| !caller.permissions.contains(p))
+            .collect();
+        if !missing.is_empty() {
+            missing.sort();
+            return Err(format!(
+                "ctx.resources.run: {owner}'s `{action}` needs {}, which {} does not declare",
+                missing.join(", "),
+                caller.module_id
+            ));
+        }
+
+        let remaining = caller.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("ctx.resources.run: the invocation ran out of time".to_string());
+        }
+
+        let mut parameters = match params {
+            Value::Object(map) => map,
+            Value::Null => serde_json::Map::new(),
+            _ => return Err("ctx.resources.run: params must be an object".to_string()),
+        };
+        parameters.insert(
+            "target".to_string(),
+            Value::String(canonical_id.to_string()),
+        );
+        let request = InvokeRequest {
+            function: format!("{owner}:function:{function}"),
+            event: serde_json::json!({ "parameters": parameters }),
+            user: None,
+            params: Value::Null,
+            workflow_chain: None,
+            timeout_ms: Some(remaining.as_millis() as u64),
+        };
+
+        Sandbox::new(self.registry.clone(), host.clone())
+            .and_then(|mut sandbox| sandbox.invoke(request))
+            .map_err(|e| format!("ctx.resources.run: {owner}'s `{action}` failed: {e}"))
     }
 }

@@ -58,6 +58,10 @@ export interface WidgetBootPayload {
   /** The widget's theme, `null` (or absent, from an older host) for a widget
    *  that declares no theme contract. Becomes `WidgetHost.theme`. */
   theme?: WidgetTheme | null;
+  /** The resource instances the widget's module links through its
+   *  `resource_ref` settings, setting id to canonical id. Absent from an
+   *  older host. Becomes `WidgetHost.linkedResources`. */
+  linkedResources?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +340,8 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     Array.isArray(boot.capabilities) &&
     typeof boot.resourceBaseUrl === "string" &&
     boot.resourceBaseUrl.length > 0 &&
-    (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme))
+    (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme)) &&
+    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false))
   );
 }
 

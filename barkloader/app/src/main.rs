@@ -13,7 +13,7 @@ use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
 use lib_sandbox::extensions::{ChatExtension, ObsExtension, TwitchExtension};
 use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
-use lib_sandbox::{ModuleRegistry, SandboxFactory};
+use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
@@ -79,9 +79,13 @@ async fn setup() -> Result<AppContext> {
     )));
 
     let mut oauth_service: Option<Arc<OAuthService>> = None;
+    // `ctx.resources.run` runs actions in a sandbox built from the very
+    // context it is part of, so it is handed that context once it exists.
+    let action_runner = SandboxActionRunner::new(registry.clone());
     let host_ctx = {
         let mut ctx = noop_host_context();
         ctx.schedule = scheduler.clone();
+        ctx.actions = action_runner.clone();
 
         let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
         let mut requester: Arc<dyn NatsRequester> = Arc::new(NoopNatsRequester);
@@ -177,6 +181,7 @@ async fn setup() -> Result<AppContext> {
         ctx
     };
 
+    action_runner.bind(host_ctx.clone());
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
 
     scheduler.start(Arc::new(sandbox.clone()));

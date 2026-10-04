@@ -54,6 +54,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
     );
 
     let module = RegisteredModule {
+        actions: Default::default(),
         metadata: ModuleMetadata {
             name: "example".to_string(),
             version: "1.0.0".to_string(),
@@ -172,6 +173,7 @@ fn test_js_instruction_limit() {
     );
 
     let module = RegisteredModule {
+        actions: Default::default(),
         metadata: ModuleMetadata {
             name: "limits".to_string(),
             version: "1.0.0".to_string(),
@@ -235,6 +237,7 @@ function isolation(ctx) {
     );
 
     let module = RegisteredModule {
+        actions: Default::default(),
         metadata: ModuleMetadata {
             name: "example".to_string(),
             version: "1.0.0".to_string(),
@@ -309,6 +312,7 @@ fn test_ctx_event_data() {
     );
 
     let module = RegisteredModule {
+        actions: Default::default(),
         metadata: ModuleMetadata {
             name: "example".to_string(),
             version: "1.0.0".to_string(),
@@ -375,6 +379,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         ),
     );
     let module = RegisteredModule {
+        actions: Default::default(),
         metadata: ModuleMetadata {
             name: "chat_test".to_string(),
             version: "1.0.0".to_string(),
@@ -447,6 +452,7 @@ fn extension_test_module(
         ),
     );
     let module = RegisteredModule {
+        actions: Default::default(),
         metadata: ModuleMetadata {
             name: name.to_string(),
             version: "1.0.0".to_string(),
@@ -1044,6 +1050,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
         .register_module(
             "homeassistant".to_string(),
             RegisteredModule {
+                actions: Default::default(),
                 metadata: ModuleMetadata {
                     name: "homeassistant".to_string(),
                     version: "1.0.0".to_string(),

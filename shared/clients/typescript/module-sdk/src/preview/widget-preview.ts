@@ -34,6 +34,8 @@ export interface MockHostOptions {
   /** Theme surfaced as `widgetHost.theme`; defaults to `null`, a widget
    *  without a theme contract. */
   theme?: WidgetHost["theme"];
+  /** Surfaced as `widgetHost.linkedResources`; defaults to none. */
+  linkedResources?: Record<string, string>;
   /** Initial storage cache: `{ "<moduleId>:<key>": value }` or
    *  `{ "<key>": value }` (the moduleId from `opts.moduleId` is
    *  prepended automatically when the key has no `:`). */
@@ -154,6 +156,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
   const host: WidgetHost = {
     surface: opts.surface ?? "scene",
     theme: opts.theme ?? null,
+    linkedResources: Object.freeze({ ...(opts.linkedResources ?? {}) }),
     moduleId,
     instanceId,
     settings,

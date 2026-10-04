@@ -742,6 +742,7 @@ interface WidgetHost {
   readonly settings: Readonly<Record<string, unknown>>; // resolved from settingsSchema
   readonly surface: "scene" | "alert";    // placed on a scene, or playing in an alert
   readonly theme: WidgetTheme | null;     // null unless the widget declares a theme contract
+  readonly linkedResources: Readonly<Record<string, string>>; // setting id -> instance its module links
   readonly storage: WidgetHostStorage;    // get / subscribe over module storage
 
   onEvent(handler: (event: WidgetEvent) => void): () => void;
@@ -911,6 +912,8 @@ types have nothing to bind to.
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
 | `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. Rejected on `type: "secret"`: the manifest would ship the secret. |
 | `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
+| `resourceKind` | string | no | Required for `type: "resource_ref"`, and only allowed there: the kind of resource instance the setting links to (`timer`). Its value is that instance's canonical id. A `resource_ref` setting takes no `defaultValue`. See [Linking a resource](#linking-a-resource). |
+| `create` | object | no | Only on a `resource_ref` setting: `{ instanceId, displayName, settings? }`, the instance install creates and links while the setting is empty. See [Linking a resource](#linking-a-resource). |
 
 Example — credentials for a Spotify integration. The client id is plain configuration;
 the client secret and refresh token are credentials, so they are `secret`:
@@ -952,6 +955,48 @@ manifest `default` (or type-based zero value) written. The one exception is a
 setting whose declared `type` changed: its row takes the new type, and a value that
 becomes `secret` is sealed in place, while a secret that stops being one is cleared
 rather than decrypted into plain text.
+
+#### Linking a resource
+
+A module that works on a resource another module provides — a subathon board
+adding time to a timer — links it with a `resource_ref` setting. The streamer
+picks the instance in the module's settings, and the module's functions read its
+canonical id from `ctx.module.settings` and drive it with
+[`ctx.resources.run`](#ctxresources-surface).
+
+```json
+{
+  "id": "timer",
+  "label": "Subathon timer",
+  "type": "resource_ref",
+  "resourceKind": "timer",
+  "create": { "instanceId": "hype_board_subathon", "displayName": "Hype Board subathon", "settings": { "duration": 3600 } }
+}
+```
+
+With `create`, the module works without the streamer making an instance first.
+After registering settings, install links every such setting that is still
+empty: the instance is `{module}:{resourceKind}:{instanceId}`, where `{module}`
+is the module that declares the kind — this one, or else the one installed
+module that does. It is created with `displayName` and `settings` when it does
+not exist and reused when it does, so a reinstall, or a second module asking for
+the same instance, links rather than fails. A setting that already holds a value
+is left alone, whether install linked it earlier or the streamer chose another
+instance since. Install fails when no installed module provides the kind, or
+when several do and none of them is the installing module.
+
+Uninstalling the module leaves the instance in place: it belongs to the module
+that provides the kind, and the streamer may have put it to other uses.
+
+The module's widgets can show a linked instance. `widgetHost.linkedResources` maps
+each linked `resource_ref` setting to its canonical id, and a widget subscribes to
+`"state:" + canonicalId` as it would to one of its own module's instances. The scene
+manager serves that key from the owning module's storage only after checking, at
+every read, that one of the widget module's `resource_ref` settings holds that id; any
+other instance reads from the widget's own storage, where nothing is. A bundled kind
+reads as it does everywhere else (a timer as `{ running, remainingMs, durationMs }`).
+`linkedResources` is fixed when the frame loads, so choosing another instance in the
+settings takes effect when the scene next loads.
 
 #### Reading settings at runtime — `ctx.module`
 
@@ -1289,6 +1334,23 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
+| `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
+
+`ctx.resources.run` is how a module drives a resource another module provides. The
+action runs as the providing module — its function, its storage, the events it
+announces — on the caller's thread, within the caller's time. Before running it the
+engine checks that:
+
+- the instance belongs to the calling module, or one of the calling module's
+  settings holds its canonical id: the streamer chose it, typically through a
+  [linked `resource_ref` setting](#linking-a-resource);
+- it exists and is of the kind its id names;
+- the providing module declares `{kind}.{verb}` as a `type: "function"` action;
+- the calling module declares every permission the providing module does, since the
+  action runs with them.
+
+Runs may nest (an action that runs another), up to four deep; deeper is refused as a
+loop. A failure throws, carrying the reason from wherever in the chain it happened.
 
 **Where an instance's value lives:** at `state:<canonicalId>` in the owning module's storage (e.g. `state:woofx3:counter:death_count`). This is the contract, not a suggestion: the engine's `getResourceValues` reads it, and the dashboard's value mirror keys on it, so a kind that stores its value anywhere else shows nothing on its first-party page.
 

@@ -147,6 +147,14 @@ export interface WidgetHost {
    *  contract. Frozen at load time. */
   readonly theme: WidgetTheme | null;
 
+  /** The resource instances this widget's module links through its
+   *  `resource_ref` module settings: setting id to canonical id, e.g.
+   *  `{ timer: "woofx3:timer:hype_board_subathon" }`. Subscribe to
+   *  `"state:" + id` to show one — the host serves a linked instance's
+   *  value even though another module owns it. Frozen at load time;
+   *  empty when the module links nothing. */
+  readonly linkedResources: Readonly<Record<string, string>>;
+
   /** Module id this widget belongs to. Surfaced so widgets can scope
    *  storage calls without the shell having to bind it. */
   readonly moduleId: string;

@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -216,6 +216,13 @@
       "runtime": "js",
       "path": "functions/timer.js",
       "entryPoint": "timerSet"
+    },
+    {
+      "id": "timer.get",
+      "name": "Read timer",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerGet"
     },
     {
       "id": "queue.add",
@@ -778,6 +785,50 @@
             "path": "remaining",
             "type": "number",
             "description": "Seconds it has left after the change."
+          },
+          {
+            "path": "endsAt",
+            "type": "number",
+            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.timer"
+      ]
+    },
+    {
+      "id": "timer.get",
+      "name": "Read timer",
+      "description": "How much time the timer has left and whether it is counting down, without changing it.",
+      "type": "function",
+      "function": "timer.get",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "Which timer to read."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer that was read."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is counting down."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left."
           },
           {
             "path": "endsAt",

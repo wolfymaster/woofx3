@@ -556,6 +556,36 @@ fn build_resources_namespace<'js>(
     .map_err(map)?;
     resources.set("list", list_fn).map_err(map)?;
 
+    let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let permissions = invocation.permissions.clone();
+    let deadline = invocation.deadline;
+    let run_fn = JsFunction::new(
+        ctx.clone(),
+        move |ctx, canonical_id: String, verb: String, params: Opt<JsValue>| {
+            let json_params = params
+                .0
+                .as_ref()
+                .map(js_to_json)
+                .transpose()
+                .map_err(|e| host_err(e.to_string()))?;
+            match super::host_bindings::resources_run(
+                &host,
+                &module_id,
+                &permissions,
+                deadline,
+                &canonical_id,
+                &verb,
+                json_params,
+            ) {
+                Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+                Err(e) => Err(host_err(e)),
+            }
+        },
+    )
+    .map_err(map)?;
+    resources.set("run", run_fn).map_err(map)?;
+
     ctx_obj.set("resources", resources).map_err(map)?;
     Ok(())
 }
