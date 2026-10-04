@@ -153,27 +153,24 @@ func (s *HTTPServerService) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Create a response writer wrapper to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// Log the incoming request
-		s.logger.InfoContext(r.Context(), "HTTP request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"remote_addr", r.RemoteAddr,
-			"user_agent", r.UserAgent(),
-		)
-
-		// Call the next handler
 		next.ServeHTTP(wrapped, r)
 
-		// Log the response
-		duration := time.Since(start)
-		s.logger.InfoContext(r.Context(), "HTTP response",
+		// Every service reaches the db proxy over Twirp, so a successful call
+		// is routine traffic: logging it at info buries everything else. One
+		// record per request, raised to warn only when the server failed.
+		level := slog.LevelDebug
+		if wrapped.statusCode >= http.StatusInternalServerError {
+			level = slog.LevelWarn
+		}
+		s.logger.Log(r.Context(), level, "HTTP request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", wrapped.statusCode,
-			"duration_ms", duration.Milliseconds(),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
 		)
 	})
 }
