@@ -18,7 +18,7 @@ function deps() {
 function request(body: string, cookie = "good"): Request {
   return new Request("http://scene.test/scene/scene-1/draft-config", {
     method: "POST",
-    headers: { Cookie: `sm_session=${cookie}`, "Content-Type": "application/json" },
+    headers: { Cookie: `sm_session_scene-1=${cookie}`, "Content-Type": "application/json" },
     body,
   });
 }

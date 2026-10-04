@@ -30,7 +30,7 @@ export async function handleWidgetStorageRoute(
   instanceId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   if (!claims || claims.sceneId !== sceneId) {
     return jsonResponse(401, { error: "invalid_session" });

@@ -70,7 +70,7 @@ export async function handleAlertWidgetFrameRoute(
 }
 
 async function sessionAllows(req: Request, sceneId: string, deps: HttpDeps): Promise<boolean> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   return !!claims && claims.sceneId === sceneId;
 }
