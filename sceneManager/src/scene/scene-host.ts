@@ -301,27 +301,16 @@ export class OverlayHost {
    * (the shell always renders).
    */
   async buildConfig(token: string): Promise<Record<string, unknown>> {
-    const state = await this.loadScene(token);
-    if (!state) {
-      return { scene: null };
-    }
-    return {
-      scene: {
-        id: state.sceneId,
-        name: state.name,
-        layout: state.layout,
-        widgets: state.instances.map((w) => ({
-          id: w.id,
-          widgetCanonicalId: w.widgetCanonicalId,
-          moduleId: w.moduleId,
-          position: w.position,
-          settings: w.settings,
-          hostsSurface: w.hostsSurface,
-          frameUrl: w.frameUrl,
-          resolved: w.resolved,
-        })),
-      },
-    };
+    return sceneConfigOf(await this.loadScene(token));
+  }
+
+  /**
+   * The same payload for a scene the caller already holds a session for, which
+   * an open overlay fetches to apply a save in place. Authorization is the
+   * caller's, as for `loadSceneById`.
+   */
+  async buildConfigById(sceneId: string): Promise<Record<string, unknown>> {
+    return sceneConfigOf(await this.loadSceneById(sceneId));
   }
 
   /**
@@ -473,6 +462,30 @@ export class OverlayHost {
       resolved: true,
     };
   }
+}
+
+/** The page's scene config, the shape `window.__WOOFX3_SCENE__` and `/config` share. */
+function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown> {
+  if (!state) {
+    return { scene: null };
+  }
+  return {
+    scene: {
+      id: state.sceneId,
+      name: state.name,
+      layout: state.layout,
+      widgets: state.instances.map((w) => ({
+        id: w.id,
+        widgetCanonicalId: w.widgetCanonicalId,
+        moduleId: w.moduleId,
+        position: w.position,
+        settings: w.settings,
+        hostsSurface: w.hostsSurface,
+        frameUrl: w.frameUrl,
+        resolved: w.resolved,
+      })),
+    },
+  };
 }
 
 /**

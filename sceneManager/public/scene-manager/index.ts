@@ -18,26 +18,9 @@ import { SceneEventSource, type DeliveryFrame } from "./event-source";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
-import { applyPreviewLayout, parsePreviewLayout } from "./preview-layout";
+import { applyPreviewLayout, parsePreviewLayout, type PreviewWidgetLayout } from "./preview-layout";
 import { applySceneBackground } from "./scene-background";
-
-interface WidgetInstanceConfig {
-  id: string;
-  widgetCanonicalId: string;
-  moduleId: string;
-  position: { x: number; y: number; width: number; height: number };
-  settings: Record<string, unknown>;
-  /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
-  hostsSurface: string;
-  frameUrl: string;
-}
-
-interface SceneConfig {
-  id: string;
-  name: string;
-  layout: Record<string, unknown>;
-  widgets: WidgetInstanceConfig[];
-}
+import { parseSceneConfig, planSceneUpdate, type SceneConfig, type WidgetPlacementConfig } from "./scene-update";
 
 declare global {
   interface Window {
@@ -56,7 +39,7 @@ function generateNonce(): string {
     .replace(/=+$/, "");
 }
 
-function placeAt(element: HTMLElement, position: WidgetInstanceConfig["position"]): void {
+function placeAt(element: HTMLElement, position: WidgetPlacementConfig["position"]): void {
   element.style.left = `${position.x}px`;
   element.style.top = `${position.y}px`;
   element.style.width = `${position.width}px`;
@@ -140,7 +123,10 @@ function main(): void {
     }).catch(() => {});
   }
 
-  const mountAlertWidget = (instance: WidgetInstanceConfig): void => {
+  // Each placement on the page by id, with what it takes to remove it again.
+  const mounted = new Map<string, { config: WidgetPlacementConfig; unmount: () => void }>();
+
+  const mountAlertWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
     placeAt(element, instance.position);
@@ -172,13 +158,17 @@ function main(): void {
       () => {},
       (eventId) => alertWidget.stop(eventId)
     );
+
+    return () => {
+      // Finishes what is playing while the queue is still there to hear it.
+      alertWidget.dispose();
+      queueManager.unregister(subId);
+      widgetElements.delete(instance.id);
+      element.remove();
+    };
   };
 
-  for (const instance of sceneData.widgets) {
-    if (instance.hostsSurface === "alert") {
-      mountAlertWidget(instance);
-      continue;
-    }
+  const mountFramedWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
@@ -241,7 +231,41 @@ function main(): void {
     container.appendChild(iframe);
     widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
+
+    return () => {
+      bridge.dispose();
+      bridge.detach();
+      bridges.delete(bridge);
+      moduleState.unwatchAll(storageTarget);
+      widgetElements.delete(instance.id);
+      iframe.remove();
+    };
+  };
+
+  function mount(instance: WidgetPlacementConfig): void {
+    const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
+    mounted.set(instance.id, { config: instance, unmount });
   }
+
+  // Stacked by z-index rather than by document order: moving an iframe in
+  // the document reloads it, which is what a scene update avoids.
+  function stack(order: readonly string[]): void {
+    order.forEach((id, index) => {
+      const element = widgetElements.get(id);
+      if (element) {
+        element.style.zIndex = String(index);
+      }
+    });
+  }
+
+  for (const instance of sceneData.widgets) {
+    mount(instance);
+  }
+  stack(sceneData.widgets.map((instance) => instance.id));
+
+  // The editor's draft layout, kept so a scene update -- which places every
+  // widget where it was saved -- doesn't undo a drag the editor has not saved.
+  let previewLayout: PreviewWidgetLayout[] | null = null;
 
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
@@ -259,9 +283,73 @@ function main(): void {
       }
       const layout = parsePreviewLayout(event.data);
       if (layout) {
+        previewLayout = layout;
         applyPreviewLayout(widgetElements, layout);
       }
     });
+  }
+
+  function applySceneConfig(next: SceneConfig): void {
+    const plan = planSceneUpdate(
+      [...mounted.values()].map((entry) => entry.config),
+      next.widgets
+    );
+    for (const id of plan.remove) {
+      mounted.get(id)?.unmount();
+      mounted.delete(id);
+    }
+    for (const instance of plan.place) {
+      const entry = mounted.get(instance.id);
+      const element = widgetElements.get(instance.id);
+      if (entry && element) {
+        entry.config = instance;
+        placeAt(element, instance.position);
+      }
+    }
+    for (const instance of plan.mount) {
+      mount(instance);
+    }
+    stack(plan.order);
+    applySceneBackground(document.body, next.layout);
+    if (previewLayout) {
+      applyPreviewLayout(widgetElements, previewLayout);
+    }
+  }
+
+  async function fetchSceneConfig(): Promise<SceneConfig | null> {
+    try {
+      const resp = await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
+      return resp.ok ? parseSceneConfig(await resp.json()) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // One update at a time: saves that land while one is applying collapse
+  // into a single fetch of the newest config once it is done.
+  let updating = false;
+  let updateRequested = false;
+  async function updateScene(): Promise<void> {
+    updateRequested = true;
+    if (updating) {
+      return;
+    }
+    updating = true;
+    try {
+      while (updateRequested) {
+        updateRequested = false;
+        const next = await fetchSceneConfig();
+        if (!next || next.id !== sceneId) {
+          // A reload renders the saved scene too, and re-mints the session
+          // when a lapsed one is why the fetch failed.
+          location.reload();
+          return;
+        }
+        applySceneConfig(next);
+      }
+    } finally {
+      updating = false;
+    }
   }
 
   // One owner for the banner. Both reachability signals below report
@@ -313,7 +401,7 @@ function main(): void {
     onConnectionChange: (connected) => status.set("stream", connected),
     // The scene was saved. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.
-    onSceneUpdated: () => location.reload(),
+    onSceneUpdated: () => void updateScene(),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();

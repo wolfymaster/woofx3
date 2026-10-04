@@ -28,6 +28,24 @@ function deferred<T>() {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("ModuleStateCache", () => {
+  it("stops sending a widget changes once it has left the page", async () => {
+    const cache = new ModuleStateCache(async () => 1);
+    const leaving = target("w1");
+    const staying = target("w2");
+    cache.watch("woofx3", KEY, leaving);
+    cache.watch("woofx3", KEY, leaving);
+    cache.watch("woofx3", "state:woofx3:counter:wins", leaving);
+    cache.watch("woofx3", KEY, staying);
+    await flush();
+
+    cache.unwatchAll(leaving);
+    cache.apply("woofx3", KEY, 2);
+    cache.apply("woofx3", "state:woofx3:counter:wins", 2);
+
+    expect(leaving.received).not.toContain(2);
+    expect(staying.received).toContain(2);
+  });
+
   it("fetches a key on first watch and sends it to the watcher", async () => {
     const cache = new ModuleStateCache(async () => 4);
     const t = target();

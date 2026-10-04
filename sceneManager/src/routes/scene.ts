@@ -1,6 +1,6 @@
 import type { HttpDeps } from "../http";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
-import { serializeSessionCookie } from "../scene/session-cookie";
+import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
 import { renderSceneShell } from "../scene/shell";
 
 const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
@@ -36,4 +36,23 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
       "Set-Cookie": serializeSessionCookie(sessionToken, SESSION_TOKEN_TTL_SECONDS),
     },
   });
+}
+
+/**
+ * `GET /scene/{sceneId}/config` — the scene config the shell renders into the
+ * page, for an open overlay applying a save without reloading. Authorized by
+ * the session cookie the shell set, so only a page already showing this scene
+ * can read it.
+ */
+export async function handleSceneConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
+  const cookie = readSessionCookie(req);
+  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
+  if (!claims || claims.sceneId !== sceneId) {
+    return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  const config = await deps.host.buildConfigById(sceneId);
+  if ((config as { scene: unknown }).scene === null) {
+    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+  return Response.json(config, { headers: { "Cache-Control": "no-store" } });
 }

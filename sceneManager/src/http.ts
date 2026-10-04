@@ -6,7 +6,7 @@ import type { FrameAssembler } from "./scene/frame-assembler";
 import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
-import { handleSceneRoute } from "./routes/scene";
+import { handleSceneConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
@@ -128,6 +128,12 @@ export function createHttpServer(deps: HttpDeps) {
           const sceneMatch = /^\/scene\/([^/]+)$/.exec(url.pathname);
           if (sceneMatch && req.method === "GET") {
             return withCors(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
+          }
+
+          // GET /scene/{sceneId}/config
+          const configMatch = /^\/scene\/([^/]+)\/config$/.exec(url.pathname);
+          if (configMatch && req.method === "GET") {
+            return withCors(await handleSceneConfigRoute(req, configMatch[1]!, deps));
           }
 
           // POST /scene/{sceneId}/session/refresh

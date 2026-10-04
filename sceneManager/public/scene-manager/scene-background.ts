@@ -19,8 +19,7 @@ export function sceneBackground(layout: Record<string, unknown>): string | null 
  * letting it inject further declarations.
  */
 export function applySceneBackground(element: HTMLElement, layout: Record<string, unknown>): void {
-  const background = sceneBackground(layout);
-  if (background !== null) {
-    element.style.backgroundColor = background;
-  }
+  // Cleared rather than left alone when unset: a saved scene can remove its
+  // colour from a page that is already showing it.
+  element.style.backgroundColor = sceneBackground(layout) ?? "";
 }
