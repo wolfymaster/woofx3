@@ -65,6 +65,13 @@ export class ModuleStateCache {
     }
   }
 
+  /** Drop every subscription `target` holds, for a widget leaving the page. */
+  unwatchAll(target: ModuleStateTarget): void {
+    for (const entry of this.entries.values()) {
+      entry.targets.delete(target);
+    }
+  }
+
   /** A change pushed on the event stream. Always newer than any fetch still in flight. */
   apply(moduleId: string, key: string, value: unknown): void {
     const entry = this.entries.get(entryKey(moduleId, key));
