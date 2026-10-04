@@ -56,6 +56,9 @@ export class WidgetBridge {
   // delivers whatever event-queue.ts routes to this instance; kept so
   // sendEvent can validate a subscriber actually exists).
   private readonly shimEventSubs = new Set<string>();
+  // The widget redraws on a settings change itself (`host.onSettings`), so
+  // the page sends it one instead of mounting the widget again.
+  private settingsSubscribed = false;
 
   constructor(
     private readonly instanceId: string,
@@ -70,6 +73,7 @@ export class WidgetBridge {
   onFrameLoad(): void {
     this.initialized = false;
     this.moduleId = null;
+    this.settingsSubscribed = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -193,6 +197,17 @@ export class WidgetBridge {
         this.callbacks.onEventComplete(subId, eventId);
         return;
       }
+      case "settings.subscribe": {
+        if (!this.initialized) {
+          return;
+        }
+        this.settingsSubscribed = true;
+        return;
+      }
+      case "settings.unsubscribe": {
+        this.settingsSubscribed = false;
+        return;
+      }
       case "status.report": {
         if (!this.initialized || !this.moduleId) {
           return;
@@ -215,7 +230,7 @@ export class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status"],
+      capabilities: ["storage", "events", "status", "settings"],
     });
   }
 
@@ -262,6 +277,20 @@ export class WidgetBridge {
     return true;
   }
 
+  /** Whether the widget takes settings changes without being mounted again. */
+  acceptsSettings(): boolean {
+    return this.initialized && this.settingsSubscribed;
+  }
+
+  /** Hand the widget its new settings. False, sending nothing, when it doesn't take them live. */
+  sendSettings(settings: Record<string, unknown>): boolean {
+    if (!this.acceptsSettings()) {
+      return false;
+    }
+    this.post({ type: "settings.changed", settings });
+    return true;
+  }
+
   dispose(): void {
     this.post({ type: "dispose", reason: "scene-manager-dispose" });
     this.callbacks.onDispose();
@@ -271,6 +300,7 @@ export class WidgetBridge {
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
+    this.settingsSubscribed = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();

@@ -71,6 +71,13 @@ export interface MockHostController {
   setStorage(key: string, value: unknown): void;
 
   /**
+   * Replace the settings, as a streamer editing them in the scene editor
+   * would. Fires every `onSettings` callback after `host.settings` is
+   * updated.
+   */
+  setSettings(settings: Record<string, unknown>): void;
+
+  /**
    * Tap into `reportStatus` and `reportComplete` calls — the harness
    * uses this to render the live console panel; tests can use it for
    * assertions. Returns an unsubscribe.
@@ -102,7 +109,8 @@ function scope(moduleId: string, key: string): string {
 export function createMockHost(opts: MockHostOptions = {}): MockHostController {
   const moduleId = opts.moduleId ?? "preview";
   const instanceId = opts.instanceId ?? `${moduleId}-preview`;
-  const settings = Object.freeze({ ...(opts.settings ?? {}) });
+  let settings: Readonly<Record<string, unknown>> = Object.freeze({ ...(opts.settings ?? {}) });
+  const settingsSubs = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
 
   const cache = new Map<string, unknown>();
   if (opts.storage) {
@@ -159,7 +167,9 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     linkedResources: Object.freeze({ ...(opts.linkedResources ?? {}) }),
     moduleId,
     instanceId,
-    settings,
+    get settings() {
+      return settings;
+    },
     storage,
     getResourceUrl(path: string): string {
       return resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
@@ -169,6 +179,12 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       eventSubs.add(sub);
       return () => {
         eventSubs.delete(sub);
+      };
+    },
+    onSettings(cb: (settings: Readonly<Record<string, unknown>>) => void): () => void {
+      settingsSubs.add(cb);
+      return () => {
+        settingsSubs.delete(cb);
       };
     },
     reportStatus(key: string, value: unknown): void {
@@ -217,6 +233,16 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
         }
       }
     },
+    setSettings(next: Record<string, unknown>): void {
+      settings = Object.freeze({ ...next });
+      for (const cb of settingsSubs) {
+        try {
+          cb(settings);
+        } catch (err) {
+          console.error("[mock-host] settings subscriber threw", err);
+        }
+      }
+    },
     onReport(handler: (r: WidgetStatusReport) => void): () => void {
       reportSubs.add(handler);
       return () => {
@@ -250,6 +276,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       storageSubs.clear();
       eventSubs.clear();
       reportSubs.clear();
+      settingsSubs.clear();
     },
   };
 }

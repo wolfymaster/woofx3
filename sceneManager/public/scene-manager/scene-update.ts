@@ -77,6 +77,25 @@ function sameFrame(a: WidgetPlacementConfig, b: WidgetPlacementConfig): boolean 
   );
 }
 
+/** The setting a widget's theme is chosen by. Matches THEME_SETTING_ID on the server. */
+const THEME_SETTING_ID = "theme";
+
+/** The theme a set of settings selects, "" for none. */
+export function themeOf(settings: Record<string, unknown>): string {
+  const value = settings[THEME_SETTING_ID];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Whether a widget that takes settings changes itself (`host.onSettings`) can
+ * be handed `next` in place of `current` without loading again. Every setting
+ * can but the theme, which the server applies to the frame before the widget
+ * runs.
+ */
+export function canChangeSettingsLive(current: Record<string, unknown>, next: Record<string, unknown>): boolean {
+  return themeOf(current) === themeOf(next);
+}
+
 /** Structural equality for JSON values, ignoring object key order. */
 export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) {

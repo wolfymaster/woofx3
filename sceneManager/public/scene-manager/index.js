@@ -64,6 +64,7 @@ class WidgetBridge {
   shimStorageSubs = new Map;
   shimSubToKey = new Map;
   shimEventSubs = new Set;
+  settingsSubscribed = false;
   constructor(instanceId, nonce, callbacks) {
     this.instanceId = instanceId;
     this.nonce = nonce;
@@ -75,6 +76,7 @@ class WidgetBridge {
   onFrameLoad() {
     this.initialized = false;
     this.moduleId = null;
+    this.settingsSubscribed = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -197,6 +199,17 @@ class WidgetBridge {
         this.callbacks.onEventComplete(subId, eventId);
         return;
       }
+      case "settings.subscribe": {
+        if (!this.initialized) {
+          return;
+        }
+        this.settingsSubscribed = true;
+        return;
+      }
+      case "settings.unsubscribe": {
+        this.settingsSubscribed = false;
+        return;
+      }
       case "status.report": {
         if (!this.initialized || !this.moduleId) {
           return;
@@ -218,7 +231,7 @@ class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status"]
+      capabilities: ["storage", "events", "status", "settings"]
     });
   }
   sendReject(reason) {
@@ -255,6 +268,16 @@ class WidgetBridge {
     this.post({ type: "event.deliver", subId, event });
     return true;
   }
+  acceptsSettings() {
+    return this.initialized && this.settingsSubscribed;
+  }
+  sendSettings(settings) {
+    if (!this.acceptsSettings()) {
+      return false;
+    }
+    this.post({ type: "settings.changed", settings });
+    return true;
+  }
   dispose() {
     this.post({ type: "dispose", reason: "scene-manager-dispose" });
     this.callbacks.onDispose();
@@ -263,6 +286,7 @@ class WidgetBridge {
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
+    this.settingsSubscribed = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -1356,6 +1380,78 @@ class ConnectionStatus {
   }
 }
 
+// public/scene-manager/scene-update.ts
+function planSceneUpdate(current, next) {
+  const currentById = new Map(current.map((placement) => [placement.id, placement]));
+  const nextIds = new Set(next.map((placement) => placement.id));
+  const plan = {
+    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
+    mount: [],
+    place: [],
+    order: next.map((placement) => placement.id)
+  };
+  for (const placement of next) {
+    const existing = currentById.get(placement.id);
+    if (existing && sameFrame(existing, placement)) {
+      plan.place.push(placement);
+      continue;
+    }
+    if (existing) {
+      plan.remove.push(placement.id);
+    }
+    plan.mount.push(placement);
+  }
+  return plan;
+}
+function sameFrame(a, b) {
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && sameValue(a.settings, b.settings);
+}
+var THEME_SETTING_ID = "theme";
+function themeOf(settings) {
+  const value = settings[THEME_SETTING_ID];
+  return typeof value === "string" ? value.trim() : "";
+}
+function canChangeSettingsLive(current, next) {
+  return themeOf(current) === themeOf(next);
+}
+function sameValue(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+  }
+  const aRecord = a;
+  const bRecord = b;
+  const aKeys = Object.keys(aRecord);
+  if (aKeys.length !== Object.keys(bRecord).length) {
+    return false;
+  }
+  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
+}
+function parseSceneConfig(body) {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const scene = body.scene;
+  if (typeof scene !== "object" || scene === null) {
+    return null;
+  }
+  const s = scene;
+  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: typeof s.name === "string" ? s.name : "",
+    layout: s.layout,
+    widgets: s.widgets
+  };
+}
+
 // public/scene-manager/preview-layout.ts
 var PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
 function isFiniteNumber(value) {
@@ -1401,11 +1497,17 @@ function parsePreviewPlacements(data) {
   }
   return message.placements;
 }
-function draftFrameKey(placements) {
+function draftFrameKey(placements, liveSettings = () => false) {
   return JSON.stringify(placements.map((raw) => {
     const placement = typeof raw === "object" && raw !== null ? raw : {};
-    return [placement.id, placement.widgetCanonicalId, placement.settings];
+    const live = typeof placement.id === "string" && liveSettings(placement.id);
+    const settings = live ? themeOf(settingsOf(placement)) : placement.settings;
+    return [placement.id, placement.widgetCanonicalId, settings];
   }));
+}
+function settingsOf(placement) {
+  const settings = placement.settings;
+  return typeof settings === "object" && settings !== null && !Array.isArray(settings) ? settings : {};
 }
 function applyPreviewLayout(elements, layout) {
   const byId = new Map(layout.map((widget) => [widget.id, widget]));
@@ -1434,70 +1536,6 @@ function sceneBackground(layout) {
 }
 function applySceneBackground(element, layout) {
   element.style.backgroundColor = sceneBackground(layout) ?? "";
-}
-
-// public/scene-manager/scene-update.ts
-function planSceneUpdate(current, next) {
-  const currentById = new Map(current.map((placement) => [placement.id, placement]));
-  const nextIds = new Set(next.map((placement) => placement.id));
-  const plan = {
-    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
-    mount: [],
-    place: [],
-    order: next.map((placement) => placement.id)
-  };
-  for (const placement of next) {
-    const existing = currentById.get(placement.id);
-    if (existing && sameFrame(existing, placement)) {
-      plan.place.push(placement);
-      continue;
-    }
-    if (existing) {
-      plan.remove.push(placement.id);
-    }
-    plan.mount.push(placement);
-  }
-  return plan;
-}
-function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && sameValue(a.settings, b.settings);
-}
-function sameValue(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
-  }
-  const aRecord = a;
-  const bRecord = b;
-  const aKeys = Object.keys(aRecord);
-  if (aKeys.length !== Object.keys(bRecord).length) {
-    return false;
-  }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
-}
-function parseSceneConfig(body) {
-  if (typeof body !== "object" || body === null) {
-    return null;
-  }
-  const scene = body.scene;
-  if (typeof scene !== "object" || scene === null) {
-    return null;
-  }
-  const s = scene;
-  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
-    return null;
-  }
-  return {
-    id: s.id,
-    name: typeof s.name === "string" ? s.name : "",
-    layout: s.layout,
-    widgets: s.widgets
-  };
 }
 
 // public/scene-manager/index.ts
@@ -1572,6 +1610,7 @@ function main() {
     }).catch(() => {});
   }
   const mounted = new Map;
+  const framedBridges = new Map;
   const mountAlertWidget = (instance) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -1642,6 +1681,7 @@ function main() {
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = withNonce(instance.frameUrl, nonce);
     bridges.add(bridge);
+    framedBridges.set(instance.id, bridge);
     container.appendChild(iframe);
     widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
@@ -1649,6 +1689,9 @@ function main() {
       bridge.dispose();
       bridge.detach();
       bridges.delete(bridge);
+      if (framedBridges.get(instance.id) === bridge) {
+        framedBridges.delete(instance.id);
+      }
       moduleState.unwatchAll(storageTarget);
       widgetElements.delete(instance.id);
       iframe.remove();
@@ -1679,6 +1722,21 @@ function main() {
       bridge.handleMessage(event);
     }
   });
+  function takesSettingsLive(id) {
+    return framedBridges.get(id)?.acceptsSettings() ?? false;
+  }
+  function changeSettingsLive(id, settings) {
+    const entry = mounted.get(id);
+    const bridge = framedBridges.get(id);
+    if (!entry || !bridge?.acceptsSettings() || !canChangeSettingsLive(entry.config.settings, settings)) {
+      return false;
+    }
+    if (!sameValue(entry.config.settings, settings)) {
+      bridge.sendSettings(settings);
+      entry.config = { ...entry.config, settings };
+    }
+    return true;
+  }
   if (window.parent !== window) {
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent) {
@@ -1692,7 +1750,13 @@ function main() {
       const placements = parsePreviewPlacements(event.data);
       if (placements) {
         draftPlacements = placements;
-        const key = draftFrameKey(placements);
+        for (const raw of placements) {
+          const placement = typeof raw === "object" && raw !== null ? raw : {};
+          if (typeof placement.id === "string") {
+            changeSettingsLive(placement.id, settingsOf(placement));
+          }
+        }
+        const key = draftFrameKey(placements, takesSettingsLive);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -1706,7 +1770,18 @@ function main() {
       }
     });
   }
-  function applySceneConfig(next) {
+  function applySceneConfig(next, fromDraft) {
+    for (const instance of next.widgets) {
+      const entry = mounted.get(instance.id);
+      if (!entry || !takesSettingsLive(instance.id)) {
+        continue;
+      }
+      if (fromDraft && canChangeSettingsLive(entry.config.settings, instance.settings)) {
+        instance.settings = entry.config.settings;
+        continue;
+      }
+      changeSettingsLive(instance.id, instance.settings);
+    }
     const plan = planSceneUpdate([...mounted.values()].map((entry) => entry.config), next.widgets);
     for (const id of plan.remove) {
       mounted.get(id)?.unmount();
@@ -1745,7 +1820,7 @@ function main() {
     }
     const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
     if (config && config.id === sceneId) {
-      return { kind: "apply", config };
+      return { kind: "apply", config, fromDraft: draft !== null };
     }
     if (draft && resp.status !== 401) {
       console.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });
@@ -1770,7 +1845,7 @@ function main() {
           return;
         }
         if (target.kind === "apply") {
-          applySceneConfig(target.config);
+          applySceneConfig(target.config, target.fromDraft);
         }
       }
     } finally {

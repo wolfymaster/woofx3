@@ -101,4 +101,15 @@ describe("draftFrameKey", () => {
   it("changes with a setting", () => {
     expect(draftFrameKey([placement(0, "hi")])).not.toBe(draftFrameKey([placement(0, "hello")]));
   });
+
+  it("ignores a setting of a widget that takes settings live", () => {
+    const live = (id: string) => id === "a";
+    expect(draftFrameKey([placement(0, "hi")], live)).toBe(draftFrameKey([placement(0, "hello")], live));
+  });
+
+  it("changes with the theme of a widget that takes settings live", () => {
+    const live = () => true;
+    const themed = (theme: string) => ({ ...placement(0, "hi"), settings: { text: "hi", theme } });
+    expect(draftFrameKey([themed("a:theme:one")], live)).not.toBe(draftFrameKey([themed("a:theme:two")], live));
+  });
 });

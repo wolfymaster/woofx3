@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  canChangeSettingsLive,
   parseSceneConfig,
   planSceneUpdate,
   sameValue,
@@ -98,5 +99,14 @@ describe("parseSceneConfig", () => {
     expect(parseSceneConfig({ error: "invalid_session" })).toBeNull();
     expect(parseSceneConfig({ scene: { id: "s1", layout: {} } })).toBeNull();
     expect(parseSceneConfig("nope")).toBeNull();
+  });
+});
+
+describe("canChangeSettingsLive", () => {
+  it("allows any change but the theme", () => {
+    expect(canChangeSettingsLive({ text: "hi" }, { text: "hello", color: "#fff" })).toBe(true);
+    expect(canChangeSettingsLive({ theme: "m:theme:a" }, { theme: " m:theme:a " })).toBe(true);
+    expect(canChangeSettingsLive({ theme: "m:theme:a" }, { theme: "m:theme:b" })).toBe(false);
+    expect(canChangeSettingsLive({}, { theme: "m:theme:a" })).toBe(false);
   });
 });
