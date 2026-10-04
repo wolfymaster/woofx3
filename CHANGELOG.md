@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.0](https://github.com/wolfymaster/woofx3/compare/v0.10.1...v0.11.0) (2026-10-04)
+
+### Features
+
+* **barkloader:** let a module setting link a resource instance at install ([73848e7](https://github.com/wolfymaster/woofx3/commit/73848e7a47e470360afab2570396f25bcfde66ff))
+* **barkloader:** let module code run an action on a resource it was given ([2113fa6](https://github.com/wolfymaster/woofx3/commit/2113fa6ca23959d56a15dd9f10a74cce9533ee1f))
+* **modules:** let a timer hold more than a day ([15dfe41](https://github.com/wolfymaster/woofx3/commit/15dfe413c9d4ba41db7e6c852e284175c2d48d62))
+* **modules:** read a timer without changing it ([1689330](https://github.com/wolfymaster/woofx3/commit/1689330d16e79224d876ce7fa221ea992be9a41f))
+* **sceneManager:** apply a scene save in place instead of reloading the overlay ([1b58b74](https://github.com/wolfymaster/woofx3/commit/1b58b740e07f9354bb14088f0b4f042c06f72c26))
+* **sceneManager:** let a widget show a resource its module links ([9b771a6](https://github.com/wolfymaster/woofx3/commit/9b771a6775280fceafe7350a5abc8236871f833a))
+* **sceneManager:** preview a scene editor's unsaved widgets and settings ([ba274e8](https://github.com/wolfymaster/woofx3/commit/ba274e8213fa7c5c1c85f23a1d18ce56870f8de8))
+* **twitch:** let modules look up a Twitch user with ctx.twitch.getUser ([6149034](https://github.com/wolfymaster/woofx3/commit/614903480f3a6219ead5084d6e613c93f59afb80))
+* **twitch:** queue every shoutout on the dashboard's shoutout queue ([8a999a4](https://github.com/wolfymaster/woofx3/commit/8a999a4e4f6dc3cfb551daafb05dd121fc61ecb7))
+
 ## [0.10.1](https://github.com/wolfymaster/woofx3/compare/v0.10.0...v0.10.1) (2026-10-04)
 
 ### Bug Fixes
