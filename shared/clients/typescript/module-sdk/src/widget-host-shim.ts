@@ -130,6 +130,8 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   // the shim auto-completes on handler return, or both.
   const completedEventIds = new Set<string>();
   let nextLocalId = 0;
+  let currentSettings: Readonly<Record<string, unknown>> = Object.freeze({ ...boot.settings });
+  const settingsListeners = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
 
   function allocId(prefix: string): string {
     nextLocalId += 1;
@@ -193,6 +195,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     storageSubs.clear();
     eventSubs.clear();
     completedEventIds.clear();
+    settingsListeners.clear();
     outQueue.length = 0;
   }
 
@@ -289,6 +292,20 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         }
         return;
       }
+      case "settings.changed": {
+        if (typeof m.settings !== "object" || m.settings === null || Array.isArray(m.settings)) {
+          return;
+        }
+        currentSettings = Object.freeze({ ...(m.settings as Record<string, unknown>) });
+        for (const listener of [...settingsListeners]) {
+          try {
+            listener(currentSettings);
+          } catch (err) {
+            console.error("[widget-host-shim] onSettings callback threw", err);
+          }
+        }
+        return;
+      }
       case "dispose": {
         teardown();
         return;
@@ -340,7 +357,9 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   };
 
   const host: WidgetHost = {
-    settings: Object.freeze({ ...boot.settings }),
+    get settings() {
+      return currentSettings;
+    },
     surface: boot.surface,
     theme: freezeTheme(boot.theme ?? null),
     linkedResources: Object.freeze({ ...(boot.linkedResources ?? {}) }),
@@ -362,6 +381,21 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
           return;
         }
         send(envelope({ type: "events.unsubscribe" as const, subId }));
+      };
+    },
+    onSettings(cb: (settings: Readonly<Record<string, unknown>>) => void): () => void {
+      if (typeof cb !== "function") {
+        throw new Error("[widget-host-shim] onSettings requires a callback");
+      }
+      if (settingsListeners.size === 0) {
+        send(envelope({ type: "settings.subscribe" as const }));
+      }
+      settingsListeners.add(cb);
+      return () => {
+        if (!settingsListeners.delete(cb) || settingsListeners.size > 0) {
+          return;
+        }
+        send(envelope({ type: "settings.unsubscribe" as const }));
       };
     },
     reportStatus(key: string, value: unknown): void {

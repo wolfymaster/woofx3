@@ -185,6 +185,29 @@ support:
 const host = window.widgetHost;
 ```
 
+### Live settings
+
+A streamer edits a widget's settings in the scene editor with the widget on
+screen. Call `host.onSettings` and each change arrives as it is made, with
+the widget still running; `host.settings` already holds the new set when the
+callback runs. A widget that never calls it is reloaded with the new settings
+instead, so a widget that draws once from `host.settings` still works.
+
+```js
+function draw(settings) {
+  label.textContent = settings.text ?? "";
+  label.style.color = settings.color ?? "#ffffff";
+}
+
+draw(host.settings);
+host.onSettings(draw);
+```
+
+Draw from the settings you are given rather than from what the last draw
+did, since any setting can change, or be emptied, at any time. A change of
+theme always reloads the widget, because the theme is applied before it runs.
+`createMockHost` has `setSettings(settings)` to try this offline.
+
 ### Themes
 
 A widget whose manifest declares a [theme contract](./modules.md#themes) is rendered with its theme already applied: each contract variable is set as `--theme-{id}` and each filled asset slot as `--theme-asset-{id}: url(...)` on `:root`, and the theme's stylesheet is linked after the widget's own. Styling with those properties is usually all a widget needs:

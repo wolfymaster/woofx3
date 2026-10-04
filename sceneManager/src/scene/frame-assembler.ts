@@ -22,7 +22,7 @@ import {
 export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body></html>";
 
 /** Capabilities advertised in every boot payload. */
-export const FRAME_CAPABILITIES = ["storage", "events", "status"] as const;
+export const FRAME_CAPABILITIES = ["storage", "events", "status", "settings"] as const;
 
 /** The widget host shim's file name under sceneManager's public directory. */
 export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";

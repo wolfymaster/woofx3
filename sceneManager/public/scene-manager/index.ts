@@ -23,10 +23,18 @@ import {
   draftFrameKey,
   parsePreviewLayout,
   parsePreviewPlacements,
+  settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
 import { applySceneBackground } from "./scene-background";
-import { parseSceneConfig, planSceneUpdate, type SceneConfig, type WidgetPlacementConfig } from "./scene-update";
+import {
+  canChangeSettingsLive,
+  parseSceneConfig,
+  planSceneUpdate,
+  sameValue,
+  type SceneConfig,
+  type WidgetPlacementConfig,
+} from "./scene-update";
 
 declare global {
   interface Window {
@@ -37,7 +45,8 @@ declare global {
 const REFRESH_INTERVAL_MS = 50_000;
 
 // Typing into a text setting posts a draft per keystroke, and a settings
-// change reloads the widget's frame; waiting for a pause reloads it once.
+// change reloads the frame of a widget that doesn't take settings live;
+// waiting for a pause reloads it once.
 const DRAFT_SETTLE_MS = 400;
 
 function generateNonce(): string {
@@ -142,6 +151,9 @@ function main(): void {
 
   // Each placement on the page by id, with what it takes to remove it again.
   const mounted = new Map<string, { config: WidgetPlacementConfig; unmount: () => void }>();
+  // The bridge of each framed placement, which is how a widget that takes
+  // settings live is handed them.
+  const framedBridges = new Map<string, WidgetBridge>();
 
   const mountAlertWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const element = document.createElement("div");
@@ -245,6 +257,7 @@ function main(): void {
     iframe.src = withNonce(instance.frameUrl, nonce);
 
     bridges.add(bridge);
+    framedBridges.set(instance.id, bridge);
     container.appendChild(iframe);
     widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
@@ -253,6 +266,9 @@ function main(): void {
       bridge.dispose();
       bridge.detach();
       bridges.delete(bridge);
+      if (framedBridges.get(instance.id) === bridge) {
+        framedBridges.delete(instance.id);
+      }
       moduleState.unwatchAll(storageTarget);
       widgetElements.delete(instance.id);
       iframe.remove();
@@ -296,6 +312,28 @@ function main(): void {
     }
   });
 
+  /** Whether the widget on the page as `id` takes settings without loading again. */
+  function takesSettingsLive(id: string): boolean {
+    return framedBridges.get(id)?.acceptsSettings() ?? false;
+  }
+
+  /**
+   * Hand a placement's settings to its widget, when it takes them live and
+   * they need no new frame. False when it must be mounted again for them.
+   */
+  function changeSettingsLive(id: string, settings: Record<string, unknown>): boolean {
+    const entry = mounted.get(id);
+    const bridge = framedBridges.get(id);
+    if (!entry || !bridge?.acceptsSettings() || !canChangeSettingsLive(entry.config.settings, settings)) {
+      return false;
+    }
+    if (!sameValue(entry.config.settings, settings)) {
+      bridge.sendSettings(settings);
+      entry.config = { ...entry.config, settings };
+    }
+    return true;
+  }
+
   // Only a page that frames this overlay can move its widgets, and it can
   // only move them on its own screen: nothing here is saved or sent on. OBS
   // loads the overlay top-level, where `window.parent` is the window itself.
@@ -312,7 +350,15 @@ function main(): void {
       const placements = parsePreviewPlacements(event.data);
       if (placements) {
         draftPlacements = placements;
-        const key = draftFrameKey(placements);
+        // A widget that takes settings live gets them now, keystroke by
+        // keystroke; only what needs a new frame waits for the server.
+        for (const raw of placements) {
+          const placement = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+          if (typeof placement.id === "string") {
+            changeSettingsLive(placement.id, settingsOf(placement));
+          }
+        }
+        const key = draftFrameKey(placements, takesSettingsLive);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -327,7 +373,20 @@ function main(): void {
     });
   }
 
-  function applySceneConfig(next: SceneConfig): void {
+  function applySceneConfig(next: SceneConfig, fromDraft: boolean): void {
+    for (const instance of next.widgets) {
+      const entry = mounted.get(instance.id);
+      if (!entry || !takesSettingsLive(instance.id)) {
+        continue;
+      }
+      if (fromDraft && canChangeSettingsLive(entry.config.settings, instance.settings)) {
+        // The editor has handed this widget its settings since this draft
+        // was sent: what it shows is newer than the response.
+        instance.settings = entry.config.settings;
+        continue;
+      }
+      changeSettingsLive(instance.id, instance.settings);
+    }
     const plan = planSceneUpdate(
       [...mounted.values()].map((entry) => entry.config),
       next.widgets
@@ -354,7 +413,7 @@ function main(): void {
     }
   }
 
-  type Target = { kind: "apply"; config: SceneConfig } | { kind: "reload" } | { kind: "keep" };
+  type Target = { kind: "apply"; config: SceneConfig; fromDraft: boolean } | { kind: "reload" } | { kind: "keep" };
 
   // The saved scene, or the editor's draft once it has sent one. A failed
   // saved fetch reloads, which renders the saved scene too and re-mints the
@@ -379,7 +438,7 @@ function main(): void {
     }
     const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
     if (config && config.id === sceneId) {
-      return { kind: "apply", config };
+      return { kind: "apply", config, fromDraft: draft !== null };
     }
     if (draft && resp.status !== 401) {
       console.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });
@@ -407,7 +466,7 @@ function main(): void {
           return;
         }
         if (target.kind === "apply") {
-          applySceneConfig(target.config);
+          applySceneConfig(target.config, target.fromDraft);
         }
       }
     } finally {

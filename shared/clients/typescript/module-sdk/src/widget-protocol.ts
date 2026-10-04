@@ -188,6 +188,20 @@ export interface WidgetStatusReportMessage extends WidgetProtocolEnvelope {
   ts: string;
 }
 
+/**
+ * The widget redraws itself when its settings change (`host.onSettings`), so
+ * the host sends a change as `settings.changed` rather than reloading the
+ * frame. Without it, a settings change reloads the widget.
+ */
+export interface WidgetSettingsSubscribeMessage extends WidgetProtocolEnvelope {
+  type: "settings.subscribe";
+}
+
+/** The widget no longer handles settings changes itself: reload it on one. */
+export interface WidgetSettingsUnsubscribeMessage extends WidgetProtocolEnvelope {
+  type: "settings.unsubscribe";
+}
+
 // ---------------------------------------------------------------------------
 // Messages — scene manager -> widget
 // ---------------------------------------------------------------------------
@@ -241,6 +255,13 @@ export interface WidgetEventDeliverMessage extends WidgetProtocolEnvelope {
   event: WidgetEvent;
 }
 
+/** The placement's settings changed: the whole new set, not a diff. Sent
+ *  only to a widget that has sent `settings.subscribe`. */
+export interface WidgetSettingsChangedMessage extends WidgetProtocolEnvelope {
+  type: "settings.changed";
+  settings: Record<string, unknown>;
+}
+
 /** Teardown order. The shim drops every subscription, resolves pending
  *  reads with `null`, and goes inert. */
 export interface WidgetDisposeMessage extends WidgetProtocolEnvelope {
@@ -278,6 +299,8 @@ export type WidgetToHostMessage =
   | WidgetEventsUnsubscribeMessage
   | WidgetEventCompleteMessage
   | WidgetStatusReportMessage
+  | WidgetSettingsSubscribeMessage
+  | WidgetSettingsUnsubscribeMessage
   | WidgetPingMessage
   | WidgetPongMessage;
 
@@ -288,6 +311,7 @@ export type HostToWidgetMessage =
   | WidgetStorageValueMessage
   | WidgetStorageChangedMessage
   | WidgetEventDeliverMessage
+  | WidgetSettingsChangedMessage
   | WidgetDisposeMessage
   | WidgetPingMessage
   | WidgetPongMessage;

@@ -12,6 +12,8 @@
 // The message shape must match `buildPreviewLayoutMessage` in the
 // dashboard (woofx3-ui client/src/lib/scene-preview-layout.ts).
 
+import { themeOf } from "./scene-update";
+
 export const PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
 
 export interface PreviewWidgetLayout {
@@ -79,15 +81,30 @@ export function parsePreviewPlacements(data: unknown): unknown[] | null {
 /**
  * What decides the frames of a set of placements, without their positions: a
  * drag changes only positions, which the layout applies on its own, so only a
- * change to this needs the server.
+ * change to this needs the server. Nor do the settings of a widget that takes
+ * them live (`liveSettings`), which the page hands it itself; only its theme,
+ * which needs a new frame.
  */
-export function draftFrameKey(placements: readonly unknown[]): string {
+export function draftFrameKey(
+  placements: readonly unknown[],
+  liveSettings: (id: string) => boolean = () => false
+): string {
   return JSON.stringify(
     placements.map((raw) => {
       const placement = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-      return [placement.id, placement.widgetCanonicalId, placement.settings];
+      const live = typeof placement.id === "string" && liveSettings(placement.id);
+      const settings = live ? themeOf(settingsOf(placement)) : placement.settings;
+      return [placement.id, placement.widgetCanonicalId, settings];
     })
   );
+}
+
+/** A placement's settings as the server reads them: an object, or none. */
+export function settingsOf(placement: Record<string, unknown>): Record<string, unknown> {
+  const settings = placement.settings;
+  return typeof settings === "object" && settings !== null && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>)
+    : {};
 }
 
 /**
