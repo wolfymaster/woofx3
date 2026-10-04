@@ -139,6 +139,20 @@ impl ScheduleClient for NoopScheduleClient {
     fn cancel_key(&self, _key: &str) {}
 }
 
+pub struct NoopActionRunner;
+
+impl ActionRunner for NoopActionRunner {
+    fn run(
+        &self,
+        _caller: &RunCaller<'_>,
+        _canonical_id: &str,
+        _verb: &str,
+        _params: Value,
+    ) -> Result<Value, String> {
+        Err("ctx.resources.run is not available on this engine".to_string())
+    }
+}
+
 pub fn noop_host_context() -> HostContext {
     HostContext {
         nats: Arc::new(NoopNatsPublisher),
@@ -147,6 +161,7 @@ pub fn noop_host_context() -> HostContext {
         resources: Arc::new(NoopResourceClient),
         settings: Arc::new(NoopSettingsClient),
         schedule: Arc::new(NoopScheduleClient),
+        actions: Arc::new(NoopActionRunner),
         extensions: Arc::new(ExtensionRegistry::new()),
     }
 }

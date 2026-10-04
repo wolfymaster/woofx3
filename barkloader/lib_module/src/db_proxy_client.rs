@@ -21,8 +21,8 @@ use super::manifest_validate::InstallProvenance;
 
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    ModuleCommandRow, ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson,
-    ResourceUsage, SettingInputJson, TriggerInputJson, WidgetInputJson,
+    ModuleCommandRow, ModuleRecord, ModuleSettingJson, RequestContext, ResolvedActionRef,
+    ResourceInstanceJson, ResourceUsage, SettingInputJson, TriggerInputJson, WidgetInputJson,
 };
 
 #[async_trait]
@@ -185,6 +185,25 @@ pub trait ModuleDbProxy: Send + Sync {
     async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>>;
     /// Every installed module, in any state, with its stored manifest.
     async fn list_modules(&self) -> Result<Vec<ModuleRecord>>;
+
+    // Linking a `resource_ref` setting to an instance at install.
+    async fn get_module_settings(&self, module_id: &str) -> Result<Vec<ModuleSettingJson>>;
+    async fn set_module_setting(&self, module_id: &str, key: &str, value: &str) -> Result<()>;
+    /// `None` when no instance has the id.
+    async fn get_resource_instance(
+        &self,
+        canonical_id: &str,
+    ) -> Result<Option<ResourceInstanceJson>>;
+    /// Creates an instance owned by the module named `module_name` (its
+    /// manifest id).
+    async fn create_resource_instance(
+        &self,
+        module_name: &str,
+        kind: &str,
+        instance_id: &str,
+        display_name: &str,
+        settings_json: &str,
+    ) -> Result<ResourceInstanceJson>;
 }
 
 /// Real adapter: delegates to the existing free functions in `db_proxy`,
@@ -542,6 +561,42 @@ impl ModuleDbProxy for HttpDbProxyClient {
     async fn list_modules(&self) -> Result<Vec<ModuleRecord>> {
         db_proxy::list_modules(&self.base_url, None).await
     }
+
+    async fn get_module_settings(&self, module_id: &str) -> Result<Vec<ModuleSettingJson>> {
+        db_proxy::get_module_settings(&self.base_url, module_id).await
+    }
+
+    async fn set_module_setting(&self, module_id: &str, key: &str, value: &str) -> Result<()> {
+        db_proxy::set_module_setting(&self.base_url, module_id, key, value).await
+    }
+
+    async fn get_resource_instance(
+        &self,
+        canonical_id: &str,
+    ) -> Result<Option<ResourceInstanceJson>> {
+        db_proxy::get_resource_instance(&self.base_url, canonical_id).await
+    }
+
+    async fn create_resource_instance(
+        &self,
+        module_name: &str,
+        kind: &str,
+        instance_id: &str,
+        display_name: &str,
+        settings_json: &str,
+    ) -> Result<ResourceInstanceJson> {
+        db_proxy::create_resource_instance(
+            &self.base_url,
+            "",
+            module_name,
+            kind,
+            instance_id,
+            display_name,
+            settings_json,
+            None,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -574,6 +629,10 @@ mod test_support {
         registered_commands: Mutex<Vec<(String, String)>>,
         /// What `list_modules` answers: the modules already installed.
         installed: Mutex<Vec<ModuleRecord>>,
+        /// The module's settings as the db would hold them, key to value.
+        settings: Mutex<std::collections::BTreeMap<String, String>>,
+        /// Resource instances as the db would hold them.
+        instances: Mutex<Vec<ResourceInstanceJson>>,
     }
 
     impl FakeDbProxyClient {
@@ -590,6 +649,8 @@ mod test_support {
                 failing_command: None,
                 registered_commands: Mutex::new(Vec::new()),
                 installed: Mutex::new(Vec::new()),
+                settings: Mutex::new(Default::default()),
+                instances: Mutex::new(Vec::new()),
             }
         }
 
@@ -616,6 +677,44 @@ mod test_support {
                 .expect("installed mutex poisoned")
                 .extend(modules);
             self
+        }
+
+        /// Seeds a setting value an earlier install or the streamer left.
+        pub fn with_setting(self, key: &str, value: &str) -> Self {
+            self.settings
+                .lock()
+                .expect("settings mutex poisoned")
+                .insert(key.to_string(), value.to_string());
+            self
+        }
+
+        /// Seeds an existing resource instance, by canonical id.
+        pub fn with_instance(self, canonical_id: &str) -> Self {
+            let mut parts = canonical_id.splitn(3, ':');
+            let (module, kind, instance) = (
+                parts.next().unwrap_or_default(),
+                parts.next().unwrap_or_default(),
+                parts.next().unwrap_or_default(),
+            );
+            self.instances
+                .lock()
+                .expect("instances mutex poisoned")
+                .push(fake_instance(module, kind, instance, instance, "{}"));
+            self
+        }
+
+        pub fn settings(&self) -> std::collections::BTreeMap<String, String> {
+            self.settings
+                .lock()
+                .expect("settings mutex poisoned")
+                .clone()
+        }
+
+        pub fn instances(&self) -> Vec<ResourceInstanceJson> {
+            self.instances
+                .lock()
+                .expect("instances mutex poisoned")
+                .clone()
         }
 
         pub fn registered_commands(&self) -> Vec<(String, String)> {
@@ -735,9 +834,16 @@ mod test_support {
         async fn register_module_settings(
             &self,
             _module_id: &str,
-            _settings: Vec<SettingInputJson>,
+            settings: Vec<SettingInputJson>,
         ) -> Result<()> {
-            self.record("register_module_settings")
+            self.record("register_module_settings")?;
+            // Like the db: a new key takes its default, an existing one keeps
+            // its value.
+            let mut stored = self.settings.lock().expect("settings mutex poisoned");
+            for s in settings {
+                stored.entry(s.key).or_insert(s.value);
+            }
+            Ok(())
         }
 
         async fn register_assets(
@@ -964,6 +1070,91 @@ mod test_support {
                 .lock()
                 .expect("installed mutex poisoned")
                 .clone())
+        }
+
+        async fn get_module_settings(&self, module_id: &str) -> Result<Vec<ModuleSettingJson>> {
+            self.record("get_module_settings")?;
+            Ok(self
+                .settings
+                .lock()
+                .expect("settings mutex poisoned")
+                .iter()
+                .map(|(key, value)| ModuleSettingJson {
+                    id: key.clone(),
+                    module_id: module_id.to_string(),
+                    key: key.clone(),
+                    value: value.clone(),
+                    value_type: String::new(),
+                })
+                .collect())
+        }
+
+        async fn set_module_setting(&self, _module_id: &str, key: &str, value: &str) -> Result<()> {
+            self.record("set_module_setting")?;
+            self.settings
+                .lock()
+                .expect("settings mutex poisoned")
+                .insert(key.to_string(), value.to_string());
+            Ok(())
+        }
+
+        async fn get_resource_instance(
+            &self,
+            canonical_id: &str,
+        ) -> Result<Option<ResourceInstanceJson>> {
+            self.record("get_resource_instance")?;
+            Ok(self
+                .instances
+                .lock()
+                .expect("instances mutex poisoned")
+                .iter()
+                .find(|i| i.canonical_id == canonical_id)
+                .cloned())
+        }
+
+        async fn create_resource_instance(
+            &self,
+            module_name: &str,
+            kind: &str,
+            instance_id: &str,
+            display_name: &str,
+            settings_json: &str,
+        ) -> Result<ResourceInstanceJson> {
+            self.record("create_resource_instance")?;
+            let instance =
+                fake_instance(module_name, kind, instance_id, display_name, settings_json);
+            let mut instances = self.instances.lock().expect("instances mutex poisoned");
+            // Like the db's unique index on (module, kind, instance_id).
+            if instances
+                .iter()
+                .any(|i| i.canonical_id == instance.canonical_id)
+            {
+                return Err(anyhow!(
+                    "FakeDbProxyClient: {} already exists",
+                    instance.canonical_id
+                ));
+            }
+            instances.push(instance.clone());
+            Ok(instance)
+        }
+    }
+
+    fn fake_instance(
+        module: &str,
+        kind: &str,
+        instance_id: &str,
+        display_name: &str,
+        settings_json: &str,
+    ) -> ResourceInstanceJson {
+        ResourceInstanceJson {
+            id: format!("id-{module}-{kind}-{instance_id}"),
+            module_id: module.to_string(),
+            module_name: module.to_string(),
+            kind: kind.to_string(),
+            instance_id: instance_id.to_string(),
+            display_name: display_name.to_string(),
+            canonical_id: format!("{module}:{kind}:{instance_id}"),
+            settings_json: settings_json.to_string(),
         }
     }
 

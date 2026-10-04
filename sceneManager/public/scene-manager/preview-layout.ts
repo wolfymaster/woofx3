@@ -4,7 +4,10 @@
 // knows the scene as last saved, so while a widget is being dragged the
 // editor posts its draft layout here and the page moves its widget
 // elements to match -- without saving and without reloading any widget.
-// Nothing is persisted: a reload renders the saved scene again.
+// The message also carries the draft placements themselves, so a widget
+// added or reconfigured in the editor shows before it is saved; only that
+// widget reloads, into a frame rendering the draft. Nothing is persisted: a
+// reload renders the saved scene again.
 //
 // The message shape must match `buildPreviewLayoutMessage` in the
 // dashboard (woofx3-ui client/src/lib/scene-preview-layout.ts).
@@ -54,6 +57,37 @@ export function parsePreviewLayout(data: unknown): PreviewWidgetLayout[] | null 
     }
   }
   return widgets;
+}
+
+/**
+ * The editor's unsaved placements a layout message carries, as the editor
+ * stores them, or null when it carries none. They are not validated here: the
+ * server parses them exactly as it parses a saved scene (see
+ * `POST /scene/{sceneId}/draft-config`).
+ */
+export function parsePreviewPlacements(data: unknown): unknown[] | null {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const message = data as Record<string, unknown>;
+  if (message.type !== PREVIEW_LAYOUT_MESSAGE || !Array.isArray(message.placements)) {
+    return null;
+  }
+  return message.placements;
+}
+
+/**
+ * What decides the frames of a set of placements, without their positions: a
+ * drag changes only positions, which the layout applies on its own, so only a
+ * change to this needs the server.
+ */
+export function draftFrameKey(placements: readonly unknown[]): string {
+  return JSON.stringify(
+    placements.map((raw) => {
+      const placement = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+      return [placement.id, placement.widgetCanonicalId, placement.settings];
+    })
+  );
 }
 
 /**

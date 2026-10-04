@@ -235,6 +235,17 @@ export interface CtxResources {
   /** One instance, settings included, or null when nothing has the id. */
   get(canonicalId: string): ResourceInstance | null;
   list(kind: string): ResourceInstance[];
+  /**
+   * Run the `{kind}.{verb}` action of the module that provides the
+   * instance's kind, on that instance, as that module:
+   * `run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add`
+   * with `target: timer`. Returns what the action returns.
+   *
+   * Allowed on an instance this module owns or one its settings link to
+   * (a `resource_ref` setting); this module must declare every permission
+   * the providing module does. Throws on refusal or failure.
+   */
+  run(canonicalId: string, verb: string, params?: Record<string, unknown>): unknown;
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { HttpDeps } from "../http";
+import { parseDraftParam } from "../scene/scene-host";
 import { readSessionCookie } from "../scene/session-cookie";
 
 /**
@@ -21,6 +22,31 @@ export async function handleWidgetFrameRoute(
 
   const url = new URL(req.url);
   return deps.frameAssembler.assemble(sceneId, instanceId, url.searchParams.get("nonce"));
+}
+
+/**
+ * `GET /scene/{sceneId}/draft-widget/{instanceId}?draft=…` — a frame for a
+ * placement the scene editor has not saved (see `draftFrameUrl`). Authorized
+ * and refused exactly like a placement's frame. A session can only render
+ * into its own page, so a draft reaches no one but the overlay that asked.
+ */
+export async function handleDraftWidgetFrameRoute(
+  req: Request,
+  sceneId: string,
+  instanceId: string,
+  deps: HttpDeps
+): Promise<Response> {
+  if (!(await sessionAllows(req, sceneId, deps))) {
+    return deps.frameAssembler.blankResponse();
+  }
+
+  const url = new URL(req.url);
+  return deps.frameAssembler.assembleDraft(
+    sceneId,
+    instanceId,
+    parseDraftParam(url.searchParams.get("draft")),
+    url.searchParams.get("nonce")
+  );
 }
 
 /**

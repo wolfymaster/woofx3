@@ -305,6 +305,12 @@ class AlertWidget {
   stop(eventId) {
     this.playing.get(eventId)?.();
   }
+  dispose() {
+    for (const [eventId, tearDown] of [...this.playing]) {
+      tearDown();
+      this.opts.onFinished(eventId);
+    }
+  }
   play(item) {
     const delivery = parseDelivery(item.value);
     if (!delivery) {
@@ -1257,6 +1263,11 @@ class ModuleStateCache {
       entry.targets.delete(target);
     }
   }
+  unwatchAll(target) {
+    for (const entry of this.entries.values()) {
+      entry.targets.delete(target);
+    }
+  }
   apply(moduleId, key, value) {
     const entry = this.entries.get(entryKey(moduleId, key));
     if (!entry) {
@@ -1380,6 +1391,22 @@ function parsePreviewLayout(data) {
   }
   return widgets;
 }
+function parsePreviewPlacements(data) {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const message = data;
+  if (message.type !== PREVIEW_LAYOUT_MESSAGE || !Array.isArray(message.placements)) {
+    return null;
+  }
+  return message.placements;
+}
+function draftFrameKey(placements) {
+  return JSON.stringify(placements.map((raw) => {
+    const placement = typeof raw === "object" && raw !== null ? raw : {};
+    return [placement.id, placement.widgetCanonicalId, placement.settings];
+  }));
+}
 function applyPreviewLayout(elements, layout) {
   const byId = new Map(layout.map((widget) => [widget.id, widget]));
   for (const [id, element] of elements) {
@@ -1406,18 +1433,85 @@ function sceneBackground(layout) {
   return trimmed === "" ? null : trimmed;
 }
 function applySceneBackground(element, layout) {
-  const background = sceneBackground(layout);
-  if (background !== null) {
-    element.style.backgroundColor = background;
+  element.style.backgroundColor = sceneBackground(layout) ?? "";
+}
+
+// public/scene-manager/scene-update.ts
+function planSceneUpdate(current, next) {
+  const currentById = new Map(current.map((placement) => [placement.id, placement]));
+  const nextIds = new Set(next.map((placement) => placement.id));
+  const plan = {
+    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
+    mount: [],
+    place: [],
+    order: next.map((placement) => placement.id)
+  };
+  for (const placement of next) {
+    const existing = currentById.get(placement.id);
+    if (existing && sameFrame(existing, placement)) {
+      plan.place.push(placement);
+      continue;
+    }
+    if (existing) {
+      plan.remove.push(placement.id);
+    }
+    plan.mount.push(placement);
   }
+  return plan;
+}
+function sameFrame(a, b) {
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && sameValue(a.settings, b.settings);
+}
+function sameValue(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+  }
+  const aRecord = a;
+  const bRecord = b;
+  const aKeys = Object.keys(aRecord);
+  if (aKeys.length !== Object.keys(bRecord).length) {
+    return false;
+  }
+  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
+}
+function parseSceneConfig(body) {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const scene = body.scene;
+  if (typeof scene !== "object" || scene === null) {
+    return null;
+  }
+  const s = scene;
+  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: typeof s.name === "string" ? s.name : "",
+    layout: s.layout,
+    widgets: s.widgets
+  };
 }
 
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
+var DRAFT_SETTLE_MS = 400;
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function withNonce(frameUrl, nonce) {
+  const url = new URL(frameUrl, location.href);
+  url.searchParams.set("nonce", nonce);
+  return url.pathname + url.search;
 }
 function placeAt(element, position) {
   element.style.left = `${position.x}px`;
@@ -1477,6 +1571,7 @@ function main() {
       body: JSON.stringify({ instanceIds: [instanceId] })
     }).catch(() => {});
   }
+  const mounted = new Map;
   const mountAlertWidget = (instance) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -1499,12 +1594,14 @@ function main() {
       postAlertAck("started", item.eventId, instance.id);
       return alertWidget.play(item);
     }, () => {}, (eventId) => alertWidget.stop(eventId));
+    return () => {
+      alertWidget.dispose();
+      queueManager.unregister(subId);
+      widgetElements.delete(instance.id);
+      element.remove();
+    };
   };
-  for (const instance of sceneData.widgets) {
-    if (instance.hostsSurface === "alert") {
-      mountAlertWidget(instance);
-      continue;
-    }
+  const mountFramedWidget = (instance) => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
@@ -1543,12 +1640,40 @@ function main() {
       sendStorageValue: (key, value) => bridge.sendStorageValue(key, value)
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
+    iframe.src = withNonce(instance.frameUrl, nonce);
     bridges.add(bridge);
     container.appendChild(iframe);
     widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
+    return () => {
+      bridge.dispose();
+      bridge.detach();
+      bridges.delete(bridge);
+      moduleState.unwatchAll(storageTarget);
+      widgetElements.delete(instance.id);
+      iframe.remove();
+    };
+  };
+  function mount(instance) {
+    const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
+    mounted.set(instance.id, { config: instance, unmount });
   }
+  function stack(order) {
+    order.forEach((id, index) => {
+      const element = widgetElements.get(id);
+      if (element) {
+        element.style.zIndex = String(index);
+      }
+    });
+  }
+  for (const instance of sceneData.widgets) {
+    mount(instance);
+  }
+  stack(sceneData.widgets.map((instance) => instance.id));
+  let previewLayout = null;
+  let draftPlacements = null;
+  let draftKey = "";
+  let draftTimer = null;
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
       bridge.handleMessage(event);
@@ -1561,9 +1686,96 @@ function main() {
       }
       const layout = parsePreviewLayout(event.data);
       if (layout) {
+        previewLayout = layout;
         applyPreviewLayout(widgetElements, layout);
       }
+      const placements = parsePreviewPlacements(event.data);
+      if (placements) {
+        draftPlacements = placements;
+        const key = draftFrameKey(placements);
+        if (key !== draftKey) {
+          draftKey = key;
+          if (draftTimer !== null) {
+            clearTimeout(draftTimer);
+          }
+          draftTimer = setTimeout(() => {
+            draftTimer = null;
+            updateScene();
+          }, DRAFT_SETTLE_MS);
+        }
+      }
     });
+  }
+  function applySceneConfig(next) {
+    const plan = planSceneUpdate([...mounted.values()].map((entry) => entry.config), next.widgets);
+    for (const id of plan.remove) {
+      mounted.get(id)?.unmount();
+      mounted.delete(id);
+    }
+    for (const instance of plan.place) {
+      const entry = mounted.get(instance.id);
+      const element = widgetElements.get(instance.id);
+      if (entry && element) {
+        entry.config = instance;
+        placeAt(element, instance.position);
+      }
+    }
+    for (const instance of plan.mount) {
+      mount(instance);
+    }
+    stack(plan.order);
+    applySceneBackground(document.body, next.layout);
+    if (previewLayout) {
+      applyPreviewLayout(widgetElements, previewLayout);
+    }
+  }
+  async function fetchTarget() {
+    const draft = draftPlacements;
+    let resp;
+    try {
+      resp = draft ? await fetch(`${sceneBase}/draft-config`, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ widgets: draft })
+      }) : await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
+    } catch {
+      return draft ? { kind: "keep" } : { kind: "reload" };
+    }
+    const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
+    if (config && config.id === sceneId) {
+      return { kind: "apply", config };
+    }
+    if (draft && resp.status !== 401) {
+      console.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });
+      return { kind: "keep" };
+    }
+    return { kind: "reload" };
+  }
+  let updating = false;
+  let updateRequested = false;
+  async function updateScene() {
+    updateRequested = true;
+    if (updating) {
+      return;
+    }
+    updating = true;
+    try {
+      while (updateRequested) {
+        updateRequested = false;
+        const target = await fetchTarget();
+        if (target.kind === "reload") {
+          location.reload();
+          return;
+        }
+        if (target.kind === "apply") {
+          applySceneConfig(target.config);
+        }
+      }
+    } finally {
+      updating = false;
+    }
   }
   const status = new ConnectionStatus(renderConnected);
   let serverBootId = null;
@@ -1592,7 +1804,7 @@ function main() {
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
-    onSceneUpdated: () => location.reload(),
+    onSceneUpdated: () => void updateScene(),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();

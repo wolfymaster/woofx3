@@ -343,6 +343,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     settings: Object.freeze({ ...boot.settings }),
     surface: boot.surface,
     theme: freezeTheme(boot.theme ?? null),
+    linkedResources: Object.freeze({ ...(boot.linkedResources ?? {}) }),
     moduleId: boot.moduleId,
     instanceId: boot.instanceId,
     storage,

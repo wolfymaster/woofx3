@@ -203,6 +203,34 @@ pub trait ScheduleClient: Send + Sync {
     fn cancel_key(&self, key: &str);
 }
 
+/// Who is asking `ActionRunner::run` to act: the invoking module, bound by the
+/// host and never supplied by module code.
+pub struct RunCaller<'a> {
+    pub module_id: &'a str,
+    /// The invocation's grants, which must cover the providing module's.
+    pub permissions: &'a HashSet<String>,
+    /// When the caller stops waiting; the action runs within it.
+    pub deadline: Instant,
+}
+
+/// `ctx.resources.run(canonicalId, verb, params)`: runs the `{kind}.{verb}`
+/// action of the module that provides the instance's kind, on that instance,
+/// as that module — its code, its storage. How a module drives a timer or a
+/// counter it does not own.
+///
+/// A module may act only on an instance it owns or one its own settings link
+/// to, which is the streamer having chosen it. Called from the sandbox's
+/// blocking thread.
+pub trait ActionRunner: Send + Sync {
+    fn run(
+        &self,
+        caller: &RunCaller<'_>,
+        canonical_id: &str,
+        verb: &str,
+        params: Value,
+    ) -> Result<Value, String>;
+}
+
 #[derive(Clone)]
 pub struct HostContext {
     pub nats: Arc<dyn NatsPublisher>,
@@ -211,6 +239,7 @@ pub struct HostContext {
     pub resources: Arc<dyn ResourceClient>,
     pub settings: Arc<dyn SettingsClient>,
     pub schedule: Arc<dyn ScheduleClient>,
+    pub actions: Arc<dyn ActionRunner>,
     pub extensions: Arc<ExtensionRegistry>,
 }
 

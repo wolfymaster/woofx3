@@ -141,6 +141,28 @@ pub fn resources_get(host: &HostContext, canonical_id: &str) -> Result<Value, St
     }
 }
 
+/// `ctx.resources.run(canonicalId, verb, params?)`: run the providing
+/// module's `{kind}.{verb}` action on the instance, as the invoking module
+/// asked. The caller's identity, grants and deadline come from the
+/// invocation, never from module code.
+pub fn resources_run(
+    host: &HostContext,
+    module_id: &str,
+    permissions: &std::collections::HashSet<String>,
+    deadline: std::time::Instant,
+    canonical_id: &str,
+    verb: &str,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let caller = crate::host::RunCaller {
+        module_id,
+        permissions,
+        deadline,
+    };
+    host.actions
+        .run(&caller, canonical_id, verb, params.unwrap_or(Value::Null))
+}
+
 /// `ctx.resources.list(kind)`: call the resource client, then serialize
 /// the list to `Value`.
 pub fn resources_list(host: &HostContext, kind: &str) -> Result<Value, String> {

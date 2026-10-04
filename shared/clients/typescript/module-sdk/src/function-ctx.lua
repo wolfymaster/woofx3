@@ -101,6 +101,9 @@
 ---@field delete fun(canonical_id: string): nil
 ---@field get fun(canonical_id: string): ResourceInstance|nil
 ---@field list fun(kind: string): ResourceInstance[]
+---Runs the providing module's `{kind}.{verb}` action on the instance, as that
+---module; allowed on an instance this module owns or its settings link to.
+---@field run fun(canonical_id: string, verb: string, params?: table): any
 
 ---One-shot invocations of a function this module declares under the
 ---manifest's `deadlines`. An entry is identified by (deadline id, key);

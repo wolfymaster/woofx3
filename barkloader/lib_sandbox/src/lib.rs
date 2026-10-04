@@ -13,4 +13,4 @@ mod sandbox;
 
 pub use error::{Error, InvokeBlockingError};
 pub use module_registry::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
-pub use sandbox::{Sandbox, SandboxFactory};
+pub use sandbox::{Sandbox, SandboxActionRunner, SandboxFactory};

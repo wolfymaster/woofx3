@@ -18,26 +18,15 @@ import { SceneEventSource, type DeliveryFrame } from "./event-source";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
-import { applyPreviewLayout, parsePreviewLayout } from "./preview-layout";
+import {
+  applyPreviewLayout,
+  draftFrameKey,
+  parsePreviewLayout,
+  parsePreviewPlacements,
+  type PreviewWidgetLayout,
+} from "./preview-layout";
 import { applySceneBackground } from "./scene-background";
-
-interface WidgetInstanceConfig {
-  id: string;
-  widgetCanonicalId: string;
-  moduleId: string;
-  position: { x: number; y: number; width: number; height: number };
-  settings: Record<string, unknown>;
-  /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
-  hostsSurface: string;
-  frameUrl: string;
-}
-
-interface SceneConfig {
-  id: string;
-  name: string;
-  layout: Record<string, unknown>;
-  widgets: WidgetInstanceConfig[];
-}
+import { parseSceneConfig, planSceneUpdate, type SceneConfig, type WidgetPlacementConfig } from "./scene-update";
 
 declare global {
   interface Window {
@@ -46,6 +35,10 @@ declare global {
 }
 
 const REFRESH_INTERVAL_MS = 50_000;
+
+// Typing into a text setting posts a draft per keystroke, and a settings
+// change reloads the widget's frame; waiting for a pause reloads it once.
+const DRAFT_SETTLE_MS = 400;
 
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
@@ -56,7 +49,14 @@ function generateNonce(): string {
     .replace(/=+$/, "");
 }
 
-function placeAt(element: HTMLElement, position: WidgetInstanceConfig["position"]): void {
+/** A frame's URL with the bridge nonce added; a draft frame's URL already has a query. */
+function withNonce(frameUrl: string, nonce: string): string {
+  const url = new URL(frameUrl, location.href);
+  url.searchParams.set("nonce", nonce);
+  return url.pathname + url.search;
+}
+
+function placeAt(element: HTMLElement, position: WidgetPlacementConfig["position"]): void {
   element.style.left = `${position.x}px`;
   element.style.top = `${position.y}px`;
   element.style.width = `${position.width}px`;
@@ -140,7 +140,10 @@ function main(): void {
     }).catch(() => {});
   }
 
-  const mountAlertWidget = (instance: WidgetInstanceConfig): void => {
+  // Each placement on the page by id, with what it takes to remove it again.
+  const mounted = new Map<string, { config: WidgetPlacementConfig; unmount: () => void }>();
+
+  const mountAlertWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
     placeAt(element, instance.position);
@@ -172,13 +175,17 @@ function main(): void {
       () => {},
       (eventId) => alertWidget.stop(eventId)
     );
+
+    return () => {
+      // Finishes what is playing while the queue is still there to hear it.
+      alertWidget.dispose();
+      queueManager.unregister(subId);
+      widgetElements.delete(instance.id);
+      element.remove();
+    };
   };
 
-  for (const instance of sceneData.widgets) {
-    if (instance.hostsSurface === "alert") {
-      mountAlertWidget(instance);
-      continue;
-    }
+  const mountFramedWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
@@ -235,13 +242,53 @@ function main(): void {
       sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
+    iframe.src = withNonce(instance.frameUrl, nonce);
 
     bridges.add(bridge);
     container.appendChild(iframe);
     widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
+
+    return () => {
+      bridge.dispose();
+      bridge.detach();
+      bridges.delete(bridge);
+      moduleState.unwatchAll(storageTarget);
+      widgetElements.delete(instance.id);
+      iframe.remove();
+    };
+  };
+
+  function mount(instance: WidgetPlacementConfig): void {
+    const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
+    mounted.set(instance.id, { config: instance, unmount });
   }
+
+  // Stacked by z-index rather than by document order: moving an iframe in
+  // the document reloads it, which is what a scene update avoids.
+  function stack(order: readonly string[]): void {
+    order.forEach((id, index) => {
+      const element = widgetElements.get(id);
+      if (element) {
+        element.style.zIndex = String(index);
+      }
+    });
+  }
+
+  for (const instance of sceneData.widgets) {
+    mount(instance);
+  }
+  stack(sceneData.widgets.map((instance) => instance.id));
+
+  // The editor's draft layout, kept so a scene update -- which places every
+  // widget where it was saved -- doesn't undo a drag the editor has not saved.
+  let previewLayout: PreviewWidgetLayout[] | null = null;
+  // The editor's unsaved placements, once it has sent any. From then on they
+  // are what the page shows: a save the editor made matches them, and a save
+  // must not undo an edit made since.
+  let draftPlacements: unknown[] | null = null;
+  let draftKey = "";
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
 
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
@@ -259,9 +306,113 @@ function main(): void {
       }
       const layout = parsePreviewLayout(event.data);
       if (layout) {
+        previewLayout = layout;
         applyPreviewLayout(widgetElements, layout);
       }
+      const placements = parsePreviewPlacements(event.data);
+      if (placements) {
+        draftPlacements = placements;
+        const key = draftFrameKey(placements);
+        if (key !== draftKey) {
+          draftKey = key;
+          if (draftTimer !== null) {
+            clearTimeout(draftTimer);
+          }
+          draftTimer = setTimeout(() => {
+            draftTimer = null;
+            void updateScene();
+          }, DRAFT_SETTLE_MS);
+        }
+      }
     });
+  }
+
+  function applySceneConfig(next: SceneConfig): void {
+    const plan = planSceneUpdate(
+      [...mounted.values()].map((entry) => entry.config),
+      next.widgets
+    );
+    for (const id of plan.remove) {
+      mounted.get(id)?.unmount();
+      mounted.delete(id);
+    }
+    for (const instance of plan.place) {
+      const entry = mounted.get(instance.id);
+      const element = widgetElements.get(instance.id);
+      if (entry && element) {
+        entry.config = instance;
+        placeAt(element, instance.position);
+      }
+    }
+    for (const instance of plan.mount) {
+      mount(instance);
+    }
+    stack(plan.order);
+    applySceneBackground(document.body, next.layout);
+    if (previewLayout) {
+      applyPreviewLayout(widgetElements, previewLayout);
+    }
+  }
+
+  type Target = { kind: "apply"; config: SceneConfig } | { kind: "reload" } | { kind: "keep" };
+
+  // The saved scene, or the editor's draft once it has sent one. A failed
+  // saved fetch reloads, which renders the saved scene too and re-mints the
+  // session when a lapsed one is why it failed. A failed draft fetch keeps
+  // what is on screen instead: the editor posts its draft again on every
+  // load, so reloading for a draft the server keeps refusing would loop.
+  async function fetchTarget(): Promise<Target> {
+    const draft = draftPlacements;
+    let resp: Response;
+    try {
+      resp = draft
+        ? await fetch(`${sceneBase}/draft-config`, {
+            method: "POST",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ widgets: draft }),
+          })
+        : await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
+    } catch {
+      return draft ? { kind: "keep" } : { kind: "reload" };
+    }
+    const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
+    if (config && config.id === sceneId) {
+      return { kind: "apply", config };
+    }
+    if (draft && resp.status !== 401) {
+      console.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });
+      return { kind: "keep" };
+    }
+    return { kind: "reload" };
+  }
+
+  // One update at a time: saves and drafts that land while one is applying
+  // collapse into a single fetch of the newest target once it is done.
+  let updating = false;
+  let updateRequested = false;
+  async function updateScene(): Promise<void> {
+    updateRequested = true;
+    if (updating) {
+      return;
+    }
+    updating = true;
+    try {
+      while (updateRequested) {
+        updateRequested = false;
+        const target = await fetchTarget();
+        if (target.kind === "reload") {
+          location.reload();
+          return;
+        }
+        if (target.kind === "apply") {
+          applySceneConfig(target.config);
+        }
+      }
+    } finally {
+      updating = false;
+    }
   }
 
   // One owner for the banner. Both reachability signals below report
@@ -313,7 +464,7 @@ function main(): void {
     onConnectionChange: (connected) => status.set("stream", connected),
     // The scene was saved. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.
-    onSceneUpdated: () => location.reload(),
+    onSceneUpdated: () => void updateScene(),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();

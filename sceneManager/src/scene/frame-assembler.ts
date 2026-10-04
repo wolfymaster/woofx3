@@ -106,6 +106,9 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
 export interface FrameAssemblerOptions {
   barkloader: BarkloaderFrameClient;
   generateNonce?: () => string;
+  /** The instances a module links through its `resource_ref` settings (see
+   *  module-state.ts `linkedResources`). None when absent. */
+  linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
 }
 
 export interface FrameScaffold {
@@ -239,6 +242,38 @@ export class FrameAssembler {
   }
 
   /**
+   * A placement the scene editor has not saved, rendered with the settings it
+   * carries, so the editor's preview shows a change before it is saved. Only a
+   * framed placement: an alert area is drawn by the page.
+   */
+  async assembleDraft(
+    sceneId: string,
+    instanceId: string,
+    draftPlacement: unknown,
+    nonceParam: string | null
+  ): Promise<Response> {
+    if (draftPlacement === null) {
+      return this.blankResponse();
+    }
+    const [instance] = await this.host.resolveDraftPlacements(sceneId, [draftPlacement]);
+    if (!instance || instance.id !== instanceId || instance.hostsSurface !== "") {
+      return this.blankResponse();
+    }
+    return this.assembleFrame(
+      sceneId,
+      {
+        instanceId: instance.id,
+        moduleId: instance.moduleId,
+        manifestId: instance.manifestId,
+        widgetCanonicalId: instance.widgetCanonicalId,
+        settings: instance.settings,
+        surface: "scene",
+      },
+      nonceParam
+    );
+  }
+
+  /**
    * One widget of the alert delivered to `sceneId` as scene event `eventId`.
    * The alert is read back from that event, so a frame can only ever show
    * what the scene manager validated and delivered to this scene.
@@ -269,6 +304,23 @@ export class FrameAssembler {
     );
   }
 
+  /** A widget still renders when its module's settings cannot be read; it
+   *  then sees no linked instances, as with an older host. */
+  private async loadLinkedResources(moduleId: string): Promise<Record<string, string>> {
+    if (!this.opts.linkedResources) {
+      return {};
+    }
+    try {
+      return await this.opts.linkedResources(moduleId);
+    } catch (err) {
+      this.logger.warn("module settings unavailable; the widget sees no linked resources", {
+        moduleId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return {};
+    }
+  }
+
   private async assembleFrame(sceneId: string, target: FrameTarget, nonceParam: string | null): Promise<Response> {
     const nonce = nonceParam && NONCE_PATTERN.test(nonceParam) ? nonceParam : this.generateNonce();
 
@@ -296,6 +348,7 @@ export class FrameAssembler {
       });
     }
 
+    const linkedResources = await this.loadLinkedResources(target.moduleId);
     const boot: WidgetBootPayload = {
       v: 1,
       nonce,
@@ -307,6 +360,7 @@ export class FrameAssembler {
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
+      linkedResources,
     };
     const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
     let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
