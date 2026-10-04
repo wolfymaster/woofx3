@@ -6,9 +6,9 @@ import type { FrameAssembler } from "./scene/frame-assembler";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
-import { handleSceneConfigRoute, handleSceneRoute } from "./routes/scene";
+import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
-import { handleAlertWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
+import { handleAlertWidgetFrameRoute, handleDraftWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
@@ -136,6 +136,18 @@ export function createHttpServer(deps: HttpDeps) {
           const configMatch = /^\/scene\/([^/]+)\/config$/.exec(url.pathname);
           if (configMatch && req.method === "GET") {
             return withCors(await handleSceneConfigRoute(req, configMatch[1]!, deps));
+          }
+
+          // POST /scene/{sceneId}/draft-config
+          const draftConfigMatch = /^\/scene\/([^/]+)\/draft-config$/.exec(url.pathname);
+          if (draftConfigMatch && req.method === "POST") {
+            return withCors(await handleSceneDraftConfigRoute(req, draftConfigMatch[1]!, deps));
+          }
+
+          // GET /scene/{sceneId}/draft-widget/{instanceId}
+          const draftWidgetMatch = /^\/scene\/([^/]+)\/draft-widget\/([^/]+)$/.exec(url.pathname);
+          if (draftWidgetMatch && req.method === "GET") {
+            return withCors(await handleDraftWidgetFrameRoute(req, draftWidgetMatch[1]!, draftWidgetMatch[2]!, deps));
           }
 
           // POST /scene/{sceneId}/session/refresh

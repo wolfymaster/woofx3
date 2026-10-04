@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+  draftFrameKey,
+  parsePreviewPlacements,
   applyPreviewLayout,
   PREVIEW_LAYOUT_MESSAGE,
   parsePreviewLayout,
@@ -66,5 +68,37 @@ describe("applyPreviewLayout", () => {
     applyPreviewLayout(elements, []);
     applyPreviewLayout(elements, [{ id: "w", x: 0, y: 0, width: 10, height: 10 }]);
     expect(widget.style.display).toBe("");
+  });
+});
+
+describe("parsePreviewPlacements", () => {
+  it("returns the placements a layout message carries", () => {
+    const placements = [{ id: "a", settings: { text: "hi" } }];
+    expect(parsePreviewPlacements({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [], placements })).toEqual(placements);
+  });
+
+  // An editor that posts only positions must keep working.
+  it("is null for a message without placements, or another message", () => {
+    expect(parsePreviewPlacements({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [] })).toBeNull();
+    expect(parsePreviewPlacements({ type: "other", placements: [] })).toBeNull();
+    expect(parsePreviewPlacements(null)).toBeNull();
+  });
+});
+
+describe("draftFrameKey", () => {
+  const placement = (x: number, text: string) => ({
+    id: "a",
+    widgetCanonicalId: "woofx3:widget:text",
+    position: { x, y: 0 },
+    size: { width: 10, height: 10 },
+    settings: { text },
+  });
+
+  it("ignores a drag", () => {
+    expect(draftFrameKey([placement(0, "hi")])).toBe(draftFrameKey([placement(40, "hi")]));
+  });
+
+  it("changes with a setting", () => {
+    expect(draftFrameKey([placement(0, "hi")])).not.toBe(draftFrameKey([placement(0, "hello")]));
   });
 });

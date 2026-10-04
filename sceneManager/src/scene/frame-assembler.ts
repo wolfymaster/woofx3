@@ -242,6 +242,38 @@ export class FrameAssembler {
   }
 
   /**
+   * A placement the scene editor has not saved, rendered with the settings it
+   * carries, so the editor's preview shows a change before it is saved. Only a
+   * framed placement: an alert area is drawn by the page.
+   */
+  async assembleDraft(
+    sceneId: string,
+    instanceId: string,
+    draftPlacement: unknown,
+    nonceParam: string | null
+  ): Promise<Response> {
+    if (draftPlacement === null) {
+      return this.blankResponse();
+    }
+    const [instance] = await this.host.resolveDraftPlacements(sceneId, [draftPlacement]);
+    if (!instance || instance.id !== instanceId || instance.hostsSurface !== "") {
+      return this.blankResponse();
+    }
+    return this.assembleFrame(
+      sceneId,
+      {
+        instanceId: instance.id,
+        moduleId: instance.moduleId,
+        manifestId: instance.manifestId,
+        widgetCanonicalId: instance.widgetCanonicalId,
+        settings: instance.settings,
+        surface: "scene",
+      },
+      nonceParam
+    );
+  }
+
+  /**
    * One widget of the alert delivered to `sceneId` as scene event `eventId`.
    * The alert is read back from that event, so a frame can only ever show
    * what the scene manager validated and delivered to this scene.
