@@ -89,11 +89,19 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		return nil, twirp.InvalidArgumentError("taxonomy", "failed to marshal taxonomy")
 	}
 
-	// Workflows are inert at create time. The contract documented in
-	// `docs/workflow/api.md` (and relied on by the UI) is "always false
-	// on create; enable via setWorkflowEnabled" — the request's
-	// `enabled` field is ignored so callers can't accidentally ship a
-	// workflow live before they intend to.
+	// A workflow someone is authoring is inert at create time. The
+	// contract documented in `docs/workflow/api.md` (and relied on by
+	// the UI) is "always false on create; enable via
+	// setWorkflowEnabled" — the request's `enabled` field is ignored so
+	// callers can't accidentally ship a workflow live before they
+	// intend to.
+	//
+	// A module's bundled workflow is the exception: it is part of what
+	// installing the module means, so it honours `enabled` (barkloader
+	// sends true) and the module works as soon as it is installed. The
+	// upsert never touches `enabled` on conflict, so an upgrade keeps
+	// whatever the streamer has since switched it to.
+	moduleOwned := createdByType == "MODULE" && req.ManifestId != ""
 	wf := &models.WorkflowDefinition{
 		ID:            uuid.New(),
 		Name:          req.Name,
@@ -103,7 +111,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		CreatedByRef:  req.CreatedByRef,
 		ManifestID:    req.ManifestId,
 		Taxonomy:      string(taxonomyJSON),
-		Enabled:       false,
+		Enabled:       moduleOwned && req.Enabled,
 	}
 
 	// MODULE-owned workflows (non-empty ManifestID) upsert on
@@ -111,7 +119,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// updates the existing workflow in place instead of duplicating it.
 	// USER-authored workflows always insert — ManifestID is empty and
 	// isn't covered by that unique index.
-	if createdByType == "MODULE" && wf.ManifestID != "" {
+	if moduleOwned {
 		err = s.workflowRepo.Upsert(wf)
 	} else {
 		err = s.workflowRepo.Create(wf)
