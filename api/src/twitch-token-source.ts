@@ -98,6 +98,17 @@ export class TwitchTokenSource implements TwitchCredentials {
   }
 
   /**
+   * The engine client id of the dashboard the linked Twitch account came
+   * from, or null when the token is the engine's own (or there is none). That
+   * dashboard holds the Twitch link, so it is the one to ask for anything
+   * that acts as the channel, such as its shoutout queue.
+   */
+  async linkedDashboardClientId(): Promise<string | null> {
+    const stored = await this.read();
+    return (stored && asDashboardToken(stored)?.dashboardClientId) || null;
+  }
+
+  /**
    * The token a dashboard sent, renewed through that dashboard when it is
    * about to expire or `force` is set (Twitch refused it). Concurrent callers
    * share one renewal.

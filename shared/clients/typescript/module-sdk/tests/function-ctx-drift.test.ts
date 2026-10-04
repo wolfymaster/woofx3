@@ -96,7 +96,7 @@ const KNOWN_DATA_FIELDS: Record<string, string[]> = {
 const KNOWN_ERROR_FIELDS = ["code"];
 
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
-  twitch: ["clip", "shoutout", "createMarker", "timeout", "updateStream"],
+  twitch: ["clip", "shoutout", "createMarker", "getUser", "timeout", "updateStream"],
   obs: ["switchScene", "setSourceVisibility", "setInputMute", "listScenes", "listSources", "listInputs"],
   chat: ["sendMessage"],
   oauth: ["request"],
