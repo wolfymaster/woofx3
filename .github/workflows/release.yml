@@ -347,3 +347,46 @@ jobs:
           Extract and run \`./start.sh\` (Linux) or \`start.bat\` (Windows). Edit the packaged \`.woofx3.json\` template before production use.
           EOF
           gh release edit "$TAG" --notes-file notes.md
+
+      # The changelog is the release's notes up to the sections the step above
+      # appends, without semantic-release's version heading, which the embed's
+      # title carries. An embed description holds at most 4096 characters, so
+      # a longer changelog is cut at a line and links to the release for the rest.
+      - name: Announce the release on Discord
+        if: steps.check.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_RELEASE_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DISCORD_RELEASE_WEBHOOK_URL" ]; then
+            echo "::error::The DISCORD_RELEASE_WEBHOOK_URL secret is not set."
+            exit 1
+          fi
+          gh release view "$TAG" --json body,url > release.json
+          jq '
+            .url as $url
+            | (.body
+               | split("\n## Container image")[0]
+               | sub("^## \\[[^\n]*\n+"; "")
+               | sub("\\s+$"; "")) as $changelog
+            | {
+                username: "woofx3",
+                embeds: [{
+                  title: "woofx3 \(env.TAG) released",
+                  url: $url,
+                  color: 5793266,
+                  description: (
+                    if ($changelog | length) > 3900 then
+                      ($changelog[:3900] | sub("\n[^\n]*$"; "")) + "\n\n[Full changelog](\($url))"
+                    else
+                      $changelog
+                    end
+                  )
+                }]
+              }
+          ' release.json > discord.json
+          curl --fail-with-body --silent --show-error \
+            --header "Content-Type: application/json" \
+            --data @discord.json \
+            "$DISCORD_RELEASE_WEBHOOK_URL"

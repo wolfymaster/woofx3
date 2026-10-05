@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/wolfymaster/woofx3/compare/v0.11.1...v0.12.0) (2026-10-04)
+
+### Features
+
+* **modules:** redraw the text, image, counter and timer widgets on a settings change ([2f929aa](https://github.com/wolfymaster/woofx3/commit/2f929aaafdad180ffd812a61856b489afa8ae553))
+* **sceneManager:** hand a widget its settings as they're edited ([3006319](https://github.com/wolfymaster/woofx3/commit/300631966b1f233b22ac752e3511e258b34b186e))
+
 ## [0.11.1](https://github.com/wolfymaster/woofx3/compare/v0.11.0...v0.11.1) (2026-10-04)
 
 ### Bug Fixes
