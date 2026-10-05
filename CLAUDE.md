@@ -4,7 +4,7 @@ Woofx3 consists of the following tools:
 - A rust-based module/plugin system that allows users to upload modules containing a manifest and custom code, workflows, and assets that extend functionality of the system.
 - A database proxy service that generates grpc clients that other services use. No service has direct access to any data store except the db proxy. DB proxy has two types of databases.
     - Postgres/Sqlite - this is the woofx3 system database used for system-wide data
-    - BadgerDB - this is a key/value datastore that is available for modules to utilize. Since modules are provided by end-users, this extends a persistant layer to modules
+    - Module storage (SQLite) - this is a key/value datastore that is available for modules to utilize. Since modules are provided by end-users, this extends a persistant layer to modules
 - Permissions embeded in db proxy that can allow/deny user access
 - Shared clients and libraries that are used across multiple services are kept in the 'shared' directory
 - Integration with OBS and Streamlabs

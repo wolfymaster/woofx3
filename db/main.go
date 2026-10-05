@@ -73,7 +73,6 @@ func main() {
 				ReplicaURL:      cfg.StorageReplicaURL,
 				AccessKeyID:     cfg.StorageReplicaAccessKeyID,
 				SecretAccessKey: cfg.StorageReplicaSecretAccessKey,
-				BadgerPath:      cfg.BadgerPath,
 			}, logger)
 			if err := application.Register(services.ModuleStorageServiceName, storageSvc); err != nil {
 				return err

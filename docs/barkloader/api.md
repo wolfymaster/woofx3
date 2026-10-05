@@ -331,6 +331,6 @@ Module file storage is handled through the `Repository` trait, which abstracts t
 
 ### Module manifest and KV storage
 
-The **module manifest** processed by barkloader follows the woofx3-ui **module-improvements-spec** (see [Module format](./modules.md)). It does **not** include a `storage` / manifest-declared Badger key map; module file assets use the `Repository` layout only.
+The **module manifest** processed by barkloader follows the woofx3-ui **module-improvements-spec** (see [Module format](./modules.md)). It does **not** include a `storage` / manifest-declared storage key map; module file assets use the `Repository` layout only.
 
 A separate in-process **StorageClient** (gRPC to the DB proxy) may exist for other features; it is **not** driven by the current manifest schema.

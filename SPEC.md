@@ -49,7 +49,7 @@ The system follows a microservices architecture with three primary communication
 │         ▼                                                 ▼                  │
 │  ┌──────────────┐                         ┌──────────────────────────────┐  │
 │  │ Barkloader   │                         │         DB Proxy            │  │
-│  │ (Plugins)    │                         │   (Postgres/BadgerDB)        │  │
+│  │ (Plugins)    │                         │   (Postgres/SQLite)          │  │
 │  └──────────────┘                         └──────────────────────────────┘  │
 │                                                   ▲                         │
 │         NATS/CloudEvents                         │                         │
@@ -91,7 +91,7 @@ Each streamer operates within an isolated data context identified by an `engineI
 | Database | Technology | Purpose |
 |----------|------------|---------|
 | System DB | PostgreSQL or SQLite | Persistent system data, user records, workflow definitions, permissions |
-| Module KV | BadgerDB | Key-value storage accessible to user-uploaded modules |
+| Module KV | SQLite | Key-value storage accessible to user-uploaded modules |
 
 **Interface**: Twirp RPC (protocol buffers over HTTP/gRPC)
 
