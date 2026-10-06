@@ -47,6 +47,32 @@ func TestFileTransportWritesSingleLine(t *testing.T) {
 	}
 }
 
+func TestTerminalTransportSingleLineWhenPrettyDisabled(t *testing.T) {
+	t.Setenv("WOOFX3_LOG_PRETTY", "false")
+	terminalBuffer := &bytes.Buffer{}
+
+	logger, err := NewWithTransports(Config{
+		ServiceName:             "db",
+		EnableTerminalTransport: true,
+	}, []Transport{NewTerminalJSONTransportWithWriter(terminalBuffer)})
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+	defer logger.Close()
+
+	logger.Info("hello", "metadata", map[string]any{"nested": "value"})
+	logger.Info("again")
+
+	lines := strings.Split(strings.TrimSpace(terminalBuffer.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected one line per record, got %d lines: %q", len(lines), terminalBuffer.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &payload); err != nil {
+		t.Fatalf("invalid json line: %v", err)
+	}
+}
+
 func TestRedactionAppliedAcrossTransports(t *testing.T) {
 	tempDir := t.TempDir()
 	terminalBuffer := &bytes.Buffer{}

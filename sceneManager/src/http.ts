@@ -3,12 +3,12 @@ import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
 import type { FrameAssembler } from "./scene/frame-assembler";
-import type { ModuleStateWatch } from "./scene/module-state";
+import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
-import { handleSceneRoute } from "./routes/scene";
+import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
-import { handleAlertWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
+import { handleAlertWidgetFrameRoute, handleDraftWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
@@ -36,6 +36,8 @@ export interface HttpDeps {
   sessionTokens: SessionTokenService;
   deliveryStore: DeliveryStore;
   moduleState: ModuleStateWatch;
+  /** Module settings, for the instances a widget's module links. */
+  settingsDb: LinkedResourcesDb;
   /** Identity of this sceneManager process, minted once at startup and
    *  announced on every SSE stream. Lets a reconnecting overlay tell a
    *  resumed stream from one that came back against a restarted server
@@ -128,6 +130,24 @@ export function createHttpServer(deps: HttpDeps) {
           const sceneMatch = /^\/scene\/([^/]+)$/.exec(url.pathname);
           if (sceneMatch && req.method === "GET") {
             return withCors(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
+          }
+
+          // GET /scene/{sceneId}/config
+          const configMatch = /^\/scene\/([^/]+)\/config$/.exec(url.pathname);
+          if (configMatch && req.method === "GET") {
+            return withCors(await handleSceneConfigRoute(req, configMatch[1]!, deps));
+          }
+
+          // POST /scene/{sceneId}/draft-config
+          const draftConfigMatch = /^\/scene\/([^/]+)\/draft-config$/.exec(url.pathname);
+          if (draftConfigMatch && req.method === "POST") {
+            return withCors(await handleSceneDraftConfigRoute(req, draftConfigMatch[1]!, deps));
+          }
+
+          // GET /scene/{sceneId}/draft-widget/{instanceId}
+          const draftWidgetMatch = /^\/scene\/([^/]+)\/draft-widget\/([^/]+)$/.exec(url.pathname);
+          if (draftWidgetMatch && req.method === "GET") {
+            return withCors(await handleDraftWidgetFrameRoute(req, draftWidgetMatch[1]!, draftWidgetMatch[2]!, deps));
           }
 
           // POST /scene/{sceneId}/session/refresh

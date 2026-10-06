@@ -265,6 +265,41 @@ export class OverlayHost {
     };
   }
 
+  /**
+   * The scene's config with the editor's unsaved placements in place of the
+   * saved ones, for an overlay previewing a draft. Placements go through the
+   * same parsing and catalog resolution as saved ones, so the page treats a
+   * draft exactly like a save. Each placement's frame is the draft frame,
+   * which renders the settings it carries rather than the saved ones.
+   * Authorization is the caller's, as for `loadSceneById`.
+   */
+  async buildDraftConfig(sceneId: string, draftPlacements: unknown[]): Promise<Record<string, unknown>> {
+    const saved = await this.loadSceneById(sceneId);
+    if (!saved) {
+      return { scene: null };
+    }
+    const instances = await this.resolveDraftPlacements(sceneId, draftPlacements);
+    return sceneConfigOf({
+      ...saved,
+      instances: instances.map((instance) => ({
+        ...instance,
+        frameUrl: draftFrameUrl(sceneId, instance) ?? instance.frameUrl,
+      })),
+    });
+  }
+
+  /** Unsaved placements, parsed and resolved like saved ones. */
+  async resolveDraftPlacements(sceneId: string, draftPlacements: unknown[]): Promise<OverlayWidgetInstance[]> {
+    const instances: OverlayWidgetInstance[] = [];
+    for (const entry of draftPlacements) {
+      const instance = this.normalizeInstance(entry, sceneId);
+      if (instance) {
+        instances.push(instance);
+      }
+    }
+    return this.resolveInstances(instances, sceneId);
+  }
+
   /** Dev diagnostic: returns raw DB data + parse results side-by-side. */
   async loadRawScene(token: string): Promise<Record<string, unknown> | null> {
     const resolved = await this.resolver.resolve(token);
@@ -301,27 +336,16 @@ export class OverlayHost {
    * (the shell always renders).
    */
   async buildConfig(token: string): Promise<Record<string, unknown>> {
-    const state = await this.loadScene(token);
-    if (!state) {
-      return { scene: null };
-    }
-    return {
-      scene: {
-        id: state.sceneId,
-        name: state.name,
-        layout: state.layout,
-        widgets: state.instances.map((w) => ({
-          id: w.id,
-          widgetCanonicalId: w.widgetCanonicalId,
-          moduleId: w.moduleId,
-          position: w.position,
-          settings: w.settings,
-          hostsSurface: w.hostsSurface,
-          frameUrl: w.frameUrl,
-          resolved: w.resolved,
-        })),
-      },
-    };
+    return sceneConfigOf(await this.loadScene(token));
+  }
+
+  /**
+   * The same payload for a scene the caller already holds a session for, which
+   * an open overlay fetches to apply a save in place. Authorization is the
+   * caller's, as for `loadSceneById`.
+   */
+  async buildConfigById(sceneId: string): Promise<Record<string, unknown>> {
+    return sceneConfigOf(await this.loadSceneById(sceneId));
   }
 
   /**
@@ -473,6 +497,65 @@ export class OverlayHost {
       resolved: true,
     };
   }
+}
+
+/**
+ * Longest encoded draft a draft frame URL carries. A frame URL is a GET, and
+ * servers and proxies cap request lines at a few kilobytes; a placement whose
+ * settings encode longer keeps its saved frame until the scene is saved.
+ */
+export const MAX_DRAFT_PARAM_LENGTH = 6_000;
+
+/**
+ * `/scene/{sceneId}/draft-widget/{instanceId}?draft=…`: a frame rendering the
+ * placement it carries. The placement travels in the URL, not in a request
+ * body or server-side state, so the frame loads like any other frame and can
+ * reload itself. Null when the placement is too long to carry.
+ */
+export function draftFrameUrl(sceneId: string, instance: OverlayWidgetInstance): string | null {
+  const draft = Buffer.from(
+    JSON.stringify({ id: instance.id, widgetCanonicalId: instance.widgetCanonicalId, settings: instance.settings })
+  ).toString("base64url");
+  if (draft.length > MAX_DRAFT_PARAM_LENGTH) {
+    return null;
+  }
+  return `/scene/${encodeURIComponent(sceneId)}/draft-widget/${encodeURIComponent(instance.id)}?draft=${draft}`;
+}
+
+/** The placement in a draft frame URL's `draft` parameter, or null when it is not one. */
+export function parseDraftParam(draft: string | null): unknown {
+  if (!draft || draft.length > MAX_DRAFT_PARAM_LENGTH) {
+    return null;
+  }
+  try {
+    return JSON.parse(Buffer.from(draft, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** The page's scene config, the shape `window.__WOOFX3_SCENE__` and `/config` share. */
+function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown> {
+  if (!state) {
+    return { scene: null };
+  }
+  return {
+    scene: {
+      id: state.sceneId,
+      name: state.name,
+      layout: state.layout,
+      widgets: state.instances.map((w) => ({
+        id: w.id,
+        widgetCanonicalId: w.widgetCanonicalId,
+        moduleId: w.moduleId,
+        position: w.position,
+        settings: w.settings,
+        hostsSurface: w.hostsSurface,
+        frameUrl: w.frameUrl,
+        resolved: w.resolved,
+      })),
+    },
+  };
 }
 
 /**

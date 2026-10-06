@@ -39,7 +39,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { SessionTokenService } = await import("./scene/session-token");
     const { DeliveryStore } = await import("./events/delivery-store");
-    const { ModuleStateWatch } = await import("./scene/module-state");
+    const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
     const { ObsConnection } = await import("./obs/connection");
     const { obsDialTarget, openObsOverRoute } = await import("./obs/settings");
@@ -61,7 +61,10 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const resolver = new OverlayTokenResolver(db, ctx.logger);
     const host = new OverlayHost(resolver, db, ctx.logger);
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-    const frameAssembler = new FrameAssembler(host, ctx.logger, { barkloader });
+    const frameAssembler = new FrameAssembler(host, ctx.logger, {
+      barkloader,
+      linkedResources: (moduleId) => linkedResources(db, moduleId),
+    });
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, ctx.logger);
@@ -156,7 +159,16 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       logger: ctx.logger,
     });
 
-    this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore, moduleState, bootId });
+    this.server = createHttpServer({
+      ctx,
+      host,
+      frameAssembler,
+      sessionTokens,
+      deliveryStore,
+      moduleState,
+      settingsDb: db,
+      bootId,
+    });
     ctx.logger.info("sceneManager listening", {
       port: ctx.runtimeConfig.port,
       bindHost: ctx.runtimeConfig.bindHost,

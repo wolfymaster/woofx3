@@ -7,32 +7,21 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/dgraph-io/badger/v3"
 )
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func TestModuleStorageService_ConnectImportsAndServes(t *testing.T) {
+func TestModuleStorageService_ConnectServes(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
-	badgerDir := filepath.Join(dir, "badger")
-	writeBadgerStore(t, badgerDir, func(db *badger.DB) {
-		putBadgerItem(t, db, "woofx3", "count", badgerItem{Value: "3", CreatedAt: 1})
-	})
-
-	cfg := ModuleStorageConfig{Path: filepath.Join(dir, "module-storage.db"), BadgerPath: badgerDir}
+	cfg := ModuleStorageConfig{Path: filepath.Join(t.TempDir(), "module-storage.db")}
 	svc := NewModuleStorageService(cfg, discardLogger())
 	if err := svc.Connect(ctx, nil); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	if !svc.Connected() || svc.Client() == nil {
 		t.Fatal("connected service has no pool")
-	}
-	if got := mustGet(t, NewStorageService(svc.Client()), "woofx3", "count"); got.GetValue() != "3" {
-		t.Errorf("imported woofx3/count = %+v, want 3", got)
 	}
 	mustSet(t, NewStorageService(svc.Client()), storageItem("woofx3", "count", "4"))
 

@@ -33,6 +33,10 @@ pub struct RegisteredModule {
     pub url_settings: HashSet<String>,
     /// The OAuth providers the module's code calls through `ctx.oauth`.
     pub oauth: Vec<crate::oauth::OAuthIntegration>,
+    /// Manifest-local action id to the manifest-local id of the function it
+    /// runs, for every `type: "function"` action: how `ctx.resources.run`
+    /// finds the code behind a resource kind's actions.
+    pub actions: HashMap<String, String>,
 }
 
 pub struct ModuleRegistry {
@@ -167,6 +171,13 @@ impl ModuleRegistry {
 
     /// The ids of the module's `url` settings; none for a module that is not
     /// registered.
+    /// The function a module's action runs, as a manifest-local function id;
+    /// `None` for an unknown module or action, or one that is not a function.
+    pub fn action_function(&self, module: &str, action: &str) -> Option<String> {
+        let modules = self.modules.read().unwrap();
+        modules.get(module)?.actions.get(action).cloned()
+    }
+
     pub fn url_settings(&self, name: &str) -> HashSet<String> {
         let modules = self.modules.read().unwrap();
         modules
@@ -194,6 +205,7 @@ mod tests {
         );
 
         RegisteredModule {
+            actions: Default::default(),
             metadata: ModuleMetadata {
                 name: name.to_string(),
                 version: "1.0.0".to_string(),

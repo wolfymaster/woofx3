@@ -15,7 +15,9 @@ function placement(id: string, moduleId: string, hostsSurface = "") {
   return { id, moduleId, hostsSurface };
 }
 
-function deps(opts: { read?: (...args: unknown[]) => Promise<unknown> } = {}) {
+type SettingRow = { key: string; value: string; valueType: string };
+
+function deps(opts: { read?: (...args: unknown[]) => Promise<unknown>; settings?: Record<string, SettingRow[]> } = {}) {
   const read = mock(opts.read ?? (async () => ({ value: 3, reached: {} })));
   const d = {
     ctx: { logger },
@@ -35,6 +37,7 @@ function deps(opts: { read?: (...args: unknown[]) => Promise<unknown> } = {}) {
           : null,
     },
     moduleState: { read },
+    settingsDb: { listModuleSettings: async (moduleId: string) => opts.settings?.[moduleId] ?? [] },
   };
   return { deps: d as unknown as HttpDeps, read };
 }
@@ -42,7 +45,7 @@ function deps(opts: { read?: (...args: unknown[]) => Promise<unknown> } = {}) {
 function request(instanceId: string, key: string | null, cookie = "good"): Request {
   const query = key === null ? "" : `?key=${encodeURIComponent(key)}`;
   return new Request(`http://scene.test/scene/scene-1/widget/${instanceId}/storage${query}`, {
-    headers: { Cookie: `sm_session=${cookie}` },
+    headers: { Cookie: `sm_session_scene-1=${cookie}` },
   });
 }
 
@@ -52,13 +55,29 @@ describe("handleWidgetStorageRoute", () => {
     const resp = await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d);
     expect(resp.status).toBe(200);
     expect(await resp.json()).toEqual({ value: { value: 3, reached: {} } });
-    expect(read).toHaveBeenCalledWith("scene-1", "woofx3", KEY);
+    expect(read).toHaveBeenCalledWith("scene-1", "woofx3", KEY, "woofx3");
   });
 
   it("reads through another module's placement only from that module's storage", async () => {
     const { deps: d, read } = deps();
     await handleWidgetStorageRoute(request("spotify-1", KEY), "scene-1", "spotify-1", d);
-    expect(read).toHaveBeenCalledWith("scene-1", "spotify", KEY);
+    expect(read).toHaveBeenCalledWith("scene-1", "spotify", KEY, "spotify");
+  });
+
+  it("reads an instance the placement's module links from the instance owner's storage", async () => {
+    const { deps: d, read } = deps({
+      settings: { spotify: [{ key: "counter", value: "woofx3:counter:deaths", valueType: "resource_ref" }] },
+    });
+    await handleWidgetStorageRoute(request("spotify-1", KEY), "scene-1", "spotify-1", d);
+    expect(read).toHaveBeenCalledWith("scene-1", "woofx3", KEY, "spotify");
+  });
+
+  it("does not follow a setting that only happens to hold an instance id", async () => {
+    const { deps: d, read } = deps({
+      settings: { spotify: [{ key: "note", value: "woofx3:counter:deaths", valueType: "text" }] },
+    });
+    await handleWidgetStorageRoute(request("spotify-1", KEY), "scene-1", "spotify-1", d);
+    expect(read).toHaveBeenCalledWith("scene-1", "spotify", KEY, "spotify");
   });
 
   it("refuses a placement that is not on the scene, or one the page draws itself", async () => {

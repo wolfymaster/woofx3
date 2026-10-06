@@ -139,13 +139,22 @@ export interface WidgetTheme {
  */
 export interface WidgetHost {
   /** Per-instance settings resolved by the scene editor from the
-   *  widget's `settingsSchema`. Frozen at load time. */
+   *  widget's `settingsSchema`. The current set: replaced (never mutated)
+   *  when the host sends a change to a widget that called `onSettings`. */
   readonly settings: Readonly<Record<string, unknown>>;
   readonly surface: WidgetSurface;
 
   /** The theme in effect, or `null` for a widget that declares no theme
    *  contract. Frozen at load time. */
   readonly theme: WidgetTheme | null;
+
+  /** The resource instances this widget's module links through its
+   *  `resource_ref` module settings: setting id to canonical id, e.g.
+   *  `{ timer: "woofx3:timer:hype_board_subathon" }`. Subscribe to
+   *  `"state:" + id` to show one — the host serves a linked instance's
+   *  value even though another module owns it. Frozen at load time;
+   *  empty when the module links nothing. */
+  readonly linkedResources: Readonly<Record<string, string>>;
 
   /** Module id this widget belongs to. Surfaced so widgets can scope
    *  storage calls without the shell having to bind it. */
@@ -167,6 +176,17 @@ export interface WidgetHost {
    * entirely from the boot payload, no network round trip.
    */
   getResourceUrl(path: string): string;
+
+  /**
+   * Redraw when this placement's settings change, as a streamer edits them
+   * in the scene editor or saves the scene. Calling this tells the host the
+   * widget handles changes itself, so a change arrives here and the widget
+   * keeps running; a widget that never calls it is reloaded with the new
+   * settings instead. `settings` is updated before `cb` runs. A change of
+   * theme always reloads, since the theme is applied before the widget runs.
+   * Returns an unsubscribe function.
+   */
+  onSettings(cb: (settings: Readonly<Record<string, unknown>>) => void): () => void;
 
   /**
    * Subscribe to the events the host delivers to this widget: in an alert

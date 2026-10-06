@@ -1,4 +1,5 @@
 import type { HttpDeps } from "../http";
+import { storageModuleFor } from "../scene/module-state";
 import { readSessionCookie } from "../scene/session-cookie";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -16,7 +17,9 @@ function jsonResponse(status: number, body: unknown): Response {
  *
  * Addressed by placement rather than by module: a widget names its module in
  * its `hello`, and nothing checks that claim, so the module is taken from the
- * scene record instead. A widget can only ever read its own module's storage.
+ * scene record instead. A widget reads its own module's storage, and beyond it
+ * only the value of a resource instance its module's settings link, read from
+ * the instance owner's storage (see `storageModuleFor`).
  *
  * The key travels as a query parameter because storage keys carry colons
  * (`state:woofx3:counter:deaths`).
@@ -27,7 +30,7 @@ export async function handleWidgetStorageRoute(
   instanceId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  const cookie = readSessionCookie(req);
+  const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
   if (!claims || claims.sceneId !== sceneId) {
     return jsonResponse(401, { error: "invalid_session" });
@@ -45,7 +48,8 @@ export async function handleWidgetStorageRoute(
   }
 
   try {
-    const value = await deps.moduleState.read(sceneId, instance.moduleId, key);
+    const readFrom = await storageModuleFor(deps.settingsDb, instance.moduleId, key);
+    const value = await deps.moduleState.read(sceneId, readFrom, key, instance.moduleId);
     return jsonResponse(200, { value });
   } catch (err) {
     deps.ctx.logger.warn("widget storage read failed", {

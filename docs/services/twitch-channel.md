@@ -45,13 +45,31 @@ Only the commands below are served (`TWITCH_API_COMMANDS` in
 | `updateStream` | `{ title?, category?, categoryId?, tags? }` | `{ ok, title?, categoryId?, categoryName?, tags? }` | `channel:manage:broadcast` |
 | `createMarker` | `{ description? }` | `{ id, createdAt, description, positionSeconds }` | `channel:manage:broadcast` |
 | `searchCategories` | `{ query, first? }` | `[{ id, name, boxArtUrl }]` | none |
+| `getUser` | `{ userId \| userName }` | `{ userId, login, displayName, description, profileImageUrl, broadcasterType, createdAt, title, categoryId, categoryName, tags, language, isLive, stream }` | none |
 | `timeout` | `{ userId \| userName, durationSeconds, reason? }` | `{ ok, userId, durationSeconds }` | `moderator:manage:banned_users` |
-| `shoutout` | `{ userId \| userName }` | `{ ok, userId }` | `moderator:manage:shoutouts` |
+| `shoutout` | `{ userId \| userName }` | `{ ok, userId, queued, position?, alreadyQueued? }`; see [Shoutouts are queued](#shoutouts-are-queued) | `moderator:manage:shoutouts` |
 | `clip` | none | `{ id, url }` | `clips:edit` |
 | `listChannelPointRewards` | none | `[{ value, label, cost, prompt, isEnabled }]` | `channel:read:redemptions` |
 | `addChannelModerator` | `{ userId }` | `{ ok, userId }` | `channel:manage:moderators` |
 | `getAdSchedule` | none | see [Ad breaks](#twitchapi-ad-commands) | `channel:read:ads` |
 | `snoozeNextAd` | none | see [Ad breaks](#twitchapi-ad-commands) | `channel:manage:ads` |
+
+### Shoutouts are queued
+
+Twitch allows one shoutout every 2 minutes per channel, and one per target
+every 60 minutes. The dashboard's shoutout queue already paces sends to that
+limit and retries refusals, so `shoutout` does not call Twitch: it looks the
+user up and asks the api service (`engine.shoutout.enqueue`) to queue them on
+the dashboard the Twitch link came from (`shoutout.enqueue.requested`). The
+reply is `{ ok, userId, queued: true, position, alreadyQueued }`; a user who
+is already waiting keeps their place instead of being queued twice. Sending
+some shoutouts directly would spend the 2 minutes the queue is counting on.
+
+Only an engine whose Twitch link is its own, with no dashboard queue, sends
+directly (`queued: false`), where a refusal carries `rate_limited`. A
+dashboard that cannot be reached, or does not answer within 8 seconds, fails
+the request: it is not retried as a direct send, because the dashboard may
+have queued it after all.
 
 ### Rules checked before calling Twitch
 
@@ -131,13 +149,14 @@ at once across the engine, since each one holds a sandbox thread.
 | Call | Returns | Manifest permission |
 |---|---|---|
 | `clip()` | `{ id, url }` | none |
-| `shoutout({ userId \| userName })` | `{ ok, userId }` | none |
+| `shoutout({ userId \| userName })` | `{ ok, userId, queued, position?, alreadyQueued? }` | none |
 | `createMarker({ description? })` | `{ id, createdAt, description, positionSeconds }` | none |
+| `getUser({ userId \| userName })` | `{ userId, login, displayName, …, categoryName, isLive, stream }` | none |
 | `timeout({ userId \| userName, durationSeconds, reason? })` | `{ ok, userId, durationSeconds }` | `twitch.moderation` |
 | `updateStream({ title?, category?, categoryId?, tags? })` | `{ ok, title?, categoryId?, categoryName?, tags? }` | `twitch.channel` |
 
-Clips, shoutouts and markers are visible and harmless, so any module may
-call them. Timing chatters out and changing the title, category or tags act
+Clips, shoutouts and markers are visible and harmless, and `getUser` reads
+only what Twitch shows anyone, so any module may call them. Timing chatters out and changing the title, category or tags act
 on the channel and its chatters, so the module has to declare the permission
 in its manifest (`"permissions": ["twitch.moderation", "twitch.channel"]`).
 Permissions are declared by the module and enforced by the engine, and shown

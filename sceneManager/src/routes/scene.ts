@@ -1,6 +1,6 @@
 import type { HttpDeps } from "../http";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
-import { serializeSessionCookie } from "../scene/session-cookie";
+import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
 import { renderSceneShell } from "../scene/shell";
 
 const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
@@ -33,7 +33,65 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
-      "Set-Cookie": serializeSessionCookie(sessionToken, SESSION_TOKEN_TTL_SECONDS),
+      "Set-Cookie": serializeSessionCookie(state.sceneId, sessionToken, SESSION_TOKEN_TTL_SECONDS),
     },
   });
+}
+
+/**
+ * `GET /scene/{sceneId}/config` — the scene config the shell renders into the
+ * page, for an open overlay applying a save without reloading. Authorized by
+ * the session cookie the shell set, so only a page already showing this scene
+ * can read it.
+ */
+export async function handleSceneConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
+  const cookie = readSessionCookie(req, sceneId);
+  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
+  if (!claims || claims.sceneId !== sceneId) {
+    return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  const config = await deps.host.buildConfigById(sceneId);
+  if ((config as { scene: unknown }).scene === null) {
+    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+  return Response.json(config, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** Largest draft-config request body; a scene's placements are a few kilobytes. */
+export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
+
+/**
+ * `POST /scene/{sceneId}/draft-config` with `{ widgets: [...] }` — the scene
+ * config with the editor's unsaved placements in place of the saved ones (see
+ * `OverlayHost.buildDraftConfig`), for an overlay previewing a draft.
+ * Authorized like `/config`.
+ */
+export async function handleSceneDraftConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
+  const cookie = readSessionCookie(req, sceneId);
+  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
+  if (!claims || claims.sceneId !== sceneId) {
+    return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  const declaredLength = Number(req.headers.get("Content-Length") ?? "0");
+  if (declaredLength > MAX_DRAFT_BODY_BYTES) {
+    return Response.json({ error: "too_large" }, { status: 413, headers: { "Cache-Control": "no-store" } });
+  }
+  const text = await req.text();
+  if (text.length > MAX_DRAFT_BODY_BYTES) {
+    return Response.json({ error: "too_large" }, { status: 413, headers: { "Cache-Control": "no-store" } });
+  }
+  let widgets: unknown;
+  try {
+    widgets = (JSON.parse(text) as { widgets?: unknown }).widgets;
+  } catch {
+    widgets = undefined;
+  }
+  if (!Array.isArray(widgets)) {
+    return Response.json({ error: "invalid_body" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
+  const config = await deps.host.buildDraftConfig(sceneId, widgets);
+  if ((config as { scene: unknown }).scene === null) {
+    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+  return Response.json(config, { headers: { "Cache-Control": "no-store" } });
 }

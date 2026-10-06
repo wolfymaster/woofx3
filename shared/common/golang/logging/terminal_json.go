@@ -32,7 +32,7 @@ func (t *TerminalJSONTransport) Build(resolved resolvedConfig, level *slog.Level
 		writer:     t.writer,
 		level:      level,
 		service:    resolved.ServiceName,
-		pretty:     true,
+		pretty:     resolved.PrettyTerminal,
 		redactKeys: resolved.RedactKeys,
 		addSource:  resolved.AddSource,
 		writeMu:    &sync.Mutex{},

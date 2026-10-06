@@ -52,7 +52,8 @@ pub const BUSY: &str = "busy";
 
 /// The commands module code may call, each the twitch service's own command
 /// name, and the manifest permission it needs. Clips, shoutouts and markers
-/// are visible and harmless, so any module may use them. Timing a chatter
+/// are visible and harmless, and looking a user up reads only what Twitch
+/// shows anyone, so any module may use them. Timing a chatter
 /// out and changing the channel's title, category or tags need a permission
 /// the module declares and the engine enforces; the module install page shows
 /// them (woofx3-ui feat/module-permissions-review). Moderator changes are not
@@ -61,6 +62,7 @@ const COMMANDS: &[(&str, Option<&str>)] = &[
     ("clip", None),
     ("shoutout", None),
     ("createMarker", None),
+    ("getUser", None),
     ("timeout", Some(TWITCH_MODERATION)),
     ("updateStream", Some(TWITCH_CHANNEL)),
 ];
@@ -279,6 +281,7 @@ mod tests {
                 ("clip", None),
                 ("shoutout", None),
                 ("createMarker", None),
+                ("getUser", None),
                 ("timeout", Some(TWITCH_MODERATION)),
                 ("updateStream", Some(TWITCH_CHANNEL)),
             ]

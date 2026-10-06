@@ -61,11 +61,11 @@ v0.1.0):
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value, options?)` |
 | `ctx.http` | `request(url, method, opts?)` — only to hosts the module declares (`net:<host>` permissions) or URLs the streamer entered in `url` settings; see [Module format → Where `ctx.http` may connect](./modules.md#where-ctx-http-may-connect) |
-| `ctx.resources` | `create(kind, instanceId, displayName?)`, `delete(canonicalId)`, `list(kind)` |
+| `ctx.resources` | `create(kind, instanceId, displayName?, settings?)`, `get(canonicalId)`, `delete(canonicalId)`, `list(kind)`, `run(canonicalId, verb, params?)` |
 | `ctx.schedule` | `at(deadlineId, key, whenMs, params?)`, `cancel(deadlineId, key)` — one-shot invocations of a function the manifest declares under `deadlines`; see below |
 | `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
-| `ctx.twitch?` | `clip()`, `shoutout({ userId \| userName })`, `createMarker({ description? })`, `timeout({ userId \| userName, durationSeconds, reason? })`, `updateStream({ title?, category?, categoryId?, tags? })`. Each waits for the twitch service and returns its result, or throws its message with an optional `code`. `timeout` needs the manifest permission `twitch.moderation` and `updateStream` needs `twitch.channel`; see [Twitch channel controls](../services/twitch-channel.md#modules) |
+| `ctx.twitch?` | `clip()`, `shoutout({ userId \| userName })`, `createMarker({ description? })`, `getUser({ userId \| userName })`, `timeout({ userId \| userName, durationSeconds, reason? })`, `updateStream({ title?, category?, categoryId?, tags? })`. Each waits for the twitch service and returns its result, or throws its message with an optional `code`. `timeout` needs the manifest permission `twitch.moderation` and `updateStream` needs `twitch.channel`; see [Twitch channel controls](../services/twitch-channel.md#modules) |
 | `ctx.chat?` | `sendMessage(text)` |
 | `ctx.oauth?` | `request({ integration, url, method?, headers?, query?, body? })` — a provider the manifest declares under `oauth[]`, with the streamer's token, which the engine attaches and refreshes; see [Module format → OAuth integrations](./modules.md#oauth-integrations-oauth) |
 
@@ -184,6 +184,29 @@ support:
 /** @type {import("@woofx3/module-sdk").WidgetHost} */
 const host = window.widgetHost;
 ```
+
+### Live settings
+
+A streamer edits a widget's settings in the scene editor with the widget on
+screen. Call `host.onSettings` and each change arrives as it is made, with
+the widget still running; `host.settings` already holds the new set when the
+callback runs. A widget that never calls it is reloaded with the new settings
+instead, so a widget that draws once from `host.settings` still works.
+
+```js
+function draw(settings) {
+  label.textContent = settings.text ?? "";
+  label.style.color = settings.color ?? "#ffffff";
+}
+
+draw(host.settings);
+host.onSettings(draw);
+```
+
+Draw from the settings you are given rather than from what the last draw
+did, since any setting can change, or be emptied, at any time. A change of
+theme always reloads the widget, because the theme is applied before it runs.
+`createMockHost` has `setSettings(settings)` to try this offline.
 
 ### Themes
 

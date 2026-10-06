@@ -113,7 +113,7 @@ WoofX3 is built around six engineering principles:
 - **Event-driven.** Services communicate exclusively over a local NATS bus
   using [CloudEvents 1.0](https://github.com/cloudevents/spec).
 - **Single data plane.** A dedicated database proxy (`db`) is the only
-  process that touches Postgres / SQLite / BadgerDB; every other service uses
+  process that touches Postgres / SQLite; every other service uses
   a generated Twirp client.
 - **Extensible.** Modules are sandboxed bundles (Lua + QuickJS) that ship
   triggers, actions, workflows, widgets, and overlays — see
@@ -150,7 +150,7 @@ WoofX3 is built around six engineering principles:
                                       ▼
                        ┌──────────────────────────────┐
                        │              db               │
-                       │   Postgres / SQLite + Badger  │
+                       │   Postgres / SQLite           │
                        │   permissions · module KV     │
                        └──────────────────────────────┘
 ```
@@ -171,7 +171,7 @@ adapted at the edges and republished onto the bus as CloudEvents.
 
 | Service | Path | Language | Role |
 | ------- | ---- | -------- | ---- |
-| **db** | [`db/`](db) | Go | Database proxy. Owns Postgres/SQLite for system data and BadgerDB for module key/value storage. Enforces permissions. Exposes Twirp services generated from protobuf. |
+| **db** | [`db/`](db) | Go | Database proxy. Owns Postgres/SQLite for system data and a separate SQLite file for module key/value storage. Enforces permissions. Exposes Twirp services generated from protobuf. |
 | **workflow** | [`workflow/`](workflow) | Go | Event-driven workflow engine with triggers, conditional branching, event aggregation, sub-workflows, and Rete-based rules. Docs: [`docs/workflow/`](docs/workflow/index.md). |
 | **services/nats** | [`services/nats/`](services/nats) | Go | Embedded local NATS server that backs the message bus during development and self-hosted deployments. |
 
@@ -350,7 +350,7 @@ Barkloader is the runtime, but a module touches several other services:
 | **Workflow step calls a function** | The workflow engine resolves the `#func` action to a barkloader WebSocket invoke (`module/function`) and forwards args. |
 | **Chat command matches** | `woofwoofwoof` matches the message against the module's `commands[]` and routes to either a workflow or a function invoke. |
 | **Widget / overlay loads** | Stored under `modules/{id}/widgets/...` or `overlays/...` and served as a browser source in OBS; widgets in an alert layout play when an alert reaches their scene's alert widget. |
-| **Module needs persistence** | A separate in-process `StorageClient` (gRPC to the `db` proxy's BadgerDB store) is exposed to modules. Keys are not pre-declared in the manifest — modules write to the KV namespace at runtime. |
+| **Module needs persistence** | A separate in-process `StorageClient` (gRPC to the `db` proxy's module storage) is exposed to modules. Keys are not pre-declared in the manifest — modules write to the KV namespace at runtime. |
 
 A few manifest sections — `actions`, `commands`, and `workflows` — are
 parsed and logged at install time today but not yet pushed end-to-end into
@@ -476,7 +476,7 @@ Set `messagebusUrl` to `nats://localhost:4222` in `.woofx3.json` when running th
 - **RPC and serialization.** Twirp + Protobuf between services and `db`,
   Cap'n Web at the public API edge, CloudEvents 1.0 over NATS for the
   message bus.
-- **Storage.** Postgres or SQLite (system data) and BadgerDB (module
+- **Storage.** Postgres or SQLite (system data) and SQLite (module
   key/value) — both behind the `db` proxy.
 - **Tooling.** [Devbox](https://www.jetify.com/devbox) pins toolchains via
   Nix. Local development runs via Docker (`Dockerfile.dev` +

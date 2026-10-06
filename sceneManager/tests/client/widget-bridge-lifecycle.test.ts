@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { createFrameLoadHandler } from "../../public/scene-manager/widget-bridge";
+import { PROTOCOL_VERSION, WIDGET_PROTOCOL } from "@woofx3/module-sdk";
+import {
+  createFrameLoadHandler,
+  WidgetBridge,
+  type WidgetBridgeCallbacks,
+} from "../../public/scene-manager/widget-bridge";
 
 describe("createFrameLoadHandler", () => {
   it("ignores the first load so it cannot wipe a completed handshake", () => {
@@ -48,5 +53,62 @@ describe("createFrameLoadHandler", () => {
     handlerB();
     expect(a).toBe(1);
     expect(b).toBe(0);
+  });
+});
+
+describe("WidgetBridge settings", () => {
+  const NONCE = "n-1";
+  const noop = () => {};
+  const callbacks: WidgetBridgeCallbacks = {
+    onStorageGet: () => null,
+    onStorageSubscribe: noop,
+    onStorageUnsubscribe: noop,
+    onStatusReport: noop,
+    onEventsSubscribe: noop,
+    onEventsUnsubscribe: noop,
+    onEventComplete: noop,
+    onDispose: noop,
+  };
+
+  function setup() {
+    const posted: Record<string, unknown>[] = [];
+    const contentWindow = {
+      postMessage: (message: Record<string, unknown>) => posted.push(message),
+    };
+    const bridge = new WidgetBridge("inst-1", NONCE, callbacks);
+    bridge.attach({ contentWindow } as unknown as HTMLIFrameElement);
+    const fromWidget = (type: string, extra: Record<string, unknown> = {}) =>
+      bridge.handleMessage({
+        source: contentWindow,
+        data: { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: NONCE, type, moduleId: "mod", ...extra },
+      } as unknown as MessageEvent);
+    return { bridge, posted, fromWidget };
+  }
+
+  it("sends nothing to a widget that never subscribed", () => {
+    const { bridge, posted, fromWidget } = setup();
+    fromWidget("hello");
+    expect(bridge.acceptsSettings()).toBe(false);
+    expect(bridge.sendSettings({ text: "hi" })).toBe(false);
+    expect(posted.some((m) => m.type === "settings.changed")).toBe(false);
+  });
+
+  it("sends a subscribed widget its settings until it unsubscribes", () => {
+    const { bridge, posted, fromWidget } = setup();
+    fromWidget("hello");
+    fromWidget("settings.subscribe");
+    expect(bridge.sendSettings({ text: "hi" })).toBe(true);
+    expect(posted.at(-1)).toMatchObject({ type: "settings.changed", nonce: NONCE, settings: { text: "hi" } });
+
+    fromWidget("settings.unsubscribe");
+    expect(bridge.sendSettings({ text: "bye" })).toBe(false);
+  });
+
+  it("forgets the subscription when the frame navigates", () => {
+    const { bridge, fromWidget } = setup();
+    fromWidget("hello");
+    fromWidget("settings.subscribe");
+    bridge.onFrameLoad();
+    expect(bridge.acceptsSettings()).toBe(false);
   });
 });

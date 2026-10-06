@@ -879,6 +879,30 @@ pub struct ManifestSetting {
     /// have no stored value.
     #[serde(default)]
     pub action: serde_json::Value,
+    /// Required for `type: "resource_ref"`, and only allowed there: the kind
+    /// of resource instance the setting links to (`timer`). The value is the
+    /// linked instance's canonical id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_kind: Option<String>,
+    /// Optional on a `resource_ref` setting: the instance install creates and
+    /// links when the setting is still empty, so the module works without the
+    /// streamer making one first. Created under the module that declares
+    /// `resourceKind`, and reused when it already exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub create: Option<SettingResourceCreate>,
+}
+
+/// The instance a `resource_ref` setting links at install when it is empty.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SettingResourceCreate {
+    /// The instance id segment; the canonical id is
+    /// `{declaring module}:{resourceKind}:{instanceId}`.
+    pub instance_id: String,
+    pub display_name: String,
+    /// The instance's settings, in the shape the kind's `schema` describes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<serde_json::Value>,
 }
 
 impl ManifestSetting {

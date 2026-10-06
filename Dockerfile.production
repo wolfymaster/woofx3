@@ -82,7 +82,7 @@ RUN apt-get update \
 COPY --from=builder --chown=65532:65532 /src/build/dist/linux-amd64/ /app/
 COPY --chown=65532:65532 --chmod=0755 build/entrypoint.sh /app/entrypoint.sh
 
-# State (Badger, a sqlite database, file-backed storage) lives here. Created
+# State (sqlite databases, file-backed storage) lives here. Created
 # owned by the image user so the image works unprivileged with no volume; a
 # host that mounts a root-owned volume here runs the entrypoint as root, which
 # fixes ownership and drops privileges (see build/entrypoint.sh).
@@ -90,6 +90,9 @@ RUN install -d -o 65532 -g 65532 /app/data
 
 WORKDIR /app
 ENV WOOFX3_ROOT=/app
+# Log collectors count lines, not records: pretty JSON spreads one record over
+# a dozen lines and trips per-line rate limits (Railway drops past 500/sec).
+ENV WOOFX3_LOG_PRETTY=false
 
 # The release this image is, reported by GET /ready and getEngineInfo. The
 # release workflow passes the tag; "dev" must match UNVERSIONED in

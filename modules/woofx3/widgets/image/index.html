@@ -31,12 +31,24 @@
       if (!host) {
         return;
       }
-      const settings = host.settings;
       const image = document.getElementById("image");
-      image.style.objectFit = ["contain", "cover", "fill"].includes(settings.fit) ? settings.fit : "contain";
-      image.src = mediaUrl(settings.src);
 
-      playForDuration(host, num(settings.duration, 0), () => {
+      function draw(settings) {
+        image.style.objectFit = ["contain", "cover", "fill"].includes(settings.fit) ? settings.fit : "contain";
+        const src = mediaUrl(settings.src);
+        // Setting the same src again would refetch it.
+        if (image.getAttribute("src") !== src) {
+          image.src = src;
+        }
+      }
+
+      draw(host.settings);
+      // Redrawn as the streamer edits it, rather than reloaded.
+      if (host.onSettings) {
+        host.onSettings(draw);
+      }
+
+      playForDuration(host, num(host.settings.duration, 0), () => {
         image.style.visibility = "hidden";
       });
     })();

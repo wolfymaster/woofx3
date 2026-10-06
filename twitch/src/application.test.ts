@@ -43,7 +43,7 @@ function createMockListener() {
     onChannelChatNotification: mock(() => confirmed()),
     onChannelCheer: mock(() => confirmed()),
     onChannelFollow: mock(() => confirmed()),
-    onChannelHypeTrainBegin: mock(() => confirmed()),
+    onChannelHypeTrainBeginV2: mock(() => confirmed()),
     onChannelRaidTo: mock(() => confirmed()),
     onChannelRedemptionAdd: mock(() => confirmed()),
     onStreamOnline: mock(() => confirmed()),

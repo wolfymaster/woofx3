@@ -101,6 +101,9 @@
 ---@field delete fun(canonical_id: string): nil
 ---@field get fun(canonical_id: string): ResourceInstance|nil
 ---@field list fun(kind: string): ResourceInstance[]
+---Runs the providing module's `{kind}.{verb}` action on the instance, as that
+---module; allowed on an instance this module owns or its settings link to.
+---@field run fun(canonical_id: string, verb: string, params?: table): any
 
 ---One-shot invocations of a function this module declares under the
 ---manifest's `deadlines`. An entry is identified by (deadline id, key);
@@ -185,8 +188,9 @@
 ---`twitch.channel`.
 ---@class CtxTwitchExtension
 ---@field clip fun(): { id: string, url: string }
----@field shoutout fun(args: { userId?: string, userName?: string }): { ok: boolean, userId: string }
+---@field shoutout fun(args: { userId?: string, userName?: string }): { ok: boolean, userId: string, queued: boolean, position?: number, alreadyQueued?: boolean }
 ---@field createMarker fun(args?: { description?: string }): { id: string, createdAt: string, description: string, positionSeconds: number }
+---@field getUser fun(args: { userId?: string, userName?: string }): { userId: string, login: string, displayName: string, description: string, profileImageUrl: string, broadcasterType: string, createdAt: string, title: string, categoryId: string, categoryName: string, tags: string[], language: string, isLive: boolean, stream: { title: string, categoryName: string, viewerCount: number, startedAt: string }? }
 ---@field timeout fun(args: { userId?: string, userName?: string, durationSeconds: number, reason?: string }): { ok: boolean, userId: string, durationSeconds: number }
 ---@field updateStream fun(args: { title?: string, category?: string, categoryId?: string, tags?: string[] }): { ok: boolean, title?: string, categoryId?: string, categoryName?: string, tags?: string[] }
 

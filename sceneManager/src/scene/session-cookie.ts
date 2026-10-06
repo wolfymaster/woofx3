@@ -1,4 +1,16 @@
-export const SESSION_COOKIE_NAME = "sm_session";
+const SESSION_COOKIE_PREFIX = "sm_session_";
+
+/**
+ * One cookie per scene. A browser commonly runs several scenes at once (OBS
+ * shares one cookie store across every browser source), and a single shared
+ * cookie would hold only the scene that refreshed last, so every other scene
+ * would be refused until it refreshed back. The scene is carried in the name
+ * rather than a `Path` because a proxy may mount sceneManager under a prefix,
+ * and a cookie path is matched against the URL the browser sees.
+ */
+export function sessionCookieName(sceneId: string): string {
+  return `${SESSION_COOKIE_PREFIX}${sceneId}`;
+}
 
 /**
  * `Set-Cookie` value for a freshly minted session JWT. HttpOnly (no
@@ -11,20 +23,25 @@ export const SESSION_COOKIE_NAME = "sm_session";
  * iframes included (their `src` still points at sceneManager's own
  * origin).
  */
-export function serializeSessionCookie(token: string, maxAgeSeconds: number): string {
-  return [`${SESSION_COOKIE_NAME}=${token}`, "Path=/", "HttpOnly", "SameSite=Strict", `Max-Age=${maxAgeSeconds}`].join(
-    "; "
-  );
+export function serializeSessionCookie(sceneId: string, token: string, maxAgeSeconds: number): string {
+  return [
+    `${sessionCookieName(sceneId)}=${token}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${maxAgeSeconds}`,
+  ].join("; ");
 }
 
-export function readSessionCookie(req: Request): string | null {
+export function readSessionCookie(req: Request, sceneId: string): string | null {
+  const wanted = sessionCookieName(sceneId);
   const header = req.headers.get("Cookie");
   if (!header) {
     return null;
   }
   for (const part of header.split(";")) {
     const [name, ...rest] = part.trim().split("=");
-    if (name === SESSION_COOKIE_NAME) {
+    if (name === wanted) {
       return rest.join("=") || null;
     }
   }

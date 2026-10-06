@@ -293,6 +293,61 @@ describe("installWidgetHostShim — storage", () => {
   });
 });
 
+describe("installWidgetHostShim — settings", () => {
+  it("onSettings subscribes once and replaces settings before calling back", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const seen: unknown[] = [];
+    const first = host.onSettings((settings) => seen.push(["first", settings.label, host.settings.label]));
+    host.onSettings((settings) => seen.push(["second", settings.label]));
+    expect(h.sent("settings.subscribe").length).toBe(1);
+
+    h.deliver(fromParent({ type: "settings.changed", settings: { label: "lurkers" } }));
+    expect(seen).toEqual([
+      ["first", "lurkers", "lurkers"],
+      ["second", "lurkers"],
+    ]);
+    expect(host.settings).toEqual({ label: "lurkers" });
+    expect(Object.isFrozen(host.settings)).toBe(true);
+
+    first();
+    expect(h.sent("settings.unsubscribe").length).toBe(0);
+  });
+
+  it("unsubscribes when the last callback goes", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    const off = host.onSettings(() => {});
+    off();
+    off();
+    expect(h.sent("settings.unsubscribe").length).toBe(1);
+  });
+
+  it("ignores a settings.changed without a settings object", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    const cb = mock(() => {});
+    host.onSettings(cb);
+    h.deliver(fromParent({ type: "settings.changed", settings: null }));
+    h.deliver(fromParent({ type: "settings.changed", settings: [1] }));
+    expect(cb).not.toHaveBeenCalled();
+    expect(host.settings.label).toBe("watchers");
+  });
+
+  it("queues the subscribe until init", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    host.onSettings(() => {});
+    expect(h.sent("settings.subscribe").length).toBe(0);
+    h.deliver(initMsg());
+    expect(h.sent("settings.subscribe").length).toBe(1);
+  });
+});
+
 describe("installWidgetHostShim — events", () => {
   function makeEvent(overrides: Record<string, unknown> = {}) {
     return {

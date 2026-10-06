@@ -33,8 +33,10 @@ type WorkflowDefinition struct {
 
 	// Enabled flips on/off whether the workflow runtime
 	// (`workflow/manager.go`, `workflow/reconcile.go`) considers this row
-	// a candidate to subscribe / execute. Always `false` at create time;
-	// the UI's `setWorkflowEnabled` action is the canonical toggle.
+	// a candidate to subscribe / execute. `false` at create time for a
+	// workflow someone is authoring; a module's bundled workflow is created
+	// enabled so the module works on install. The UI's `setWorkflowEnabled`
+	// action is the canonical toggle, and a module upgrade never changes it.
 	Enabled bool `gorm:"column:enabled;not null;default:false;index:idx_workflow_definitions_enabled"`
 }
 

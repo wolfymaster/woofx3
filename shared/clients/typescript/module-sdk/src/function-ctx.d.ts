@@ -235,6 +235,17 @@ export interface CtxResources {
   /** One instance, settings included, or null when nothing has the id. */
   get(canonicalId: string): ResourceInstance | null;
   list(kind: string): ResourceInstance[];
+  /**
+   * Run the `{kind}.{verb}` action of the module that provides the
+   * instance's kind, on that instance, as that module:
+   * `run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add`
+   * with `target: timer`. Returns what the action returns.
+   *
+   * Allowed on an instance this module owns or one its settings link to
+   * (a `resource_ref` setting); this module must declare every permission
+   * the providing module does. Throws on refusal or failure.
+   */
+  run(canonicalId: string, verb: string, params?: Record<string, unknown>): unknown;
 }
 
 /**
@@ -370,8 +381,18 @@ export interface TwitchUserTarget {
 export interface CtxTwitchExtension {
   /** Clip the live stream. */
   clip(): { id: string; url: string };
-  /** Twitch's own shoutout of another channel. */
-  shoutout(args: TwitchUserTarget): { ok: true; userId: string };
+  /**
+   * Twitch's own shoutout of another channel. It joins the dashboard's
+   * shoutout queue, which sends one every 2 minutes and retries refusals, so
+   * `queued` with the 1-based `position` (and `alreadyQueued` when the user was
+   * waiting already). An engine with no dashboard queue sends it at once
+   * instead (`queued: false`), and Twitch's rate limit throws `rate_limited`.
+   */
+  shoutout(
+    args: TwitchUserTarget
+  ):
+    | { ok: true; userId: string; queued: true; position: number; alreadyQueued: boolean }
+    | { ok: true; userId: string; queued: false };
   /** Place a stream marker. Throws while the channel is offline: Twitch
    *  only marks a live stream. Description at most 140 characters. */
   createMarker(args?: { description?: string }): {
@@ -381,6 +402,31 @@ export interface CtxTwitchExtension {
     description: string;
     /** How far into the broadcast the marker sits. */
     positionSeconds: number;
+  };
+  /**
+   * Look a Twitch user up: their profile, what their channel is set to, and
+   * their stream while they are live. The category is the channel's current
+   * one, which Twitch keeps after a stream ends, so it is what they last
+   * streamed. Throws when no user has that id or name.
+   */
+  getUser(args: TwitchUserTarget): {
+    userId: string;
+    login: string;
+    displayName: string;
+    description: string;
+    profileImageUrl: string;
+    /** "partner", "affiliate" or "" for neither. */
+    broadcasterType: string;
+    /** When the account was created, ISO 8601. */
+    createdAt: string;
+    title: string;
+    categoryId: string;
+    categoryName: string;
+    tags: string[];
+    language: string;
+    isLive: boolean;
+    /** Null while offline. `startedAt` is ISO 8601. */
+    stream: { title: string; categoryName: string; viewerCount: number; startedAt: string } | null;
   };
   /** Time a chatter out for 1 to 1209600 seconds. Needs `twitch.moderation`. */
   timeout(args: TwitchUserTarget & { durationSeconds: number; reason?: string }): {

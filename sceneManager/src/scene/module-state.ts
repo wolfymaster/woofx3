@@ -114,8 +114,9 @@ function counterReading(settings: Record<string, unknown>, stored: unknown): Cou
   return { value: numberOr(stored, initial), reached: {}, goals };
 }
 
-// A day, the longest a timer can hold.
-const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
+// The latest moment a Date can hold: a timer has no limit of its own, this
+// only keeps a corrupt value from reading as an impossible time.
+const MAX_DATE_MS = 8.64e15;
 
 function timerReading(settings: Record<string, unknown>, stored: unknown, now: number): TimerReading {
   const durationMs = clampTimerMs(numberOr(settings.duration, 300) * 1000);
@@ -130,7 +131,7 @@ function timerReading(settings: Record<string, unknown>, stored: unknown, now: n
 }
 
 function clampTimerMs(ms: number): number {
-  return Math.min(MAX_TIMER_MS, Math.max(0, Math.round(ms)));
+  return Math.min(MAX_DATE_MS, Math.max(0, Math.round(ms)));
 }
 
 function parseGoals(raw: unknown): CounterGoal[] {
@@ -174,9 +175,62 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
   }
 }
 
+/** The slice of DbClient `storageModuleFor` needs (injectable for tests). */
+export interface LinkedResourcesDb {
+  listModuleSettings(moduleId: string): Promise<{ key: string; value: string; valueType: string }[]>;
+}
+
+/** The setting type whose value is a linked resource instance's canonical id. */
+const RESOURCE_REF_SETTING = "resource_ref";
+
+/**
+ * The canonical ids a module's settings link: the values of its
+ * `resource_ref` settings, keyed by setting id. What a widget of the module
+ * may read beyond its own module's storage, and what its boot payload hands
+ * it so it knows which keys to ask for.
+ */
+export async function linkedResources(db: LinkedResourcesDb, moduleId: string): Promise<Record<string, string>> {
+  const linked: Record<string, string> = {};
+  for (const setting of await db.listModuleSettings(moduleId)) {
+    const value = setting.value.trim();
+    if (setting.valueType === RESOURCE_REF_SETTING && value !== "") {
+      linked[setting.key] = value;
+    }
+  }
+  return linked;
+}
+
+/**
+ * Whose storage a widget of `moduleId` reads `key` from: its own module's,
+ * unless the key is the value of a resource instance the module's settings
+ * link, which lives in the instance owner's storage.
+ *
+ * Checked against the settings at every read, so a widget can never name its
+ * way into another module's storage: an instance its module does not link
+ * reads from its own storage, where nothing is.
+ */
+export async function storageModuleFor(db: LinkedResourcesDb, moduleId: string, key: string): Promise<string> {
+  if (!key.startsWith(RESOURCE_STATE_PREFIX)) {
+    return moduleId;
+  }
+  const canonicalId = key.slice(RESOURCE_STATE_PREFIX.length);
+  const owner = canonicalId.split(":")[0] ?? "";
+  if (owner === "" || owner === moduleId) {
+    return moduleId;
+  }
+  const linked = await linkedResources(db, moduleId);
+  return Object.values(linked).includes(canonicalId) ? owner : moduleId;
+}
+
 export class ModuleStateWatch {
-  /** sceneId -> moduleId -> keys some page of that scene has asked for. */
-  private readonly watched = new Map<string, Map<string, Set<string>>>();
+  /**
+   * sceneId -> the module whose storage is read -> key -> the modules the
+   * scene's widgets read it as. A widget reads its own module's storage, so
+   * the two are the same, except for an instance its module links (see
+   * `storageModuleFor`): that is read from the instance's owner and pushed
+   * to the page as the widget's module, which is all the page knows it by.
+   */
+  private readonly watched = new Map<string, Map<string, Map<string, Set<string>>>>();
 
   constructor(
     private readonly db: ModuleStateDb,
@@ -195,7 +249,7 @@ export class ModuleStateWatch {
    * keys the scene's widgets ask for, and a page that reconnects asks again
    * anyway, to catch up on what changed while it was away.
    */
-  async read(sceneId: string, moduleId: string, key: string): Promise<unknown> {
+  async read(sceneId: string, moduleId: string, key: string, readAs: string = moduleId): Promise<unknown> {
     let byModule = this.watched.get(sceneId);
     if (!byModule) {
       byModule = new Map();
@@ -203,10 +257,15 @@ export class ModuleStateWatch {
     }
     let keys = byModule.get(moduleId);
     if (!keys) {
-      keys = new Set();
+      keys = new Map();
       byModule.set(moduleId, keys);
     }
-    keys.add(key);
+    let as = keys.get(key);
+    if (!as) {
+      as = new Set();
+      keys.set(key, as);
+    }
+    as.add(readAs);
 
     const stored = await this.db.getModuleStorageValue(moduleId, key);
     return this.reading(moduleId, key, stored);
@@ -214,13 +273,16 @@ export class ModuleStateWatch {
 
   /** A change announced on the bus, pushed to every connected scene watching it. */
   async publish(moduleId: string, key: string, value: unknown): Promise<void> {
-    const sceneIds = this.watchingScenes(moduleId, key);
-    if (sceneIds.length === 0) {
+    const watching = this.watchingScenes(moduleId, key);
+    if (watching.length === 0) {
       return;
     }
-    const frame: ModuleStateFrame = { moduleId, key, value: await this.reading(moduleId, key, value) };
-    for (const sceneId of sceneIds) {
-      this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+    const reading = await this.reading(moduleId, key, value);
+    for (const { sceneId, readAs } of watching) {
+      for (const as of readAs) {
+        const frame: ModuleStateFrame = { moduleId: as, key, value: reading };
+        this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+      }
     }
   }
 
@@ -232,7 +294,7 @@ export class ModuleStateWatch {
   async resourceUpdated(canonicalId: string): Promise<void> {
     const moduleId = canonicalId.split(":")[0] ?? "";
     const key = `${RESOURCE_STATE_PREFIX}${canonicalId}`;
-    for (const sceneId of this.watchingScenes(moduleId, key)) {
+    for (const { sceneId, readAs } of this.watchingScenes(moduleId, key)) {
       let stored: unknown;
       try {
         stored = await this.db.getModuleStorageValue(moduleId, key);
@@ -244,15 +306,23 @@ export class ModuleStateWatch {
         });
         continue;
       }
-      const frame: ModuleStateFrame = { moduleId, key, value: await this.reading(moduleId, key, stored) };
-      this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+      const reading = await this.reading(moduleId, key, stored);
+      for (const as of readAs) {
+        const frame: ModuleStateFrame = { moduleId: as, key, value: reading };
+        this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+      }
     }
   }
 
-  private watchingScenes(moduleId: string, key: string): string[] {
-    return this.scenes.connectedSceneIds().filter((sceneId) => {
-      return this.watched.get(sceneId)?.get(moduleId)?.has(key) ?? false;
-    });
+  private watchingScenes(moduleId: string, key: string): { sceneId: string; readAs: Set<string> }[] {
+    const watching: { sceneId: string; readAs: Set<string> }[] = [];
+    for (const sceneId of this.scenes.connectedSceneIds()) {
+      const readAs = this.watched.get(sceneId)?.get(moduleId)?.get(key);
+      if (readAs && readAs.size > 0) {
+        watching.push({ sceneId, readAs });
+      }
+    }
+    return watching;
   }
 
   private async reading(moduleId: string, key: string, stored: unknown): Promise<unknown> {

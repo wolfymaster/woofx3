@@ -283,6 +283,32 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                 },
             )?;
         resources.set("list", list_fn)?;
+
+        let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let permissions = invocation.permissions.clone();
+        let deadline = invocation.deadline;
+        let run_fn = lua.create_function(
+            move |lua, (canonical_id, verb, params): (String, String, Option<LuaValue>)| {
+                let json_params: Option<Value> = params
+                    .map(|p| serde_json::to_value(&p))
+                    .transpose()
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                match super::host_bindings::resources_run(
+                    &host,
+                    &module_id,
+                    &permissions,
+                    deadline,
+                    &canonical_id,
+                    &verb,
+                    json_params,
+                ) {
+                    Ok(v) => lua.to_value(&v),
+                    Err(e) => Err(mlua::Error::RuntimeError(e)),
+                }
+            },
+        )?;
+        resources.set("run", run_fn)?;
     }
     ctx.set("resources", resources)?;
 

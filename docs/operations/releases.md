@@ -114,8 +114,8 @@ rule below guarantees.
   a column's type, or adding a constraint that rows written by N-1 would break
   ships at least one release after nothing reads or writes the old shape. The
   same holds for the Postgres and the SQLite chains.
-- **Data on the volume stays readable.** What N writes to Badger, to the SQLite
-  database and to file-backed storage must still be readable by N-1.
+- **Data on the volume stays readable.** What N writes to module storage, to the
+  system database and to file-backed storage must still be readable by N-1.
 - **A release that cannot meet this says so in its release notes**, and must not
   be offered to managed engines (the maintenance API's `ENGINE_VERSION`) while a
   failed upgrade to it would be rolled back automatically.

@@ -263,23 +263,40 @@ jobs:
 
       # semantic-release exits cleanly without releasing when master moved on
       # since the dry run, or when a rerun finds the tag already published.
-      # Only the second may go on to tag the image. The tag is on the
-      # CHANGELOG.md commit, which must sit directly on the commit the
-      # artifacts were built from and change nothing else.
+      # Only the second may go on to tag the image. The first is routine when
+      # pull requests merge minutes apart: the run for the newer push, queued
+      # behind this one, releases these commits along with its own, so this
+      # run ends without tagging rather than failing. Its image stays in the
+      # registry by digest alone. The tag is on the CHANGELOG.md commit, which
+      # must sit directly on the commit the artifacts were built from and
+      # change nothing else.
       - name: Check the release exists
+        id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git fetch --force --tags origin
+          if ! git rev-parse --quiet --verify "refs/tags/${TAG}" > /dev/null; then
+            head="$(git rev-parse origin/master)"
+            if [ "$head" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$head"; then
+              echo "::notice::Not released: master moved on to ${head}, whose run releases these commits."
+              echo "released=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::semantic-release published no ${TAG}, and master has not moved on."
+            exit 1
+          fi
           released="$(git rev-parse "${TAG}^{commit}")"
           test "$(git rev-parse "${released}^")" = "${GITHUB_SHA}"
           test "$(git diff --name-only "${GITHUB_SHA}" "$released")" = "CHANGELOG.md"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > published
           printf '%s\n' "woofx3-${TAG}-linux-amd64.zip" "woofx3-${TAG}-windows-amd64.zip" | sort > expected
           diff expected published
+          echo "released=true" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
+        if: steps.check.outputs.released == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -287,6 +304,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag the image
+        if: steps.check.outputs.released == 'true'
         run: |
           docker buildx imagetools create \
             --tag "${IMAGE_NAME}:${TAG}" \
@@ -294,6 +312,7 @@ jobs:
             "${IMAGE_NAME}@${DIGEST}"
 
       - name: Add the image to the release notes
+        if: steps.check.outputs.released == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -328,3 +347,46 @@ jobs:
           Extract and run \`./start.sh\` (Linux) or \`start.bat\` (Windows). Edit the packaged \`.woofx3.json\` template before production use.
           EOF
           gh release edit "$TAG" --notes-file notes.md
+
+      # The changelog is the release's notes up to the sections the step above
+      # appends, without semantic-release's version heading, which the embed's
+      # title carries. An embed description holds at most 4096 characters, so
+      # a longer changelog is cut at a line and links to the release for the rest.
+      - name: Announce the release on Discord
+        if: steps.check.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_RELEASE_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DISCORD_RELEASE_WEBHOOK_URL" ]; then
+            echo "::error::The DISCORD_RELEASE_WEBHOOK_URL secret is not set."
+            exit 1
+          fi
+          gh release view "$TAG" --json body,url > release.json
+          jq '
+            .url as $url
+            | (.body
+               | split("\n## Container image")[0]
+               | sub("^## \\[[^\n]*\n+"; "")
+               | sub("\\s+$"; "")) as $changelog
+            | {
+                username: "woofx3",
+                embeds: [{
+                  title: "woofx3 \(env.TAG) released",
+                  url: $url,
+                  color: 5793266,
+                  description: (
+                    if ($changelog | length) > 3900 then
+                      ($changelog[:3900] | sub("\n[^\n]*$"; "")) + "\n\n[Full changelog](\($url))"
+                    else
+                      $changelog
+                    end
+                  )
+                }]
+              }
+          ' release.json > discord.json
+          curl --fail-with-body --silent --show-error \
+            --header "Content-Type: application/json" \
+            --data @discord.json \
+            "$DISCORD_RELEASE_WEBHOOK_URL"

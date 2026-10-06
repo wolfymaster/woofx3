@@ -52,6 +52,18 @@ export class AlertWidget {
   }
 
   /**
+   * Take every alert off screen and report each finished, for an area leaving
+   * the page: nothing would ever finish them otherwise, and the server would
+   * hold them on screen until they time out.
+   */
+  dispose(): void {
+    for (const [eventId, tearDown] of [...this.playing]) {
+      tearDown();
+      this.opts.onFinished(eventId);
+    }
+  }
+
+  /**
    * Start one alert. Always accepts the delivery: one that cannot be played
    * still has to finish, or the server redelivers it forever.
    */

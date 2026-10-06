@@ -152,3 +152,16 @@ describe("parseTokenResponse", () => {
     expect(() => parseTokenResponse({ token: { ...GRANT, clientId: "" } })).toThrow("malformed");
   });
 });
+
+describe("linkedDashboardClientId", () => {
+  test("names the dashboard a token came from, and nothing for the engine's own token", async () => {
+    const fromDashboard = new TwitchTokenSource(store({ ...GRANT, dashboardClientId: "dash-client" }).db, () => null);
+    expect(await fromDashboard.linkedDashboardClientId()).toBe("dash-client");
+
+    const own = new TwitchTokenSource(store({ ...GRANT }).db, () => null);
+    expect(await own.linkedDashboardClientId()).toBeNull();
+
+    const none = new TwitchTokenSource(store(null).db, () => null);
+    expect(await none.linkedDashboardClientId()).toBeNull();
+  });
+});

@@ -35,9 +35,6 @@ crash.*.log
 # Build dist
 build/dist
 
-# DB Badger files
-db/badger
-
 # DB migration binary
 db/migrate
 

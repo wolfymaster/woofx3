@@ -27,9 +27,10 @@ describe("applySceneBackground", () => {
     expect(body.style.backgroundColor).toBe("#123456");
   });
 
-  it("leaves the element alone when there is no colour", () => {
+  it("clears a colour the scene no longer sets", () => {
     const body = element();
+    applySceneBackground(body, { backgroundColor: "#123456" });
     applySceneBackground(body, {});
-    expect(body.style.backgroundColor).toBeUndefined();
+    expect(body.style.backgroundColor).toBe("");
   });
 });

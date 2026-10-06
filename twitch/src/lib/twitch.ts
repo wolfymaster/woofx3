@@ -1,5 +1,6 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import type { CreateMarkerArgs, TimeoutArgs, UpdateStreamArgs } from "@woofx3/common/cloudevents/Twitch/commands";
+import type { EnqueueShoutout } from "./shoutoutQueue";
 
 /**
  * Each Twitch API method returns a plain data shape — the dispatcher in
@@ -74,6 +75,15 @@ function characterCount(text: string): number {
   return [...text].length;
 }
 
+/**
+ * `queued`: the shoutout joined the dashboard's shoutout queue, which sends
+ * it in turn; `position` (1-based) and `alreadyQueued` say where. Otherwise
+ * it was sent directly, because this engine has no dashboard queue.
+ */
+export type ShoutoutResult =
+  | { ok: true; userId: string; queued: true; position: number; alreadyQueued: boolean }
+  | { ok: true; userId: string; queued: false };
+
 export interface TimeoutResult {
   ok: true;
   userId: string;
@@ -113,6 +123,36 @@ export interface StreamInfo {
   categoryName: string;
   tags: string[];
   language: string;
+}
+
+export interface GetUserArgs {
+  userId?: string;
+  /** Login name, used when `userId` is absent. */
+  userName?: string;
+}
+
+/**
+ * A Twitch user and their channel. The category is the channel's current
+ * one, which Twitch keeps after the stream ends, so it is what they were last
+ * streaming. `stream` is null while they are offline.
+ */
+export interface TwitchUserInfo {
+  userId: string;
+  login: string;
+  displayName: string;
+  description: string;
+  profileImageUrl: string;
+  /** "partner", "affiliate" or "" for neither. */
+  broadcasterType: string;
+  /** When the account was created, ISO 8601. */
+  createdAt: string;
+  title: string;
+  categoryId: string;
+  categoryName: string;
+  tags: string[];
+  language: string;
+  isLive: boolean;
+  stream: { title: string; categoryName: string; viewerCount: number; startedAt: string } | null;
 }
 
 /** Throws unless `title` is a title Twitch will accept. */
@@ -178,6 +218,7 @@ export const TWITCH_API_COMMANDS = [
   "createMarker",
   "searchCategories",
   "getStreamInfo",
+  "getUser",
   "getAdSchedule",
   "snoozeNextAd",
 ] as const satisfies readonly (keyof TwitchApi)[];
@@ -308,9 +349,14 @@ function wholeSeconds(raw: number | string | undefined): number {
 }
 
 export default class TwitchApi {
+  /**
+   * `enqueueShoutout` hands shoutouts to the dashboard's queue; without it,
+   * every shoutout is sent directly.
+   */
   constructor(
     private apiClient: ApiClient,
-    private broadcaster: HelixUser
+    private broadcaster: HelixUser,
+    private enqueueShoutout?: EnqueueShoutout
   ) {}
 
   async clip(_args: unknown): Promise<ClipResult> {
@@ -353,15 +399,35 @@ export default class TwitchApi {
    * action has whichever the trigger gave them — a raid carries the raider's
    * id, a chat command carries what someone typed.
    *
-   * Twitch rate-limits shoutouts (one every 2 minutes, and one per target per
-   * 60 minutes) and answers a refusal with a 429. That refusal is routine on
-   * a busy raid night, so it carries the `rate_limited` code: a workflow can
-   * skip the shoutout instead of failing the run.
+   * Twitch allows one shoutout every 2 minutes, and one per target every 60
+   * minutes, per channel. So a shoutout joins the dashboard's shoutout queue,
+   * the same one its shoutout widget feeds, which spaces them out and retries
+   * refusals; sending directly as well would spend the 2 minutes the queue is
+   * counting on. Only an engine with no dashboard queue sends directly, and
+   * there a refusal carries the `rate_limited` code.
    */
-  async shoutout(args: { userId?: string; userName?: string }): Promise<{ ok: true; userId: string }> {
-    const target = await this.resolveUserId("shoutout", args);
+  async shoutout(args: { userId?: string; userName?: string }): Promise<ShoutoutResult> {
+    const user = await this.resolveUser("shoutout", args);
+    if (this.enqueueShoutout) {
+      const outcome = await this.enqueueShoutout({
+        twitchUserId: user.id,
+        login: user.name,
+        displayName: user.displayName,
+        profileImageUrl: user.profilePictureUrl || undefined,
+        broadcasterType: user.broadcasterType,
+      });
+      if (outcome.kind === "queued") {
+        return {
+          ok: true,
+          userId: user.id,
+          queued: true,
+          position: outcome.position,
+          alreadyQueued: outcome.alreadyQueued,
+        };
+      }
+    }
     try {
-      await this.apiClient.chat.shoutoutUser(this.broadcaster, target);
+      await this.apiClient.chat.shoutoutUser(this.broadcaster, user.id);
     } catch (err) {
       if (httpStatusOf(err) === 429) {
         throw new TwitchApiError(
@@ -371,7 +437,7 @@ export default class TwitchApi {
       }
       throw err;
     }
-    return { ok: true, userId: target };
+    return { ok: true, userId: user.id, queued: false };
   }
 
   /**
@@ -540,6 +606,38 @@ export default class TwitchApi {
     };
   }
 
+  /** Who a user is, what their channel is set to, and whether they are live. Needs no scope. */
+  async getUser(args: GetUserArgs): Promise<TwitchUserInfo> {
+    const user = await this.resolveUser("getUser", args);
+    const [channel, stream] = await Promise.all([
+      this.apiClient.channels.getChannelInfoById(user.id),
+      this.apiClient.streams.getStreamByUserId(user.id),
+    ]);
+    return {
+      userId: user.id,
+      login: user.name,
+      displayName: user.displayName,
+      description: user.description,
+      profileImageUrl: user.profilePictureUrl,
+      broadcasterType: user.broadcasterType,
+      createdAt: user.creationDate.toISOString(),
+      title: channel?.title ?? "",
+      categoryId: channel?.gameId ?? "",
+      categoryName: channel?.gameName ?? "",
+      tags: channel?.tags ?? [],
+      language: channel?.language ?? "",
+      isLive: stream !== null,
+      stream: stream
+        ? {
+            title: stream.title,
+            categoryName: stream.gameName,
+            viewerCount: stream.viewers,
+            startedAt: stream.startDate.toISOString(),
+          }
+        : null,
+    };
+  }
+
   /**
    * Push the next ad back by five minutes, spending one snooze. Twitch
    * answers a snooze with none left, or with no ad scheduled, with a 400,
@@ -587,6 +685,24 @@ export default class TwitchApi {
       throw new Error(`updateStream: no Twitch category matches "${query}"`);
     }
     return match;
+  }
+
+  /** The user named by whichever of id/name the caller had. */
+  private async resolveUser(command: string, args: GetUserArgs): Promise<HelixUser> {
+    const userId = args?.userId?.trim();
+    const userName = args?.userName?.trim().replace(/^@/, "");
+    if (!userId && !userName) {
+      throw new Error(`${command}: userId or userName is required`);
+    }
+    const user = userId
+      ? await this.apiClient.users.getUserById(userId)
+      : await this.apiClient.users.getUserByName(userName as string);
+    if (!user) {
+      throw new Error(
+        userId ? `${command}: no Twitch user with id ${userId}` : `${command}: no Twitch user named "${userName}"`
+      );
+    }
+    return user;
   }
 
   /** A user id from whichever of id/name the caller had. */

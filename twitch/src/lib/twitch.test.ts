@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ApiClient, HelixUser } from "@twurple/api";
+import type { EnqueueOutcome, ShoutoutTarget } from "./shoutoutQueue";
 import TwitchApi, {
   isTwitchApiCommand,
   normalizeHelixTime,
@@ -13,23 +14,91 @@ import TwitchApi, {
 
 const BROADCASTER = { id: "broadcaster-1" } as HelixUser;
 
+const TARGET = {
+  id: "target-1",
+  name: "wolfymaster",
+  displayName: "WolfyMaster",
+  profilePictureUrl: "https://img/target-1.png",
+  broadcasterType: "affiliate",
+};
+
 function apiClientWith(overrides: { shoutoutUser?: ReturnType<typeof mock>; getUserByName?: ReturnType<typeof mock> }) {
   const shoutoutUser = overrides.shoutoutUser ?? mock(async (..._args: unknown[]) => {});
-  const getUserByName = overrides.getUserByName ?? mock(async (..._args: unknown[]) => ({ id: "target-1" }));
+  const getUserByName = overrides.getUserByName ?? mock(async (..._args: unknown[]) => TARGET);
+  const getUserById = mock(async (..._args: unknown[]) => TARGET);
   return {
-    client: { chat: { shoutoutUser }, users: { getUserByName } } as unknown as ApiClient,
+    client: { chat: { shoutoutUser }, users: { getUserByName, getUserById } } as unknown as ApiClient,
     shoutoutUser,
     getUserByName,
+    getUserById,
   };
 }
 
-describe("shoutout", () => {
-  test("shouts out a user id without looking anything up", async () => {
-    const { client, shoutoutUser, getUserByName } = apiClientWith({});
-    const api = new TwitchApi(client, BROADCASTER);
+function queue(outcome: EnqueueOutcome | Error) {
+  return mock(async (_target: ShoutoutTarget): Promise<EnqueueOutcome> => {
+    if (outcome instanceof Error) {
+      throw outcome;
+    }
+    return outcome;
+  });
+}
 
-    expect(await api.shoutout({ userId: "target-1" })).toEqual({ ok: true, userId: "target-1" });
-    expect(getUserByName).not.toHaveBeenCalled();
+describe("shoutout", () => {
+  test("joins the dashboard's queue with who the user is, instead of sending", async () => {
+    const { client, shoutoutUser, getUserById } = apiClientWith({});
+    const enqueue = queue({ kind: "queued", position: 2, alreadyQueued: false });
+    const api = new TwitchApi(client, BROADCASTER, enqueue);
+
+    expect(await api.shoutout({ userId: "target-1" })).toEqual({
+      ok: true,
+      userId: "target-1",
+      queued: true,
+      position: 2,
+      alreadyQueued: false,
+    });
+    expect(getUserById.mock.calls[0]).toEqual(["target-1"]);
+    expect(enqueue.mock.calls[0]).toEqual([
+      {
+        twitchUserId: "target-1",
+        login: "wolfymaster",
+        displayName: "WolfyMaster",
+        profileImageUrl: "https://img/target-1.png",
+        broadcasterType: "affiliate",
+      },
+    ]);
+    expect(shoutoutUser).not.toHaveBeenCalled();
+  });
+
+  test("says when the user was already waiting in the queue", async () => {
+    const { client } = apiClientWith({});
+    const api = new TwitchApi(client, BROADCASTER, queue({ kind: "queued", position: 1, alreadyQueued: true }));
+
+    expect(await api.shoutout({ userName: "wolfymaster" })).toMatchObject({ queued: true, alreadyQueued: true });
+  });
+
+  // Sending directly after a failed enqueue could shout the user out twice, if
+  // the dashboard queued it after all.
+  test("fails rather than sending directly when the queue cannot take it", async () => {
+    const { client, shoutoutUser } = apiClientWith({});
+    const api = new TwitchApi(
+      client,
+      BROADCASTER,
+      queue(new Error("shoutout: could not queue the shoutout: HTTP 500"))
+    );
+
+    await expect(api.shoutout({ userId: "target-1" })).rejects.toThrow("could not queue the shoutout");
+    expect(shoutoutUser).not.toHaveBeenCalled();
+  });
+
+  test("sends directly when the engine has no dashboard queue", async () => {
+    const { client, shoutoutUser } = apiClientWith({});
+    const api = new TwitchApi(
+      client,
+      BROADCASTER,
+      queue({ kind: "no_queue", reason: "not linked through a dashboard" })
+    );
+
+    expect(await api.shoutout({ userId: "target-1" })).toEqual({ ok: true, userId: "target-1", queued: false });
     expect(shoutoutUser.mock.calls[0]).toEqual([BROADCASTER, "target-1"]);
   });
 
@@ -52,7 +121,7 @@ describe("shoutout", () => {
     await expect(api.shoutout({ userName: "ghost" })).rejects.toThrow('no Twitch user named "ghost"');
   });
 
-  test("reports Twitch's rate limit with the rate_limited code", async () => {
+  test("reports Twitch's rate limit on a direct send with the rate_limited code", async () => {
     const limited = Object.assign(new Error("Encountered HTTP status code 429: Too Many Requests"), {
       statusCode: 429,
     });
@@ -85,9 +154,11 @@ describe("shoutout", () => {
 
   test("refuses a shoutout that names nobody", async () => {
     const { client, shoutoutUser } = apiClientWith({});
-    const api = new TwitchApi(client, BROADCASTER);
+    const enqueue = queue({ kind: "queued", position: 1, alreadyQueued: false });
+    const api = new TwitchApi(client, BROADCASTER, enqueue);
 
     await expect(api.shoutout({})).rejects.toThrow("userId or userName is required");
+    expect(enqueue).not.toHaveBeenCalled();
     expect(shoutoutUser).not.toHaveBeenCalled();
   });
 });
@@ -551,5 +622,94 @@ describe("getStreamInfo", () => {
       tags: ["English"],
       language: "en",
     });
+  });
+});
+
+describe("getUser", () => {
+  const USER = {
+    id: "user-1",
+    name: "wolfymaster",
+    displayName: "WolfyMaster",
+    description: "Code and chaos",
+    profilePictureUrl: "https://img/user-1.png",
+    broadcasterType: "affiliate",
+    creationDate: new Date("2015-03-01T12:00:00Z"),
+  };
+  const CHANNEL = {
+    title: "Building bots",
+    gameId: "1469308723",
+    gameName: "Software and Game Development",
+    tags: ["English"],
+    language: "en",
+  };
+
+  function client(stream: unknown) {
+    const getUserById = mock(async (..._args: unknown[]) => USER);
+    const getUserByName = mock(async (..._args: unknown[]) => USER);
+    const getChannelInfoById = mock(async (..._args: unknown[]) => CHANNEL);
+    const getStreamByUserId = mock(async (..._args: unknown[]) => stream);
+    const apiClient = {
+      users: { getUserById, getUserByName },
+      channels: { getChannelInfoById },
+      streams: { getStreamByUserId },
+    } as unknown as ApiClient;
+    return { apiClient, getUserById, getUserByName, getChannelInfoById, getStreamByUserId };
+  }
+
+  test("reads the profile and the channel's last category while offline", async () => {
+    const { apiClient, getUserByName, getChannelInfoById, getStreamByUserId } = client(null);
+    const api = new TwitchApi(apiClient, BROADCASTER);
+
+    expect(await api.getUser({ userName: "@wolfymaster" })).toEqual({
+      userId: "user-1",
+      login: "wolfymaster",
+      displayName: "WolfyMaster",
+      description: "Code and chaos",
+      profileImageUrl: "https://img/user-1.png",
+      broadcasterType: "affiliate",
+      createdAt: "2015-03-01T12:00:00.000Z",
+      title: "Building bots",
+      categoryId: "1469308723",
+      categoryName: "Software and Game Development",
+      tags: ["English"],
+      language: "en",
+      isLive: false,
+      stream: null,
+    });
+    expect(getUserByName.mock.calls[0]).toEqual(["wolfymaster"]);
+    expect(getChannelInfoById.mock.calls[0]).toEqual(["user-1"]);
+    expect(getStreamByUserId.mock.calls[0]).toEqual(["user-1"]);
+  });
+
+  test("adds the live stream when they are live", async () => {
+    const { apiClient, getUserById, getUserByName } = client({
+      title: "Raid train",
+      gameName: "Just Chatting",
+      viewers: 42,
+      startDate: new Date("2026-10-03T18:00:00Z"),
+    });
+    const api = new TwitchApi(apiClient, BROADCASTER);
+
+    const info = await api.getUser({ userId: "user-1" });
+    expect(info.isLive).toBe(true);
+    expect(info.stream).toEqual({
+      title: "Raid train",
+      categoryName: "Just Chatting",
+      viewerCount: 42,
+      startedAt: "2026-10-03T18:00:00.000Z",
+    });
+    expect(getUserById.mock.calls[0]).toEqual(["user-1"]);
+    expect(getUserByName).not.toHaveBeenCalled();
+  });
+
+  test("says which user it could not find, and needs one", async () => {
+    const { apiClient, getUserByName, getUserById } = client(null);
+    getUserByName.mockImplementation(async () => null as never);
+    getUserById.mockImplementation(async () => null as never);
+    const api = new TwitchApi(apiClient, BROADCASTER);
+
+    await expect(api.getUser({ userName: "ghost" })).rejects.toThrow('getUser: no Twitch user named "ghost"');
+    await expect(api.getUser({ userId: "404" })).rejects.toThrow("getUser: no Twitch user with id 404");
+    await expect(api.getUser({ userName: " " })).rejects.toThrow("userId or userName is required");
   });
 });
