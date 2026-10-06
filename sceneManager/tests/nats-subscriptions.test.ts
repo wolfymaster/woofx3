@@ -243,7 +243,8 @@ describe("module setting changes", () => {
       }
       return handler({ subject: "db.module.setting.updated.system", json: () => ({ data }) });
     };
-    const relayChanged = () => handlers.get("engine.relay.config.updated")?.({ subject: "engine.relay.config.updated" });
+    const relayChanged = () =>
+      handlers.get("engine.relay.config.updated")?.({ subject: "engine.relay.config.updated" });
     return { deliver, relayChanged, reconnects };
   }
 
