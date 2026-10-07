@@ -114,7 +114,28 @@ export interface AlertWidgetsConfigFieldSource {
   kind: "alertWidgets";
 }
 
-export type ConfigFieldSource = { kind: "commands" } | InternalConfigFieldSource | AlertWidgetsConfigFieldSource;
+/** The user's scenes; the value is the scene id. */
+export interface ScenesConfigFieldSource {
+  kind: "scenes";
+}
+
+/**
+ * The widgets placed on one of the user's scenes; the value is the
+ * placement id. Which scene is read from another field of the same form,
+ * named by `sceneField`, whose source is `scenes`: a placement id means
+ * nothing without its scene.
+ */
+export interface ScenePlacementsConfigFieldSource {
+  kind: "scenePlacements";
+  sceneField: string;
+}
+
+export type ConfigFieldSource =
+  | { kind: "commands" }
+  | InternalConfigFieldSource
+  | AlertWidgetsConfigFieldSource
+  | ScenesConfigFieldSource
+  | ScenePlacementsConfigFieldSource;
 
 export interface ConfigField {
   /** Stable field id; the key the collected value is stored under. */
