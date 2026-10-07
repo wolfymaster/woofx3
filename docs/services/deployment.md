@@ -112,6 +112,11 @@ s3://<bucket>/engines/<engine-id>/storage?endpoint=https://<account>.r2.cloudfla
   replica URL; Litestream uploads the existing file as its first snapshot.
   Replicated to local: start once with the URL on a host with no file, so it
   restores, then remove the URL.
+- **Sharing the asset bucket.** The replica can live in the same bucket as
+  barkloader's assets (`S3_BUCKET`) under a prefix of its own, such as
+  `module-storage`. Barkloader keeps to its `user/`, `modules/` and
+  `archives/` prefixes, so the two never overlap; any cleanup added to
+  barkloader must stay inside those prefixes, or it can delete the replica.
 
 **One writer per replica path.** Two engines writing the same bucket path can
 leave a replica that cannot be restored. Give every engine its own path, and
@@ -138,7 +143,7 @@ is still running after 25 seconds.
    announced.
 2. db-proxy and the message bus are signalled once those services have exited,
    or their 8 seconds are up. db-proxy stops serving, then closes module
-   storage, which makes the final flush to the replica (bounded at 15 seconds).
+   storage, which makes the final flush to the replica (bounded at 10 seconds).
 
 The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
 Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
