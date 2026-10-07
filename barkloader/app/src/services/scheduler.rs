@@ -62,6 +62,9 @@ impl Clock for SystemClock {
 
 /// Runs one module function to completion. Implemented by `SandboxFactory`;
 /// the tests supply their own.
+// async-trait marks each method it rewrites `#[must_use]`, and its boxed
+// future already is; clippy 1.99 flags that pairing in the generated code.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait FunctionInvoker: Send + Sync + 'static {
     async fn invoke(&self, request: InvokeRequest) -> Result<(), String>;

@@ -25,6 +25,9 @@ use super::db_proxy::{
     ResourceInstanceJson, ResourceUsage, SettingInputJson, TriggerInputJson, WidgetInputJson,
 };
 
+// async-trait marks each method it rewrites `#[must_use]`, and its boxed
+// future already is; clippy 1.99 flags that pairing in the generated code.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait ModuleDbProxy: Send + Sync {
     // module lifecycle

@@ -21,7 +21,6 @@ use types::{AppContext, SharedRepository};
 
 mod bundled_modules;
 mod callback;
-mod errors;
 mod routes;
 mod services;
 mod types;
