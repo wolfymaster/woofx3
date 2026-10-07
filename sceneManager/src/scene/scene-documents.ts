@@ -239,8 +239,9 @@ export type SubmitResult =
 
 interface HeldVersion {
   snapshot: SceneSnapshot;
-  /** The most recent ops, oldest first, for transforming late submits. */
-  log: Array<{ seq: number; ops: Json0Component[] }>;
+  /** The most recent ops, oldest first, for transforming late submits, with
+   *  the op id each was submitted under, to know a resubmit. */
+  log: Array<{ seq: number; ops: Json0Component[]; opId: string | null }>;
   saveTimer: ReturnType<typeof setTimeout> | null;
   /** The document last written back, to know the database's echo of it. */
   written: SceneDocument | null;
@@ -341,6 +342,12 @@ export class SceneDocuments {
       }
       const target = held[version];
       const seq = target.snapshot.seq;
+      // An editor that reconnects resends what it has no ack for; ops this
+      // already applied are acknowledged, not applied twice.
+      const applied = opId === null ? undefined : target.log.find((entry) => entry.opId === opId);
+      if (applied) {
+        return { ok: true, seq: applied.seq };
+      }
       if (!Number.isInteger(base) || base > seq) {
         return { ok: false, error: "resync", detail: "base is ahead of the scene" };
       }
@@ -556,7 +563,7 @@ export class SceneDocuments {
     const metaChanges = changedMeta(before.meta, meta);
     const seq = before.seq + 1;
     target.snapshot = { ...before, name: name ?? before.name, seq, doc, meta };
-    target.log.push({ seq, ops });
+    target.log.push({ seq, ops, opId });
     if (target.log.length > OP_LOG_LIMIT) {
       target.log.splice(0, target.log.length - OP_LOG_LIMIT);
     }

@@ -298,3 +298,13 @@ describe("documentOf + storedSceneOf", () => {
     expect(doc.widgets.a).toMatchObject({ name: "", rotation: 0, opacity: 1, locked: false, extra: {} });
   });
 });
+
+describe("SceneDocuments — resubmits", () => {
+  it("acknowledges ops it already applied rather than applying them twice", async () => {
+    const { documents } = setup(scene([instance("a")]));
+    const op = [{ p: ["widgets", "a", "settings", "text", 2], si: "!" }];
+    expect(await documents.submit("s1", "draft", 0, op, "op-1")).toEqual({ ok: true, seq: 1 });
+    expect(await documents.submit("s1", "draft", 0, op, "op-1")).toEqual({ ok: true, seq: 1 });
+    expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a!.settings.text).toBe("hi!");
+  });
+});
