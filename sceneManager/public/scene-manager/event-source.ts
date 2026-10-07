@@ -21,6 +21,7 @@
 // ReconnectCoordinator (see reconnect-coordinator.ts).
 
 import { ALWAYS_PROBE, type ReconnectCoordinator } from "./reconnect-coordinator";
+import { type SceneOpsEvent, parseSceneOpsEvent } from "./scene-document";
 
 export interface DeliveryFrame {
   eventId: string;
@@ -45,24 +46,25 @@ export interface CancelFrame {
 
 /** The stream carries five frame kinds: per-event deliveries, module
  *  storage changes, the `hello` control frame the server opens every
- *  stream with, `scene-updated` when the scene's saved config changes,
- *  and `cancel` when an operator skips or clears alerts. */
+ *  stream with, `scene-ops` when the scene changes, and `cancel` when an
+ *  operator skips or clears alerts. */
 export type SceneFrame =
   | { kind: "delivery"; frame: DeliveryFrame }
   | { kind: "module-state"; frame: ModuleStateFrame }
-  | { kind: "hello"; bootId: string }
-  | { kind: "scene-updated" }
+  | { kind: "hello"; bootId: string; seq: number }
+  | { kind: "scene-ops"; event: SceneOpsEvent }
   | { kind: "cancel"; frame: CancelFrame };
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
   onModuleState?(frame: ModuleStateFrame): void;
   onConnectionChange(connected: boolean): void;
-  /** Server boot identity for the stream just opened. Changes across a
-   *  sceneManager restart; see index.ts for what that triggers. */
-  onHello?(bootId: string): void;
-  /** The scene's saved config changed; the one baked into this page is stale. */
-  onSceneUpdated?(): void;
+  /** Server boot identity for the stream just opened, and the scene ops
+   *  the page should be up to. The boot id changes across a sceneManager
+   *  restart; see index.ts for what that triggers. */
+  onHello?(bootId: string, seq: number): void;
+  /** The scene changed: the ops for the next sequence number. */
+  onSceneOps?(event: SceneOpsEvent): void;
   /** The server closed deliveries the page may still be holding. */
   onCancel?(frame: CancelFrame): void;
   /** The server rejected our session cookie. Unlike every other
@@ -114,12 +116,13 @@ export function parseSseChunk(rawEvent: string): SceneFrame | null {
 
   if (eventName === "hello") {
     return typeof parsed.bootId === "string" && parsed.bootId.length > 0
-      ? { kind: "hello", bootId: parsed.bootId }
+      ? { kind: "hello", bootId: parsed.bootId, seq: typeof parsed.seq === "number" ? parsed.seq : 0 }
       : null;
   }
 
-  if (eventName === "scene-updated") {
-    return { kind: "scene-updated" };
+  if (eventName === "scene-ops") {
+    const event = parseSceneOpsEvent(parsed);
+    return event ? { kind: "scene-ops", event } : null;
   }
 
   if (eventName === "cancel") {
@@ -284,11 +287,11 @@ export class SceneEventSource {
             continue;
           }
           if (parsed.kind === "hello") {
-            this.sink?.onHello?.(parsed.bootId);
+            this.sink?.onHello?.(parsed.bootId, parsed.seq);
           } else if (parsed.kind === "module-state") {
             this.sink?.onModuleState?.(parsed.frame);
-          } else if (parsed.kind === "scene-updated") {
-            this.sink?.onSceneUpdated?.();
+          } else if (parsed.kind === "scene-ops") {
+            this.sink?.onSceneOps?.(parsed.event);
           } else if (parsed.kind === "cancel") {
             this.sink?.onCancel?.(parsed.frame);
           } else {

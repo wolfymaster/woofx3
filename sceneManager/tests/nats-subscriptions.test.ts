@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { reportAlertNotPlayed } from "../src/events/alert-dispatch";
-import { initSubscriptions, notifySceneUpdated, SCENE_UPDATED_EVENT } from "../src/nats-subscriptions";
+import { initSubscriptions, notifySceneUpdated } from "../src/nats-subscriptions";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
@@ -77,33 +77,33 @@ describe("reportAlertNotPlayed", () => {
 });
 
 describe("notifySceneUpdated", () => {
-  function broadcaster() {
-    const calls: Array<{ sceneId: string; event: string; data: unknown }> = [];
+  function documents() {
+    const refreshed: string[] = [];
     return {
-      calls,
+      refreshed,
       scenes: {
-        broadcast: (sceneId: string, event: string, data: unknown) => {
-          calls.push({ sceneId, event, data });
+        refresh: async (sceneId: string) => {
+          refreshed.push(sceneId);
         },
       },
     };
   }
 
-  it("pushes scene-updated to the scene the db event names", () => {
-    const { calls, scenes } = broadcaster();
+  it("hands the save of the scene the db event names to the scene documents", () => {
+    const { refreshed, scenes } = documents();
 
     expect(notifySceneUpdated(scenes, { data: { id: "scene-1" } })).toBe("scene-1");
 
-    expect(calls).toEqual([{ sceneId: "scene-1", event: SCENE_UPDATED_EVENT, data: { sceneId: "scene-1" } }]);
+    expect(refreshed).toEqual(["scene-1"]);
   });
 
-  it("pushes nothing for an event without a scene id", () => {
-    const { calls, scenes } = broadcaster();
+  it("hands on nothing for an event without a scene id", () => {
+    const { refreshed, scenes } = documents();
 
     expect(notifySceneUpdated(scenes, { data: {} })).toBeNull();
     expect(notifySceneUpdated(scenes, {})).toBeNull();
 
-    expect(calls).toEqual([]);
+    expect(refreshed).toEqual([]);
   });
 });
 
@@ -148,6 +148,7 @@ describe("alert queue control subjects", () => {
       deliveryStore: deliveryStore as any,
       moduleState: {} as any,
       resolver: {} as any,
+      sceneDocuments: { refresh: async () => {} },
       logger: fakeLogger(),
     });
     return handlers;
@@ -234,6 +235,7 @@ describe("module setting changes", () => {
       deliveryStore: {} as any,
       moduleState: {} as any,
       resolver: {} as any,
+      sceneDocuments: { refresh: async () => {} },
       logger: fakeLogger(),
     });
     const deliver = (data: unknown) => {
@@ -297,6 +299,7 @@ describe("module setting changes", () => {
       deliveryStore: {} as never,
       moduleState: {} as never,
       resolver: {} as never,
+      sceneDocuments: { refresh: async () => {} },
       logger: fakeLogger(),
     });
     const handler = handlers.get("engine.obs.status");

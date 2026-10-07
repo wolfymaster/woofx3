@@ -19,6 +19,8 @@ export interface WidgetPlacementConfig {
   frameUrl: string;
   /** The resource instances the widget's module links, handed to the frame. */
   linkedResources?: Record<string, string>;
+  /** False for a placement hidden in the editor; absent means shown. */
+  visible?: boolean;
 }
 
 export interface SceneConfig {

@@ -37,6 +37,7 @@ interface InitArgs {
   deliveryStore: DeliveryStore;
   moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
+  sceneDocuments: SavedScenes;
   logger: Logger;
 }
 
@@ -52,29 +53,25 @@ interface SceneUpdatedEnvelope {
   data?: { id?: unknown };
 }
 
-/** SSE event name telling a scene's open overlays their config is stale. */
-export const SCENE_UPDATED_EVENT = "scene-updated";
-
-/** The slice of `DeliveryStore` a scene-updated push needs. */
-interface SceneBroadcaster {
-  broadcast(sceneId: string, event: string, data: unknown): void;
+/** The slice of `SceneDocuments` a save is handed to. */
+interface SavedScenes {
+  refresh(sceneId: string): Promise<void>;
 }
 
 /**
- * Tell every overlay open on a scene that its saved config changed.
+ * A scene was saved: bring its open overlays up to date.
  *
- * The shell bakes the scene config into the page when it loads, so an
- * overlay open in OBS keeps rendering the old layout until it reloads.
- * Pushing the change down the stream it already holds is what lets a
- * save in the dashboard reach OBS without anyone pressing refresh.
- * Returns the scene id it notified, or null for an envelope with none.
+ * The scene documents diff the save against what the overlays hold and push
+ * the difference down the stream they already have open, as sequenced ops,
+ * so a save in the dashboard reaches OBS without a reload. Returns the scene
+ * id it handed on, or null for an envelope with none.
  */
-export function notifySceneUpdated(scenes: SceneBroadcaster, envelope: SceneUpdatedEnvelope): string | null {
+export function notifySceneUpdated(scenes: SavedScenes, envelope: SceneUpdatedEnvelope): string | null {
   const sceneId = typeof envelope.data?.id === "string" ? envelope.data.id : "";
   if (!sceneId) {
     return null;
   }
-  scenes.broadcast(sceneId, SCENE_UPDATED_EVENT, { sceneId });
+  void scenes.refresh(sceneId);
   return sceneId;
 }
 
@@ -115,7 +112,19 @@ interface WidgetEventEnvelope {
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, obs, obsStatus, relayConfigMovesObs, db, host, deliveryStore, moduleState, resolver, logger } = args;
+  const {
+    nats,
+    obs,
+    obsStatus,
+    relayConfigMovesObs,
+    db,
+    host,
+    deliveryStore,
+    moduleState,
+    resolver,
+    sceneDocuments,
+    logger,
+  } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -319,7 +328,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
       return;
     }
-    if (!notifySceneUpdated(deliveryStore, envelope)) {
+    if (!notifySceneUpdated(sceneDocuments, envelope)) {
       logger.warn("db.scene.updated: missing scene id; dropping", { subject: msg.subject });
     }
   });

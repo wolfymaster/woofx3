@@ -21,7 +21,17 @@ describe("parseSseChunk", () => {
   });
 
   it("parses the hello control frame", () => {
-    expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a"}')).toEqual({ kind: "hello", bootId: "boot-a" });
+    expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a","seq":4}')).toEqual({
+      kind: "hello",
+      bootId: "boot-a",
+      seq: 4,
+    });
+    // A server from before scene ops sends no seq.
+    expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a"}')).toEqual({
+      kind: "hello",
+      bootId: "boot-a",
+      seq: 0,
+    });
   });
 
   it("parses a module-state frame", () => {
@@ -33,8 +43,10 @@ describe("parseSseChunk", () => {
     });
   });
 
-  it("parses a scene-updated frame", () => {
-    expect(parseSseChunk('event: scene-updated\ndata: {"sceneId":"s1"}')).toEqual({ kind: "scene-updated" });
+  it("parses a scene-ops frame, and drops a malformed one", () => {
+    const event = { seq: 3, ops: [{ p: ["widgets", "w1", "x"], od: 0, oi: 40 }], meta: {} };
+    expect(parseSseChunk(`event: scene-ops\ndata: ${JSON.stringify(event)}`)).toEqual({ kind: "scene-ops", event });
+    expect(parseSseChunk('event: scene-ops\ndata: {"seq":"3"}')).toBeNull();
   });
 
   it("returns null for a module-state frame with no key", () => {

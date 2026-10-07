@@ -16,6 +16,7 @@ function placement(overrides: Partial<OverlayWidgetInstance>): OverlayWidgetInst
     position: { x: 0, y: 0, width: 100, height: 100 },
     settings: {},
     resolved: true,
+    visible: true,
     hostsSurface: "",
     frameUrl: "",
     ...overrides,

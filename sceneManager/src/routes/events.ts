@@ -50,7 +50,10 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
         // carries this process's boot identity so a reconnecting
         // overlay can detect that it came back to a *restarted*
         // sceneManager rather than resuming against the same one.
-        controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify({ bootId: deps.bootId })}\n\n`));
+        // It also says which scene ops the overlay should be up to, so one
+        // that missed some while its stream was down resyncs.
+        const hello = { bootId: deps.bootId, seq: deps.sceneDocuments.seqOf(sceneId) };
+        controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`));
         // A scene can sit idle far longer than any idle timeout on the
         // path: Bun.serve reaps a silent connection (see `idleTimeout`
         // in http.ts), and reverse proxies do the same. Without this

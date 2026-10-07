@@ -41,6 +41,8 @@ export interface OverlayWidgetInstance {
   /** The resource instances the widget's module links (see `linkedResources`
    *  in module-state.ts), handed to the frame with the placement. */
   linkedResources?: Record<string, string>;
+  /** False for a placement hidden in the editor. */
+  visible: boolean;
   /**
    * False when this placement's `widgetCanonicalId` matches no widget in the
    * catalog — the widget was renamed, or its module was uninstalled, and the
@@ -145,6 +147,16 @@ export class OverlayHost {
   }
 
   /** The page's scene config, each placement framed for this engine. */
+  /** A scene with each placement framed for this engine (see `PlacementFraming`).
+   *  Authorization is the caller's, as for `loadSceneById`. */
+  async loadFramedSceneById(sceneId: string): Promise<OverlaySceneState | null> {
+    const state = await this.loadSceneById(sceneId);
+    if (!state || !this.framing) {
+      return state;
+    }
+    return { ...state, instances: await this.framing.frame(state.instances) };
+  }
+
   private async configOf(state: OverlaySceneState | null): Promise<Record<string, unknown>> {
     if (!state || !this.framing) {
       return sceneConfigOf(state);
@@ -500,6 +512,7 @@ export class OverlayHost {
       manifestId: parsed.manifestId,
       position: normalizePosition(w),
       settings,
+      visible: w.visible !== false,
       // Placements carry none; `resolveInstances` takes it from the widget
       // definition.
       hostsSurface: "",
@@ -531,6 +544,7 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         hostsSurface: w.hostsSurface,
         frameUrl: w.frameUrl,
         linkedResources: w.linkedResources ?? {},
+        visible: w.visible,
         resolved: w.resolved,
       })),
     },
