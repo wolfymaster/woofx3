@@ -6,6 +6,7 @@ import {
   type SceneOpsEvent,
   type SceneSnapshot,
   diffDocuments,
+  stackOrder,
   zKey,
 } from "../../public/scene-manager/scene-document";
 import { sameValue } from "../../public/scene-manager/scene-update";
@@ -25,12 +26,40 @@ export interface SceneBroadcaster {
   connectedSceneIds(): string[];
 }
 
+/** The fields of a stored placement the document models; the rest go to `extra`. */
+const MODELED_FIELDS = new Set([
+  "id",
+  "widgetCanonicalId",
+  "widgetDefinitionRef",
+  "name",
+  "position",
+  "size",
+  "rotation",
+  "opacity",
+  "zIndex",
+  "locked",
+  "visible",
+  "settings",
+]);
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 /** A scene state as a document: placements keyed by id, stacked as saved. */
 export function documentOf(state: OverlaySceneState): SceneDocument {
   const widgets: SceneDocument["widgets"] = {};
   state.instances.forEach((instance, index) => {
+    const stored = instance.stored ?? {};
+    const extra: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(stored)) {
+      if (!MODELED_FIELDS.has(key)) {
+        extra[key] = value;
+      }
+    }
     widgets[instance.id] = {
-      widget: instance.widgetCanonicalId,
+      // As stored, so writing the scene back does not rewrite the id.
+      widget: typeof stored.widgetCanonicalId === "string" ? stored.widgetCanonicalId : instance.widgetCanonicalId,
       x: instance.position.x,
       y: instance.position.y,
       width: instance.position.width,
@@ -38,9 +67,40 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
       visible: instance.visible,
       z: zKey(index),
       settings: instance.settings,
+      name: typeof stored.name === "string" ? stored.name : "",
+      rotation: numberOr(stored.rotation, 0),
+      opacity: numberOr(stored.opacity, 1),
+      locked: stored.locked === true,
+      extra,
     };
   });
   return { layout: { ...state.layout }, widgets };
+}
+
+/**
+ * A document in the shapes the database stores and the editor reads:
+ * `widgets_json` is the placements in stacking order, each as the editor
+ * writes one, and `layout_json` the layout.
+ */
+export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string } {
+  const widgets = stackOrder(doc).map((id, index) => {
+    const p = doc.widgets[id]!;
+    return {
+      ...p.extra,
+      id,
+      widgetCanonicalId: p.widget,
+      name: p.name,
+      position: { x: p.x, y: p.y },
+      size: { width: p.width, height: p.height },
+      rotation: p.rotation,
+      opacity: p.opacity,
+      zIndex: index,
+      locked: p.locked,
+      visible: p.visible,
+      settings: p.settings,
+    };
+  });
+  return { widgetsJson: JSON.stringify(widgets), layoutJson: JSON.stringify(doc.layout) };
 }
 
 /** What each placement of a framed scene state needs beyond the document. */

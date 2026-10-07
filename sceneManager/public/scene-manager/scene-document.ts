@@ -29,6 +29,13 @@ export interface PlacementDocument {
   /** Stacking, bottom first, as a key that sorts as text (see `zKey`). */
   z: string;
   settings: Record<string, unknown>;
+  /** What only the editor reads: overlays ignore these. */
+  name: string;
+  rotation: number;
+  opacity: number;
+  locked: boolean;
+  /** Any other field a placement was stored with, kept as it was. */
+  extra: Record<string, unknown>;
 }
 
 export interface SceneDocument {

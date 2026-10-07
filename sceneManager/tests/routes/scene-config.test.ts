@@ -10,7 +10,21 @@ const SNAPSHOT: SceneSnapshot = {
   doc: {
     layout: {},
     widgets: {
-      w1: { widget: "woofx3:widget:text", x: 1, y: 2, width: 3, height: 4, visible: true, z: "a0000", settings: {} },
+      w1: {
+        widget: "woofx3:widget:text",
+        x: 1,
+        y: 2,
+        width: 3,
+        height: 4,
+        visible: true,
+        z: "a0000",
+        settings: {},
+        name: "Text",
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+        extra: {},
+      },
     },
   },
   meta: { w1: { moduleId: "woofx3", hostsSurface: "", frameUrl: "/frames/woofx3/text?v=x", linkedResources: {} } },

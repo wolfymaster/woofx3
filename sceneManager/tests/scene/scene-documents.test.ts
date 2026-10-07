@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { applyOps } from "../../public/scene-manager/scene-document";
-import { SCENE_OPS_EVENT, SceneDocuments } from "../../src/scene/scene-documents";
+import { SCENE_OPS_EVENT, SceneDocuments, documentOf, storedSceneOf } from "../../src/scene/scene-documents";
 import type { OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function logger() {
@@ -123,5 +123,52 @@ describe("SceneDocuments", () => {
     await documents.refresh("s1");
     expect(sent).toEqual([]);
     expect(documents.seqOf("s1")).toBe(0);
+  });
+});
+
+describe("documentOf + storedSceneOf", () => {
+  it("writes a scene back as the editor stored it, unknown fields included", () => {
+    const stored = {
+      id: "a",
+      widgetCanonicalId: "woofx3:widget:text",
+      name: "Raid banner",
+      position: { x: 10, y: 20 },
+      size: { width: 300, height: 80 },
+      rotation: 15,
+      opacity: 0.5,
+      zIndex: 0,
+      locked: true,
+      visible: false,
+      settings: { text: "hi" },
+      futureField: { keep: "me" },
+    };
+    const doc = documentOf(
+      scene([
+        instance("a", {
+          stored,
+          position: { x: 10, y: 20, width: 300, height: 80 },
+          visible: false,
+          settings: { text: "hi" },
+        }),
+      ])
+    );
+    expect(doc.widgets.a).toMatchObject({ name: "Raid banner", rotation: 15, opacity: 0.5, locked: true });
+    expect(doc.widgets.a!.extra).toEqual({ futureField: { keep: "me" } });
+    expect(JSON.parse(storedSceneOf(doc).widgetsJson)).toEqual([stored]);
+  });
+
+  it("stores placements in stacking order with zIndex to match", () => {
+    const doc = documentOf(scene([instance("a"), instance("b")]));
+    doc.widgets.a!.z = "a0009";
+    const widgets = JSON.parse(storedSceneOf(doc).widgetsJson);
+    expect(widgets.map((w: { id: string; zIndex: number }) => [w.id, w.zIndex])).toEqual([
+      ["b", 0],
+      ["a", 1],
+    ]);
+  });
+
+  it("gives a placement stored before the editor tracked these fields their defaults", () => {
+    const doc = documentOf(scene([instance("a", { stored: { id: "a", widgetCanonicalId: "woofx3:widget:text" } })]));
+    expect(doc.widgets.a).toMatchObject({ name: "", rotation: 0, opacity: 1, locked: false, extra: {} });
   });
 });
