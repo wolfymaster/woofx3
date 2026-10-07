@@ -7,9 +7,35 @@ import type { SessionTokenService } from "../scene/session-token";
 /** Largest message an editor may send: one submit's ops and their envelope. */
 export const MAX_EDITOR_MESSAGE_BYTES = 128 * 1024;
 
+/** What one editor tells the others about itself: who, and what it has selected. */
+export interface EditorPresence {
+  name: string;
+  /** The placement id it has selected, or null. */
+  selection: string | null;
+}
+
 export interface EditorSocketData {
   sceneId: string;
   unsubscribe: (() => void) | null;
+  /** This connection's id among the scene's editors. */
+  editorId: string;
+  presence: EditorPresence | null;
+}
+
+const MAX_PRESENCE_NAME = 64;
+const MAX_PLACEMENT_ID = 128;
+
+/** A presence message's fields, or null when they are not valid. */
+export function parsePresence(message: Record<string, unknown>): EditorPresence | null {
+  const name = typeof message.name === "string" ? message.name.trim().slice(0, MAX_PRESENCE_NAME) : "";
+  const selection = message.selection;
+  if (
+    selection !== null &&
+    (typeof selection !== "string" || selection.length === 0 || selection.length > MAX_PLACEMENT_ID)
+  ) {
+    return null;
+  }
+  return { name, selection };
 }
 
 export interface EditorDeps {
@@ -35,7 +61,7 @@ export async function handleEditorUpgrade(
   if (!claims || claims.sceneId !== sceneId) {
     return new Response("unauthorized", { status: 401, headers: { "Cache-Control": "no-store" } });
   }
-  const data: EditorSocketData = { sceneId, unsubscribe: null };
+  const data: EditorSocketData = { sceneId, unsubscribe: null, editorId: crypto.randomUUID(), presence: null };
   if (server.upgrade(req, { data })) {
     return undefined;
   }
@@ -53,6 +79,7 @@ function isVersion(value: unknown): value is SceneVersion {
  *   { type: "submit", version, base, opId, ops }   json0 ops made against `base`
  *   { type: "publish" } | { type: "discard" }
  *   { type: "snapshot", version }                   resync one version
+ *   { type: "presence", name, selection }           who this editor is and what it has selected
  *
  * To the editor:
  *   { type: "snapshot", version, snapshot, hasDraft }   on open (both), and on request
@@ -62,12 +89,21 @@ function isVersion(value: unknown): value is SceneVersion {
  *       the answer to each submit, after its ops; a resync reject is followed
  *       by a fresh snapshot of that version
  *   { type: "published" | "discarded", hasDraft }
+ *   { type: "presence", editorId, name, selection }  another editor's, on open and as it changes
+ *   { type: "presence", editorId, left: true }       another editor closed the scene
+ *
+ * Presence is relayed between the scene's editors as it is and kept nowhere:
+ * it is who is looking at what right now, not part of the scene.
  */
 export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorSocketData> {
   const docs = deps.sceneDocuments;
   const send = (ws: ServerWebSocket<EditorSocketData>, message: unknown) => {
     ws.send(JSON.stringify(message));
   };
+  /** Every open editor socket, by scene. */
+  const editors = new Map<string, Set<ServerWebSocket<EditorSocketData>>>();
+  const others = (ws: ServerWebSocket<EditorSocketData>) =>
+    [...(editors.get(ws.data.sceneId) ?? [])].filter((other) => other !== ws);
   const sendSnapshot = async (ws: ServerWebSocket<EditorSocketData>, version: SceneVersion) => {
     const snapshot = await docs.snapshot(ws.data.sceneId, version);
     send(ws, { type: "snapshot", version, snapshot, hasDraft: docs.hasDraft(ws.data.sceneId) });
@@ -88,6 +124,17 @@ export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorS
       ws.data.unsubscribe = unsubscribe;
       await sendSnapshot(ws, "published");
       await sendSnapshot(ws, "draft");
+      let sceneEditors = editors.get(sceneId);
+      if (!sceneEditors) {
+        sceneEditors = new Set();
+        editors.set(sceneId, sceneEditors);
+      }
+      sceneEditors.add(ws);
+      for (const other of others(ws)) {
+        if (other.data.presence) {
+          send(ws, { type: "presence", editorId: other.data.editorId, ...other.data.presence });
+        }
+      }
     },
     async message(ws, raw) {
       let message: Record<string, unknown>;
@@ -134,6 +181,17 @@ export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorS
               await sendSnapshot(ws, message.version);
             }
             return;
+          case "presence": {
+            const presence = parsePresence(message);
+            if (!presence) {
+              return;
+            }
+            ws.data.presence = presence;
+            for (const other of others(ws)) {
+              send(other, { type: "presence", editorId: ws.data.editorId, ...presence });
+            }
+            return;
+          }
           default:
             return;
         }
@@ -149,6 +207,15 @@ export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorS
     close(ws) {
       ws.data.unsubscribe?.();
       ws.data.unsubscribe = null;
+      const sceneEditors = editors.get(ws.data.sceneId);
+      if (sceneEditors?.delete(ws)) {
+        for (const other of sceneEditors) {
+          send(other, { type: "presence", editorId: ws.data.editorId, left: true });
+        }
+        if (sceneEditors.size === 0) {
+          editors.delete(ws.data.sceneId);
+        }
+      }
     },
   };
 }

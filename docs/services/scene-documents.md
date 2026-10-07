@@ -87,6 +87,12 @@ once. Every change is pushed to every editor, its own tagged with its op id,
 and each submit is answered with `ack` or `reject`; a `resync` reject comes
 with a fresh snapshot.
 
+Editors also tell each other who they are and which widget each has
+selected (`presence`), so the editor can show where others are working.
+That is relayed between the scene's open editors as it is and kept nowhere:
+a newcomer is told the others' current selections, and an editor that
+closes the scene clears its own.
+
 ## Drafts and live editing
 
 Edits go to the draft by default: the editor's preview (`?view=draft`)
