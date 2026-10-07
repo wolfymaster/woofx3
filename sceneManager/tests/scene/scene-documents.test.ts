@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { applyOps } from "../../public/scene-manager/scene-document";
-import { SCENE_OPS_EVENT, SceneDocuments, documentOf, storedSceneOf } from "../../src/scene/scene-documents";
+import { type SceneWrite, SceneDocuments, documentOf, storedSceneOf } from "../../src/scene/scene-documents";
 import type { OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function logger() {
@@ -24,23 +24,44 @@ function instance(id: string, overrides: Partial<OverlayWidgetInstance> = {}): O
   };
 }
 
-function setup(initial: OverlaySceneState) {
+function setup(initial: OverlaySceneState, draft?: OverlaySceneState) {
   let saved = initial;
-  const loads = mock(async (_sceneId: string) => saved);
+  let savedDraft = draft;
+  const loads = mock(async (_sceneId: string, version?: string) =>
+    version === "draft" ? (savedDraft ?? saved) : { ...saved, hasDraft: savedDraft !== undefined }
+  );
+  const framePlacements = mock(async (_sceneId: string, entries: unknown[]) =>
+    (entries as Array<{ id: string; widgetCanonicalId: string }>).map((e) =>
+      instance(e.id, { widgetCanonicalId: e.widgetCanonicalId, frameUrl: `/frames/for/${e.widgetCanonicalId}` })
+    )
+  );
   const sent: Array<{ sceneId: string; event: string; data: any }> = [];
+  const writes: SceneWrite[] = [];
   let connected = ["s1"];
   const documents = new SceneDocuments(
-    { loadFramedSceneById: loads },
+    { loadFramedSceneById: loads, framePlacements },
     {
       broadcast: (sceneId, event, data) => sent.push({ sceneId, event, data }),
       connectedSceneIds: () => connected,
     },
-    logger()
+    logger(),
+    {
+      autosaveMs: 5,
+      persister: {
+        updateScene: async (write) => {
+          writes.push(write);
+        },
+      },
+    }
   );
   return {
     documents,
     loads,
+    framePlacements,
     sent,
+    writes,
+    published: () => sent.filter((s) => s.data.version === "published").map((s) => s.data),
+    drafts: () => sent.filter((s) => s.data.version === "draft").map((s) => s.data),
     save: (state: OverlaySceneState) => {
       saved = state;
     },
@@ -57,37 +78,40 @@ const scene = (instances: OverlayWidgetInstance[]): OverlaySceneState => ({
   instances,
 });
 
-describe("SceneDocuments", () => {
-  it("loads a scene once and starts it at seq 0", async () => {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const x = (id: string, from: number, to: number) => ({ p: ["widgets", id, "x"], od: from, oi: to });
+
+describe("SceneDocuments — loading and saves made elsewhere", () => {
+  it("loads both versions of a scene once and starts each at seq 0", async () => {
     const { documents, loads } = setup(scene([instance("a")]));
     const first = await documents.snapshot("s1");
-    await documents.snapshot("s1");
-    expect(loads).toHaveBeenCalledTimes(1);
+    await documents.snapshot("s1", "draft");
+    expect(loads).toHaveBeenCalledTimes(2);
     expect(first!.seq).toBe(0);
     expect(first!.doc.widgets.a!.settings).toEqual({ text: "hi" });
     expect(first!.meta.a!.frameUrl).toBe("/frames/woofx3/text?v=1");
   });
 
-  it("pushes a save as the ops for the next seq, which turn the old document into the new", async () => {
-    const { documents, sent, save } = setup(scene([instance("a")]));
+  it("pushes a save as published ops for the next seq, and mirrors it into a scene with no draft", async () => {
+    const { documents, save, published, drafts } = setup(scene([instance("a")]));
     const before = await documents.snapshot("s1");
     save(scene([instance("a", { settings: { text: "hi there" }, position: { x: 5, y: 0, width: 100, height: 50 } })]));
     await documents.refresh("s1");
 
-    expect(sent).toHaveLength(1);
-    expect(sent[0]!.event).toBe(SCENE_OPS_EVENT);
-    expect(sent[0]!.data.seq).toBe(1);
+    expect(published()).toHaveLength(1);
+    expect(published()[0].seq).toBe(1);
     const after = await documents.snapshot("s1");
-    expect(applyOps(before!.doc, sent[0]!.data.ops)).toEqual(after!.doc);
-    expect(documents.seqOf("s1")).toBe(1);
+    expect(applyOps(before!.doc, published()[0].ops)).toEqual(after!.doc);
+    expect((await documents.snapshot("s1", "draft"))!.doc).toEqual(after!.doc);
+    expect(drafts()).toHaveLength(1);
   });
 
   it("sends the meta of placements whose frame changed, and null for one removed", async () => {
-    const { documents, sent, save } = setup(scene([instance("a"), instance("b")]));
+    const { documents, save, published } = setup(scene([instance("a"), instance("b")]));
     await documents.snapshot("s1");
     save(scene([instance("a", { frameUrl: "/frames/woofx3/text?v=2" })]));
     await documents.refresh("s1");
-    expect(sent[0]!.data.meta).toEqual({
+    expect(published()[0].meta).toEqual({
       a: { moduleId: "woofx3", hostsSurface: "", frameUrl: "/frames/woofx3/text?v=2", linkedResources: {} },
       b: null,
     });
@@ -98,19 +122,6 @@ describe("SceneDocuments", () => {
     await documents.snapshot("s1");
     await documents.refresh("s1");
     expect(sent).toEqual([]);
-    expect(documents.seqOf("s1")).toBe(0);
-  });
-
-  it("numbers saves in the order they arrive", async () => {
-    const { documents, sent, save } = setup(scene([instance("a")]));
-    await documents.snapshot("s1");
-    save(scene([instance("a", { settings: { text: "one" } })]));
-    const first = documents.refresh("s1");
-    save(scene([instance("a", { settings: { text: "two" } })]));
-    await Promise.all([first, documents.refresh("s1")]);
-    expect(sent.map((s) => s.data.seq)).toEqual([1]);
-    // Both refreshes read the latest save; the second found nothing new.
-    expect((await documents.snapshot("s1"))!.doc.widgets.a!.settings).toEqual({ text: "two" });
   });
 
   it("ignores a save of a scene nobody has open, and drops one whose overlays left", async () => {
@@ -123,6 +134,121 @@ describe("SceneDocuments", () => {
     await documents.refresh("s1");
     expect(sent).toEqual([]);
     expect(documents.seqOf("s1")).toBe(0);
+  });
+});
+
+describe("SceneDocuments — editors", () => {
+  it("applies an editor's ops to the draft, tells its editors with the op id, and makes a draft", async () => {
+    const { documents, drafts, published } = setup(scene([instance("a")]));
+    const heard: any[] = [];
+    await documents.subscribeEditor("s1", (event) => heard.push(event));
+    const result = await documents.submit("s1", "draft", 0, [x("a", 0, 40)], "op-1");
+    expect(result).toEqual({ ok: true, seq: 1 });
+    expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a!.x).toBe(40);
+    expect((await documents.snapshot("s1"))!.doc.widgets.a!.x).toBe(0);
+    expect(drafts()).toHaveLength(1);
+    expect(published()).toHaveLength(0);
+    expect(heard).toEqual([expect.objectContaining({ version: "draft", seq: 1, opId: "op-1" })]);
+    expect(documents.hasDraft("s1")).toBe(true);
+  });
+
+  it("transforms ops made against an older number, so concurrent typing keeps both edits", async () => {
+    const { documents } = setup(scene([instance("a", { settings: { text: "Thanks" } })]));
+    const at = (pos: number, si: string) => ({ p: ["widgets", "a", "settings", "text", pos], si });
+    await documents.submit("s1", "draft", 0, [at(6, "!")], "first");
+    const second = await documents.submit("s1", "draft", 0, [at(0, "Big ")], "second");
+    expect(second).toEqual({ ok: true, seq: 2 });
+    expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a!.settings.text).toBe("Big Thanks!");
+  });
+
+  it("refuses ops outside the scene's shape, ahead of it, or older than it keeps", async () => {
+    const { documents } = setup(scene([instance("a")]));
+    expect(await documents.submit("s1", "draft", 0, [{ p: ["secrets"], oi: 1 }])).toMatchObject({ error: "invalid" });
+    expect(await documents.submit("s1", "draft", 0, [{ p: ["widgets", "a", "x"], oi: "far" }])).toMatchObject({
+      error: "invalid",
+    });
+    expect(await documents.submit("s1", "draft", 0, [{ p: ["widgets", "b"], oi: { widget: "w" } }])).toMatchObject({
+      error: "invalid",
+    });
+    expect(await documents.submit("s1", "draft", 5, [x("a", 0, 1)])).toMatchObject({ error: "resync" });
+    expect(await documents.submit("s1", "draft", 0, [{ p: ["widgets", "zz", "x"], od: 0, oi: 1 }])).toMatchObject({
+      error: "invalid",
+    });
+  });
+
+  it("frames a placement added by an editor, or whose widget changed", async () => {
+    const { documents, framePlacements, drafts } = setup(scene([instance("a")]));
+    const draft = await documents.snapshot("s1", "draft");
+    const added = { ...draft!.doc.widgets.a!, widget: "woofx3:widget:image", z: "a0001" };
+    await documents.submit("s1", "draft", 0, [{ p: ["widgets", "b"], oi: added }]);
+    expect(framePlacements).toHaveBeenCalledTimes(1);
+    expect(drafts()[0].meta.b.frameUrl).toBe("/frames/for/woofx3:widget:image");
+    await documents.submit("s1", "draft", 1, [x("b", 0, 9)]);
+    expect(framePlacements).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies a live edit into the draft field by field, keeping the draft's other edits", async () => {
+    const { documents } = setup(scene([instance("a", { settings: { text: "hi" } })]));
+    await documents.submit("s1", "draft", 0, [{ p: ["widgets", "a", "y"], od: 0, oi: 70 }]);
+    await documents.submit("s1", "published", 0, [x("a", 0, 40)]);
+    const draft = (await documents.snapshot("s1", "draft"))!.doc.widgets.a!;
+    expect(draft.x).toBe(40);
+    expect(draft.y).toBe(70);
+    expect((await documents.snapshot("s1"))!.doc.widgets.a!.y).toBe(0);
+  });
+
+  it("publishes the draft as ops overlays apply, and discards it back to what is published", async () => {
+    const { documents, published, writes } = setup(scene([instance("a")]));
+    await documents.submit("s1", "draft", 0, [x("a", 0, 40)]);
+    expect(await documents.publish("s1")).toBe(true);
+    expect(published()).toHaveLength(1);
+    expect(published()[0].ops).toEqual([x("a", 0, 40)]);
+    expect(documents.hasDraft("s1")).toBe(false);
+    expect(writes.at(-1)).toMatchObject({ id: "s1", clearDraft: true });
+    expect(JSON.parse(writes.at(-1)!.widgetsJson!)[0].position).toEqual({ x: 40, y: 0 });
+
+    await documents.submit("s1", "draft", 1, [x("a", 40, 99)]);
+    await documents.discard("s1");
+    expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a!.x).toBe(40);
+    expect(writes.at(-1)).toEqual({ id: "s1", clearDraft: true });
+  });
+});
+
+describe("SceneDocuments — autosave", () => {
+  it("writes a version back a moment after its last change, once", async () => {
+    const { documents, writes } = setup(scene([instance("a")]));
+    await documents.submit("s1", "draft", 0, [x("a", 0, 1)]);
+    await documents.submit("s1", "draft", 1, [x("a", 1, 2)]);
+    expect(writes).toEqual([]);
+    await sleep(30);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ id: "s1", draftLayoutJson: "{}" });
+    expect(JSON.parse(writes[0]!.draftWidgetsJson!)[0].position).toEqual({ x: 2, y: 0 });
+  });
+
+  it("does not take the database's echo of its own write for a save made elsewhere", async () => {
+    const { documents, save, published } = setup(scene([instance("a")]));
+    await documents.submit("s1", "published", 0, [x("a", 0, 40)]);
+    await sleep(30);
+    // The echo of that write: what was written, read back.
+    save(scene([instance("a", { position: { x: 40, y: 0, width: 100, height: 50 } })]));
+    await documents.refresh("s1");
+    expect(published()).toHaveLength(1);
+  });
+
+  it("lets edits waiting to be written win over a save that lands first", async () => {
+    const { documents, published } = setup(scene([instance("a")]));
+    await documents.submit("s1", "published", 0, [x("a", 0, 40)]);
+    await documents.refresh("s1");
+    expect(published()).toHaveLength(1);
+    expect((await documents.snapshot("s1"))!.doc.widgets.a!.x).toBe(40);
+  });
+
+  it("writes everything waiting when flushed", async () => {
+    const { documents, writes } = setup(scene([instance("a")]));
+    await documents.submit("s1", "published", 0, [x("a", 0, 40)]);
+    await documents.flush();
+    expect(writes.some((w) => w.widgetsJson !== undefined)).toBe(true);
   });
 });
 

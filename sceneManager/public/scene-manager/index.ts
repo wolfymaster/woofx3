@@ -137,6 +137,8 @@ function main(): void {
   // /scene/session/refresh (missing sceneId) instead of
   // /scene/{sceneId}/session/refresh.
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
+  // The editor's preview shows the draft; every other overlay what is published.
+  const view = new URLSearchParams(location.search).get("view") === "draft" ? "draft" : "published";
 
   const bridges = new Set<WidgetBridge>();
   // Every placed element by widget instance id, for the editor's live layout.
@@ -540,6 +542,9 @@ function main(): void {
    * ops that do not apply, means this page missed some: it resyncs.
    */
   function applySceneOps(event: SceneOpsEvent): void {
+    if ((event.version ?? "published") !== view) {
+      return;
+    }
     if (sceneDoc && event.seq <= sceneDoc.seq) {
       return;
     }
@@ -586,7 +591,10 @@ function main(): void {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ widgets: draft }),
           })
-        : await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
+        : await fetch(`${sceneBase}/config${view === "draft" ? "?view=draft" : ""}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
     } catch {
       return draft ? { kind: "keep" } : { kind: "reload" };
     }
@@ -684,7 +692,8 @@ function main(): void {
     // The scene changed. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.
     onSceneOps: applySceneOps,
-    onHello: (bootId, seq) => {
+    onHello: (bootId, publishedSeq, draftSeq) => {
+      const seq = view === "draft" ? draftSeq : publishedSeq;
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
         return;

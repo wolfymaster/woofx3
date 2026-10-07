@@ -324,6 +324,12 @@ export class OverlayHost {
     return this.configOf({ ...saved, instances });
   }
 
+  /** Placements given as stored, parsed, resolved and framed like a loaded scene's. */
+  async framePlacements(sceneId: string, entries: unknown[]): Promise<OverlayWidgetInstance[]> {
+    const instances = await this.resolveDraftPlacements(sceneId, entries);
+    return this.framing ? this.framing.frame(instances) : instances;
+  }
+
   /** Unsaved placements, parsed and resolved like saved ones. */
   async resolveDraftPlacements(sceneId: string, draftPlacements: unknown[]): Promise<OverlayWidgetInstance[]> {
     const instances: OverlayWidgetInstance[] = [];
