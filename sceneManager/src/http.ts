@@ -10,6 +10,7 @@ import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
+import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
@@ -86,7 +87,8 @@ function withCors(res: Response, corsHeaders: Record<string, string> = CORS_HEAD
  */
 export function createHttpServer(deps: HttpDeps) {
   const { ctx } = deps;
-  return Bun.serve({
+  const editorDeps = { sessionTokens: deps.sessionTokens, sceneDocuments: deps.sceneDocuments, logger: ctx.logger };
+  return Bun.serve<EditorSocketData>({
     port: ctx.runtimeConfig.port,
     hostname: ctx.runtimeConfig.bindHost,
     // Bun's 10s default reaps the SSE stream between events, so the
@@ -100,8 +102,17 @@ export function createHttpServer(deps: HttpDeps) {
     // small-JSON routes inherit the same ceiling; that is the trade for
     // one upload limit rather than two that disagree.
     maxRequestBodySize: MAX_UPLOAD_BYTES,
-    fetch: async (req) => {
+    // The scene editor's socket (routes/editor.ts).
+    websocket: editorSocketHandlers(editorDeps),
+    fetch: async (req, server) => {
       const url = new URL(req.url);
+
+      // GET /scene/{sceneId}/edit — upgraded outside the request span, since
+      // a socket that opens returns no response for the span to end with.
+      const editorMatch = /^\/scene\/([^/]+)\/edit$/.exec(url.pathname);
+      if (editorMatch && req.method === "GET") {
+        return handleEditorUpgrade(req, server, decodeURIComponent(editorMatch[1]!), editorDeps);
+      }
 
       if (req.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeadersFor(url.pathname) });

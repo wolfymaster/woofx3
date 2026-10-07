@@ -40,7 +40,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { FrameCatalog } = await import("./scene/frame-catalog");
     const { SceneDocuments } = await import("./scene/scene-documents");
-    const { SessionTokenService } = await import("./scene/session-token");
+    const { EDITOR_TOKEN_TTL_SECONDS, SessionTokenService } = await import("./scene/session-token");
+    const { sceneEditorPath } = await import("@woofx3/common/cloudevents/Scene/editor");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
@@ -178,6 +179,17 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       moduleState,
       resolver,
       sceneDocuments,
+      editorToken: async (sceneId) => {
+        if (!(await host.loadSceneById(sceneId))) {
+          return { ok: false, reason: "scene not found" };
+        }
+        return {
+          ok: true,
+          token: await sessionTokens.mintEditor({ sceneId }),
+          expiresInSeconds: EDITOR_TOKEN_TTL_SECONDS,
+          path: sceneEditorPath(sceneId),
+        };
+      },
       logger: ctx.logger,
     });
 

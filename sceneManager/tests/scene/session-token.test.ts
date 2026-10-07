@@ -39,3 +39,19 @@ describe("SessionTokenService", () => {
     expect(() => new SessionTokenService("")).toThrow();
   });
 });
+
+describe("SessionTokenService — editor tokens", () => {
+  const tokens = new SessionTokenService("test-secret");
+
+  it("lets an editor token open the editor, and nothing else", async () => {
+    const editor = await tokens.mintEditor({ sceneId: "s1" });
+    expect(await tokens.verifyEditor(editor)).toEqual({ sceneId: "s1" });
+    expect(await tokens.verify(editor)).toBeNull();
+  });
+
+  it("never lets an overlay's session edit the scene", async () => {
+    const session = await tokens.mint({ sceneId: "s1" });
+    expect(await tokens.verify(session)).toEqual({ sceneId: "s1" });
+    expect(await tokens.verifyEditor(session)).toBeNull();
+  });
+});

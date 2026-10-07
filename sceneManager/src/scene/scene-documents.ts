@@ -368,10 +368,12 @@ export class SceneDocuments {
       if (JSON.stringify(doc).length > MAX_DOCUMENT_BYTES) {
         return { ok: false, error: "invalid", detail: "the scene would be too large" };
       }
-      await this.commit(held, version, transformed, doc, opId);
+      // Before the commit, so the change goes out saying the draft exists.
       if (version === "draft") {
         held.hasDraft = true;
-      } else {
+      }
+      await this.commit(held, version, transformed, doc, opId);
+      if (version === "published") {
         await this.mirrorIntoDraft(held, transformed);
       }
       return { ok: true, seq: held[version].snapshot.seq };
