@@ -43,6 +43,12 @@ export const ENGINE_CAPABILITIES = {
    * token, so the dashboard need not send one.
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
+  /**
+   * Editing a scene live with sceneManager: `getSceneEditorSession`, the
+   * editor socket it opens (sequenced json0 ops on a draft and the published
+   * scene, publish, discard) and autosave in place of `updateScene`.
+   */
+  scenesEditorSessions: "scenes.editorSessions",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
 } as const;
