@@ -768,11 +768,11 @@ mod tests {
                 tokio::time::sleep(*hold).await;
             }
             let mut failures = self.failures.lock().unwrap();
-            if let Some(remaining) = failures.get_mut(&request.function) {
-                if *remaining > 0 {
-                    *remaining -= 1;
-                    return Err("not ready".to_string());
-                }
+            if let Some(remaining) = failures.get_mut(&request.function)
+                && *remaining > 0
+            {
+                *remaining -= 1;
+                return Err("not ready".to_string());
             }
             Ok(())
         }
@@ -1156,7 +1156,7 @@ mod tests {
         }
         advance(1).await;
         let heap_len = h.scheduler.inner.lock().heap.len();
-        assert!(heap_len <= 2 * 1 + 64, "heap holds {heap_len} items");
+        assert!(heap_len <= 2 + 64, "heap holds {heap_len} items");
     }
 
     /// The schedule the bundled woofx3 module declares, as registration reads

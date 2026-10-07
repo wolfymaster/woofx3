@@ -28,6 +28,7 @@ use super::db_proxy::{
 #[async_trait]
 pub trait ModuleDbProxy: Send + Sync {
     // module lifecycle
+    #[allow(clippy::too_many_arguments)]
     async fn create_module(
         &self,
         display_name: &str,
@@ -508,10 +509,10 @@ impl ModuleDbProxy for HttpDbProxyClient {
             .create_workflow(request)
             .await
             .map_err(|e| anyhow!("CreateWorkflow request failed: {}", e))?;
-        if let Some(status) = response.status {
-            if status.code != 0 {
-                return Err(anyhow!("CreateWorkflow failed: {}", status.message));
-            }
+        if let Some(status) = response.status
+            && status.code != 0
+        {
+            return Err(anyhow!("CreateWorkflow failed: {}", status.message));
         }
         Ok(())
     }

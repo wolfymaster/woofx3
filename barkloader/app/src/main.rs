@@ -78,7 +78,7 @@ async fn setup() -> Result<AppContext> {
         services::scheduler::SystemClock,
     )));
 
-    let mut oauth_service: Option<Arc<OAuthService>> = None;
+    let oauth_service: Option<Arc<OAuthService>>;
     // `ctx.resources.run` runs actions in a sandbox built from the very
     // context it is part of, so it is handed that context once it exists.
     let action_runner = SandboxActionRunner::new(registry.clone());

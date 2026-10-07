@@ -119,6 +119,9 @@ pub enum RepositoryImpl {
 
 pub struct RepositoryFactory {}
 impl RepositoryFactory {
+    /// Builds the backend the config names. A factory, so it returns that
+    /// backend rather than `Self`.
+    #[allow(clippy::new_ret_no_self)]
     pub async fn new(config: &RepositoryConfig) -> Result<RepositoryImpl> {
         match config {
             RepositoryConfig::File(file_config) => Ok(RepositoryImpl::File(FileRepository::new(

@@ -35,10 +35,10 @@ pub fn get_env_or_default_with_key(
 
         let base = env_var.strip_prefix("WOOFX3_").unwrap_or(env_var);
         let converted = screaming_snake_to_camel(base);
-        if !converted.is_empty() {
-            if let Some(value) = config.get_non_empty(&converted) {
-                return value;
-            }
+        if !converted.is_empty()
+            && let Some(value) = config.get_non_empty(&converted)
+        {
+            return value;
         }
     }
 

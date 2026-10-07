@@ -38,10 +38,10 @@ impl Function {
     }
 
     pub fn resolved_entry_point(&self) -> &str {
-        if let Some(ep) = self.entry_point.as_deref() {
-            if !ep.is_empty() {
-                return ep;
-            }
+        if let Some(ep) = self.entry_point.as_deref()
+            && !ep.is_empty()
+        {
+            return ep;
         }
         // Sandbox module files conventionally export a function named
         // after the manifest id / file stem (`increment`, `sendChatMessage`).

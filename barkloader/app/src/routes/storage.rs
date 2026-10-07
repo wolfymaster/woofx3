@@ -75,7 +75,7 @@ async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, E
     })?;
 
     let previous = ctx.repository.current();
-    let stranded = stranded_modules(&*previous, &new_keys).await;
+    let stranded = stranded_modules(&previous, &new_keys).await;
 
     ctx.repository.replace(candidate);
     info!("Storage backend reloaded: now {}", describe(&config));

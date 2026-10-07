@@ -332,30 +332,29 @@ async fn upload_handler(
 
         let archive_key = format!("archives/{}.zip", computed_module_key);
 
-        if !force {
-            if ctx
+        if !force
+            && ctx
                 .repository
                 .current()
                 .exists(&archive_key)
                 .await
                 .unwrap_or(false)
-            {
-                let err_msg = format!(
-                    "Module '{}' version '{}' already exists. Use force=true to overwrite.",
-                    module_name, module_version
-                );
-                error!("{}", err_msg);
-                notify_install(
-                    db_proxy_ref,
-                    module_name,
-                    module_version,
-                    "failed",
-                    &err_msg,
-                    request_context.as_ref(),
-                )
-                .await;
-                return;
-            }
+        {
+            let err_msg = format!(
+                "Module '{}' version '{}' already exists. Use force=true to overwrite.",
+                module_name, module_version
+            );
+            error!("{}", err_msg);
+            notify_install(
+                db_proxy_ref,
+                module_name,
+                module_version,
+                "failed",
+                &err_msg,
+                request_context.as_ref(),
+            )
+            .await;
+            return;
         }
 
         let upload_client_id = request_context
@@ -387,8 +386,8 @@ async fn upload_handler(
             return;
         }
 
-        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref() {
-            if let Err(err) = registry_loader::refresh_module_in_registry(
+        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref()
+            && let Err(err) = registry_loader::refresh_module_in_registry(
                 &ctx.registry,
                 db_proxy_url,
                 module_name,
@@ -396,12 +395,11 @@ async fn upload_handler(
                 &ctx.scheduler,
             )
             .await
-            {
-                error!(
-                    "Module installed to repository but sandbox registry refresh failed for {}: {}",
-                    module_name, err
-                );
-            }
+        {
+            error!(
+                "Module installed to repository but sandbox registry refresh failed for {}: {}",
+                module_name, err
+            );
         }
 
         // archive the original zip keyed by module_key
@@ -784,7 +782,7 @@ async fn versions_handler(
         .iter()
         .filter_map(|key| {
             let stem = std::path::Path::new(key).file_stem()?.to_str()?;
-            stem.splitn(3, ':').nth(1).map(|v| v.to_string())
+            stem.split(':').nth(1).map(|v| v.to_string())
         })
         .collect();
     versions.sort();

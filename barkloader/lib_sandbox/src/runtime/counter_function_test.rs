@@ -378,7 +378,7 @@ fn a_counter_stored_as_a_bare_number_still_reads() {
 fn only_goals_the_counter_still_carries_are_recorded() {
     let harness = counter(json!({ "goals": "100, 250" }));
     add(&harness, 300);
-    assert_eq!(harness.stored().unwrap()["reached"]["100"].is_null(), false);
+    assert!(!harness.stored().unwrap()["reached"]["100"].is_null());
 
     let narrowed = Harness::new(COUNTER_JS, TARGET, "counter", json!({ "goals": "250" }));
     narrowed.store(harness.stored().unwrap());

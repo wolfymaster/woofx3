@@ -952,12 +952,12 @@ fn validate_oauth(manifest: &ModuleManifest) -> Result<()> {
                 ));
             }
         }
-        if let Some(secret_setting) = &integration.client_secret_setting {
-            if setting_type(secret_setting) != Some(SECRET_SETTING_TYPE) {
-                return Err(anyhow!(
-                    "{context}: `clientSecretSetting` {secret_setting:?} must be a `secret` setting this module declares"
-                ));
-            }
+        if let Some(secret_setting) = &integration.client_secret_setting
+            && setting_type(secret_setting) != Some(SECRET_SETTING_TYPE)
+        {
+            return Err(anyhow!(
+                "{context}: `clientSecretSetting` {secret_setting:?} must be a `secret` setting this module declares"
+            ));
         }
     }
     Ok(())
@@ -1006,15 +1006,18 @@ struct StepNode {
     /// unconstrained, deterministically, matching today's behavior
     /// rather than introducing new parallelism the db-proxy backend
     /// hasn't been verified to tolerate.
-    phase: (u8, u8, u32),
+    phase: StepPhase,
     deps: Vec<usize>,
 }
+
+/// A step's tie-break key; see `StepNode::phase`.
+type StepPhase = (u8, u8, u32);
 
 fn add_step(
     nodes: &mut Vec<StepNode>,
     index_of: &mut HashMap<InstallStep, usize>,
     step: InstallStep,
-    phase: (u8, u8, u32),
+    phase: StepPhase,
     deps: &[&InstallStep],
 ) -> usize {
     let dep_indices = deps.iter().map(|d| index_of[*d]).collect();
@@ -1176,10 +1179,10 @@ pub async fn build_install_plan(
         // must run after that workflow registers. A cross-module
         // workflow reference has no node in this plan — it was already
         // validated above and is (by definition) already installed.
-        if let Some(wf_id) = &cmd.workflow {
-            if resolved.workflows.iter().any(|w| &w.canonical_id == wf_id) {
-                deps.push(InstallStep::RegisterWorkflow(wf_id.clone()));
-            }
+        if let Some(wf_id) = &cmd.workflow
+            && resolved.workflows.iter().any(|w| &w.canonical_id == wf_id)
+        {
+            deps.push(InstallStep::RegisterWorkflow(wf_id.clone()));
         }
         let dep_refs: Vec<&InstallStep> = deps.iter().collect();
         add_step(&mut nodes, &mut index_of, step, (4, 0, i as u32), &dep_refs);
@@ -1202,7 +1205,7 @@ fn topo_sort(nodes: Vec<StepNode>) -> Vec<InstallStep> {
         }
     }
 
-    let mut ready: BinaryHeap<Reverse<((u8, u8, u32), usize)>> = BinaryHeap::new();
+    let mut ready: BinaryHeap<Reverse<(StepPhase, usize)>> = BinaryHeap::new();
     for (i, node) in nodes.iter().enumerate() {
         if indegree[i] == 0 {
             ready.push(Reverse((node.phase, i)));
