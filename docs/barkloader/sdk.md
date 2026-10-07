@@ -188,25 +188,46 @@ const host = window.widgetHost;
 ### Live settings
 
 A streamer edits a widget's settings in the scene editor with the widget on
-screen. Call `host.onSettings` and each change arrives as it is made, with
-the widget still running; `host.settings` already holds the new set when the
-callback runs. A widget that never calls it is reloaded with the new settings
-instead, so a widget that draws once from `host.settings` still works.
+screen, and every change reaches it while it runs. A widget never handles
+updates itself: the host works out how to apply each change from how the
+widget uses the setting.
 
-```js
-function draw(settings) {
-  label.textContent = settings.text ?? "";
-  label.style.color = settings.color ?? "#ffffff";
-}
+**Bindings update in place.** The host mirrors the placement's settings into
+the widget's document and mirrors them again on every change:
 
-draw(host.settings);
-host.onSettings(draw);
+| Binding | Where | What it holds |
+|---|---|---|
+| `--setting-{id}` | custom property on `:root` | text as written, numbers, booleans as `1` / `0`, a media setting as `url("…")` |
+| `data-setting-{id}` | attribute on `<html>` | booleans as `true` / `false`, short text; for selectors (names are lowercased) |
+| `data-setting="{id}"` | any element | the element's text is the setting |
+| `data-setting-src="{id}"` | any element (also `-href`, `-poster`) | that attribute is the setting's URL (http(s), `data:image` or relative only) |
+
+```html
+<style>
+  #label {
+    color: var(--setting-color, #fff);
+    font-size: calc(var(--setting-fontSize, 48) * 1px);
+  }
+  :root[data-setting-showpanel="false"] .panel { display: none; }
+</style>
+<div class="panel"><span id="label" data-setting="headline">Thanks for watching!</span></div>
+<img data-setting-src="image" alt="" />
 ```
 
-Draw from the settings you are given rather than from what the last draw
-did, since any setting can change, or be emptied, at any time. A change of
-theme always reloads the widget, because the theme is applied before it runs.
-`createMockHost` has `setSettings(settings)` to try this offline.
+A setting the placement has no value for leaves what the widget wrote, so an
+element's own text and a `var()` fallback are its defaults.
+
+**Settings read by script reload the widget.** `host.settings` reports each
+setting the widget's script reads. A change to one of those loads a fresh copy
+of the widget, invisibly, and swaps it in once it has painted, so nothing
+flashes; the widget's in-memory state starts over (state in module storage
+comes back through its subscription). Spreading or listing the settings counts
+as reading all of them. Draw from settings in script when you must, and move
+what you can into bindings to make it update in place.
+
+A change of theme always swaps the widget, because the theme is applied
+before it runs. In the preview harness, **Send to running widget** applies a
+settings change through the bindings the same way.
 
 ### Themes
 

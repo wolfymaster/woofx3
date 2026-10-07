@@ -46,65 +46,36 @@
       if (!host) {
         return;
       }
+      const settings = host.settings;
       const el = document.getElementById("text");
-      let settings = host.settings;
-      // The counter shown, its subscription, and its last value.
-      let counter = "";
-      let unsubscribe = null;
-      let stored = null;
+      el.style.color = str(settings.color, "#ffffff");
+      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
+      el.style.fontSize = num(settings.fontSize, 48) + "px";
+      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
 
-      function draw() {
-        el.style.color = str(settings.color, "#ffffff");
-        el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
-        el.style.fontSize = num(settings.fontSize, 48) + "px";
-        el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
-
-        const value = counterValue(stored);
-        if (value === null) {
-          el.replaceChildren();
-          return;
-        }
-        const goal = currentGoal(stored, value);
-        render(el, fill(str(settings.text, "{value}"), {
-          value: String(value),
-          goal: goal ? String(goal.value) : "",
-          goalName: goal ? goal.name : "",
-        }), str(settings.highlightColor, "#ec6758"));
+      const counter = str(settings.counter, "");
+      if (counter === "") {
+        return;
       }
+      const template = str(settings.text, "{value}");
+      const highlight = str(settings.highlightColor, "#ec6758");
 
       // The counter keeps its number at `state:<canonicalId>` in this
       // module's storage. The host answers a counter nothing has written yet
       // with its starting value, so nothing shows until the first answer
       // arrives rather than a number that may be wrong.
-      function follow(next) {
-        if (next === counter) {
+      host.storage.subscribe("state:" + counter, (stored) => {
+        const value = counterValue(stored);
+        if (value === null) {
           return;
         }
-        if (unsubscribe) {
-          unsubscribe();
-          unsubscribe = null;
-        }
-        counter = next;
-        stored = null;
-        if (counter !== "") {
-          unsubscribe = host.storage.subscribe("state:" + counter, (value) => {
-            stored = value;
-            draw();
-          });
-        }
-      }
-
-      function apply(next) {
-        settings = next;
-        follow(str(settings.counter, ""));
-        draw();
-      }
-
-      apply(settings);
-      // Redrawn as the streamer edits it, rather than reloaded.
-      if (host.onSettings) {
-        host.onSettings(apply);
-      }
+        const goal = currentGoal(stored, value);
+        render(el, fill(template, {
+          value: String(value),
+          goal: goal ? String(goal.value) : "",
+          goalName: goal ? goal.name : "",
+        }), highlight);
+      });
     })();
 
     // The host serves a counter as `{ value, reached, goals }`. A bare number

@@ -122,6 +122,13 @@ same-origin shortcut waiting to be replaced: widget assets can already be served
 from barkloader or a CDN (see [Asset delivery](./asset-delivery.md)),
 and postMessage is what makes that origin-agnostic.
 
+A scene placement's frame document is the widget's own, served at
+`/frames/{moduleId}/{manifestId}?theme=…&v=…` and cached by the browser while
+`v` (a hash of what barkloader resolved for it) is current. The placement --
+nonce, instance id, settings and linked resources -- is appended in the URL's
+fragment (`#boot=…`) and merged in by the shim, so it never reaches the server
+and every placement of a widget shares one cached document.
+
 ### Alerts
 
 A scene gets alerts through **alert widgets** (`woofx3:widget:alert`): named areas the

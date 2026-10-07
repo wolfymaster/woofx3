@@ -49,11 +49,19 @@
       if (!host) {
         return;
       }
+      const settings = host.settings;
       const el = document.getElementById("text");
-      let settings = host.settings;
-      // The timer shown and its subscription.
-      let timer = "";
-      let unsubscribe = null;
+      el.style.color = str(settings.color, "#ffffff");
+      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
+      el.style.fontSize = num(settings.fontSize, 48) + "px";
+      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
+
+      const timer = str(settings.timer, "");
+      if (timer === "") {
+        return;
+      }
+      const template = str(settings.text, "{time}");
+      const highlight = str(settings.highlightColor, "#ec6758");
 
       // The reading last synced to, and when it arrived on this page's
       // monotonic clock. The time left is counted down from those alone.
@@ -71,23 +79,12 @@
       // Draws the time left and, while it is running, wakes again just as
       // the shown second turns over.
       function draw() {
-        if (tick !== null) {
-          clearTimeout(tick);
-        }
         tick = null;
-        el.style.color = str(settings.color, "#ffffff");
-        el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
-        el.style.fontSize = num(settings.fontSize, 48) + "px";
-        el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
-        if (reading === null) {
-          el.replaceChildren();
-          return;
-        }
         const left = remainingMs();
-        render(el, fill(str(settings.text, "{time}"), {
+        render(el, fill(template, {
           time: formatDuration(left),
           duration: formatDuration(reading.durationMs),
-        }), str(settings.highlightColor, "#ec6758"));
+        }), highlight);
         if (reading.running && left > 0) {
           tick = setTimeout(draw, (left % 1000 || 1000) + 5);
         }
@@ -98,39 +95,17 @@
       // it changes, and never in between, with a running timer's time left
       // measured as it is sent. Nothing shows until the first reading
       // arrives rather than a time that may be wrong.
-      function follow(next) {
-        if (next === timer) {
+      host.storage.subscribe("state:" + timer, (stored) => {
+        if (!isReading(stored)) {
           return;
         }
-        if (unsubscribe) {
-          unsubscribe();
-          unsubscribe = null;
+        reading = stored;
+        syncedAt = performance.now();
+        if (tick !== null) {
+          clearTimeout(tick);
         }
-        timer = next;
-        reading = null;
-        if (timer !== "") {
-          unsubscribe = host.storage.subscribe("state:" + timer, (stored) => {
-            if (!isReading(stored)) {
-              return;
-            }
-            reading = stored;
-            syncedAt = performance.now();
-            draw();
-          });
-        }
-      }
-
-      function apply(next) {
-        settings = next;
-        follow(str(settings.timer, ""));
         draw();
-      }
-
-      apply(settings);
-      // Redrawn as the streamer edits it, rather than reloaded.
-      if (host.onSettings) {
-        host.onSettings(apply);
-      }
+      });
     })();
 
     function isReading(stored) {

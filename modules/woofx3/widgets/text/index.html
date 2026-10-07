@@ -23,8 +23,15 @@
       padding: 8px;
     }
 
+    /* Colour, font, size and alignment come from the placement's settings
+       through the host's bindings, so changing them updates the widget in
+       place. */
     #text {
       width: 100%;
+      color: var(--setting-color, #ffffff);
+      font-family: var(--setting-fontFamily, Roboto, system-ui, sans-serif);
+      font-size: calc(var(--setting-fontSize, 48) * 1px);
+      text-align: var(--setting-align, center);
       font-weight: bold;
       line-height: 1.2;
       white-space: pre-wrap;
@@ -45,38 +52,25 @@
       if (!host) {
         return;
       }
+      const settings = host.settings;
       const el = document.getElementById("text");
 
-      function draw(settings) {
-        el.style.color = str(settings.color, "#ffffff");
-        el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
-        el.style.fontSize = num(settings.fontSize, 48) + "px";
-        el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
+      // Every other segment between {primary} markers is highlighted. The
+      // text goes in as text nodes, never markup: it usually carries a
+      // viewer's name.
+      const highlight = str(settings.highlightColor, "#ec6758");
+      str(settings.text, "").split("{primary}").forEach((segment, i) => {
+        if (i % 2 === 1) {
+          const span = document.createElement("span");
+          span.style.color = highlight;
+          span.textContent = segment;
+          el.appendChild(span);
+        } else {
+          el.appendChild(document.createTextNode(segment));
+        }
+      });
 
-        // Every other segment between {primary} markers is highlighted. The
-        // text goes in as text nodes, never markup: it usually carries a
-        // viewer's name.
-        const highlight = str(settings.highlightColor, "#ec6758");
-        el.replaceChildren();
-        str(settings.text, "").split("{primary}").forEach((segment, i) => {
-          if (i % 2 === 1) {
-            const span = document.createElement("span");
-            span.style.color = highlight;
-            span.textContent = segment;
-            el.appendChild(span);
-          } else {
-            el.appendChild(document.createTextNode(segment));
-          }
-        });
-      }
-
-      draw(host.settings);
-      // Redrawn as the streamer edits it, rather than reloaded.
-      if (host.onSettings) {
-        host.onSettings(draw);
-      }
-
-      playForDuration(host, num(host.settings.duration, 0), () => {
+      playForDuration(host, num(settings.duration, 0), () => {
         el.style.visibility = "hidden";
       });
     })();
