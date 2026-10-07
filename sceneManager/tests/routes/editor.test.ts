@@ -144,3 +144,57 @@ describe("editor socket", () => {
     expect((await fetch(http("garbage"))).status).toBe(401);
   });
 });
+
+describe("editor socket — presence", () => {
+  async function opened(url: string) {
+    const editor = await connect(url);
+    await editor.next();
+    await editor.next();
+    return editor;
+  }
+
+  it("tells the other editors what one has selected, and that it left", async () => {
+    const { sessionTokens, url } = start();
+    const token = await sessionTokens.mintEditor({ sceneId: "s1" });
+    const one = await opened(url(token));
+    const two = await opened(url(token));
+
+    one.send({ type: "presence", name: " Wolfy ", selection: "a" });
+    const seen = await two.next();
+    expect(seen).toMatchObject({ type: "presence", name: "Wolfy", selection: "a" });
+    expect(typeof seen.editorId).toBe("string");
+
+    one.socket.close();
+    expect(await two.next()).toEqual({ type: "presence", editorId: seen.editorId, left: true });
+    two.socket.close();
+  });
+
+  it("shows a newcomer what the others already have selected", async () => {
+    const { sessionTokens, url } = start();
+    const token = await sessionTokens.mintEditor({ sceneId: "s1" });
+    const one = await opened(url(token));
+    const two = await opened(url(token));
+    one.send({ type: "presence", name: "Wolfy", selection: "a" });
+    await two.next();
+
+    const three = await connect(url(token));
+    await three.next();
+    await three.next();
+    expect(await three.next()).toMatchObject({ type: "presence", name: "Wolfy", selection: "a" });
+    for (const editor of [one, two, three]) {
+      editor.socket.close();
+    }
+  });
+
+  it("ignores a selection that is not a placement id", async () => {
+    const { sessionTokens, url } = start();
+    const token = await sessionTokens.mintEditor({ sceneId: "s1" });
+    const one = await opened(url(token));
+    const two = await opened(url(token));
+    one.send({ type: "presence", name: "Wolfy", selection: 42 });
+    one.send({ type: "presence", name: "Wolfy", selection: null });
+    expect(await two.next()).toMatchObject({ type: "presence", selection: null });
+    one.socket.close();
+    two.socket.close();
+  });
+});
