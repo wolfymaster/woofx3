@@ -43,6 +43,8 @@ export interface WidgetBridgeCallbacks {
   /** Widget acked completion of a delivered event. */
   onEventComplete(subId: string, eventId: string): void;
   onDispose(): void;
+  /** The frame has painted (the shim's `rendered`). */
+  onRendered?(): void;
 }
 
 export class WidgetBridge {
@@ -56,9 +58,10 @@ export class WidgetBridge {
   // delivers whatever event-queue.ts routes to this instance; kept so
   // sendEvent can validate a subscriber actually exists).
   private readonly shimEventSubs = new Set<string>();
-  // The widget redraws on a settings change itself (`host.onSettings`), so
-  // the page sends it one instead of mounting the widget again.
-  private settingsSubscribed = false;
+  // The settings the widget's script has read (`settings.reads`). A change
+  // to one of these needs a fresh frame; any other is patched in.
+  private readonly readKeys = new Set<string>();
+  private readAll = false;
 
   constructor(
     private readonly instanceId: string,
@@ -73,7 +76,8 @@ export class WidgetBridge {
   onFrameLoad(): void {
     this.initialized = false;
     this.moduleId = null;
-    this.settingsSubscribed = false;
+    this.readKeys.clear();
+    this.readAll = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -197,15 +201,24 @@ export class WidgetBridge {
         this.callbacks.onEventComplete(subId, eventId);
         return;
       }
-      case "settings.subscribe": {
+      case "settings.reads": {
         if (!this.initialized) {
           return;
         }
-        this.settingsSubscribed = true;
+        if (msg.all === true) {
+          this.readAll = true;
+        }
+        if (Array.isArray(msg.keys)) {
+          for (const key of msg.keys) {
+            if (typeof key === "string") {
+              this.readKeys.add(key);
+            }
+          }
+        }
         return;
       }
-      case "settings.unsubscribe": {
-        this.settingsSubscribed = false;
+      case "rendered": {
+        this.callbacks.onRendered?.();
         return;
       }
       case "status.report": {
@@ -277,18 +290,19 @@ export class WidgetBridge {
     return true;
   }
 
-  /** Whether the widget takes settings changes without being mounted again. */
-  acceptsSettings(): boolean {
-    return this.initialized && this.settingsSubscribed;
+  /**
+   * The settings the widget's script has read, or null before its handshake,
+   * when nothing about it is known yet.
+   */
+  settingsReads(): { all: boolean; keys: ReadonlySet<string> } | null {
+    return this.initialized ? { all: this.readAll, keys: this.readKeys } : null;
   }
 
-  /** Hand the widget its new settings. False, sending nothing, when it doesn't take them live. */
-  sendSettings(settings: Record<string, unknown>): boolean {
-    if (!this.acceptsSettings()) {
-      return false;
+  /** Hand the widget new settings, which its shim applies through its bindings. */
+  sendSettings(settings: Record<string, unknown>): void {
+    if (this.initialized) {
+      this.post({ type: "settings.changed", settings });
     }
-    this.post({ type: "settings.changed", settings });
-    return true;
   }
 
   dispose(): void {
@@ -300,7 +314,8 @@ export class WidgetBridge {
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
-    this.settingsSubscribed = false;
+    this.readKeys.clear();
+    this.readAll = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();

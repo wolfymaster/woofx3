@@ -6,9 +6,10 @@ import {
   injectFrameScaffold,
   SHIM_SRC,
 } from "../../src/scene/frame-assembler";
+import { frameVersion } from "../../src/scene/frame-catalog";
 import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
 import type { FrameTheme } from "../../src/scene/widget-theme";
-import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
+import type { OverlayHost, OverlaySceneState } from "../../src/scene/scene-host";
 
 function minimalBoot(): FrameScaffold["boot"] {
   return {
@@ -147,21 +148,6 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
   });
 });
 
-function widgetInstance(overrides: Partial<OverlayWidgetInstance>): OverlayWidgetInstance {
-  return {
-    id: "inst-1",
-    widgetCanonicalId: "mod:widget:w",
-    moduleId: "mod",
-    manifestId: "w",
-    position: { x: 0, y: 0, width: 100, height: 100 },
-    settings: {},
-    resolved: true,
-    hostsSurface: "",
-    frameUrl: "",
-    ...overrides,
-  };
-}
-
 function fakeHost(state: OverlaySceneState, entry: string): OverlayHost {
   return {
     async loadSceneById(_sceneId: string) {
@@ -173,84 +159,58 @@ function fakeHost(state: OverlaySceneState, entry: string): OverlayHost {
   } as unknown as OverlayHost;
 }
 
-describe("FrameAssembler.assemble", () => {
-  it("fetches module widget entry+resourceBaseUrl from Barkloader and uses it as <base href>", async () => {
-    const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
-    const state: OverlaySceneState = {
-      sceneId: "scene-1",
-      name: "Scene",
-      layout: {},
-      instances: [instance],
-    };
+describe("FrameAssembler.assembleDocument", () => {
+  const info = {
+    entryHtml: "<!doctype html><body></body>",
+    resourceBaseUrl: "https://cdn.example.com/modules/mymod/abc123/widgets/mywid/",
+    theme: null,
+  };
+
+  it("frames the widget with no placement in the document", async () => {
     const barkloader: BarkloaderFrameClient = {
       fetchWidgetFrame: mock(async (moduleKey: string, manifestId: string) => {
         expect(moduleKey).toBe("mymod");
         expect(manifestId).toBe("mywid");
-        return {
-          entryHtml: "<!doctype html><body></body>",
-          resourceBaseUrl: "https://cdn.example.com/modules/mymod/abc123/widgets/mywid/",
-          theme: null,
-        };
+        return info;
       }),
     };
-    const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
-      barkloader,
-    });
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
 
-    const resp = await assembler.assemble("scene-1", "inst-1", null);
+    const resp = await assembler.assembleDocument("mymod", "mywid", null, frameVersion(info));
     const html = await resp.text();
     expect(html).toContain('<base href="https://cdn.example.com/modules/mymod/abc123/widgets/mywid/">');
-    expect(barkloader.fetchWidgetFrame).toHaveBeenCalledTimes(1);
     expect(resp.headers.get("Content-Security-Policy")).toBeNull();
-    expect(bootOf(html).theme).toBeNull();
+    const boot = bootOf(html);
+    expect(boot).toMatchObject({ moduleId: "mymod", widgetCanonicalId: "mymod:widget:mywid", surface: "scene" });
+    expect(boot.theme).toBeNull();
+    for (const placementField of ["nonce", "instanceId", "settings", "linkedResources"]) {
+      expect(boot).not.toHaveProperty(placementField);
+    }
   });
 
-  it("returns 502 (uniform blank-adjacent doc) when Barkloader has no frame info for the module widget", async () => {
-    const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
-    const state: OverlaySceneState = {
-      sceneId: "scene-1",
-      name: "Scene",
-      layout: {},
-      instances: [instance],
-    };
+  it("is cached for good while its version is current, and not otherwise", async () => {
+    const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => info) };
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+    const current = await assembler.assembleDocument("mymod", "mywid", null, frameVersion(info));
+    expect(current.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    const stale = await assembler.assembleDocument("mymod", "mywid", null, "an-old-version");
+    expect(stale.headers.get("Cache-Control")).toBe("no-cache");
+    const unversioned = await assembler.assembleDocument("mymod", "mywid", null, null);
+    expect(unversioned.headers.get("Cache-Control")).toBe("no-cache");
+  });
+
+  it("returns 502, uncached, when barkloader has no frame for the widget", async () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
-    const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
-      barkloader,
-    });
-    const resp = await assembler.assemble("scene-1", "inst-1", null);
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+    const resp = await assembler.assembleDocument("mymod", "mywid", null, "v");
     expect(resp.status).toBe(502);
-  });
-
-  it("returns the uniform blank document for an unknown scene", async () => {
-    const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
-    const host = {
-      async loadSceneById() {
-        return null;
-      },
-    } as unknown as OverlayHost;
-    const assembler = new FrameAssembler(host, fakeLogger(), {
-      barkloader,
-    });
-    const resp = await assembler.assemble("nope", "inst-1", null);
-    expect(resp.status).toBe(200);
-    expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");
-  });
-
-  it("returns the same uniform blank document for a valid scene with an unknown instance id", async () => {
-    const state: OverlaySceneState = {
-      sceneId: "scene-1",
-      name: "Scene",
-      layout: {},
-      instances: [],
-    };
-    const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
-    const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
-      barkloader,
-    });
-    const resp = await assembler.assemble("scene-1", "missing-instance", null);
-    expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");
+    expect(resp.headers.get("Cache-Control")).toBe("no-store");
   });
 });
+
+function emptyState(): OverlaySceneState {
+  return { sceneId: "scene-1", name: "Scene", layout: {}, instances: [] };
+}
 
 function bootOf(html: string): Record<string, unknown> {
   const match = /window\.__WOOFX3_WIDGET_BOOT__ = (.*?);<\/script>/.exec(html);
@@ -274,17 +234,16 @@ function frameTheme(overrides: Partial<FrameTheme> = {}): FrameTheme {
 }
 
 async function assembleThemed(settings: Record<string, unknown>, theme: FrameTheme | null) {
-  const instance = widgetInstance({ moduleId: "timerpro", manifestId: "countdown", settings });
-  const state: OverlaySceneState = { sceneId: "scene-1", name: "Scene", layout: {}, instances: [instance] };
   const fetchWidgetFrame = mock(async (_moduleKey: string, _manifestId: string, _themeId?: string) => ({
     entryHtml: "<!doctype html><html><head><style>#t{}</style></head><body><script>1</script></body></html>",
     resourceBaseUrl: THEMED_BASE,
     theme,
   }));
-  const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
+  const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
     barkloader: { fetchWidgetFrame },
   });
-  const resp = await assembler.assemble("scene-1", "inst-1", null);
+  const selected = typeof settings.theme === "string" ? settings.theme : null;
+  const resp = await assembler.assembleDocument("timerpro", "countdown", selected, null);
   return { resp, html: await resp.text(), fetchWidgetFrame };
 }
 

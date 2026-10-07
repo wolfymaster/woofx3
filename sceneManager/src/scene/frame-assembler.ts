@@ -1,6 +1,7 @@
 import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import { frameVersion } from "./frame-catalog";
 import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
@@ -111,8 +112,17 @@ export interface FrameAssemblerOptions {
   linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
 }
 
+/**
+ * The boot payload a cacheable frame document inlines: the widget's half.
+ * The placement's half (`WidgetPlacementBoot`) arrives in the fragment.
+ */
+export type WidgetFrameBoot = Omit<WidgetBootPayload, "nonce" | "instanceId" | "settings" | "linkedResources">;
+
+/** A frame document whose URL carries its current version never changes. */
+const CACHED_FRAME_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 export interface FrameScaffold {
-  boot: WidgetBootPayload;
+  boot: WidgetBootPayload | WidgetFrameBoot;
   baseHref: string;
   /** Variables and asset slots of a themeable widget, set before any of
    *  the widget's own styles or scripts. */
@@ -215,62 +225,48 @@ export class FrameAssembler {
     return new Response(BLANK_FRAME_DOC, { status: 200, headers: { ...FRAME_HEADERS } });
   }
 
-  /** `sceneId` comes from an already-verified session (JWT), not a
-   *  re-presented opaque token — see `OverlayHost.loadSceneById`. */
-  async assemble(sceneId: string, instanceId: string, nonceParam: string | null): Promise<Response> {
-    const state = await this.host.loadSceneById(sceneId);
-    if (!state) {
-      return this.blankResponse();
-    }
-    const instance = state.instances.find((w) => w.id === instanceId);
-    // A placement that hosts a surface is drawn by the page, never framed.
-    if (!instance || instance.hostsSurface !== "") {
-      return this.blankResponse();
-    }
-    return this.assembleFrame(
-      sceneId,
-      {
-        instanceId: instance.id,
-        moduleId: instance.moduleId,
-        manifestId: instance.manifestId,
-        widgetCanonicalId: instance.widgetCanonicalId,
-        settings: instance.settings,
-        surface: "scene",
-      },
-      nonceParam
-    );
-  }
-
   /**
-   * A placement the scene editor has not saved, rendered with the settings it
-   * carries, so the editor's preview shows a change before it is saved. Only a
-   * framed placement: an alert area is drawn by the page.
+   * `GET /frames/{moduleId}/{manifestId}?theme=…&v=…`: a widget's frame
+   * document, with nothing in it about a placement. The placement (nonce,
+   * instance, settings, linked resources) arrives in the URL's fragment and
+   * the shim merges it in, so the document is the same for every placement,
+   * needs no session, and is cached by the browser while `v` is current.
+   * A stale `v` still gets the current document, uncached.
    */
-  async assembleDraft(
-    sceneId: string,
-    instanceId: string,
-    draftPlacement: unknown,
-    nonceParam: string | null
+  async assembleDocument(
+    moduleId: string,
+    manifestId: string,
+    themeParam: string | null,
+    versionParam: string | null
   ): Promise<Response> {
-    if (draftPlacement === null) {
-      return this.blankResponse();
+    const themeId = themeParam?.trim() || undefined;
+    const widgetCanonicalId = `${moduleId}:widget:${manifestId}`;
+    const frameInfo = await this.loadFrameInfo(moduleId, manifestId, widgetCanonicalId, themeId);
+    if (frameInfo === null) {
+      this.logger.warn("widget entry document unavailable", { widgetCanonicalId });
+      return new Response("<!doctype html><!-- widget entry unavailable -->", {
+        status: 502,
+        headers: { ...FRAME_HEADERS },
+      });
     }
-    const [instance] = await this.host.resolveDraftPlacements(sceneId, [draftPlacement]);
-    if (!instance || instance.id !== instanceId || instance.hostsSurface !== "") {
-      return this.blankResponse();
+    if (frameInfo.theme?.fallback) {
+      this.logger.warn("widget theme unavailable; rendering the widget's defaults", {
+        widgetCanonicalId,
+        selectedTheme: themeId,
+        reason: frameInfo.theme.fallback,
+      });
     }
-    return this.assembleFrame(
-      sceneId,
-      {
-        instanceId: instance.id,
-        moduleId: instance.moduleId,
-        manifestId: instance.manifestId,
-        widgetCanonicalId: instance.widgetCanonicalId,
-        settings: instance.settings,
-        surface: "scene",
-      },
-      nonceParam
-    );
+    const boot: WidgetFrameBoot = {
+      v: 1,
+      moduleId,
+      widgetCanonicalId,
+      surface: "scene",
+      capabilities: [...FRAME_CAPABILITIES],
+      resourceBaseUrl: frameInfo.resourceBaseUrl,
+      theme: frameInfo.theme ? hostTheme(frameInfo.theme) : null,
+    };
+    const cacheable = versionParam !== null && versionParam === frameVersion(frameInfo);
+    return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache");
   }
 
   /**
@@ -324,7 +320,12 @@ export class FrameAssembler {
   private async assembleFrame(sceneId: string, target: FrameTarget, nonceParam: string | null): Promise<Response> {
     const nonce = nonceParam && NONCE_PATTERN.test(nonceParam) ? nonceParam : this.generateNonce();
 
-    const frameInfo = await this.loadFrameInfo(target);
+    const frameInfo = await this.loadFrameInfo(
+      target.moduleId,
+      target.manifestId,
+      target.widgetCanonicalId,
+      selectedThemeId(target.settings)
+    );
     if (frameInfo === null) {
       this.logger.warn("widget entry document unavailable", {
         sceneId,
@@ -362,9 +363,19 @@ export class FrameAssembler {
       theme: theme ? hostTheme(theme) : null,
       linkedResources,
     };
+    return this.render(frameInfo, boot, "no-store");
+  }
+
+  /** The entry document with the scaffold, theme stylesheet and policy. */
+  private render(
+    frameInfo: BarkloaderFrameInfo,
+    boot: WidgetBootPayload | WidgetFrameBoot,
+    cacheControl: string
+  ): Response {
+    const theme = frameInfo.theme;
     const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
     let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
-    const headers: Record<string, string> = { ...FRAME_HEADERS };
+    const headers: Record<string, string> = { ...FRAME_HEADERS, "Cache-Control": cacheControl };
     if (theme) {
       if (theme.stylesheetUrl) {
         assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
@@ -379,16 +390,17 @@ export class FrameAssembler {
     return new Response(assembled, { status: 200, headers });
   }
 
-  private async loadFrameInfo(target: FrameTarget): Promise<BarkloaderFrameInfo | null> {
+  private async loadFrameInfo(
+    moduleId: string,
+    manifestId: string,
+    widgetCanonicalId: string,
+    themeId: string | undefined
+  ): Promise<BarkloaderFrameInfo | null> {
     try {
-      return await this.opts.barkloader.fetchWidgetFrame(
-        target.moduleId,
-        target.manifestId,
-        selectedThemeId(target.settings)
-      );
+      return await this.opts.barkloader.fetchWidgetFrame(moduleId, manifestId, themeId);
     } catch (err) {
       this.logger.warn("barkloader frame fetch failed", {
-        widgetCanonicalId: target.widgetCanonicalId,
+        widgetCanonicalId,
         error: err instanceof Error ? err.message : String(err),
       });
       return null;

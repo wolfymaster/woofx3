@@ -4,6 +4,8 @@ import type * as module_widget from "@woofx3/db/module_widget.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
+import { type PlacementFraming, UNAVAILABLE_VERSION, frameDocumentUrl } from "./frame-catalog";
+import { selectedThemeId } from "./widget-theme";
 
 export interface OverlayWidgetPosition {
   x: number;
@@ -14,12 +16,11 @@ export interface OverlayWidgetPosition {
 
 /**
  * One widget instance in a token overlay's scene config. `frameUrl` is
- * derived (never stored): the client mounts an iframe at the absolute
- * path `/scene/{sceneId}/widget/{instanceId}`. Deliberately absolute,
- * not relative — the scene shell is served at `/scene/{sceneId}` with
- * no trailing slash, so a `./`-relative URL resolves against `/scene/`
- * (treating `{sceneId}` as a filename, not a directory) and silently
- * drops the sceneId segment.
+ * derived (never stored): the widget's frame document,
+ * `/frames/{moduleId}/{manifestId}?theme=…&v=…`, the same for every
+ * placement of the widget. The page adds the placement in the fragment.
+ * Deliberately absolute: the scene shell is served at `/scene/{sceneId}`
+ * with no trailing slash, so a relative URL would resolve against `/scene/`.
  */
 export interface OverlayWidgetInstance {
   id: string;
@@ -37,6 +38,9 @@ export interface OverlayWidgetInstance {
    */
   hostsSurface: string;
   frameUrl: string;
+  /** The resource instances the widget's module links (see `linkedResources`
+   *  in module-state.ts), handed to the frame with the placement. */
+  linkedResources?: Record<string, string>;
   /**
    * False when this placement's `widgetCanonicalId` matches no widget in the
    * catalog — the widget was renamed, or its module was uninstalled, and the
@@ -86,6 +90,9 @@ export interface OverlayHostOptions {
   /** Widget-catalog cache TTL in milliseconds (default 30s). */
   widgetCacheTtlMs?: number;
   now?: () => number;
+  /** Versions each placement's frame URL and attaches its linked resources
+   *  (see `FrameCatalog`). Without it, frame URLs are unversioned. */
+  framing?: PlacementFraming;
 }
 
 const WIDGET_CACHE_TTL_MS = 30_000;
@@ -117,11 +124,12 @@ export function parseWidgetCanonicalId(canonicalId: string): { moduleKey: string
  * Assembly is read-only and derivation-only: stored `bundleUrl` values
  * are ignored (deprecation-logged once per canonical id) and every
  * instance — module-sourced or built-in — gets a derived, absolute
- * `frameUrl: "/scene/{sceneId}/widget/{instanceId}"`.
+ * `frameUrl` for its widget's frame document (see `frameDocumentUrl`).
  */
 export class OverlayHost {
   private widgetCache: { rows: OverlayWidgetDefinition[]; expiresAt: number } | null = null;
   private readonly widgetCacheTtlMs: number;
+  private readonly framing: PlacementFraming | null;
   private readonly now: () => number;
   private readonly bundleUrlWarned = new Set<string>();
 
@@ -133,6 +141,15 @@ export class OverlayHost {
   ) {
     this.widgetCacheTtlMs = opts.widgetCacheTtlMs ?? WIDGET_CACHE_TTL_MS;
     this.now = opts.now ?? Date.now;
+    this.framing = opts.framing ?? null;
+  }
+
+  /** The page's scene config, each placement framed for this engine. */
+  private async configOf(state: OverlaySceneState | null): Promise<Record<string, unknown>> {
+    if (!state || !this.framing) {
+      return sceneConfigOf(state);
+    }
+    return sceneConfigOf({ ...state, instances: await this.framing.frame(state.instances) });
   }
 
   /**
@@ -269,8 +286,8 @@ export class OverlayHost {
    * The scene's config with the editor's unsaved placements in place of the
    * saved ones, for an overlay previewing a draft. Placements go through the
    * same parsing and catalog resolution as saved ones, so the page treats a
-   * draft exactly like a save. Each placement's frame is the draft frame,
-   * which renders the settings it carries rather than the saved ones.
+   * draft exactly like a save. Frames carry no settings (the page hands them
+   * over), so a draft placement's frame is the same as a saved one's.
    * Authorization is the caller's, as for `loadSceneById`.
    */
   async buildDraftConfig(sceneId: string, draftPlacements: unknown[]): Promise<Record<string, unknown>> {
@@ -279,13 +296,7 @@ export class OverlayHost {
       return { scene: null };
     }
     const instances = await this.resolveDraftPlacements(sceneId, draftPlacements);
-    return sceneConfigOf({
-      ...saved,
-      instances: instances.map((instance) => ({
-        ...instance,
-        frameUrl: draftFrameUrl(sceneId, instance) ?? instance.frameUrl,
-      })),
-    });
+    return this.configOf({ ...saved, instances });
   }
 
   /** Unsaved placements, parsed and resolved like saved ones. */
@@ -336,7 +347,7 @@ export class OverlayHost {
    * (the shell always renders).
    */
   async buildConfig(token: string): Promise<Record<string, unknown>> {
-    return sceneConfigOf(await this.loadScene(token));
+    return this.configOf(await this.loadScene(token));
   }
 
   /**
@@ -345,7 +356,7 @@ export class OverlayHost {
    * caller's, as for `loadSceneById`.
    */
   async buildConfigById(sceneId: string): Promise<Record<string, unknown>> {
-    return sceneConfigOf(await this.loadSceneById(sceneId));
+    return this.configOf(await this.loadSceneById(sceneId));
   }
 
   /**
@@ -481,56 +492,23 @@ export class OverlayHost {
       });
     }
 
+    const settings = w.settings && typeof w.settings === "object" ? (w.settings as Record<string, unknown>) : {};
     return {
       id,
       widgetCanonicalId: stableCanonicalId,
       moduleId: stableModuleKey,
       manifestId: parsed.manifestId,
       position: normalizePosition(w),
-      settings: w.settings && typeof w.settings === "object" ? (w.settings as Record<string, unknown>) : {},
+      settings,
       // Placements carry none; `resolveInstances` takes it from the widget
       // definition.
       hostsSurface: "",
-      frameUrl: `/scene/${encodeURIComponent(sceneId)}/widget/${encodeURIComponent(id)}`,
+      // Versioned by `framing` when the config is built.
+      frameUrl: frameDocumentUrl(stableModuleKey, parsed.manifestId, selectedThemeId(settings), UNAVAILABLE_VERSION),
       // Assumed until the catalog says otherwise; `resolveInstances` is what
       // decides, since parsing alone cannot know what exists.
       resolved: true,
     };
-  }
-}
-
-/**
- * Longest encoded draft a draft frame URL carries. A frame URL is a GET, and
- * servers and proxies cap request lines at a few kilobytes; a placement whose
- * settings encode longer keeps its saved frame until the scene is saved.
- */
-export const MAX_DRAFT_PARAM_LENGTH = 6_000;
-
-/**
- * `/scene/{sceneId}/draft-widget/{instanceId}?draft=…`: a frame rendering the
- * placement it carries. The placement travels in the URL, not in a request
- * body or server-side state, so the frame loads like any other frame and can
- * reload itself. Null when the placement is too long to carry.
- */
-export function draftFrameUrl(sceneId: string, instance: OverlayWidgetInstance): string | null {
-  const draft = Buffer.from(
-    JSON.stringify({ id: instance.id, widgetCanonicalId: instance.widgetCanonicalId, settings: instance.settings })
-  ).toString("base64url");
-  if (draft.length > MAX_DRAFT_PARAM_LENGTH) {
-    return null;
-  }
-  return `/scene/${encodeURIComponent(sceneId)}/draft-widget/${encodeURIComponent(instance.id)}?draft=${draft}`;
-}
-
-/** The placement in a draft frame URL's `draft` parameter, or null when it is not one. */
-export function parseDraftParam(draft: string | null): unknown {
-  if (!draft || draft.length > MAX_DRAFT_PARAM_LENGTH) {
-    return null;
-  }
-  try {
-    return JSON.parse(Buffer.from(draft, "base64url").toString("utf8"));
-  } catch {
-    return null;
   }
 }
 
@@ -552,6 +530,7 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         settings: w.settings,
         hostsSurface: w.hostsSurface,
         frameUrl: w.frameUrl,
+        linkedResources: w.linkedResources ?? {},
         resolved: w.resolved,
       })),
     },

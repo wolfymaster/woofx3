@@ -73,38 +73,19 @@ describe("FrameAssembler.assembleAlertWidget", () => {
   });
 });
 
-describe("FrameAssembler.assemble — surfaces", () => {
-  function sceneWith(hostsSurface: string): OverlayHost {
-    const state: OverlaySceneState = {
-      sceneId: "scene-1",
-      name: "Scene",
-      layout: {},
-      instances: [
-        {
-          id: "inst-1",
-          widgetCanonicalId: "woofx3:widget:text",
-          moduleId: "woofx3",
-          manifestId: "text",
-          position: { x: 0, y: 0, width: 10, height: 10 },
-          settings: {},
-          hostsSurface,
-          frameUrl: "",
-          resolved: true,
-        },
-      ],
-    };
-    return { loadSceneById: async () => state } as unknown as OverlayHost;
-  }
+describe("FrameAssembler.assembleDocument — surfaces", () => {
+  const barkloader = {
+    fetchWidgetFrame: async () => ({
+      entryHtml: "<!doctype html><html><head></head></html>",
+      resourceBaseUrl: "https://e/",
+      theme: null,
+    }),
+  };
 
-  it("frames a scene placement on the scene surface", async () => {
-    const assembler = new FrameAssembler(sceneWith(""), fakeLogger(), { barkloader });
-    const resp = await assembler.assemble("scene-1", "inst-1", null);
+  it("frames a widget on the scene surface", async () => {
+    const host = { loadSceneById: async () => null } as unknown as OverlayHost;
+    const assembler = new FrameAssembler(host, fakeLogger(), { barkloader });
+    const resp = await assembler.assembleDocument("mod", "w", null, null);
     expect(bootOf(await resp.text()).surface).toBe("scene");
-  });
-
-  it("never frames an alert widget, which the page draws itself", async () => {
-    const assembler = new FrameAssembler(sceneWith("alert"), fakeLogger(), { barkloader });
-    const resp = await assembler.assemble("scene-1", "inst-1", null);
-    expect(await resp.text()).toBe(BLANK_FRAME_DOC);
   });
 });

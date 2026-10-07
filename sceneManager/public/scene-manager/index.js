@@ -43,9 +43,23 @@ class AlertTimeline {
     return this.anyTimed || elapsed >= UNTIMED_ALERT_MS;
   }
 }
+
+// ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
+var URL_ATTRIBUTES = ["src", "href", "poster"];
+var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
 // ../shared/clients/typescript/module-sdk/dist/widget-protocol.js
 var WIDGET_PROTOCOL = "woofx3.widget";
 var PROTOCOL_VERSION = 1;
+var WIDGET_BOOT_FRAGMENT_PARAM = "boot";
+function encodePlacementBoot(boot) {
+  const bytes = new TextEncoder().encode(JSON.stringify(boot));
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${WIDGET_BOOT_FRAGMENT_PARAM}=${base64}`;
+}
 function isWidgetProtocolEnvelope(value) {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -64,7 +78,8 @@ class WidgetBridge {
   shimStorageSubs = new Map;
   shimSubToKey = new Map;
   shimEventSubs = new Set;
-  settingsSubscribed = false;
+  readKeys = new Set;
+  readAll = false;
   constructor(instanceId, nonce, callbacks) {
     this.instanceId = instanceId;
     this.nonce = nonce;
@@ -76,7 +91,8 @@ class WidgetBridge {
   onFrameLoad() {
     this.initialized = false;
     this.moduleId = null;
-    this.settingsSubscribed = false;
+    this.readKeys.clear();
+    this.readAll = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -199,15 +215,24 @@ class WidgetBridge {
         this.callbacks.onEventComplete(subId, eventId);
         return;
       }
-      case "settings.subscribe": {
+      case "settings.reads": {
         if (!this.initialized) {
           return;
         }
-        this.settingsSubscribed = true;
+        if (msg.all === true) {
+          this.readAll = true;
+        }
+        if (Array.isArray(msg.keys)) {
+          for (const key of msg.keys) {
+            if (typeof key === "string") {
+              this.readKeys.add(key);
+            }
+          }
+        }
         return;
       }
-      case "settings.unsubscribe": {
-        this.settingsSubscribed = false;
+      case "rendered": {
+        this.callbacks.onRendered?.();
         return;
       }
       case "status.report": {
@@ -268,15 +293,13 @@ class WidgetBridge {
     this.post({ type: "event.deliver", subId, event });
     return true;
   }
-  acceptsSettings() {
-    return this.initialized && this.settingsSubscribed;
+  settingsReads() {
+    return this.initialized ? { all: this.readAll, keys: this.readKeys } : null;
   }
   sendSettings(settings) {
-    if (!this.acceptsSettings()) {
-      return false;
+    if (this.initialized) {
+      this.post({ type: "settings.changed", settings });
     }
-    this.post({ type: "settings.changed", settings });
-    return true;
   }
   dispose() {
     this.post({ type: "dispose", reason: "scene-manager-dispose" });
@@ -286,7 +309,8 @@ class WidgetBridge {
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
-    this.settingsSubscribed = false;
+    this.readKeys.clear();
+    this.readAll = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -1387,32 +1411,40 @@ function planSceneUpdate(current, next) {
   const plan = {
     remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
     mount: [],
+    replace: [],
     place: [],
     order: next.map((placement) => placement.id)
   };
   for (const placement of next) {
     const existing = currentById.get(placement.id);
-    if (existing && sameFrame(existing, placement)) {
+    if (!existing) {
+      plan.mount.push(placement);
+    } else if (sameFrame(existing, placement)) {
       plan.place.push(placement);
-      continue;
+    } else {
+      plan.replace.push(placement);
     }
-    if (existing) {
-      plan.remove.push(placement.id);
-    }
-    plan.mount.push(placement);
   }
   return plan;
 }
 function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && sameValue(a.settings, b.settings);
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
+}
+function settingsUpdate(current, next, reads) {
+  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
+  if (changed.length === 0) {
+    return "none";
+  }
+  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
+    return "reload";
+  }
+  return "patch";
 }
 var THEME_SETTING_ID = "theme";
 function themeOf(settings) {
   const value = settings[THEME_SETTING_ID];
   return typeof value === "string" ? value.trim() : "";
-}
-function canChangeSettingsLive(current, next) {
-  return themeOf(current) === themeOf(next);
 }
 function sameValue(a, b) {
   if (a === b) {
@@ -1497,12 +1529,11 @@ function parsePreviewPlacements(data) {
   }
   return message.placements;
 }
-function draftFrameKey(placements, liveSettings = () => false) {
+function draftFrameKey(placements, drawnByPage = () => false) {
   return JSON.stringify(placements.map((raw) => {
     const placement = typeof raw === "object" && raw !== null ? raw : {};
-    const live = typeof placement.id === "string" && liveSettings(placement.id);
-    const settings = live ? themeOf(settingsOf(placement)) : placement.settings;
-    return [placement.id, placement.widgetCanonicalId, settings];
+    const drawn = typeof placement.id === "string" && drawnByPage(placement.id);
+    return [placement.id, placement.widgetCanonicalId, drawn ? placement.settings : themeOf(settingsOf(placement))];
   }));
 }
 function settingsOf(placement) {
@@ -1541,15 +1572,23 @@ function applySceneBackground(element, layout) {
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
+var SWAP_TIMEOUT_MS = 2000;
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function withNonce(frameUrl, nonce) {
-  const url = new URL(frameUrl, location.href);
-  url.searchParams.set("nonce", nonce);
-  return url.pathname + url.search;
+function frameSrc(instance, nonce) {
+  const boot = encodePlacementBoot({
+    nonce,
+    instanceId: instance.id,
+    settings: instance.settings,
+    linkedResources: instance.linkedResources ?? {}
+  });
+  return `${instance.frameUrl}#${boot}`;
+}
+function asRecord(value) {
+  return typeof value === "object" && value !== null ? value : {};
 }
 function placeAt(element, position) {
   element.style.left = `${position.x}px`;
@@ -1610,7 +1649,6 @@ function main() {
     }).catch(() => {});
   }
   const mounted = new Map;
-  const framedBridges = new Map;
   const mountAlertWidget = (instance) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -1640,10 +1678,13 @@ function main() {
       element.remove();
     };
   };
-  const mountFramedWidget = (instance) => {
+  const mountFramedWidget = (instance, hidden = false, onRendered) => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
+    if (hidden) {
+      iframe.style.opacity = "0";
+    }
     iframe.setAttribute("sandbox", "allow-scripts");
     const nonce = generateNonce();
     let currentSubId = null;
@@ -1671,7 +1712,8 @@ function main() {
           queueManager.unregister(currentSubId);
           currentSubId = null;
         }
-      }
+      },
+      onRendered
     };
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
     const storageTarget = {
@@ -1679,27 +1721,98 @@ function main() {
       sendStorageValue: (key, value) => bridge.sendStorageValue(key, value)
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = withNonce(instance.frameUrl, nonce);
+    iframe.src = frameSrc(instance, nonce);
     bridges.add(bridge);
-    framedBridges.set(instance.id, bridge);
     container.appendChild(iframe);
-    widgetElements.set(instance.id, iframe);
+    if (!hidden) {
+      widgetElements.set(instance.id, iframe);
+    }
     bridge.attach(iframe);
-    return () => {
+    const unmount = () => {
       bridge.dispose();
       bridge.detach();
       bridges.delete(bridge);
-      if (framedBridges.get(instance.id) === bridge) {
-        framedBridges.delete(instance.id);
-      }
       moduleState.unwatchAll(storageTarget);
-      widgetElements.delete(instance.id);
+      if (widgetElements.get(instance.id) === iframe) {
+        widgetElements.delete(instance.id);
+      }
       iframe.remove();
     };
+    return { element: iframe, bridge, unmount };
   };
   function mount(instance) {
-    const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
-    mounted.set(instance.id, { config: instance, unmount });
+    if (instance.hostsSurface === "alert") {
+      mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
+      return;
+    }
+    const frame = mountFramedWidget(instance);
+    mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+  }
+  function unmountPlacement(id) {
+    const entry = mounted.get(id);
+    entry?.swap?.cancel();
+    entry?.unmount();
+    mounted.delete(id);
+  }
+  function swapFrame(next) {
+    const entry = mounted.get(next.id);
+    if (!entry || next.hostsSurface !== "" || entry.config.hostsSurface !== "") {
+      unmountPlacement(next.id);
+      mount(next);
+      return;
+    }
+    entry.swap?.cancel();
+    let settled = false;
+    let timer = null;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+      const old = widgetElements.get(next.id);
+      fresh.element.style.zIndex = old?.style.zIndex ?? "";
+      fresh.element.style.display = old?.style.display ?? "";
+      fresh.element.style.opacity = "";
+      entry.unmount();
+      widgetElements.set(next.id, fresh.element);
+      mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
+      if (previewLayout) {
+        applyPreviewLayout(widgetElements, previewLayout);
+      }
+    };
+    const fresh = mountFramedWidget(next, true, finish);
+    timer = setTimeout(finish, SWAP_TIMEOUT_MS);
+    entry.swap = {
+      cancel: () => {
+        if (!settled) {
+          settled = true;
+          if (timer !== null) {
+            clearTimeout(timer);
+          }
+          fresh.unmount();
+        }
+      }
+    };
+  }
+  function updateSettings(id, settings) {
+    const entry = mounted.get(id);
+    if (!entry) {
+      return;
+    }
+    const reads = entry.swap || !entry.bridge ? null : entry.bridge.settingsReads();
+    const decision = settingsUpdate(entry.config.settings, settings, reads);
+    if (decision === "none") {
+      return;
+    }
+    if (decision === "patch" && entry.bridge) {
+      entry.bridge.sendSettings(settings);
+      entry.config = { ...entry.config, settings };
+      return;
+    }
+    swapFrame({ ...entry.config, settings });
   }
   function stack(order) {
     order.forEach((id, index) => {
@@ -1722,21 +1835,6 @@ function main() {
       bridge.handleMessage(event);
     }
   });
-  function takesSettingsLive(id) {
-    return framedBridges.get(id)?.acceptsSettings() ?? false;
-  }
-  function changeSettingsLive(id, settings) {
-    const entry = mounted.get(id);
-    const bridge = framedBridges.get(id);
-    if (!entry || !bridge?.acceptsSettings() || !canChangeSettingsLive(entry.config.settings, settings)) {
-      return false;
-    }
-    if (!sameValue(entry.config.settings, settings)) {
-      bridge.sendSettings(settings);
-      entry.config = { ...entry.config, settings };
-    }
-    return true;
-  }
   if (window.parent !== window) {
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent) {
@@ -1751,12 +1849,14 @@ function main() {
       if (placements) {
         draftPlacements = placements;
         for (const raw of placements) {
-          const placement = typeof raw === "object" && raw !== null ? raw : {};
-          if (typeof placement.id === "string") {
-            changeSettingsLive(placement.id, settingsOf(placement));
+          const placement = asRecord(raw);
+          const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
+          const settings = settingsOf(placement);
+          if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
+            updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, takesSettingsLive);
+        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert");
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -1771,29 +1871,30 @@ function main() {
     });
   }
   function applySceneConfig(next, fromDraft) {
-    for (const instance of next.widgets) {
-      const entry = mounted.get(instance.id);
-      if (!entry || !takesSettingsLive(instance.id)) {
-        continue;
+    if (fromDraft && draftPlacements) {
+      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, settingsOf(asRecord(raw))]));
+      for (const instance of next.widgets) {
+        const settings = latest.get(instance.id);
+        if (settings && instance.hostsSurface === "" && themeOf(settings) === themeOf(instance.settings)) {
+          instance.settings = settings;
+        }
       }
-      if (fromDraft && canChangeSettingsLive(entry.config.settings, instance.settings)) {
-        instance.settings = entry.config.settings;
-        continue;
-      }
-      changeSettingsLive(instance.id, instance.settings);
     }
     const plan = planSceneUpdate([...mounted.values()].map((entry) => entry.config), next.widgets);
     for (const id of plan.remove) {
-      mounted.get(id)?.unmount();
-      mounted.delete(id);
+      unmountPlacement(id);
     }
     for (const instance of plan.place) {
       const entry = mounted.get(instance.id);
       const element = widgetElements.get(instance.id);
       if (entry && element) {
-        entry.config = instance;
+        entry.config = { ...instance, settings: entry.config.settings };
         placeAt(element, instance.position);
+        updateSettings(instance.id, instance.settings);
       }
+    }
+    for (const instance of plan.replace) {
+      swapFrame(instance);
     }
     for (const instance of plan.mount) {
       mount(instance);

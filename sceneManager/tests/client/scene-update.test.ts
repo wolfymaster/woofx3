@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
-  canChangeSettingsLive,
   parseSceneConfig,
   planSceneUpdate,
   sameValue,
+  settingsUpdate,
   type WidgetPlacementConfig,
 } from "../../public/scene-manager/scene-update";
 
@@ -15,7 +15,7 @@ function placement(id: string, overrides: Partial<WidgetPlacementConfig> = {}): 
     position: { x: 0, y: 0, width: 100, height: 50 },
     settings: { label: "Deaths", style: { color: "#fff", size: 12 } },
     hostsSurface: "",
-    frameUrl: `/scene/s1/widget/${id}`,
+    frameUrl: "/frames/woofx3/counter?v=abc",
     ...overrides,
   };
 }
@@ -31,37 +31,32 @@ describe("planSceneUpdate", () => {
     expect(plan.place.map((p) => p.position)).toEqual([{ x: 40, y: 10, width: 200, height: 80 }]);
   });
 
-  it("mounts again only the widget whose settings changed", () => {
+  it("keeps the frame of a widget whose settings changed: the page hands them over", () => {
     const plan = planSceneUpdate(
       [placement("a"), placement("b")],
       [placement("a"), placement("b", { settings: { label: "Wins", style: { color: "#fff", size: 12 } } })]
     );
-    expect(plan.remove).toEqual(["b"]);
-    expect(plan.mount.map((p) => p.id)).toEqual(["b"]);
-    expect(plan.place.map((p) => p.id)).toEqual(["a"]);
+    expect(plan.remove).toEqual([]);
+    expect(plan.replace).toEqual([]);
+    expect(plan.place.map((p) => p.id)).toEqual(["a", "b"]);
   });
 
-  it("treats settings saved with their keys in another order as unchanged", () => {
-    const plan = planSceneUpdate(
-      [placement("a")],
-      [placement("a", { settings: { style: { size: 12, color: "#fff" }, label: "Deaths" } })]
-    );
-    expect(plan.mount).toEqual([]);
+  it("swaps the frame of a placement whose document changed: a new version or theme", () => {
+    const plan = planSceneUpdate([placement("a")], [placement("a", { frameUrl: "/frames/woofx3/counter?v=def" })]);
+    expect(plan.remove).toEqual([]);
+    expect(plan.replace.map((p) => p.id)).toEqual(["a"]);
   });
 
-  it("keeps a frame when only its source changes, as when a save matches the draft on screen", () => {
-    const plan = planSceneUpdate(
-      [placement("a", { frameUrl: "/scene/s1/draft-widget/a?draft=abc" })],
-      [placement("a")]
-    );
-    expect(plan.mount).toEqual([]);
-    expect(plan.place.map((p) => p.id)).toEqual(["a"]);
-  });
-
-  it("mounts again a placement pointed at another widget", () => {
+  it("swaps the frame of a placement pointed at another widget", () => {
     const plan = planSceneUpdate([placement("a")], [placement("a", { widgetCanonicalId: "woofx3:widget:timer" })]);
-    expect(plan.remove).toEqual(["a"]);
-    expect(plan.mount.map((p) => p.id)).toEqual(["a"]);
+    expect(plan.replace.map((p) => p.id)).toEqual(["a"]);
+    expect(plan.mount).toEqual([]);
+  });
+
+  it("mounts an alert area again for any change of settings, since the page draws it from them", () => {
+    const area = placement("a", { hostsSurface: "alert", frameUrl: "" });
+    const plan = planSceneUpdate([area], [{ ...area, settings: { label: "Raids" } }]);
+    expect(plan.replace.map((p) => p.id)).toEqual(["a"]);
   });
 
   it("removes placements gone from the scene and mounts new ones", () => {
@@ -69,6 +64,7 @@ describe("planSceneUpdate", () => {
     expect(plan.remove).toEqual(["a"]);
     expect(plan.mount.map((p) => p.id)).toEqual(["c"]);
     expect(plan.place.map((p) => p.id)).toEqual(["b"]);
+    expect(plan.replace).toEqual([]);
   });
 
   it("orders the stack by the saved scene, bottom first", () => {
@@ -102,11 +98,30 @@ describe("parseSceneConfig", () => {
   });
 });
 
-describe("canChangeSettingsLive", () => {
-  it("allows any change but the theme", () => {
-    expect(canChangeSettingsLive({ text: "hi" }, { text: "hello", color: "#fff" })).toBe(true);
-    expect(canChangeSettingsLive({ theme: "m:theme:a" }, { theme: " m:theme:a " })).toBe(true);
-    expect(canChangeSettingsLive({ theme: "m:theme:a" }, { theme: "m:theme:b" })).toBe(false);
-    expect(canChangeSettingsLive({}, { theme: "m:theme:a" })).toBe(false);
+describe("settingsUpdate", () => {
+  const reads = (keys: string[], all = false) => ({ all, keys: new Set(keys) });
+
+  it("does nothing when no setting changed, whatever the key order", () => {
+    expect(settingsUpdate({ a: 1, b: { x: 1, y: 2 } }, { b: { y: 2, x: 1 }, a: 1 }, null)).toBe("none");
+  });
+
+  it("patches a change to settings the widget's script never read", () => {
+    expect(settingsUpdate({ color: "#fff", text: "hi" }, { color: "#000", text: "hi" }, reads(["duration"]))).toBe(
+      "patch"
+    );
+  });
+
+  it("reloads for a change to a setting the script read", () => {
+    expect(settingsUpdate({ duration: 5 }, { duration: 8 }, reads(["duration"]))).toBe("reload");
+  });
+
+  it("reloads when the script read everything, or nothing is known yet", () => {
+    expect(settingsUpdate({ a: 1 }, { a: 2 }, reads([], true))).toBe("reload");
+    expect(settingsUpdate({ a: 1 }, { a: 2 }, null)).toBe("reload");
+  });
+
+  it("counts a setting added or removed as changed", () => {
+    expect(settingsUpdate({ a: 1 }, { a: 1, b: 2 }, reads(["b"]))).toBe("reload");
+    expect(settingsUpdate({ a: 1, b: 2 }, { a: 1 }, reads([]))).toBe("patch");
   });
 });
