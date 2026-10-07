@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0](https://github.com/wolfymaster/woofx3/compare/v0.13.0...v0.14.0) (2026-10-07)
+
+### Features
+
+* **barkloader:** serve widget frames from an in-memory cache ([a5104dd](https://github.com/wolfymaster/woofx3/commit/a5104ddbb21f64d1a800bdcfaae9473810e1ca18))
+* **module-sdk:** setting bindings, read tracking and a cacheable boot ([10e6533](https://github.com/wolfymaster/woofx3/commit/10e6533e2e9a7dc3490a3a9b4a054a1fb6a76d0d)), closes [#219](https://github.com/wolfymaster/woofx3/issues/219)
+* **modules:** show text and image settings through bindings, and drop onSettings ([709a56c](https://github.com/wolfymaster/woofx3/commit/709a56c45e80cea1ec7f45eccced6d0fdf932d1d)), closes [#219](https://github.com/wolfymaster/woofx3/issues/219)
+* **sceneManager:** cacheable frames, and settings patched or swapped in ([626bf2c](https://github.com/wolfymaster/woofx3/commit/626bf2c0e77245e5ba754bd0fcd9c07e301649a9))
+
 ## [0.13.0](https://github.com/wolfymaster/woofx3/compare/v0.12.0...v0.13.0) (2026-10-07)
 
 ### Features
