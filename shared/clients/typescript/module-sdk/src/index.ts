@@ -56,16 +56,26 @@ export type {
   WidgetStorageSubscribeMessage,
   WidgetStorageUnsubscribeMessage,
   WidgetStorageValueMessage,
+  WidgetPlacementBoot,
+  WidgetRenderedMessage,
+  WidgetSettingsChangedMessage,
+  WidgetSettingsReadsMessage,
   WidgetToHostMessage,
 } from "./widget-protocol";
 export {
   PROTOCOL_VERSION,
+  WIDGET_BOOT_FRAGMENT_PARAM,
   WIDGET_BOOT_GLOBAL,
   WIDGET_PROTOCOL,
+  decodePlacementBoot,
+  encodePlacementBoot,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
   isWidgetTheme,
 } from "./widget-protocol";
+
+export type { BindingDocument } from "./widget-bindings";
+export { applySettingBindings } from "./widget-bindings";
 
 export type {
   InstallWidgetHostShimOptions,

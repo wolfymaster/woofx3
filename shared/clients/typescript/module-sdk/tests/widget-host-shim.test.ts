@@ -13,6 +13,7 @@ import {
 import {
   PROTOCOL_VERSION,
   WIDGET_PROTOCOL,
+  encodePlacementBoot,
   isWidgetProtocolEnvelope,
   type WidgetBootPayload,
 } from "../src/widget-protocol";
@@ -36,6 +37,8 @@ function makeBoot(overrides: Partial<WidgetBootPayload> = {}): WidgetBootPayload
 
 interface Harness {
   windowRef: ShimWindow;
+  /** Fire a non-message window event (`load`, `DOMContentLoaded`). */
+  fire(type: string): void;
   parent: ShimParentWindow & { messages: Array<{ data: unknown; origin: string }> };
   /** Simulate a message arriving in the child window. */
   deliver(data: unknown, source?: unknown): void;
@@ -44,8 +47,9 @@ interface Harness {
   listenerCount(): number;
 }
 
-function makeHarness(boot: unknown): Harness {
+function makeHarness(boot: unknown, hash = ""): Harness {
   const listeners: Array<(event: ShimMessageEvent) => void> = [];
+  const others = new Map<string, Array<(event: ShimMessageEvent) => void>>();
   const parent = {
     messages: [] as Array<{ data: unknown; origin: string }>,
     postMessage(message: unknown, targetOrigin: string): void {
@@ -54,10 +58,22 @@ function makeHarness(boot: unknown): Harness {
   };
   const windowRef: ShimWindow = {
     __WOOFX3_WIDGET_BOOT__: boot,
-    addEventListener(_type, listener): void {
-      listeners.push(listener);
+    location: { hash },
+    addEventListener(type, listener): void {
+      if (type === "message") {
+        listeners.push(listener);
+        return;
+      }
+      others.set(type, [...(others.get(type) ?? []), listener]);
     },
-    removeEventListener(_type, listener): void {
+    removeEventListener(type, listener): void {
+      if (type !== "message") {
+        others.set(
+          type,
+          (others.get(type) ?? []).filter((l) => l !== listener)
+        );
+        return;
+      }
       const idx = listeners.indexOf(listener);
       if (idx >= 0) {
         listeners.splice(idx, 1);
@@ -66,6 +82,11 @@ function makeHarness(boot: unknown): Harness {
   };
   return {
     windowRef,
+    fire(type: string): void {
+      for (const listener of others.get(type) ?? []) {
+        listener({ source: null, data: null });
+      }
+    },
     parent,
     deliver(data: unknown, source: unknown = parent): void {
       for (const listener of listeners.slice()) {
@@ -293,60 +314,128 @@ describe("installWidgetHostShim — storage", () => {
   });
 });
 
-describe("installWidgetHostShim — settings", () => {
-  it("onSettings subscribes once and replaces settings before calling back", () => {
-    const h = makeHarness(makeBoot());
+describe("installWidgetHostShim — placement boot in the fragment", () => {
+  // What the cacheable frame document inlines: the widget, not the placement.
+  function widgetBoot(): Record<string, unknown> {
+    const { nonce: _n, instanceId: _i, settings: _s, ...rest } = makeBoot();
+    return rest;
+  }
+
+  it("merges the fragment's placement over the inlined widget boot", () => {
+    const hash =
+      "#" + encodePlacementBoot({ nonce: NONCE, instanceId: "inst-9", settings: { label: "fragment" } });
+    const h = makeHarness(widgetBoot(), hash);
     const host = install(h)!;
-    h.deliver(initMsg());
-
-    const seen: unknown[] = [];
-    const first = host.onSettings((settings) => seen.push(["first", settings.label, host.settings.label]));
-    host.onSettings((settings) => seen.push(["second", settings.label]));
-    expect(h.sent("settings.subscribe").length).toBe(1);
-
-    h.deliver(fromParent({ type: "settings.changed", settings: { label: "lurkers" } }));
-    expect(seen).toEqual([
-      ["first", "lurkers", "lurkers"],
-      ["second", "lurkers"],
-    ]);
-    expect(host.settings).toEqual({ label: "lurkers" });
-    expect(Object.isFrozen(host.settings)).toBe(true);
-
-    first();
-    expect(h.sent("settings.unsubscribe").length).toBe(0);
+    expect(host.instanceId).toBe("inst-9");
+    expect(host.settings.label).toBe("fragment");
+    expect(h.sent("hello")[0]!.nonce).toBe(NONCE);
   });
 
-  it("unsubscribes when the last callback goes", () => {
+  it("refuses a widget boot with no placement to go with it", () => {
+    spyOn(console, "error").mockImplementation(() => {});
+    expect(install(makeHarness(widgetBoot()))).toBeNull();
+  });
+});
+
+describe("installWidgetHostShim — settings", () => {
+  it("reports each setting the script reads, once", async () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
     h.deliver(initMsg());
-    const off = host.onSettings(() => {});
-    off();
-    off();
-    expect(h.sent("settings.unsubscribe").length).toBe(1);
+
+    expect(host.settings.label).toBe("watchers");
+    void host.settings.label;
+    void ("accent" in host.settings);
+    await Promise.resolve();
+    expect(h.sent("settings.reads")).toEqual([
+      expect.objectContaining({ keys: ["label", "accent"], all: false }),
+    ]);
+
+    void host.settings.label;
+    await Promise.resolve();
+    expect(h.sent("settings.reads").length).toBe(1);
+  });
+
+  it("reports every setting read when the script spreads them", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    const copy = { ...host.settings };
+    expect(copy).toEqual({ label: "watchers", accent: "#fff" });
+    await Promise.resolve();
+    expect(h.sent("settings.reads").at(-1)).toMatchObject({ all: true });
+  });
+
+  it("holds the report until init, like every other message", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    void host.settings.label;
+    await Promise.resolve();
+    expect(h.sent("settings.reads").length).toBe(0);
+    h.deliver(initMsg());
+    expect(h.sent("settings.reads")).toEqual([expect.objectContaining({ keys: ["label"] })]);
+  });
+
+  it("applies a settings change to host.settings and the bindings", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    const host = installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc })!;
+    h.deliver(initMsg());
+    expect(doc.vars.get("--setting-label")).toBe("watchers");
+
+    h.deliver(fromParent({ type: "settings.changed", settings: { label: "lurkers" } }));
+    expect(host.settings).toEqual({ label: "lurkers" });
+    expect(Object.isFrozen(host.settings)).toBe(true);
+    expect(doc.vars.get("--setting-label")).toBe("lurkers");
+    expect(doc.vars.has("--setting-accent")).toBe(false);
   });
 
   it("ignores a settings.changed without a settings object", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
     h.deliver(initMsg());
-    const cb = mock(() => {});
-    host.onSettings(cb);
     h.deliver(fromParent({ type: "settings.changed", settings: null }));
     h.deliver(fromParent({ type: "settings.changed", settings: [1] }));
-    expect(cb).not.toHaveBeenCalled();
     expect(host.settings.label).toBe("watchers");
   });
 
-  it("queues the subscribe until init", () => {
-    const h = makeHarness(makeBoot());
-    const host = install(h)!;
-    host.onSettings(() => {});
-    expect(h.sent("settings.subscribe").length).toBe(0);
-    h.deliver(initMsg());
-    expect(h.sent("settings.subscribe").length).toBe(1);
+  it("offers no update callback: widgets never handle updates", () => {
+    const host = install(makeHarness(makeBoot()))! as unknown as Record<string, unknown>;
+    expect(host.onSettings).toBeUndefined();
   });
 });
+
+describe("installWidgetHostShim — rendered", () => {
+  it("reports rendered two frames after load", async () => {
+    const h = makeHarness(makeBoot());
+    install(h);
+    h.deliver(initMsg());
+    h.fire("load");
+    expect(h.sent("rendered").length).toBe(0);
+    await sleep(60);
+    expect(h.sent("rendered").length).toBe(1);
+  });
+});
+
+/** Just enough document for the bindings: :root's custom properties. */
+function fakeDocument() {
+  const vars = new Map<string, string>();
+  const attributes = new Map<string, string>();
+  const documentElement = {
+    style: {
+      setProperty: (name: string, value: string) => void vars.set(name, value),
+      removeProperty: (name: string) => {
+        vars.delete(name);
+        return "";
+      },
+    },
+    getAttribute: (name: string) => attributes.get(name) ?? null,
+    setAttribute: (name: string, value: string) => void attributes.set(name, value),
+    removeAttribute: (name: string) => void attributes.delete(name),
+    textContent: null as string | null,
+  };
+  return { vars, documentElement, querySelectorAll: () => [] };
+}
 
 describe("installWidgetHostShim — events", () => {
   function makeEvent(overrides: Record<string, unknown> = {}) {

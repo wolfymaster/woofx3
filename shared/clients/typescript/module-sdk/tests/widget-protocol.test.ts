@@ -7,6 +7,8 @@ import { describe, expect, it } from "bun:test";
 import {
   PROTOCOL_VERSION,
   WIDGET_PROTOCOL,
+  decodePlacementBoot,
+  encodePlacementBoot,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
   type WidgetBootPayload,
@@ -209,5 +211,26 @@ describe("P2 woofx3.overlay-events — frame round-trip", () => {
     expect(isOverlayEventsEnvelope({ ...good, frame: null })).toBe(false);
     expect(isOverlayEventsEnvelope({ proto: OVERLAY_EVENTS_PROTOCOL, v: 1 })).toBe(false);
     expect(isOverlayEventsEnvelope(null)).toBe(false);
+  });
+});
+
+describe("placement boot in the fragment", () => {
+  it("round-trips through the fragment, text of any script included", () => {
+    const boot = { nonce: "n-1", instanceId: "w_1", settings: { text: "Ça va? 🎉 <b>" }, linkedResources: {} };
+    const hash = "#" + encodePlacementBoot(boot);
+    expect(hash.startsWith("#boot=")).toBe(true);
+    expect(hash.slice("#boot=".length)).not.toMatch(/[+/=]/);
+    expect(decodePlacementBoot(hash)).toEqual(boot);
+  });
+
+  it("finds it beside other fragment parameters", () => {
+    const encoded = encodePlacementBoot({ nonce: "n", instanceId: "i", settings: {} });
+    expect(decodePlacementBoot(`#a=1&${encoded}&b=2`)).toEqual({ nonce: "n", instanceId: "i", settings: {} });
+  });
+
+  it("is null for no fragment, garbage, or a non-object", () => {
+    expect(decodePlacementBoot("")).toBeNull();
+    expect(decodePlacementBoot("#boot=%%%")).toBeNull();
+    expect(decodePlacementBoot("#boot=" + btoa("[1]"))).toBeNull();
   });
 });

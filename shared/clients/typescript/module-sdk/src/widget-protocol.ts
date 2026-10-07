@@ -64,6 +64,51 @@ export interface WidgetBootPayload {
   linkedResources?: Record<string, string>;
 }
 
+/**
+ * The part of the boot payload that belongs to one placement rather than to
+ * the widget. It travels in the frame URL's fragment (`#boot=…`), so the
+ * frame document itself is the same for every placement of a widget version
+ * and can be cached; the shim merges it over the inlined payload.
+ */
+export type WidgetPlacementBoot = Pick<WidgetBootPayload, "nonce" | "instanceId" | "settings" | "linkedResources">;
+
+/** The fragment parameter carrying a `WidgetPlacementBoot`. */
+export const WIDGET_BOOT_FRAGMENT_PARAM = "boot";
+
+/** `boot=<base64url JSON>`, to append to a frame URL after `#`. */
+export function encodePlacementBoot(boot: WidgetPlacementBoot): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(boot));
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${WIDGET_BOOT_FRAGMENT_PARAM}=${base64}`;
+}
+
+/** The placement boot in a frame URL's fragment, or null when there is none. */
+export function decodePlacementBoot(hash: string): Partial<WidgetPlacementBoot> | null {
+  const fragment = hash.startsWith("#") ? hash.slice(1) : hash;
+  for (const part of fragment.split("&")) {
+    const eq = part.indexOf("=");
+    if (eq < 0 || part.slice(0, eq) !== WIDGET_BOOT_FRAGMENT_PARAM) {
+      continue;
+    }
+    try {
+      const base64 = part.slice(eq + 1).replace(/-/g, "+").replace(/_/g, "/");
+      const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+      const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      return typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Partial<WidgetPlacementBoot>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Envelope
 // ---------------------------------------------------------------------------
@@ -189,17 +234,24 @@ export interface WidgetStatusReportMessage extends WidgetProtocolEnvelope {
 }
 
 /**
- * The widget redraws itself when its settings change (`host.onSettings`), so
- * the host sends a change as `settings.changed` rather than reloading the
- * frame. Without it, a settings change reloads the widget.
+ * The settings the widget's script has read through `host.settings`, sent
+ * as they are first read. A change to any of these reloads the widget; a
+ * change to any other setting is applied in place through its bindings
+ * (`settings.changed`). `all` means the script read every setting at once
+ * (spread them, listed their keys), so every change reloads it.
  */
-export interface WidgetSettingsSubscribeMessage extends WidgetProtocolEnvelope {
-  type: "settings.subscribe";
+export interface WidgetSettingsReadsMessage extends WidgetProtocolEnvelope {
+  type: "settings.reads";
+  keys: string[];
+  all: boolean;
 }
 
-/** The widget no longer handles settings changes itself: reload it on one. */
-export interface WidgetSettingsUnsubscribeMessage extends WidgetProtocolEnvelope {
-  type: "settings.unsubscribe";
+/**
+ * The frame has loaded and painted. The host waits for this before showing a
+ * frame that replaces another, so a reload never shows a blank widget.
+ */
+export interface WidgetRenderedMessage extends WidgetProtocolEnvelope {
+  type: "rendered";
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +308,8 @@ export interface WidgetEventDeliverMessage extends WidgetProtocolEnvelope {
 }
 
 /** The placement's settings changed: the whole new set, not a diff. Sent
- *  only to a widget that has sent `settings.subscribe`. */
+ *  only when no changed setting is one the widget's script has read (see
+ *  `settings.reads`); the shim applies it through the setting bindings. */
 export interface WidgetSettingsChangedMessage extends WidgetProtocolEnvelope {
   type: "settings.changed";
   settings: Record<string, unknown>;
@@ -299,8 +352,8 @@ export type WidgetToHostMessage =
   | WidgetEventsUnsubscribeMessage
   | WidgetEventCompleteMessage
   | WidgetStatusReportMessage
-  | WidgetSettingsSubscribeMessage
-  | WidgetSettingsUnsubscribeMessage
+  | WidgetSettingsReadsMessage
+  | WidgetRenderedMessage
   | WidgetPingMessage
   | WidgetPongMessage;
 
