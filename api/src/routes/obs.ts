@@ -6,7 +6,8 @@ import { routeModule } from "./context";
 const OBS_STATUS_TIMEOUT_MS = 3_000;
 
 const OBS_CONNECTION_STATES = new Set(["connecting", "connected", "retrying", "stopped"]);
-const OBS_FAILURES = new Set(["authentication", "unreachable"]);
+const OBS_FAILURES = new Set(["authentication", "unreachable", "relay"]);
+const OBS_ROUTES = new Set(["direct", "companion"]);
 
 /**
  * The scene manager's reply as an ObsStatus. Anything malformed reads as
@@ -18,7 +19,7 @@ export function parseObsStatusReply(raw: unknown): ObsStatus {
   if (state === null) {
     return { state: "unanswered", failure: null, address: null };
   }
-  return {
+  const status: ObsStatus = {
     state: state as ObsStatus["state"],
     failure:
       typeof reply.failure === "string" && OBS_FAILURES.has(reply.failure)
@@ -26,6 +27,10 @@ export function parseObsStatusReply(raw: unknown): ObsStatus {
         : null,
     address: typeof reply.address === "string" && reply.address.length > 0 ? reply.address : null,
   };
+  if (typeof reply.route === "string" && OBS_ROUTES.has(reply.route)) {
+    status.route = reply.route as NonNullable<ObsStatus["route"]>;
+  }
+  return status;
 }
 
 export const obsRoutes = routeModule({

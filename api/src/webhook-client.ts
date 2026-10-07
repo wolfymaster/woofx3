@@ -54,6 +54,11 @@ export class WebhookClient {
     private logger: SharedLogger
   ) {}
 
+  /** Engine client ids of the dashboards with a callback URL. */
+  clientIds(): string[] {
+    return this.instances.map((instance) => instance.clientId);
+  }
+
   async refreshCallbackUrls(): Promise<void> {
     const resp = await this.db.listClients();
     const newInstances: RegisteredInstance[] = [];

@@ -10,6 +10,7 @@
 // is one line, not one line per retry.
 
 import type { Logger } from "@woofx3/common/runtime";
+import { EndpointRelayError } from "../endpoints/dialer";
 
 /** One open OBS session: the client to issue requests on, and its lifecycle. */
 export interface ObsSession<TClient> {
@@ -64,14 +65,19 @@ export function obsRetryDelay(attempt: number, backoff: ObsBackoff, random: numb
 /** obs-websocket v5 WebSocketCloseCode.AuthenticationFailed. */
 const OBS_AUTHENTICATION_FAILED = 4009;
 
-export type ObsFailureKind = "authentication" | "unreachable";
+export type ObsFailureKind = "authentication" | "unreachable" | "relay";
 
 /**
- * A wrong or missing password closes the socket with 4009, which obs-websocket-js
- * surfaces as the connect error's `code`. Everything else a streamer can act on
- * is "OBS is not running or not listening there".
+ * The endpoint dialer throws `EndpointRelayError` when OBS is routed through
+ * the companion and the bridge could not be opened. A wrong or missing
+ * password closes the socket with 4009, which obs-websocket-js surfaces as the
+ * connect error's `code`. Everything else a streamer can act on is "OBS is not
+ * running or not listening there".
  */
 export function obsFailureKind(err: unknown): ObsFailureKind {
+  if (err instanceof EndpointRelayError) {
+    return "relay";
+  }
   const code = typeof err === "object" && err !== null && "code" in err ? (err as { code: unknown }).code : undefined;
   return code === OBS_AUTHENTICATION_FAILED ? "authentication" : "unreachable";
 }
@@ -183,7 +189,8 @@ export class ObsConnection<TClient> {
 
   /**
    * Why OBS cannot be reached, as last seen: `authentication` for a refused
-   * password, `unreachable` for nothing answering or a lost connection. Null
+   * password, `relay` for a companion bridge that could not be opened,
+   * `unreachable` for nothing answering or a lost connection. Null
    * while connected and before any attempt has failed.
    */
   lastFailure(): ObsFailureKind | null {
@@ -276,6 +283,11 @@ export class ObsConnection<TClient> {
       if (kind === "authentication") {
         this.options.logger.warn(
           "OBS refused the connection: check the WebSocket password in the OBS module's settings (or WOOFX3_OBS_RPC_TOKEN without the module); retrying in the background",
+          { error }
+        );
+      } else if (kind === "relay") {
+        this.options.logger.warn(
+          "OBS is routed through the companion, and the relay could not open the bridge (is the companion running?); retrying in the background",
           { error }
         );
       } else {

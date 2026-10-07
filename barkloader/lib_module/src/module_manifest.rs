@@ -1004,6 +1004,11 @@ pub struct ModuleManifest {
     /// engine keeps their tokens (`lib_sandbox::oauth`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub oauth: Vec<lib_sandbox::oauth::OAuthIntegration>,
+    /// Things on the streamer's network the module reaches. Stored with the
+    /// manifest (it is re-serialized at install), so the dashboard and
+    /// sceneManager read it from `modules.manifest`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local: Vec<crate::local_endpoint::LocalEndpoint>,
 }
 
 impl ModuleManifest {

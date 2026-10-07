@@ -199,6 +199,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `themes` | array | no | Data-only appearance variants for widgets that declare a `theme` contract. See [Themes](#themes). |
 | `permissions` | array of string | no | Privileged host functions this module's code may call, e.g. `["twitch.moderation"]`. See [Permissions](#permissions-permissions). |
 | `oauth` | array of object | no | OAuth providers the module's code calls through `ctx.oauth`, with tokens the engine keeps. See [OAuth integrations](#oauth-integrations-oauth). |
+| `local` | array of object | no | Things on the streamer's own network the module reaches (OBS, lights), and which of its settings hold the address. See [Local endpoints](#local-endpoints-local). |
 
 ### Trigger entry (`triggers[]`)
 
@@ -1301,6 +1302,53 @@ every permission that module declares; otherwise the install fails, naming the
 reference and the missing permissions. The other module must be installed with
 a readable manifest. Bundled system modules are exempt, and references to the
 module's own actions need nothing beyond its own `permissions`.
+
+### Local endpoints (`local[]`)
+
+A module that controls something on the streamer's own network (OBS, a key
+light, VTube Studio) declares it as a local endpoint. The module states facts
+only: what it reaches, which of its settings hold the address, and how the
+device can be found. How the engine reaches it, straight to the address or
+through the woofx3 companion on the streamer's PC, is the platform's decision
+(see [Local endpoints](../services/local-endpoints.md)).
+
+```json
+"settings": [
+  { "id": "host", "label": "Host", "type": "text", "defaultValue": "127.0.0.1" },
+  { "id": "port", "label": "Port", "type": "number", "defaultValue": "4455" },
+  { "id": "password", "label": "Password", "type": "secret" }
+],
+"local": [{
+  "id": "obs",
+  "name": "OBS WebSocket",
+  "protocol": "websocket",
+  "hostSetting": "host",
+  "portSetting": "port",
+  "passwordSetting": "password",
+  "discover": { "known": "obs-websocket" }
+}]
+```
+
+| Field | Notes |
+|---|---|
+| `id` | 1-40 lowercase letters, digits, `_` or `-`; unique within the module |
+| `name` | 1-80 characters. Shown in the companion and on the module install page |
+| `protocol` | `websocket` or `http`. Any other value fails the install, because the platform could not carry it |
+| `hostSetting` | A `text` setting holding the host |
+| `portSetting` | A `number` setting holding the port |
+| `passwordSetting` | Optional: a `secret` setting holding the endpoint's own password |
+| `discover` | Optional, with exactly one of `mdns` or `known`. `mdns` is a DNS-SD service type such as `_elg._tcp`, browsed by the companion. `known` names a discoverer built into the companion (`obs-websocket` reads OBS's own WebSocket config file); it is checked for shape only, because which discoverers exist depends on the companion's version, not the engine's |
+
+The install fails when a named setting is missing or of another type, or when
+two endpoint fields name the same setting: the companion fills these settings
+in, and two endpoints sharing one would overwrite each other's values. Unknown
+fields in an entry also fail the install. The block is stored with the manifest
+in `modules.manifest`, where the dashboard and sceneManager read it.
+
+Module code cannot open a local endpoint yet. Today the one endpoint in use is
+OBS's, and sceneManager holds that connection on the module's behalf
+(`woofx3_obs/obs`, see [OBS](../services/obs.md)); module code reaches OBS
+through `ctx.obs`.
 
 ## Runtime resource instances
 
