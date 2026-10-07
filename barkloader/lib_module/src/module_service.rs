@@ -43,7 +43,7 @@ where
         }
     }
 
-    fn pick_manifest_file<'a>(&'a self) -> Result<&'a ModuleFile> {
+    fn pick_manifest_file(&self) -> Result<&ModuleFile> {
         fn norm(p: &str) -> String {
             p.replace('\\', "/").to_lowercase()
         }
@@ -195,7 +195,7 @@ mod tests {
         });
         for (name, contents) in files {
             service.add_file(
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 *name,
                 contents.to_vec(),
             );

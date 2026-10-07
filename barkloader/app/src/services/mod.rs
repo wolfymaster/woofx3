@@ -2,6 +2,7 @@ pub mod bundled_reconciler;
 pub mod chat;
 pub mod field_options;
 pub mod file_service;
+pub mod frame_cache;
 pub mod heartbeat;
 pub mod http_client;
 pub mod http_storage_client;

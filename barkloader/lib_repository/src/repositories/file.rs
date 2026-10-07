@@ -131,13 +131,12 @@ impl Repository for FileRepository {
             let destination_path = self.config.destination.join(&create_request.file_name);
 
             // ensure parent directories exist for nested paths
-            if let Some(parent) = destination_path.parent() {
-                if !parent.exists() {
-                    if let Err(_err) = fs::create_dir_all(parent).await {
-                        failed.push(create_request.file_name);
-                        continue;
-                    }
-                }
+            if let Some(parent) = destination_path.parent()
+                && !parent.exists()
+                && let Err(_err) = fs::create_dir_all(parent).await
+            {
+                failed.push(create_request.file_name);
+                continue;
             }
 
             // Written beside the destination and renamed into place, so the

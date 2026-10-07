@@ -21,7 +21,6 @@ use types::{AppContext, SharedRepository};
 
 mod bundled_modules;
 mod callback;
-mod errors;
 mod routes;
 mod services;
 mod types;
@@ -78,7 +77,7 @@ async fn setup() -> Result<AppContext> {
         services::scheduler::SystemClock,
     )));
 
-    let mut oauth_service: Option<Arc<OAuthService>> = None;
+    let oauth_service: Option<Arc<OAuthService>>;
     // `ctx.resources.run` runs actions in a sandbox built from the very
     // context it is part of, so it is handed that context once it exists.
     let action_runner = SandboxActionRunner::new(registry.clone());
@@ -286,6 +285,7 @@ async fn setup() -> Result<AppContext> {
         scheduler,
         public_url_resolver,
         oauth: oauth_service,
+        frame_cache: Arc::new(services::frame_cache::FrameCache::new()),
     };
 
     Ok(ctx)

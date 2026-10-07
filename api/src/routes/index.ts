@@ -17,6 +17,7 @@ import { moduleOAuthRoutes } from "./module-oauth";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
+import { relayRoutes } from "./relay";
 import { resourcesRoutes } from "./resources";
 import { scenesRoutes } from "./scenes";
 import { streamEventsRoutes } from "./stream-events";
@@ -54,7 +55,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof streamSessionsRoutes &
   typeof analyticsRoutes &
   typeof configBundlesRoutes &
-  typeof moduleOAuthRoutes;
+  typeof moduleOAuthRoutes &
+  typeof relayRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -111,6 +113,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(streamSessionsRoutes),
     instrumentRoutes(analyticsRoutes),
     instrumentRoutes(configBundlesRoutes),
-    instrumentRoutes(moduleOAuthRoutes)
+    instrumentRoutes(moduleOAuthRoutes),
+    instrumentRoutes(relayRoutes)
   );
 }

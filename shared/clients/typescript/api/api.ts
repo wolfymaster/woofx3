@@ -732,13 +732,35 @@ export interface ModuleOAuthConnected {
  * - `failure`: why the last connect attempt failed: `authentication` when OBS
  *   refused the password, `unreachable` when nothing answered at `address` or
  *   the connection was lost. Null while connected and before any attempt failed.
+ *   `relay` when the endpoint is routed through the companion and the relay
+ *   could not open the bridge (the companion is not connected, or the relay
+ *   refused).
  * - `address`: the `host:port` the scene manager last tried. Never includes the
- *   password.
+ *   password. Through the companion it is the bridge's host, never a ticket.
+ * - `route`: how the last attempt reached OBS: straight to the address in the
+ *   module's settings, or through the companion's bridge. Absent before any
+ *   attempt, and from engines without the `modules.localEndpoints` capability.
  */
 export interface ObsStatus {
   state: ObsConnectionState | "unanswered";
-  failure: "authentication" | "unreachable" | null;
+  failure: "authentication" | "unreachable" | "relay" | null;
   address: string | null;
+  route?: "direct" | "companion";
+}
+
+// ==================== Local endpoints ====================
+
+/** Where a cloud engine reaches the companion's bridge, and which endpoints go through it. */
+export interface RelayConfig {
+  /** `https://c-xxxxxxxxxxxx.woofx3.tv`; the dialer opens `wss://…/bridge/<moduleId>/<endpointId>`. */
+  bridgeOrigin: string;
+  endpoints: RelayEndpoint[];
+}
+
+/** A module's `local[]` endpoint, named by the module's manifest id and the endpoint's `id`. */
+export interface RelayEndpoint {
+  moduleId: string;
+  endpointId: string;
 }
 
 // ==================== Alert queue controls ====================
@@ -1718,6 +1740,15 @@ export interface Woofx3EngineApi {
     integration: string,
     authorization: ModuleOAuthAuthorization
   ): Promise<ModuleOAuthConnected>;
+
+  /**
+   * Route the listed local endpoints through the companion's bridge, or stop
+   * (null). Stored, so a restart keeps it. The bridge credential is not part
+   * of it: the engine asks the dashboard that called this for one with the
+   * `relay.credential.requested` request. Requires the
+   * `modules.localEndpoints` capability.
+   */
+  setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
 
   // Overlay Tokens
   //

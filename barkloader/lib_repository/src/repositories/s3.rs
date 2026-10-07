@@ -88,10 +88,10 @@ impl S3Repository {
         let shared = loader.load().await;
 
         let mut s3_builder = aws_sdk_s3::config::Builder::from(&shared);
-        if let Some(endpoint) = config.endpoint.as_deref() {
-            if !endpoint.is_empty() {
-                s3_builder = s3_builder.endpoint_url(endpoint);
-            }
+        if let Some(endpoint) = config.endpoint.as_deref()
+            && !endpoint.is_empty()
+        {
+            s3_builder = s3_builder.endpoint_url(endpoint);
         }
         if config.force_path_style {
             s3_builder = s3_builder.force_path_style(true);

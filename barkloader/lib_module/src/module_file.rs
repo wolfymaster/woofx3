@@ -6,14 +6,14 @@ use super::module_manifest::ModuleManifest;
 
 #[derive(Debug, Clone)]
 pub enum ModuleValidProgramKind {
-    JS,
-    LUA,
+    Js,
+    Lua,
 }
 
 #[derive(Debug, Clone)]
 pub enum ModuleValidManifestKind {
-    JSON,
-    YAML,
+    Json,
+    Yaml,
 }
 
 #[derive(Debug, Clone)]
@@ -28,14 +28,17 @@ impl ModuleFileKind {
     pub fn is_manifest(&self) -> bool {
         matches!(self, ModuleFileKind::MANIFEST(_))
     }
+}
 
-    pub fn to_string(&self) -> String {
+/// The file extension the kind was read from.
+impl std::fmt::Display for ModuleFileKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS) => "js".to_string(),
-            ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA) => "lua".to_string(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => "json".to_string(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => "yaml".to_string(),
-            ModuleFileKind::ASSET(ext) => ext.clone(),
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::Js) => f.write_str("js"),
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua) => f.write_str("lua"),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json) => f.write_str("json"),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Yaml) => f.write_str("yaml"),
+            ModuleFileKind::ASSET(ext) => f.write_str(ext),
         }
     }
 }
@@ -44,11 +47,11 @@ impl FromStr for ModuleFileKind {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().trim() {
-            "js" => Ok(ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS)),
-            "lua" => Ok(ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA)),
-            "json" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON)),
-            "yaml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML)),
-            "yml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML)),
+            "js" => Ok(ModuleFileKind::PROGRAM(ModuleValidProgramKind::Js)),
+            "lua" => Ok(ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua)),
+            "json" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json)),
+            "yaml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::Yaml)),
+            "yml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::Yaml)),
             "zip" => Err(anyhow!("zip is handled separately")),
             other => Ok(ModuleFileKind::ASSET(other.to_string())),
         }
@@ -89,9 +92,9 @@ impl ModuleFile {
             .map_err(|_| anyhow!("File '{}' contents are not valid UTF-8", self.name))?;
 
         match kind {
-            ModuleValidManifestKind::JSON => serde_json::from_str(content_str)
+            ModuleValidManifestKind::Json => serde_json::from_str(content_str)
                 .map_err(|e| anyhow!("Failed to parse JSON manifest '{}': {}", self.name, e)),
-            ModuleValidManifestKind::YAML => serde_yaml::from_str(content_str)
+            ModuleValidManifestKind::Yaml => serde_yaml::from_str(content_str)
                 .map_err(|e| anyhow!("Failed to parse YAML manifest '{}': {}", self.name, e)),
         }
     }

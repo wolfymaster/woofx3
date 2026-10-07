@@ -6,6 +6,7 @@ use lib_repository::Repository;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::services::frame_cache::{FrameCache, FrameKey};
 use crate::types::AppContext;
 use lib_module::db_proxy::{self as db_rpc, ModuleRecord};
 use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
@@ -13,7 +14,7 @@ use lib_module::module_manifest::ModuleManifest;
 use lib_module::theme::{self, InstalledModule, ResolvedTheme, SelectedTheme, ThemeListing};
 
 #[derive(Serialize)]
-struct FrameResponse {
+pub struct FrameResponse {
     #[serde(rename = "entryHtml")]
     entry_html: String,
     #[serde(rename = "resourceBaseUrl")]
@@ -23,11 +24,23 @@ struct FrameResponse {
     theme: Option<ResolvedTheme>,
 }
 
+/// Frames are resolved once per installed version and served from here; see
+/// `services::frame_cache`.
+pub type WidgetFrameCache = FrameCache<FrameResponse>;
+
 #[derive(Deserialize)]
 struct FrameQuery {
     /// The theme canonical id a placement's settings select, if any.
     #[serde(default)]
     theme: Option<String>,
+}
+
+/// Why a frame could not be resolved, as the status the handler answers.
+/// Each is logged where it happens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameError {
+    NotFound,
+    Internal,
 }
 
 /// Resolves a module widget's frame: raw entry HTML (fetched
@@ -36,6 +49,9 @@ struct FrameQuery {
 /// under that widget's version-scoped asset root. Every widget resolves
 /// through here, the bundled `woofx3` ones included -- there is no second
 /// path serving widget frames from anywhere else.
+///
+/// Served from `ctx.frame_cache`: only the first request for a widget and
+/// theme after an install, uninstall or storage swap resolves it.
 #[get("/widgets/{module_key}/{manifest_id}/frame")]
 #[tracing::instrument(
     name = "GET /widgets/{module_key}/{manifest_id}/frame",
@@ -48,30 +64,71 @@ async fn widget_frame_handler(
     query: Query<FrameQuery>,
 ) -> HttpResponse {
     let (module_key, manifest_id) = path.into_inner();
-    let Some(db_proxy_url) = ctx.db_proxy_url.as_ref() else {
+    let Some(db_proxy_url) = ctx.db_proxy_url.clone() else {
         warn!(
             "widget_frame: db_proxy_url not configured; refusing {}:{}",
             module_key, manifest_id
         );
         return HttpResponse::ServiceUnavailable().finish();
     };
-    let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
+    let theme = query
+        .into_inner()
+        .theme
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let public_url = ctx.public_url_resolver.resolve().await;
+    let key = FrameKey {
+        module_key: module_key.clone(),
+        manifest_id: manifest_id.clone(),
+        theme: theme.clone(),
+        public_url: public_url.clone(),
+    };
 
-    let entry = match db_proxy.get_widget_entry(&module_key, &manifest_id).await {
+    let resolved = ctx
+        .frame_cache
+        .get_or_resolve(key, || {
+            resolve_frame(
+                &ctx,
+                &db_proxy_url,
+                &module_key,
+                &manifest_id,
+                theme.as_deref(),
+                &public_url,
+            )
+        })
+        .await;
+    match resolved {
+        Ok(frame) => HttpResponse::Ok().json(&*frame),
+        Err(FrameError::NotFound) => HttpResponse::NotFound().finish(),
+        Err(FrameError::Internal) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+async fn resolve_frame(
+    ctx: &AppContext,
+    db_proxy_url: &str,
+    module_key: &str,
+    manifest_id: &str,
+    theme: Option<&str>,
+    public_url: &str,
+) -> Result<FrameResponse, FrameError> {
+    let db_proxy = HttpDbProxyClient::new(db_proxy_url.to_string());
+
+    let entry = match db_proxy.get_widget_entry(module_key, manifest_id).await {
         Ok(Some(entry)) => entry,
         Ok(None) => {
             warn!(
                 "widget_frame: no widget registered for {}:{}",
                 module_key, manifest_id
             );
-            return HttpResponse::NotFound().finish();
+            return Err(FrameError::NotFound);
         }
         Err(e) => {
             warn!(
                 "widget_frame: entry lookup failed for {}:{}: {}",
                 module_key, manifest_id, e
             );
-            return HttpResponse::InternalServerError().finish();
+            return Err(FrameError::Internal);
         }
     };
     let Some(entry) = sanitize_entry(&entry) else {
@@ -79,24 +136,24 @@ async fn widget_frame_handler(
             "widget_frame: registered entry rejected by traversal check: {}",
             entry
         );
-        return HttpResponse::NotFound().finish();
+        return Err(FrameError::NotFound);
     };
 
-    let record = match db_rpc::get_module_record_by_module_id(db_proxy_url, &module_key).await {
+    let record = match db_rpc::get_module_record_by_module_id(db_proxy_url, module_key).await {
         Ok(Some(record)) => record,
         Ok(None) => {
             warn!(
                 "widget_frame: module {} has no resolvable installed version",
                 module_key
             );
-            return HttpResponse::NotFound().finish();
+            return Err(FrameError::NotFound);
         }
         Err(e) => {
             warn!(
                 "widget_frame: version resolve failed for {}: {}",
                 module_key, e
             );
-            return HttpResponse::InternalServerError().finish();
+            return Err(FrameError::Internal);
         }
     };
 
@@ -105,7 +162,7 @@ async fn widget_frame_handler(
             "widget_frame: module {} has no version directory in its key {:?}",
             module_key, record.module_key
         );
-        return HttpResponse::NotFound().finish();
+        return Err(FrameError::NotFound);
     };
 
     let repo_key = format!("modules/{module_key}/{version_dir}/widgets/{manifest_id}/{entry}");
@@ -117,7 +174,7 @@ async fn widget_frame_handler(
                     "widget_frame: entry document is not valid UTF-8 at {}: {}",
                     repo_key, e
                 );
-                return HttpResponse::InternalServerError().finish();
+                return Err(FrameError::Internal);
             }
         },
         Err(e) => {
@@ -125,29 +182,28 @@ async fn widget_frame_handler(
                 "widget_frame: repository read_file failed for key {}: {}",
                 repo_key, e
             );
-            return HttpResponse::NotFound().finish();
+            return Err(FrameError::NotFound);
         }
     };
 
-    let public_url = ctx.public_url_resolver.resolve().await;
     let resource_base_url = format!(
         "{}/assets/modules/{module_key}/{version_dir}/widgets/{manifest_id}/",
         public_url.trim_end_matches('/')
     );
 
     let theme = resolve_frame_theme(
-        &ctx,
+        ctx,
         db_proxy_url,
         &record,
-        &module_key,
-        &manifest_id,
+        module_key,
+        manifest_id,
         &resource_base_url,
-        &public_url,
-        query.into_inner().theme.as_deref(),
+        public_url,
+        theme,
     )
     .await;
 
-    HttpResponse::Ok().json(FrameResponse {
+    Ok(FrameResponse {
         entry_html,
         resource_base_url,
         theme,

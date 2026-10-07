@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/wolfymaster/woofx3/compare/v0.12.0...v0.13.0) (2026-10-07)
+
+### Features
+
+* **api:** store the relay configuration and renew the bridge credential through the dashboard ([56d28b8](https://github.com/wolfymaster/woofx3/commit/56d28b807d1a47c5b20852aa1848f029b03e5c55))
+* **barkloader:** local[] endpoints in the module manifest ([9465fe2](https://github.com/wolfymaster/woofx3/commit/9465fe2fb5eb57be34a7cef4741db716e3763f14))
+* **sceneManager:** reach OBS through an endpoint dialer that can use the companion's bridge ([3687702](https://github.com/wolfymaster/woofx3/commit/3687702f48bbbac878cf0e684fc03951edc4dbf5))
+
 ## [0.12.0](https://github.com/wolfymaster/woofx3/compare/v0.11.1...v0.12.0) (2026-10-04)
 
 ### Features

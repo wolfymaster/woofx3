@@ -84,6 +84,9 @@ struct Module {
 /// SDKs (S3, R2, MinIO) don't have to bridge tokio from sync
 /// methods. FileRepository wraps `std::fs` calls in `tokio::fs`
 /// equivalents.
+// async-trait marks each method it rewrites `#[must_use]`, and its boxed
+// future already is; clippy 1.99 flags that pairing in the generated code.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 #[enum_dispatch(RepositoryImpl)]
 pub trait Repository {
@@ -119,6 +122,9 @@ pub enum RepositoryImpl {
 
 pub struct RepositoryFactory {}
 impl RepositoryFactory {
+    /// Builds the backend the config names. A factory, so it returns that
+    /// backend rather than `Self`.
+    #[allow(clippy::new_ret_no_self)]
     pub async fn new(config: &RepositoryConfig) -> Result<RepositoryImpl> {
         match config {
             RepositoryConfig::File(file_config) => Ok(RepositoryImpl::File(FileRepository::new(

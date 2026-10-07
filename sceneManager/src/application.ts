@@ -41,10 +41,14 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
-    const { openObsSession } = await import("./obs/manager");
     const { ObsConnection } = await import("./obs/connection");
-    const { readObsConnectionConfig } = await import("./obs/settings");
+    const { obsDialTarget, openObsOverRoute } = await import("./obs/settings");
     const { obsStatusReply } = await import("./obs/status");
+    const { dialWebSocketEndpoint, endpointKeysFromManifest, EndpointRelayError, relayChangeMovesEndpoint } =
+      await import("./endpoints/dialer");
+    const { RELAY_CONFIG_SETTING, readStoredRelayConfig, requestRelayCredentialOverNats } = await import(
+      "@woofx3/common/cloudevents/Relay/relay"
+    );
     const { initSubscriptions } = await import("./nats-subscriptions");
     const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
 
@@ -89,14 +93,44 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     }
     // Started only once the server is listening (below), so the first
     // session's overlay refresh can never land before /scene is served.
-    // Where the latest attempt looked for OBS, for the status reply. The
-    // password stays inside the attempt.
-    let lastObsUrl: string | null = null;
+    const readRelayConfig = async () => readStoredRelayConfig(await db.getSetting(RELAY_CONFIG_SETTING));
+    const bus = nats;
+    const requestRelayCredential = bus
+      ? requestRelayCredentialOverNats((subject, data, opts) => bus.request(subject, data, opts))
+      : null;
+    const dialer: import("./endpoints/dialer").DialerDeps = {
+      endpointKeys: async (moduleId, endpointId) =>
+        endpointKeysFromManifest(await db.getModuleManifest(moduleId), endpointId),
+      settings: (moduleId) => db.listModuleSettings(moduleId),
+      secrets: (moduleId) => db.getModuleSecretValues(moduleId),
+      // Read on every attempt, like the module settings, so a missed
+      // `engine.relay.config.updated` is picked up on the next retry.
+      relayConfig: readRelayConfig,
+      relayCredential: async (force) => {
+        if (!requestRelayCredential) {
+          throw new Error("no message bus to ask the api for a relay credential");
+        }
+        return requestRelayCredential(force);
+      },
+      fetch,
+      logger: ctx.logger,
+    };
+    const obsTarget = obsDialTarget(ctx.runtimeConfig.obs);
+    // Where and how the latest attempt looked for OBS, for the status reply.
+    // The password and any bridge ticket stay inside the attempt.
+    let lastObs: import("./obs/status").ObsLastRoute | null = null;
     const obs = new ObsConnection({
       open: async () => {
-        const config = await readObsConnectionConfig(db, ctx.runtimeConfig.obs, ctx.logger);
-        lastObsUrl = config.url;
-        return openObsSession(config, ctx.logger);
+        try {
+          const route = await dialWebSocketEndpoint(dialer, obsTarget);
+          lastObs = { route: route.route, address: route.address };
+          return await openObsOverRoute(route, ctx.logger);
+        } catch (err) {
+          if (err instanceof EndpointRelayError) {
+            lastObs = { route: "companion", address: err.address };
+          }
+          throw err;
+        }
       },
       // Refresh overlays on the first session only. It exists to recover
       // overlays after *this process* restarted; after a mere reconnect their
@@ -115,7 +149,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     await initSubscriptions({
       nats,
       obs,
-      obsStatus: () => obsStatusReply(obs, lastObsUrl),
+      obsStatus: () => obsStatusReply(obs, lastObs),
+      relayConfigMovesObs: async () => relayChangeMovesEndpoint(await readRelayConfig(), obsTarget, lastObs),
       db,
       host,
       deliveryStore,
