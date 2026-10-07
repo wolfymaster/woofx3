@@ -7,6 +7,9 @@
  */
 export interface SceneShellConfig {
   scene: unknown;
+  /** The scene's sequenced document the page applies later saves to as
+   *  ops; null when it could not be loaded. */
+  document?: unknown;
 }
 
 function escapeForInlineScript(value: unknown): string {

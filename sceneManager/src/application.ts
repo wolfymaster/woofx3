@@ -38,6 +38,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { OverlayHost } = await import("./scene/scene-host");
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { FrameCatalog } = await import("./scene/frame-catalog");
+    const { SceneDocuments } = await import("./scene/scene-documents");
     const { SessionTokenService } = await import("./scene/session-token");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
@@ -70,6 +71,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, ctx.logger);
+    const sceneDocuments = new SceneDocuments(host, deliveryStore, ctx.logger);
     // Hydrate from the DB before accepting any traffic — a restart
     // must never silently drop in-flight events.
     await deliveryStore.hydrate();
@@ -158,6 +160,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       deliveryStore,
       moduleState,
       resolver,
+      sceneDocuments,
       logger: ctx.logger,
     });
 
@@ -169,6 +172,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       deliveryStore,
       moduleState,
       settingsDb: db,
+      sceneDocuments,
       bootId,
     });
     ctx.logger.info("sceneManager listening", {

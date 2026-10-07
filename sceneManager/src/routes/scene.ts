@@ -2,6 +2,7 @@ import type { HttpDeps } from "../http";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
 import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
 import { renderSceneShell } from "../scene/shell";
+import { configOfSnapshot } from "../../public/scene-manager/scene-document";
 
 const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
 
@@ -24,10 +25,13 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
     });
   }
 
-  const config = await deps.host.buildConfig(token);
+  // The page starts from the scene's sequenced document, so it can apply
+  // every save after this one as ops (see scene-documents.ts).
+  const snapshot = await deps.sceneDocuments.snapshot(state.sceneId);
+  const scene = snapshot ? configOfSnapshot(snapshot) : (await deps.host.buildConfig(token)).scene;
   const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
 
-  return new Response(renderSceneShell({ scene: (config as { scene: unknown }).scene }), {
+  return new Response(renderSceneShell({ scene, document: snapshot }), {
     status: 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
@@ -50,11 +54,15 @@ export async function handleSceneConfigRoute(req: Request, sceneId: string, deps
   if (!claims || claims.sceneId !== sceneId) {
     return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
-  const config = await deps.host.buildConfigById(sceneId);
-  if ((config as { scene: unknown }).scene === null) {
+  // With its document, so an overlay that missed ops resyncs from here.
+  const snapshot = await deps.sceneDocuments.snapshot(sceneId);
+  if (!snapshot) {
     return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
-  return Response.json(config, { headers: { "Cache-Control": "no-store" } });
+  return Response.json(
+    { scene: configOfSnapshot(snapshot), document: snapshot },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 /** Largest draft-config request body; a scene's placements are a few kilobytes. */

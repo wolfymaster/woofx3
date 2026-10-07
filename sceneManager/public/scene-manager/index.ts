@@ -36,10 +36,18 @@ import {
   type WidgetPlacementConfig,
 } from "./scene-update";
 import { encodePlacementBoot } from "@woofx3/module-sdk";
+import {
+  type SceneOpsEvent,
+  type SceneSnapshot,
+  applyOps,
+  configOfSnapshot,
+  mergeMeta,
+  parseSnapshot,
+} from "./scene-document";
 
 declare global {
   interface Window {
-    __WOOFX3_SCENE__?: { scene: SceneConfig | null };
+    __WOOFX3_SCENE__?: { scene: SceneConfig | null; document?: unknown };
   }
 }
 
@@ -77,6 +85,13 @@ function frameSrc(instance: WidgetPlacementConfig, nonce: string): string {
   return `${instance.frameUrl}#${boot}`;
 }
 
+/** A placement hidden in the editor keeps its frame running, out of sight. */
+function showIf(element: HTMLElement | undefined, visible: boolean | undefined): void {
+  if (element) {
+    element.style.visibility = visible === false ? "hidden" : "";
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
@@ -112,6 +127,9 @@ function main(): void {
   }
   applySceneBackground(document.body, sceneData.layout);
   const sceneId = sceneData.id;
+  // The scene's sequenced document: every save after it arrives as ops for
+  // the next sequence number (see scene-document.ts).
+  let sceneDoc: SceneSnapshot | null = parseSnapshot(window.__WOOFX3_SCENE__?.document);
   // Absolute, never relative: the shell is served at /scene/{sceneId}
   // with no trailing slash, so a `./`-relative URL resolves against
   // /scene/ (the sceneId segment gets treated as a filename, not a
@@ -310,10 +328,11 @@ function main(): void {
   function mount(instance: WidgetPlacementConfig): void {
     if (instance.hostsSurface === "alert") {
       mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
-      return;
+    } else {
+      const frame = mountFramedWidget(instance);
+      mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
     }
-    const frame = mountFramedWidget(instance);
-    mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+    showIf(widgetElements.get(instance.id), instance.visible);
   }
 
   function unmountPlacement(id: string): void {
@@ -351,6 +370,7 @@ function main(): void {
       fresh.element.style.zIndex = old?.style.zIndex ?? "";
       fresh.element.style.display = old?.style.display ?? "";
       fresh.element.style.opacity = "";
+      showIf(fresh.element, next.visible);
       entry.unmount();
       widgetElements.set(next.id, fresh.element);
       mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
@@ -496,6 +516,7 @@ function main(): void {
       if (entry && element) {
         entry.config = { ...instance, settings: entry.config.settings };
         placeAt(element, instance.position);
+        showIf(element, instance.visible);
         updateSettings(instance.id, instance.settings);
       }
     }
@@ -510,6 +531,40 @@ function main(): void {
     if (previewLayout) {
       applyPreviewLayout(widgetElements, previewLayout);
     }
+  }
+
+  /**
+   * The ops for the scene's next sequence number. Applied to the document
+   * and then to the page through the same update plan a config uses, so a
+   * widget whose settings changed is patched or swapped as usual. A gap, or
+   * ops that do not apply, means this page missed some: it resyncs.
+   */
+  function applySceneOps(event: SceneOpsEvent): void {
+    if (sceneDoc && event.seq <= sceneDoc.seq) {
+      return;
+    }
+    if (!sceneDoc || event.seq !== sceneDoc.seq + 1) {
+      void updateScene();
+      return;
+    }
+    try {
+      sceneDoc = {
+        ...sceneDoc,
+        seq: event.seq,
+        doc: applyOps(sceneDoc.doc, event.ops),
+        meta: mergeMeta(sceneDoc.meta, event.meta),
+      };
+    } catch (err) {
+      console.warn("[scene-manager] scene ops did not apply; resyncing", err);
+      void updateScene();
+      return;
+    }
+    // While the editor previews a draft, the draft is what this page shows.
+    if (draftPlacements) {
+      void updateScene();
+      return;
+    }
+    applySceneConfig(configOfSnapshot(sceneDoc), false);
   }
 
   type Target = { kind: "apply"; config: SceneConfig; fromDraft: boolean } | { kind: "reload" } | { kind: "keep" };
@@ -535,8 +590,14 @@ function main(): void {
     } catch {
       return draft ? { kind: "keep" } : { kind: "reload" };
     }
-    const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
+    const body: unknown = resp.ok ? await resp.json().catch(() => null) : null;
+    const config = parseSceneConfig(body);
     if (config && config.id === sceneId) {
+      // The saved scene comes with its document; later ops apply to it.
+      const snapshot = draft ? null : parseSnapshot(asRecord(body).document);
+      if (snapshot) {
+        sceneDoc = snapshot;
+      }
       return { kind: "apply", config, fromDraft: draft !== null };
     }
     if (draft && resp.status !== 401) {
@@ -620,10 +681,10 @@ function main(): void {
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
-    // The scene was saved. Only this scene's streams receive the frame, so
+    // The scene changed. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.
-    onSceneUpdated: () => void updateScene(),
-    onHello: (bootId) => {
+    onSceneOps: applySceneOps,
+    onHello: (bootId, seq) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
         return;
@@ -632,6 +693,11 @@ function main(): void {
         moduleState.refresh();
       }
       serverBootId = bootId;
+      // Ops sent while the stream was down are not sent again; nor does a
+      // scene the server stopped holding keep this page's numbering.
+      if (!sceneDoc || seq !== sceneDoc.seq) {
+        void updateScene();
+      }
     },
     onSessionExpired: () => {
       // Our 60s session JWT lapsed while the server was away, so every

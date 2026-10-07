@@ -1,3 +1,737 @@
+var __create = Object.create;
+var __getProtoOf = Object.getPrototypeOf;
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+function __accessProp(key) {
+  return this[key];
+}
+var __toESMCache_node;
+var __toESMCache_esm;
+var __toESM = (mod, isNodeMode, target) => {
+  var canCache = mod != null && typeof mod === "object";
+  if (canCache) {
+    var cache = isNodeMode ? __toESMCache_node ??= new WeakMap : __toESMCache_esm ??= new WeakMap;
+    var cached = cache.get(mod);
+    if (cached)
+      return cached;
+  }
+  target = mod != null ? __create(__getProtoOf(mod)) : {};
+  const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
+  for (let key of __getOwnPropNames(mod))
+    if (!__hasOwnProp.call(to, key))
+      __defProp(to, key, {
+        get: __accessProp.bind(mod, key),
+        enumerable: true
+      });
+  if (canCache)
+    cache.set(mod, to);
+  return to;
+};
+var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+
+// node_modules/ot-json0/lib/bootstrapTransform.js
+var require_bootstrapTransform = __commonJS((exports, module) => {
+  module.exports = bootstrapTransform;
+  function bootstrapTransform(type, transformComponent, checkValidOp, append) {
+    var transformComponentX = function(left, right, destLeft, destRight) {
+      transformComponent(destLeft, left, right, "left");
+      transformComponent(destRight, right, left, "right");
+    };
+    var transformX = type.transformX = function(leftOp, rightOp) {
+      checkValidOp(leftOp);
+      checkValidOp(rightOp);
+      var newRightOp = [];
+      for (var i = 0;i < rightOp.length; i++) {
+        var rightComponent = rightOp[i];
+        var newLeftOp = [];
+        var k = 0;
+        while (k < leftOp.length) {
+          var nextC = [];
+          transformComponentX(leftOp[k], rightComponent, newLeftOp, nextC);
+          k++;
+          if (nextC.length === 1) {
+            rightComponent = nextC[0];
+          } else if (nextC.length === 0) {
+            for (var j = k;j < leftOp.length; j++) {
+              append(newLeftOp, leftOp[j]);
+            }
+            rightComponent = null;
+            break;
+          } else {
+            var pair = transformX(leftOp.slice(k), nextC);
+            for (var l = 0;l < pair[0].length; l++) {
+              append(newLeftOp, pair[0][l]);
+            }
+            for (var r = 0;r < pair[1].length; r++) {
+              append(newRightOp, pair[1][r]);
+            }
+            rightComponent = null;
+            break;
+          }
+        }
+        if (rightComponent != null) {
+          append(newRightOp, rightComponent);
+        }
+        leftOp = newLeftOp;
+      }
+      return [leftOp, newRightOp];
+    };
+    type.transform = function(op, otherOp, type2) {
+      if (!(type2 === "left" || type2 === "right"))
+        throw new Error("type must be 'left' or 'right'");
+      if (otherOp.length === 0)
+        return op;
+      if (op.length === 1 && otherOp.length === 1)
+        return transformComponent([], op[0], otherOp[0], type2);
+      if (type2 === "left")
+        return transformX(op, otherOp)[0];
+      else
+        return transformX(otherOp, op)[1];
+    };
+  }
+});
+
+// node_modules/ot-json0/lib/text0.js
+var require_text0 = __commonJS((exports, module) => {
+  var text = module.exports = {
+    name: "text0",
+    uri: "http://sharejs.org/types/textv0",
+    create: function(initial) {
+      if (initial != null && typeof initial !== "string") {
+        throw new Error("Initial data must be a string");
+      }
+      return initial || "";
+    }
+  };
+  var strInject = function(s1, pos, s2) {
+    return s1.slice(0, pos) + s2 + s1.slice(pos);
+  };
+  var checkValidComponent = function(c) {
+    if (typeof c.p !== "number")
+      throw new Error("component missing position field");
+    if (typeof c.i === "string" === (typeof c.d === "string"))
+      throw new Error("component needs an i or d field");
+    if (c.p < 0)
+      throw new Error("position cannot be negative");
+  };
+  var checkValidOp = function(op) {
+    for (var i = 0;i < op.length; i++) {
+      checkValidComponent(op[i]);
+    }
+  };
+  text.apply = function(snapshot, op) {
+    var deleted;
+    checkValidOp(op);
+    for (var i = 0;i < op.length; i++) {
+      var component = op[i];
+      if (component.i != null) {
+        snapshot = strInject(snapshot, component.p, component.i);
+      } else {
+        deleted = snapshot.slice(component.p, component.p + component.d.length);
+        if (component.d !== deleted)
+          throw new Error("Delete component '" + component.d + "' does not match deleted text '" + deleted + "'");
+        snapshot = snapshot.slice(0, component.p) + snapshot.slice(component.p + component.d.length);
+      }
+    }
+    return snapshot;
+  };
+  var append = text._append = function(newOp, c) {
+    if (c.i === "" || c.d === "")
+      return;
+    if (newOp.length === 0) {
+      newOp.push(c);
+    } else {
+      var last = newOp[newOp.length - 1];
+      if (last.i != null && c.i != null && last.p <= c.p && c.p <= last.p + last.i.length) {
+        newOp[newOp.length - 1] = { i: strInject(last.i, c.p - last.p, c.i), p: last.p };
+      } else if (last.d != null && c.d != null && c.p <= last.p && last.p <= c.p + c.d.length) {
+        newOp[newOp.length - 1] = { d: strInject(c.d, last.p - c.p, last.d), p: c.p };
+      } else {
+        newOp.push(c);
+      }
+    }
+  };
+  text.compose = function(op1, op2) {
+    checkValidOp(op1);
+    checkValidOp(op2);
+    var newOp = op1.slice();
+    for (var i = 0;i < op2.length; i++) {
+      append(newOp, op2[i]);
+    }
+    return newOp;
+  };
+  text.normalize = function(op) {
+    var newOp = [];
+    if (op.i != null || op.p != null)
+      op = [op];
+    for (var i = 0;i < op.length; i++) {
+      var c = op[i];
+      if (c.p == null)
+        c.p = 0;
+      append(newOp, c);
+    }
+    return newOp;
+  };
+  var transformPosition = function(pos, c, insertAfter) {
+    if (c.i != null) {
+      if (c.p < pos || c.p === pos && insertAfter) {
+        return pos + c.i.length;
+      } else {
+        return pos;
+      }
+    } else {
+      if (pos <= c.p) {
+        return pos;
+      } else if (pos <= c.p + c.d.length) {
+        return c.p;
+      } else {
+        return pos - c.d.length;
+      }
+    }
+  };
+  text.transformCursor = function(position, op, side) {
+    var insertAfter = side === "right";
+    for (var i = 0;i < op.length; i++) {
+      position = transformPosition(position, op[i], insertAfter);
+    }
+    return position;
+  };
+  var transformComponent = text._tc = function(dest, c, otherC, side) {
+    checkValidComponent(c);
+    checkValidComponent(otherC);
+    if (c.i != null) {
+      append(dest, { i: c.i, p: transformPosition(c.p, otherC, side === "right") });
+    } else {
+      if (otherC.i != null) {
+        var s = c.d;
+        if (c.p < otherC.p) {
+          append(dest, { d: s.slice(0, otherC.p - c.p), p: c.p });
+          s = s.slice(otherC.p - c.p);
+        }
+        if (s !== "")
+          append(dest, { d: s, p: c.p + otherC.i.length });
+      } else {
+        if (c.p >= otherC.p + otherC.d.length)
+          append(dest, { d: c.d, p: c.p - otherC.d.length });
+        else if (c.p + c.d.length <= otherC.p)
+          append(dest, c);
+        else {
+          var newC = { d: "", p: c.p };
+          if (c.p < otherC.p)
+            newC.d = c.d.slice(0, otherC.p - c.p);
+          if (c.p + c.d.length > otherC.p + otherC.d.length)
+            newC.d += c.d.slice(otherC.p + otherC.d.length - c.p);
+          var intersectStart = Math.max(c.p, otherC.p);
+          var intersectEnd = Math.min(c.p + c.d.length, otherC.p + otherC.d.length);
+          var cIntersect = c.d.slice(intersectStart - c.p, intersectEnd - c.p);
+          var otherIntersect = otherC.d.slice(intersectStart - otherC.p, intersectEnd - otherC.p);
+          if (cIntersect !== otherIntersect)
+            throw new Error("Delete ops delete different text in the same region of the document");
+          if (newC.d !== "") {
+            newC.p = transformPosition(newC.p, otherC);
+            append(dest, newC);
+          }
+        }
+      }
+    }
+    return dest;
+  };
+  var invertComponent = function(c) {
+    return c.i != null ? { d: c.i, p: c.p } : { i: c.d, p: c.p };
+  };
+  text.invert = function(op) {
+    op = op.slice().reverse();
+    for (var i = 0;i < op.length; i++) {
+      op[i] = invertComponent(op[i]);
+    }
+    return op;
+  };
+  require_bootstrapTransform()(text, transformComponent, checkValidOp, append);
+});
+
+// node_modules/ot-json0/lib/json0.js
+var require_json0 = __commonJS((exports, module) => {
+  var isArray = function(obj) {
+    return Object.prototype.toString.call(obj) == "[object Array]";
+  };
+  var isObject = function(obj) {
+    return !!obj && obj.constructor === Object;
+  };
+  var clone = function(o) {
+    return JSON.parse(JSON.stringify(o));
+  };
+  var json = {
+    name: "json0",
+    uri: "http://sharejs.org/types/JSONv0"
+  };
+  var subtypes = {};
+  json.registerSubtype = function(subtype) {
+    subtypes[subtype.name] = subtype;
+  };
+  json.create = function(data) {
+    return data === undefined ? null : clone(data);
+  };
+  json.invertComponent = function(c) {
+    var c_ = { p: c.p };
+    if (c.t && subtypes[c.t]) {
+      c_.t = c.t;
+      c_.o = subtypes[c.t].invert(c.o);
+    }
+    if (c.si !== undefined)
+      c_.sd = c.si;
+    if (c.sd !== undefined)
+      c_.si = c.sd;
+    if (c.oi !== undefined)
+      c_.od = c.oi;
+    if (c.od !== undefined)
+      c_.oi = c.od;
+    if (c.li !== undefined)
+      c_.ld = c.li;
+    if (c.ld !== undefined)
+      c_.li = c.ld;
+    if (c.na !== undefined)
+      c_.na = -c.na;
+    if (c.lm !== undefined) {
+      c_.lm = c.p[c.p.length - 1];
+      c_.p = c.p.slice(0, c.p.length - 1).concat([c.lm]);
+    }
+    return c_;
+  };
+  json.invert = function(op) {
+    var op_ = op.slice().reverse();
+    var iop = [];
+    for (var i = 0;i < op_.length; i++) {
+      iop.push(json.invertComponent(op_[i]));
+    }
+    return iop;
+  };
+  json.checkValidOp = function(op) {
+    for (var i = 0;i < op.length; i++) {
+      if (!isArray(op[i].p))
+        throw new Error("Missing path");
+    }
+  };
+  json.checkList = function(elem) {
+    if (!isArray(elem))
+      throw new Error("Referenced element not a list");
+  };
+  json.checkObj = function(elem) {
+    if (!isObject(elem)) {
+      throw new Error("Referenced element not an object (it was " + JSON.stringify(elem) + ")");
+    }
+  };
+  function convertFromText(c) {
+    c.t = "text0";
+    var o = { p: c.p.pop() };
+    if (c.si != null)
+      o.i = c.si;
+    if (c.sd != null)
+      o.d = c.sd;
+    c.o = [o];
+  }
+  function convertToText(c) {
+    c.p.push(c.o[0].p);
+    if (c.o[0].i != null)
+      c.si = c.o[0].i;
+    if (c.o[0].d != null)
+      c.sd = c.o[0].d;
+    delete c.t;
+    delete c.o;
+  }
+  json.apply = function(snapshot, op) {
+    json.checkValidOp(op);
+    op = clone(op);
+    var container = {
+      data: snapshot
+    };
+    for (var i = 0;i < op.length; i++) {
+      var c = op[i];
+      if (c.si != null || c.sd != null)
+        convertFromText(c);
+      var parent = null;
+      var parentKey = null;
+      var elem = container;
+      var key = "data";
+      for (var j = 0;j < c.p.length; j++) {
+        var p = c.p[j];
+        parent = elem;
+        parentKey = key;
+        elem = elem[key];
+        key = p;
+        if (parent == null)
+          throw new Error("Path invalid");
+      }
+      if (c.t && c.o !== undefined && subtypes[c.t]) {
+        elem[key] = subtypes[c.t].apply(elem[key], c.o);
+      } else if (c.na !== undefined) {
+        if (typeof elem[key] != "number")
+          throw new Error("Referenced element not a number");
+        elem[key] += c.na;
+      } else if (c.li !== undefined && c.ld !== undefined) {
+        json.checkList(elem);
+        elem[key] = c.li;
+      } else if (c.li !== undefined) {
+        json.checkList(elem);
+        elem.splice(key, 0, c.li);
+      } else if (c.ld !== undefined) {
+        json.checkList(elem);
+        elem.splice(key, 1);
+      } else if (c.lm !== undefined) {
+        json.checkList(elem);
+        if (c.lm != key) {
+          var e = elem[key];
+          elem.splice(key, 1);
+          elem.splice(c.lm, 0, e);
+        }
+      } else if (c.oi !== undefined) {
+        json.checkObj(elem);
+        elem[key] = c.oi;
+      } else if (c.od !== undefined) {
+        json.checkObj(elem);
+        delete elem[key];
+      } else {
+        throw new Error("invalid / missing instruction in op");
+      }
+    }
+    return container.data;
+  };
+  json.shatter = function(op) {
+    var results = [];
+    for (var i = 0;i < op.length; i++) {
+      results.push([op[i]]);
+    }
+    return results;
+  };
+  json.incrementalApply = function(snapshot, op, _yield) {
+    for (var i = 0;i < op.length; i++) {
+      var smallOp = [op[i]];
+      snapshot = json.apply(snapshot, smallOp);
+      _yield(smallOp, snapshot);
+    }
+    return snapshot;
+  };
+  var pathMatches = json.pathMatches = function(p1, p2, ignoreLast) {
+    if (p1.length != p2.length)
+      return false;
+    for (var i = 0;i < p1.length; i++) {
+      if (p1[i] !== p2[i] && (!ignoreLast || i !== p1.length - 1))
+        return false;
+    }
+    return true;
+  };
+  json.append = function(dest, c) {
+    c = clone(c);
+    if (dest.length === 0) {
+      dest.push(c);
+      return;
+    }
+    var last = dest[dest.length - 1];
+    if ((c.si != null || c.sd != null) && (last.si != null || last.sd != null)) {
+      convertFromText(c);
+      convertFromText(last);
+    }
+    if (pathMatches(c.p, last.p)) {
+      if (c.t && last.t && c.t === last.t && subtypes[c.t]) {
+        last.o = subtypes[c.t].compose(last.o, c.o);
+        if (c.si != null || c.sd != null) {
+          var p = c.p;
+          for (var i = 0;i < last.o.length - 1; i++) {
+            c.o = [last.o.pop()];
+            c.p = p.slice();
+            convertToText(c);
+            dest.push(c);
+          }
+          convertToText(last);
+        }
+      } else if (last.na != null && c.na != null) {
+        dest[dest.length - 1] = { p: last.p, na: last.na + c.na };
+      } else if (last.li !== undefined && c.li === undefined && c.ld === last.li) {
+        if (last.ld !== undefined) {
+          delete last.li;
+        } else {
+          dest.pop();
+        }
+      } else if (last.od !== undefined && last.oi === undefined && c.oi !== undefined && c.od === undefined) {
+        last.oi = c.oi;
+      } else if (last.oi !== undefined && c.od !== undefined) {
+        if (c.oi !== undefined) {
+          last.oi = c.oi;
+        } else if (last.od !== undefined) {
+          delete last.oi;
+        } else {
+          dest.pop();
+        }
+      } else if (c.lm !== undefined && c.p[c.p.length - 1] === c.lm) {} else {
+        dest.push(c);
+      }
+    } else {
+      if ((c.si != null || c.sd != null) && (last.si != null || last.sd != null)) {
+        convertToText(c);
+        convertToText(last);
+      }
+      dest.push(c);
+    }
+  };
+  json.compose = function(op1, op2) {
+    json.checkValidOp(op1);
+    json.checkValidOp(op2);
+    var newOp = clone(op1);
+    for (var i = 0;i < op2.length; i++) {
+      json.append(newOp, op2[i]);
+    }
+    return newOp;
+  };
+  json.normalize = function(op) {
+    var newOp = [];
+    op = isArray(op) ? op : [op];
+    for (var i = 0;i < op.length; i++) {
+      var c = op[i];
+      if (c.p == null)
+        c.p = [];
+      json.append(newOp, c);
+    }
+    return newOp;
+  };
+  json.commonLengthForOps = function(a, b) {
+    var alen = a.p.length;
+    var blen = b.p.length;
+    if (a.na != null || a.t)
+      alen++;
+    if (b.na != null || b.t)
+      blen++;
+    if (alen === 0)
+      return -1;
+    if (blen === 0)
+      return null;
+    alen--;
+    blen--;
+    for (var i = 0;i < alen; i++) {
+      var p = a.p[i];
+      if (i >= blen || p !== b.p[i])
+        return null;
+    }
+    return alen;
+  };
+  json.canOpAffectPath = function(op, path) {
+    return json.commonLengthForOps({ p: path }, op) != null;
+  };
+  json.transformComponent = function(dest, c, otherC, type) {
+    c = clone(c);
+    var common = json.commonLengthForOps(otherC, c);
+    var common2 = json.commonLengthForOps(c, otherC);
+    var cplength = c.p.length;
+    var otherCplength = otherC.p.length;
+    if (c.na != null || c.t)
+      cplength++;
+    if (otherC.na != null || otherC.t)
+      otherCplength++;
+    if (common2 != null && otherCplength > cplength && c.p[common2] == otherC.p[common2]) {
+      if (c.ld !== undefined) {
+        var oc = clone(otherC);
+        oc.p = oc.p.slice(cplength);
+        c.ld = json.apply(clone(c.ld), [oc]);
+      } else if (c.od !== undefined) {
+        var oc = clone(otherC);
+        oc.p = oc.p.slice(cplength);
+        c.od = json.apply(clone(c.od), [oc]);
+      }
+    }
+    if (common != null) {
+      var commonOperand = cplength == otherCplength;
+      var oc = otherC;
+      if ((c.si != null || c.sd != null) && (otherC.si != null || otherC.sd != null)) {
+        convertFromText(c);
+        oc = clone(otherC);
+        convertFromText(oc);
+      }
+      if (oc.t && subtypes[oc.t]) {
+        if (c.t && c.t === oc.t) {
+          var res = subtypes[c.t].transform(c.o, oc.o, type);
+          if (c.si != null || c.sd != null) {
+            var p = c.p;
+            for (var i = 0;i < res.length; i++) {
+              c.o = [res[i]];
+              c.p = p.slice();
+              convertToText(c);
+              json.append(dest, c);
+            }
+          } else if (!isArray(res) || res.length > 0) {
+            c.o = res;
+            json.append(dest, c);
+          }
+          return dest;
+        }
+      } else if (otherC.na !== undefined) {} else if (otherC.li !== undefined && otherC.ld !== undefined) {
+        if (otherC.p[common] === c.p[common]) {
+          if (!commonOperand) {
+            return dest;
+          } else if (c.ld !== undefined) {
+            if (c.li !== undefined && type === "left") {
+              c.ld = clone(otherC.li);
+            } else {
+              return dest;
+            }
+          }
+        }
+      } else if (otherC.li !== undefined) {
+        if (c.li !== undefined && c.ld === undefined && commonOperand && c.p[common] === otherC.p[common]) {
+          if (type === "right")
+            c.p[common]++;
+        } else if (otherC.p[common] <= c.p[common]) {
+          c.p[common]++;
+        }
+        if (c.lm !== undefined) {
+          if (commonOperand) {
+            if (otherC.p[common] <= c.lm)
+              c.lm++;
+          }
+        }
+      } else if (otherC.ld !== undefined) {
+        if (c.lm !== undefined) {
+          if (commonOperand) {
+            if (otherC.p[common] === c.p[common]) {
+              return dest;
+            }
+            var p = otherC.p[common];
+            var from = c.p[common];
+            var to = c.lm;
+            if (p < to || p === to && from < to)
+              c.lm--;
+          }
+        }
+        if (otherC.p[common] < c.p[common]) {
+          c.p[common]--;
+        } else if (otherC.p[common] === c.p[common]) {
+          if (otherCplength < cplength) {
+            return dest;
+          } else if (c.ld !== undefined) {
+            if (c.li !== undefined) {
+              delete c.ld;
+            } else {
+              return dest;
+            }
+          }
+        }
+      } else if (otherC.lm !== undefined) {
+        if (c.lm !== undefined && cplength === otherCplength) {
+          var from = c.p[common];
+          var to = c.lm;
+          var otherFrom = otherC.p[common];
+          var otherTo = otherC.lm;
+          if (otherFrom !== otherTo) {
+            if (from === otherFrom) {
+              if (type === "left") {
+                c.p[common] = otherTo;
+                if (from === to)
+                  c.lm = otherTo;
+              } else {
+                return dest;
+              }
+            } else {
+              if (from > otherFrom)
+                c.p[common]--;
+              if (from > otherTo)
+                c.p[common]++;
+              else if (from === otherTo) {
+                if (otherFrom > otherTo) {
+                  c.p[common]++;
+                  if (from === to)
+                    c.lm++;
+                }
+              }
+              if (to > otherFrom) {
+                c.lm--;
+              } else if (to === otherFrom) {
+                if (to > from)
+                  c.lm--;
+              }
+              if (to > otherTo) {
+                c.lm++;
+              } else if (to === otherTo) {
+                if (otherTo > otherFrom && to > from || otherTo < otherFrom && to < from) {
+                  if (type === "right")
+                    c.lm++;
+                } else {
+                  if (to > from)
+                    c.lm++;
+                  else if (to === otherFrom)
+                    c.lm--;
+                }
+              }
+            }
+          }
+        } else if (c.li !== undefined && c.ld === undefined && commonOperand) {
+          var from = otherC.p[common];
+          var to = otherC.lm;
+          p = c.p[common];
+          if (p > from)
+            c.p[common]--;
+          if (p > to)
+            c.p[common]++;
+        } else {
+          var from = otherC.p[common];
+          var to = otherC.lm;
+          p = c.p[common];
+          if (p === from) {
+            c.p[common] = to;
+          } else {
+            if (p > from)
+              c.p[common]--;
+            if (p > to)
+              c.p[common]++;
+            else if (p === to && from > to)
+              c.p[common]++;
+          }
+        }
+      } else if (otherC.oi !== undefined && otherC.od !== undefined) {
+        if (c.p[common] === otherC.p[common]) {
+          if (c.oi !== undefined && commonOperand) {
+            if (type === "right") {
+              return dest;
+            } else {
+              c.od = otherC.oi;
+            }
+          } else {
+            return dest;
+          }
+        }
+      } else if (otherC.oi !== undefined) {
+        if (c.oi !== undefined && c.p[common] === otherC.p[common]) {
+          if (type === "left") {
+            json.append(dest, { p: c.p, od: otherC.oi });
+          } else {
+            return dest;
+          }
+        }
+      } else if (otherC.od !== undefined) {
+        if (c.p[common] == otherC.p[common]) {
+          if (!commonOperand)
+            return dest;
+          if (c.oi !== undefined) {
+            delete c.od;
+          } else {
+            return dest;
+          }
+        }
+      }
+    }
+    json.append(dest, c);
+    return dest;
+  };
+  require_bootstrapTransform()(json, json.transformComponent, json.checkValidOp, json.append);
+  var text = require_text0();
+  json.registerSubtype(text);
+  module.exports = json;
+});
+
+// node_modules/ot-json0/lib/index.js
+var require_lib = __commonJS((exports, module) => {
+  module.exports = {
+    type: require_json0()
+  };
+});
+
 // public/scene-manager/alert-timeline.ts
 var UNTIMED_ALERT_MS = 5000;
 var SUBSCRIBE_TIMEOUT_MS = 1e4;
@@ -1081,6 +1815,158 @@ function createReconnectCoordinator() {
   }
 }
 
+// public/scene-manager/scene-document.ts
+var import_ot_json0 = __toESM(require_lib(), 1);
+
+// public/scene-manager/scene-update.ts
+function planSceneUpdate(current, next) {
+  const currentById = new Map(current.map((placement) => [placement.id, placement]));
+  const nextIds = new Set(next.map((placement) => placement.id));
+  const plan = {
+    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
+    mount: [],
+    replace: [],
+    place: [],
+    order: next.map((placement) => placement.id)
+  };
+  for (const placement of next) {
+    const existing = currentById.get(placement.id);
+    if (!existing) {
+      plan.mount.push(placement);
+    } else if (sameFrame(existing, placement)) {
+      plan.place.push(placement);
+    } else {
+      plan.replace.push(placement);
+    }
+  }
+  return plan;
+}
+function sameFrame(a, b) {
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
+}
+function settingsUpdate(current, next, reads) {
+  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
+  if (changed.length === 0) {
+    return "none";
+  }
+  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
+    return "reload";
+  }
+  return "patch";
+}
+var THEME_SETTING_ID = "theme";
+function themeOf(settings) {
+  const value = settings[THEME_SETTING_ID];
+  return typeof value === "string" ? value.trim() : "";
+}
+function sameValue(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+  }
+  const aRecord = a;
+  const bRecord = b;
+  const aKeys = Object.keys(aRecord);
+  if (aKeys.length !== Object.keys(bRecord).length) {
+    return false;
+  }
+  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
+}
+function parseSceneConfig(body) {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const scene = body.scene;
+  if (typeof scene !== "object" || scene === null) {
+    return null;
+  }
+  const s = scene;
+  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: typeof s.name === "string" ? s.name : "",
+    layout: s.layout,
+    widgets: s.widgets
+  };
+}
+
+// public/scene-manager/scene-document.ts
+var json0 = import_ot_json0.default.type;
+function applyOps(doc, ops) {
+  return json0.apply(structuredClone(doc), structuredClone([...ops]));
+}
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stackOrder(doc) {
+  return Object.keys(doc.widgets).sort((a, b) => {
+    const za = doc.widgets[a].z;
+    const zb = doc.widgets[b].z;
+    return za < zb ? -1 : za > zb ? 1 : a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+function configOfSnapshot(snapshot) {
+  const widgets = [];
+  for (const id of stackOrder(snapshot.doc)) {
+    const placement = snapshot.doc.widgets[id];
+    const meta = snapshot.meta[id];
+    if (!meta) {
+      continue;
+    }
+    widgets.push({
+      id,
+      widgetCanonicalId: placement.widget,
+      moduleId: meta.moduleId,
+      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+      settings: placement.settings,
+      hostsSurface: meta.hostsSurface,
+      frameUrl: meta.frameUrl,
+      linkedResources: meta.linkedResources,
+      visible: placement.visible
+    });
+  }
+  return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
+}
+function mergeMeta(meta, changes) {
+  const next = { ...meta };
+  for (const [id, value] of Object.entries(changes)) {
+    if (value === null) {
+      delete next[id];
+    } else {
+      next[id] = value;
+    }
+  }
+  return next;
+}
+function parseSnapshot(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const s = value;
+  if (typeof s.sceneId !== "string" || typeof s.seq !== "number" || !isPlainObject(s.doc) || !isPlainObject(s.doc.widgets) || !isPlainObject(s.meta)) {
+    return null;
+  }
+  return value;
+}
+function parseSceneOpsEvent(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const e = value;
+  if (typeof e.seq !== "number" || !Array.isArray(e.ops) || !isPlainObject(e.meta)) {
+    return null;
+  }
+  return value;
+}
+
 // public/scene-manager/event-source.ts
 var SESSION_REJECTED_STATUSES = new Set([401, 403]);
 function parseSseChunk(rawEvent) {
@@ -1106,10 +1992,11 @@ function parseSseChunk(rawEvent) {
     return null;
   }
   if (eventName === "hello") {
-    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId } : null;
+    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId, seq: typeof parsed.seq === "number" ? parsed.seq : 0 } : null;
   }
-  if (eventName === "scene-updated") {
-    return { kind: "scene-updated" };
+  if (eventName === "scene-ops") {
+    const event = parseSceneOpsEvent(parsed);
+    return event ? { kind: "scene-ops", event } : null;
   }
   if (eventName === "cancel") {
     const { instanceId, eventIds } = parsed;
@@ -1233,11 +2120,11 @@ class SceneEventSource {
             continue;
           }
           if (parsed.kind === "hello") {
-            this.sink?.onHello?.(parsed.bootId);
+            this.sink?.onHello?.(parsed.bootId, parsed.seq);
           } else if (parsed.kind === "module-state") {
             this.sink?.onModuleState?.(parsed.frame);
-          } else if (parsed.kind === "scene-updated") {
-            this.sink?.onSceneUpdated?.();
+          } else if (parsed.kind === "scene-ops") {
+            this.sink?.onSceneOps?.(parsed.event);
           } else if (parsed.kind === "cancel") {
             this.sink?.onCancel?.(parsed.frame);
           } else {
@@ -1404,86 +2291,6 @@ class ConnectionStatus {
   }
 }
 
-// public/scene-manager/scene-update.ts
-function planSceneUpdate(current, next) {
-  const currentById = new Map(current.map((placement) => [placement.id, placement]));
-  const nextIds = new Set(next.map((placement) => placement.id));
-  const plan = {
-    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
-    mount: [],
-    replace: [],
-    place: [],
-    order: next.map((placement) => placement.id)
-  };
-  for (const placement of next) {
-    const existing = currentById.get(placement.id);
-    if (!existing) {
-      plan.mount.push(placement);
-    } else if (sameFrame(existing, placement)) {
-      plan.place.push(placement);
-    } else {
-      plan.replace.push(placement);
-    }
-  }
-  return plan;
-}
-function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
-}
-function settingsUpdate(current, next, reads) {
-  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
-  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
-  if (changed.length === 0) {
-    return "none";
-  }
-  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
-    return "reload";
-  }
-  return "patch";
-}
-var THEME_SETTING_ID = "theme";
-function themeOf(settings) {
-  const value = settings[THEME_SETTING_ID];
-  return typeof value === "string" ? value.trim() : "";
-}
-function sameValue(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
-  }
-  const aRecord = a;
-  const bRecord = b;
-  const aKeys = Object.keys(aRecord);
-  if (aKeys.length !== Object.keys(bRecord).length) {
-    return false;
-  }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
-}
-function parseSceneConfig(body) {
-  if (typeof body !== "object" || body === null) {
-    return null;
-  }
-  const scene = body.scene;
-  if (typeof scene !== "object" || scene === null) {
-    return null;
-  }
-  const s = scene;
-  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
-    return null;
-  }
-  return {
-    id: s.id,
-    name: typeof s.name === "string" ? s.name : "",
-    layout: s.layout,
-    widgets: s.widgets
-  };
-}
-
 // public/scene-manager/preview-layout.ts
 var PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
 function isFiniteNumber(value) {
@@ -1587,6 +2394,11 @@ function frameSrc(instance, nonce) {
   });
   return `${instance.frameUrl}#${boot}`;
 }
+function showIf(element, visible) {
+  if (element) {
+    element.style.visibility = visible === false ? "hidden" : "";
+  }
+}
 function asRecord(value) {
   return typeof value === "object" && value !== null ? value : {};
 }
@@ -1611,6 +2423,7 @@ function main() {
   }
   applySceneBackground(document.body, sceneData.layout);
   const sceneId = sceneData.id;
+  let sceneDoc = parseSnapshot(window.__WOOFX3_SCENE__?.document);
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
   const bridges = new Set;
   const widgetElements = new Map;
@@ -1743,10 +2556,11 @@ function main() {
   function mount(instance) {
     if (instance.hostsSurface === "alert") {
       mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
-      return;
+    } else {
+      const frame = mountFramedWidget(instance);
+      mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
     }
-    const frame = mountFramedWidget(instance);
-    mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+    showIf(widgetElements.get(instance.id), instance.visible);
   }
   function unmountPlacement(id) {
     const entry = mounted.get(id);
@@ -1776,6 +2590,7 @@ function main() {
       fresh.element.style.zIndex = old?.style.zIndex ?? "";
       fresh.element.style.display = old?.style.display ?? "";
       fresh.element.style.opacity = "";
+      showIf(fresh.element, next.visible);
       entry.unmount();
       widgetElements.set(next.id, fresh.element);
       mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
@@ -1890,6 +2705,7 @@ function main() {
       if (entry && element) {
         entry.config = { ...instance, settings: entry.config.settings };
         placeAt(element, instance.position);
+        showIf(element, instance.visible);
         updateSettings(instance.id, instance.settings);
       }
     }
@@ -1905,6 +2721,32 @@ function main() {
       applyPreviewLayout(widgetElements, previewLayout);
     }
   }
+  function applySceneOps(event) {
+    if (sceneDoc && event.seq <= sceneDoc.seq) {
+      return;
+    }
+    if (!sceneDoc || event.seq !== sceneDoc.seq + 1) {
+      updateScene();
+      return;
+    }
+    try {
+      sceneDoc = {
+        ...sceneDoc,
+        seq: event.seq,
+        doc: applyOps(sceneDoc.doc, event.ops),
+        meta: mergeMeta(sceneDoc.meta, event.meta)
+      };
+    } catch (err) {
+      console.warn("[scene-manager] scene ops did not apply; resyncing", err);
+      updateScene();
+      return;
+    }
+    if (draftPlacements) {
+      updateScene();
+      return;
+    }
+    applySceneConfig(configOfSnapshot(sceneDoc), false);
+  }
   async function fetchTarget() {
     const draft = draftPlacements;
     let resp;
@@ -1919,8 +2761,13 @@ function main() {
     } catch {
       return draft ? { kind: "keep" } : { kind: "reload" };
     }
-    const config = resp.ok ? parseSceneConfig(await resp.json().catch(() => null)) : null;
+    const body = resp.ok ? await resp.json().catch(() => null) : null;
+    const config = parseSceneConfig(body);
     if (config && config.id === sceneId) {
+      const snapshot = draft ? null : parseSnapshot(asRecord(body).document);
+      if (snapshot) {
+        sceneDoc = snapshot;
+      }
       return { kind: "apply", config, fromDraft: draft !== null };
     }
     if (draft && resp.status !== 401) {
@@ -1980,8 +2827,8 @@ function main() {
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
-    onSceneUpdated: () => void updateScene(),
-    onHello: (bootId) => {
+    onSceneOps: applySceneOps,
+    onHello: (bootId, seq) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
         return;
@@ -1990,6 +2837,9 @@ function main() {
         moduleState.refresh();
       }
       serverBootId = bootId;
+      if (!sceneDoc || seq !== sceneDoc.seq) {
+        updateScene();
+      }
     },
     onSessionExpired: () => {
       reloadOverlay();
