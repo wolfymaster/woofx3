@@ -366,25 +366,67 @@ export class SceneDocuments {
       if (transformed.length === 0) {
         return { ok: true, seq };
       }
-      let doc: SceneDocument;
-      try {
-        doc = applyOps(target.snapshot.doc, transformed);
-      } catch (err) {
-        return { ok: false, error: "invalid", detail: `ops do not apply: ${String(err)}` };
-      }
-      if (JSON.stringify(doc).length > MAX_DOCUMENT_BYTES) {
-        return { ok: false, error: "invalid", detail: "the scene would be too large" };
-      }
-      // Before the commit, so the change goes out saying the draft exists.
-      if (version === "draft") {
-        held.hasDraft = true;
-      }
-      await this.commit(held, version, transformed, doc, opId);
-      if (version === "published") {
-        await this.mirrorIntoDraft(held, transformed);
+      const failure = await this.apply(held, version, transformed, opId);
+      if (failure) {
+        return { ok: false, error: "invalid", detail: failure };
       }
       return { ok: true, seq: held[version].snapshot.seq };
     });
+  }
+
+  /**
+   * A change the engine makes itself (a workflow step), not an editor:
+   * `change` is given the version as it stands and returns the ops to apply,
+   * or why it cannot be made. Applied, pushed and saved like an editor's.
+   */
+  applyChange(
+    sceneId: string,
+    version: SceneVersion,
+    change: (snapshot: SceneSnapshot) => Json0Component[] | { error: string }
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    return this.serial(sceneId, async () => {
+      const held = await this.hold(sceneId);
+      if (!held) {
+        return { ok: false as const, error: "not_found" };
+      }
+      const ops = change(held[version].snapshot);
+      if (!Array.isArray(ops)) {
+        return { ok: false as const, error: ops.error };
+      }
+      if (ops.length === 0) {
+        return { ok: true as const };
+      }
+      const invalid = invalidOps(ops);
+      const failure = invalid ?? (await this.apply(held, version, ops, null));
+      return failure ? { ok: false as const, error: failure } : { ok: true as const };
+    });
+  }
+
+  /** Apply ops made against a version as it stands; why not, or null. */
+  private async apply(
+    held: HeldScene,
+    version: SceneVersion,
+    ops: Json0Component[],
+    opId: string | null
+  ): Promise<string | null> {
+    let doc: SceneDocument;
+    try {
+      doc = applyOps(held[version].snapshot.doc, ops);
+    } catch (err) {
+      return `ops do not apply: ${String(err)}`;
+    }
+    if (JSON.stringify(doc).length > MAX_DOCUMENT_BYTES) {
+      return "the scene would be too large";
+    }
+    // Before the commit, so the change goes out saying the draft exists.
+    if (version === "draft") {
+      held.hasDraft = true;
+    }
+    await this.commit(held, version, ops, doc, opId);
+    if (version === "published") {
+      await this.mirrorIntoDraft(held, ops);
+    }
+    return null;
   }
 
   /** Make the draft the published scene. */

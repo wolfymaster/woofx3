@@ -24,6 +24,8 @@ import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 import { SCENE_EDITOR_TOKEN_SUBJECT, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
+import { SCENE_COMMAND_SUBJECT } from "@woofx3/common/cloudevents/Scene/commands";
+import { type SceneCommandDeps, answerSceneCommand } from "./scene/scene-command";
 
 interface InitArgs {
   nats: NATSClient | null;
@@ -56,8 +58,8 @@ interface SceneUpdatedEnvelope {
   data?: { id?: unknown };
 }
 
-/** The slice of `SceneDocuments` a save is handed to. */
-interface SavedScenes {
+/** The slice of `SceneDocuments` saves and scene commands are handed to. */
+interface SavedScenes extends SceneCommandDeps {
   refresh(sceneId: string): Promise<void>;
 }
 
@@ -69,7 +71,10 @@ interface SavedScenes {
  * so a save in the dashboard reaches OBS without a reload. Returns the scene
  * id it handed on, or null for an envelope with none.
  */
-export function notifySceneUpdated(scenes: SavedScenes, envelope: SceneUpdatedEnvelope): string | null {
+export function notifySceneUpdated(
+  scenes: Pick<SavedScenes, "refresh">,
+  envelope: SceneUpdatedEnvelope
+): string | null {
   const sceneId = typeof envelope.data?.id === "string" ? envelope.data.id : "";
   if (!sceneId) {
     return null;
@@ -299,6 +304,11 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     return sceneId ? editorToken(sceneId) : ({ ok: false, reason: "sceneId required" } satisfies SceneEditorTokenReply);
   });
   logger.info(`Answering ${SCENE_EDITOR_TOKEN_SUBJECT}`);
+
+  // A workflow step changing a scene (scene.widget.visibility): applied to
+  // the published scene like an edit, and answered so the step knows.
+  await nats.subscribe(SCENE_COMMAND_SUBJECT, (msg) => answerSceneCommand(sceneDocuments, msg, logger));
+  logger.info(`Answering ${SCENE_COMMAND_SUBJECT}`);
 
   // db-proxy announces every module setting write, naming the setting but
   // never its value. A change to the OBS module's connection reconnects with

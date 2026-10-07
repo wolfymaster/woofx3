@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -327,6 +327,45 @@
       "taxonomy": [
         "system.workflow",
         "alert.renderer"
+      ]
+    },
+    {
+      "id": "scene.widget.visibility",
+      "name": "Set widget visibility",
+      "description": "Show or hide a widget on a scene, on every overlay showing that scene. The change is saved with the scene, so the widget stays that way until it is changed again.",
+      "type": "native",
+      "handler": "scene.widget.visibility",
+      "schema": [
+        {
+          "id": "sceneId",
+          "label": "Scene",
+          "type": "text",
+          "required": true,
+          "source": {
+            "kind": "scenes"
+          }
+        },
+        {
+          "id": "placementId",
+          "label": "Widget",
+          "type": "text",
+          "required": true,
+          "source": {
+            "kind": "scenePlacements",
+            "sceneField": "sceneId"
+          },
+          "description": "The widget on the chosen scene. A widget placed twice is two choices, one per placement."
+        },
+        {
+          "id": "visible",
+          "label": "Visible",
+          "type": "toggle",
+          "defaultValue": true,
+          "description": "On shows the widget, off hides it. A hidden widget keeps running, so it shows again instantly and as it was."
+        }
+      ],
+      "taxonomy": [
+        "system.workflow"
       ]
     },
     {

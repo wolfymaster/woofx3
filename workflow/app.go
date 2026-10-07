@@ -247,6 +247,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	a.engine.RegisterActionWithSpec("function", WithServices(appServices, NewBarkloaderAction()), functionActionSpec)
 	a.engine.RegisterActionWithSpec("alert", WithServices(appServices, NewAlertAction()), alertActionSpec)
 	a.engine.RegisterActionWithSpec("chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec)
+	a.engine.RegisterActionWithSpec("scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec)
 	a.engine.RegisterActionWithSpec("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 		a.logger.Info("Action: print", "params", params)
 		return params, nil
