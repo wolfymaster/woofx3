@@ -149,6 +149,7 @@ describe("alert queue control subjects", () => {
       moduleState: {} as any,
       resolver: {} as any,
       sceneDocuments: { refresh: async () => {} },
+      editorToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
     return handlers;
@@ -236,6 +237,7 @@ describe("module setting changes", () => {
       moduleState: {} as any,
       resolver: {} as any,
       sceneDocuments: { refresh: async () => {} },
+      editorToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
     const deliver = (data: unknown) => {
@@ -300,6 +302,7 @@ describe("module setting changes", () => {
       moduleState: {} as never,
       resolver: {} as never,
       sceneDocuments: { refresh: async () => {} },
+      editorToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
     const handler = handlers.get("engine.obs.status");

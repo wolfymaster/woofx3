@@ -76,10 +76,15 @@ export class DbClient {
     await Ping({}, this.config);
   }
 
-  // Scene reads — sceneManager fetches a scene by id when `/scene/{id}`
-  // loads. Write paths stay on the api service.
+  // Scenes — sceneManager fetches a scene by id when `/scene/{id}` loads,
+  // and writes the scenes it holds back as their editors change them (see
+  // scene-documents.ts). Creating, renaming and deleting stay on the api.
   async getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse> {
     return scene.GetScene(req, this.config);
+  }
+
+  async updateScene(req: scene.UpdateSceneRequest): Promise<scene.SceneResponse> {
+    return scene.UpdateScene(req, this.config);
   }
 
   // Overlay-token resolution — engine-internal only. sceneManager is

@@ -29,6 +29,13 @@ export interface PlacementDocument {
   /** Stacking, bottom first, as a key that sorts as text (see `zKey`). */
   z: string;
   settings: Record<string, unknown>;
+  /** What only the editor reads: overlays ignore these. */
+  name: string;
+  rotation: number;
+  opacity: number;
+  locked: boolean;
+  /** Any other field a placement was stored with, kept as it was. */
+  extra: Record<string, unknown>;
 }
 
 export interface SceneDocument {
@@ -69,11 +76,27 @@ export interface SceneOpsEvent {
   seq: number;
   ops: Json0Component[];
   meta: Record<string, PlacementMeta | null>;
+  /** Which of the scene's versions changed; absent means published. */
+  version?: "published" | "draft";
 }
 
 /** `doc` with `ops` applied; `doc` itself is left as it was. */
 export function applyOps(doc: SceneDocument, ops: readonly Json0Component[]): SceneDocument {
   return json0.apply(structuredClone(doc), structuredClone([...ops])) as SceneDocument;
+}
+
+/**
+ * `ops` rewritten to apply after `against`, which was applied first. `left`
+ * means `ops` loses a tie (both inserting at one text position, or both
+ * setting one value): the server transforms an editor's op this way against
+ * what was applied before it, so what is already on everyone's screen wins.
+ */
+export function transformOps(
+  ops: readonly Json0Component[],
+  against: readonly Json0Component[],
+  side: "left" | "right"
+): Json0Component[] {
+  return json0.transform(structuredClone([...ops]), structuredClone([...against]), side) as Json0Component[];
 }
 
 /**

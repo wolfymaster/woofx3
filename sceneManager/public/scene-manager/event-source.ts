@@ -51,7 +51,7 @@ export interface CancelFrame {
 export type SceneFrame =
   | { kind: "delivery"; frame: DeliveryFrame }
   | { kind: "module-state"; frame: ModuleStateFrame }
-  | { kind: "hello"; bootId: string; seq: number }
+  | { kind: "hello"; bootId: string; seq: number; draftSeq: number }
   | { kind: "scene-ops"; event: SceneOpsEvent }
   | { kind: "cancel"; frame: CancelFrame };
 
@@ -62,7 +62,7 @@ export interface SceneEventSink {
   /** Server boot identity for the stream just opened, and the scene ops
    *  the page should be up to. The boot id changes across a sceneManager
    *  restart; see index.ts for what that triggers. */
-  onHello?(bootId: string, seq: number): void;
+  onHello?(bootId: string, seq: number, draftSeq: number): void;
   /** The scene changed: the ops for the next sequence number. */
   onSceneOps?(event: SceneOpsEvent): void;
   /** The server closed deliveries the page may still be holding. */
@@ -116,7 +116,12 @@ export function parseSseChunk(rawEvent: string): SceneFrame | null {
 
   if (eventName === "hello") {
     return typeof parsed.bootId === "string" && parsed.bootId.length > 0
-      ? { kind: "hello", bootId: parsed.bootId, seq: typeof parsed.seq === "number" ? parsed.seq : 0 }
+      ? {
+          kind: "hello",
+          bootId: parsed.bootId,
+          seq: typeof parsed.seq === "number" ? parsed.seq : 0,
+          draftSeq: typeof parsed.draftSeq === "number" ? parsed.draftSeq : 0,
+        }
       : null;
   }
 
@@ -287,7 +292,7 @@ export class SceneEventSource {
             continue;
           }
           if (parsed.kind === "hello") {
-            this.sink?.onHello?.(parsed.bootId, parsed.seq);
+            this.sink?.onHello?.(parsed.bootId, parsed.seq, parsed.draftSeq);
           } else if (parsed.kind === "module-state") {
             this.sink?.onModuleState?.(parsed.frame);
           } else if (parsed.kind === "scene-ops") {

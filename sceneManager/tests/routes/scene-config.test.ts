@@ -10,7 +10,21 @@ const SNAPSHOT: SceneSnapshot = {
   doc: {
     layout: {},
     widgets: {
-      w1: { widget: "woofx3:widget:text", x: 1, y: 2, width: 3, height: 4, visible: true, z: "a0000", settings: {} },
+      w1: {
+        widget: "woofx3:widget:text",
+        x: 1,
+        y: 2,
+        width: 3,
+        height: 4,
+        visible: true,
+        z: "a0000",
+        settings: {},
+        name: "Text",
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+        extra: {},
+      },
     },
   },
   meta: { w1: { moduleId: "woofx3", hostsSurface: "", frameUrl: "/frames/woofx3/text?v=x", linkedResources: {} } },
@@ -56,6 +70,17 @@ describe("handleSceneConfigRoute", () => {
     expect((await handleSceneConfigRoute(request("scene-1", "bad"), "scene-1", d)).status).toBe(401);
     expect((await handleSceneConfigRoute(request("scene-2", "good"), "scene-2", d)).status).toBe(401);
     expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it("serves the editor's draft to a page that asks for it", async () => {
+    const { deps: d, snapshot } = deps();
+    const draft = new Request("http://scene.test/scene/scene-1/config?view=draft", {
+      headers: { Cookie: "sm_session_scene-1=good" },
+    });
+    await handleSceneConfigRoute(draft, "scene-1", d);
+    expect(snapshot).toHaveBeenLastCalledWith("scene-1", "draft");
+    await handleSceneConfigRoute(request("scene-1", "good"), "scene-1", d);
+    expect(snapshot).toHaveBeenLastCalledWith("scene-1", "published");
   });
 
   it("answers 404 for a scene that no longer loads", async () => {

@@ -1,8 +1,14 @@
 import type { HttpDeps } from "../http";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
 import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
+import type { SceneVersion } from "../scene/scene-host";
 import { renderSceneShell } from "../scene/shell";
 import { configOfSnapshot } from "../../public/scene-manager/scene-document";
+
+/** Which version of the scene a page shows: `?view=draft` for the editor's preview. */
+export function viewOf(url: URL): SceneVersion {
+  return url.searchParams.get("view") === "draft" ? "draft" : "published";
+}
 
 const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
 
@@ -26,8 +32,9 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   }
 
   // The page starts from the scene's sequenced document, so it can apply
-  // every save after this one as ops (see scene-documents.ts).
-  const snapshot = await deps.sceneDocuments.snapshot(state.sceneId);
+  // every change after this one as ops (see scene-documents.ts). The
+  // editor's preview asks for the draft.
+  const snapshot = await deps.sceneDocuments.snapshot(state.sceneId, viewOf(url));
   const scene = snapshot ? configOfSnapshot(snapshot) : (await deps.host.buildConfig(token)).scene;
   const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
 
@@ -55,7 +62,7 @@ export async function handleSceneConfigRoute(req: Request, sceneId: string, deps
     return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   // With its document, so an overlay that missed ops resyncs from here.
-  const snapshot = await deps.sceneDocuments.snapshot(sceneId);
+  const snapshot = await deps.sceneDocuments.snapshot(sceneId, viewOf(new URL(req.url)));
   if (!snapshot) {
     return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }

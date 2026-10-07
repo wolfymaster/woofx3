@@ -103,3 +103,47 @@ describe("OverlayHost — frameUrl", () => {
     expect(state?.instances[0]?.frameUrl).toBe("/frames/woofx3/media_alert?v=unavailable");
   });
 });
+
+describe("OverlayHost.loadSceneById — drafts", () => {
+  function hostWith(sceneFields: Record<string, unknown>) {
+    const db = {
+      getScene: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        scene: { id: "scene-1", name: "Main", ...sceneFields },
+      })),
+      listWidgets: mock(async () => ({ status: { code: "OK" as const, message: "" }, widgets: [] })),
+    };
+    const resolver = new OverlayTokenResolver({ resolveOverlayToken: async () => ({}) } as any, fakeLogger());
+    return new OverlayHost(resolver, db as any, fakeLogger());
+  }
+  const placements = (id: string) => JSON.stringify([{ id, widgetCanonicalId: "woofx3:widget:text", settings: {} }]);
+
+  it("loads the draft only when asked for it and the scene has one", async () => {
+    const host = hostWith({
+      widgetsJson: placements("published"),
+      layoutJson: "{}",
+      hasDraft: true,
+      draftWidgetsJson: placements("draft"),
+      draftLayoutJson: '{"backgroundColor":"#000"}',
+    });
+    expect((await host.loadSceneById("scene-1"))!.instances.map((i) => i.id)).toEqual(["published"]);
+    const draft = await host.loadSceneById("scene-1", "draft");
+    expect(draft!.instances.map((i) => i.id)).toEqual(["draft"]);
+    expect(draft!.layout).toEqual({ backgroundColor: "#000" });
+    expect(draft!.hasDraft).toBe(true);
+  });
+
+  it("reads a scene with no draft as its own draft", async () => {
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", hasDraft: false });
+    expect((await host.loadSceneById("scene-1", "draft"))!.instances.map((i) => i.id)).toEqual(["published"]);
+  });
+
+  it("keeps each placement as stored", async () => {
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}" });
+    expect((await host.loadSceneById("scene-1"))!.instances[0]!.stored).toEqual({
+      id: "published",
+      widgetCanonicalId: "woofx3:widget:text",
+      settings: {},
+    });
+  });
+});

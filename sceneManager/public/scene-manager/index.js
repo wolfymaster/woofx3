@@ -1992,7 +1992,12 @@ function parseSseChunk(rawEvent) {
     return null;
   }
   if (eventName === "hello") {
-    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId, seq: typeof parsed.seq === "number" ? parsed.seq : 0 } : null;
+    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? {
+      kind: "hello",
+      bootId: parsed.bootId,
+      seq: typeof parsed.seq === "number" ? parsed.seq : 0,
+      draftSeq: typeof parsed.draftSeq === "number" ? parsed.draftSeq : 0
+    } : null;
   }
   if (eventName === "scene-ops") {
     const event = parseSceneOpsEvent(parsed);
@@ -2120,7 +2125,7 @@ class SceneEventSource {
             continue;
           }
           if (parsed.kind === "hello") {
-            this.sink?.onHello?.(parsed.bootId, parsed.seq);
+            this.sink?.onHello?.(parsed.bootId, parsed.seq, parsed.draftSeq);
           } else if (parsed.kind === "module-state") {
             this.sink?.onModuleState?.(parsed.frame);
           } else if (parsed.kind === "scene-ops") {
@@ -2425,6 +2430,7 @@ function main() {
   const sceneId = sceneData.id;
   let sceneDoc = parseSnapshot(window.__WOOFX3_SCENE__?.document);
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
+  const view = new URLSearchParams(location.search).get("view") === "draft" ? "draft" : "published";
   const bridges = new Set;
   const widgetElements = new Map;
   const queueManager = new EventQueueManager;
@@ -2722,6 +2728,9 @@ function main() {
     }
   }
   function applySceneOps(event) {
+    if ((event.version ?? "published") !== view) {
+      return;
+    }
     if (sceneDoc && event.seq <= sceneDoc.seq) {
       return;
     }
@@ -2757,7 +2766,10 @@ function main() {
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ widgets: draft })
-      }) : await fetch(`${sceneBase}/config`, { credentials: "same-origin", cache: "no-store" });
+      }) : await fetch(`${sceneBase}/config${view === "draft" ? "?view=draft" : ""}`, {
+        credentials: "same-origin",
+        cache: "no-store"
+      });
     } catch {
       return draft ? { kind: "keep" } : { kind: "reload" };
     }
@@ -2828,7 +2840,8 @@ function main() {
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
     onSceneOps: applySceneOps,
-    onHello: (bootId, seq) => {
+    onHello: (bootId, publishedSeq, draftSeq) => {
+      const seq = view === "draft" ? draftSeq : publishedSeq;
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
         return;

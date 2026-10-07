@@ -52,7 +52,11 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
         // sceneManager rather than resuming against the same one.
         // It also says which scene ops the overlay should be up to, so one
         // that missed some while its stream was down resyncs.
-        const hello = { bootId: deps.bootId, seq: deps.sceneDocuments.seqOf(sceneId) };
+        const hello = {
+          bootId: deps.bootId,
+          seq: deps.sceneDocuments.seqOf(sceneId, "published"),
+          draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
+        };
         controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`));
         // A scene can sit idle far longer than any idle timeout on the
         // path: Bun.serve reaps a silent connection (see `idleTimeout`

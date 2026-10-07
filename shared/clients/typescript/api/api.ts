@@ -724,6 +724,15 @@ export interface ModuleOAuthConnected {
   scope: string[];
 }
 
+/** Returned by `getSceneEditorSession`. */
+export interface SceneEditorSession {
+  token: string;
+  /** The editor socket, relative to sceneManager's public URL. */
+  path: string;
+  /** How long `token` may be presented for; ask again to reconnect after. */
+  expiresInSeconds: number;
+}
+
 /**
  * Outcome of `getObsStatus`.
  *
@@ -1727,6 +1736,14 @@ export interface Woofx3EngineApi {
    * page. Requires the `obs.status` capability.
    */
   getObsStatus(): Promise<ObsStatus>;
+  /**
+   * What the dashboard's scene editor needs to open sceneManager's editor
+   * socket for a scene: a token presented once, as `?token=`, on the socket
+   * at `path` (relative to sceneManager's public URL). Null when the scene
+   * does not exist or sceneManager does not answer. Requires the
+   * `scenes.editorSessions` capability.
+   */
+  getSceneEditorSession(sceneId: string): Promise<SceneEditorSession | null>;
 
   /**
    * Finish connecting a module's OAuth integration (the manifest's `oauth[]`):

@@ -12,7 +12,21 @@ import {
 } from "../../public/scene-manager/scene-document";
 
 function placement(z: string, settings: Record<string, unknown> = {}) {
-  return { widget: "woofx3:widget:text", x: 0, y: 0, width: 100, height: 50, visible: true, z, settings };
+  return {
+    widget: "woofx3:widget:text",
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 50,
+    visible: true,
+    z,
+    settings,
+    name: "Text",
+    rotation: 0,
+    opacity: 1,
+    locked: false,
+    extra: {},
+  };
 }
 
 function doc(widgets: SceneDocument["widgets"], layout: Record<string, unknown> = {}): SceneDocument {

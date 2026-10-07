@@ -42,6 +42,13 @@ export interface Scene {
   createdByRef: string;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
+  /**
+   * The editor's unpublished widgets and layout, the same shapes as
+   * `widgets_json` and `layout_json`. Set only when `has_draft`.
+   */
+  draftWidgetsJson: string;
+  draftLayoutJson: string;
+  hasDraft: boolean;
 }
 
 export interface CreateSceneRequest {
@@ -82,6 +89,17 @@ export interface UpdateSceneRequest {
   description: string;
   widgetsJson: string;
   layoutJson: string;
+  /**
+   * Store a draft, the same shapes as `widgets_json` and `layout_json`.
+   * Both are set together; empty leaves the draft unchanged.
+   */
+  draftWidgetsJson: string;
+  draftLayoutJson: string;
+  /**
+   * Drop the draft (it was published or discarded). Wins over a draft
+   * set in the same request.
+   */
+  clearDraft: boolean;
 }
 
 export interface DeleteSceneRequest {
@@ -355,6 +373,9 @@ export const Scene = {
       createdByRef: "",
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
+      draftWidgetsJson: "",
+      draftLayoutJson: "",
+      hasDraft: false,
       ...msg,
     };
   },
@@ -401,6 +422,15 @@ export const Scene = {
         protoscript.Timestamp._writeMessage,
       );
     }
+    if (msg.draftWidgetsJson) {
+      writer.writeString(11, msg.draftWidgetsJson);
+    }
+    if (msg.draftLayoutJson) {
+      writer.writeString(12, msg.draftLayoutJson);
+    }
+    if (msg.hasDraft) {
+      writer.writeBool(13, msg.hasDraft);
+    }
     return writer;
   },
 
@@ -445,6 +475,18 @@ export const Scene = {
         }
         case 10: {
           reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 11: {
+          msg.draftWidgetsJson = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.draftLayoutJson = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.hasDraft = reader.readBool();
           break;
         }
         default: {
@@ -740,6 +782,9 @@ export const UpdateSceneRequest = {
       description: "",
       widgetsJson: "",
       layoutJson: "",
+      draftWidgetsJson: "",
+      draftLayoutJson: "",
+      clearDraft: false,
       ...msg,
     };
   },
@@ -765,6 +810,15 @@ export const UpdateSceneRequest = {
     }
     if (msg.layoutJson) {
       writer.writeString(5, msg.layoutJson);
+    }
+    if (msg.draftWidgetsJson) {
+      writer.writeString(6, msg.draftWidgetsJson);
+    }
+    if (msg.draftLayoutJson) {
+      writer.writeString(7, msg.draftLayoutJson);
+    }
+    if (msg.clearDraft) {
+      writer.writeBool(8, msg.clearDraft);
     }
     return writer;
   },
@@ -797,6 +851,18 @@ export const UpdateSceneRequest = {
         }
         case 5: {
           msg.layoutJson = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.draftWidgetsJson = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.draftLayoutJson = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.clearDraft = reader.readBool();
           break;
         }
         default: {
@@ -1104,6 +1170,9 @@ export const SceneJSON = {
       createdByRef: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
+      draftWidgetsJson: "",
+      draftLayoutJson: "",
+      hasDraft: false,
       ...msg,
     };
   },
@@ -1139,6 +1208,15 @@ export const SceneJSON = {
     }
     if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
       json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.draftWidgetsJson) {
+      json["draftWidgetsJson"] = msg.draftWidgetsJson;
+    }
+    if (msg.draftLayoutJson) {
+      json["draftLayoutJson"] = msg.draftLayoutJson;
+    }
+    if (msg.hasDraft) {
+      json["hasDraft"] = msg.hasDraft;
     }
     return json;
   },
@@ -1182,6 +1260,20 @@ export const SceneJSON = {
     const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
     if (_updatedAt_) {
       msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    const _draftWidgetsJson_ =
+      json["draftWidgetsJson"] ?? json["draft_widgets_json"];
+    if (_draftWidgetsJson_) {
+      msg.draftWidgetsJson = _draftWidgetsJson_;
+    }
+    const _draftLayoutJson_ =
+      json["draftLayoutJson"] ?? json["draft_layout_json"];
+    if (_draftLayoutJson_) {
+      msg.draftLayoutJson = _draftLayoutJson_;
+    }
+    const _hasDraft_ = json["hasDraft"] ?? json["has_draft"];
+    if (_hasDraft_) {
+      msg.hasDraft = _hasDraft_;
     }
     return msg;
   },
@@ -1431,6 +1523,9 @@ export const UpdateSceneRequestJSON = {
       description: "",
       widgetsJson: "",
       layoutJson: "",
+      draftWidgetsJson: "",
+      draftLayoutJson: "",
+      clearDraft: false,
       ...msg,
     };
   },
@@ -1456,6 +1551,15 @@ export const UpdateSceneRequestJSON = {
     }
     if (msg.layoutJson) {
       json["layoutJson"] = msg.layoutJson;
+    }
+    if (msg.draftWidgetsJson) {
+      json["draftWidgetsJson"] = msg.draftWidgetsJson;
+    }
+    if (msg.draftLayoutJson) {
+      json["draftLayoutJson"] = msg.draftLayoutJson;
+    }
+    if (msg.clearDraft) {
+      json["clearDraft"] = msg.clearDraft;
     }
     return json;
   },
@@ -1486,6 +1590,20 @@ export const UpdateSceneRequestJSON = {
     const _layoutJson_ = json["layoutJson"] ?? json["layout_json"];
     if (_layoutJson_) {
       msg.layoutJson = _layoutJson_;
+    }
+    const _draftWidgetsJson_ =
+      json["draftWidgetsJson"] ?? json["draft_widgets_json"];
+    if (_draftWidgetsJson_) {
+      msg.draftWidgetsJson = _draftWidgetsJson_;
+    }
+    const _draftLayoutJson_ =
+      json["draftLayoutJson"] ?? json["draft_layout_json"];
+    if (_draftLayoutJson_) {
+      msg.draftLayoutJson = _draftLayoutJson_;
+    }
+    const _clearDraft_ = json["clearDraft"] ?? json["clear_draft"];
+    if (_clearDraft_) {
+      msg.clearDraft = _clearDraft_;
     }
     return msg;
   },

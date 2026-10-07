@@ -27,6 +27,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   private server: ReturnType<typeof Bun.serve> | null = null;
   private deliveryStore: import("./events/delivery-store").DeliveryStore | null = null;
   private obs: import("./obs/connection").ObsConnection<import("./obs/manager").default> | null = null;
+  private sceneDocuments: import("./scene/scene-documents").SceneDocuments | null = null;
 
   constructor(runtimeConfig: SceneManagerRuntimeConfig) {
     this.context = { runtimeConfig };
@@ -39,7 +40,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { FrameCatalog } = await import("./scene/frame-catalog");
     const { SceneDocuments } = await import("./scene/scene-documents");
-    const { SessionTokenService } = await import("./scene/session-token");
+    const { EDITOR_TOKEN_TTL_SECONDS, SessionTokenService } = await import("./scene/session-token");
+    const { sceneEditorPath } = await import("@woofx3/common/cloudevents/Scene/editor");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
@@ -71,7 +73,23 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, ctx.logger);
-    const sceneDocuments = new SceneDocuments(host, deliveryStore, ctx.logger);
+    // Edits are written back here, so the database stays each scene's record.
+    const sceneDocuments = new SceneDocuments(host, deliveryStore, ctx.logger, {
+      persister: {
+        updateScene: (write) =>
+          db.updateScene({
+            name: "",
+            description: "",
+            widgetsJson: "",
+            layoutJson: "",
+            draftWidgetsJson: "",
+            draftLayoutJson: "",
+            clearDraft: false,
+            ...write,
+          }),
+      },
+    });
+    this.sceneDocuments = sceneDocuments;
     // Hydrate from the DB before accepting any traffic — a restart
     // must never silently drop in-flight events.
     await deliveryStore.hydrate();
@@ -161,6 +179,17 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       moduleState,
       resolver,
       sceneDocuments,
+      editorToken: async (sceneId) => {
+        if (!(await host.loadSceneById(sceneId))) {
+          return { ok: false, reason: "scene not found" };
+        }
+        return {
+          ok: true,
+          token: await sessionTokens.mintEditor({ sceneId }),
+          expiresInSeconds: EDITOR_TOKEN_TTL_SECONDS,
+          path: sceneEditorPath(sceneId),
+        };
+      },
       logger: ctx.logger,
     });
 
@@ -189,6 +218,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   }
 
   async terminate(ctx: Context): Promise<void> {
+    // Edits still waiting to be written would otherwise be lost with the process.
+    await this.sceneDocuments?.flush();
+    this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
     this.server?.stop();

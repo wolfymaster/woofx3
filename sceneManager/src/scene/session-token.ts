@@ -26,6 +26,16 @@ export interface SessionClaims {
 /** Token lifetime: 60s, refreshed pre-emptively by the client every ~50s. */
 export const SESSION_TOKEN_TTL_SECONDS = 60;
 
+/**
+ * An editor token is only presented when the editor socket opens, so it
+ * needs to live only as long as it takes the dashboard to connect; a
+ * reconnect asks for a new one.
+ */
+export const EDITOR_TOKEN_TTL_SECONDS = 300;
+
+/** The claim that makes a token an editor's. */
+const EDIT_SCOPE = "edit";
+
 export class SessionTokenService {
   private readonly key: Uint8Array;
 
@@ -44,10 +54,30 @@ export class SessionTokenService {
       .sign(this.key);
   }
 
+  /** A token that lets its holder edit one scene, minted for the dashboard
+   *  through the api (see `SCENE_EDITOR_TOKEN_SUBJECT`). */
+  async mintEditor(claims: SessionClaims): Promise<string> {
+    return new SignJWT({ sceneId: claims.sceneId, scope: EDIT_SCOPE })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime(`${EDITOR_TOKEN_TTL_SECONDS}s`)
+      .sign(this.key);
+  }
+
   /** Verifies signature + expiry and returns the claims, or `null` for
    *  any failure (expired, tampered, malformed) — uniform, no detail
-   *  leaked to the caller. */
+   *  leaked to the caller. An editor token is not a session. */
   async verify(token: string): Promise<SessionClaims | null> {
+    return this.claims(token, false);
+  }
+
+  /** Verifies an editor token: as `verify`, and it must carry the edit scope.
+   *  An overlay's session never lets its holder edit the scene. */
+  async verifyEditor(token: string): Promise<SessionClaims | null> {
+    return this.claims(token, true);
+  }
+
+  private async claims(token: string, editor: boolean): Promise<SessionClaims | null> {
     if (!token) {
       return null;
     }
@@ -55,6 +85,9 @@ export class SessionTokenService {
       const { payload } = await jwtVerify(token, this.key, { algorithms: ["HS256"] });
       const sceneId = payload.sceneId;
       if (typeof sceneId !== "string" || !sceneId) {
+        return null;
+      }
+      if ((payload.scope === EDIT_SCOPE) !== editor) {
         return null;
       }
       return { sceneId };

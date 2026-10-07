@@ -182,6 +182,7 @@ export const RPC_METHODS = [
   "createScene",
   "updateScene",
   "deleteScene",
+  "getSceneEditorSession",
   "getStreamStatus",
   "listStreamSessions",
   "getStreamSession",

@@ -23,6 +23,7 @@ import type { ObsStatusReply } from "./obs/status";
 import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
+import { SCENE_EDITOR_TOKEN_SUBJECT, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
 
 interface InitArgs {
   nats: NATSClient | null;
@@ -38,6 +39,8 @@ interface InitArgs {
   moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
   sceneDocuments: SavedScenes;
+  /** Mints the token that opens a scene's editor socket (see routes/editor.ts). */
+  editorToken: (sceneId: string) => Promise<SceneEditorTokenReply>;
   logger: Logger;
 }
 
@@ -123,6 +126,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     moduleState,
     resolver,
     sceneDocuments,
+    editorToken,
     logger,
   } = args;
 
@@ -287,6 +291,14 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // or not OBS is up; the api asks it for the OBS module's page.
   await answer(OBS_STATUS_SUBJECT, async () => obsStatus());
   logger.info(`Answering ${OBS_STATUS_SUBJECT}`);
+
+  // The api asks for this when a dashboard opens the scene editor; only the
+  // api's requests are answered (see `answer`).
+  await answer(SCENE_EDITOR_TOKEN_SUBJECT, async (body) => {
+    const sceneId = typeof body.sceneId === "string" ? body.sceneId : "";
+    return sceneId ? editorToken(sceneId) : ({ ok: false, reason: "sceneId required" } satisfies SceneEditorTokenReply);
+  });
+  logger.info(`Answering ${SCENE_EDITOR_TOKEN_SUBJECT}`);
 
   // db-proxy announces every module setting write, naming the setting but
   // never its value. A change to the OBS module's connection reconnects with

@@ -21,16 +21,18 @@ describe("parseSseChunk", () => {
   });
 
   it("parses the hello control frame", () => {
-    expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a","seq":4}')).toEqual({
+    expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a","seq":4,"draftSeq":7}')).toEqual({
       kind: "hello",
       bootId: "boot-a",
       seq: 4,
+      draftSeq: 7,
     });
-    // A server from before scene ops sends no seq.
+    // A server from before scene ops sends neither.
     expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a"}')).toEqual({
       kind: "hello",
       bootId: "boot-a",
       seq: 0,
+      draftSeq: 0,
     });
   });
 

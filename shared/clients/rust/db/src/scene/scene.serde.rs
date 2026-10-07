@@ -712,6 +712,15 @@ impl serde::Serialize for Scene {
         if self.updated_at.is_some() {
             len += 1;
         }
+        if !self.draft_widgets_json.is_empty() {
+            len += 1;
+        }
+        if !self.draft_layout_json.is_empty() {
+            len += 1;
+        }
+        if self.has_draft {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.Scene", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -740,6 +749,15 @@ impl serde::Serialize for Scene {
         if let Some(v) = self.updated_at.as_ref() {
             struct_ser.serialize_field("updatedAt", v)?;
         }
+        if !self.draft_widgets_json.is_empty() {
+            struct_ser.serialize_field("draftWidgetsJson", &self.draft_widgets_json)?;
+        }
+        if !self.draft_layout_json.is_empty() {
+            struct_ser.serialize_field("draftLayoutJson", &self.draft_layout_json)?;
+        }
+        if self.has_draft {
+            struct_ser.serialize_field("hasDraft", &self.has_draft)?;
+        }
         struct_ser.end()
     }
 }
@@ -765,6 +783,12 @@ impl<'de> serde::Deserialize<'de> for Scene {
             "createdAt",
             "updated_at",
             "updatedAt",
+            "draft_widgets_json",
+            "draftWidgetsJson",
+            "draft_layout_json",
+            "draftLayoutJson",
+            "has_draft",
+            "hasDraft",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -778,6 +802,9 @@ impl<'de> serde::Deserialize<'de> for Scene {
             CreatedByRef,
             CreatedAt,
             UpdatedAt,
+            DraftWidgetsJson,
+            DraftLayoutJson,
+            HasDraft,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -808,6 +835,9 @@ impl<'de> serde::Deserialize<'de> for Scene {
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
+                            "draftWidgetsJson" | "draft_widgets_json" => Ok(GeneratedField::DraftWidgetsJson),
+                            "draftLayoutJson" | "draft_layout_json" => Ok(GeneratedField::DraftLayoutJson),
+                            "hasDraft" | "has_draft" => Ok(GeneratedField::HasDraft),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -836,6 +866,9 @@ impl<'de> serde::Deserialize<'de> for Scene {
                 let mut created_by_ref__ = None;
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
+                let mut draft_widgets_json__ = None;
+                let mut draft_layout_json__ = None;
+                let mut has_draft__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -892,6 +925,24 @@ impl<'de> serde::Deserialize<'de> for Scene {
                             }
                             updated_at__ = map_.next_value()?;
                         }
+                        GeneratedField::DraftWidgetsJson => {
+                            if draft_widgets_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("draftWidgetsJson"));
+                            }
+                            draft_widgets_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::DraftLayoutJson => {
+                            if draft_layout_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("draftLayoutJson"));
+                            }
+                            draft_layout_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::HasDraft => {
+                            if has_draft__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("hasDraft"));
+                            }
+                            has_draft__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Scene {
@@ -904,6 +955,9 @@ impl<'de> serde::Deserialize<'de> for Scene {
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     created_at: created_at__,
                     updated_at: updated_at__,
+                    draft_widgets_json: draft_widgets_json__.unwrap_or_default(),
+                    draft_layout_json: draft_layout_json__.unwrap_or_default(),
+                    has_draft: has_draft__.unwrap_or_default(),
                 })
             }
         }
@@ -1041,6 +1095,15 @@ impl serde::Serialize for UpdateSceneRequest {
         if !self.layout_json.is_empty() {
             len += 1;
         }
+        if !self.draft_widgets_json.is_empty() {
+            len += 1;
+        }
+        if !self.draft_layout_json.is_empty() {
+            len += 1;
+        }
+        if self.clear_draft {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.UpdateSceneRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -1056,6 +1119,15 @@ impl serde::Serialize for UpdateSceneRequest {
         }
         if !self.layout_json.is_empty() {
             struct_ser.serialize_field("layoutJson", &self.layout_json)?;
+        }
+        if !self.draft_widgets_json.is_empty() {
+            struct_ser.serialize_field("draftWidgetsJson", &self.draft_widgets_json)?;
+        }
+        if !self.draft_layout_json.is_empty() {
+            struct_ser.serialize_field("draftLayoutJson", &self.draft_layout_json)?;
+        }
+        if self.clear_draft {
+            struct_ser.serialize_field("clearDraft", &self.clear_draft)?;
         }
         struct_ser.end()
     }
@@ -1074,6 +1146,12 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
             "widgetsJson",
             "layout_json",
             "layoutJson",
+            "draft_widgets_json",
+            "draftWidgetsJson",
+            "draft_layout_json",
+            "draftLayoutJson",
+            "clear_draft",
+            "clearDraft",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1083,6 +1161,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
             Description,
             WidgetsJson,
             LayoutJson,
+            DraftWidgetsJson,
+            DraftLayoutJson,
+            ClearDraft,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1109,6 +1190,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                             "description" => Ok(GeneratedField::Description),
                             "widgetsJson" | "widgets_json" => Ok(GeneratedField::WidgetsJson),
                             "layoutJson" | "layout_json" => Ok(GeneratedField::LayoutJson),
+                            "draftWidgetsJson" | "draft_widgets_json" => Ok(GeneratedField::DraftWidgetsJson),
+                            "draftLayoutJson" | "draft_layout_json" => Ok(GeneratedField::DraftLayoutJson),
+                            "clearDraft" | "clear_draft" => Ok(GeneratedField::ClearDraft),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1133,6 +1217,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                 let mut description__ = None;
                 let mut widgets_json__ = None;
                 let mut layout_json__ = None;
+                let mut draft_widgets_json__ = None;
+                let mut draft_layout_json__ = None;
+                let mut clear_draft__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -1165,6 +1252,24 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                             }
                             layout_json__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::DraftWidgetsJson => {
+                            if draft_widgets_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("draftWidgetsJson"));
+                            }
+                            draft_widgets_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::DraftLayoutJson => {
+                            if draft_layout_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("draftLayoutJson"));
+                            }
+                            draft_layout_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ClearDraft => {
+                            if clear_draft__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("clearDraft"));
+                            }
+                            clear_draft__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateSceneRequest {
@@ -1173,6 +1278,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                     description: description__.unwrap_or_default(),
                     widgets_json: widgets_json__.unwrap_or_default(),
                     layout_json: layout_json__.unwrap_or_default(),
+                    draft_widgets_json: draft_widgets_json__.unwrap_or_default(),
+                    draft_layout_json: draft_layout_json__.unwrap_or_default(),
+                    clear_draft: clear_draft__.unwrap_or_default(),
                 })
             }
         }

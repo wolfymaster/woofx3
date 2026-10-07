@@ -1,7 +1,15 @@
 import { routeModule } from "./context";
-import type { Scene } from "@woofx3/api";
+import type { Scene, SceneEditorSession } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { dbSceneToSnapshot, dbSceneToWire } from "./helpers";
+import {
+  SCENE_EDITOR_TOKEN_SUBJECT,
+  type SceneEditorTokenReply,
+  type SceneEditorTokenRequest,
+} from "@woofx3/common/cloudevents/Scene/editor";
+
+/** Short: sceneManager answers from memory, and an editor is waiting to open. */
+const SCENE_EDITOR_TOKEN_TIMEOUT_MS = 3_000;
 
 export const scenesRoutes = routeModule({
   async getScenes(query?: { page?: number; pageSize?: number }): Promise<{
@@ -116,6 +124,10 @@ export const scenesRoutes = routeModule({
       description: data.description ?? "",
       widgetsJson: data.widgetsJson ?? "",
       layoutJson: data.layoutJson ?? "",
+      // Drafts are written by sceneManager's editor; this path leaves them be.
+      draftWidgetsJson: "",
+      draftLayoutJson: "",
+      clearDraft: false,
     });
     if (!updated) {
       return { success: false };
@@ -141,5 +153,31 @@ export const scenesRoutes = routeModule({
       });
     }
     return { success };
+  },
+
+  async getSceneEditorSession(sceneId: string): Promise<SceneEditorSession | null> {
+    if (!this.nats || typeof sceneId !== "string" || sceneId === "") {
+      return null;
+    }
+    try {
+      const request: SceneEditorTokenRequest = { sceneId };
+      const reply = await this.nats.request(
+        SCENE_EDITOR_TOKEN_SUBJECT,
+        new TextEncoder().encode(JSON.stringify(request)),
+        { timeout: SCENE_EDITOR_TOKEN_TIMEOUT_MS }
+      );
+      const answer = JSON.parse(new TextDecoder().decode(reply.data)) as SceneEditorTokenReply;
+      if (!answer.ok) {
+        this.logger.warn("getSceneEditorSession: refused", { sceneId, reason: answer.reason });
+        return null;
+      }
+      return { token: answer.token, path: answer.path, expiresInSeconds: answer.expiresInSeconds };
+    } catch (err) {
+      this.logger.warn("getSceneEditorSession: the scene manager did not answer", {
+        sceneId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   },
 });

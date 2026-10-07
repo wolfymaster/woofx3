@@ -25,6 +25,11 @@ type Scene struct {
 	// Canvas-level layout config. Optional; most scenes leave this
 	// `{}`. The shape is editor-defined and opaque to the engine.
 	LayoutJSON string `gorm:"column:layout_json;type:jsonb;not null;default:'{}'"`
+	// The editor's unpublished widgets and layout, the same shapes as the
+	// published ones. Nil when the scene has no draft: its draft is then the
+	// published scene.
+	DraftWidgetsJSON *string `gorm:"column:draft_widgets_json;type:jsonb"`
+	DraftLayoutJSON  *string `gorm:"column:draft_layout_json;type:jsonb"`
 
 	// Origin metadata — same convention as `WorkflowDefinition`.
 	// `USER` for UI-authored scenes, `MODULE` if a future manifest

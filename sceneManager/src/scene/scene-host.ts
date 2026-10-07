@@ -43,6 +43,9 @@ export interface OverlayWidgetInstance {
   linkedResources?: Record<string, string>;
   /** False for a placement hidden in the editor. */
   visible: boolean;
+  /** The placement exactly as stored, for writing the scene back without
+   *  losing the fields only the editor reads (see scene-documents.ts). */
+  stored?: Record<string, unknown>;
   /**
    * False when this placement's `widgetCanonicalId` matches no widget in the
    * catalog — the widget was renamed, or its module was uninstalled, and the
@@ -69,7 +72,12 @@ export interface OverlaySceneState {
   name: string;
   layout: OverlaySceneLayout;
   instances: OverlayWidgetInstance[];
+  /** Whether the scene has an unpublished draft (see `loadSceneById`). */
+  hasDraft?: boolean;
 }
+
+/** Which of a scene's versions to load: what overlays show, or the editor's draft. */
+export type SceneVersion = "published" | "draft";
 
 /** Widget catalog row fields the scene host needs. */
 export interface OverlayWidgetDefinition {
@@ -149,8 +157,8 @@ export class OverlayHost {
   /** The page's scene config, each placement framed for this engine. */
   /** A scene with each placement framed for this engine (see `PlacementFraming`).
    *  Authorization is the caller's, as for `loadSceneById`. */
-  async loadFramedSceneById(sceneId: string): Promise<OverlaySceneState | null> {
-    const state = await this.loadSceneById(sceneId);
+  async loadFramedSceneById(sceneId: string, version: SceneVersion = "published"): Promise<OverlaySceneState | null> {
+    const state = await this.loadSceneById(sceneId, version);
     if (!state || !this.framing) {
       return state;
     }
@@ -267,7 +275,7 @@ export class OverlayHost {
    * intended caller. Used by widget-frame and event routes, which
    * carry that JWT instead of the original opaque overlay token.
    */
-  async loadSceneById(sceneId: string): Promise<OverlaySceneState | null> {
+  async loadSceneById(sceneId: string, version: SceneVersion = "published"): Promise<OverlaySceneState | null> {
     if (!this.db) {
       this.logger.warn("scene load skipped — db proxy unavailable", { sceneId });
       return null;
@@ -286,11 +294,16 @@ export class OverlayHost {
       return null;
     }
     const s = response.scene;
+    // A scene with no draft reads as its own draft.
+    const draft = version === "draft" && s.hasDraft;
+    const widgetsJson = draft ? s.draftWidgetsJson : s.widgetsJson;
+    const layoutJson = draft ? s.draftLayoutJson : s.layoutJson;
     return {
       sceneId: s.id,
       name: s.name,
-      layout: parseLayout(s.layoutJson),
-      instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
+      layout: parseLayout(layoutJson),
+      instances: await this.resolveInstances(this.parseInstances(widgetsJson, s.id), s.id),
+      hasDraft: s.hasDraft,
     };
   }
 
@@ -309,6 +322,12 @@ export class OverlayHost {
     }
     const instances = await this.resolveDraftPlacements(sceneId, draftPlacements);
     return this.configOf({ ...saved, instances });
+  }
+
+  /** Placements given as stored, parsed, resolved and framed like a loaded scene's. */
+  async framePlacements(sceneId: string, entries: unknown[]): Promise<OverlayWidgetInstance[]> {
+    const instances = await this.resolveDraftPlacements(sceneId, entries);
+    return this.framing ? this.framing.frame(instances) : instances;
   }
 
   /** Unsaved placements, parsed and resolved like saved ones. */
@@ -513,6 +532,7 @@ export class OverlayHost {
       position: normalizePosition(w),
       settings,
       visible: w.visible !== false,
+      stored: w,
       // Placements carry none; `resolveInstances` takes it from the widget
       // definition.
       hostsSurface: "",
