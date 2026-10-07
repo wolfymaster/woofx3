@@ -44,6 +44,12 @@ export interface AlertDelivery {
   layout: AlertLayout;
   /** The CloudEvent that triggered the workflow; null when nothing did (a manual or scheduled run). */
   event: { type: string; data: unknown } | null;
+  /**
+   * The media the layout's widgets reference, as repository keys, for the page
+   * to start fetching before it frames them (see scene/media-keys.ts). Absent
+   * from an alert recorded before deliveries carried it.
+   */
+  media?: string[];
 }
 
 export interface RejectedLayoutWidget {

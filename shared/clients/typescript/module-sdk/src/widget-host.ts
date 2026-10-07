@@ -178,6 +178,22 @@ export interface WidgetHost {
   getResourceUrl(path: string): string;
 
   /**
+   * A URL to play `url` from: an object URL over bytes the host has cached,
+   * or `url` itself when the host does not cache it (media not served by the
+   * engine, a file too large to hold, or a host without the `media`
+   * capability). Never rejects, so a widget can always assign the result to
+   * a `src`.
+   *
+   * A widget frame cannot use the browser's HTTP cache, so media a widget
+   * loads from its own URL is downloaded again every time the widget is
+   * framed — on every alert, for an alert layout's widgets. Call this as the
+   * widget loads, not when an event arrives: the host may already have
+   * fetched the file as the scene loaded. Repeat calls for one URL share one
+   * request and one object URL, which lives as long as the frame.
+   */
+  loadMedia(url: string): Promise<string>;
+
+  /**
    * Redraw when this placement's settings change, as a streamer edits them
    * in the scene editor or saves the scene. Calling this tells the host the
    * widget handles changes itself, so a change arrives here and the widget

@@ -65,6 +65,46 @@ would carry no signature.
 | Inline `user/` bytes | `public, max-age=60, must-revalidate` | A thumbnail is written after its original |
 | Redirect | `public, max-age=3600` | Well inside the presigned URL's 12 hours |
 
+## The scene media cache
+
+A widget frame is sandboxed without `allow-same-origin`, so its document has an
+opaque origin, and the browser keeps no HTTP cache for an opaque-origin
+document's requests. Every `Cache-Control` above is therefore ignored for
+media a widget loads itself: an alert layout's frames are created per alert,
+and each one downloads its sound or clip again. A prefetch by the scene page
+does not help either, since the page and the frame do not share a cache.
+
+The page is not sandboxed, so it holds the media instead and hands the bytes
+to the widget through `host.loadMedia` (see [Module SDK](../barkloader/sdk.md#media)):
+
+```
+scene page
+  ├─> GET /scene/{sceneId}/media-manifest         every key the scene can play
+  ├─> GET /scene/{sceneId}/media/{key}            sceneManager
+  │     └─> GET {barkloaderUrl}/assets/{key}      redirect followed server-side
+  └─> media.value { blob } ─> widget frame        object URL inside the frame
+```
+
+- **The manifest** lists the media in the scene's placements' settings, and
+  in the layout of every enabled workflow's alert step that targets one of
+  its alert widgets (`sceneManager/src/scene/media-manifest.ts`). A step
+  whose target is an expression counts as targeting every alert widget. A
+  string is media when it is an engine asset URL or a
+  `${woofx3_asset_url:<key>}` token; widget bundle and theme files are not.
+  Each alert delivery also carries its layout's keys, so an alert whose media
+  the manifest missed starts downloading before its frames load.
+- **The media route** follows a storage redirect rather than relaying it. The
+  page has to read the bytes, which a cross-origin response allows only when
+  the bucket carries a CORS policy, and a fresh bucket has none. It is behind
+  the scene's session, and refuses a file over 64 MiB (413); the widget then
+  loads that file from its own URL, uncached.
+- **The page** holds up to 256 MiB in memory and persists every file in the
+  Cache API (`woofx3-media:{sceneId}`), so an overlay reloaded, or OBS started
+  again, has its media before the first alert. Files the manifest no longer
+  lists are pruned when the scene loads. The Cache API exists only in a
+  secure context: an overlay loaded over plain `http` from another machine
+  keeps the memory copy alone.
+
 ## How an upload is stored
 
 A caller never sends bytes through the api. It asks for a grant, PUTs

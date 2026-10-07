@@ -35,9 +35,13 @@
       const inAlert = host.surface === "alert";
       const seconds = num(settings.duration, 0);
       const container = document.getElementById("animation");
+      // Requested as the frame boots rather than when the alert arrives, so
+      // the animation is ready, or nearly, by the time the alert asks for it.
+      const source = loadMedia(host, mediaUrl(settings.src));
 
       function start(onDone) {
-        loadAnimationData(mediaUrl(settings.src))
+        source
+          .then(loadAnimationData)
           .then((animationData) => {
             const layerName = typeof settings.textLayer === "string" ? settings.textLayer.trim() : "";
             if (layerName) {
@@ -76,6 +80,14 @@
         start(() => event.complete());
       }, { autoComplete: false });
     })();
+
+    // The URL to fetch from: the host's cached copy when it has one.
+    function loadMedia(host, url) {
+      if (!url || typeof host.loadMedia !== "function") {
+        return Promise.resolve(url);
+      }
+      return host.loadMedia(url);
+    }
 
     function loadAnimationData(url) {
       return fetch(url).then((response) => {

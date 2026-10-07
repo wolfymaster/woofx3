@@ -8,6 +8,7 @@
 import type { WidgetEvent } from "@woofx3/module-sdk";
 import { AlertTimeline } from "./alert-timeline";
 import type { QueuedEvent } from "./event-queue";
+import type { MediaCache } from "./media-cache";
 import { createFrameLoadHandler, WidgetBridge, type WidgetStatusReportPayload } from "./widget-bridge";
 
 const TICK_MS = 250;
@@ -23,6 +24,7 @@ interface Position {
 interface AlertDelivery {
   layout: { width: number; height: number; widgets: Array<{ id: string; position: Position }> };
   event: { type: string; data: unknown } | null;
+  media: string[];
 }
 
 export interface AlertWidgetOptions {
@@ -31,6 +33,7 @@ export interface AlertWidgetOptions {
   sceneBase: string;
   /** Every live bridge on the page; inbound messages are routed through it. */
   bridges: Set<WidgetBridge>;
+  media: MediaCache;
   generateNonce(): string;
   postStatus(instanceId: string, report: WidgetStatusReportPayload): void;
   /** The alert delivered as `eventId` is over; the queue may start the next. */
@@ -79,8 +82,11 @@ export class AlertWidget {
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
-    const { element, sceneBase, bridges } = this.opts;
+    const { element, sceneBase, bridges, media } = this.opts;
     const { layout } = delivery;
+    // Started before the frames load, so the bytes are on their way while
+    // each frame fetches its document and asks for them.
+    void media.prefetch(delivery.media);
 
     const stage = document.createElement("div");
     stage.className = "alert-stage";
@@ -115,6 +121,7 @@ export class AlertWidget {
       iframe.style.width = `${widget.position.width}px`;
       iframe.style.height = `${widget.position.height}px`;
       iframe.setAttribute("sandbox", "allow-scripts");
+      iframe.setAttribute("allow", "autoplay");
 
       const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
         onStorageGet: () => null,
@@ -127,6 +134,7 @@ export class AlertWidget {
         },
         onEventsUnsubscribe: () => {},
         onEventComplete: () => timeline.completed(widget.id),
+        onMediaGet: (url) => media.load(url),
         onDispose: () => {},
       });
       iframe.addEventListener("load", createFrameLoadHandler(bridge));
@@ -165,9 +173,10 @@ function parseDelivery(value: unknown): AlertDelivery | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
-  const { layout, event } = value as Partial<AlertDelivery>;
+  const { layout, event, media } = value as Partial<AlertDelivery>;
   if (!layout || !(layout.width > 0) || !(layout.height > 0) || !Array.isArray(layout.widgets)) {
     return null;
   }
-  return { layout, event: event ?? null };
+  const mediaKeys = Array.isArray(media) ? media.filter((key): key is string => typeof key === "string") : [];
+  return { layout, event: event ?? null, media: mediaKeys };
 }

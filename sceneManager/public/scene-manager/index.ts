@@ -15,6 +15,7 @@ import {
 import { EventQueueManager, toWidgetEvent } from "./event-queue";
 import { AckBatcher } from "./ack-batcher";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
+import { MediaCache } from "./media-cache";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
@@ -121,6 +122,23 @@ function main(): void {
     return body.value ?? null;
   });
 
+  const media = new MediaCache({
+    sceneId,
+    sceneBase,
+    warn: (message, detail) => console.warn(message, detail),
+  });
+  // Everything the scene can be asked to play, fetched now so the first
+  // alert does not wait on a download. A manifest that fails to load costs
+  // only that: each file is still fetched the first time a widget asks.
+  void fetch(`${sceneBase}/media-manifest`, { credentials: "same-origin", cache: "no-store" })
+    .then((resp) => (resp.ok ? (resp.json() as Promise<{ keys?: unknown }>) : { keys: [] }))
+    .then(async (body) => {
+      const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === "string") : [];
+      await media.prune(keys);
+      await media.prefetch(keys);
+    })
+    .catch((err) => console.warn("[scene-manager] media manifest unavailable", { error: String(err) }));
+
   function postStatus(instanceId: string, report: WidgetStatusReportPayload): void {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -169,6 +187,7 @@ function main(): void {
       element,
       sceneBase,
       bridges,
+      media,
       generateNonce,
       postStatus,
       onFinished: (eventId) => {
@@ -205,6 +224,7 @@ function main(): void {
     // trust is established entirely by postMessage source identity +
     // the per-frame nonce, never by same-origin access.
     iframe.setAttribute("sandbox", "allow-scripts");
+    iframe.setAttribute("allow", "autoplay");
 
     const nonce = generateNonce();
     let currentSubId: string | null = null;
@@ -240,6 +260,7 @@ function main(): void {
         queueManager.complete(subId, eventId);
         completedBatcher.add(eventId, instance.id);
       },
+      onMediaGet: (url) => media.load(url),
       onDispose: () => {
         if (currentSubId) {
           queueManager.unregister(currentSubId);

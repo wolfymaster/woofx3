@@ -199,6 +199,18 @@ class WidgetBridge {
         this.callbacks.onEventComplete(subId, eventId);
         return;
       }
+      case "media.get": {
+        if (!this.initialized) {
+          return;
+        }
+        const id = typeof msg.id === "string" ? msg.id : "";
+        const url = typeof msg.url === "string" ? msg.url : "";
+        if (!id) {
+          return;
+        }
+        this.callbacks.onMediaGet(url).catch(() => null).then((blob) => this.post({ type: "media.value", id, url, blob }));
+        return;
+      }
       case "settings.subscribe": {
         if (!this.initialized) {
           return;
@@ -231,7 +243,7 @@ class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status", "settings"]
+      capabilities: ["storage", "events", "status", "settings", "media"]
     });
   }
   sendReject(reason) {
@@ -346,8 +358,9 @@ class AlertWidget {
     return true;
   }
   run(eventId, delivery) {
-    const { element, sceneBase, bridges } = this.opts;
+    const { element, sceneBase, bridges, media } = this.opts;
     const { layout } = delivery;
+    media.prefetch(delivery.media);
     const stage = document.createElement("div");
     stage.className = "alert-stage";
     stage.style.width = `${layout.width}px`;
@@ -376,6 +389,7 @@ class AlertWidget {
       iframe.style.width = `${widget.position.width}px`;
       iframe.style.height = `${widget.position.height}px`;
       iframe.setAttribute("sandbox", "allow-scripts");
+      iframe.setAttribute("allow", "autoplay");
       const bridge = new WidgetBridge(instanceId, nonce, {
         onStorageGet: () => null,
         onStorageSubscribe: () => {},
@@ -387,6 +401,7 @@ class AlertWidget {
         },
         onEventsUnsubscribe: () => {},
         onEventComplete: () => timeline.completed(widget.id),
+        onMediaGet: (url) => media.load(url),
         onDispose: () => {}
       });
       iframe.addEventListener("load", createFrameLoadHandler(bridge));
@@ -420,11 +435,12 @@ function parseDelivery(value) {
   if (typeof value !== "object" || value === null) {
     return null;
   }
-  const { layout, event } = value;
+  const { layout, event, media } = value;
   if (!layout || !(layout.width > 0) || !(layout.height > 0) || !Array.isArray(layout.widgets)) {
     return null;
   }
-  return { layout, event: event ?? null };
+  const mediaKeys = Array.isArray(media) ? media.filter((key) => typeof key === "string") : [];
+  return { layout, event: event ?? null, media: mediaKeys };
 }
 
 // public/scene-manager/resolver.ts
@@ -1259,6 +1275,200 @@ class SceneEventSource {
   }
 }
 
+// src/scene/media-keys.ts
+var MEDIA_KEY_PATTERN = /^(user|modules)\/[^?#]+$/;
+var ASSET_URL_TOKEN = /^\$\{woofx3_asset_url:([^}]+)\}$/;
+var ASSET_PATH_PREFIX = "/assets/";
+function mediaKeyOf(value) {
+  const token = ASSET_URL_TOKEN.exec(value);
+  const key = token ? token[1] : keyOfAssetUrl(value);
+  if (key === null || !isMediaKey(key)) {
+    return null;
+  }
+  return key;
+}
+function isMediaKey(key) {
+  if (!MEDIA_KEY_PATTERN.test(key)) {
+    return false;
+  }
+  const segments = key.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return false;
+  }
+  return !(segments[0] === "modules" && (segments[3] === "widgets" || segments[3] === "themes"));
+}
+function keyOfAssetUrl(value) {
+  if (!value.includes(ASSET_PATH_PREFIX)) {
+    return null;
+  }
+  let pathname;
+  try {
+    pathname = new URL(value).pathname;
+  } catch {
+    return null;
+  }
+  if (!pathname.startsWith(ASSET_PATH_PREFIX)) {
+    return null;
+  }
+  try {
+    return pathname.slice(ASSET_PATH_PREFIX.length).split("/").map((segment) => decodeURIComponent(segment)).join("/");
+  } catch {
+    return null;
+  }
+}
+
+// public/scene-manager/media-cache.ts
+var MAX_MEDIA_BYTES = 64 * 1024 * 1024;
+var MAX_MEMORY_BYTES = 256 * 1024 * 1024;
+var PREFETCH_CONCURRENCY = 3;
+
+class MediaCache {
+  opts;
+  memory = new Map;
+  memoryBytes = 0;
+  inFlight = new Map;
+  fetchFn;
+  cacheName;
+  cacheStorage;
+  constructor(opts) {
+    this.opts = opts;
+    this.fetchFn = opts.fetchFn ?? fetch.bind(globalThis);
+    this.cacheName = `woofx3-media:${opts.sceneId}`;
+    this.cacheStorage = opts.cacheStorage === undefined ? defaultCacheStorage() : opts.cacheStorage;
+  }
+  async load(url) {
+    const key = mediaKeyOf(url);
+    return key === null ? null : this.get(key);
+  }
+  get(key) {
+    if (!isMediaKey(key)) {
+      return Promise.resolve(null);
+    }
+    const held = this.memory.get(key);
+    if (held !== undefined) {
+      this.memory.delete(key);
+      this.memory.set(key, held);
+      return Promise.resolve(held);
+    }
+    const pending = this.inFlight.get(key);
+    if (pending !== undefined) {
+      return pending;
+    }
+    const loading = this.fetchKey(key).finally(() => {
+      this.inFlight.delete(key);
+    });
+    this.inFlight.set(key, loading);
+    return loading;
+  }
+  async prefetch(keys) {
+    const queue = keys.filter((key) => !this.memory.has(key));
+    const workers = Array.from({ length: Math.min(PREFETCH_CONCURRENCY, queue.length) }, async () => {
+      for (let key = queue.shift();key !== undefined; key = queue.shift()) {
+        await this.get(key);
+      }
+    });
+    await Promise.all(workers);
+  }
+  async prune(keep) {
+    if (this.cacheStorage === null) {
+      return;
+    }
+    const kept = new Set(keep.map((key) => this.mediaUrl(key)));
+    try {
+      const cache = await this.cacheStorage.open(this.cacheName);
+      for (const request of await cache.keys()) {
+        if (!kept.has(request.url)) {
+          await cache.delete(request);
+        }
+      }
+    } catch (err) {
+      this.warn("media cache prune failed", { error: errorMessage(err) });
+    }
+  }
+  async fetchKey(key) {
+    const url = this.mediaUrl(key);
+    const persisted = await this.readPersisted(url);
+    if (persisted !== null) {
+      this.remember(key, persisted);
+      return persisted;
+    }
+    let response;
+    try {
+      response = await this.fetchFn(url, { credentials: "same-origin" });
+    } catch (err) {
+      this.warn("media fetch failed", { key, error: errorMessage(err) });
+      return null;
+    }
+    if (!response.ok) {
+      if (response.status !== 413) {
+        this.warn("media fetch refused", { key, status: response.status });
+      }
+      await response.body?.cancel();
+      return null;
+    }
+    let blob;
+    try {
+      blob = await response.blob();
+    } catch (err) {
+      this.warn("media download failed", { key, error: errorMessage(err) });
+      return null;
+    }
+    if (blob.size > MAX_MEDIA_BYTES) {
+      return null;
+    }
+    this.remember(key, blob);
+    await this.persist(url, blob);
+    return blob;
+  }
+  remember(key, blob) {
+    this.memory.set(key, blob);
+    this.memoryBytes += blob.size;
+    for (const [oldest, held] of this.memory) {
+      if (this.memoryBytes <= (this.opts.maxMemoryBytes ?? MAX_MEMORY_BYTES) || oldest === key) {
+        break;
+      }
+      this.memory.delete(oldest);
+      this.memoryBytes -= held.size;
+    }
+  }
+  async readPersisted(url) {
+    if (this.cacheStorage === null) {
+      return null;
+    }
+    try {
+      const cache = await this.cacheStorage.open(this.cacheName);
+      const hit = await cache.match(url);
+      return hit ? await hit.blob() : null;
+    } catch {
+      return null;
+    }
+  }
+  async persist(url, blob) {
+    if (this.cacheStorage === null) {
+      return;
+    }
+    try {
+      const cache = await this.cacheStorage.open(this.cacheName);
+      await cache.put(url, new Response(blob, { headers: { "Content-Type": blob.type } }));
+    } catch (err) {
+      this.warn("media cache write failed", { error: errorMessage(err) });
+    }
+  }
+  mediaUrl(key) {
+    const path = `${this.opts.sceneBase}/media/${key.split("/").map(encodeURIComponent).join("/")}`;
+    return new URL(path, this.opts.pageUrl ?? location.href).toString();
+  }
+  warn(message, detail) {
+    this.opts.warn?.(`[scene-manager] ${message}`, detail);
+  }
+}
+function defaultCacheStorage() {
+  return typeof caches === "undefined" ? null : caches;
+}
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+
 // public/scene-manager/module-state.ts
 class ModuleStateCache {
   fetchValue;
@@ -1587,6 +1797,16 @@ function main() {
     const body = await resp.json();
     return body.value ?? null;
   });
+  const media = new MediaCache({
+    sceneId,
+    sceneBase,
+    warn: (message, detail) => console.warn(message, detail)
+  });
+  fetch(`${sceneBase}/media-manifest`, { credentials: "same-origin", cache: "no-store" }).then((resp) => resp.ok ? resp.json() : { keys: [] }).then(async (body) => {
+    const keys = Array.isArray(body.keys) ? body.keys.filter((key) => typeof key === "string") : [];
+    await media.prune(keys);
+    await media.prefetch(keys);
+  }).catch((err) => console.warn("[scene-manager] media manifest unavailable", { error: String(err) }));
   function postStatus(instanceId, report) {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -1622,6 +1842,7 @@ function main() {
       element,
       sceneBase,
       bridges,
+      media,
       generateNonce,
       postStatus,
       onFinished: (eventId) => {
@@ -1645,6 +1866,7 @@ function main() {
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
     iframe.setAttribute("sandbox", "allow-scripts");
+    iframe.setAttribute("allow", "autoplay");
     const nonce = generateNonce();
     let currentSubId = null;
     const callbacks = {
@@ -1666,6 +1888,7 @@ function main() {
         queueManager.complete(subId, eventId);
         completedBatcher.add(eventId, instance.id);
       },
+      onMediaGet: (url) => media.load(url),
       onDispose: () => {
         if (currentSubId) {
           queueManager.unregister(currentSubId);

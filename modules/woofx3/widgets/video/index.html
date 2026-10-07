@@ -39,13 +39,17 @@
       video.volume = volume(settings.volume);
       // A clip shorter than a set duration loops until the time is up.
       video.loop = loop || seconds > 0;
-      video.src = mediaUrl(settings.src);
+      // Loaded as the frame boots rather than when the alert arrives, so the
+      // clip is ready, or nearly, by the time the alert asks for it.
+      const ready = loadMedia(host, mediaUrl(settings.src)).then((src) => {
+        video.src = src;
+      });
 
       // Looping with no duration, the video has no length of its own: it
       // plays for as long as the rest of the alert does.
       if (loop && seconds <= 0) {
         host.onEvent(() => {
-          play(video).catch(() => {});
+          ready.then(() => play(video)).catch(() => {});
         });
         return;
       }
@@ -62,14 +66,24 @@
           event.complete();
         };
         if (seconds > 0) {
-          setTimeout(finish, seconds * 1000);
+          // Counted from the first frame, not from the alert: a clip still
+          // downloading would otherwise spend its time on a blank frame.
+          video.addEventListener("playing", () => setTimeout(finish, seconds * 1000), { once: true });
         } else {
           video.addEventListener("ended", finish);
         }
         video.addEventListener("error", finish);
-        play(video).catch(finish);
+        ready.then(() => play(video)).catch(finish);
       }, { autoComplete: false });
     })();
+
+    // The URL to play from: the host's cached copy when it has one.
+    function loadMedia(host, url) {
+      if (!url) {
+        return Promise.reject(new Error("no clip is set"));
+      }
+      return typeof host.loadMedia === "function" ? host.loadMedia(url) : Promise.resolve(url);
+    }
 
     // A browser that refuses to autoplay sound still plays the video muted.
     function play(video) {

@@ -163,7 +163,7 @@ describe("installWidgetHostShim — boot + handshake", () => {
     expect(hello.nonce).toBe(NONCE);
     expect(hello.instanceId).toBe("inst-1");
     expect(hello.sdkVersion).toBe(SDK_VERSION);
-    expect(hello.wants).toEqual(["storage", "events", "status"]);
+    expect(hello.wants).toEqual(["storage", "events", "status", "media"]);
   });
 
   it("re-posts hello every 250ms until init arrives, then stops", async () => {
@@ -290,6 +290,68 @@ describe("installWidgetHostShim — storage", () => {
     // Unsubscribe is idempotent: a second call posts nothing new.
     unsubscribe();
     expect(h.sent("storage.unsubscribe").length).toBe(1);
+  });
+});
+
+describe("installWidgetHostShim — media", () => {
+  const SOUND = "https://scene.example.test/assets/user/r1/sound.mp3";
+
+  it("resolves the URL itself, asking nothing, from a host without the media capability", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    expect(await host.loadMedia(SOUND)).toBe(SOUND);
+    expect(h.sent("media.get")).toEqual([]);
+  });
+
+  it("plays the host's cached bytes from an object URL", async () => {
+    const h = makeHarness(makeBoot({ capabilities: ["events", "media"] }));
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const loaded = host.loadMedia(SOUND);
+    const [get] = h.sent("media.get");
+    expect(get!.url).toBe(SOUND);
+    h.deliver(fromParent({ type: "media.value", id: get!.id, url: SOUND, blob: new Blob(["abc"]) }));
+
+    const src = await loaded;
+    expect(src.startsWith("blob:")).toBe(true);
+    expect(await (await fetch(src)).text()).toBe("abc");
+  });
+
+  it("falls back to the URL when the host does not cache it", async () => {
+    const h = makeHarness(makeBoot({ capabilities: ["media"] }));
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const loaded = host.loadMedia(SOUND);
+    const [get] = h.sent("media.get");
+    h.deliver(fromParent({ type: "media.value", id: get!.id, url: SOUND, blob: null }));
+    expect(await loaded).toBe(SOUND);
+  });
+
+  it("shares one request between repeat calls for a URL", async () => {
+    const h = makeHarness(makeBoot({ capabilities: ["media"] }));
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const first = host.loadMedia(SOUND);
+    const second = host.loadMedia(SOUND);
+    expect(h.sent("media.get").length).toBe(1);
+    const [get] = h.sent("media.get");
+    h.deliver(fromParent({ type: "media.value", id: get!.id, url: SOUND, blob: new Blob(["abc"]) }));
+    expect(await second).toBe(await first);
+  });
+
+  it("resolves a pending load with the URL when the host disposes the frame", async () => {
+    const h = makeHarness(makeBoot({ capabilities: ["media"] }));
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const loaded = host.loadMedia(SOUND);
+    h.deliver(fromParent({ type: "dispose", reason: "test" }));
+    expect(await loaded).toBe(SOUND);
   });
 });
 

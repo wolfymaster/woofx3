@@ -12,7 +12,8 @@
 // Module storage (`storage.get`/`storage.subscribe`) is answered by the
 // page's ModuleStateCache (module-state.ts) for scene placements. Alert
 // layout widgets are not given storage: `storage.get` answers `null`
-// and subscriptions never fire.
+// and subscriptions never fire. `media.get` is answered by the page's
+// MediaCache (media-cache.ts) for every widget.
 
 import {
   WIDGET_PROTOCOL,
@@ -42,6 +43,8 @@ export interface WidgetBridgeCallbacks {
   onEventsUnsubscribe(subId: string): void;
   /** Widget acked completion of a delivered event. */
   onEventComplete(subId: string, eventId: string): void;
+  /** The cached bytes at a media URL, or null when the page does not cache it. */
+  onMediaGet(url: string): Promise<Blob | null>;
   onDispose(): void;
 }
 
@@ -197,6 +200,22 @@ export class WidgetBridge {
         this.callbacks.onEventComplete(subId, eventId);
         return;
       }
+      case "media.get": {
+        if (!this.initialized) {
+          return;
+        }
+        const id = typeof msg.id === "string" ? msg.id : "";
+        const url = typeof msg.url === "string" ? msg.url : "";
+        if (!id) {
+          return;
+        }
+        // Answered whatever happens: the widget waits on this before it can play.
+        void this.callbacks
+          .onMediaGet(url)
+          .catch(() => null)
+          .then((blob) => this.post({ type: "media.value", id, url, blob }));
+        return;
+      }
       case "settings.subscribe": {
         if (!this.initialized) {
           return;
@@ -230,7 +249,7 @@ export class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status", "settings"],
+      capabilities: ["storage", "events", "status", "settings", "media"],
     });
   }
 

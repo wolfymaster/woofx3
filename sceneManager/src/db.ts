@@ -8,6 +8,7 @@ import * as module_setting from "@woofx3/db/module_setting.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
+import * as workflow from "@woofx3/db/workflow.pb";
 import { GetModuleByModuleId, GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
 import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
@@ -153,6 +154,16 @@ export class DbClient {
 
   async updateAlertStatus(req: alert.UpdateAlertStatusRequest): Promise<alert.AlertResponse> {
     return alert.UpdateAlertStatus(req, this.config);
+  }
+
+  // The scene page prefetches the media of the alert steps that target its
+  // alert widgets (scene/media-manifest.ts).
+  async listEnabledWorkflowSteps(): Promise<string[]> {
+    const resp = await workflow.ListWorkflows(
+      { includeDisabled: false, page: 0, pageSize: 0, sortBy: "", sortDesc: false },
+      this.config
+    );
+    return resp.workflows.map((w) => w.stepsJson);
   }
 
   async getSetting(key: string): Promise<string | null> {

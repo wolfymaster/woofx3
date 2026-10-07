@@ -32,14 +32,21 @@
         return;
       }
       const image = document.getElementById("image");
+      let wanted = "";
 
       function draw(settings) {
         image.style.objectFit = ["contain", "cover", "fill"].includes(settings.fit) ? settings.fit : "contain";
-        const src = mediaUrl(settings.src);
-        // Setting the same src again would refetch it.
-        if (image.getAttribute("src") !== src) {
-          image.src = src;
+        const url = mediaUrl(settings.src);
+        if (url === wanted) {
+          return;
         }
+        wanted = url;
+        loadMedia(host, url).then((src) => {
+          // A later edit chose another image while this one loaded.
+          if (wanted === url) {
+            image.src = src;
+          }
+        });
       }
 
       draw(host.settings);
@@ -70,6 +77,14 @@
           event.complete();
         }, seconds * 1000);
       }, { autoComplete: false });
+    }
+
+    // The URL to show: the host's cached copy when it has one.
+    function loadMedia(host, url) {
+      if (!url || typeof host.loadMedia !== "function") {
+        return Promise.resolve(url);
+      }
+      return host.loadMedia(url);
     }
 
     // A media setting is a URL, or the asset picker's `{ url, ... }`.

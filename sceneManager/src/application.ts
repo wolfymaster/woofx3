@@ -132,6 +132,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       deliveryStore,
       moduleState,
       settingsDb: db,
+      workflows: db,
       bootId,
     });
     ctx.logger.info("sceneManager listening", {

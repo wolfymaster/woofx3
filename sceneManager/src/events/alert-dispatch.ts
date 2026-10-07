@@ -6,6 +6,7 @@ import {
   alertWidgetsNamed,
   parseAlertLayout,
 } from "../scene/alert-layout";
+import { collectMediaKeys } from "../scene/media-keys";
 import type { OverlayHost } from "../scene/scene-host";
 import type { DeliveryStore } from "./delivery-store";
 
@@ -80,8 +81,17 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     alertId,
     layout: parsed.layout,
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
+    media: layoutMediaKeys(parsed.layout),
   };
   return fanOutAlert({ target: alertTarget(parameters), delivery }, deps);
+}
+
+function layoutMediaKeys(layout: AlertDelivery["layout"]): string[] {
+  const keys = new Set<string>();
+  for (const widget of layout.widgets) {
+    collectMediaKeys(widget.settings, keys);
+  }
+  return [...keys];
 }
 
 /**

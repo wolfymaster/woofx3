@@ -240,6 +240,29 @@ sound.addEventListener("error", () => {
 
 `host.theme` is `null` for a widget without a contract. Widget code is the same for every theme: with no theme selected, or one that is missing or no longer fits, every value is the contract default. `createMockHost({ theme })` in the preview helper lets you try a theme offline.
 
+### Media
+
+Load the media a widget plays (sound, video, image, Lottie JSON) through
+`host.loadMedia(url)`, and assign what it resolves to:
+
+```js
+const sound = new Audio();
+const ready = host.loadMedia(settings.src.url).then((src) => {
+  sound.src = src;
+});
+```
+
+A widget frame runs in an opaque origin, where the browser never uses its
+HTTP cache, so a widget that loads its own URL downloads the file again each
+time it is framed — every alert, for an alert layout's widgets. The scene page
+is not sandboxed: it keeps engine media in its own cache, fetched as the scene
+loads, and `loadMedia` resolves to an object URL over those bytes. For media
+the page does not serve (another host, a file over 64 MiB) it resolves to `url`
+itself. It never rejects.
+
+Call it as the widget boots rather than when an event arrives, so the file is
+in hand by the time it plays. See [Asset delivery](../services/asset-delivery.md#the-scene-media-cache).
+
 ### Playing in an alert
 
 A widget whose manifest `surfaces` include `"alert"` can be placed inside an alert
@@ -251,7 +274,7 @@ for it. Otherwise subscribe normally, and it stays up until the alert ends.
 ```js
 host.onEvent((event) => {
   sound.addEventListener("ended", () => event.complete());
-  sound.play();
+  ready.then(() => sound.play()).catch(() => event.complete());
 }, { autoComplete: false });
 ```
 

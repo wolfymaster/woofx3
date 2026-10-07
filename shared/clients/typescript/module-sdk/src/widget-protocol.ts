@@ -202,6 +202,16 @@ export interface WidgetSettingsUnsubscribeMessage extends WidgetProtocolEnvelope
   type: "settings.unsubscribe";
 }
 
+/**
+ * Correlated media read — answered by `media.value` with the same `id`.
+ * Sent only to a host that advertises the `media` capability.
+ */
+export interface WidgetMediaGetMessage extends WidgetProtocolEnvelope {
+  type: "media.get";
+  id: string;
+  url: string;
+}
+
 // ---------------------------------------------------------------------------
 // Messages — scene manager -> widget
 // ---------------------------------------------------------------------------
@@ -262,6 +272,19 @@ export interface WidgetSettingsChangedMessage extends WidgetProtocolEnvelope {
   settings: Record<string, unknown>;
 }
 
+/**
+ * Answer to `media.get`. `blob` holds the bytes at `url` from the host's
+ * cache, or is `null` when the host does not cache that URL, in which case
+ * the widget loads `url` itself. A `Blob` survives the structured clone into
+ * an opaque-origin frame, where the widget makes an object URL of it.
+ */
+export interface WidgetMediaValueMessage extends WidgetProtocolEnvelope {
+  type: "media.value";
+  id: string;
+  url: string;
+  blob: Blob | null;
+}
+
 /** Teardown order. The shim drops every subscription, resolves pending
  *  reads with `null`, and goes inert. */
 export interface WidgetDisposeMessage extends WidgetProtocolEnvelope {
@@ -301,6 +324,7 @@ export type WidgetToHostMessage =
   | WidgetStatusReportMessage
   | WidgetSettingsSubscribeMessage
   | WidgetSettingsUnsubscribeMessage
+  | WidgetMediaGetMessage
   | WidgetPingMessage
   | WidgetPongMessage;
 
@@ -312,6 +336,7 @@ export type HostToWidgetMessage =
   | WidgetStorageChangedMessage
   | WidgetEventDeliverMessage
   | WidgetSettingsChangedMessage
+  | WidgetMediaValueMessage
   | WidgetDisposeMessage
   | WidgetPingMessage
   | WidgetPongMessage;

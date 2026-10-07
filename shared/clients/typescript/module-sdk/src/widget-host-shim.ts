@@ -41,7 +41,10 @@ export const SDK_VERSION = "0.1.0";
 export const HELLO_RETRY_INTERVAL_MS = 250;
 
 /** Capabilities this shim implementation uses — `hello.wants`. */
-const SHIM_WANTS = ["storage", "events", "status"];
+const SHIM_WANTS = ["storage", "events", "status", "media"];
+
+/** How long `loadMedia` waits on the host before the widget loads the URL itself. */
+export const MEDIA_TIMEOUT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Injectable environment (testability without jsdom)
@@ -129,6 +132,12 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   // guards double-sends whether the widget calls `.complete()` itself,
   // the shim auto-completes on handler return, or both.
   const completedEventIds = new Set<string>();
+  // `loadMedia` results by URL, so repeat calls share one request and one
+  // object URL; and each object URL made, revoked on teardown.
+  const hostCachesMedia = boot.capabilities.includes("media");
+  const pendingMedia = new Map<string, (blob: Blob | null) => void>();
+  const mediaUrls = new Map<string, Promise<string>>();
+  const objectUrls: string[] = [];
   let nextLocalId = 0;
   let currentSettings: Readonly<Record<string, unknown>> = Object.freeze({ ...boot.settings });
   const settingsListeners = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
@@ -192,6 +201,14 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
       resolve(null);
     }
     pendingGets.clear();
+    for (const resolve of pendingMedia.values()) {
+      resolve(null);
+    }
+    pendingMedia.clear();
+    for (const objectUrl of objectUrls.splice(0, objectUrls.length)) {
+      URL.revokeObjectURL(objectUrl);
+    }
+    mediaUrls.clear();
     storageSubs.clear();
     eventSubs.clear();
     completedEventIds.clear();
@@ -248,6 +265,17 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         if (resolve !== undefined) {
           pendingGets.delete(m.id);
           resolve(m.value === undefined ? null : m.value);
+        }
+        return;
+      }
+      case "media.value": {
+        if (typeof m.id !== "string") {
+          return;
+        }
+        const resolve = pendingMedia.get(m.id);
+        if (resolve !== undefined) {
+          pendingMedia.delete(m.id);
+          resolve(m.blob instanceof Blob ? m.blob : null);
         }
         return;
       }
@@ -356,6 +384,46 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     },
   };
 
+  function requestMedia(url: string): Promise<Blob | null> {
+    return new Promise<Blob | null>((resolve) => {
+      if (disposed || rejected) {
+        resolve(null);
+        return;
+      }
+      const id = allocId("media");
+      const timer = setTimeout(() => {
+        if (pendingMedia.delete(id)) {
+          resolve(null);
+        }
+      }, MEDIA_TIMEOUT_MS);
+      pendingMedia.set(id, (blob) => {
+        clearTimeout(timer);
+        resolve(blob);
+      });
+      send(envelope({ type: "media.get" as const, id, url }));
+    });
+  }
+
+  function loadMedia(url: string): Promise<string> {
+    if (typeof url !== "string" || url.length === 0 || !hostCachesMedia) {
+      return Promise.resolve(url);
+    }
+    const known = mediaUrls.get(url);
+    if (known !== undefined) {
+      return known;
+    }
+    const loaded = requestMedia(url).then((blob) => {
+      if (blob === null || disposed) {
+        return url;
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      objectUrls.push(objectUrl);
+      return objectUrl;
+    });
+    mediaUrls.set(url, loaded);
+    return loaded;
+  }
+
   const host: WidgetHost = {
     get settings() {
       return currentSettings;
@@ -369,6 +437,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     getResourceUrl(path: string): string {
       return boot.resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
     },
+    loadMedia,
     onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void {
       if (typeof handler !== "function") {
         throw new Error("[widget-host-shim] onEvent requires a handler function");

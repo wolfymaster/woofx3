@@ -3,6 +3,7 @@ import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
 import type { FrameAssembler } from "./scene/frame-assembler";
+import type { WorkflowStepsSource } from "./scene/media-manifest";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
@@ -10,6 +11,7 @@ import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute }
 import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleDraftWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleSceneMediaManifestRoute, handleSceneMediaRoute } from "./routes/media";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
   handleStorageAssetRoute,
@@ -38,6 +40,8 @@ export interface HttpDeps {
   moduleState: ModuleStateWatch;
   /** Module settings, for the instances a widget's module links. */
   settingsDb: LinkedResourcesDb;
+  /** Workflow definitions, for the alert media a scene prefetches. */
+  workflows: WorkflowStepsSource;
   /** Identity of this sceneManager process, minted once at startup and
    *  announced on every SSE stream. Lets a reconnecting overlay tell a
    *  resumed stream from one that came back against a restarted server
@@ -186,6 +190,18 @@ export function createHttpServer(deps: HttpDeps) {
           const storageMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/storage$/.exec(url.pathname);
           if (storageMatch && req.method === "GET") {
             return withCors(await handleWidgetStorageRoute(req, storageMatch[1]!, storageMatch[2]!, deps));
+          }
+
+          // GET /scene/{sceneId}/media-manifest
+          const mediaManifestMatch = /^\/scene\/([^/]+)\/media-manifest$/.exec(url.pathname);
+          if (mediaManifestMatch && req.method === "GET") {
+            return withCors(await handleSceneMediaManifestRoute(req, mediaManifestMatch[1]!, deps));
+          }
+
+          // GET /scene/{sceneId}/media/{key}
+          const mediaMatch = /^\/scene\/([^/]+)\/media\/(.+)$/.exec(url.pathname);
+          if (mediaMatch && req.method === "GET") {
+            return withCors(await handleSceneMediaRoute(req, mediaMatch[1]!, mediaMatch[2]!, deps));
           }
 
           // GET /scene/{sceneId}/events — SSE.

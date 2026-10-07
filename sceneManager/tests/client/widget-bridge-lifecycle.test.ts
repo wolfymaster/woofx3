@@ -67,6 +67,7 @@ describe("WidgetBridge settings", () => {
     onEventsSubscribe: noop,
     onEventsUnsubscribe: noop,
     onEventComplete: noop,
+    onMediaGet: async () => null,
     onDispose: noop,
   };
 
@@ -110,5 +111,62 @@ describe("WidgetBridge settings", () => {
     fromWidget("settings.subscribe");
     bridge.onFrameLoad();
     expect(bridge.acceptsSettings()).toBe(false);
+  });
+});
+
+describe("WidgetBridge media", () => {
+  const NONCE = "n-1";
+  const noop = () => {};
+
+  function setup(onMediaGet: WidgetBridgeCallbacks["onMediaGet"]) {
+    const posted: Record<string, unknown>[] = [];
+    const contentWindow = {
+      postMessage: (message: Record<string, unknown>) => posted.push(message),
+    };
+    const bridge = new WidgetBridge("inst-1", NONCE, {
+      onStorageGet: () => null,
+      onStorageSubscribe: noop,
+      onStorageUnsubscribe: noop,
+      onStatusReport: noop,
+      onEventsSubscribe: noop,
+      onEventsUnsubscribe: noop,
+      onEventComplete: noop,
+      onMediaGet,
+      onDispose: noop,
+    });
+    bridge.attach({ contentWindow } as unknown as HTMLIFrameElement);
+    const fromWidget = (type: string, extra: Record<string, unknown> = {}) =>
+      bridge.handleMessage({
+        source: contentWindow,
+        data: { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: NONCE, type, moduleId: "mod", ...extra },
+      } as unknown as MessageEvent);
+    return { posted, fromWidget };
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("advertises the media capability", () => {
+    const { posted, fromWidget } = setup(async () => null);
+    fromWidget("hello");
+    expect(posted.find((m) => m.type === "init")?.capabilities).toContain("media");
+  });
+
+  it("answers media.get with the page's cached bytes", async () => {
+    const blob = new Blob(["abc"]);
+    const { posted, fromWidget } = setup(async (url) => (url === "https://s.test/assets/user/r1/a.mp3" ? blob : null));
+    fromWidget("hello");
+    fromWidget("media.get", { id: "media-1", url: "https://s.test/assets/user/r1/a.mp3" });
+    await settle();
+    expect(posted.at(-1)).toMatchObject({ type: "media.value", id: "media-1", blob });
+  });
+
+  it("answers null when the cache fails, so the widget never waits forever", async () => {
+    const { posted, fromWidget } = setup(async () => {
+      throw new Error("boom");
+    });
+    fromWidget("hello");
+    fromWidget("media.get", { id: "media-1", url: "https://s.test/assets/user/r1/a.mp3" });
+    await settle();
+    expect(posted.at(-1)).toMatchObject({ type: "media.value", id: "media-1", blob: null });
   });
 });

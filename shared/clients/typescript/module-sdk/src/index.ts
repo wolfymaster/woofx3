@@ -44,6 +44,8 @@ export type {
   WidgetHelloMessage,
   WidgetInitMessage,
   WidgetInitRejectMessage,
+  WidgetMediaGetMessage,
+  WidgetMediaValueMessage,
   WidgetPingMessage,
   WidgetPongMessage,
   WidgetProtocolEnvelope,

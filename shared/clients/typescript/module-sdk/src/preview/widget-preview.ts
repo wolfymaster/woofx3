@@ -174,6 +174,9 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     getResourceUrl(path: string): string {
       return resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
     },
+    loadMedia(url: string): Promise<string> {
+      return Promise.resolve(url);
+    },
     onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void {
       const sub = { handler, queue };
       eventSubs.add(sub);
