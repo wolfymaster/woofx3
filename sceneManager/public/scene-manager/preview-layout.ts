@@ -79,22 +79,21 @@ export function parsePreviewPlacements(data: unknown): unknown[] | null {
 }
 
 /**
- * What decides the frames of a set of placements, without their positions: a
- * drag changes only positions, which the layout applies on its own, so only a
- * change to this needs the server. Nor do the settings of a widget that takes
- * them live (`liveSettings`), which the page hands it itself; only its theme,
- * which needs a new frame.
+ * What decides the frames of a set of placements: which widgets there are and
+ * their themes. A drag changes only positions, which the layout applies on its
+ * own, and other settings are handed to the widgets directly, so only a change
+ * to this needs the server. A placement the page draws itself (an alert area,
+ * `drawnByPage`) is mounted again for any change, so all its settings count.
  */
 export function draftFrameKey(
   placements: readonly unknown[],
-  liveSettings: (id: string) => boolean = () => false
+  drawnByPage: (id: string) => boolean = () => false
 ): string {
   return JSON.stringify(
     placements.map((raw) => {
       const placement = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-      const live = typeof placement.id === "string" && liveSettings(placement.id);
-      const settings = live ? themeOf(settingsOf(placement)) : placement.settings;
-      return [placement.id, placement.widgetCanonicalId, settings];
+      const drawn = typeof placement.id === "string" && drawnByPage(placement.id);
+      return [placement.id, placement.widgetCanonicalId, drawn ? placement.settings : themeOf(settingsOf(placement))];
     })
   );
 }

@@ -70,7 +70,7 @@ function fakeLogger() {
 }
 
 describe("OverlayHost — frameUrl", () => {
-  it("derives an absolute frameUrl under /scene/{sceneId}/widget/ (never relative — the shell has no trailing slash)", async () => {
+  it("derives an absolute frameUrl for the widget's document (never relative — the shell has no trailing slash)", async () => {
     const db = {
       getScene: mock(async () => ({
         status: { code: "OK" as const, message: "" },
@@ -99,6 +99,7 @@ describe("OverlayHost — frameUrl", () => {
     );
     const host = new OverlayHost(resolver, db as any, fakeLogger());
     const state = await host.loadScene("ovl_token");
-    expect(state?.instances[0]?.frameUrl).toBe("/scene/scene-1/widget/inst-1");
+    // Unversioned without a FrameCatalog; see frame-catalog.test.ts.
+    expect(state?.instances[0]?.frameUrl).toBe("/frames/woofx3/media_alert?v=unavailable");
   });
 });

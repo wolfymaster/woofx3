@@ -98,18 +98,17 @@ describe("draftFrameKey", () => {
     expect(draftFrameKey([placement(0, "hi")])).toBe(draftFrameKey([placement(40, "hi")]));
   });
 
-  it("changes with a setting", () => {
-    expect(draftFrameKey([placement(0, "hi")])).not.toBe(draftFrameKey([placement(0, "hello")]));
+  it("ignores settings other than the theme: the page hands those to the widget", () => {
+    expect(draftFrameKey([placement(0, "hi")])).toBe(draftFrameKey([placement(0, "hello")]));
   });
 
-  it("ignores a setting of a widget that takes settings live", () => {
-    const live = (id: string) => id === "a";
-    expect(draftFrameKey([placement(0, "hi")], live)).toBe(draftFrameKey([placement(0, "hello")], live));
-  });
-
-  it("changes with the theme of a widget that takes settings live", () => {
-    const live = () => true;
+  it("changes with the theme, which picks the frame document", () => {
     const themed = (theme: string) => ({ ...placement(0, "hi"), settings: { text: "hi", theme } });
-    expect(draftFrameKey([themed("a:theme:one")], live)).not.toBe(draftFrameKey([themed("a:theme:two")], live));
+    expect(draftFrameKey([themed("a:theme:one")])).not.toBe(draftFrameKey([themed("a:theme:two")]));
+  });
+
+  it("counts every setting of a placement the page draws itself", () => {
+    const drawn = () => true;
+    expect(draftFrameKey([placement(0, "hi")], drawn)).not.toBe(draftFrameKey([placement(0, "hello")], drawn));
   });
 });

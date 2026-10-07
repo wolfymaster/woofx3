@@ -23,10 +23,12 @@ import type {
   WidgetHostStorage,
   WidgetTheme,
 } from "./widget-host";
+import { type BindingDocument, applySettingBindings } from "./widget-bindings";
 import {
   PROTOCOL_VERSION,
   WIDGET_BOOT_GLOBAL,
   WIDGET_PROTOCOL,
+  decodePlacementBoot,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
   type EventQueueConfig,
@@ -59,11 +61,17 @@ export interface ShimParentWindow {
 
 /** The slice of the frame's own window the shim needs. */
 export interface ShimWindow {
-  addEventListener(type: "message", listener: (event: ShimMessageEvent) => void): void;
-  removeEventListener(type: "message", listener: (event: ShimMessageEvent) => void): void;
+  /** `message` events carry a `ShimMessageEvent`; `load` and
+   *  `DOMContentLoaded` carry nothing the shim reads. */
+  addEventListener(type: string, listener: (event: ShimMessageEvent) => void): void;
+  removeEventListener(type: string, listener: (event: ShimMessageEvent) => void): void;
   __WOOFX3_WIDGET_BOOT__?: unknown;
   widgetHost?: WidgetHost;
   parent?: unknown;
+  /** The frame URL's fragment carries the placement's half of the boot
+   *  payload (see `WidgetPlacementBoot`). */
+  location?: { hash: string };
+  requestAnimationFrame?: (cb: () => void) => unknown;
 }
 
 export interface InstallWidgetHostShimOptions {
@@ -71,6 +79,9 @@ export interface InstallWidgetHostShimOptions {
   windowRef?: ShimWindow;
   /** Defaults to `windowRef.parent`. */
   parentRef?: ShimParentWindow;
+  /** Where setting bindings are applied. Defaults to the global `document`;
+   *  none, and settings are only readable through `host.settings`. */
+  documentRef?: BindingDocument & { readyState?: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +116,15 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }
   const parentRef = parentCandidate as ShimParentWindow;
 
-  const bootCandidate = windowRef[WIDGET_BOOT_GLOBAL as "__WOOFX3_WIDGET_BOOT__"];
+  // The inlined payload describes the widget; the fragment, when there is
+  // one, carries the placement (nonce, instance, settings), so the document
+  // itself can be cached and shared by every placement of the widget.
+  const inlineBoot = windowRef[WIDGET_BOOT_GLOBAL as "__WOOFX3_WIDGET_BOOT__"];
+  const placementBoot = decodePlacementBoot(windowRef.location?.hash ?? "");
+  const bootCandidate =
+    placementBoot && typeof inlineBoot === "object" && inlineBoot !== null
+      ? { ...(inlineBoot as Record<string, unknown>), ...placementBoot }
+      : inlineBoot;
   if (!isWidgetBootPayload(bootCandidate)) {
     console.error(
       "[widget-host-shim] missing or malformed " +
@@ -130,8 +149,89 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   // the shim auto-completes on handler return, or both.
   const completedEventIds = new Set<string>();
   let nextLocalId = 0;
+  const documentRef =
+    options.documentRef ?? (globalThis as { document?: BindingDocument & { readyState?: string } }).document;
   let currentSettings: Readonly<Record<string, unknown>> = Object.freeze({ ...boot.settings });
-  const settingsListeners = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
+
+  // Which settings the widget's script has read. The host reloads the widget
+  // for a change to one of these and patches the bindings for any other, so
+  // a setting the script never touches never costs a reload.
+  const readKeys = new Set<string>();
+  let readAll = false;
+  let unreportedKeys: string[] = [];
+  let unreportedAll = false;
+  let reportScheduled = false;
+
+  function reportReads(): void {
+    reportScheduled = false;
+    if (unreportedKeys.length === 0 && !unreportedAll) {
+      return;
+    }
+    send(envelope({ type: "settings.reads" as const, keys: unreportedKeys, all: unreportedAll }));
+    unreportedKeys = [];
+    unreportedAll = false;
+  }
+
+  function scheduleReport(): void {
+    if (!reportScheduled) {
+      reportScheduled = true;
+      queueMicrotask(reportReads);
+    }
+  }
+
+  function noteRead(key: string | symbol): void {
+    if (typeof key !== "string" || readAll || readKeys.has(key)) {
+      return;
+    }
+    readKeys.add(key);
+    unreportedKeys.push(key);
+    scheduleReport();
+  }
+
+  function noteReadAll(): void {
+    if (readAll) {
+      return;
+    }
+    readAll = true;
+    unreportedAll = true;
+    scheduleReport();
+  }
+
+  function settingsView(settings: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+    return new Proxy(settings, {
+      get(target, key, receiver) {
+        noteRead(key);
+        return Reflect.get(target, key, receiver);
+      },
+      has(target, key) {
+        noteRead(key);
+        return Reflect.has(target, key);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        noteRead(key);
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+      // Spreading the settings, listing their keys or serialising them reads
+      // every one.
+      ownKeys(target) {
+        noteReadAll();
+        return Reflect.ownKeys(target);
+      },
+    });
+  }
+
+  let settingsForScript = settingsView(currentSettings);
+
+  function bind(previous: Readonly<Record<string, unknown>>): void {
+    if (!documentRef) {
+      return;
+    }
+    try {
+      applySettingBindings(documentRef, currentSettings, previous);
+    } catch (err) {
+      console.error("[widget-host-shim] applying setting bindings failed", err);
+    }
+  }
 
   function allocId(prefix: string): string {
     nextLocalId += 1;
@@ -187,6 +287,8 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     disposed = true;
     stopHelloLoop();
     windowRef.removeEventListener("message", onMessage);
+    windowRef.removeEventListener("DOMContentLoaded", onDocumentReady);
+    windowRef.removeEventListener("load", onLoad);
     // Pending reads resolve null (never leave a widget awaiting forever).
     for (const resolve of pendingGets.values()) {
       resolve(null);
@@ -195,7 +297,6 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     storageSubs.clear();
     eventSubs.clear();
     completedEventIds.clear();
-    settingsListeners.clear();
     outQueue.length = 0;
   }
 
@@ -296,14 +397,10 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         if (typeof m.settings !== "object" || m.settings === null || Array.isArray(m.settings)) {
           return;
         }
+        const previous = currentSettings;
         currentSettings = Object.freeze({ ...(m.settings as Record<string, unknown>) });
-        for (const listener of [...settingsListeners]) {
-          try {
-            listener(currentSettings);
-          } catch (err) {
-            console.error("[widget-host-shim] onSettings callback threw", err);
-          }
-        }
+        settingsForScript = settingsView(currentSettings);
+        bind(previous);
         return;
       }
       case "dispose": {
@@ -358,7 +455,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
 
   const host: WidgetHost = {
     get settings() {
-      return currentSettings;
+      return settingsForScript;
     },
     surface: boot.surface,
     theme: freezeTheme(boot.theme ?? null),
@@ -383,21 +480,6 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         send(envelope({ type: "events.unsubscribe" as const, subId }));
       };
     },
-    onSettings(cb: (settings: Readonly<Record<string, unknown>>) => void): () => void {
-      if (typeof cb !== "function") {
-        throw new Error("[widget-host-shim] onSettings requires a callback");
-      }
-      if (settingsListeners.size === 0) {
-        send(envelope({ type: "settings.subscribe" as const }));
-      }
-      settingsListeners.add(cb);
-      return () => {
-        if (!settingsListeners.delete(cb) || settingsListeners.size > 0) {
-          return;
-        }
-        send(envelope({ type: "settings.unsubscribe" as const }));
-      };
-    },
     reportStatus(key: string, value: unknown): void {
       // Best-effort by contract: never throws, silently dropped when
       // the channel is gone.
@@ -419,9 +501,30 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     },
   };
 
+  // Bindings on :root apply now, before the widget's styles; element
+  // bindings need the body, so they apply again once it is parsed.
+  function onDocumentReady(): void {
+    bind({});
+  }
+
+  // Two frames after load, the first paint is on screen: a frame replacing
+  // another is shown then, so a reload never flashes an empty widget.
+  function onLoad(): void {
+    const nextFrame =
+      typeof windowRef.requestAnimationFrame === "function"
+        ? (cb: () => void) => windowRef.requestAnimationFrame!(cb)
+        : (cb: () => void) => setTimeout(cb, 16);
+    nextFrame(() => nextFrame(() => send(envelope({ type: "rendered" as const }))));
+  }
+
   // Install synchronously, then open the channel. Widgets that run
   // right after this script see a fully usable `window.widgetHost`.
   windowRef.widgetHost = host;
+  bind({});
+  if (documentRef?.readyState === "loading") {
+    windowRef.addEventListener("DOMContentLoaded", onDocumentReady);
+  }
+  windowRef.addEventListener("load", onLoad);
   windowRef.addEventListener("message", onMessage);
   post(helloMessage);
   helloTimer = setInterval(() => {

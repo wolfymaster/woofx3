@@ -71,11 +71,11 @@
 // The harness imports the SDK from a peer path so it works whether the
 // HTML is opened directly off disk (relative path) or served from a
 // node_modules install (sibling file). Pick whichever resolves.
-let createMockHost;
+let createMockHost, applySettingBindings;
 try {
-  ({ createMockHost } = await import("./widget-preview.js"));
+  ({ createMockHost, applySettingBindings } = await import("./widget-preview.js"));
 } catch {
-  ({ createMockHost } = await import("../../dist/preview/widget-preview.js"));
+  ({ createMockHost, applySettingBindings } = await import("../../dist/preview/widget-preview.js"));
 }
 
 const params = new URLSearchParams(location.search);
@@ -91,6 +91,8 @@ function logRow(cls, text) {
 }
 
 let ctrl = null;
+// The settings last applied through bindings, so a removed one is cleared.
+let boundSettings = {};
 
 function install() {
   if (ctrl) ctrl.reset();
@@ -100,6 +102,7 @@ function install() {
   try { settings = JSON.parse(document.getElementById("settings").value || "{}"); }
   catch (e) { logRow("warn", `settings parse error: ${e.message}`); }
   ctrl = createMockHost({ moduleId, instanceId, settings });
+  boundSettings = {};
   ctrl.onReport(r => logRow("report", `report ${r.key} = ${JSON.stringify(r.value)}`));
 }
 
@@ -118,6 +121,7 @@ function loadWidget() {
       const win = frame.contentWindow;
       if (!win) return;
       win.widgetHost = ctrl.host;
+      bindSettings(ctrl.host.settings);
       // Mirror console.log/warn/error from the iframe into the panel.
       const orig = { log: win.console.log, warn: win.console.warn, error: win.console.error };
       win.console.log = (...a) => { orig.log(...a); logRow("console", a.map(String).join(" ")); };
@@ -134,13 +138,21 @@ function loadWidget() {
 
 document.getElementById("reload").addEventListener("click", loadWidget);
 document.getElementById("apply").addEventListener("click", loadWidget);
-// What the scene editor does as a setting changes: no reload, the widget's
-// onSettings callbacks get the new set.
+// What the host does when a setting the widget's script never read changes:
+// no reload, the bindings (--setting-*, data-setting) are updated in place.
+function bindSettings(next) {
+  const doc = document.getElementById("frame").contentDocument;
+  if (!doc) return;
+  applySettingBindings(doc, next, boundSettings);
+  boundSettings = { ...next };
+}
 document.getElementById("sendSettings").addEventListener("click", () => {
   if (!ctrl) { logRow("warn", "no widget loaded"); return; }
   try {
-    ctrl.setSettings(JSON.parse(document.getElementById("settings").value || "{}"));
-    logRow("event", "settings sent");
+    const next = JSON.parse(document.getElementById("settings").value || "{}");
+    ctrl.setSettings(next);
+    bindSettings(next);
+    logRow("event", "settings applied through bindings");
   } catch (e) { logRow("warn", `settings parse error: ${e.message}`); }
 });
 document.getElementById("fire").addEventListener("click", () => {

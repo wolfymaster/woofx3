@@ -2,9 +2,11 @@
 //
 // A save used to reload the whole overlay, restarting every widget on stream
 // to apply a change to one. The page instead fetches the saved config and
-// works out, per placement, the least it has to do: a placement whose frame
-// would come out the same is only moved, and only a placement whose frame
-// would differ is mounted again.
+// works out, per placement, the least it has to do. A placement whose frame
+// document is the same keeps its frame: it is moved, and its settings are
+// patched in or, when the widget's script read a changed one, it is swapped
+// for a fresh frame once that has painted. Only a different frame document
+// (another widget, version or theme) means a new frame for that reason.
 
 export interface WidgetPlacementConfig {
   id: string;
@@ -15,6 +17,8 @@ export interface WidgetPlacementConfig {
   /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
   hostsSurface: string;
   frameUrl: string;
+  /** The resource instances the widget's module links, handed to the frame. */
+  linkedResources?: Record<string, string>;
 }
 
 export interface SceneConfig {
@@ -27,9 +31,11 @@ export interface SceneConfig {
 export interface ScenePlan {
   /** Placements no longer on the scene. */
   remove: string[];
-  /** Placements to mount: new ones, and changed ones after their old mount is removed. */
+  /** New placements. */
   mount: WidgetPlacementConfig[];
-  /** Placements kept as they are, re-placed in case they moved. */
+  /** Placements whose frame document differs: swapped for a new frame. */
+  replace: WidgetPlacementConfig[];
+  /** Placements whose frame stays: re-placed, and their settings brought up to date. */
   place: WidgetPlacementConfig[];
   /** Every placement id, bottom of the stack first. */
   order: string[];
@@ -44,37 +50,65 @@ export function planSceneUpdate(
   const plan: ScenePlan = {
     remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
     mount: [],
+    replace: [],
     place: [],
     order: next.map((placement) => placement.id),
   };
   for (const placement of next) {
     const existing = currentById.get(placement.id);
-    if (existing && sameFrame(existing, placement)) {
+    if (!existing) {
+      plan.mount.push(placement);
+    } else if (sameFrame(existing, placement)) {
       plan.place.push(placement);
-      continue;
+    } else {
+      plan.replace.push(placement);
     }
-    if (existing) {
-      plan.remove.push(placement.id);
-    }
-    plan.mount.push(placement);
   }
   return plan;
 }
 
 /**
- * Whether two placements render the same frame. Settings are part of it: the
- * server writes them into the frame document, so a frame never sees a change
- * to them without loading again. The frame URL is not: a saved frame and a
- * draft frame of the same placement and settings render the same thing, so a
- * save that matches the draft on screen reloads nothing.
+ * Whether two placements load the same frame document. The frame URL names
+ * exactly that (widget, version, theme); settings are not part of it, since
+ * the page hands them to the frame. An alert area has no frame of its own and
+ * is drawn from its settings, so for one they are part of it.
  */
 function sameFrame(a: WidgetPlacementConfig, b: WidgetPlacementConfig): boolean {
   return (
     a.widgetCanonicalId === b.widgetCanonicalId &&
     a.moduleId === b.moduleId &&
     a.hostsSurface === b.hostsSurface &&
-    sameValue(a.settings, b.settings)
+    a.frameUrl === b.frameUrl &&
+    (a.hostsSurface === "" || sameValue(a.settings, b.settings))
   );
+}
+
+/** The settings a widget's script has read; `all` when it read every one. */
+export interface SettingsReads {
+  all: boolean;
+  keys: ReadonlySet<string>;
+}
+
+/**
+ * What a change of settings takes for a widget whose frame stays. `patch`
+ * hands them over and the shim updates the widget's bindings in place;
+ * `reload` swaps in a fresh frame, needed when the widget's script read a
+ * setting that changed, or when what it read is not known yet.
+ */
+export function settingsUpdate(
+  current: Record<string, unknown>,
+  next: Record<string, unknown>,
+  reads: SettingsReads | null
+): "none" | "patch" | "reload" {
+  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
+  if (changed.length === 0) {
+    return "none";
+  }
+  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
+    return "reload";
+  }
+  return "patch";
 }
 
 /** The setting a widget's theme is chosen by. Matches THEME_SETTING_ID on the server. */
@@ -84,16 +118,6 @@ const THEME_SETTING_ID = "theme";
 export function themeOf(settings: Record<string, unknown>): string {
   const value = settings[THEME_SETTING_ID];
   return typeof value === "string" ? value.trim() : "";
-}
-
-/**
- * Whether a widget that takes settings changes itself (`host.onSettings`) can
- * be handed `next` in place of `current` without loading again. Every setting
- * can but the theme, which the server applies to the frame before the widget
- * runs.
- */
-export function canChangeSettingsLive(current: Record<string, unknown>, next: Record<string, unknown>): boolean {
-  return themeOf(current) === themeOf(next);
 }
 
 /** Structural equality for JSON values, ignoring object key order. */

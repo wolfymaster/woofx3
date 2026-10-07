@@ -28,13 +28,14 @@ import {
 } from "./preview-layout";
 import { applySceneBackground } from "./scene-background";
 import {
-  canChangeSettingsLive,
   parseSceneConfig,
   planSceneUpdate,
-  sameValue,
+  settingsUpdate,
+  themeOf,
   type SceneConfig,
   type WidgetPlacementConfig,
 } from "./scene-update";
+import { encodePlacementBoot } from "@woofx3/module-sdk";
 
 declare global {
   interface Window {
@@ -44,10 +45,13 @@ declare global {
 
 const REFRESH_INTERVAL_MS = 50_000;
 
-// Typing into a text setting posts a draft per keystroke, and a settings
-// change reloads the frame of a widget that doesn't take settings live;
-// waiting for a pause reloads it once.
+// Adding a widget or changing a theme in the editor needs the server to
+// resolve the new frame; waiting for a pause asks it once.
 const DRAFT_SETTLE_MS = 400;
+
+// A frame swapped in for another is shown once it reports it has painted, or
+// after this long, so a widget that never reports still appears.
+const SWAP_TIMEOUT_MS = 2000;
 
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
@@ -58,11 +62,23 @@ function generateNonce(): string {
     .replace(/=+$/, "");
 }
 
-/** A frame's URL with the bridge nonce added; a draft frame's URL already has a query. */
-function withNonce(frameUrl: string, nonce: string): string {
-  const url = new URL(frameUrl, location.href);
-  url.searchParams.set("nonce", nonce);
-  return url.pathname + url.search;
+/**
+ * A frame's URL with its placement in the fragment (see `WidgetPlacementBoot`):
+ * the document is the widget's and cached, the placement never reaches the
+ * server.
+ */
+function frameSrc(instance: WidgetPlacementConfig, nonce: string): string {
+  const boot = encodePlacementBoot({
+    nonce,
+    instanceId: instance.id,
+    settings: instance.settings,
+    linkedResources: instance.linkedResources ?? {},
+  });
+  return `${instance.frameUrl}#${boot}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 function placeAt(element: HTMLElement, position: WidgetPlacementConfig["position"]): void {
@@ -149,11 +165,15 @@ function main(): void {
     }).catch(() => {});
   }
 
-  // Each placement on the page by id, with what it takes to remove it again.
-  const mounted = new Map<string, { config: WidgetPlacementConfig; unmount: () => void }>();
-  // The bridge of each framed placement, which is how a widget that takes
-  // settings live is handed them.
-  const framedBridges = new Map<string, WidgetBridge>();
+  // Each placement on the page by id: what it was mounted from, how to remove
+  // it, its bridge when it is framed, and a frame being swapped in, if any.
+  interface MountedPlacement {
+    config: WidgetPlacementConfig;
+    unmount: () => void;
+    bridge: WidgetBridge | null;
+    swap: { cancel: () => void } | null;
+  }
+  const mounted = new Map<string, MountedPlacement>();
 
   const mountAlertWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const element = document.createElement("div");
@@ -197,10 +217,20 @@ function main(): void {
     };
   };
 
-  const mountFramedWidget = (instance: WidgetPlacementConfig): (() => void) => {
+  interface Frame {
+    element: HTMLIFrameElement;
+    bridge: WidgetBridge;
+    unmount: () => void;
+  }
+
+  /** A widget's frame. A `hidden` one is loading to replace another (see `swapFrame`). */
+  const mountFramedWidget = (instance: WidgetPlacementConfig, hidden = false, onRendered?: () => void): Frame => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
+    if (hidden) {
+      iframe.style.opacity = "0";
+    }
     // No allow-same-origin: the frame runs with an opaque origin, and
     // trust is established entirely by postMessage source identity +
     // the per-frame nonce, never by same-origin access.
@@ -246,6 +276,7 @@ function main(): void {
           currentSubId = null;
         }
       },
+      onRendered,
     };
 
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
@@ -254,30 +285,116 @@ function main(): void {
       sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = withNonce(instance.frameUrl, nonce);
+    iframe.src = frameSrc(instance, nonce);
 
     bridges.add(bridge);
-    framedBridges.set(instance.id, bridge);
     container.appendChild(iframe);
-    widgetElements.set(instance.id, iframe);
+    if (!hidden) {
+      widgetElements.set(instance.id, iframe);
+    }
     bridge.attach(iframe);
 
-    return () => {
+    const unmount = (): void => {
       bridge.dispose();
       bridge.detach();
       bridges.delete(bridge);
-      if (framedBridges.get(instance.id) === bridge) {
-        framedBridges.delete(instance.id);
-      }
       moduleState.unwatchAll(storageTarget);
-      widgetElements.delete(instance.id);
+      if (widgetElements.get(instance.id) === iframe) {
+        widgetElements.delete(instance.id);
+      }
       iframe.remove();
     };
+    return { element: iframe, bridge, unmount };
   };
 
   function mount(instance: WidgetPlacementConfig): void {
-    const unmount = instance.hostsSurface === "alert" ? mountAlertWidget(instance) : mountFramedWidget(instance);
-    mounted.set(instance.id, { config: instance, unmount });
+    if (instance.hostsSurface === "alert") {
+      mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
+      return;
+    }
+    const frame = mountFramedWidget(instance);
+    mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+  }
+
+  function unmountPlacement(id: string): void {
+    const entry = mounted.get(id);
+    entry?.swap?.cancel();
+    entry?.unmount();
+    mounted.delete(id);
+  }
+
+  /**
+   * Give a placement a new frame without a blank moment: the new frame loads
+   * invisibly at the same spot and takes the old one's place once it has
+   * painted. A newer swap for the placement cancels this one. An alert area
+   * has no frame, so it is simply mounted again.
+   */
+  function swapFrame(next: WidgetPlacementConfig): void {
+    const entry = mounted.get(next.id);
+    if (!entry || next.hostsSurface !== "" || entry.config.hostsSurface !== "") {
+      unmountPlacement(next.id);
+      mount(next);
+      return;
+    }
+    entry.swap?.cancel();
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+      const old = widgetElements.get(next.id);
+      fresh.element.style.zIndex = old?.style.zIndex ?? "";
+      fresh.element.style.display = old?.style.display ?? "";
+      fresh.element.style.opacity = "";
+      entry.unmount();
+      widgetElements.set(next.id, fresh.element);
+      mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
+      if (previewLayout) {
+        applyPreviewLayout(widgetElements, previewLayout);
+      }
+    };
+    const fresh = mountFramedWidget(next, true, finish);
+    timer = setTimeout(finish, SWAP_TIMEOUT_MS);
+    entry.swap = {
+      cancel: () => {
+        if (!settled) {
+          settled = true;
+          if (timer !== null) {
+            clearTimeout(timer);
+          }
+          fresh.unmount();
+        }
+      },
+    };
+  }
+
+  /**
+   * Bring a placement whose frame stays up to date with new settings: patched
+   * in through the widget's bindings, or a fresh frame when the widget's
+   * script read one that changed (see `settingsUpdate`).
+   */
+  function updateSettings(id: string, settings: Record<string, unknown>): void {
+    const entry = mounted.get(id);
+    if (!entry) {
+      return;
+    }
+    // While a frame is being swapped in, nothing is known about it yet.
+    const reads = entry.swap || !entry.bridge ? null : entry.bridge.settingsReads();
+    const decision = settingsUpdate(entry.config.settings, settings, reads);
+    if (decision === "none") {
+      return;
+    }
+    if (decision === "patch" && entry.bridge) {
+      entry.bridge.sendSettings(settings);
+      entry.config = { ...entry.config, settings };
+      return;
+    }
+    swapFrame({ ...entry.config, settings });
   }
 
   // Stacked by z-index rather than by document order: moving an iframe in
@@ -312,28 +429,6 @@ function main(): void {
     }
   });
 
-  /** Whether the widget on the page as `id` takes settings without loading again. */
-  function takesSettingsLive(id: string): boolean {
-    return framedBridges.get(id)?.acceptsSettings() ?? false;
-  }
-
-  /**
-   * Hand a placement's settings to its widget, when it takes them live and
-   * they need no new frame. False when it must be mounted again for them.
-   */
-  function changeSettingsLive(id: string, settings: Record<string, unknown>): boolean {
-    const entry = mounted.get(id);
-    const bridge = framedBridges.get(id);
-    if (!entry || !bridge?.acceptsSettings() || !canChangeSettingsLive(entry.config.settings, settings)) {
-      return false;
-    }
-    if (!sameValue(entry.config.settings, settings)) {
-      bridge.sendSettings(settings);
-      entry.config = { ...entry.config, settings };
-    }
-    return true;
-  }
-
   // Only a page that frames this overlay can move its widgets, and it can
   // only move them on its own screen: nothing here is saved or sent on. OBS
   // loads the overlay top-level, where `window.parent` is the window itself.
@@ -350,15 +445,18 @@ function main(): void {
       const placements = parsePreviewPlacements(event.data);
       if (placements) {
         draftPlacements = placements;
-        // A widget that takes settings live gets them now, keystroke by
-        // keystroke; only what needs a new frame waits for the server.
+        // Settings reach the widgets now, keystroke by keystroke. Only a new
+        // widget or theme needs the server, and an alert area waits for it
+        // too, since one is mounted again for any change.
         for (const raw of placements) {
-          const placement = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-          if (typeof placement.id === "string") {
-            changeSettingsLive(placement.id, settingsOf(placement));
+          const placement = asRecord(raw);
+          const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
+          const settings = settingsOf(placement);
+          if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
+            updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, takesSettingsLive);
+        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert");
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -374,34 +472,35 @@ function main(): void {
   }
 
   function applySceneConfig(next: SceneConfig, fromDraft: boolean): void {
-    for (const instance of next.widgets) {
-      const entry = mounted.get(instance.id);
-      if (!entry || !takesSettingsLive(instance.id)) {
-        continue;
+    if (fromDraft && draftPlacements) {
+      // The editor's newest settings, not the ones this response was built
+      // from: they may have changed while it was in flight.
+      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, settingsOf(asRecord(raw))]));
+      for (const instance of next.widgets) {
+        const settings = latest.get(instance.id);
+        if (settings && instance.hostsSurface === "" && themeOf(settings) === themeOf(instance.settings)) {
+          instance.settings = settings;
+        }
       }
-      if (fromDraft && canChangeSettingsLive(entry.config.settings, instance.settings)) {
-        // The editor has handed this widget its settings since this draft
-        // was sent: what it shows is newer than the response.
-        instance.settings = entry.config.settings;
-        continue;
-      }
-      changeSettingsLive(instance.id, instance.settings);
     }
     const plan = planSceneUpdate(
       [...mounted.values()].map((entry) => entry.config),
       next.widgets
     );
     for (const id of plan.remove) {
-      mounted.get(id)?.unmount();
-      mounted.delete(id);
+      unmountPlacement(id);
     }
     for (const instance of plan.place) {
       const entry = mounted.get(instance.id);
       const element = widgetElements.get(instance.id);
       if (entry && element) {
-        entry.config = instance;
+        entry.config = { ...instance, settings: entry.config.settings };
         placeAt(element, instance.position);
+        updateSettings(instance.id, instance.settings);
       }
+    }
+    for (const instance of plan.replace) {
+      swapFrame(instance);
     }
     for (const instance of plan.mount) {
       mount(instance);

@@ -8,7 +8,7 @@ import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
-import { handleAlertWidgetFrameRoute, handleDraftWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
+import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
@@ -144,22 +144,16 @@ export function createHttpServer(deps: HttpDeps) {
             return withCors(await handleSceneDraftConfigRoute(req, draftConfigMatch[1]!, deps));
           }
 
-          // GET /scene/{sceneId}/draft-widget/{instanceId}
-          const draftWidgetMatch = /^\/scene\/([^/]+)\/draft-widget\/([^/]+)$/.exec(url.pathname);
-          if (draftWidgetMatch && req.method === "GET") {
-            return withCors(await handleDraftWidgetFrameRoute(req, draftWidgetMatch[1]!, draftWidgetMatch[2]!, deps));
-          }
-
           // POST /scene/{sceneId}/session/refresh
           const refreshMatch = /^\/scene\/([^/]+)\/session\/refresh$/.exec(url.pathname);
           if (refreshMatch && req.method === "POST") {
             return withCors(await handleSessionRefreshRoute(req, refreshMatch[1]!, deps));
           }
 
-          // GET /scene/{sceneId}/widget/{instanceId}
-          const widgetMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
-          if (widgetMatch && req.method === "GET") {
-            return withCors(await handleWidgetFrameRoute(req, widgetMatch[1]!, widgetMatch[2]!, deps));
+          // GET /frames/{moduleId}/{manifestId}
+          const frameDocumentMatch = /^\/frames\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+          if (frameDocumentMatch && req.method === "GET") {
+            return withCors(await handleFrameDocumentRoute(req, frameDocumentMatch[1]!, frameDocumentMatch[2]!, deps));
           }
 
           // GET /scene/{sceneId}/alert/{eventId}/widget/{widgetId}

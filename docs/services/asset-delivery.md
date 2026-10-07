@@ -224,5 +224,7 @@ Asset URLs are built server-side before any specific scene or overlay token
 is known — a single workflow execution may fan out to whichever scenes end
 up rendering it — so there is no token to embed in them. Assets are
 therefore public by design at every layer; only the storage bucket is
-private, and presigned URLs are how bytes leave it. Scene pages, widget
-frames and event streams stay behind an overlay token and session.
+private, and presigned URLs are how bytes leave it. Scene pages, alert
+frames and event streams stay behind an overlay token and session. A scene
+widget's frame document is public too: it is the widget's code and nothing
+else, and the placement reaches it through the URL's fragment.

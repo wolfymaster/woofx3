@@ -70,12 +70,12 @@ describe("WidgetBridge settings", () => {
     onDispose: noop,
   };
 
-  function setup() {
+  function setup(extra: Partial<WidgetBridgeCallbacks> = {}) {
     const posted: Record<string, unknown>[] = [];
     const contentWindow = {
       postMessage: (message: Record<string, unknown>) => posted.push(message),
     };
-    const bridge = new WidgetBridge("inst-1", NONCE, callbacks);
+    const bridge = new WidgetBridge("inst-1", NONCE, { ...callbacks, ...extra });
     bridge.attach({ contentWindow } as unknown as HTMLIFrameElement);
     const fromWidget = (type: string, extra: Record<string, unknown> = {}) =>
       bridge.handleMessage({
@@ -85,30 +85,43 @@ describe("WidgetBridge settings", () => {
     return { bridge, posted, fromWidget };
   }
 
-  it("sends nothing to a widget that never subscribed", () => {
-    const { bridge, posted, fromWidget } = setup();
-    fromWidget("hello");
-    expect(bridge.acceptsSettings()).toBe(false);
-    expect(bridge.sendSettings({ text: "hi" })).toBe(false);
-    expect(posted.some((m) => m.type === "settings.changed")).toBe(false);
+  it("knows nothing about a widget's reads before its handshake", () => {
+    const { bridge } = setup();
+    expect(bridge.settingsReads()).toBeNull();
   });
 
-  it("sends a subscribed widget its settings until it unsubscribes", () => {
-    const { bridge, posted, fromWidget } = setup();
-    fromWidget("hello");
-    fromWidget("settings.subscribe");
-    expect(bridge.sendSettings({ text: "hi" })).toBe(true);
-    expect(posted.at(-1)).toMatchObject({ type: "settings.changed", nonce: NONCE, settings: { text: "hi" } });
-
-    fromWidget("settings.unsubscribe");
-    expect(bridge.sendSettings({ text: "bye" })).toBe(false);
-  });
-
-  it("forgets the subscription when the frame navigates", () => {
+  it("collects the settings a widget reports reading", () => {
     const { bridge, fromWidget } = setup();
     fromWidget("hello");
-    fromWidget("settings.subscribe");
+    fromWidget("settings.reads", { keys: ["duration"], all: false });
+    fromWidget("settings.reads", { keys: ["src", 7], all: false });
+    expect([...bridge.settingsReads()!.keys]).toEqual(["duration", "src"]);
+    expect(bridge.settingsReads()!.all).toBe(false);
+    fromWidget("settings.reads", { keys: [], all: true });
+    expect(bridge.settingsReads()!.all).toBe(true);
+  });
+
+  it("sends settings once the widget is connected", () => {
+    const { bridge, posted, fromWidget } = setup();
+    bridge.sendSettings({ text: "early" });
+    expect(posted.some((m) => m.type === "settings.changed")).toBe(false);
+    fromWidget("hello");
+    bridge.sendSettings({ text: "hi" });
+    expect(posted.at(-1)).toMatchObject({ type: "settings.changed", nonce: NONCE, settings: { text: "hi" } });
+  });
+
+  it("forgets the reads when the frame navigates", () => {
+    const { bridge, fromWidget } = setup();
+    fromWidget("hello");
+    fromWidget("settings.reads", { keys: ["a"], all: true });
     bridge.onFrameLoad();
-    expect(bridge.acceptsSettings()).toBe(false);
+    expect(bridge.settingsReads()).toBeNull();
+  });
+
+  it("passes on rendered", () => {
+    let rendered = 0;
+    const { fromWidget } = setup({ onRendered: () => rendered++ });
+    fromWidget("rendered");
+    expect(rendered).toBe(1);
   });
 });

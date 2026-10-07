@@ -725,7 +725,7 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `description` | string | no | |
 | `entry` | string | no | HTML entry path in the ZIP. |
 | `assets` | string | no | Directory prefix in the ZIP for static assets (all files under this prefix are uploaded). |
-| `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values flow back to the widget at render time as `widgetHost.settings`, and as they are edited to a widget that subscribes with `widgetHost.onSettings` (see [Live settings](./sdk.md#live-settings)). |
+| `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values reach the widget as `widgetHost.settings` and through its setting bindings, and edits reach it while it runs (see [Live settings](./sdk.md#live-settings)). |
 | `surfaces` | string[] | no | Where the widget may be placed: `"scene"`, `"alert"` (inside an alert layout), or both. Defaults to `["scene"]`. |
 | `hostsSurface` | string | no | Bundled system module only. Marks a widget whose placements host a surface: the `"alert"` widget is the area of a scene where alert layouts play. The scene manager draws it, so it declares no `entry`, and it cannot be placed on the surface it hosts. |
 | `theme` | object | no | Opts the widget into themes by declaring a theme contract. Absent means the widget cannot be themed and nothing about it changes. See [Themes](#themes). |

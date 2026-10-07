@@ -139,8 +139,11 @@ export interface WidgetTheme {
  */
 export interface WidgetHost {
   /** Per-instance settings resolved by the scene editor from the
-   *  widget's `settingsSchema`. The current set: replaced (never mutated)
-   *  when the host sends a change to a widget that called `onSettings`. */
+   *  widget's `settingsSchema`. Reading one here tells the host the
+   *  widget's script depends on it, so a change to it reloads the widget
+   *  (invisibly, swapped in once painted). A setting the widget shows only
+   *  through its bindings (`--setting-{id}`, `data-setting`) is updated in
+   *  place instead; see the SDK docs on live settings. */
   readonly settings: Readonly<Record<string, unknown>>;
   readonly surface: WidgetSurface;
 
@@ -176,17 +179,6 @@ export interface WidgetHost {
    * entirely from the boot payload, no network round trip.
    */
   getResourceUrl(path: string): string;
-
-  /**
-   * Redraw when this placement's settings change, as a streamer edits them
-   * in the scene editor or saves the scene. Calling this tells the host the
-   * widget handles changes itself, so a change arrives here and the widget
-   * keeps running; a widget that never calls it is reloaded with the new
-   * settings instead. `settings` is updated before `cb` runs. A change of
-   * theme always reloads, since the theme is applied before the widget runs.
-   * Returns an unsubscribe function.
-   */
-  onSettings(cb: (settings: Readonly<Record<string, unknown>>) => void): () => void;
 
   /**
    * Subscribe to the events the host delivers to this widget: in an alert

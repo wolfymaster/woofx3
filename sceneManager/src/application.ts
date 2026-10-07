@@ -37,6 +37,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { OverlayTokenResolver } = await import("./scene/token-resolver");
     const { OverlayHost } = await import("./scene/scene-host");
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
+    const { FrameCatalog } = await import("./scene/frame-catalog");
     const { SessionTokenService } = await import("./scene/session-token");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
@@ -59,8 +60,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
 
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, ctx.logger);
-    const host = new OverlayHost(resolver, db, ctx.logger);
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
+    const framing = new FrameCatalog(barkloader, ctx.logger, (moduleId) => linkedResources(db, moduleId));
+    const host = new OverlayHost(resolver, db, ctx.logger, { framing });
     const frameAssembler = new FrameAssembler(host, ctx.logger, {
       barkloader,
       linkedResources: (moduleId) => linkedResources(db, moduleId),
