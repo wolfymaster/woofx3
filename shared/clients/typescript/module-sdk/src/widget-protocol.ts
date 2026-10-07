@@ -95,7 +95,10 @@ export function decodePlacementBoot(hash: string): Partial<WidgetPlacementBoot> 
       continue;
     }
     try {
-      const base64 = part.slice(eq + 1).replace(/-/g, "+").replace(/_/g, "/");
+      const base64 = part
+        .slice(eq + 1)
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
       const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
       const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
       const value: unknown = JSON.parse(new TextDecoder().decode(bytes));

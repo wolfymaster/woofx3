@@ -322,8 +322,7 @@ describe("installWidgetHostShim — placement boot in the fragment", () => {
   }
 
   it("merges the fragment's placement over the inlined widget boot", () => {
-    const hash =
-      "#" + encodePlacementBoot({ nonce: NONCE, instanceId: "inst-9", settings: { label: "fragment" } });
+    const hash = "#" + encodePlacementBoot({ nonce: NONCE, instanceId: "inst-9", settings: { label: "fragment" } });
     const h = makeHarness(widgetBoot(), hash);
     const host = install(h)!;
     expect(host.instanceId).toBe("inst-9");
@@ -347,9 +346,7 @@ describe("installWidgetHostShim — settings", () => {
     void host.settings.label;
     void ("accent" in host.settings);
     await Promise.resolve();
-    expect(h.sent("settings.reads")).toEqual([
-      expect.objectContaining({ keys: ["label", "accent"], all: false }),
-    ]);
+    expect(h.sent("settings.reads")).toEqual([expect.objectContaining({ keys: ["label", "accent"], all: false })]);
 
     void host.settings.label;
     await Promise.resolve();
