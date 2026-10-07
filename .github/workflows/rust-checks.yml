@@ -14,9 +14,9 @@ name: rust checks
 #
 # Formatting is checked for every language at once by format-checks.yml.
 #
-# No clippy gate. barkloader carries dozens of pre-existing clippy warnings,
-# so `-D warnings` would fail on its first run and teach people to ignore a
-# red check.
+# Clippy runs with `-D warnings` on every crate root. Each was cleared of
+# warnings before the gate went on, so a red clippy check is always the change
+# under review, never a backlog.
 
 on:
   push:
@@ -69,6 +69,8 @@ jobs:
       # needs 1.84+; stable is comfortably past that.
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       # barkloader pulls aws-sdk-s3 and two wasm runtimes; a cold build is
       # several minutes. Keyed per crate root because the three have different
@@ -85,6 +87,13 @@ jobs:
       - name: Build
         working-directory: ${{ matrix.crate }}
         run: cargo build --workspace --locked --all-targets
+
+      # After Build, so it reuses that step's dependency builds. Tracks
+      # stable like the build does, so a lint added in a new release can fail
+      # this step on a branch that did not cause it.
+      - name: Clippy
+        working-directory: ${{ matrix.crate }}
+        run: cargo clippy --workspace --locked --all-targets -- -D warnings
 
       - name: Test
         working-directory: ${{ matrix.crate }}

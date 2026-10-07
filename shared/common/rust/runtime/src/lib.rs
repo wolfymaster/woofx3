@@ -91,7 +91,7 @@ impl Config {
     pub fn get_required(&self, key: &str) -> Result<String, ConfigError> {
         self.get(key)
             .filter(|v| !v.is_empty())
-            .ok_or_else(|| ConfigError::ConfigNotFound)
+            .ok_or(ConfigError::ConfigNotFound)
     }
 
     /// Resolve a key as a boolean. An absent or blank value yields `None` so the
@@ -174,12 +174,12 @@ pub fn find_config_root(start_dir: &str) -> String {
 fn camel_to_screaming_snake(s: &str) -> String {
     let mut result = String::new();
     for (i, c) in s.chars().enumerate() {
-        if c >= 'A' && c <= 'Z' && i > 0 {
+        if c.is_ascii_uppercase() && i > 0 {
             result.push('_');
         }
-        if c >= 'a' && c <= 'z' {
+        if c.is_ascii_lowercase() {
             result.push((c as u8 - 32) as char);
-        } else if c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' {
+        } else if c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_' {
             result.push(c);
         }
     }
