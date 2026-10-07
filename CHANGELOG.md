@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.0](https://github.com/wolfymaster/woofx3/compare/v0.14.0...v0.15.0) (2026-10-07)
+
+### Features
+
+* **sceneManager:** push scene saves to overlays as sequenced json0 ops ([bc83309](https://github.com/wolfymaster/woofx3/commit/bc833098dbf7f78fe1dae7b2d94b70895eb4e9fa))
+
 ## [0.14.0](https://github.com/wolfymaster/woofx3/compare/v0.13.0...v0.14.0) (2026-10-07)
 
 ### Features
