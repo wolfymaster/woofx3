@@ -224,17 +224,20 @@ impl reqwest::dns::Resolve for GuardedResolver {
             let host = name.as_str().to_string();
             let addrs: Vec<SocketAddr> =
                 tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
-            if !policy.allow_private {
-                if let Some(addr) = addrs.iter().find(|addr| net::is_restricted_ip(addr.ip())) {
-                    warn!(
-                        "ctx.http host resolves to a private or local address host={} address={} enforced={}",
-                        host,
-                        addr.ip(),
-                        policy.mode == HttpPolicyMode::Enforce
-                    );
-                    if policy.mode == HttpPolicyMode::Enforce {
-                        return Err(format!("permission_denied: ctx.http: {host} resolves to a private or local address").into());
-                    }
+            if !policy.allow_private
+                && let Some(addr) = addrs.iter().find(|addr| net::is_restricted_ip(addr.ip()))
+            {
+                warn!(
+                    "ctx.http host resolves to a private or local address host={} address={} enforced={}",
+                    host,
+                    addr.ip(),
+                    policy.mode == HttpPolicyMode::Enforce
+                );
+                if policy.mode == HttpPolicyMode::Enforce {
+                    return Err(format!(
+                        "permission_denied: ctx.http: {host} resolves to a private or local address"
+                    )
+                    .into());
                 }
             }
             let addrs: reqwest::dns::Addrs = Box::new(addrs.into_iter());

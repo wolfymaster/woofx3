@@ -131,6 +131,12 @@ pub struct ModuleDeletePlan {
     pub steps: Vec<DeleteStep>,
 }
 
+impl Default for ModuleDeletePlan {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModuleDeletePlan {
     pub fn new() -> Self {
         let mut steps = vec![
@@ -148,7 +154,7 @@ impl ModuleDeletePlan {
             DeleteStep::UnregisterSandbox,
             DeleteStep::ModuleRecord,
         ];
-        steps.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        steps.sort_by_key(|step| std::cmp::Reverse(step.priority()));
         Self { steps }
     }
 

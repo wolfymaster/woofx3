@@ -27,6 +27,8 @@ const MODULES_PREFIX: &str = "modules";
 #[post("/storage/reload")]
 #[tracing::instrument(name = "POST /storage/reload", skip_all)]
 async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
+    // Frames hold entry documents read from the old backend.
+    let _frames = ctx.frame_cache.clear_on_drop();
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
         actix_web::error::ErrorInternalServerError(
             "databaseProxyUrl is not configured in .woofx3.json",
@@ -73,7 +75,7 @@ async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, E
     })?;
 
     let previous = ctx.repository.current();
-    let stranded = stranded_modules(&*previous, &new_keys).await;
+    let stranded = stranded_modules(&previous, &new_keys).await;
 
     ctx.repository.replace(candidate);
     info!("Storage backend reloaded: now {}", describe(&config));

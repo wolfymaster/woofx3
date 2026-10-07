@@ -329,6 +329,7 @@ pub async fn register_actions(
 /// (created_by_type, created_by_ref) override. When both overrides are
 /// empty, the db-proxy falls back to the default (MODULE, module_key)
 /// pairing — behaviorally identical to the non-`_with` variant.
+#[allow(clippy::too_many_arguments)]
 pub async fn register_actions_with(
     db_proxy_url: &str,
     module_id: &str,
@@ -520,6 +521,7 @@ pub struct CreateCommandJson {
 /// is persisted as `created_by_ref` with `created_by_type = "CLIENT"` so we
 /// can always trace a module back to the caller that installed it. A module
 /// is owned by the client that installed it, not by another module.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_module(
     db_proxy_url: &str,
     display_name: &str,
@@ -1637,6 +1639,7 @@ struct ListResourceInstancesResponseJson {
 /// callers (`ctx.resources.create`) typically only know the manifest id;
 /// install-time callers usually have the UUID. Pass empty strings for
 /// the unused argument.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_resource_instance(
     db_proxy_url: &str,
     module_id: &str,
@@ -2072,12 +2075,6 @@ pub struct SettingInputJson {
 struct RegisterModuleSettingsBody {
     module_id: String,
     settings: Vec<SettingInputJson>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
-struct RegisterModuleSettingsResponse {
-    registered: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

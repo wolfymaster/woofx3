@@ -29,10 +29,9 @@ impl PublicUrlResolver {
             .read()
             .expect("public url cache lock poisoned")
             .clone()
+            && at.elapsed() < TTL
         {
-            if at.elapsed() < TTL {
-                return value;
-            }
+            return value;
         }
         let resolved = self.resolve_uncached().await;
         *self.cache.write().expect("public url cache lock poisoned") =

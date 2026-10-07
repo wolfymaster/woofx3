@@ -43,6 +43,12 @@ pub struct ModuleRegistry {
     modules: RwLock<HashMap<String, RegisteredModule>>,
 }
 
+impl Default for ModuleRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModuleRegistry {
     pub fn new() -> Self {
         Self {

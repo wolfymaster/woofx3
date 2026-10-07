@@ -1136,8 +1136,8 @@ impl<'a, R: Repository> SagaState<'a, R> {
         let mid = self.module_record_id_for_commands.as_deref().unwrap_or("");
 
         let canonical = resolved_cmd.canonical_id.to_string();
-        if !mid.is_empty() {
-            if let Err(e) = db_proxy
+        if !mid.is_empty()
+            && let Err(e) = db_proxy
                 .create_module_resource(
                     mid,
                     "command",
@@ -1147,9 +1147,8 @@ impl<'a, R: Repository> SagaState<'a, R> {
                     &self.manifest.version,
                 )
                 .await
-            {
-                warn!("Failed to record command resource {}: {}", canonical, e);
-            }
+        {
+            warn!("Failed to record command resource {}: {}", canonical, e);
         }
         Ok(())
     }
@@ -1192,6 +1191,7 @@ fn check_theme_files(manifest: &ModuleManifest, files: &[ModuleFile]) -> Result<
 /// A user-provenance install that knows of no `systemOnly` actions, so it
 /// refuses no reference as reserved. Uploads go through
 /// `ModuleService::execute_plan`, which carries the bundled set.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub async fn run_install<R: Repository>(
     manifest: &ModuleManifest,
@@ -1407,7 +1407,7 @@ mod tests {
         let (manifest, manifest_json) = system_manifest("woofx3");
         let files = vec![ModuleFile::new(
             "manifest.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             manifest_json.clone(),
         )];
         let mid = manifest.compute_module_key(&manifest_json);
@@ -1445,7 +1445,7 @@ mod tests {
         let (manifest, manifest_json) = system_manifest("woofx3");
         let files = vec![ModuleFile::new(
             "manifest.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             manifest_json.clone(),
         )];
         let mid = manifest.compute_module_key(&manifest_json);
@@ -1485,7 +1485,7 @@ mod tests {
         let (manifest, manifest_json) = system_manifest("ordinary_module");
         let files = vec![ModuleFile::new(
             "manifest.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             manifest_json.clone(),
         )];
         let mid = manifest.compute_module_key(&manifest_json);
@@ -1554,12 +1554,12 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.clone(),
             ),
             ModuleFile::new(
                 "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
                 b"return 1".to_vec(),
             ),
         ];
@@ -1623,12 +1623,12 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.clone(),
             ),
             ModuleFile::new(
                 "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
                 b"return 1".to_vec(),
             ),
         ];
@@ -1674,12 +1674,12 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.clone(),
             ),
             ModuleFile::new(
                 "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
                 b"return 1".to_vec(),
             ),
         ];
@@ -1737,12 +1737,12 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.clone(),
             ),
             ModuleFile::new(
                 "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
                 b"return 1".to_vec(),
             ),
         ];
@@ -1809,12 +1809,12 @@ mod tests {
         vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.to_vec(),
             ),
             ModuleFile::new(
                 "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
                 b"return 1".to_vec(),
             ),
         ]
@@ -2016,7 +2016,7 @@ mod tests {
         }"#;
         let files = vec![ModuleFile::new(
             "module.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             manifest_json.to_vec(),
         )];
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
@@ -2135,12 +2135,12 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.to_vec(),
             ),
             ModuleFile::new(
                 "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
                 b"return 1".to_vec(),
             ),
         ];
@@ -2193,7 +2193,7 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.to_vec(),
             ),
             ModuleFile::new(
@@ -2245,7 +2245,7 @@ mod tests {
         let mut files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.to_vec(),
             ),
             ModuleFile::new(
@@ -2372,7 +2372,7 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.to_vec(),
             ),
             ModuleFile::new(
@@ -2435,7 +2435,7 @@ mod tests {
 
         let files = vec![ModuleFile::new(
             "module.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             manifest_json.to_vec(),
         )];
 
@@ -2492,7 +2492,7 @@ mod tests {
         let files = vec![
             ModuleFile::new(
                 "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
                 manifest_json.to_vec(),
             ),
             ModuleFile::new(
@@ -2588,7 +2588,7 @@ mod tests {
 
         let files = vec![ModuleFile::new(
             "module.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             manifest_json.to_vec(),
         )];
 
@@ -2675,7 +2675,7 @@ mod link_resource_settings_tests {
         let (manifest, json) = linking_manifest();
         let files = vec![ModuleFile::new(
             "module.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
             json.clone(),
         )];
         let key = manifest.compute_module_key(&json);

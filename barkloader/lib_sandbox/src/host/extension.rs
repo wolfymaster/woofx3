@@ -158,16 +158,16 @@ impl HostFunction {
         scope: &CallScope,
         args: Value,
     ) -> Result<Value, HostError> {
-        if let Some(permission) = self.permission {
-            if !scope.granted().contains(permission) {
-                return Err(HostError::with_code(
-                    format!(
-                        "ctx.{namespace}.{} requires the {permission:?} permission; declare it in the module manifest's \"permissions\"",
-                        self.name
-                    ),
-                    PERMISSION_DENIED,
-                ));
-            }
+        if let Some(permission) = self.permission
+            && !scope.granted().contains(permission)
+        {
+            return Err(HostError::with_code(
+                format!(
+                    "ctx.{namespace}.{} requires the {permission:?} permission; declare it in the module manifest's \"permissions\"",
+                    self.name
+                ),
+                PERMISSION_DENIED,
+            ));
         }
         (self.handler)(scope, args)
     }

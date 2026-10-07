@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_STACK_SIZE: usize = 1024 * 1024;
@@ -28,10 +28,10 @@ fn throw_host_error(ctx: &Ctx<'_>, err: &HostError) -> rquickjs::Error {
         Ok(exception) => exception,
         Err(e) => return e,
     };
-    if let Some(code) = &err.code {
-        if let Err(e) = exception.set("code", code.as_str()) {
-            return e;
-        }
+    if let Some(code) = &err.code
+        && let Err(e) = exception.set("code", code.as_str())
+    {
+        return e;
     }
     ctx.throw(exception.into_value())
 }
@@ -123,10 +123,10 @@ fn to_sandbox_error(
 
 /// What a module threw, as text: an Error's message, or the value itself.
 fn describe_thrown(thrown: &JsValue<'_>) -> String {
-    if let Some(exception) = thrown.as_exception() {
-        if let Some(message) = exception.message() {
-            return message;
-        }
+    if let Some(exception) = thrown.as_exception()
+        && let Some(message) = exception.message()
+    {
+        return message;
     }
     if let Some(text) = thrown.as_string().and_then(|s| s.to_string().ok()) {
         return text;
@@ -463,7 +463,7 @@ fn build_http_namespace<'js>(
                     method: &method,
                     opts: json_opts,
                 })
-                .map_err(|e| host_err(e))?;
+                .map_err(host_err)?;
             json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))
         },
     )
@@ -851,6 +851,7 @@ mod tests {
     use super::*;
     use crate::host::{InvocationContext, noop::noop_host_context};
     use crate::runtime::RuntimeAdapter;
+    use std::sync::atomic::AtomicUsize;
 
     /// The engine's environment holds its own credentials, and module code is
     /// end-user code: nothing in `ctx` may read it.

@@ -2562,7 +2562,7 @@ mod tests {
         let s0 = &m.settings[0];
         assert_eq!(s0.id, "clientId");
         assert_eq!(s0.setting_type, "text");
-        assert_eq!(s0.required, true);
+        assert!(s0.required);
         assert!(s0.default_value.is_none());
 
         let s1 = &m.settings[1];

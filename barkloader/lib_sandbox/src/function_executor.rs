@@ -19,6 +19,7 @@ impl FunctionExecutor {
         }
     }
 
+    #[cfg(test)]
     pub fn add_adapter(&mut self, extension: String, adapter: Box<dyn RuntimeAdapter>) {
         self.adapters.insert(extension, adapter);
     }

@@ -21,12 +21,11 @@ fn extract_token(req: &HttpRequest, query: &WsQueryParams) -> Option<String> {
     if let Some(ref token) = query.token {
         return Some(token.clone());
     }
-    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION) {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if let Some(bearer) = auth_str.strip_prefix("Bearer ") {
-                return Some(bearer.to_string());
-            }
-        }
+    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
+        && let Ok(auth_str) = auth_header.to_str()
+        && let Some(bearer) = auth_str.strip_prefix("Bearer ")
+    {
+        return Some(bearer.to_string());
     }
     None
 }

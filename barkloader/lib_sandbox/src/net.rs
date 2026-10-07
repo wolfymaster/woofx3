@@ -104,15 +104,14 @@ pub fn refusal(granted: &HashSet<String>, url: &Url, allow_private: bool) -> Opt
         Ok(destination) => destination,
         Err(reason) => return Some(reason),
     };
-    if !allow_private {
-        if let Some(ip) = destination.ip {
-            if is_restricted_ip(ip) {
-                return Some(format!(
-                    "{} is a private or local address",
-                    destination.host
-                ));
-            }
-        }
+    if !allow_private
+        && let Some(ip) = destination.ip
+        && is_restricted_ip(ip)
+    {
+        return Some(format!(
+            "{} is a private or local address",
+            destination.host
+        ));
     }
     if granted.contains(&destination.origin_grant()) {
         return None;

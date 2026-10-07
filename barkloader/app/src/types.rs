@@ -56,6 +56,8 @@ pub struct AppContext {
     pub public_url_resolver: Arc<PublicUrlResolver>,
     /// `ctx.oauth`, for completing a connect; absent without a host context.
     pub oauth: Option<Arc<crate::services::oauth::OAuthService>>,
+    /// Resolved widget frames, cleared by every module lifecycle change.
+    pub frame_cache: Arc<crate::routes::widgets::WidgetFrameCache>,
 }
 
 pub struct SafeTempDir {
