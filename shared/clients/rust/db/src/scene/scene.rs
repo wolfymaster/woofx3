@@ -30,6 +30,14 @@ pub struct Scene {
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="10")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// The editor's unpublished widgets and layout, the same shapes as
+    /// `widgets_json` and `layout_json`. Set only when `has_draft`.
+    #[prost(string, tag="11")]
+    pub draft_widgets_json: ::prost::alloc::string::String,
+    #[prost(string, tag="12")]
+    pub draft_layout_json: ::prost::alloc::string::String,
+    #[prost(bool, tag="13")]
+    pub has_draft: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateSceneRequest {
@@ -78,6 +86,16 @@ pub struct UpdateSceneRequest {
     pub widgets_json: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
     pub layout_json: ::prost::alloc::string::String,
+    /// Store a draft, the same shapes as `widgets_json` and `layout_json`.
+    /// Both are set together; empty leaves the draft unchanged.
+    #[prost(string, tag="6")]
+    pub draft_widgets_json: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub draft_layout_json: ::prost::alloc::string::String,
+    /// Drop the draft (it was published or discarded). Wins over a draft
+    /// set in the same request.
+    #[prost(bool, tag="8")]
+    pub clear_draft: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteSceneRequest {

@@ -51,6 +51,11 @@ message Scene {
     string created_by_ref = 8;
     google.protobuf.Timestamp created_at = 9;
     google.protobuf.Timestamp updated_at = 10;
+    // The editor's unpublished widgets and layout, the same shapes as
+    // `widgets_json` and `layout_json`. Set only when `has_draft`.
+    string draft_widgets_json = 11;
+    string draft_layout_json = 12;
+    bool has_draft = 13;
 }
 
 message CreateSceneRequest {
@@ -87,6 +92,13 @@ message UpdateSceneRequest {
     string description = 3;
     string widgets_json = 4;
     string layout_json = 5;
+    // Store a draft, the same shapes as `widgets_json` and `layout_json`.
+    // Both are set together; empty leaves the draft unchanged.
+    string draft_widgets_json = 6;
+    string draft_layout_json = 7;
+    // Drop the draft (it was published or discarded). Wins over a draft
+    // set in the same request.
+    bool clear_draft = 8;
 }
 
 message DeleteSceneRequest {

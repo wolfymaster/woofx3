@@ -161,3 +161,64 @@ func TestSceneService_Delete_UnknownSceneIsNotFound(t *testing.T) {
 		t.Fatal("deleting an unknown scene returned no error")
 	}
 }
+
+func TestSceneService_Update_KeepsADraftBesideThePublishedScene(t *testing.T) {
+	sceneSvc, _, _, db := newSceneSvc(t)
+	sceneID := seedScene(t, db, "main")
+	ctx := context.Background()
+	get := func() *client.Scene {
+		t.Helper()
+		resp, err := sceneSvc.GetScene(ctx, &client.GetSceneRequest{Id: sceneID.String()})
+		if err != nil {
+			t.Fatalf("get scene: %v", err)
+		}
+		return resp.Scene
+	}
+
+	if get().HasDraft {
+		t.Fatalf("a new scene has a draft")
+	}
+
+	_, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{
+		Id:               sceneID.String(),
+		DraftWidgetsJson: `[{"id":"w1"}]`,
+		DraftLayoutJson:  `{}`,
+	})
+	if err != nil {
+		t.Fatalf("store draft: %v", err)
+	}
+	scene := get()
+	if !scene.HasDraft || scene.DraftWidgetsJson != `[{"id":"w1"}]` || scene.DraftLayoutJson != `{}` {
+		t.Fatalf("draft not stored: %+v", scene)
+	}
+	if scene.WidgetsJson != "[]" {
+		t.Fatalf("storing a draft changed the published widgets: %q", scene.WidgetsJson)
+	}
+
+	// An update that names no draft leaves it alone.
+	if _, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: sceneID.String(), Name: "renamed"}); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if !get().HasDraft {
+		t.Fatalf("a rename dropped the draft")
+	}
+
+	// Clearing wins over a draft set in the same request.
+	_, err = sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{
+		Id:               sceneID.String(),
+		WidgetsJson:      `[{"id":"w1"}]`,
+		DraftWidgetsJson: `[{"id":"w2"}]`,
+		DraftLayoutJson:  `{}`,
+		ClearDraft:       true,
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	scene = get()
+	if scene.HasDraft || scene.DraftWidgetsJson != "" {
+		t.Fatalf("draft not cleared: %+v", scene)
+	}
+	if scene.WidgetsJson != `[{"id":"w1"}]` {
+		t.Fatalf("published widgets = %q", scene.WidgetsJson)
+	}
+}

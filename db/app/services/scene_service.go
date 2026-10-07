@@ -158,6 +158,13 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	if req.LayoutJson != "" {
 		scene.LayoutJSON = req.LayoutJson
 	}
+	if req.DraftWidgetsJson != "" && req.DraftLayoutJson != "" {
+		widgets, layout := req.DraftWidgetsJson, req.DraftLayoutJson
+		scene.DraftWidgetsJSON, scene.DraftLayoutJSON = &widgets, &layout
+	}
+	if req.ClearDraft {
+		scene.DraftWidgetsJSON, scene.DraftLayoutJSON = nil, nil
+	}
 
 	if err := s.repo.Update(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
@@ -290,7 +297,7 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	// columns on the typed model today (same gap as `workflowToProto`);
 	// leave them as nil-typed timestamps until a follow-up exposes them.
 	var createdAt, updatedAt *timestamppb.Timestamp
-	return &client.Scene{
+	scene := &client.Scene{
 		Id:            m.ID.String(),
 		Name:          m.Name,
 		Description:   m.Description,
@@ -301,6 +308,12 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 	}
+	if m.DraftWidgetsJSON != nil && m.DraftLayoutJSON != nil {
+		scene.DraftWidgetsJson = *m.DraftWidgetsJSON
+		scene.DraftLayoutJson = *m.DraftLayoutJSON
+		scene.HasDraft = true
+	}
+	return scene
 }
 
 func (s *sceneService) publishChange(scene *models.Scene, op string) {
