@@ -88,6 +88,8 @@ async fn upload_handler(
     };
 
     task::spawn(async move {
+        // However the install ends, frames resolved against the old version go.
+        let _frames = ctx.frame_cache.clear_on_drop();
         let db_proxy_client = ctx.db_proxy_url.as_deref().map(HttpDbProxyClient::new);
         let db_proxy_ref = db_proxy_client.as_ref().map(|c| c as &dyn ModuleDbProxy);
 
@@ -514,6 +516,7 @@ async fn delete_handler(
     let module_name_task = module_name.clone();
 
     tokio::spawn(async move {
+        let _frames = ctx_clone.frame_cache.clear_on_drop();
         let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
         let mut request_context = db_proxy::RequestContext {
             client_id,
@@ -816,6 +819,7 @@ async fn rollback_handler(
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
     let version = &query.version;
+    let _frames = ctx.frame_cache.clear_on_drop();
 
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
         actix_web::error::ErrorInternalServerError(

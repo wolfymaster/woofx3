@@ -286,6 +286,7 @@ async fn setup() -> Result<AppContext> {
         scheduler,
         public_url_resolver,
         oauth: oauth_service,
+        frame_cache: Arc::new(services::frame_cache::FrameCache::new()),
     };
 
     Ok(ctx)

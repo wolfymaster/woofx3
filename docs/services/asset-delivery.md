@@ -188,6 +188,13 @@ tunnel or reverse proxy) changes where **every** widget's assets resolve
 from, uniformly — and where overlay browser-source links point, since it's
 the same setting.
 
+Barkloader resolves each frame (entry HTML, `resourceBaseUrl`, theme) once and
+serves it from memory after that, keyed by module, widget, theme and the
+public URL. An install, upgrade, rollback, uninstall or storage backend swap
+clears every cached frame, so the next request resolves against what is
+installed now. A changed `scene.publicUrl` needs no clear: it is part of the
+key.
+
 ## Traversal pipeline
 
 Barkloader is the gate. `sanitize_asset_key`
