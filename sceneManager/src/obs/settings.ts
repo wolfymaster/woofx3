@@ -1,23 +1,28 @@
 // Where sceneManager connects to OBS. The OBS marketplace module declares the
-// connection as its settings, so a streamer enters it on the module's page;
-// sceneManager's own configuration fills in whatever the module does not say,
-// which keeps an engine without the module connecting as it always has.
+// connection as a `local[]` endpoint whose settings a streamer (or the
+// companion) fills in on the module's page; the endpoint dialer reads them and
+// picks the route. sceneManager's own configuration fills in whatever the
+// module does not say, which keeps an engine without the module connecting as
+// it always has.
 
 import type { Logger } from "@woofx3/common/runtime";
+import { type DialTarget, type EndpointKeys, EndpointRelayError, type WebSocketRoute } from "../endpoints/dialer";
+import { type ObsSession, obsFailureKind } from "./connection";
+import type Manager from "./manager";
+import { openObsSession } from "./manager";
 
 /** The OBS module's manifest id. Must match `id` in woofx3-modules' modules/platform/obs/manifest.json. */
 export const OBS_MODULE_ID = "woofx3_obs";
 
-/** Setting ids the OBS module declares. Must match its manifest's `settings`. */
-const HOST_SETTING = "host";
-const PORT_SETTING = "port";
-const PASSWORD_SETTING = "password";
+/** The OBS module's `local[]` endpoint id. Must match its manifest. */
+export const OBS_ENDPOINT_ID = "obs";
 
-export interface ObsConnectionConfig {
-  url: string;
-  /** The OBS WebSocket password; absent when OBS has authentication turned off. */
-  token?: string;
-}
+/** The OBS module's setting ids, for an installed version that predates `local[]`. */
+export const OBS_FALLBACK_KEYS: EndpointKeys = {
+  hostSetting: "host",
+  portSetting: "port",
+  passwordSetting: "password",
+};
 
 export interface ObsFallback {
   host: string;
@@ -25,67 +30,31 @@ export interface ObsFallback {
   token?: string;
 }
 
-export interface ObsSettingsReader {
-  listModuleSettings(moduleId: string): Promise<{ key: string; value: string }[]>;
-  getModuleSecretValues(moduleId: string): Promise<Record<string, string>>;
-}
-
-function validPort(value: string): string | null {
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed)) {
-    return null;
-  }
-  const port = Number(trimmed);
-  return port >= 1 && port <= 65535 ? String(port) : null;
-}
-
-/** An IPv6 address goes in brackets in a URL; anything else is used as typed. */
-function urlHost(host: string): string {
-  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+/** The dialer target for OBS's connection, falling back to sceneManager's configuration. */
+export function obsDialTarget(fallback: ObsFallback): DialTarget {
+  return {
+    moduleId: OBS_MODULE_ID,
+    endpointId: OBS_ENDPOINT_ID,
+    fallbackKeys: OBS_FALLBACK_KEYS,
+    fallback: { host: fallback.host, port: fallback.port, password: fallback.token },
+  };
 }
 
 /**
- * The connection from the module's settings, each falling back to
- * sceneManager's configuration when empty. A port that is not a port falls
- * back too, rather than producing a URL that can never connect.
+ * Open an OBS session on the route the dialer picked. Through the companion,
+ * a failure other than OBS refusing the password is the bridge's: the relay
+ * refusing the upgrade (502, 503), the companion refusing the endpoint (4403),
+ * or the companion not reaching OBS. It reads as `relay`, so the streamer is
+ * pointed at the companion rather than at OBS.
  */
-export function obsConnectionConfig(
-  settings: readonly { key: string; value: string }[],
-  secrets: Readonly<Record<string, string>>,
-  fallback: ObsFallback
-): ObsConnectionConfig {
-  const settingValue = (key: string) => settings.find((setting) => setting.key === key)?.value.trim() ?? "";
-  const host = settingValue(HOST_SETTING) || fallback.host;
-  const port = validPort(settingValue(PORT_SETTING)) ?? fallback.port;
-  const token = secrets[PASSWORD_SETTING] || fallback.token;
-  const config: ObsConnectionConfig = { url: `ws://${urlHost(host)}:${port}` };
-  if (token) {
-    config.token = token;
-  }
-  return config;
-}
-
-/**
- * Reads the connection for one connect attempt. Settings are read afresh each
- * time, so a retry picks up a change even if its announcement was missed. When
- * db-proxy cannot be read, the configuration is used: OBS control is
- * best-effort and must not stop on a db outage.
- */
-export async function readObsConnectionConfig(
-  db: ObsSettingsReader,
-  fallback: ObsFallback,
-  logger: Logger
-): Promise<ObsConnectionConfig> {
+export async function openObsOverRoute(route: WebSocketRoute, logger: Logger): Promise<ObsSession<Manager>> {
   try {
-    const [settings, secrets] = await Promise.all([
-      db.listModuleSettings(OBS_MODULE_ID),
-      db.getModuleSecretValues(OBS_MODULE_ID),
-    ]);
-    return obsConnectionConfig(settings, secrets, fallback);
+    return await openObsSession({ url: route.url, token: route.password }, logger);
   } catch (err) {
-    logger.debug("OBS module settings unreadable; using sceneManager's OBS configuration", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return obsConnectionConfig([], {}, fallback);
+    if (route.route === "companion" && obsFailureKind(err) !== "authentication") {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new EndpointRelayError(`OBS could not be reached through the companion: ${message}`, route.address);
+    }
+    throw err;
   }
 }

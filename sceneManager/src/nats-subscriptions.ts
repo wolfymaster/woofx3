@@ -1,4 +1,5 @@
 import { OBS_STATUS_SUBJECT } from "@woofx3/common/cloudevents/Obs/commands";
+import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { DbClient } from "./db";
@@ -15,8 +16,8 @@ import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { handleLegacySlobsCommand } from "./obs/commands";
 import { answerObsCommand } from "./obs/control";
-import { answerObsOptions } from "./obs/options";
 import type Manager from "./obs/manager";
+import { answerObsOptions } from "./obs/options";
 import { OBS_MODULE_ID } from "./obs/settings";
 import type { ObsStatusReply } from "./obs/status";
 import type { ModuleStateWatch } from "./scene/module-state";
@@ -29,6 +30,8 @@ interface InitArgs {
   obs: { current(): Manager | null; recycle(reason: string): void; reconnectNow(reason: string): void };
   /** The OBS connection's state for `engine.obs.status`; see obs/status.ts. */
   obsStatus: () => ObsStatusReply;
+  /** Whether the stored relay configuration moves OBS off the route its latest attempt took. */
+  relayConfigMovesObs: () => Promise<boolean>;
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
@@ -112,7 +115,7 @@ interface WidgetEventEnvelope {
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, obs, obsStatus, db, host, deliveryStore, moduleState, resolver, logger } = args;
+  const { nats, obs, obsStatus, relayConfigMovesObs, db, host, deliveryStore, moduleState, resolver, logger } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -294,6 +297,17 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     }
   });
   logger.info("Subscribed to db.module.setting.updated.*");
+
+  // The api announces a change to which local endpoints go through the
+  // companion. OBS's open session is replaced only when the change moves it to
+  // another route; one that cannot be read is assumed to.
+  await nats.subscribe(RELAY_CONFIG_UPDATED_SUBJECT, async () => {
+    const moves = await relayConfigMovesObs().catch(() => true);
+    if (moves) {
+      obs.reconnectNow("Relay configuration changed");
+    }
+  });
+  logger.info(`Subscribed to ${RELAY_CONFIG_UPDATED_SUBJECT}`);
 
   await nats.subscribe("db.scene.updated.*", (msg) => {
     let envelope: SceneUpdatedEnvelope;

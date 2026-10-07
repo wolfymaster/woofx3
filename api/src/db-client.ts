@@ -828,6 +828,11 @@ export class DbClient {
     );
   }
 
+  /** Remove a setting. Removing one that does not exist succeeds. */
+  async deleteSetting(key: string): Promise<void> {
+    unwrapVoid("deleteSetting", { status: await setting.DeleteSetting({ key }, this.config) });
+  }
+
   async getSetting(key: string): Promise<string | null> {
     const resp = await setting.GetSetting({ key }, this.config);
     return resp.setting?.value?.stringValue ?? null;

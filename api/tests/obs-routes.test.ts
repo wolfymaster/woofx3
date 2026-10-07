@@ -53,4 +53,18 @@ describe("parseObsStatusReply", () => {
       address: null,
     });
   });
+
+  test("carries the route and a relay failure", () => {
+    expect(
+      parseObsStatusReply({ state: "retrying", failure: "relay", address: "c-x.woofx3.tv", route: "companion" })
+    ).toEqual({ state: "retrying", failure: "relay", address: "c-x.woofx3.tv", route: "companion" });
+  });
+
+  test("drops an unknown route", () => {
+    expect(parseObsStatusReply({ state: "connected", address: "obs.lan:4455", route: "carrier-pigeon" })).toEqual({
+      state: "connected",
+      failure: null,
+      address: "obs.lan:4455",
+    });
+  });
 });

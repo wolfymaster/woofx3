@@ -142,6 +142,7 @@ describe("alert queue control subjects", () => {
       nats: nats as any,
       obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
       obsStatus: () => ({ state: "connected", failure: null, address: "127.0.0.1:4455" }),
+      relayConfigMovesObs: async () => false,
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
@@ -215,7 +216,7 @@ describe("alert queue control subjects", () => {
 });
 
 describe("module setting changes", () => {
-  async function wire() {
+  async function wire(relayConfigMovesObs: () => Promise<boolean> = async () => false) {
     const handlers = new Map<string, (msg: any) => unknown>();
     const reconnects: string[] = [];
     await initSubscriptions({
@@ -227,6 +228,7 @@ describe("module setting changes", () => {
       } as any,
       obs: { current: () => null, recycle: () => {}, reconnectNow: (reason: string) => reconnects.push(reason) },
       obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
+      relayConfigMovesObs,
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
@@ -241,8 +243,30 @@ describe("module setting changes", () => {
       }
       return handler({ subject: "db.module.setting.updated.system", json: () => ({ data }) });
     };
-    return { deliver, reconnects };
+    const relayChanged = () =>
+      handlers.get("engine.relay.config.updated")?.({ subject: "engine.relay.config.updated" });
+    return { deliver, relayChanged, reconnects };
   }
+
+  it("reconnects to OBS when a relay configuration change moves it to another route", async () => {
+    const { relayChanged, reconnects } = await wire(async () => true);
+    await relayChanged();
+    expect(reconnects).toEqual(["Relay configuration changed"]);
+  });
+
+  it("keeps the OBS session when a relay configuration change leaves its route alone", async () => {
+    const { relayChanged, reconnects } = await wire(async () => false);
+    await relayChanged();
+    expect(reconnects).toEqual([]);
+  });
+
+  it("reconnects when the relay configuration cannot be read", async () => {
+    const { relayChanged, reconnects } = await wire(async () => {
+      throw new Error("db down");
+    });
+    await relayChanged();
+    expect(reconnects).toEqual(["Relay configuration changed"]);
+  });
 
   it("reconnects to OBS when the OBS module's settings change", async () => {
     const { deliver, reconnects } = await wire();
@@ -267,6 +291,7 @@ describe("module setting changes", () => {
       } as never,
       obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
       obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
+      relayConfigMovesObs: async () => false,
       db: {} as never,
       host: {} as never,
       deliveryStore: {} as never,

@@ -21,6 +21,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@msgpack/msgpack": "^2.8.0",
     "@types/bun": "latest",
     "typescript": "^5.0.0"
   }
