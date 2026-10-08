@@ -296,7 +296,8 @@ pub fn format_log_value(value: &Value) -> String {
 }
 
 /// `ctx.response(success, message)` — the standard shape a module
-/// function returns when it wants the invoking chat command to reply.
+/// function returns to report an outcome and a message, which becomes the
+/// calling step's output.
 /// Tagged with `proto`/`v` (mirroring the `woofx3.widget`/
 /// `woofx3.overlay-events` envelope convention) so a caller can reliably
 /// distinguish a deliberate response from any other object a function

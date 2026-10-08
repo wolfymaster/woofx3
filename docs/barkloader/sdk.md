@@ -44,6 +44,10 @@ function increment(ctx) {
 }
 ```
 
+The returned value becomes the `function` step's output. A command that
+should answer in chat follows the step with a `chat.reply` step that
+reads it, e.g. `${<stepId>.message}`.
+
 A function asks the engine to act by returning a value, never by
 driving the bus itself. See
 [Engine integrity](../services/engine-integrity.md).
