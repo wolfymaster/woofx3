@@ -1078,7 +1078,7 @@ fn to_snake_case(s: &str) -> String {
 /// never produce a `..`-containing repository key, which `lib_repository`'s
 /// file backend would otherwise honor via `PathBuf::join`, writing outside
 /// the configured storage root.
-fn normalize_rel_path(s: &str) -> Result<String> {
+pub fn normalize_rel_path(s: &str) -> Result<String> {
     let normalized = s
         .trim_start_matches("./")
         .replace('\\', "/")

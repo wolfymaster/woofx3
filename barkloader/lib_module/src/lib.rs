@@ -18,5 +18,5 @@ pub mod theme;
 
 pub use manifest_validate::{InstallProvenance, SystemOnlyActions};
 pub use module_file::ModuleFileKind;
-pub use module_service::{ModuleService, ModuleServiceConfig};
+pub use module_service::{ModuleService, ModuleServiceConfig, manifest_file_rank};
 pub use registry_loader::{ModuleSchedule, ScheduleRegistrar};

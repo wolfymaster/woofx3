@@ -344,13 +344,14 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(ctx.clone()))
-            // The assets route depends only on the repository, not the
-            // full AppContext, so it gets its own Data registration. It
+            // The assets and archives routes depend only on the repository,
+            // not the full AppContext, so they get their own Data registration. It
             // shares the same swappable handle, so a storage reload takes
             // effect here too rather than pinning a stale backend.
             .app_data(Data::new(ctx.repository.clone()))
             .wrap(Logger::default()) // Use default format
             .configure(routes::assets::configure)
+            .configure(routes::archives::configure)
             .configure(routes::resources::configure)
             .configure(routes::storage::configure)
             .configure(routes::echo::configure)

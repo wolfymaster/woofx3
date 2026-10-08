@@ -9,6 +9,30 @@ use super::module_install::run_install_with_provenance;
 use super::module_manifest::ModuleManifest;
 use super::module_plan::ModulePlan;
 
+/// How strongly an archive member name reads as the module manifest: lower
+/// is preferred, `None` is not a manifest name at all. Real modules ship
+/// `manifest.*` (see the woofx3-modules repo); `module.*` is kept,
+/// lower-ranked, for the legacy convention. Matching is on the final path
+/// segment, case-insensitively, so an archive whose files sit under one
+/// top-level folder resolves the same way as a flat one. Anything that
+/// locates the module root inside an archive ranks names with this, so it
+/// agrees with the file the installer parsed.
+pub fn manifest_file_rank(name: &str) -> Option<u8> {
+    const PREFERRED: &[(&str, u8)] = &[
+        ("manifest.json", 0),
+        ("manifest.yaml", 1),
+        ("manifest.yml", 2),
+        ("module.json", 3),
+        ("module.yaml", 4),
+        ("module.yml", 5),
+    ];
+    let normalized = name.replace('\\', "/").to_lowercase();
+    PREFERRED
+        .iter()
+        .find(|(suffix, _)| normalized == *suffix || normalized.ends_with(&format!("/{suffix}")))
+        .map(|(_, rank)| *rank)
+}
+
 pub struct ModuleService<R> {
     files: Vec<ModuleFile>,
     pub repository: R,
@@ -44,40 +68,20 @@ where
     }
 
     fn pick_manifest_file(&self) -> Result<&ModuleFile> {
-        fn norm(p: &str) -> String {
-            p.replace('\\', "/").to_lowercase()
-        }
         let manifests: Vec<&ModuleFile> =
             self.files.iter().filter(|f| f.kind.is_manifest()).collect();
         if manifests.is_empty() {
             return Err(anyhow!("No manifest found"));
         }
-        // Real modules ship `manifest.*` (see the woofx3-modules repo); `module.*`
-        // is kept, lower-ranked, for the legacy convention this list originally
-        // targeted. Before this ordering existed neither name was matched, so an
-        // archive shipping either one fell through to the non-deterministic
-        // `manifests[0]` fallback below.
-        let preferred_suffixes: &[(&str, u8)] = &[
-            ("manifest.json", 0),
-            ("manifest.yaml", 1),
-            ("manifest.yml", 2),
-            ("module.json", 3),
-            ("module.yaml", 4),
-            ("module.yml", 5),
-        ];
         let mut best: Option<(&ModuleFile, u8)> = None;
         for f in &manifests {
-            let n = norm(&f.name);
-            for (suf, rank) in preferred_suffixes {
-                if n == *suf || n.ends_with(&format!("/{}", suf)) {
-                    let r = *rank;
-                    best = match best {
-                        None => Some((*f, r)),
-                        Some((_, br)) if r < br => Some((*f, r)),
-                        Some(other) => Some(other),
-                    };
-                }
-            }
+            let Some(rank) = manifest_file_rank(&f.name) else {
+                continue;
+            };
+            best = match best {
+                Some((_, best_rank)) if best_rank <= rank => best,
+                _ => Some((*f, rank)),
+            };
         }
         if let Some((f, _)) = best {
             return Ok(f);
@@ -234,5 +238,15 @@ mod tests {
             .create_plan()
             .expect("create_plan should still pick module.json when it's the only manifest");
         assert_eq!(service.module_id(), Some("legacy_id"));
+    }
+
+    #[test]
+    fn manifest_file_rank_matches_the_final_segment_case_insensitively() {
+        assert_eq!(manifest_file_rank("manifest.json"), Some(0));
+        assert_eq!(manifest_file_rank("demo/Manifest.JSON"), Some(0));
+        assert_eq!(manifest_file_rank("demo\\manifest.yaml"), Some(1));
+        assert_eq!(manifest_file_rank("module.json"), Some(3));
+        assert_eq!(manifest_file_rank("assets/bit_overlay.json"), None);
+        assert_eq!(manifest_file_rank("not_manifest.json"), None);
     }
 }

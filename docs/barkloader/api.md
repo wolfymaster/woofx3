@@ -227,6 +227,39 @@ POST /functions/{name}/rollback?version=1.0.0
 | 404 | Archive not found for the given module/version |
 | 500 | Extraction or registration failure |
 
+### List Archive Files
+
+List the files inside the zip a module was installed from. Paths are relative to the module root, the directory holding the manifest, so a zip that wraps the module in one top-level folder lists the same paths as a flat one. Directories, `__MACOSX/` and `.DS_Store` entries, and members outside the module root are left out. The API serves this to the dashboard as `listModuleFiles`.
+
+```
+GET /archives/files?key=archives/{module_key}.zip
+```
+
+**Response (200):** sorted by path; `size` is the uncompressed size the zip declares.
+
+```json
+[
+  { "path": "functions/hello.js", "size": 17 },
+  { "path": "manifest.json", "size": 412 }
+]
+```
+
+### Read Archive File
+
+Read one file from a module's archive as raw bytes. At most 1 MiB + 1 byte is inflated and returned; the `X-Archive-Entry-Size` header carries the size the zip declares, so a caller can tell a capped read from a whole one. The API serves this as `getModuleFile`.
+
+```
+GET /archives/file?key=archives/{module_key}.zip&path=functions/hello.js
+```
+
+**Error responses (both archive routes):**
+
+| Code | Condition |
+|------|-----------|
+| 400 | `key` is not `archives/{...}.zip`, or contains `..`; `path` is empty or contains `..` |
+| 404 | No archive is stored under `key`, or (`/archives/file`) it holds no such file |
+| 500 | The archive is not a readable zip |
+
 ### Reload Modules
 
 Force reload of all modules from the repository.
