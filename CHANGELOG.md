@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/wolfymaster/woofx3/compare/v0.15.0...v0.16.0) (2026-10-07)
+
+### Features
+
+* **api:** hand the dashboard a scene editor session ([478a03c](https://github.com/wolfymaster/woofx3/commit/478a03cc1e61ac0e8e26c4027977d421d5ba6178))
+* **db:** keep a scene's draft beside its published widgets and layout ([c42fec0](https://github.com/wolfymaster/woofx3/commit/c42fec09929e8119f99acd313b39cdf18de71ed1))
+* **sceneManager:** acknowledge a resubmitted op instead of applying it twice ([457968e](https://github.com/wolfymaster/woofx3/commit/457968efef30a90655c1acf99b7b42553865e90d))
+* **sceneManager:** an editor socket, opened with a short-lived editor token ([d33d985](https://github.com/wolfymaster/woofx3/commit/d33d985e1bf6249a9bcc409aa49a7b913d38d4bc))
+* **sceneManager:** carry every stored placement field through the scene document ([7903f32](https://github.com/wolfymaster/woofx3/commit/7903f3260e883926c303e242a34f8f3dbd7b2f79))
+* **sceneManager:** relay which widget each scene editor has selected ([da4a6c6](https://github.com/wolfymaster/woofx3/commit/da4a6c618f3f4d5b9b528d1d771bfbc5751222b7))
+* **sceneManager:** sequence editors' ops against a draft and the published scene ([0d99b61](https://github.com/wolfymaster/woofx3/commit/0d99b6195bf6e38a1df876d1e150db753835dc42))
+* show or hide a scene widget from a workflow, saved with the scene ([920c33c](https://github.com/wolfymaster/woofx3/commit/920c33c6d6ac2992bfbd2a3ce898f067546a5197)), closes [#220](https://github.com/wolfymaster/woofx3/issues/220)
+
 ## [0.15.0](https://github.com/wolfymaster/woofx3/compare/v0.14.0...v0.15.0) (2026-10-07)
 
 ### Features
