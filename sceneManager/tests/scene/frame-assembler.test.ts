@@ -290,12 +290,13 @@ describe("FrameAssembler — widget themes", () => {
     });
   });
 
-  it("restricts styles, fonts and media to the engine for a themeable widget", async () => {
+  it("restricts styles and fonts to the engine, and lets images and media come from any http(s) host", async () => {
     const { resp } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
     const csp = resp.headers.get("Content-Security-Policy");
     expect(csp).toContain("style-src 'self' https://engine.example.com 'unsafe-inline'");
     expect(csp).toContain("font-src 'self' https://engine.example.com data:");
-    expect(csp).toContain("media-src 'self' https://engine.example.com data: blob:");
+    expect(csp).toContain("img-src 'self' https://engine.example.com https: http: data: blob:");
+    expect(csp).toContain("media-src 'self' https://engine.example.com https: http: data: blob:");
     expect(csp).not.toContain("script-src");
   });
 
