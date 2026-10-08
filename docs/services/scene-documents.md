@@ -32,7 +32,8 @@ Widgets are keyed by placement id, so editing one never shifts another's
 path, and `z` is a stacking key that sorts as text, bottom first. `name`,
 `rotation`, `opacity` and `locked` are the editor's, and `extra` keeps any
 other field a placement was stored with, so writing the document back loses
-nothing. What a
+nothing. `opacity` is a fraction from 0 (transparent) to 1 (opaque), as in
+CSS, both in the document and in the stored placement. What a
 placement needs on the page that depends on what is installed rather than on
 the scene (its frame URL, linked resources, whether it is an alert area) is
 kept beside the document as each placement's meta.
