@@ -290,14 +290,27 @@ describe("FrameAssembler — widget themes", () => {
     });
   });
 
-  it("restricts styles and fonts to the engine, and lets images and media come from any http(s) host", async () => {
+  it("restricts styles, fonts, images and media to the engine for a themeable widget", async () => {
     const { resp } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
-    const csp = resp.headers.get("Content-Security-Policy");
-    expect(csp).toContain("style-src 'self' https://engine.example.com 'unsafe-inline'");
-    expect(csp).toContain("font-src 'self' https://engine.example.com data:");
-    expect(csp).toContain("img-src 'self' https://engine.example.com https: http: data: blob:");
-    expect(csp).toContain("media-src 'self' https://engine.example.com https: http: data: blob:");
-    expect(csp).not.toContain("script-src");
+    const csp = resp.headers.get("Content-Security-Policy") ?? "";
+    const directives = Object.fromEntries(
+      csp.split(";").map((directive) => {
+        const [name, ...sources] = directive.trim().split(/\s+/);
+        return [name, sources];
+      })
+    );
+    // Exact values, so the policy cannot widen without this test changing.
+    expect(directives).toEqual({
+      "style-src": ["'self'", "https://engine.example.com", "'unsafe-inline'"],
+      "font-src": ["'self'", "https://engine.example.com", "data:"],
+      "img-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
+      "media-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
+    });
+    for (const sources of Object.values(directives) as string[][]) {
+      for (const source of sources) {
+        expect(["https:", "http:", "*"]).not.toContain(source);
+      }
+    }
   });
 
   it("renders the defaults, and still loads, when the selected theme is missing", async () => {

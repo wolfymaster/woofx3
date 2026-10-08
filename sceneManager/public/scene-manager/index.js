@@ -2368,6 +2368,71 @@ function applyPreviewLayout(elements, layout) {
   }
 }
 
+// public/scene-manager/media-url.ts
+var MAX_DEPTH = 32;
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isAbsoluteHttpUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (url.protocol === "https:" || url.protocol === "http:") && url.hostname !== "";
+}
+function externalMediaUrl(value) {
+  if (!isPlainObject2(value) || typeof value.url !== "string" || !isAbsoluteHttpUrl(value.url)) {
+    return null;
+  }
+  if (value.source === "url") {
+    return value.url;
+  }
+  const libraryId = typeof value.id === "string" && value.id !== "";
+  return !libraryId && typeof value.type === "string" ? value.url : null;
+}
+function rewriteExternalMedia(value, replace) {
+  return rewrite(value, replace, 0);
+}
+function rewrite(value, replace, depth) {
+  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next2 = value.map((item) => {
+      const rewritten = rewrite(item, replace, depth + 1);
+      changed ||= rewritten !== item;
+      return rewritten;
+    });
+    return changed ? next2 : value;
+  }
+  const record = value;
+  const external = externalMediaUrl(record);
+  if (external !== null) {
+    const replaced = replace(external);
+    return replaced === undefined || replaced === external ? record : { ...record, url: replaced };
+  }
+  let next = null;
+  for (const [key, item] of Object.entries(record)) {
+    const rewritten = rewrite(item, replace, depth + 1);
+    if (rewritten !== item) {
+      next ??= { ...record };
+      next[key] = rewritten;
+    }
+  }
+  return next ?? record;
+}
+function externalMediaUrls(value) {
+  const urls = new Set;
+  rewriteExternalMedia(value, (url) => {
+    urls.add(url);
+    return;
+  });
+  return [...urls];
+}
+
 // public/scene-manager/scene-background.ts
 function sceneBackground(layout) {
   const value = layout.backgroundColor;
@@ -2651,6 +2716,9 @@ function main() {
   let draftPlacements = null;
   let draftKey = "";
   let draftTimer = null;
+  const proxiedMedia = new Map;
+  const draftSettingsOf = (placement) => rewriteExternalMedia(settingsOf(placement), (url) => proxiedMedia.get(url));
+  const unsignedMediaKey = (placements) => JSON.stringify(placements.flatMap((raw) => externalMediaUrls(settingsOf(asRecord(raw))).filter((url) => !proxiedMedia.has(url))));
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
       bridge.handleMessage(event);
@@ -2672,12 +2740,12 @@ function main() {
         for (const raw of placements) {
           const placement = asRecord(raw);
           const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
-          const settings = settingsOf(placement);
+          const settings = draftSettingsOf(placement);
           if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
             updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert");
+        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") + unsignedMediaKey(placements);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -2693,7 +2761,7 @@ function main() {
   }
   function applySceneConfig(next, fromDraft) {
     if (fromDraft && draftPlacements) {
-      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, settingsOf(asRecord(raw))]));
+      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, draftSettingsOf(asRecord(raw))]));
       for (const instance of next.widgets) {
         const settings = latest.get(instance.id);
         if (settings && instance.hostsSurface === "" && themeOf(settings) === themeOf(instance.settings)) {
@@ -2775,6 +2843,13 @@ function main() {
     }
     const body = resp.ok ? await resp.json().catch(() => null) : null;
     const config = parseSceneConfig(body);
+    if (draft) {
+      for (const [upstream, proxied] of Object.entries(asRecord(asRecord(body).mediaUrls))) {
+        if (typeof proxied === "string") {
+          proxiedMedia.set(upstream, proxied);
+        }
+      }
+    }
     if (config && config.id === sceneId) {
       const snapshot = draft ? null : parseSnapshot(asRecord(body).document);
       if (snapshot) {

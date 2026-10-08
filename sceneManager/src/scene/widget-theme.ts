@@ -115,29 +115,26 @@ export function injectThemeStylesheet(html: string, stylesheetUrl: string): stri
 }
 
 /**
- * The Content-Security-Policy for a themeable widget's frame: styles and fonts
- * from the engine only. A theme stylesheet is author data, and its `url(...)`
- * or `@import` could otherwise pull in more CSS or fonts from any host; nothing
- * a theme ships is a script, so scripts and connections are left as they were.
+ * The Content-Security-Policy for a themeable widget's frame: styles, fonts,
+ * images and media from the engine only. A theme stylesheet is author data,
+ * and its `url(...)` or `@import` could otherwise reach any host, carrying
+ * whatever its selectors can read off the page; nothing a theme ships is a
+ * script, so scripts and connections are left as they were. External media a
+ * placement's settings name reaches the frame through the engine's media
+ * proxy (see media-proxy.ts), so it needs no outside host here either.
  *
- * Images and media may come from any http(s) host, because a placement's media
- * settings can name a file hosted outside the engine and the widget loads it
- * from there. The policy is fixed when the frame loads while settings change
- * live, so it cannot list just the hosts the settings name. A theme can
- * therefore reference an outside image too; that only fetches an image.
- *
- * `'self'` alone is not enough for styles and fonts: the frame is sandboxed
- * and its resources come from barkloader's public origin, not the scene
- * manager's, so each engine origin is listed. `'unsafe-inline'` is for the
- * widget's own inline styles and the variables block this module injects.
+ * `'self'` alone is not enough: the frame is sandboxed and its resources
+ * come from barkloader's public origin, not the scene manager's, so each
+ * engine origin is listed. `'unsafe-inline'` is for the widget's own inline
+ * styles and the variables block this module injects.
  */
 export function themeContentSecurityPolicy(engineOrigins: string[]): string {
   const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))].join(" ");
   return [
     `style-src ${origins} 'unsafe-inline'`,
     `font-src ${origins} data:`,
-    `img-src ${origins} https: http: data: blob:`,
-    `media-src ${origins} https: http: data: blob:`,
+    `img-src ${origins} data: blob:`,
+    `media-src ${origins} data: blob:`,
   ].join("; ");
 }
 

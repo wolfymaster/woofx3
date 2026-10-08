@@ -34,8 +34,10 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   // The page starts from the scene's sequenced document, so it can apply
   // every change after this one as ops (see scene-documents.ts). The
   // editor's preview asks for the draft.
-  const snapshot = await deps.sceneDocuments.snapshot(state.sceneId, viewOf(url));
-  const scene = snapshot ? configOfSnapshot(snapshot) : (await deps.host.buildConfig(token)).scene;
+  const snapshot = await deps.sceneDocuments.overlaySnapshot(state.sceneId, viewOf(url));
+  const scene = snapshot
+    ? configOfSnapshot(snapshot)
+    : deps.mediaProxy.sceneConfig((await deps.host.buildConfig(token)).scene);
   const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
 
   return new Response(renderSceneShell({ scene, document: snapshot }), {
@@ -62,7 +64,7 @@ export async function handleSceneConfigRoute(req: Request, sceneId: string, deps
     return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   // With its document, so an overlay that missed ops resyncs from here.
-  const snapshot = await deps.sceneDocuments.snapshot(sceneId, viewOf(new URL(req.url)));
+  const snapshot = await deps.sceneDocuments.overlaySnapshot(sceneId, viewOf(new URL(req.url)));
   if (!snapshot) {
     return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
@@ -80,6 +82,10 @@ export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
  * config with the editor's unsaved placements in place of the saved ones (see
  * `OverlayHost.buildDraftConfig`), for an overlay previewing a draft.
  * Authorized like `/config`.
+ *
+ * `mediaUrls` maps each external media URL in the placements to its proxy
+ * URL. The editor also posts settings to the page as they are typed, with
+ * external media as entered, and the page points them at the proxy with it.
  */
 export async function handleSceneDraftConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
   const cookie = readSessionCookie(req, sceneId);
@@ -105,8 +111,15 @@ export async function handleSceneDraftConfigRoute(req: Request, sceneId: string,
     return Response.json({ error: "invalid_body" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
   const config = await deps.host.buildDraftConfig(sceneId, widgets);
-  if ((config as { scene: unknown }).scene === null) {
+  const scene = (config as { scene: unknown }).scene;
+  if (scene === null) {
     return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
-  return Response.json(config, { headers: { "Cache-Control": "no-store" } });
+  const mediaUrls = deps.mediaProxy.urlsIn(
+    widgets.map((widget: unknown) => (widget as { settings?: unknown })?.settings)
+  );
+  return Response.json(
+    { ...config, scene: deps.mediaProxy.sceneConfig(scene), mediaUrls },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

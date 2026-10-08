@@ -26,6 +26,7 @@ import {
   settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
+import { externalMediaUrls, rewriteExternalMedia } from "./media-url";
 import { applySceneBackground } from "./scene-background";
 import {
   parseSceneConfig,
@@ -444,6 +445,19 @@ function main(): void {
   let draftPlacements: unknown[] | null = null;
   let draftKey = "";
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  // The editor sends settings as entered, so external media in them still
+  // names its own host, which a themeable widget's frame refuses. The server
+  // answers each draft with the proxy URL of every external media URL in it
+  // (`mediaUrls`), and settings from the editor are pointed at those.
+  const proxiedMedia = new Map<string, string>();
+  const draftSettingsOf = (placement: Record<string, unknown>): Record<string, unknown> =>
+    rewriteExternalMedia(settingsOf(placement), (url) => proxiedMedia.get(url));
+  // External media URLs the server has not signed yet: one appearing asks
+  // the server for a draft, like a new widget does.
+  const unsignedMediaKey = (placements: readonly unknown[]): string =>
+    JSON.stringify(
+      placements.flatMap((raw) => externalMediaUrls(settingsOf(asRecord(raw))).filter((url) => !proxiedMedia.has(url)))
+    );
 
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
@@ -473,12 +487,14 @@ function main(): void {
         for (const raw of placements) {
           const placement = asRecord(raw);
           const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
-          const settings = settingsOf(placement);
+          const settings = draftSettingsOf(placement);
           if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
             updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert");
+        const key =
+          draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") +
+          unsignedMediaKey(placements);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -497,7 +513,7 @@ function main(): void {
     if (fromDraft && draftPlacements) {
       // The editor's newest settings, not the ones this response was built
       // from: they may have changed while it was in flight.
-      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, settingsOf(asRecord(raw))]));
+      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, draftSettingsOf(asRecord(raw))]));
       for (const instance of next.widgets) {
         const settings = latest.get(instance.id);
         if (settings && instance.hostsSurface === "" && themeOf(settings) === themeOf(instance.settings)) {
@@ -600,6 +616,13 @@ function main(): void {
     }
     const body: unknown = resp.ok ? await resp.json().catch(() => null) : null;
     const config = parseSceneConfig(body);
+    if (draft) {
+      for (const [upstream, proxied] of Object.entries(asRecord(asRecord(body).mediaUrls))) {
+        if (typeof proxied === "string") {
+          proxiedMedia.set(upstream, proxied);
+        }
+      }
+    }
     if (config && config.id === sceneId) {
       // The saved scene comes with its document; later ops apply to it.
       const snapshot = draft ? null : parseSnapshot(asRecord(body).document);

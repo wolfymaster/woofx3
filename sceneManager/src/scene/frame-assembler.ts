@@ -2,6 +2,7 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
+import type { MediaProxy } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
@@ -110,6 +111,9 @@ export interface FrameAssemblerOptions {
   /** The instances a module links through its `resource_ref` settings (see
    *  module-state.ts `linkedResources`). None when absent. */
   linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
+  /** Points external media in the boot payload's settings at the engine's
+   *  media proxy. Settings pass through as they are when absent. */
+  mediaProxy?: MediaProxy;
 }
 
 /**
@@ -357,7 +361,7 @@ export class FrameAssembler {
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
-      settings: target.settings,
+      settings: this.opts.mediaProxy ? this.opts.mediaProxy.settings(target.settings) : target.settings,
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
