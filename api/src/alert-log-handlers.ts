@@ -1,6 +1,8 @@
 import type {
   AlertCompletedEvent,
+  AlertDispatchedEvent,
   AlertFailedEvent,
+  AlertPlayingEvent,
   AlertRecordedEvent,
   AlertReplayedEvent,
   AlertSkippedEvent,
@@ -16,6 +18,8 @@ import type { WebhookClient } from "./webhook-client";
 
 /** Union of every webhook event projected from `db.alert.updated.*`. */
 export type AlertUpdatedEvent =
+  | AlertDispatchedEvent
+  | AlertPlayingEvent
   | AlertReplayedEvent
   | AlertCompletedEvent
   | AlertFailedEvent
@@ -23,11 +27,9 @@ export type AlertUpdatedEvent =
   | AlertSkippedEvent;
 
 // The db proxy publishes alert lifecycle events on
-// `db.alert.{created,updated,deleted}`. We only project the
-// `created` and `updated` flavors today — `created` becomes
-// `alert.recorded`, and `updated` (with `status: "replayed"`) becomes
-// `alert.replayed`. Other status changes don't produce a webhook
-// today; they can be added when the contract grows.
+// `db.alert.{created,updated,deleted}`. Only `created` and `updated` are
+// projected: `created` becomes `alert.recorded`, and each `updated` becomes
+// the callback named for the row's new status (see parseAlertUpdated).
 //
 // The CloudEvent's `data` is the snake-cased map produced by
 // `buildAlertChangeData` in `db/app/services/alert_service.go`. As
@@ -117,16 +119,19 @@ export function parseAlertCreated(ce: Record<string, unknown>): ParsedAlertChang
 }
 
 /**
- * Project a `db.alert.updated.*` outbox event to a webhook event.
- * Maps the new lifecycle column to the right callback type:
- *   - "replayed"  → ALERT_REPLAYED
- *   - "completed" → ALERT_COMPLETED   (overlay finished playing)
- *   - "failed"    → ALERT_FAILED      (overlay reported an error)
- * Other transitions (`"playing"` notably) intentionally produce
- * no webhook today — they're observable via the alert-log row's
- * `status` + `playedAt` columns and emitting per-mount adds noise
- * without enabling a dashboard surface. Phase 3 may revisit when
- * the operator UI wants live "currently playing" highlights.
+ * Project a `db.alert.updated.*` outbox event to a webhook event named for
+ * the row's new status:
+ *   - "dispatched" → ALERT_DISPATCHED  (handed to the overlay)
+ *   - "playing"    → ALERT_PLAYING     (overlay started playing it)
+ *   - "replayed"   → ALERT_REPLAYED
+ *   - "completed"  → ALERT_COMPLETED   (overlay finished playing)
+ *   - "failed"     → ALERT_FAILED      (overlay reported an error)
+ *   - "timed_out"  → ALERT_TIMED_OUT
+ *   - "skipped"    → ALERT_SKIPPED
+ * The in-flight transitions are projected so a receiver hears the alert move
+ * between its creation and its verdict: without them, an alert queued or
+ * playing for a while is indistinguishable from one the engine lost. Any
+ * other status parses to null.
  */
 export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChange<AlertUpdatedEvent> {
   const clientId = asString(ce.client_id);
@@ -136,6 +141,12 @@ export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChang
   }
   let event: AlertUpdatedEvent | null = null;
   switch (snapshot.status) {
+    case "dispatched":
+      event = { type: EngineEventType.ALERT_DISPATCHED, alert: snapshot };
+      break;
+    case "playing":
+      event = { type: EngineEventType.ALERT_PLAYING, alert: snapshot };
+      break;
     case "replayed":
       event = { type: EngineEventType.ALERT_REPLAYED, alert: snapshot };
       break;
@@ -178,8 +189,8 @@ export async function initAlertLogHandlers(
     {
       subject: "db.alert.updated.*",
       name: "db.alert.updated",
-      // Lifecycle transitions with no webhook surface (today: "playing")
-      // parse to null on purpose -- see parseAlertUpdated's projection map.
+      // A status with no callback parses to null on purpose -- see
+      // parseAlertUpdated's projection map.
       quietDrop: true,
       parse: (ce) => {
         const { clientId, event } = parseAlertUpdated(ce);

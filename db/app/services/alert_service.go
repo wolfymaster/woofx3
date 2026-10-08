@@ -267,6 +267,13 @@ func (s *alertService) publishChange(alert *models.Alert, op string) {
 	})
 }
 
+// alertUpdatedAtLayout formats `updated_at` in UTC with nine fractional
+// digits. Receivers order an alert's lifecycle callbacks, which are retried
+// independently and can arrive out of order, by this value, so it keeps the
+// full precision the column stores: two lifecycle writes can fall within one
+// millisecond. Fixed width and one zone keep equal writes byte-identical.
+const alertUpdatedAtLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
 func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 	wf := ""
 	if alert.WorkflowID != nil {
@@ -281,7 +288,7 @@ func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 		"status":          alert.Status,
 		"error":           alert.Error,
 		"created_at":      alert.CreatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
-		"updated_at":      alert.UpdatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
+		"updated_at":      alert.UpdatedAt.UTC().Format(alertUpdatedAtLayout),
 	}
 	if alert.DispatchedAt != nil {
 		out["dispatched_at"] = alert.DispatchedAt.Format("2006-01-02T15:04:05.000Z07:00")

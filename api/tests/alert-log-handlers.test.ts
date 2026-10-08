@@ -123,9 +123,31 @@ describe("parseAlertUpdated", () => {
     expect(event?.type).toBe(EngineEventType.ALERT_SKIPPED);
   });
 
-  it("drops transitions without a webhook surface (e.g. status='playing')", () => {
-    const playing = snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" });
-    expect(parseAlertUpdated(playing).event).toBeNull();
+  it("emits ALERT_DISPATCHED for status='dispatched'", () => {
+    const ce = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "dispatched",
+      dispatched_at: "2026-05-03T01:02:04.000Z",
+    });
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe(EngineEventType.ALERT_DISPATCHED);
+    expect(event?.alert.dispatchedAt).toBe("2026-05-03T01:02:04.000Z");
+  });
+
+  it("emits ALERT_PLAYING for status='playing'", () => {
+    const ce = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "playing",
+      played_at: "2026-05-03T01:02:05.000Z",
+    });
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe(EngineEventType.ALERT_PLAYING);
+    expect(event?.alert.playedAt).toBe("2026-05-03T01:02:05.000Z");
+  });
+
+  it("drops a status with no callback (e.g. status='sent')", () => {
     const sent = snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" });
     expect(parseAlertUpdated(sent).event).toBeNull();
   });
@@ -215,12 +237,23 @@ describe("initAlertLogHandlers", () => {
     expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_REPLAYED);
   });
 
-  it("db.alert.updated.* with status=playing does not dispatch a webhook", async () => {
+  it("db.alert.updated.* with status=playing dispatches an ALERT_PLAYING webhook", async () => {
     const nats = new FakeNatsClient();
     const webhook = new FakeWebhookClient();
     await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
 
     await nats.dispatch("db.alert.updated.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" }));
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_PLAYING);
+  });
+
+  it("db.alert.updated.* with status=sent does not dispatch a webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.alert.updated.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" }));
 
     expect(webhook.sentEvents).toHaveLength(0);
   });

@@ -61,6 +61,8 @@ export const EngineEventType = {
   SCENE_UPDATED: "scene.updated",
   SCENE_DELETED: "scene.deleted",
   ALERT_RECORDED: "alert.recorded",
+  ALERT_DISPATCHED: "alert.dispatched",
+  ALERT_PLAYING: "alert.playing",
   ALERT_REPLAYED: "alert.replayed",
   ALERT_COMPLETED: "alert.completed",
   ALERT_FAILED: "alert.failed",
@@ -927,12 +929,14 @@ export interface AlertSnapshot {
   sourceEventId: string;
   /** Lifecycle:
    *   `"sent"`       — engine published; overlay has not yet ack'd
+   *   `"pending"`    — queued in the engine, not yet handed to an overlay
+   *   `"dispatched"` — handed to the overlay
    *   `"playing"`    — overlay reported the widget mounted
    *   `"completed"`  — overlay reported the widget finished playing
    *   `"failed"`     — overlay reported a render / playback error
-   *   `"replayed"`   — operator re-fired this row from the UI
-   *  Phase 2 will add `"pending"`, `"dispatched"`, `"timed_out"`,
-   *  `"skipped"`. */
+   *   `"timed_out"`  — the engine gave up waiting for the overlay
+   *   `"skipped"`    — an operator skipped or cleared it
+   *   `"replayed"`   — operator re-fired this row from the UI */
   status: string;
   /**
    * Denormalised AlertPayload envelope id (`payload->>'id'`). Stable
@@ -950,6 +954,12 @@ export interface AlertSnapshot {
    *  status === `"failed"`. */
   error?: string;
   createdAt: string;
+  /**
+   * The engine's last write to the row, RFC 3339 in UTC with nine fractional
+   * digits. Lifecycle callbacks are retried independently and can arrive out
+   * of order; this is how a receiver tells the newer of two snapshots apart,
+   * so it carries the full precision the database stores.
+   */
   updatedAt: string;
 }
 
@@ -1124,6 +1134,26 @@ export interface WorkflowRunStepRecordedEvent {
  */
 export interface AlertRecordedEvent {
   type: typeof EngineEventType.ALERT_RECORDED;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when an alert's row moves to `dispatched`: the engine handed it to the
+ * overlay. Like the other lifecycle events it carries the whole row, so a
+ * receiver that misses one still converges on the next.
+ */
+export interface AlertDispatchedEvent {
+  type: typeof EngineEventType.ALERT_DISPATCHED;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when an alert's row moves to `playing`: an overlay reported it started
+ * playing. Lets a receiver tell an alert that is on screen from one the engine
+ * lost track of, without waiting for the verdict.
+ */
+export interface AlertPlayingEvent {
+  type: typeof EngineEventType.ALERT_PLAYING;
   alert: AlertSnapshot;
 }
 
@@ -1390,6 +1420,8 @@ export type CallbackEvent =
   | SceneUpdatedEvent
   | SceneDeletedEvent
   | AlertRecordedEvent
+  | AlertDispatchedEvent
+  | AlertPlayingEvent
   | AlertReplayedEvent
   | AlertCompletedEvent
   | AlertFailedEvent
@@ -1451,6 +1483,8 @@ export type CallbackEventByType = {
   [EngineEventType.SCENE_UPDATED]: SceneUpdatedEvent;
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;
   [EngineEventType.ALERT_RECORDED]: AlertRecordedEvent;
+  [EngineEventType.ALERT_DISPATCHED]: AlertDispatchedEvent;
+  [EngineEventType.ALERT_PLAYING]: AlertPlayingEvent;
   [EngineEventType.ALERT_REPLAYED]: AlertReplayedEvent;
   [EngineEventType.ALERT_COMPLETED]: AlertCompletedEvent;
   [EngineEventType.ALERT_FAILED]: AlertFailedEvent;
