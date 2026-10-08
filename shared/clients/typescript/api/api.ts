@@ -717,6 +717,12 @@ export interface ModuleOAuthAuthorization {
   redirectUri: string;
   /** The OAuth client to exchange as, when the dashboard supplies the app; otherwise the module's own. */
   clientId?: string;
+  /**
+   * Required with `clientId`: the token endpoint the dashboard checked when it
+   * chose that app. The engine refuses the exchange unless the module's
+   * installed `tokenUrl` is still the same.
+   */
+  tokenUrl?: string;
 }
 
 export interface ModuleOAuthConnected {
