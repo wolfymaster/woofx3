@@ -41,8 +41,8 @@ browser
               └─ file backend, or a widget bundle file → 200 with the bytes
 ```
 
-sceneManager claims only `/assets/modules/` and `/assets/user/`; its own
-static files under `/assets/` (such as `widget-host-shim.js`) are served
+sceneManager claims only `/assets/modules/` and `/assets/user/` here (and
+`/assets/upload/` and `/assets/media/`, below); its own static files under `/assets/` (such as `widget-host-shim.js`) are served
 from its public directory. It forwards the path still percent-encoded,
 relays `Location`, `Content-Type` and `Cache-Control`, and never follows a
 redirect, so presigned bytes go straight from the bucket to the browser.
@@ -217,6 +217,92 @@ The same rejection is enforced upstream, at module-install time: barkloader's
 appears as a raw ZIP archive member name, not just a manifest-declared string —
 before it can become a repository write (see
 [Module manifest reference](../barkloader/modules.md)).
+
+## External media
+
+A placement's media setting can name a file hosted outside the engine:
+`{ "source": "url", "name", "url", "type" }`, beside the library's
+`{ "id", "name", "url", "type" }`. Themeable widget frames only load images
+and media from the engine's origins (see
+[Rendering and fallback](../barkloader/modules.md#rendering-and-fallback)),
+so sceneManager points such a value's `url` at the engine's media proxy
+before it reaches an overlay:
+
+```
+browser (widget frame)
+  └─> GET {sceneManagerUrl}/assets/media/{token}         sceneManager
+        └─> GET {barkloaderUrl}/assets/media/{token}     barkloader
+              └─> GET https://the.file/elsewhere.mp4     the upstream host
+```
+
+### What is rewritten
+
+An object in placement settings, at any depth, with an absolute http(s)
+`url` that is marked `"source": "url"`, or that has a `type` but no library
+`id`. Library values pass through unchanged. A bare string is never
+rewritten: without the widget's settings schema it cannot be told apart from
+a link or an API endpoint, and the dashboard's picker never stores one.
+
+It is rewritten everywhere sceneManager hands settings to an overlay:
+
+- the scene page and `GET /scene/{id}/config` (the overlay's view of the
+  scene document, see [Scene documents](./scene-documents.md#what-overlays-see));
+- every SSE `scene-ops` event, so a live edit in the scene editor reaches a
+  widget already pointed at the proxy without reloading its frame;
+- `POST /scene/{id}/draft-config`, which also returns `mediaUrls`, each
+  external URL in the draft mapped to its proxy URL. The editor posts
+  settings to a previewing page as they are typed, and the page points them
+  at the proxy with that map; a URL it has not seen yet asks for a draft,
+  and shows once the answer arrives;
+- an alert widget's frame, whose boot payload carries its settings.
+
+The proxy URL is relative, `/assets/media/{token}`, so it resolves against
+a widget frame's `<base>` (the public origin barkloader's resource base URL
+names, which the frame's policy lists) or against the scene page itself.
+
+### The token
+
+`{base64url(url)}.{hex HMAC-SHA256(key, base64url(url))}`, where `key` is
+HMAC-SHA256 of the label `woofx3 media proxy v1` under the engine secret
+(`WOOFX3_BARKLOADER_KEY`). sceneManager signs, barkloader verifies; the
+label keeps these signatures apart from upload grants made with the same
+secret. A token has no expiry: an overlay holds its settings for a whole
+stream, and the same URL always gets the same proxy URL, so browsers cache
+it. It grants only what the proxy would do for that one URL; rotating the
+secret revokes every token. URLs over 2048 bytes are not signed and stay as
+entered.
+
+### What the proxy fetches and relays
+
+- A token that does not verify gets a bare 404.
+- **https only**, with no credentials in the URL.
+- Every address a host resolves to must be public: loopback, private
+  (RFC 1918), link-local (and so cloud metadata), CGNAT, unique local IPv6,
+  multicast, reserved and documentation ranges are refused, as are IPv6
+  forms that embed such an IPv4 address. The check runs in the resolver the
+  connection is made from, so the address vetted is the address connected
+  to, and a literal address in the URL is checked the same way. An
+  `HTTP_PROXY` in the environment is ignored.
+- Redirects are followed by the proxy, at most 5, and every hop is checked
+  like the first.
+- Only `Range` and `If-Range` are forwarded from the browser; no cookies or
+  authorization go upstream.
+- Only a 200 or 206 with an `image/*`, `audio/*` or `video/*`
+  `Content-Type` and no content encoding is relayed (a 416 passes through
+  as is); anything else is a 502, and a refused destination a 403.
+- The file may be at most 512 MiB, the largest upload the engine accepts,
+  judged by `Content-Length` or the total in `Content-Range`, and counted as
+  it streams.
+- Timeouts: 5 s to connect, 15 s to the response headers, 30 s between
+  reads of the body. A long video streams for as long as it keeps arriving.
+
+The response carries the upstream's `Content-Type`, `Content-Length`,
+`Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified`, plus
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+`Cache-Control: public, max-age=3600` (the upstream's file may change), and
+`Content-Security-Policy: default-src 'none'; …; sandbox`, so a relayed SVG
+opened directly cannot run as a page on the engine's origin. There is no
+server-side cache; browsers cache by the stable URL.
 
 ## Why asset URLs are public, not token-scoped
 

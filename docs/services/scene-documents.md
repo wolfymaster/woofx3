@@ -128,3 +128,14 @@ Sequence numbers and the op window live in memory: they start again at 0
 when sceneManager restarts, which reloads every overlay and reconnects every
 editor anyway (see the stream's boot id). Only the documents are persisted,
 through autosave.
+
+## What overlays see
+
+Overlays get the document with every external media value in placement
+settings pointed at the engine's media proxy (see
+[External media](./asset-delivery.md#external-media)); editors get it as
+entered. The snapshot in the page and `/config` is that view, and a
+`scene-ops` event whose ops touch settings carries the ops between the views
+before and after the change rather than the ops as made, since a splice into
+a media value's `url` only applies to the value as entered. Ops that do not
+touch settings are sent as made.
