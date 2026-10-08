@@ -468,7 +468,8 @@ export interface ObsNameOption {
  * `CtxHostError` carrying OBS's reason, which a field-options function can
  * return as `{ error }` so the picker says why it is empty.
  *
- * Names are OBS's own, case included. The three changes need
+ * Names are OBS's own, case included. The changes (`switchScene`,
+ * `setSourceVisibility`, `setInputMute`, `showBrowserSource`) need
  * `"permissions": ["obs.control"]` in the manifest, or the call throws
  * `permission_denied` without reaching OBS; listing needs none.
  */
@@ -488,6 +489,26 @@ export interface CtxObsExtension {
    * "true" and "false". Needs `obs.control`.
    */
   setInputMute(args: { inputName: string; muted?: boolean | "true" | "false" }): { ok: true };
+  /**
+   * Show a web page in a browser source in a scene, the live program scene
+   * when `sceneName` is absent or empty. `url` must be an absolute http:// or
+   * https:// URL.
+   *
+   * When OBS has a browser source named `sourceName`, it is pointed at `url`
+   * (its other settings are kept), added to the scene if it is not in it, and
+   * made visible. When OBS has no input by that name, a browser source is
+   * created in the scene at `width` x `height` (default 1920 x 1080, at most
+   * 7680 x 4320; whole numbers, also accepted as text); the size is not
+   * changed on an existing source. An input of another kind by that name is
+   * refused, not replaced. Needs `obs.control`.
+   */
+  showBrowserSource(args: {
+    sourceName: string;
+    url: string;
+    sceneName?: string;
+    width?: number | string;
+    height?: number | string;
+  }): { ok: true };
   /** OBS's scenes. */
   listScenes(): ObsNameOption[];
   /** OBS's sources, grouped by the scene they are in. */

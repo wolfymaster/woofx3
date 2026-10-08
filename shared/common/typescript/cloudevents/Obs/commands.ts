@@ -45,7 +45,22 @@ export type ObsControlCommand =
       sourceName: string;
       visible: boolean;
     }
-  | { command: "set_input_mute"; inputName: string; muted: boolean };
+  | { command: "set_input_mute"; inputName: string; muted: boolean }
+  | {
+      /**
+       * Point the browser source `sourceName` at `url` and show it, creating
+       * it in the scene when OBS has no input by that name.
+       */
+      command: "show_browser_source";
+      /** The current program scene when absent. */
+      sceneName?: string;
+      sourceName: string;
+      /** An absolute http:// or https:// URL. */
+      url: string;
+      /** The size of a source this command creates; an existing one keeps its own. */
+      width: number;
+      height: number;
+    };
 
 export type ObsControlCommandName = ObsControlCommand["command"];
 

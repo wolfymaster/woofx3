@@ -28,6 +28,22 @@ const OBS_RESOURCE_NOT_FOUND = 600;
 
 const nonEmptyName = z.string().min(1);
 
+/** OBS's id for the browser source input kind. */
+const BROWSER_SOURCE_KIND = "browser_source";
+
+// Must match the limits in barkloader/lib_sandbox/src/extensions/obs.rs.
+const BROWSER_SOURCE_MAX_WIDTH = 7_680;
+const BROWSER_SOURCE_MAX_HEIGHT = 4_320;
+
+/**
+ * An absolute http(s) URL. A browser source loads whatever it is given, and a
+ * `file:` URL would put the streamer's own files on stream.
+ */
+const webUrl = z.string().refine((value) => {
+  const parsed = URL.parse(value);
+  return parsed !== null && (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
+}, "must be an absolute http:// or https:// URL");
+
 // Mirrors ObsControlCommand in shared/common/typescript/cloudevents/Obs/commands.ts.
 // `.strict()` so a misspelled field is refused rather than silently ignored:
 // `visibile: false` must not read as a command with no visibility.
@@ -42,6 +58,16 @@ const commandSchema = z.discriminatedUnion("command", [
     })
     .strict(),
   z.object({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }).strict(),
+  z
+    .object({
+      command: z.literal("show_browser_source"),
+      sceneName: z.string().optional(),
+      sourceName: nonEmptyName,
+      url: webUrl,
+      width: z.number().int().min(1).max(BROWSER_SOURCE_MAX_WIDTH),
+      height: z.number().int().min(1).max(BROWSER_SOURCE_MAX_HEIGHT),
+    })
+    .strict(),
 ]);
 
 export type ParsedObsCommand = { ok: true; command: ObsControlCommand } | { ok: false; error: string };
@@ -145,6 +171,80 @@ async function runCommand(obs: ObsControlClient, command: ObsControlCommand): Pr
       await obs.request("SetInputMute", { inputName: command.inputName, inputMuted: command.muted });
       return { ok: true };
     }
+    case "show_browser_source": {
+      await showBrowserSource(obs, command);
+      return { ok: true };
+    }
+  }
+}
+
+/**
+ * Point a browser source at a page and show it in a scene, creating the
+ * source when OBS has none by that name. Every check is made before anything
+ * changes, so a refusal leaves OBS as it was.
+ *
+ * An existing input of another kind is refused rather than replaced: the name
+ * is the streamer's, and it may be their camera.
+ */
+async function showBrowserSource(
+  obs: ObsControlClient,
+  command: Extract<ObsControlCommand, { command: "show_browser_source" }>
+): Promise<void> {
+  const sceneName = command.sceneName || (await obs.request("GetCurrentProgramScene")).currentProgramSceneName;
+  const existingKind = await inputKind(obs, command.sourceName);
+
+  if (existingKind === null) {
+    try {
+      await obs.request("CreateInput", {
+        sceneName,
+        inputName: command.sourceName,
+        inputKind: BROWSER_SOURCE_KIND,
+        inputSettings: { url: command.url, width: command.width, height: command.height },
+        sceneItemEnabled: true,
+      });
+    } catch (err) {
+      if (isNotFound(err)) {
+        throw new ObsControlError(`scene ${JSON.stringify(sceneName)} does not exist in OBS`);
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (existingKind !== BROWSER_SOURCE_KIND) {
+    throw new ObsControlError(
+      `source ${JSON.stringify(command.sourceName)} in OBS is not a browser source ` +
+        `(it is a ${JSON.stringify(existingKind)}); use another name so it is not replaced`
+    );
+  }
+  const item = await locateSceneItem(obs, sceneName, command.sourceName);
+  // overlay keeps the source's other settings (size, CSS, audio), which the
+  // streamer may have tuned since it was created.
+  await obs.request("SetInputSettings", {
+    inputName: command.sourceName,
+    inputSettings: { url: command.url },
+    overlay: true,
+  });
+  if (item) {
+    await obs.request("SetSceneItemEnabled", {
+      sceneName: item.sceneName,
+      sceneItemId: item.sceneItemId,
+      sceneItemEnabled: true,
+    });
+    return;
+  }
+  await obs.request("CreateSceneItem", { sceneName, sourceName: command.sourceName, sceneItemEnabled: true });
+}
+
+/** The kind of OBS input `inputName`, or null when OBS has no input by that name. */
+async function inputKind(obs: ObsControlClient, inputName: string): Promise<string | null> {
+  try {
+    return (await obs.request("GetInputSettings", { inputName })).inputKind;
+  } catch (err) {
+    if (isNotFound(err)) {
+      return null;
+    }
+    throw err;
   }
 }
 
@@ -159,7 +259,32 @@ async function findSceneItem(
   sceneName: string,
   sourceName: string,
   isCurrentScene: boolean
-): Promise<{ sceneName: string; sceneItemId: number }> {
+): Promise<SceneItemRef> {
+  const item = await locateSceneItem(obs, sceneName, sourceName);
+  if (item) {
+    return item;
+  }
+  const where = isCurrentScene
+    ? `the current scene (${JSON.stringify(sceneName)})`
+    : `scene ${JSON.stringify(sceneName)}`;
+  throw new ObsControlError(`source ${JSON.stringify(sourceName)} is not in ${where} or any group in it`);
+}
+
+interface SceneItemRef {
+  /** The scene, or the group within it, that holds the item. */
+  sceneName: string;
+  sceneItemId: number;
+}
+
+/**
+ * `findSceneItem` without the refusal: null when the source is in neither
+ * the scene nor any group in it. A scene that does not exist is still refused.
+ */
+async function locateSceneItem(
+  obs: ObsControlClient,
+  sceneName: string,
+  sourceName: string
+): Promise<SceneItemRef | null> {
   let sceneItems: Record<string, unknown>[];
   try {
     ({ sceneItems } = await obs.request("GetSceneItemList", { sceneName }));
@@ -182,11 +307,7 @@ async function findSceneItem(
       return { sceneName: groups[i], sceneItemId: Number(nested.sceneItemId) };
     }
   }
-
-  const where = isCurrentScene
-    ? `the current scene (${JSON.stringify(sceneName)})`
-    : `scene ${JSON.stringify(sceneName)}`;
-  throw new ObsControlError(`source ${JSON.stringify(sourceName)} is not in ${where} or any group in it`);
+  return null;
 }
 
 /** A group's items, or none when the group vanished since it was listed. */
@@ -217,6 +338,7 @@ function describeObsError(command: ObsControlCommand, err: unknown): string {
       case "set_input_mute":
         return `input ${JSON.stringify(command.inputName)} does not exist in OBS`;
       case "set_source_visibility":
+      case "show_browser_source":
         break;
     }
   }

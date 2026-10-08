@@ -97,7 +97,15 @@ const KNOWN_ERROR_FIELDS = ["code"];
 
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
   twitch: ["clip", "shoutout", "createMarker", "getUser", "timeout", "updateStream"],
-  obs: ["switchScene", "setSourceVisibility", "setInputMute", "listScenes", "listSources", "listInputs"],
+  obs: [
+    "switchScene",
+    "setSourceVisibility",
+    "setInputMute",
+    "showBrowserSource",
+    "listScenes",
+    "listSources",
+    "listInputs",
+  ],
   chat: ["sendMessage"],
   oauth: ["request"],
 };

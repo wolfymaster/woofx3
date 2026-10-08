@@ -16,8 +16,9 @@ pub const TWITCH_MODERATION: &str = "twitch.moderation";
 pub const TWITCH_CHANNEL: &str = "twitch.channel";
 
 /// Change OBS: switch the program scene, show or hide a source, mute or
-/// unmute an input (`ctx.obs.switchScene`, `setSourceVisibility`,
-/// `setInputMute`). Listing OBS's names needs none.
+/// unmute an input, show a web page in a browser source
+/// (`ctx.obs.switchScene`, `setSourceVisibility`, `setInputMute`,
+/// `showBrowserSource`). Listing OBS's names needs none.
 pub const OBS_CONTROL: &str = "obs.control";
 
 pub const KNOWN_PERMISSIONS: &[&str] = &[TWITCH_MODERATION, TWITCH_CHANNEL, OBS_CONTROL];

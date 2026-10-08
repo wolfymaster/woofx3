@@ -91,6 +91,11 @@ const FUNCTIONS: &[(&str, Operation, Option<&str>)] = &[
         Operation::Command(set_input_mute),
         Some(OBS_CONTROL),
     ),
+    (
+        "showBrowserSource",
+        Operation::Command(show_browser_source),
+        Some(OBS_CONTROL),
+    ),
     ("listScenes", Operation::List("scenes"), None),
     ("listSources", Operation::List("sources"), None),
     ("listInputs", Operation::List("inputs"), None),
@@ -320,6 +325,63 @@ fn set_input_mute(name: &str, args: &Map<String, Value>) -> Result<Value, HostEr
     Ok(json!({ "command": "set_input_mute", "inputName": input_name, "muted": muted }))
 }
 
+/// The size a browser source is created at when the call does not say. OBS's
+/// own default is 800x600, which leaves a full-screen page cropped; a module
+/// showing a page on stream almost always wants the canvas size.
+const BROWSER_SOURCE_DEFAULT_WIDTH: u64 = 1920;
+const BROWSER_SOURCE_DEFAULT_HEIGHT: u64 = 1080;
+
+/// 8K. Each browser source renders off-screen at its full size, so a larger
+/// one costs the streamer's machine without being seen any sharper.
+const BROWSER_SOURCE_MAX_WIDTH: u64 = 7680;
+const BROWSER_SOURCE_MAX_HEIGHT: u64 = 4320;
+
+/// `url` must be an absolute http(s) URL: a browser source loads whatever it
+/// is given, and `file:` would show the streamer's own files on stream.
+/// `width` and `height` only size a source the call creates; an existing one
+/// keeps the size the streamer gave it.
+fn show_browser_source(name: &str, args: &Map<String, Value>) -> Result<Value, HostError> {
+    let source_name = required_string(name, args, "sourceName")?;
+    let url = required_string(name, args, "url")?;
+    let scheme_ok = url::Url::parse(&url)
+        .map(|parsed| matches!(parsed.scheme(), "http" | "https") && parsed.has_host())
+        .unwrap_or(false);
+    if !scheme_ok {
+        return Err(invalid(
+            name,
+            "url",
+            "an absolute http:// or https:// URL",
+            args.get("url"),
+        ));
+    }
+    let scene_name = optional_string(name, args, "sceneName")?;
+    let width = optional_size(
+        name,
+        args,
+        "width",
+        BROWSER_SOURCE_DEFAULT_WIDTH,
+        BROWSER_SOURCE_MAX_WIDTH,
+    )?;
+    let height = optional_size(
+        name,
+        args,
+        "height",
+        BROWSER_SOURCE_DEFAULT_HEIGHT,
+        BROWSER_SOURCE_MAX_HEIGHT,
+    )?;
+    let mut command = json!({
+        "command": "show_browser_source",
+        "sourceName": source_name,
+        "url": url,
+        "width": width,
+        "height": height,
+    });
+    if let Some(scene_name) = scene_name.filter(|scene| !scene.is_empty()) {
+        command["sceneName"] = Value::String(scene_name);
+    }
+    Ok(command)
+}
+
 fn invalid(name: &str, key: &str, expected: &str, got: Option<&Value>) -> HostError {
     HostError::with_code(
         format!(
@@ -375,6 +437,40 @@ fn optional_bool(
         Some(Value::String(text)) if text == "true" => Ok(true),
         Some(Value::String(text)) if text == "false" => Ok(false),
         other => Err(invalid(name, key, "true or false", other)),
+    }
+}
+
+/// A whole number from 1 to `max`. A whole-valued float is accepted, since
+/// JavaScript arithmetic can produce one, and so is a string of digits, since
+/// a value filled in from a workflow step's parameters reaches module code as
+/// text.
+fn optional_size(
+    name: &str,
+    args: &Map<String, Value>,
+    key: &str,
+    fallback: u64,
+    max: u64,
+) -> Result<u64, HostError> {
+    let value = args.get(key);
+    let number = match value {
+        None | Some(Value::Null) => return Ok(fallback),
+        Some(Value::Number(number)) => number.as_u64().or_else(|| {
+            number
+                .as_f64()
+                .filter(|float| float.fract() == 0.0 && *float >= 1.0 && *float <= max as f64)
+                .map(|float| float as u64)
+        }),
+        Some(Value::String(text)) => text.trim().parse::<u64>().ok(),
+        Some(_) => None,
+    };
+    match number {
+        Some(number) if (1..=max).contains(&number) => Ok(number),
+        _ => Err(invalid(
+            name,
+            key,
+            &format!("a whole number from 1 to {max}"),
+            value,
+        )),
     }
 }
 
@@ -457,6 +553,7 @@ mod tests {
                 ("switchScene", Some(OBS_CONTROL)),
                 ("setSourceVisibility", Some(OBS_CONTROL)),
                 ("setInputMute", Some(OBS_CONTROL)),
+                ("showBrowserSource", Some(OBS_CONTROL)),
                 ("listScenes", None),
                 ("listSources", None),
                 ("listInputs", None),
@@ -558,6 +655,134 @@ mod tests {
     }
 
     #[test]
+    fn show_browser_source_defaults_the_size_and_leaves_off_an_absent_scene() {
+        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let ext = ObsExtension::new(nats.clone());
+
+        let result = call(
+            &ext,
+            "showBrowserSource",
+            &control(),
+            json!({ "sourceName": "Winner", "url": "https://player.twitch.tv/?channel=wolfy" }),
+        )
+        .unwrap();
+        call(
+            &ext,
+            "showBrowserSource",
+            &control(),
+            json!({
+                "sourceName": "Winner",
+                "url": "http://localhost:8080/page",
+                "sceneName": "Game",
+                "width": 1280.0,
+                "height": "720"
+            }),
+        )
+        .unwrap();
+        call(
+            &ext,
+            "showBrowserSource",
+            &control(),
+            json!({ "sourceName": "Winner", "url": "https://example.com", "sceneName": "" }),
+        )
+        .unwrap();
+
+        assert_eq!(result, json!({ "ok": true }));
+        let data: Vec<Value> = nats
+            .sent()
+            .into_iter()
+            .map(|(_, e, _)| e["data"].clone())
+            .collect();
+        assert_eq!(
+            data,
+            vec![
+                json!({
+                    "command": "show_browser_source",
+                    "sourceName": "Winner",
+                    "url": "https://player.twitch.tv/?channel=wolfy",
+                    "width": 1920,
+                    "height": 1080
+                }),
+                json!({
+                    "command": "show_browser_source",
+                    "sourceName": "Winner",
+                    "url": "http://localhost:8080/page",
+                    "sceneName": "Game",
+                    "width": 1280,
+                    "height": 720
+                }),
+                json!({
+                    "command": "show_browser_source",
+                    "sourceName": "Winner",
+                    "url": "https://example.com",
+                    "width": 1920,
+                    "height": 1080
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn show_browser_source_refuses_a_url_that_is_not_http_or_https() {
+        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let ext = ObsExtension::new(nats.clone());
+
+        for url in [
+            json!("file:///etc/passwd"),
+            json!("javascript:alert(1)"),
+            json!("data:text/html,hi"),
+            json!("ftp://example.com"),
+            json!("example.com/page"),
+            json!("/relative/page"),
+            json!("https://"),
+            json!(""),
+            json!(42),
+        ] {
+            let err = call(
+                &ext,
+                "showBrowserSource",
+                &control(),
+                json!({ "sourceName": "Winner", "url": url }),
+            )
+            .unwrap_err();
+            assert_eq!(err.code.as_deref(), Some(INVALID_ARGUMENTS), "{url}: {err}");
+            assert!(err.message.contains("url must be"), "{url}: {err}");
+        }
+        assert!(nats.sent().is_empty());
+    }
+
+    #[test]
+    fn show_browser_source_refuses_a_size_that_is_not_a_sensible_whole_number() {
+        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let ext = ObsExtension::new(nats.clone());
+
+        for (key, value) in [
+            ("width", json!(0)),
+            ("width", json!(-5)),
+            ("width", json!(1920.5)),
+            ("width", json!(7681)),
+            ("height", json!(4321)),
+            ("height", json!("tall")),
+            ("height", json!(true)),
+        ] {
+            let mut args = json!({ "sourceName": "Winner", "url": "https://example.com" });
+            args[key] = value.clone();
+            let err = call(&ext, "showBrowserSource", &control(), args).unwrap_err();
+            assert_eq!(
+                err.code.as_deref(),
+                Some(INVALID_ARGUMENTS),
+                "{key}={value}"
+            );
+            assert!(
+                err.message
+                    .contains(&format!("{key} must be a whole number")),
+                "{key}={value}: {err}"
+            );
+        }
+        assert!(nats.sent().is_empty());
+    }
+
+    #[test]
     fn bad_arguments_are_refused_with_the_reason_before_sending() {
         let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
@@ -589,6 +814,16 @@ mod tests {
                 json!({ "inputName": 7 }),
                 "inputName must be a non-empty string, got 7",
             ),
+            (
+                "showBrowserSource",
+                json!({ "url": "https://example.com" }),
+                "sourceName must be a non-empty string, got nothing",
+            ),
+            (
+                "showBrowserSource",
+                json!({ "sourceName": "Winner" }),
+                "url must be a non-empty string, got nothing",
+            ),
         ] {
             let err = call(&ext, name, &control(), args).unwrap_err();
             assert_eq!(
@@ -606,7 +841,12 @@ mod tests {
         let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
-        for name in ["switchScene", "setSourceVisibility", "setInputMute"] {
+        for name in [
+            "switchScene",
+            "setSourceVisibility",
+            "setInputMute",
+            "showBrowserSource",
+        ] {
             let err = call(&ext, name, &granted(&[]), json!({})).unwrap_err();
             assert_eq!(err.code.as_deref(), Some(PERMISSION_DENIED), "{name}");
             assert!(err.message.contains(OBS_CONTROL), "{err}");
