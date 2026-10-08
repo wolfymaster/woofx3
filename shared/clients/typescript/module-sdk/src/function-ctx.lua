@@ -131,11 +131,13 @@
 ---@field dueAt number  epoch ms the entry was armed for
 ---@field firedAt number epoch ms it actually fired
 
----The standard shape a function returns when it wants the invoking chat
----command to reply. `proto`/`v` mirror the woofx3.widget/
----woofx3.overlay-events envelope convention, letting a caller reliably
----recognize a deliberate ctx.response() result versus any other table a
----function might return for its own purposes.
+---The standard shape a function returns to report an outcome and a message.
+---It becomes the calling `function` step's output, read by later steps as
+---`${<stepId>.message}`; the engine never sends `message` anywhere itself, so
+---a chat command that answers in chat follows the step with `chat.reply`.
+---`proto`/`v` mirror the woofx3.widget/woofx3.overlay-events envelope
+---convention, letting a reader of the step output recognize a deliberate
+---ctx.response() result versus any other table a function might return.
 ---@class CtxResponse
 ---@field proto "woofx3.response"
 ---@field v 1

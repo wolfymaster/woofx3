@@ -187,11 +187,13 @@ export interface CtxLog {
 }
 
 /**
- * The standard shape a function returns when it wants the invoking chat
- * command to reply. `proto`/`v` mirror the `woofx3.widget`/
- * `woofx3.overlay-events` envelope convention, letting a caller reliably
- * recognize "this is a deliberate ctx.response() result" versus any other
- * object a function might return for its own purposes.
+ * The standard shape a function returns to report an outcome and a message.
+ * It becomes the calling `function` step's output, read by later steps as
+ * `${<stepId>.message}`; the engine never sends `message` anywhere itself, so
+ * a chat command that answers in chat follows the step with `chat.reply`.
+ * `proto`/`v` mirror the `woofx3.widget`/`woofx3.overlay-events` envelope
+ * convention, letting a reader of the step output recognize a deliberate
+ * ctx.response() result versus any other object a function might return.
  */
 export interface CtxResponse {
   proto: "woofx3.response";
@@ -574,12 +576,10 @@ export interface Ctx extends CtxExtensions {
   module: CtxModule;
   log: CtxLog;
   /**
-   * Builds the standard response shape to `return` when a chat-command-
-   * triggered function wants to reply. `message` is required — if a
-   * function has nothing to say, it simply doesn't call this (returns
-   * `null`/`undefined`, or nothing); `success` never gates whether the
-   * message is sent, only whether the caller treats it as an error for
-   * logging.
+   * Builds the standard response shape to `return` as the step's output.
+   * See `CtxResponse`. `message` is required — a function with nothing to
+   * report returns `null`/`undefined`, or nothing. `success` reports the
+   * outcome; it does not stop the steps that follow.
    */
   response(success: boolean, message: string): CtxResponse;
   /**

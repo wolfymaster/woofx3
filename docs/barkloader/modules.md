@@ -668,19 +668,28 @@ ones.
     "name": "Song Request",
     "pattern": "!sr",
     "type": "prefix",
-    "actions": [{ "id": "queue_song", "action": "song_request" }]
+    "actions": [
+      { "id": "queue_song", "action": "song_request" },
+      {
+        "action": "woofx3:action:chat.reply",
+        "parameters": { "message": "${queue_song.message}" }
+      }
+    ]
   }
 ]
 ```
+
+Each action's output is available to the actions after it as
+`${<id>.<field>}`. `song_request` returns a
+[`ctx.response`](./sandbox.md#ctxresponse), and the `chat.reply` after it posts
+that response's `message`.
 
 #### `ctx.event` for a chat-command-triggered function
 
 A chat command reaches a module function through one of two paths — a workflow
 subscribed to the `chat.command.*` CloudEvent (via the built-in "Chat Command"
-trigger), or a direct `woofwoofwoof` → barkloader invoke for a command configured
-with `type: "function"` in the (DB-backed, not manifest-declared) `commands` admin
-UI. Both converge on the same shape, so a function doesn't need to know which path
-invoked it:
+trigger), or a `function` step in the command's own `actions`. Both converge on the
+same shape, so a function doesn't need to know which path invoked it:
 
 ```js
 ctx.event.data = {
@@ -703,8 +712,10 @@ manifest's `commands[]` entry above). Dotted variable names (`"{user.name}"`) bu
 nested objects. See `modules/platform/spotify/functions/song_request.js` (**woofx3-modules**) for a
 worked example.
 
-To reply to the chat command, `return ctx.response(success, message)` instead of
-calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.md#ctxresponse).
+To reply to the chat command, `return ctx.response(success, message)` and put a
+`chat.reply` action after the function's step that reads `${<id>.message}`, rather
+than calling `ctx.chat.sendMessage(...)` directly — see
+[`ctx.response`](./sandbox.md#ctxresponse).
 
 ### Workflow entry (`workflows[]`)
 
