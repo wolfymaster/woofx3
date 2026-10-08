@@ -82,17 +82,21 @@ function readVersion(row: RawAlertRow): number | null {
 }
 
 /**
- * The snapshot an outbox row carries, or null when it lacks the fields a
- * receiver needs: the id that names the alert and the version that orders
- * its snapshots.
+ * The snapshot an outbox row carries, or null when it has no id to name the
+ * alert.
+ *
+ * A row without a version is still sent, without one: during a rolling
+ * deploy, a db proxy not yet upgraded and outbox rows written before the
+ * upgrade publish none, and dropping them would lose the callback outright.
+ * Receivers order such a snapshot by stage and `updatedAt`.
  */
 function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
   const row = readRow<RawAlertRow>(ce);
   const id = pickFirst(row.ID, row.id);
-  const version = readVersion(row);
-  if (id === "" || version === null) {
+  if (id === "") {
     return null;
   }
+  const version = readVersion(row);
   const now = formatAlertTimestamp(new Date());
   const envelopeId = pickFirst(row.EnvelopeID, row.envelope_id);
   const dispatchedAt = pickFirst(row.DispatchedAt, row.dispatched_at);
@@ -105,10 +109,8 @@ function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
     workflowId: pickFirst(row.WorkflowID, row.workflow_id),
     sourceEventId: pickFirst(row.SourceEventID, row.source_event_id),
     status: pickFirst(row.Status, row.status) || "sent",
-    version,
-    // Optional lifecycle fields — only emit when the publisher
-    // supplied them, so an older db proxy without these columns
-    // continues to round-trip cleanly.
+    ...(version !== null ? { version } : {}),
+    // Fields the row may lack are left out rather than sent empty.
     ...(envelopeId ? { envelopeId } : {}),
     ...(dispatchedAt ? { dispatchedAt } : {}),
     ...(playedAt ? { playedAt } : {}),

@@ -63,10 +63,12 @@ describe("parseAlertCreated", () => {
     expect(parseAlertCreated(ce).event?.alert.version).toBe(2);
   });
 
-  it("returns null when the version is missing or not a positive integer", () => {
+  it("sends a row without a usable version, leaving the version out", () => {
     for (const version of [undefined, 0, 1.5, "3"]) {
-      const ce = { client_id: "client-1", data: { id: ALERT_ID, payload: "{}", version } };
-      expect(parseAlertCreated(ce).event).toBeNull();
+      const ce = { client_id: "client-1", data: { id: ALERT_ID, payload: "{}", status: "sent", version } };
+      const alert = parseAlertCreated(ce).event?.alert;
+      expect(alert?.id).toBe(ALERT_ID);
+      expect(alert).not.toHaveProperty("version");
     }
   });
 
@@ -171,6 +173,13 @@ describe("parseAlertUpdated", () => {
   it("carries the row's version", () => {
     const ce = snakeCe({ id: ALERT_ID, payload: "{}", status: "completed", version: 5 });
     expect(parseAlertUpdated(ce).event?.alert.version).toBe(5);
+  });
+
+  it("sends an update without a version, leaving the version out", () => {
+    const ce = { client_id: "client-1", data: { id: ALERT_ID, payload: "{}", status: "completed" } };
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe("alert.completed");
+    expect(event?.alert).not.toHaveProperty("version");
   });
 
   it("returns null when id is missing", () => {

@@ -937,11 +937,15 @@ export interface AlertSnapshot {
    *   `"skipped"`   — an operator skipped or cleared it
    *   `"replayed"`  — an operator re-fired this row; the re-fire is a row of
    *                   its own
-   * A row only moves forward through these: a write that would move it back,
-   * or repeat its current status, is refused and publishes nothing. One
-   * verdict may replace another, so a late overlay report still lands.
-   * `"timed_out"` has a callback (`alert.timed_out`) but no engine service
-   * writes it yet.
+   * A row only moves forward through these, and the first verdict
+   * (`completed`, `failed`, `timed_out`, `skipped`) wins. The single
+   * exception: a real verdict (`completed`, `failed`, `skipped`) may replace
+   * `timed_out`, because a timeout is the engine giving up on hearing back and
+   * a late overlay report is the truth. `replayed` may follow any status but
+   * itself. Every other write is refused and publishes nothing: one that would
+   * move the row back, repeat its status, replace a verdict, or replay a row
+   * already replayed. `"timed_out"` has a callback (`alert.timed_out`) but no
+   * engine service writes it yet.
    */
   status: string;
   /**
@@ -956,8 +960,8 @@ export interface AlertSnapshot {
   playedAt?: string;
   /** Set when the overlay reported `completed` or `failed`. */
   completedAt?: string;
-  /** Failure reason captured from a `failed` ack. Empty unless
-   *  status === `"failed"`. */
+  /** Failure reason captured with a `failed` or `timed_out` verdict. Absent
+   *  otherwise: a success that replaces a timeout clears it. */
   error?: string;
   /**
    * Counts the writes applied to the row, starting at 1 when it is recorded.
@@ -968,14 +972,20 @@ export interface AlertSnapshot {
    * Lifecycle callbacks are retried independently and can arrive out of
    * order: a receiver keeps the snapshot with the highest version. An equal
    * version is the same write delivered again.
+   *
+   * Present on every snapshot from a current engine. A snapshot published
+   * before the engine counted versions (a db proxy not yet upgraded, or an
+   * outbox row written before the upgrade) has none; a receiver orders it by
+   * the lifecycle stage and `updatedAt` instead.
    */
-  version: number;
+  version?: number;
   /** Every timestamp in a snapshot is RFC 3339 in UTC with nine fractional
    *  digits. */
   createdAt: string;
   /**
-   * When the engine last wrote the row, by the database's clock.
-   * Informational: order snapshots by `version`, which cannot tie.
+   * When the engine last wrote the row, by the database's clock. Order
+   * snapshots by `version`, which cannot tie; this is the fallback for a
+   * snapshot without one.
    */
   updatedAt: string;
 }

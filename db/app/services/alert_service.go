@@ -55,8 +55,7 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 		workflowID = &parsed
 	}
 
-	now := time.Now().UTC()
-	alert := &models.Alert{
+	alert, err := s.repo.Create(repo.NewAlert{
 		// Generated here rather than by the column default: SQLite has no
 		// uuid_generate_v4().
 		ID:            uuid.New(),
@@ -64,19 +63,9 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
 		EnvelopeID:    req.EnvelopeId,
-		Status:        "sent",
-		DispatchedAt:  &now,
-		Version:       1,
-	}
-	if err := s.repo.Create(alert); err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
-	}
-	// Publish the row as stored, not as built: the database keeps timestamps
-	// at its own precision (microseconds on Postgres), and every snapshot of
-	// one write must carry the same values.
-	alert, err := s.repo.GetByID(alert.ID)
+	})
 	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to read back created alert: %w", err))
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
 	}
 
 	s.publishChange(alert, "created")
@@ -183,14 +172,48 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update alert lifecycle: %w", err))
 	}
-	// A refused transition changed nothing, so there is nothing to publish:
-	// a callback for it would tell receivers the row moved when it did not.
-	// It is not an error either; reporters (several widgets playing one
-	// alert) routinely send transitions the row has already passed.
-	message := "Alert lifecycle transition refused; the row is already at or past it"
+	return s.transitionResponse(alert, applied), nil
+}
+
+// UpdateAlertStatus moves a row, by id, through the same forward-only
+// transition as UpdateAlertLifecycle. Replay uses it to mark the row it
+// replayed.
+func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.UpdateAlertStatusRequest) (*client.AlertResponse, error) {
+	id, err := uuid.Parse(req.Id)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+	}
+	switch req.Status {
+	case "dispatched", "playing", "completed", "failed", "timed_out", "skipped", "replayed":
+		// allowed
+	case "":
+		return nil, twirp.RequiredArgumentError("status")
+	default:
+		return nil, twirp.InvalidArgumentError("status",
+			"must be one of: dispatched, playing, completed, failed, timed_out, skipped, replayed")
+	}
+	alert, applied, err := s.repo.UpdateStatus(id, req.Status)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError("alert not found")
+		}
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update alert status: %w", err))
+	}
+	return s.transitionResponse(alert, applied), nil
+}
+
+// transitionResponse publishes an applied transition and answers with the row
+// as it stands.
+//
+// A refused transition changed nothing, so there is nothing to publish: a
+// callback for it would tell receivers the row moved when it did not. It is
+// not an error either; reporters (several widgets playing one alert, a second
+// replay of one row) routinely send transitions the row has already passed.
+func (s *alertService) transitionResponse(alert *models.Alert, applied bool) *client.AlertResponse {
+	message := "Alert transition refused; the row is already at or past it"
 	if applied {
 		s.publishChange(alert, "updated")
-		message = "Alert lifecycle updated successfully"
+		message = "Alert updated successfully"
 	}
 	return &client.AlertResponse{
 		Status: &client.ResponseStatus{
@@ -198,32 +221,7 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 			Message: message,
 		},
 		Alert: s.alertToProto(alert),
-	}, nil
-}
-
-func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.UpdateAlertStatusRequest) (*client.AlertResponse, error) {
-	id, err := uuid.Parse(req.Id)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
-	if req.Status == "" {
-		return nil, twirp.RequiredArgumentError("status")
-	}
-	if err := s.repo.UpdateStatus(id, req.Status); err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update alert status: %w", err))
-	}
-	alert, err := s.repo.GetByID(id)
-	if err != nil {
-		return nil, twirp.NotFoundError("alert not found")
-	}
-	s.publishChange(alert, "updated")
-	return &client.AlertResponse{
-		Status: &client.ResponseStatus{
-			Code:    client.ResponseStatus_OK,
-			Message: "Alert status updated successfully",
-		},
-		Alert: s.alertToProto(alert),
-	}, nil
 }
 
 func (s *alertService) DeleteAlert(ctx context.Context, req *client.DeleteAlertRequest) (*client.ResponseStatus, error) {
