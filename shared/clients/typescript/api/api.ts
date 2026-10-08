@@ -75,6 +75,33 @@ export interface WidgetThemes {
   themes: WidgetThemeOption[];
 }
 
+/** One file in an installed module's archive, path relative to the module root (where manifest.json is). */
+export interface ModuleFileEntry {
+  path: string;
+  /** Uncompressed size in bytes. */
+  size: number;
+}
+
+export interface ModuleFileList {
+  /** False when the engine holds no archive for this module (e.g. bundled or legacy installs); files is then []. */
+  available: boolean;
+  /** Sorted by path, files only (no directory entries). */
+  files: ModuleFileEntry[];
+}
+
+/** The bytes a `getModuleFile` reads as text at most. */
+export const MODULE_FILE_TEXT_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * One file from an installed module, for a read-only viewer. `kind` says
+ * whether `content` is present: only for valid UTF-8 with no NUL bytes and
+ * no larger than `MODULE_FILE_TEXT_LIMIT_BYTES`.
+ */
+export type ModuleFileContent =
+  | { path: string; size: number; kind: "text"; content: string }
+  | { path: string; size: number; kind: "binary" }
+  | { path: string; size: number; kind: "too_large" };
+
 /**
  * An inbound HTTP request the control plane relays to a module's webhook
  * handler. See `Woofx3EngineApi.handleInboundWebhook`.
@@ -1376,6 +1403,24 @@ export interface Woofx3EngineApi {
    * with that id is installed, or its stored manifest fails to parse.
    */
   getModuleManifest(moduleId: string): Promise<Record<string, unknown> | null>;
+
+  /**
+   * Every file in the archive an installed module was installed from:
+   * functions, widget files, themes, the manifest, the README. Paths are
+   * relative to the module root, the directory holding the manifest.
+   * `moduleId` is the manifest-local module id, same as `getModuleManifest`.
+   * `available` is false when the engine kept no archive for the module.
+   * Throws when no module with that id is installed.
+   */
+  listModuleFiles(moduleId: string): Promise<ModuleFileList>;
+
+  /**
+   * One file from `listModuleFiles`, classified for a read-only viewer: text
+   * with its content, or `binary` / `too_large` without it. Throws
+   * `file not found in module: <path>` when the module has no such file, and
+   * when no module with that id is installed.
+   */
+  getModuleFile(moduleId: string, path: string): Promise<ModuleFileContent>;
 
   /**
    * The installed themes made for one widget, for the picker behind a

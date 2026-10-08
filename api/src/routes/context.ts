@@ -64,6 +64,11 @@ export interface ApiOptions {
   version?: string;
 }
 
+async function barkloaderRequestError(response: Response): Promise<Error> {
+  const body = await response.text();
+  return new Error(`Barkloader request failed (${response.status} ${response.statusText}): ${body || "empty body"}`);
+}
+
 /**
  * Shared host state and internal helpers for route modules.
  */
@@ -99,8 +104,24 @@ export class ApiRouteHost extends RpcTarget {
   protected async barkloaderRequest(path: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
     if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Barkloader request failed (${response.status} ${response.statusText}): ${body || "empty body"}`);
+      throw await barkloaderRequestError(response);
+    }
+    return response;
+  }
+
+  /**
+   * `barkloaderRequest` for a lookup where "not there" is an expected
+   * answer: a 404 resolves to null instead of throwing. Every other failure
+   * still throws.
+   */
+  protected async barkloaderRequestOrNull(path: string, init?: RequestInit): Promise<Response | null> {
+    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    if (response.status === 404) {
+      await response.body?.cancel();
+      return null;
+    }
+    if (!response.ok) {
+      throw await barkloaderRequestError(response);
     }
     return response;
   }

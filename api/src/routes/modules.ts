@@ -1,10 +1,14 @@
 import type { SharedLogger } from "@woofx3/common/logging";
-import type {
-  ModuleSetting,
-  ModuleSettingsResponse,
-  ModuleResourceUsage,
-  ResourceInstanceDefinition,
-  WidgetThemes,
+import {
+  MODULE_FILE_TEXT_LIMIT_BYTES,
+  type ModuleFileContent,
+  type ModuleFileEntry,
+  type ModuleFileList,
+  type ModuleSetting,
+  type ModuleSettingsResponse,
+  type ModuleResourceUsage,
+  type ResourceInstanceDefinition,
+  type WidgetThemes,
 } from "@woofx3/api";
 import { type EngineModule, listEngineModules } from "../engine-modules";
 import { routeModule } from "./context";
@@ -47,6 +51,69 @@ async function requestEngineModuleUninstall(
   // Success/failure is delivered asynchronously via webhook
   // (module.deleted or module.delete_failed), both carrying moduleKey.
   return { requested: true };
+}
+
+/**
+ * Barkloader's header carrying a file's size as its archive declares it.
+ * Must match `ENTRY_SIZE_HEADER` in barkloader/app/src/routes/archives.rs.
+ */
+const ARCHIVE_ENTRY_SIZE_HEADER = "x-archive-entry-size";
+
+/**
+ * Where the zip a module was installed from is stored. The row records it as
+ * `archiveKey`; a row written before that column was filled falls back to the
+ * key barkloader stores every archive under, `archives/{moduleKey}.zip`.
+ * Empty when neither is known.
+ */
+export function moduleArchiveKey(module: { archiveKey?: string; moduleKey?: string }): string {
+  if (module.archiveKey) {
+    return module.archiveKey;
+  }
+  return module.moduleKey ? `archives/${module.moduleKey}.zip` : "";
+}
+
+/**
+ * Classifies a file read from a module archive for a read-only viewer.
+ *
+ * `bytes` holds at most `MODULE_FILE_TEXT_LIMIT_BYTES + 1` bytes: barkloader
+ * caps the read, so a longer file arrives cut short and `declaredSize` is
+ * what says how big it is. A file is text when its bytes are valid UTF-8 with
+ * no NUL; a cut-off file is judged on the bytes that did arrive, ignoring a
+ * multi-byte character the cap split in two.
+ */
+export function classifyModuleFile(path: string, bytes: Uint8Array, declaredSize: number): ModuleFileContent {
+  const size = Math.max(declaredSize, bytes.byteLength);
+  const truncated = size > MODULE_FILE_TEXT_LIMIT_BYTES;
+  if (bytes.includes(0)) {
+    return { path, size, kind: "binary" };
+  }
+  let content: string;
+  try {
+    content = new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: truncated });
+  } catch {
+    return { path, size, kind: "binary" };
+  }
+  if (truncated) {
+    return { path, size, kind: "too_large" };
+  }
+  return { path, size, kind: "text", content };
+}
+
+/** The installed module with this manifest-local id, or a thrown error naming the caller. */
+async function findInstalledModule(
+  db: { listModules(): Promise<Array<{ moduleId: string; archiveKey: string; moduleKey: string }>> },
+  caller: string,
+  moduleId: string
+) {
+  if (!moduleId) {
+    throw new Error(`${caller}: moduleId is required`);
+  }
+  const modules = await db.listModules();
+  const found = modules.find((m) => m.moduleId === moduleId);
+  if (!found) {
+    throw new Error(`${caller}: no module found for moduleId "${moduleId}"`);
+  }
+  return found;
 }
 
 import { parseInstanceSettings } from "../module-event-handlers";
@@ -396,6 +463,45 @@ export const modulesRoutes = routeModule({
     } catch {
       return null;
     }
+  },
+
+  /**
+   * Read from the zip the module was installed from, which barkloader keeps
+   * beside the unpacked files, so this lists what was uploaded -- the README
+   * and anything else the installer has no use for included.
+   */
+  async listModuleFiles(moduleId: string): Promise<ModuleFileList> {
+    const found = await findInstalledModule(this.db, "listModuleFiles", moduleId);
+    const archiveKey = moduleArchiveKey(found);
+    if (!archiveKey) {
+      return { available: false, files: [] };
+    }
+    const response = await this.barkloaderRequestOrNull(`/archives/files?key=${encodeURIComponent(archiveKey)}`);
+    if (!response) {
+      this.logger.warn("Module archive not found", { moduleId, archiveKey });
+      return { available: false, files: [] };
+    }
+    const files = (await response.json()) as ModuleFileEntry[];
+    return { available: true, files };
+  },
+
+  async getModuleFile(moduleId: string, path: string): Promise<ModuleFileContent> {
+    if (typeof path !== "string" || !path) {
+      throw new Error("getModuleFile: path is required");
+    }
+    const found = await findInstalledModule(this.db, "getModuleFile", moduleId);
+    const archiveKey = moduleArchiveKey(found);
+    const response = archiveKey
+      ? await this.barkloaderRequestOrNull(
+          `/archives/file?key=${encodeURIComponent(archiveKey)}&path=${encodeURIComponent(path)}`
+        )
+      : null;
+    if (!response) {
+      throw new Error(`file not found in module: ${path}`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const declaredSize = Number(response.headers.get(ARCHIVE_ENTRY_SIZE_HEADER) ?? bytes.byteLength);
+    return classifyModuleFile(path, bytes, Number.isFinite(declaredSize) ? declaredSize : bytes.byteLength);
   },
 
   async listWidgetThemes(widgetCanonicalId: string): Promise<WidgetThemes> {

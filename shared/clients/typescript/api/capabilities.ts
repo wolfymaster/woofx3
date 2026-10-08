@@ -37,6 +37,8 @@ export const ENGINE_CAPABILITIES = {
    * connect with `completeModuleOAuth`.
    */
   modulesOAuth: "modules.oauth",
+  /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
+  modulesFiles: "modules.files",
   /**
    * A Twitch token that carries the app's `clientId` is renewed by asking the
    * dashboard that sent it (`twitch.token.requested`), not with a refresh
