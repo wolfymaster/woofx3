@@ -61,7 +61,6 @@ export const EngineEventType = {
   SCENE_UPDATED: "scene.updated",
   SCENE_DELETED: "scene.deleted",
   ALERT_RECORDED: "alert.recorded",
-  ALERT_DISPATCHED: "alert.dispatched",
   ALERT_PLAYING: "alert.playing",
   ALERT_REPLAYED: "alert.replayed",
   ALERT_COMPLETED: "alert.completed",
@@ -927,16 +926,23 @@ export interface AlertSnapshot {
   workflowId: string;
   /** Originating CloudEvent id from the trigger, when known. */
   sourceEventId: string;
-  /** Lifecycle:
-   *   `"sent"`       — engine published; overlay has not yet ack'd
-   *   `"pending"`    — queued in the engine, not yet handed to an overlay
-   *   `"dispatched"` — handed to the overlay
-   *   `"playing"`    — overlay reported the widget mounted
-   *   `"completed"`  — overlay reported the widget finished playing
-   *   `"failed"`     — overlay reported a render / playback error
-   *   `"timed_out"`  — the engine gave up waiting for the overlay
-   *   `"skipped"`    — an operator skipped or cleared it
-   *   `"replayed"`   — operator re-fired this row from the UI */
+  /**
+   * Lifecycle. The engine writes:
+   *   `"sent"`      — recorded as the engine published it; nothing has
+   *                   reported it since
+   *   `"playing"`   — an overlay started playing it: the in-progress signal
+   *   `"completed"` — an overlay finished playing it
+   *   `"failed"`    — it could not play (no overlay to play it on, or an
+   *                   overlay reported a render / playback error)
+   *   `"skipped"`   — an operator skipped or cleared it
+   *   `"replayed"`  — an operator re-fired this row; the re-fire is a row of
+   *                   its own
+   * A row only moves forward through these: a write that would move it back,
+   * or repeat its current status, is refused and publishes nothing. One
+   * verdict may replace another, so a late overlay report still lands.
+   * `"timed_out"` has a callback (`alert.timed_out`) but no engine service
+   * writes it yet.
+   */
   status: string;
   /**
    * Denormalised AlertPayload envelope id (`payload->>'id'`). Stable
@@ -953,12 +959,23 @@ export interface AlertSnapshot {
   /** Failure reason captured from a `failed` ack. Empty unless
    *  status === `"failed"`. */
   error?: string;
+  /**
+   * Counts the writes applied to the row, starting at 1 when it is recorded.
+   * The database increments it with every write it publishes, so each
+   * snapshot of an alert carries a distinct version, in the order the writes
+   * were applied.
+   *
+   * Lifecycle callbacks are retried independently and can arrive out of
+   * order: a receiver keeps the snapshot with the highest version. An equal
+   * version is the same write delivered again.
+   */
+  version: number;
+  /** Every timestamp in a snapshot is RFC 3339 in UTC with nine fractional
+   *  digits. */
   createdAt: string;
   /**
-   * The engine's last write to the row, RFC 3339 in UTC with nine fractional
-   * digits. Lifecycle callbacks are retried independently and can arrive out
-   * of order; this is how a receiver tells the newer of two snapshots apart,
-   * so it carries the full precision the database stores.
+   * When the engine last wrote the row, by the database's clock.
+   * Informational: order snapshots by `version`, which cannot tie.
    */
   updatedAt: string;
 }
@@ -1138,19 +1155,10 @@ export interface AlertRecordedEvent {
 }
 
 /**
- * Fired when an alert's row moves to `dispatched`: the engine handed it to the
- * overlay. Like the other lifecycle events it carries the whole row, so a
- * receiver that misses one still converges on the next.
- */
-export interface AlertDispatchedEvent {
-  type: typeof EngineEventType.ALERT_DISPATCHED;
-  alert: AlertSnapshot;
-}
-
-/**
  * Fired when an alert's row moves to `playing`: an overlay reported it started
  * playing. Lets a receiver tell an alert that is on screen from one the engine
- * lost track of, without waiting for the verdict.
+ * lost track of, without waiting for the verdict. Sent once per alert: when
+ * several overlays play it, only the first start moves the row.
  */
 export interface AlertPlayingEvent {
   type: typeof EngineEventType.ALERT_PLAYING;
@@ -1420,7 +1428,6 @@ export type CallbackEvent =
   | SceneUpdatedEvent
   | SceneDeletedEvent
   | AlertRecordedEvent
-  | AlertDispatchedEvent
   | AlertPlayingEvent
   | AlertReplayedEvent
   | AlertCompletedEvent
@@ -1483,7 +1490,6 @@ export type CallbackEventByType = {
   [EngineEventType.SCENE_UPDATED]: SceneUpdatedEvent;
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;
   [EngineEventType.ALERT_RECORDED]: AlertRecordedEvent;
-  [EngineEventType.ALERT_DISPATCHED]: AlertDispatchedEvent;
   [EngineEventType.ALERT_PLAYING]: AlertPlayingEvent;
   [EngineEventType.ALERT_REPLAYED]: AlertReplayedEvent;
   [EngineEventType.ALERT_COMPLETED]: AlertCompletedEvent;

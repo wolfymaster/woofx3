@@ -57,15 +57,26 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 
 	now := time.Now().UTC()
 	alert := &models.Alert{
+		// Generated here rather than by the column default: SQLite has no
+		// uuid_generate_v4().
+		ID:            uuid.New(),
 		Payload:       req.Payload,
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
 		EnvelopeID:    req.EnvelopeId,
 		Status:        "sent",
 		DispatchedAt:  &now,
+		Version:       1,
 	}
 	if err := s.repo.Create(alert); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
+	}
+	// Publish the row as stored, not as built: the database keeps timestamps
+	// at its own precision (microseconds on Postgres), and every snapshot of
+	// one write must carry the same values.
+	alert, err := s.repo.GetByID(alert.ID)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to read back created alert: %w", err))
 	}
 
 	s.publishChange(alert, "created")
@@ -165,18 +176,26 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 		return nil, twirp.InvalidArgumentError("status",
 			"must be one of: dispatched, playing, completed, failed, timed_out, skipped")
 	}
-	alert, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error)
+	alert, applied, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("alert not found for envelope")
 		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update alert lifecycle: %w", err))
 	}
-	s.publishChange(alert, "updated")
+	// A refused transition changed nothing, so there is nothing to publish:
+	// a callback for it would tell receivers the row moved when it did not.
+	// It is not an error either; reporters (several widgets playing one
+	// alert) routinely send transitions the row has already passed.
+	message := "Alert lifecycle transition refused; the row is already at or past it"
+	if applied {
+		s.publishChange(alert, "updated")
+		message = "Alert lifecycle updated successfully"
+	}
 	return &client.AlertResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
-			Message: "Alert lifecycle updated successfully",
+			Message: message,
 		},
 		Alert: s.alertToProto(alert),
 	}, nil
@@ -267,12 +286,15 @@ func (s *alertService) publishChange(alert *models.Alert, op string) {
 	})
 }
 
-// alertUpdatedAtLayout formats `updated_at` in UTC with nine fractional
-// digits. Receivers order an alert's lifecycle callbacks, which are retried
-// independently and can arrive out of order, by this value, so it keeps the
-// full precision the column stores: two lifecycle writes can fall within one
-// millisecond. Fixed width and one zone keep equal writes byte-identical.
-const alertUpdatedAtLayout = "2006-01-02T15:04:05.000000000Z07:00"
+// alertTimestampLayout formats every timestamp in an alert snapshot: RFC
+// 3339 in UTC with nine fractional digits. Fixed width and one zone make
+// equal values byte-identical, and the full precision the database stores
+// survives. Receivers order snapshots by `version`, not by these.
+const alertTimestampLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+func formatAlertTimestamp(t time.Time) string {
+	return t.UTC().Format(alertTimestampLayout)
+}
 
 func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 	wf := ""
@@ -287,17 +309,18 @@ func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 		"envelope_id":     alert.EnvelopeID,
 		"status":          alert.Status,
 		"error":           alert.Error,
-		"created_at":      alert.CreatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
-		"updated_at":      alert.UpdatedAt.UTC().Format(alertUpdatedAtLayout),
+		"version":         alert.Version,
+		"created_at":      formatAlertTimestamp(alert.CreatedAt),
+		"updated_at":      formatAlertTimestamp(alert.UpdatedAt),
 	}
 	if alert.DispatchedAt != nil {
-		out["dispatched_at"] = alert.DispatchedAt.Format("2006-01-02T15:04:05.000Z07:00")
+		out["dispatched_at"] = formatAlertTimestamp(*alert.DispatchedAt)
 	}
 	if alert.PlayedAt != nil {
-		out["played_at"] = alert.PlayedAt.Format("2006-01-02T15:04:05.000Z07:00")
+		out["played_at"] = formatAlertTimestamp(*alert.PlayedAt)
 	}
 	if alert.CompletedAt != nil {
-		out["completed_at"] = alert.CompletedAt.Format("2006-01-02T15:04:05.000Z07:00")
+		out["completed_at"] = formatAlertTimestamp(*alert.CompletedAt)
 	}
 	return out
 }

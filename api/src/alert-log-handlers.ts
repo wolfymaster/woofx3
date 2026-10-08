@@ -1,6 +1,5 @@
 import type {
   AlertCompletedEvent,
-  AlertDispatchedEvent,
   AlertFailedEvent,
   AlertPlayingEvent,
   AlertRecordedEvent,
@@ -18,7 +17,6 @@ import type { WebhookClient } from "./webhook-client";
 
 /** Union of every webhook event projected from `db.alert.updated.*`. */
 export type AlertUpdatedEvent =
-  | AlertDispatchedEvent
   | AlertPlayingEvent
   | AlertReplayedEvent
   | AlertCompletedEvent
@@ -29,7 +27,7 @@ export type AlertUpdatedEvent =
 // The db proxy publishes alert lifecycle events on
 // `db.alert.{created,updated,deleted}`. Only `created` and `updated` are
 // projected: `created` becomes `alert.recorded`, and each `updated` becomes
-// the callback named for the row's new status (see parseAlertUpdated).
+// the callback named for the row's new status (see UPDATED_EVENT_TYPES).
 //
 // The CloudEvent's `data` is the snake-cased map produced by
 // `buildAlertChangeData` in `db/app/services/alert_service.go`. As
@@ -58,19 +56,44 @@ interface RawAlertRow {
   completed_at?: unknown;
   Error?: unknown;
   error?: unknown;
+  Version?: unknown;
+  version?: unknown;
   CreatedAt?: unknown;
   created_at?: unknown;
   UpdatedAt?: unknown;
   updated_at?: unknown;
 }
 
+/**
+ * A timestamp in the layout the db proxy writes every alert timestamp in:
+ * RFC 3339 in UTC with nine fractional digits.
+ */
+function formatAlertTimestamp(date: Date): string {
+  return date.toISOString().replace(/\.(\d{3})Z$/, ".$1000000Z");
+}
+
+/** The row's version: a positive integer, or null when it is not one. */
+function readVersion(row: RawAlertRow): number | null {
+  const value = row.Version ?? row.version;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * The snapshot an outbox row carries, or null when it lacks the fields a
+ * receiver needs: the id that names the alert and the version that orders
+ * its snapshots.
+ */
 function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
   const row = readRow<RawAlertRow>(ce);
   const id = pickFirst(row.ID, row.id);
-  if (id === "") {
+  const version = readVersion(row);
+  if (id === "" || version === null) {
     return null;
   }
-  const now = new Date().toISOString();
+  const now = formatAlertTimestamp(new Date());
   const envelopeId = pickFirst(row.EnvelopeID, row.envelope_id);
   const dispatchedAt = pickFirst(row.DispatchedAt, row.dispatched_at);
   const playedAt = pickFirst(row.PlayedAt, row.played_at);
@@ -82,6 +105,7 @@ function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
     workflowId: pickFirst(row.WorkflowID, row.workflow_id),
     sourceEventId: pickFirst(row.SourceEventID, row.source_event_id),
     status: pickFirst(row.Status, row.status) || "sent",
+    version,
     // Optional lifecycle fields — only emit when the publisher
     // supplied them, so an older db proxy without these columns
     // continues to round-trip cleanly.
@@ -93,7 +117,7 @@ function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
     // Prefer the publisher-supplied timestamps — they reflect when
     // the engine actually persisted the row, not when this consumer
     // saw the message. Fall back to "now" only when the publisher
-    // shape doesn't include them (older publishers, ad-hoc replays).
+    // shape doesn't include them (ad-hoc replays).
     createdAt: pickFirst(row.CreatedAt, row.created_at) || now,
     updatedAt: pickFirst(row.UpdatedAt, row.updated_at) || now,
   };
@@ -119,50 +143,39 @@ export function parseAlertCreated(ce: Record<string, unknown>): ParsedAlertChang
 }
 
 /**
- * Project a `db.alert.updated.*` outbox event to a webhook event named for
- * the row's new status:
- *   - "dispatched" → ALERT_DISPATCHED  (handed to the overlay)
- *   - "playing"    → ALERT_PLAYING     (overlay started playing it)
- *   - "replayed"   → ALERT_REPLAYED
- *   - "completed"  → ALERT_COMPLETED   (overlay finished playing)
- *   - "failed"     → ALERT_FAILED      (overlay reported an error)
- *   - "timed_out"  → ALERT_TIMED_OUT
- *   - "skipped"    → ALERT_SKIPPED
- * The in-flight transitions are projected so a receiver hears the alert move
- * between its creation and its verdict: without them, an alert queued or
- * playing for a while is indistinguishable from one the engine lost. Any
- * other status parses to null.
+ * The callback for each status an alert row can move to. A status with no
+ * entry (`sent`, the status a row is created with) has no update callback.
+ *
+ * `playing` is the in-progress signal: it tells a receiver the alert is on
+ * screen, so one that is playing for a while is not mistaken for one the
+ * engine lost. The db proxy publishes only lifecycle writes it applied, and
+ * a row only moves forward, so a receiver hears `playing` once per alert.
+ */
+const UPDATED_EVENT_TYPES = {
+  playing: EngineEventType.ALERT_PLAYING,
+  replayed: EngineEventType.ALERT_REPLAYED,
+  completed: EngineEventType.ALERT_COMPLETED,
+  failed: EngineEventType.ALERT_FAILED,
+  timed_out: EngineEventType.ALERT_TIMED_OUT,
+  skipped: EngineEventType.ALERT_SKIPPED,
+} as const satisfies Record<string, AlertUpdatedEvent["type"]>;
+
+function isUpdatedStatus(status: string): status is keyof typeof UPDATED_EVENT_TYPES {
+  return Object.hasOwn(UPDATED_EVENT_TYPES, status);
+}
+
+/**
+ * Project a `db.alert.updated.*` outbox event to the webhook event named for
+ * the row's new status (see UPDATED_EVENT_TYPES). Any other status parses to
+ * null.
  */
 export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChange<AlertUpdatedEvent> {
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
-  if (!snapshot) {
+  if (!snapshot || !isUpdatedStatus(snapshot.status)) {
     return { clientId, event: null };
   }
-  let event: AlertUpdatedEvent | null = null;
-  switch (snapshot.status) {
-    case "dispatched":
-      event = { type: EngineEventType.ALERT_DISPATCHED, alert: snapshot };
-      break;
-    case "playing":
-      event = { type: EngineEventType.ALERT_PLAYING, alert: snapshot };
-      break;
-    case "replayed":
-      event = { type: EngineEventType.ALERT_REPLAYED, alert: snapshot };
-      break;
-    case "completed":
-      event = { type: EngineEventType.ALERT_COMPLETED, alert: snapshot };
-      break;
-    case "failed":
-      event = { type: EngineEventType.ALERT_FAILED, alert: snapshot };
-      break;
-    case "timed_out":
-      event = { type: EngineEventType.ALERT_TIMED_OUT, alert: snapshot };
-      break;
-    case "skipped":
-      event = { type: EngineEventType.ALERT_SKIPPED, alert: snapshot };
-      break;
-  }
+  const event = { type: UPDATED_EVENT_TYPES[snapshot.status], alert: snapshot } as AlertUpdatedEvent;
   return { clientId, event };
 }
 
@@ -190,7 +203,7 @@ export async function initAlertLogHandlers(
       subject: "db.alert.updated.*",
       name: "db.alert.updated",
       // A status with no callback parses to null on purpose -- see
-      // parseAlertUpdated's projection map.
+      // UPDATED_EVENT_TYPES.
       quietDrop: true,
       parse: (ce) => {
         const { clientId, event } = parseAlertUpdated(ce);

@@ -156,7 +156,12 @@ export async function handleEventStartedRoute(
   return Response.json({ status: "ok" });
 }
 
-/** The first start report for an alert moves its row to `playing`, best-effort. */
+/**
+ * Report each widget instance's first start of an alert, best-effort. The
+ * alert's row moves to `playing` on the first report; the db proxy refuses
+ * the rest, since the row has already moved there or past it, and publishes
+ * nothing for them.
+ */
 export async function reportAlertsPlaying(
   db: AlertLifecycleWriter,
   logger: Logger,
@@ -200,8 +205,8 @@ export async function handleEventCompletedRoute(
  * This is the alert's only terminal report when it plays normally: without it
  * the row stays at `playing` and the dashboard counts it in flight forever.
  * An alert fanned out to several widgets completes on the first one to finish;
- * the others re-apply the same status, which the lifecycle write treats as a
- * no-op on its timestamps.
+ * the db proxy refuses the others' reports of the same verdict and publishes
+ * nothing for them.
  */
 export async function reportAlertsCompleted(
   db: AlertLifecycleWriter,
