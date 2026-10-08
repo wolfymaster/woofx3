@@ -249,8 +249,16 @@ export class DeliveryStore {
   }
 
   /** Client acks completion for one or more instances of the same event. */
-  async ackCompleted(sceneId: string, eventId: string, instanceIds: string[]): Promise<void> {
+  /**
+   * A page finished an event on these instances. Returns the deliveries this
+   * closed, so the caller can record what finished. A delivery already closed
+   * -- cancelled by a skip, or acked by another page -- is not returned: its
+   * end has been recorded by whoever closed it.
+   */
+  async ackCompleted(sceneId: string, eventId: string, instanceIds: string[]): Promise<OpenDeliveryRef[]> {
+    const closed: OpenDeliveryRef[] = [];
     for (const instanceId of instanceIds) {
+      const delivery = this.open.get(sceneId)?.get(eventId)?.get(instanceId);
       try {
         await this.db.recordSceneEventCompletion({ sceneEventId: eventId, instanceId });
       } catch (err) {
@@ -263,7 +271,11 @@ export class DeliveryStore {
         continue;
       }
       this.deleteOpen(sceneId, eventId, instanceId);
+      if (delivery) {
+        closed.push({ eventId, type: delivery.type, key: delivery.key, startedAt: delivery.startedAt });
+      }
     }
+    return closed;
   }
 
   /**
