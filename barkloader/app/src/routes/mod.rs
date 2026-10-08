@@ -1,3 +1,4 @@
+pub mod archives;
 pub mod assets;
 pub mod echo;
 pub mod functions;
