@@ -855,7 +855,7 @@ The install fails, naming the offending field, when:
 
 When the scene manager assembles a themeable widget's frame it passes the placement's `theme` setting to barkloader (`GET /widgets/{moduleId}/{widgetId}/frame?theme=...`), which resolves it against the installed modules. The frame then gets, before any widget code runs: a `:root` block setting every `--theme-*` property (theme values over defaults), the theme stylesheet, and `widgetHost.theme` (see [the SDK](./sdk.md#themes)). Theme files are stored under `modules/{moduleId}/{hash}/themes/{themeId}/…` and served by barkloader itself.
 
-Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles, fonts, images and media to the engine's own origins, so a stylesheet's `url()` or `@import` cannot reach another host. Scripts and connections are not restricted by it.
+Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles and fonts to the engine's own origins, so a stylesheet's `@import` or font `url()` cannot reach another host. Images and media may load from any http(s) host, since a placement's media settings can point at a file hosted elsewhere. Scripts and connections are not restricted by it.
 
 A widget always renders. When the selected theme is uninstalled, is for another contract version, or no longer fits the contract, the frame uses the contract defaults and `widgetHost.theme.fallback` says why (`missing` or `incompatible`); a theme asset file missing from storage falls back to that slot's default.
 
