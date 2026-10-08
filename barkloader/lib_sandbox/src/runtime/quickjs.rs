@@ -802,13 +802,12 @@ fn build_log_namespace<'js>(
 }
 
 /// `ctx.response(success, message)` — the standard shape a module function
-/// returns when it wants the invoking chat command to reply. A pure data
-/// constructor (no host state, unlike the other `build_*` functions): it
-/// only builds and returns `{ proto: "woofx3.response", v: 1, success,
-/// message }`; the sandboxed function still has to actually `return` the
-/// result for anything to happen. If a function never calls this and just
-/// returns `null`/`undefined` (or nothing), no message is sent — same
-/// outcome as never calling it at all. Tagged with `proto`/`v` (mirroring
+/// returns to report an outcome and a message, which becomes the calling
+/// step's output. A pure data constructor (no host state, unlike the other
+/// `build_*` functions): it only builds and returns `{ proto:
+/// "woofx3.response", v: 1, success, message }`; the sandboxed function
+/// still has to actually `return` the result for it to reach the step.
+/// Tagged with `proto`/`v` (mirroring
 /// the `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a
 /// caller can reliably distinguish "this is a deliberate response" from any
 /// other object a function might return for its own purposes.

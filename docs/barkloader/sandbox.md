@@ -189,13 +189,13 @@ call.
 
 ## `ctx.response`
 
-The standard shape a function returns when it wants the invoking chat command to
-reply. Both adapters bind it as a bare callable directly on `ctx` (`build_response_fn`
-in `barkloader/lib_sandbox/src/runtime/quickjs.rs`; the equivalent inline
-`response_fn` in `barkloader/lib_sandbox/src/runtime/lua.rs`) — unlike `ctx.log`,
-it's not a namespace, since it's one verb, not a family of related operations. It's a
-pure data constructor with no host state: calling it just builds and returns an
-object, it does not itself send anything anywhere.
+The standard shape a function returns to report an outcome and a message. Both
+adapters bind it as a bare callable directly on `ctx` (`build_response_fn` in
+`barkloader/lib_sandbox/src/runtime/quickjs.rs`; the equivalent inline `response_fn`
+in `barkloader/lib_sandbox/src/runtime/lua.rs`) — unlike `ctx.log`, it's not a
+namespace, since it's one verb, not a family of related operations. It's a pure data
+constructor with no host state: calling it just builds and returns an object, it does
+not itself send anything anywhere.
 
 ```js
 ctx.response(success, message)
@@ -207,29 +207,41 @@ function my_function(ctx) {
   if (somethingWentWrong) {
     return ctx.response(false, "Could not do the thing.");
   }
-  return ctx.response(true, "Done!");
+  var reply = ctx.response(true, "Done!");
+  reply.detail = "anything else later actions should see";
+  return reply;
 }
 ```
 
-- `message` is **required** — the entire point of calling this is to say something
-  back. A function with nothing to say simply doesn't call it: returning
-  `null`/`undefined` (or nothing at all) is exactly equivalent to never having called
-  `ctx.response()`.
-- `success` never gates whether the message is delivered — a `false` response's
-  `message` is sent exactly the same way a `true` one's is. `success` exists purely
-  so the caller can distinguish outcome (e.g. for logging) without parsing the
-  message text.
+The returned object becomes the output of the `function` step that called the
+function, and nothing more: the engine does not send `message` anywhere. Later steps
+in the same workflow or command action list read it with `${<stepId>.<field>}`. To
+answer a chat command, follow the `function` step with a `chat.reply` step:
+
+```json
+[
+  { "id": "queue_song", "action": "function", "function": "spotify_sr:function:song_request" },
+  { "action": "chat.reply", "parameters": { "message": "${queue_song.message}" } }
+]
+```
+
+A step with no `id` in a command's action list is named by its position
+(`action-1`, `action-2`, ...), so give the `function` step an `id` whenever a later
+step refers to it; inserting a step otherwise changes what the reference points at.
+
+- `message` is **required**. A function with nothing to report returns
+  `null`/`undefined` (or nothing at all) instead.
+- `success` reports the outcome; it does not stop the steps after it. A
+  `false` response's `message` reaches a following `chat.reply` the same way a
+  `true` one's does, which is usually what a command wants ("couldn't find that
+  song"). To act only on success, guard the later step with a [condition](../workflow/tasks.md#condition)
+  on `${<stepId>.success}`.
+- Extra fields set on the returned object are part of the step output too
+  (`${queue_song.song}` above).
 - Tagged with `proto: "woofx3.response"` / `v: 1`, mirroring the same envelope
   convention `woofx3.widget` and `woofx3.overlay-events` already use elsewhere in
-  this codebase.
-  This is what lets a caller reliably recognize "this is a deliberate response"
-  versus any other object a function might return for its own purposes — see
-  [`extractResponseMessage` in `woofwoofwoof/src/application.ts`](../../woofwoofwoof/src/application.ts),
-  the only place that currently interprets this shape (a function invoked via a
-  workflow's `function` action, rather than a direct chat-command invoke, gets no
-  automatic "send as chat message" behavior — the returned object just becomes the
-  workflow step's own result, unused unless a later step references it via
-  `${taskId.message}`).
+  this codebase, so a reader of the step output can tell a deliberate response from
+  any other object a function might return.
 
 ## `ctx.result`
 

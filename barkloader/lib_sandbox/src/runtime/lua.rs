@@ -451,9 +451,9 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     }
     ctx.set("log", log)?;
 
-    // response — the standard shape a module function returns when it wants
-    // the invoking chat command to reply. Pure data constructor, no host
-    // state. Tagged with proto/v (mirroring the woofx3.widget/
+    // response — the standard shape a module function returns to report an
+    // outcome and a message, which becomes the calling step's output. Pure
+    // data constructor, no host state. Tagged with proto/v (mirroring the woofx3.widget/
     // woofx3.overlay-events envelope convention) so a caller can reliably
     // distinguish a deliberate response from any other table a function
     // might return for its own purposes.
