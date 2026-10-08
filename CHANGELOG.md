@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/wolfymaster/woofx3/compare/v0.17.0...v0.18.0) (2026-10-08)
+
+### Features
+
+* **barkloader:** keep a module OAuth token to the endpoints it was issued for ([2368066](https://github.com/wolfymaster/woofx3/commit/2368066a047416f2743a3368a8bd1a234416cc5f))
+* **barkloader:** refuse a dashboard-supplied OAuth client at another token endpoint ([07a8f12](https://github.com/wolfymaster/woofx3/commit/07a8f121c7adee6c0975a50a7b539a0852857823))
+
+### Bug Fixes
+
+* **scenes:** store widget opacity as a fraction 0–1, migrating stored percents ([9caf518](https://github.com/wolfymaster/woofx3/commit/9caf5183666802fd3a6518b08fa6d3db4c9b88fa))
+
 ## [0.17.0](https://github.com/wolfymaster/woofx3/compare/v0.16.0...v0.17.0) (2026-10-08)
 
 ### Features
