@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/wolfymaster/woofx3/compare/v0.18.0...v0.19.0) (2026-10-08)
+
+### Features
+
+* **api:** list and read the files inside an installed module ([174cbc5](https://github.com/wolfymaster/woofx3/commit/174cbc55ffbecfa17bbe76129c13784e4f102368))
+* **barkloader:** list and read the files inside a module's install archive ([2c3d0ab](https://github.com/wolfymaster/woofx3/commit/2c3d0ab2c544ad1341a21a75b68758f9d83174f1))
+
 ## [0.18.0](https://github.com/wolfymaster/woofx3/compare/v0.17.0...v0.18.0) (2026-10-08)
 
 ### Features
