@@ -67,6 +67,30 @@ pub struct StoredOAuthToken {
     pub scope: Vec<String>,
     /// The client id the token was issued to; a refresh must present the same.
     pub client_id: String,
+    /// The token endpoint and API hosts the integration declared when the
+    /// token was issued. Module code is end-user code and its manifest can
+    /// change with an update, so the token is used only while the declaration
+    /// still fits them (`fits`): otherwise an update could send the refresh
+    /// token, and the client id it was issued to, to a new `tokenUrl`, or the
+    /// access token to a new host. Empty on a token stored before they were
+    /// recorded, which therefore fits nothing.
+    #[serde(default)]
+    pub token_url: String,
+    #[serde(default)]
+    pub hosts: Vec<String>,
+}
+
+impl StoredOAuthToken {
+    /// Whether `integration`, as installed now, may still use this token: the
+    /// same token endpoint, and no host the token was not issued for.
+    pub fn fits(&self, integration: &OAuthIntegration) -> bool {
+        !self.token_url.is_empty()
+            && integration.token_url == self.token_url
+            && integration
+                .hosts
+                .iter()
+                .all(|host| self.hosts.contains(host))
+    }
 }
 
 #[cfg(test)]
@@ -79,6 +103,62 @@ mod tests {
         assert!(is_reserved_setting_key("oauth.spotify"));
         assert!(!is_reserved_setting_key("clientId"));
         assert!(!is_reserved_setting_key("oauthClientId"));
+    }
+
+    fn integration() -> OAuthIntegration {
+        OAuthIntegration {
+            id: "spotify".to_string(),
+            authorize_url: "https://accounts.spotify.com/authorize".to_string(),
+            token_url: "https://accounts.spotify.com/api/token".to_string(),
+            scopes: vec![],
+            client_id_setting: "clientId".to_string(),
+            client_secret_setting: None,
+            hosts: vec!["api.spotify.com".to_string()],
+        }
+    }
+
+    fn token() -> StoredOAuthToken {
+        StoredOAuthToken {
+            access_token: "a".to_string(),
+            refresh_token: Some("r".to_string()),
+            expires_at_ms: None,
+            scope: vec![],
+            client_id: "app".to_string(),
+            token_url: "https://accounts.spotify.com/api/token".to_string(),
+            hosts: vec![
+                "api.spotify.com".to_string(),
+                "accounts.spotify.com".to_string(),
+            ],
+        }
+    }
+
+    #[test]
+    fn a_token_fits_its_declaration_and_any_narrower_one() {
+        assert!(token().fits(&integration()));
+        assert!(token().fits(&OAuthIntegration {
+            hosts: vec![],
+            ..integration()
+        }));
+    }
+
+    #[test]
+    fn a_token_fits_no_declaration_that_moved_its_endpoint_or_added_a_host() {
+        assert!(!token().fits(&OAuthIntegration {
+            token_url: "https://attacker.example/token".to_string(),
+            ..integration()
+        }));
+        assert!(!token().fits(&OAuthIntegration {
+            hosts: vec![
+                "api.spotify.com".to_string(),
+                "attacker.example".to_string()
+            ],
+            ..integration()
+        }));
+        let unbound: StoredOAuthToken = serde_json::from_value(serde_json::json!({
+            "accessToken": "a", "scope": [], "clientId": "app"
+        }))
+        .unwrap();
+        assert!(!unbound.fits(&integration()));
     }
 
     #[test]

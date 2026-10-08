@@ -1293,7 +1293,7 @@ starting with `oauth.`. Module code then calls the provider with
 the engine attaches the access token, refreshes it when it is about to expire
 or the provider answers 401, and sends it only to `hosts`, through the same
 checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)).
-It throws while the integration is not connected.
+It throws while the integration is not connected. A token is used only with the `tokenUrl` and `hosts` it was issued under: once an update moves the `tokenUrl` or adds a host, `ctx.oauth.request` throws without sending anything until the streamer connects again, so an update cannot redirect the refresh token or the access token. Dropping a host needs no reconnect.
 
 A workflow step or command action that names another module's action runs that
 module's function, with that module's permissions. So an uploaded module whose
