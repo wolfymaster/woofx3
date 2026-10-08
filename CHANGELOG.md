@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/wolfymaster/woofx3/compare/v0.19.0...v0.19.1) (2026-10-08)
+
+### Bug Fixes
+
+* **sceneManager:** let themeable widget frames load images and media from any http(s) host ([d32510f](https://github.com/wolfymaster/woofx3/commit/d32510f57eebac743ef9e17688a38fc2d94f7ce8))
+* **sceneManager:** record an alert as completed when its overlay finishes it ([0441670](https://github.com/wolfymaster/woofx3/commit/0441670106ba08c843c3644efffc70dbc43c0b82))
+
 ## [0.19.0](https://github.com/wolfymaster/woofx3/compare/v0.18.0...v0.19.0) (2026-10-08)
 
 ### Features
