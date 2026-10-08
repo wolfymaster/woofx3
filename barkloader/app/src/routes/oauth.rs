@@ -15,6 +15,8 @@ struct CompleteBody {
     redirect_uri: String,
     #[serde(default)]
     client_id: Option<String>,
+    #[serde(default)]
+    token_url: Option<String>,
 }
 
 /// Finish connecting a module's OAuth integration: exchange the code the
@@ -42,6 +44,7 @@ async fn complete_handler(
         code_verifier: body.code_verifier,
         redirect_uri: body.redirect_uri,
         client_id: body.client_id,
+        token_url: body.token_url,
     };
     // The exchange blocks on HTTP and db-proxy calls, like a sandbox call.
     let outcome = tokio::task::spawn_blocking(move || {

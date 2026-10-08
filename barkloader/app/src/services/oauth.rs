@@ -32,6 +32,12 @@ pub struct Authorization {
     /// The OAuth client to exchange as, when the dashboard supplies the app
     /// (one woofx3 provides); otherwise the module's `clientIdSetting`.
     pub client_id: Option<String>,
+    /// The token endpoint the dashboard checked when it chose `client_id`.
+    /// Required with `client_id`: the dashboard may hand out an app only for
+    /// endpoints that app is registered for, and the module can be updated
+    /// between that check and this exchange, so the exchange is refused
+    /// unless the installed integration's `tokenUrl` is still the same.
+    pub token_url: Option<String>,
 }
 
 pub struct OAuthService {
@@ -80,7 +86,19 @@ impl OAuthService {
         let integration = self.integration(module_id, integration_id)?;
         let settings = self.settings.list_by_module(module_id)?;
         let client_id = match authorization.client_id.filter(|id| !id.is_empty()) {
-            Some(id) => id,
+            Some(id) => {
+                let Some(checked) = authorization.token_url.as_deref() else {
+                    return Err(format!(
+                        "{integration_id}: a supplied client id needs the tokenUrl it was chosen for"
+                    ));
+                };
+                if checked != integration.token_url {
+                    return Err(format!(
+                        "{integration_id}: the module's tokenUrl changed since this connect started; connect again"
+                    ));
+                }
+                id
+            }
             None => setting_string(&settings, &integration.client_id_setting).ok_or_else(|| {
                 format!(
                     "{integration_id}: no client id; set the module's {:?} setting",
@@ -542,6 +560,7 @@ mod tests {
                     redirect_uri: "https://dash.convex.site/api/integrations/oauth/callback"
                         .to_string(),
                     client_id: None,
+                    token_url: None,
                 },
             )
             .unwrap();
@@ -588,6 +607,7 @@ mod tests {
                     code_verifier: "v".to_string(),
                     redirect_uri: "https://x".to_string(),
                     client_id: Some("woofx3-app".to_string()),
+                    token_url: Some("https://accounts.spotify.com/api/token".to_string()),
                 },
             )
             .unwrap();
@@ -598,6 +618,30 @@ mod tests {
                 .unwrap()
                 .contains("client_secret")
         );
+    }
+
+    #[test]
+    fn a_dashboard_supplied_client_is_refused_at_any_other_token_endpoint() {
+        for token_url in [None, Some("https://attacker.example/token")] {
+            let settings = settings(&[]);
+            let provider = provider(vec![json!({ "access_token": "a1" })], vec![]);
+            let err = service(settings.clone(), provider.clone())
+                .complete(
+                    "spotify",
+                    "spotify",
+                    Authorization {
+                        code: "c".to_string(),
+                        code_verifier: "v".to_string(),
+                        redirect_uri: "https://x".to_string(),
+                        client_id: Some("woofx3-app".to_string()),
+                        token_url: token_url.map(str::to_string),
+                    },
+                )
+                .unwrap_err();
+            assert!(err.contains("tokenUrl"), "{err}");
+            assert!(provider.sent.lock().unwrap().is_empty());
+            assert!(!settings.0.lock().unwrap().contains_key("oauth.spotify"));
+        }
     }
 
     #[test]

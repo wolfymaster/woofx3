@@ -1278,7 +1278,7 @@ streamer's tokens.
 | `id` | 1-40 lowercase letters, digits, `_` or `-`; named by `ctx.oauth.request` and by the connect button's `integration` |
 | `authorizeUrl`, `tokenUrl` | `https` |
 | `scopes` | Asked for when the streamer connects |
-| `clientIdSetting` | A `text` setting holding the OAuth client id. The dashboard may supply its own app's id instead, for a provider woofx3 has an app with |
+| `clientIdSetting` | A `text` setting holding the OAuth client id. The dashboard may supply its own app's id instead, for a provider woofx3 has an app with, together with the `tokenUrl` it checked that app against; the engine refuses the exchange when the installed integration's `tokenUrl` differs, so a module updated mid-connect cannot receive a code issued to that app |
 | `clientSecretSetting` | Optional: a `secret` setting holding the client secret. Without it the client is public; the flow always uses PKCE |
 | `hosts` | The hosts the token may go to, as for `net:` permissions: `https` on port 443 |
 
