@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.0](https://github.com/wolfymaster/woofx3/compare/v0.16.0...v0.17.0) (2026-10-08)
+
+### Features
+
+* **obs:** let modules show a web page in a browser source ([0c4c128](https://github.com/wolfymaster/woofx3/commit/0c4c12893cdab934432f13438c8bd6378fbb2d8d))
+
 ## [0.16.0](https://github.com/wolfymaster/woofx3/compare/v0.15.0...v0.16.0) (2026-10-07)
 
 ### Features
