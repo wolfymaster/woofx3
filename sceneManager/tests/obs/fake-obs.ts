@@ -14,10 +14,15 @@ export class ObsNotFound extends Error {
   code = 600;
 }
 
+export class ObsAlreadyExists extends Error {
+  code = 601;
+}
+
 export interface FakeInput {
   inputName: string;
   inputKind: string;
   unversionedInputKind: string;
+  inputSettings?: Record<string, unknown>;
 }
 
 export interface FakeScene {
@@ -51,6 +56,19 @@ export function fakeObs(
   const findSceneOrGroup = (name: unknown) => {
     const group = groups.find((g) => g.name === name);
     return group ?? findScene(name);
+  };
+  const findInput = (name: unknown) => {
+    const input = inputs.find((i) => i.inputName === name);
+    if (!input) {
+      throw new ObsNotFound(`No source was found by the name of \`${String(name)}\`.`);
+    }
+    return input;
+  };
+  // OBS creates a scene item enabled unless told otherwise.
+  const addItem = (scene: FakeScene, sourceName: string, inputKind: string, enabled: unknown) => {
+    const sceneItemId = Math.max(0, ...scene.items.map((i) => i.sceneItemId)) + 1;
+    scene.items.push({ sourceName, sceneItemId, inputKind, sceneItemEnabled: enabled !== false });
+    return sceneItemId;
   };
   const answer = (cmd: string, args: Record<string, unknown>): unknown => {
     switch (cmd) {
@@ -95,7 +113,36 @@ export function fakeObs(
         return { sceneItems: group.items.map((i) => ({ ...i })) };
       }
       case "GetInputList":
-        return { inputs: inputs.map((i) => ({ ...i })) };
+        return { inputs: inputs.map(({ inputSettings: _, ...i }) => ({ ...i })) };
+      case "GetInputSettings": {
+        const input = findInput(args.inputName);
+        return { inputKind: input.inputKind, inputSettings: { ...input.inputSettings } };
+      }
+      case "SetInputSettings": {
+        const input = findInput(args.inputName);
+        const settings = args.inputSettings as Record<string, unknown>;
+        input.inputSettings = args.overlay === false ? { ...settings } : { ...input.inputSettings, ...settings };
+        return {};
+      }
+      case "CreateInput": {
+        const scene = findScene(args.sceneName);
+        if (inputs.some((i) => i.inputName === args.inputName)) {
+          throw new ObsAlreadyExists("A source already exists by that input name.");
+        }
+        const inputKind = String(args.inputKind);
+        inputs.push({
+          inputName: String(args.inputName),
+          inputKind,
+          unversionedInputKind: inputKind,
+          inputSettings: { ...(args.inputSettings as Record<string, unknown>) },
+        });
+        return { inputUuid: "", sceneItemId: addItem(scene, String(args.inputName), inputKind, args.sceneItemEnabled) };
+      }
+      case "CreateSceneItem": {
+        const scene = findScene(args.sceneName);
+        const input = findInput(args.sourceName);
+        return { sceneItemId: addItem(scene, input.inputName, input.inputKind, args.sceneItemEnabled) };
+      }
       default:
         throw new Error(`fake OBS does not handle ${cmd}`);
     }

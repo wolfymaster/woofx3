@@ -6,7 +6,7 @@ import {
   type ObsControlClient,
   parseObsControlCommand,
 } from "../../src/obs/control";
-import { fakeObs, groupedScenes, logger, scenes } from "./fake-obs";
+import { type FakeInput, fakeObs, groupedScenes, logger, scenes } from "./fake-obs";
 
 describe("parseObsControlCommand", () => {
   it("accepts each command in its documented shape", () => {
@@ -15,6 +15,21 @@ describe("parseObsControlCommand", () => {
       { command: "set_source_visibility", sourceName: "Confetti", visible: true },
       { command: "set_source_visibility", sceneName: "Main", sourceName: "Confetti", visible: false },
       { command: "set_input_mute", inputName: "Mic/Aux", muted: true },
+      {
+        command: "show_browser_source",
+        sourceName: "Winner",
+        url: "https://player.twitch.tv/?channel=wolfy",
+        width: 1920,
+        height: 1080,
+      },
+      {
+        command: "show_browser_source",
+        sceneName: "Main",
+        sourceName: "Winner",
+        url: "http://localhost:8080/",
+        width: 1280,
+        height: 720,
+      },
     ]) {
       expect(parseObsControlCommand(data)).toEqual({ ok: true, command: data as never });
     }
@@ -39,6 +54,17 @@ describe("parseObsControlCommand", () => {
       visibile: false,
     });
     expect(parsed.ok).toBe(false);
+  });
+
+  it("refuses a browser source page that is not an http(s) URL, and a size out of range", () => {
+    const base = { command: "show_browser_source", sourceName: "Winner", width: 1920, height: 1080 };
+    for (const url of ["file:///etc/passwd", "javascript:alert(1)", "ftp://example.com", "example.com", ""]) {
+      const parsed = parseObsControlCommand({ ...base, url });
+      expect(parsed.ok ? "" : parsed.error).toContain("url");
+    }
+    for (const size of [{ width: 0 }, { width: 1920.5 }, { width: 7681 }, { height: 4321 }]) {
+      expect(parseObsControlCommand({ ...base, url: "https://example.com", ...size }).ok).toBe(false);
+    }
   });
 
   it("refuses an unknown command and a missing payload", () => {
@@ -140,6 +166,121 @@ describe("executeObsControlCommand", () => {
     } as unknown as ObsControlClient;
     const reply = await executeObsControlCommand(client, { command: "switch_scene", sceneName: "Raid" });
     expect(reply).toEqual({ ok: false, error: "OBS refused switch_scene: Not connected" });
+  });
+});
+
+describe("show_browser_source", () => {
+  const show = (overrides: Partial<{ sceneName: string; sourceName: string; url: string }> = {}) =>
+    ({
+      command: "show_browser_source",
+      sourceName: "Winner",
+      url: "https://player.twitch.tv/?channel=wolfy",
+      width: 1280,
+      height: 720,
+      ...overrides,
+    }) as const;
+  const browser = (inputName: string, inputSettings: Record<string, unknown>) => ({
+    inputName,
+    inputKind: "browser_source",
+    unversionedInputKind: "browser_source",
+    inputSettings,
+  });
+
+  it("creates the source in the current program scene when OBS has none by that name", async () => {
+    const all = scenes();
+    const inputs: FakeInput[] = [];
+    const obs = fakeObs(all, "Raid", [], null, inputs);
+    const reply = await executeObsControlCommand(obs.client, show());
+    expect(reply).toEqual({ ok: true });
+    expect(obs.calls.at(-1)).toEqual({
+      cmd: "CreateInput",
+      args: {
+        sceneName: "Raid",
+        inputName: "Winner",
+        inputKind: "browser_source",
+        inputSettings: { url: "https://player.twitch.tv/?channel=wolfy", width: 1280, height: 720 },
+        sceneItemEnabled: true,
+      },
+    });
+    expect(all[1].items).toEqual([
+      { sourceName: "Winner", sceneItemId: 1, inputKind: "browser_source", sceneItemEnabled: true },
+    ]);
+  });
+
+  it("points an existing browser source at the page, keeping its other settings, and shows it", async () => {
+    const all = scenes();
+    const inputs = [browser("Confetti", { url: "https://old.example", width: 800, height: 600, css: "x" })];
+    const obs = fakeObs(all, "Raid", [], null, inputs);
+    const reply = await executeObsControlCommand(
+      obs.client,
+      show({ sceneName: "Main", sourceName: "Confetti", url: "https://new.example/" })
+    );
+    expect(reply).toEqual({ ok: true });
+    expect(inputs[0].inputSettings).toEqual({ url: "https://new.example/", width: 800, height: 600, css: "x" });
+    expect(all[0].items[1].sceneItemEnabled).toBe(true);
+    expect(obs.calls.map((c) => c.cmd)).toEqual([
+      "GetInputSettings",
+      "GetSceneItemList",
+      "SetInputSettings",
+      "SetSceneItemEnabled",
+    ]);
+  });
+
+  it("shows an existing browser source inside a group of the scene, addressing the group", async () => {
+    const { main, alerts } = groupedScenes();
+    const inputs = [browser("Confetti", { url: "https://old.example" })];
+    const obs = fakeObs([main], "Main", [alerts], null, inputs);
+    const reply = await executeObsControlCommand(obs.client, show({ sourceName: "Confetti" }));
+    expect(reply).toEqual({ ok: true });
+    expect(alerts.items[0].sceneItemEnabled).toBe(true);
+    expect(main.items.map((i) => i.sourceName)).toEqual(["Camera", "Alerts"]);
+  });
+
+  it("adds an existing browser source to a scene it is not in yet", async () => {
+    const all = scenes();
+    const inputs = [browser("Confetti", { url: "https://old.example" })];
+    const obs = fakeObs(all, "Main", [], null, inputs);
+    const reply = await executeObsControlCommand(obs.client, show({ sceneName: "Raid", sourceName: "Confetti" }));
+    expect(reply).toEqual({ ok: true });
+    expect(obs.calls.at(-1)).toEqual({
+      cmd: "CreateSceneItem",
+      args: { sceneName: "Raid", sourceName: "Confetti", sceneItemEnabled: true },
+    });
+    expect(all[1].items).toEqual([
+      { sourceName: "Confetti", sceneItemId: 1, inputKind: "browser_source", sceneItemEnabled: true },
+    ]);
+    expect(inputs[0].inputSettings).toEqual({ url: "https://player.twitch.tv/?channel=wolfy" });
+  });
+
+  it("refuses to replace a source of another kind, changing nothing", async () => {
+    const inputs: FakeInput[] = [
+      { inputName: "Camera", inputKind: "v4l2_input", unversionedInputKind: "v4l2_input", inputSettings: {} },
+    ];
+    const obs = fakeObs(scenes(), "Main", [], null, inputs);
+    const reply = await executeObsControlCommand(obs.client, show({ sourceName: "Camera" }));
+    expect(reply).toEqual({
+      ok: false,
+      error:
+        'source "Camera" in OBS is not a browser source (it is a "v4l2_input"); use another name so it is not replaced',
+    });
+    expect(obs.calls.map((c) => c.cmd)).toEqual(["GetCurrentProgramScene", "GetInputSettings"]);
+    expect(inputs[0].inputSettings).toEqual({});
+  });
+
+  it("names a scene that does not exist, whether creating or reusing the source", async () => {
+    const created = fakeObs(scenes(), "Main", [], null, []);
+    expect(await executeObsControlCommand(created.client, show({ sceneName: "BRB" }))).toEqual({
+      ok: false,
+      error: 'scene "BRB" does not exist in OBS',
+    });
+
+    const inputs = [browser("Winner", { url: "https://old.example" })];
+    const reused = fakeObs(scenes(), "Main", [], null, inputs);
+    expect(await executeObsControlCommand(reused.client, show({ sceneName: "BRB" }))).toEqual({
+      ok: false,
+      error: 'scene "BRB" does not exist in OBS',
+    });
+    expect(inputs[0].inputSettings).toEqual({ url: "https://old.example" });
   });
 });
 

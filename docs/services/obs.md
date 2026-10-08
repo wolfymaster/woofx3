@@ -27,6 +27,7 @@ and typed in `shared/clients/typescript/module-sdk/src/function-ctx.d.ts`.
 | `switchScene({ sceneName })` | `switch_scene` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
 | `setSourceVisibility({ sourceName, sceneName?, visible? })` | `set_source_visibility` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
 | `setInputMute({ inputName, muted? })` | `set_input_mute` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
+| `showBrowserSource({ sourceName, url, sceneName?, width?, height? })` | `show_browser_source` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
 | `listScenes()`, `listSources()`, `listInputs()` | `{ list }` on `engine.obs.options` | the option list below | none |
 
 Changing OBS changes what viewers see and hear, so it needs the manifest
@@ -37,7 +38,11 @@ Arguments are checked before anything is sent: names must be non-empty
 strings, `sceneName` may be absent or empty (the live program scene), and
 `visible` / `muted` default to true and accept `true`, `false`, `"true"` and
 `"false"`, since a value filled in from a step's parameters reaches the
-function as text. A bad call throws with `code: "invalid_arguments"`.
+function as text. `showBrowserSource`'s `url` must be an absolute `http://` or
+`https://` URL (a browser source loads anything, and `file:` would put the
+streamer's own files on stream), and `width` / `height` must be whole numbers
+from 1 to 7680 / 4320, as numbers or text, defaulting to 1920 x 1080. A bad
+call throws with `code: "invalid_arguments"`.
 
 A refusal from the scene manager (OBS not connected, no scene by that name)
 throws with OBS's reason as the message and no `code`, so a module action can
@@ -135,9 +140,18 @@ A NATS request/reply subject. The request is a CloudEvent of type
 | `switch_scene` | `sceneName` | `SetCurrentProgramScene` |
 | `set_source_visibility` | `sourceName`, `visible`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetSceneItemList`, `GetGroupSceneItemList` per group when the source is not at the top level, `SetSceneItemEnabled` (on the group, for a source inside one) |
 | `set_input_mute` | `inputName`, `muted` | `SetInputMute` |
+| `show_browser_source` | `sourceName`, `url`, `width`, `height`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetInputSettings`; then `CreateInput` when there is no input by that name, or else `GetSceneItemList` (and `GetGroupSceneItemList` per group), `SetInputSettings` with `overlay: true`, and `SetSceneItemEnabled`, or `CreateSceneItem` when the source is not in the scene |
 
 `switch_scene` sets the program scene, so it changes what is live even in
 studio mode.
+
+`show_browser_source` creates a browser source at `width` x `height` when OBS
+has no input named `sourceName`. An existing browser source keeps its size and
+other settings: only its `url` changes, and it is added to the scene when it is
+not there (a source inside one of the scene's groups counts as there) and made
+visible. An existing input of any other kind is refused, so a module cannot
+replace the streamer's camera by naming it; the refusal is checked before
+anything changes.
 
 The reply is `{ "ok": true }` or `{ "ok": false, "error": "<reason>" }`. The scene manager answers every
 request, a malformed one included, so a requester only ever times out when no

@@ -197,12 +197,14 @@
 ---`ctx.obs.*`: each call asks the scene manager to change OBS or list its
 ---names, waits up to 5 seconds (never past the end of the function's run) and
 ---returns its answer, or raises a `CtxHostError` carrying OBS's reason. At most
----10 calls per run. `switchScene`, `setSourceVisibility` and `setInputMute`
----need the manifest permission `obs.control`; listing needs none.
+---10 calls per run. `switchScene`, `setSourceVisibility`, `setInputMute` and
+---`showBrowserSource` need the manifest permission `obs.control`; listing
+---needs none.
 ---@class CtxObsExtension
 ---@field switchScene fun(args: { sceneName: string }): { ok: boolean }
 ---@field setSourceVisibility fun(args: { sourceName: string, sceneName?: string, visible?: boolean|string }): { ok: boolean }
 ---@field setInputMute fun(args: { inputName: string, muted?: boolean|string }): { ok: boolean }
+---@field showBrowserSource fun(args: { sourceName: string, url: string, sceneName?: string, width?: integer|string, height?: integer|string }): { ok: boolean }
 ---@field listScenes fun(): { value: string, label: string, group?: string }[]
 ---@field listSources fun(): { value: string, label: string, group?: string }[]
 ---@field listInputs fun(): { value: string, label: string, group?: string }[]
