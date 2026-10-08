@@ -189,8 +189,36 @@ export async function handleEventCompletedRoute(
   if (!instanceIds) {
     return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
   }
-  await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
+  const closed = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
+  await reportAlertsCompleted(deps.ctx.services.db.client, deps.ctx.logger, closed);
   return Response.json({ status: "ok" });
+}
+
+/**
+ * A page finishing an alert moves its row to `completed`, best-effort.
+ *
+ * This is the alert's only terminal report when it plays normally: without it
+ * the row stays at `playing` and the dashboard counts it in flight forever.
+ * An alert fanned out to several widgets completes on the first one to finish;
+ * the others re-apply the same status, which the lifecycle write treats as a
+ * no-op on its timestamps.
+ */
+export async function reportAlertsCompleted(
+  db: AlertLifecycleWriter,
+  logger: Logger,
+  closed: Array<{ type: string; key: string }>
+): Promise<void> {
+  const alertIds = new Set(closed.filter((delivery) => delivery.type === ALERT_EVENT_TYPE).map((d) => d.key));
+  for (const alertId of alertIds) {
+    try {
+      await db.updateAlertLifecycle({ envelopeId: alertId, status: "completed", error: "" });
+    } catch (err) {
+      logger.debug("alert completion not recorded", {
+        alertId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 interface StatusReportBody {
