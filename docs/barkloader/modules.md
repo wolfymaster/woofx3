@@ -1278,7 +1278,7 @@ streamer's tokens.
 | `id` | 1-40 lowercase letters, digits, `_` or `-`; named by `ctx.oauth.request` and by the connect button's `integration` |
 | `authorizeUrl`, `tokenUrl` | `https` |
 | `scopes` | Asked for when the streamer connects |
-| `clientIdSetting` | A `text` setting holding the OAuth client id. The dashboard may supply its own app's id instead, for a provider woofx3 has an app with |
+| `clientIdSetting` | A `text` setting holding the OAuth client id. The dashboard may supply its own app's id instead, for a provider woofx3 has an app with, together with the `tokenUrl` it checked that app against; the engine refuses the exchange when the installed integration's `tokenUrl` differs, so a module updated mid-connect cannot receive a code issued to that app |
 | `clientSecretSetting` | Optional: a `secret` setting holding the client secret. Without it the client is public; the flow always uses PKCE |
 | `hosts` | The hosts the token may go to, as for `net:` permissions: `https` on port 443 |
 
@@ -1293,7 +1293,7 @@ starting with `oauth.`. Module code then calls the provider with
 the engine attaches the access token, refreshes it when it is about to expire
 or the provider answers 401, and sends it only to `hosts`, through the same
 checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)).
-It throws while the integration is not connected.
+It throws while the integration is not connected. A token is used only with the `tokenUrl` and `hosts` it was issued under: once an update moves the `tokenUrl` or adds a host, `ctx.oauth.request` throws without sending anything until the streamer connects again, so an update cannot redirect the refresh token or the access token. Dropping a host needs no reconnect.
 
 A workflow step or command action that names another module's action runs that
 module's function, with that module's permissions. So an uploaded module whose

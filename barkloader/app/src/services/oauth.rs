@@ -32,6 +32,12 @@ pub struct Authorization {
     /// The OAuth client to exchange as, when the dashboard supplies the app
     /// (one woofx3 provides); otherwise the module's `clientIdSetting`.
     pub client_id: Option<String>,
+    /// The token endpoint the dashboard checked when it chose `client_id`.
+    /// Required with `client_id`: the dashboard may hand out an app only for
+    /// endpoints that app is registered for, and the module can be updated
+    /// between that check and this exchange, so the exchange is refused
+    /// unless the installed integration's `tokenUrl` is still the same.
+    pub token_url: Option<String>,
 }
 
 pub struct OAuthService {
@@ -80,7 +86,19 @@ impl OAuthService {
         let integration = self.integration(module_id, integration_id)?;
         let settings = self.settings.list_by_module(module_id)?;
         let client_id = match authorization.client_id.filter(|id| !id.is_empty()) {
-            Some(id) => id,
+            Some(id) => {
+                let Some(checked) = authorization.token_url.as_deref() else {
+                    return Err(format!(
+                        "{integration_id}: a supplied client id needs the tokenUrl it was chosen for"
+                    ));
+                };
+                if checked != integration.token_url {
+                    return Err(format!(
+                        "{integration_id}: the module's tokenUrl changed since this connect started; connect again"
+                    ));
+                }
+                id
+            }
             None => setting_string(&settings, &integration.client_id_setting).ok_or_else(|| {
                 format!(
                     "{integration_id}: no client id; set the module's {:?} setting",
@@ -117,6 +135,11 @@ impl OAuthService {
         let mut token = self.load(module_id, integration_id)?.ok_or_else(|| {
             format!("{integration_id} is not connected; connect it from the module's settings")
         })?;
+        if !token.fits(&integration) {
+            return Err(format!(
+                "{integration_id}: the module's tokenUrl or hosts changed since it was connected; connect it again from the module's settings"
+            ));
+        }
         if token
             .expires_at_ms
             .is_some_and(|at| at - EXPIRY_MARGIN_MS <= (self.now_ms)())
@@ -261,6 +284,8 @@ impl OAuthService {
                 .map(|scope| scope.split_whitespace().map(str::to_string).collect())
                 .unwrap_or_else(|| integration.scopes.clone()),
             client_id: client_id.to_string(),
+            token_url: integration.token_url.clone(),
+            hosts: integration.hosts.clone(),
         })
     }
 
@@ -542,6 +567,7 @@ mod tests {
                     redirect_uri: "https://dash.convex.site/api/integrations/oauth/callback"
                         .to_string(),
                     client_id: None,
+                    token_url: None,
                 },
             )
             .unwrap();
@@ -554,6 +580,8 @@ mod tests {
                 expires_at_ms: Some(NOW + 3_600_000),
                 scope: vec!["user-read-playback-state".to_string()],
                 client_id: "module-app".to_string(),
+                token_url: "https://accounts.spotify.com/api/token".to_string(),
+                hosts: vec!["api.spotify.com".to_string()],
             }
         );
         let sent = provider.sent.lock().unwrap();
@@ -588,6 +616,7 @@ mod tests {
                     code_verifier: "v".to_string(),
                     redirect_uri: "https://x".to_string(),
                     client_id: Some("woofx3-app".to_string()),
+                    token_url: Some("https://accounts.spotify.com/api/token".to_string()),
                 },
             )
             .unwrap();
@@ -601,8 +630,53 @@ mod tests {
     }
 
     #[test]
+    fn a_dashboard_supplied_client_is_refused_at_any_other_token_endpoint() {
+        for token_url in [None, Some("https://attacker.example/token")] {
+            let settings = settings(&[]);
+            let provider = provider(vec![json!({ "access_token": "a1" })], vec![]);
+            let err = service(settings.clone(), provider.clone())
+                .complete(
+                    "spotify",
+                    "spotify",
+                    Authorization {
+                        code: "c".to_string(),
+                        code_verifier: "v".to_string(),
+                        redirect_uri: "https://x".to_string(),
+                        client_id: Some("woofx3-app".to_string()),
+                        token_url: token_url.map(str::to_string),
+                    },
+                )
+                .unwrap_err();
+            assert!(err.contains("tokenUrl"), "{err}");
+            assert!(provider.sent.lock().unwrap().is_empty());
+            assert!(!settings.0.lock().unwrap().contains_key("oauth.spotify"));
+        }
+    }
+
+    #[test]
+    fn a_token_is_not_used_once_the_module_moves_its_endpoint_or_adds_a_host() {
+        let moved = json!({ "accessToken": "a1", "refreshToken": "r1", "expiresAtMs": NOW + 10_000, "scope": [], "clientId": "app", "tokenUrl": "https://attacker.example/token", "hosts": ["api.spotify.com"] });
+        let unbound = json!({ "accessToken": "a1", "refreshToken": "r1", "expiresAtMs": NOW + 10_000, "scope": [], "clientId": "app" });
+        for token in [moved, unbound] {
+            let settings = settings(&[("oauth.spotify", &token.to_string())]);
+            let provider = provider(vec![], vec![200]);
+            let err = service(settings, provider.clone())
+                .request(
+                    "spotify",
+                    "spotify",
+                    "https://api.spotify.com/v1/me/player",
+                    "GET",
+                    json!({}),
+                )
+                .unwrap_err();
+            assert!(err.contains("connect it again"), "{err}");
+            assert!(provider.sent.lock().unwrap().is_empty());
+        }
+    }
+
+    #[test]
     fn a_request_carries_the_token_only_to_the_integrations_hosts() {
-        let token = json!({ "accessToken": "a1", "refreshToken": "r1", "expiresAtMs": NOW + 3_600_000, "scope": [], "clientId": "app" });
+        let token = json!({ "accessToken": "a1", "refreshToken": "r1", "expiresAtMs": NOW + 3_600_000, "scope": [], "clientId": "app", "tokenUrl": "https://accounts.spotify.com/api/token", "hosts": ["api.spotify.com"] });
         let settings = settings(&[("oauth.spotify", &token.to_string())]);
         let provider = provider(vec![], vec![200]);
         let response = service(settings, provider.clone())
@@ -623,7 +697,7 @@ mod tests {
 
     #[test]
     fn an_expiring_token_is_refreshed_first_and_a_401_once_more() {
-        let token = json!({ "accessToken": "old", "refreshToken": "r1", "expiresAtMs": NOW + 10_000, "scope": [], "clientId": "app" });
+        let token = json!({ "accessToken": "old", "refreshToken": "r1", "expiresAtMs": NOW + 10_000, "scope": [], "clientId": "app", "tokenUrl": "https://accounts.spotify.com/api/token", "hosts": ["api.spotify.com"] });
         let settings = settings(&[
             ("oauth.spotify", &token.to_string()),
             ("clientSecret", "shh"),
