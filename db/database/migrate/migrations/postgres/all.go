@@ -65,5 +65,6 @@ func All() []*gormigrate.Migration {
 		AddStreamGaugeSamples(),
 		AddWorkflowRunDryRun(),
 		AddSceneDrafts(),
+		FractionWidgetOpacity(),
 	}
 }
