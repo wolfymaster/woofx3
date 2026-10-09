@@ -1616,12 +1616,11 @@
           "id": "segment",
           "label": "Segment",
           "type": "text",
-          "required": true,
           "placeholder": "user:segment:superfans",
           "eventPath": "segmentId",
           "operator": "eq",
-          "description": "The segment, by canonical id.",
-          "missingText": "a segment you have not picked"
+          "description": "Only this segment, by its full id (e.g. user:segment:superfans). Leave it as any to act on every segment.",
+          "anyText": "any segment"
         }
       ],
       "sentence": "a viewer enters {segment}",
@@ -1658,6 +1657,11 @@
             "path": "facts",
             "type": "object",
             "description": "Every fact the segment reads, keyed by fact id, each as { before, after } around the change."
+          },
+          {
+            "path": "cause",
+            "type": "object",
+            "description": "The event that caused the change, as { source, eventId }."
           }
         ]
       }
@@ -1676,12 +1680,11 @@
           "id": "segment",
           "label": "Segment",
           "type": "text",
-          "required": true,
           "placeholder": "user:segment:superfans",
           "eventPath": "segmentId",
           "operator": "eq",
-          "description": "The segment, by canonical id.",
-          "missingText": "a segment you have not picked"
+          "description": "Only this segment, by its full id (e.g. user:segment:superfans). Leave it as any to act on every segment.",
+          "anyText": "any segment"
         }
       ],
       "sentence": "a viewer leaves {segment}",
@@ -1718,6 +1721,11 @@
             "path": "facts",
             "type": "object",
             "description": "Every fact the segment reads, keyed by fact id, each as { before, after } around the change."
+          },
+          {
+            "path": "cause",
+            "type": "object",
+            "description": "The event that caused the change, as { source, eventId }."
           }
         ]
       }
