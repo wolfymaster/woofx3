@@ -27,7 +27,7 @@ func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 		expectedValue = resolved
 	}
 
-	return evaluateOperator(condition.Operator, fieldValue, expectedValue)
+	return EvaluateOperator(condition.Operator, fieldValue, expectedValue)
 }
 
 // EvaluateMultiple evaluates multiple conditions with the specified logic ("and" or "or")
@@ -62,19 +62,64 @@ func EvaluateMultiple(conditions []Condition, logic string, resolver *Resolver) 
 	return !useOr, nil
 }
 
-func evaluateOperator(op string, actual, expected any) (bool, error) {
-	switch op {
-	case "eq", "==", "equals":
+// conditionOperators maps every accepted spelling of an operator to its
+// canonical name, so callers comparing operators (two filters sharing one
+// evaluation, a rule that depends on what an operator does with a missing
+// value) compare one name rather than every alias.
+var conditionOperators = map[string]string{
+	"eq":          "eq",
+	"==":          "eq",
+	"equals":      "eq",
+	"ne":          "ne",
+	"!=":          "ne",
+	"not_equals":  "ne",
+	"gt":          "gt",
+	">":           "gt",
+	"gte":         "gte",
+	">=":          "gte",
+	"lt":          "lt",
+	"<":           "lt",
+	"lte":         "lte",
+	"<=":          "lte",
+	"contains":    "contains",
+	"starts_with": "starts_with",
+	"ends_with":   "ends_with",
+	"in":          "in",
+	"not_in":      "not_in",
+	"exists":      "exists",
+	"not_exists":  "not_exists",
+	"regex":       "regex",
+	"matches":     "regex",
+	"between":     "between",
+	"range":       "between",
+}
+
+// CanonicalOperator returns the canonical name of an operator spelling, and
+// false when the spelling is not an operator.
+func CanonicalOperator(op string) (string, bool) {
+	canonical, ok := conditionOperators[op]
+	return canonical, ok
+}
+
+// EvaluateOperator applies a condition operator to an actual and an expected
+// value. Both are taken as they are: nothing is resolved from a template.
+func EvaluateOperator(op string, actual, expected any) (bool, error) {
+	canonical, ok := CanonicalOperator(op)
+	if !ok {
+		return false, fmt.Errorf("unknown operator: %s", op)
+	}
+	switch canonical {
+	case "eq":
 		return equals(actual, expected), nil
-	case "ne", "!=", "not_equals":
+	case "ne":
 		return !equals(actual, expected), nil
-	case "gt", ">":
+	case "gt":
 		return compare(actual, expected) > 0, nil
-	case "gte", ">=":
+	case "gte":
 		return compare(actual, expected) >= 0, nil
-	case "lt", "<":
+	case "lt":
 		return compare(actual, expected) < 0, nil
-	case "lte", "<=":
+	case "lte":
 		return compare(actual, expected) <= 0, nil
 	case "contains":
 		return containsCheck(actual, expected), nil
@@ -90,12 +135,12 @@ func evaluateOperator(op string, actual, expected any) (bool, error) {
 		return actual != nil, nil
 	case "not_exists":
 		return actual == nil, nil
-	case "regex", "matches":
+	case "regex":
 		return regexCheck(actual, expected)
-	case "between", "range":
+	case "between":
 		return betweenCheck(actual, expected)
 	default:
-		return false, fmt.Errorf("unknown operator: %s", op)
+		panic(fmt.Sprintf("operator %q has a canonical name %q with no evaluation", op, canonical))
 	}
 }
 
