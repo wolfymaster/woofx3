@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1656,7 +1656,7 @@
           {
             "path": "facts",
             "type": "object",
-            "description": "Every fact the segment reads, keyed by fact id, each as { before, after } around the change."
+            "description": "Every fact the segment reads, nested by owner and slug like ${viewer.*}: a fact id {owner}:fact:{slug} is at facts.{owner}.{slug}, as { before, after } around the change."
           },
           {
             "path": "cause",
@@ -1720,7 +1720,7 @@
           {
             "path": "facts",
             "type": "object",
-            "description": "Every fact the segment reads, keyed by fact id, each as { before, after } around the change."
+            "description": "Every fact the segment reads, nested by owner and slug like ${viewer.*}: a fact id {owner}:fact:{slug} is at facts.{owner}.{slug}, as { before, after } around the change."
           },
           {
             "path": "cause",
