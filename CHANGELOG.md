@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.21.1](https://github.com/wolfymaster/woofx3/compare/v0.21.0...v0.21.1) (2026-10-09)
+
+### Bug Fixes
+
+* **alerts:** completed replaces any verdict, transactional outbox, every row of an envelope ([fc06474](https://github.com/wolfymaster/woofx3/commit/fc064746d8e6d93aa89584a561a7df133f1deaa0))
+* **alerts:** first verdict wins, one clock per write, unversioned snapshots still sent ([af0bcbe](https://github.com/wolfymaster/woofx3/commit/af0bcbe67099a0ff627a016d2fea99e38f2c013c))
+* **alerts:** forward-only lifecycle with a per-alert version ([52c6efa](https://github.com/wolfymaster/woofx3/commit/52c6efa2ad086ae6872dcb2295afedf71e279cba))
+* **alerts:** move only an envelope's newest row, in one conditional UPDATE ([02824b6](https://github.com/wolfymaster/woofx3/commit/02824b691b59e3bbaaea0419aca2584e5fc1d189))
+* **alerts:** report each play's lifecycle against its own row ([63c401e](https://github.com/wolfymaster/woofx3/commit/63c401efe7c4d6733366aa7d978fb317b574fea9))
+* **alerts:** send dispatched and playing callbacks, and updated_at at full precision ([cc0cc26](https://github.com/wolfymaster/woofx3/commit/cc0cc2622e0fc0e493c065d81065b455ff3503aa))
+* **api:** read an alert version written as its decimal string ([83b0ada](https://github.com/wolfymaster/woofx3/commit/83b0adab77491630060f6d037340d5ca47e8e6ba))
+* **api:** type-check the alert updated callback per status; document dispatched ([e40b1f3](https://github.com/wolfymaster/woofx3/commit/e40b1f3a4ce814f76caacc792034d36cfcb0e459))
+* **db:** let the alert timestamp migration skip values it cannot parse ([1cc67e3](https://github.com/wolfymaster/woofx3/commit/1cc67e381598604813723f36e78c82f573eb87a4))
+
 ## [0.21.0](https://github.com/wolfymaster/woofx3/compare/v0.20.0...v0.21.0) (2026-10-09)
 
 ### Features
