@@ -3,6 +3,8 @@ import type {
   Leaderboard,
   LeaderboardQuery,
   StreamGaugeSample,
+  StreamSessionEvents,
+  StreamSessionEventsQuery,
   StreamSessionTotals,
   ViewerTotals,
   ViewerTotalsQuery,
@@ -49,12 +51,14 @@ interface Fake {
   samples?: stream_gauge.StreamGaugeSample[] | null;
   viewer?: user_event.ViewerEventTotals | null;
   entries?: user_event.LeaderboardEntry[] | null;
+  sessionEvents?: { events: user_event.UserEvent[]; total: bigint } | null;
 }
 
 /** The routes touch only `db`, so that is all the host needs here. */
 function setup(fake: Fake) {
   const viewerRequests: user_event.GetViewerEventTotalsRequest[] = [];
   const leaderboardRequests: user_event.ListViewerLeaderboardRequest[] = [];
+  const sessionEventRequests: user_event.ListStreamSessionUserEventsRequest[] = [];
   const ctx = {
     db: {
       async findStreamSessionEventTotals() {
@@ -71,6 +75,10 @@ function setup(fake: Fake) {
         leaderboardRequests.push(req);
         return fake.entries === undefined ? [] : fake.entries;
       },
+      async findStreamSessionUserEvents(req: user_event.ListStreamSessionUserEventsRequest) {
+        sessionEventRequests.push(req);
+        return fake.sessionEvents === undefined ? { events: [], total: 0n } : fake.sessionEvents;
+      },
     },
   };
   const routes = analyticsRoutes as unknown as {
@@ -78,14 +86,17 @@ function setup(fake: Fake) {
     getViewerTotals(q: ViewerTotalsQuery): Promise<ViewerTotals | null>;
     getLeaderboard(q: LeaderboardQuery): Promise<Leaderboard | null>;
     getStreamSessionGauges(id: string): Promise<StreamGaugeSample[] | null>;
+    getStreamSessionEvents(q: StreamSessionEventsQuery): Promise<StreamSessionEvents | null>;
   };
   return {
     viewerRequests,
     leaderboardRequests,
+    sessionEventRequests,
     totals: (id: string) => routes.getStreamSessionTotals.call(ctx, id),
     viewer: (q: ViewerTotalsQuery) => routes.getViewerTotals.call(ctx, q),
     leaderboard: (q: LeaderboardQuery) => routes.getLeaderboard.call(ctx, q),
     gauges: (id: string) => routes.getStreamSessionGauges.call(ctx, id),
+    sessionEvents: (q: StreamSessionEventsQuery) => routes.getStreamSessionEvents.call(ctx, q),
   };
 }
 
@@ -259,5 +270,82 @@ describe("getStreamSessionGauges", () => {
 
   test("is null for an unknown session", async () => {
     expect(await setup({ samples: null }).gauges(SESSION)).toBeNull();
+  });
+});
+
+function userEvent(
+  eventType: string,
+  occurredAt: string,
+  fields: Partial<Pick<user_event.UserEvent, "userName" | "amount">> = {}
+): user_event.UserEvent {
+  return {
+    id: `e-${eventType}-${occurredAt}`,
+    eventId: `ce-${eventType}-${occurredAt}`,
+    source: "twitch",
+    eventType,
+    platform: "twitch",
+    eventValue: "{}",
+    occurredAt: at(occurredAt),
+    createdAt: at(occurredAt),
+    ...fields,
+  };
+}
+
+describe("getStreamSessionEvents", () => {
+  test("maps each counted type to its kind and keeps the amount only where it means something", async () => {
+    const api = setup({
+      sessionEvents: {
+        events: [
+          userEvent("channel.cheer", "2026-09-27T20:00:01Z", { userName: "Alice", amount: 100n }),
+          userEvent("channel.cheer", "2026-09-27T20:00:02Z", { amount: 50n }),
+          userEvent("channel.follow", "2026-09-27T20:01:00Z", { userName: "Bob" }),
+          userEvent("channel.subscribe", "2026-09-27T20:02:00Z", { userName: "Cara" }),
+          userEvent("channel.resub", "2026-09-27T20:03:00Z", { userName: "Dan", amount: 1n }),
+          userEvent("channel.subscriptionGift", "2026-09-27T20:04:00Z", { userName: "Eve", amount: 5n }),
+          userEvent("channel.raid", "2026-09-27T20:05:00.250Z", { userName: "Finn", amount: 42n }),
+        ],
+        total: 9n,
+      },
+    });
+
+    expect(await api.sessionEvents({ sessionId: SESSION })).toEqual({
+      sessionId: SESSION,
+      total: 9,
+      events: [
+        { occurredAt: "2026-09-27T20:00:01.000Z", kind: "cheer", userName: "Alice", amount: 100 },
+        { occurredAt: "2026-09-27T20:00:02.000Z", kind: "cheer", userName: null, amount: 50 },
+        { occurredAt: "2026-09-27T20:01:00.000Z", kind: "follow", userName: "Bob", amount: null },
+        { occurredAt: "2026-09-27T20:02:00.000Z", kind: "sub", userName: "Cara", amount: null },
+        { occurredAt: "2026-09-27T20:03:00.000Z", kind: "sub", userName: "Dan", amount: null },
+        { occurredAt: "2026-09-27T20:04:00.000Z", kind: "giftedSubs", userName: "Eve", amount: 5 },
+        { occurredAt: "2026-09-27T20:05:00.250Z", kind: "raid", userName: "Finn", amount: 42 },
+      ],
+    });
+    expect(api.sessionEventRequests).toEqual([{ streamSessionId: SESSION, limit: 500 }]);
+  });
+
+  test("passes the limit through", async () => {
+    const api = setup({});
+    await api.sessionEvents({ sessionId: SESSION, limit: 1000 });
+    expect(api.sessionEventRequests).toEqual([{ streamSessionId: SESSION, limit: 1000 }]);
+  });
+
+  test("is null for an unknown session", async () => {
+    expect(await setup({ sessionEvents: null }).sessionEvents({ sessionId: SESSION })).toBeNull();
+  });
+
+  test("validates before calling db-proxy", async () => {
+    const api = setup({});
+    await expect(api.sessionEvents({ sessionId: "" })).rejects.toThrow("sessionId");
+    await expect(api.sessionEvents({ sessionId: SESSION, limit: 0 })).rejects.toThrow("limit");
+    await expect(api.sessionEvents({ sessionId: SESSION, limit: 1001 })).rejects.toThrow("limit");
+    expect(api.sessionEventRequests).toEqual([]);
+  });
+
+  test("refuses a type that is not a counted kind", async () => {
+    const api = setup({
+      sessionEvents: { events: [userEvent("channelpoints.redeem", "2026-09-27T20:00:00Z")], total: 1n },
+    });
+    await expect(api.sessionEvents({ sessionId: SESSION })).rejects.toThrow("not a counted kind");
   });
 });
