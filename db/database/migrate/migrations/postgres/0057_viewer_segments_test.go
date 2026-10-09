@@ -60,6 +60,10 @@ func TestViewerSegmentMembershipStatementsOnPostgres(t *testing.T) {
 		if err != nil || len(dependents) != 1 {
 			t.Errorf("DependentSegments = %d, %v", len(dependents), err)
 		}
+		locked, err := txSegments.DependentSegmentsForUpdate([]string{"user:fact:messages"})
+		if err != nil || len(locked) != 1 {
+			t.Errorf("DependentSegmentsForUpdate = %d, %v", len(locked), err)
+		}
 		member := models.SegmentMember{SegmentID: definition.ID, Platform: "twitch", SubjectID: "v1", WindowKey: "s1", EnteredAt: time.Now().UTC()}
 		for i, want := range []bool{true, false} {
 			if wrote, err := txSegments.Enter(member); err != nil || wrote != want {

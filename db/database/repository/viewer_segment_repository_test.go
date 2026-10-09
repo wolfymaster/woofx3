@@ -126,6 +126,10 @@ func TestDependentSegmentsAreThoseReadingAChangedFact(t *testing.T) {
 	if want := []string{"user:segment:chatty", "user:segment:cheerer"}; !slices.Equal(ids, want) {
 		t.Fatalf("dependents = %v, want %v", ids, want)
 	}
+	locked, err := segments.DependentSegmentsForUpdate([]string{"user:fact:bits"})
+	if err != nil || len(locked) != 1 || locked[0].ID != "user:segment:cheerer" {
+		t.Fatalf("DependentSegmentsForUpdate = %v, %v", locked, err)
+	}
 	reading, err := segments.SegmentIDsReading("user:fact:raids")
 	if err != nil || !slices.Equal(reading, []string{"user:segment:raider"}) {
 		t.Fatalf("SegmentIDsReading = %v, %v", reading, err)
@@ -239,5 +243,16 @@ func TestSegmentFactValuesReadTheLifetimeAndCurrentSessionWindows(t *testing.T) 
 	kinds, err := segments.FactDefinitions(ids)
 	if err != nil || kinds["user:fact:session_messages"].WindowKind != models.FactWindowSession {
 		t.Fatalf("FactDefinitions = %+v, %v", kinds, err)
+	}
+}
+
+func TestViewerLockKeyIsStablePerViewer(t *testing.T) {
+	a := ViewerLockKey(ViewerKey{Platform: "twitch", SubjectID: "v1"})
+	if a != ViewerLockKey(ViewerKey{Platform: "twitch", SubjectID: "v1"}) {
+		t.Fatal("one viewer got two lock keys")
+	}
+	if a == ViewerLockKey(ViewerKey{Platform: "twitch", SubjectID: "v2"}) ||
+		a == ViewerLockKey(ViewerKey{Platform: "youtube", SubjectID: "v1"}) {
+		t.Fatal("two viewers share a lock key")
 	}
 }

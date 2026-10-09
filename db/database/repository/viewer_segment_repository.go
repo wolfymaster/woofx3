@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"slices"
 	"time"
 
@@ -108,6 +109,15 @@ func (r *ViewerSegmentRepository) upsertDefinitionOnce(in *models.SegmentDefinit
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		txRepo := r.WithDB(tx)
 		now := time.Now().UTC()
+		// The facts are locked before the segment, in id order, the order a
+		// fact revision takes them in (its fact, then the segments reading
+		// it), so a save and a revision cannot deadlock.
+		ids := slices.Sorted(slices.Values(factIDs))
+		var facts []models.FactDefinition
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Select("id").Where("id IN ?", ids).Order("id ASC").Find(&facts).Error; err != nil {
+			return err
+		}
 		var existing []models.SegmentDefinition
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", in.ID).Limit(1).Find(&existing).Error; err != nil {
@@ -230,16 +240,28 @@ func (r *ViewerSegmentRepository) DeleteDefinition(id string, record RecordSegme
 }
 
 // DependentSegments returns the segments whose condition reads any of
-// factIDs, in id order, under a share lock. The lock makes an apply that
-// diffs their membership and a save that revises one of them run one after
-// the other; SQLite takes no row locks and its single writer serializes them
-// instead.
+// factIDs, in id order, under a share lock: what an apply takes before it
+// diffs their membership. A segment save or a fact revision rewriting that
+// membership locks the rows for update, so it runs wholly before or after
+// the apply. SQLite takes no row locks; its single writer serializes the
+// transactions instead.
 func (r *ViewerSegmentRepository) DependentSegments(factIDs []string) ([]*models.SegmentDefinition, error) {
+	return r.dependentSegments(factIDs, "SHARE")
+}
+
+// DependentSegmentsForUpdate is DependentSegments locking the rows for
+// update, in id order: what a fact revision takes before it refills their
+// membership, excluding the applies that would diff it meanwhile.
+func (r *ViewerSegmentRepository) DependentSegmentsForUpdate(factIDs []string) ([]*models.SegmentDefinition, error) {
+	return r.dependentSegments(factIDs, "UPDATE")
+}
+
+func (r *ViewerSegmentRepository) dependentSegments(factIDs []string, strength string) ([]*models.SegmentDefinition, error) {
 	segments := []*models.SegmentDefinition{}
 	if len(factIDs) == 0 {
 		return segments, nil
 	}
-	err := r.db.Clauses(clause.Locking{Strength: "SHARE"}).
+	err := r.db.Clauses(clause.Locking{Strength: strength}).
 		Where("id IN (?)", r.db.Model(&models.SegmentFact{}).Select("segment_id").Where("fact_id IN ?", factIDs)).
 		Order("id ASC").
 		Find(&segments).Error
@@ -335,19 +357,23 @@ func (r *ViewerSegmentRepository) FactValues(factIDs []string, sessionKey string
 // one viewer lock different value rows, so without it each could evaluate a
 // segment reading both facts against the other's stale value and neither
 // would see the viewer enter. On Postgres it is a transaction-scoped advisory
-// lock keyed by a hash of the viewer (a collision only serializes two viewers
-// needlessly); SQLite's single writer already serializes the transactions.
+// lock on ViewerLockKey; SQLite's single writer already serializes the
+// transactions. A transaction locking several viewers must lock them in
+// ViewerLockKey order, so two cannot deadlock.
 func (r *ViewerSegmentRepository) LockViewer(viewer ViewerKey) error {
 	if r.db.Dialector.Name() != "postgres" {
 		return nil
 	}
-	return r.db.Exec(`SELECT pg_advisory_xact_lock(?, hashtext(?))`,
-		segmentViewerLockSpace, viewer.Platform+"\x1f"+viewer.SubjectID).Error
+	return r.db.Exec(`SELECT pg_advisory_xact_lock(?)`, ViewerLockKey(viewer)).Error
 }
 
-// segmentViewerLockSpace is the first key of the advisory locks LockViewer
-// takes, keeping them apart from any other advisory lock.
-const segmentViewerLockSpace = 0x5e9_0001
+// ViewerLockKey is the advisory lock key of a viewer: FNV-1a of
+// `platform|subject`. A collision only serializes two viewers needlessly.
+func ViewerLockKey(viewer ViewerKey) int64 {
+	hash := fnv.New64a()
+	hash.Write([]byte(viewer.Platform + "|" + viewer.SubjectID))
+	return int64(hash.Sum64())
+}
 
 // ViewerMembers returns one viewer's membership rows in segmentIDs, whatever
 // their window.
