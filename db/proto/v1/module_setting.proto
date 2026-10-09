@@ -31,6 +31,25 @@ message SetModuleSettingRequest {
   string value_type = 4;
 }
 
+// Writes `value` only while the setting still holds `expected_value`, in one
+// statement: the safe way for a module's functions to change a setting that
+// other runs, or the streamer, may be changing at the same moment. Refused for
+// a `secret` setting, whose stored value is sealed and never compared.
+message CompareAndSetModuleSettingRequest {
+  string module_id      = 1;
+  string key            = 2;
+  string expected_value = 3;
+  string value          = 4;
+}
+
+message CompareAndSetModuleSettingResponse {
+  bool swapped = 1;
+  // The setting as stored after the call: the written row when swapped, else
+  // what it holds now, which is what the caller retries from. Absent when no
+  // such setting exists.
+  ModuleSettingRecord current = 2;
+}
+
 message ManifestSettingInput {
   string key        = 1;
   string value      = 2;
@@ -59,6 +78,7 @@ message GetModuleSecretValuesResponse {
 service ModuleSettingService {
   rpc ListModuleSettings(ListModuleSettingsRequest)       returns (ListModuleSettingsResponse);
   rpc SetModuleSetting(SetModuleSettingRequest)           returns (ModuleSettingRecord);
+  rpc CompareAndSetModuleSetting(CompareAndSetModuleSettingRequest) returns (CompareAndSetModuleSettingResponse);
   rpc RegisterModuleSettings(RegisterModuleSettingsRequest) returns (RegisterModuleSettingsResponse);
   rpc GetModuleSecretValues(GetModuleSecretValuesRequest) returns (GetModuleSecretValuesResponse);
 }

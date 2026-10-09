@@ -46,6 +46,29 @@ export interface SetModuleSettingRequest {
   valueType: string;
 }
 
+/**
+ * Writes `value` only while the setting still holds `expected_value`, in one
+ * statement: the safe way for a module's functions to change a setting that
+ * other runs, or the streamer, may be changing at the same moment. Refused for
+ * a `secret` setting, whose stored value is sealed and never compared.
+ */
+export interface CompareAndSetModuleSettingRequest {
+  moduleId: string;
+  key: string;
+  expectedValue: string;
+  value: string;
+}
+
+export interface CompareAndSetModuleSettingResponse {
+  swapped: boolean;
+  /**
+   * The setting as stored after the call: the written row when swapped, else
+   * what it holds now, which is what the caller retries from. Absent when no
+   * such setting exists.
+   */
+  current: ModuleSettingRecord;
+}
+
 export interface ManifestSettingInput {
   key: string;
   value: string;
@@ -111,6 +134,18 @@ export async function SetModuleSetting(
   return ModuleSettingRecord.decode(response);
 }
 
+export async function CompareAndSetModuleSetting(
+  compareAndSetModuleSettingRequest: CompareAndSetModuleSettingRequest,
+  config?: ClientConfiguration,
+): Promise<CompareAndSetModuleSettingResponse> {
+  const response = await PBrequest(
+    "/module_setting.ModuleSettingService/CompareAndSetModuleSetting",
+    CompareAndSetModuleSettingRequest.encode(compareAndSetModuleSettingRequest),
+    config,
+  );
+  return CompareAndSetModuleSettingResponse.decode(response);
+}
+
 export async function RegisterModuleSettings(
   registerModuleSettingsRequest: RegisterModuleSettingsRequest,
   config?: ClientConfiguration,
@@ -163,6 +198,20 @@ export async function SetModuleSettingJSON(
   return ModuleSettingRecordJSON.decode(response);
 }
 
+export async function CompareAndSetModuleSettingJSON(
+  compareAndSetModuleSettingRequest: CompareAndSetModuleSettingRequest,
+  config?: ClientConfiguration,
+): Promise<CompareAndSetModuleSettingResponse> {
+  const response = await JSONrequest(
+    "/module_setting.ModuleSettingService/CompareAndSetModuleSetting",
+    CompareAndSetModuleSettingRequestJSON.encode(
+      compareAndSetModuleSettingRequest,
+    ),
+    config,
+  );
+  return CompareAndSetModuleSettingResponseJSON.decode(response);
+}
+
 export async function RegisterModuleSettingsJSON(
   registerModuleSettingsRequest: RegisterModuleSettingsRequest,
   config?: ClientConfiguration,
@@ -200,6 +249,12 @@ export interface ModuleSettingService<Context = unknown> {
     setModuleSettingRequest: SetModuleSettingRequest,
     context: Context,
   ) => Promise<ModuleSettingRecord> | ModuleSettingRecord;
+  CompareAndSetModuleSetting: (
+    compareAndSetModuleSettingRequest: CompareAndSetModuleSettingRequest,
+    context: Context,
+  ) =>
+    | Promise<CompareAndSetModuleSettingResponse>
+    | CompareAndSetModuleSettingResponse;
   RegisterModuleSettings: (
     registerModuleSettingsRequest: RegisterModuleSettingsRequest,
     context: Context,
@@ -238,6 +293,18 @@ export function createModuleSettingService<Context>(
         output: {
           protobuf: ModuleSettingRecord,
           json: ModuleSettingRecordJSON,
+        },
+      },
+      CompareAndSetModuleSetting: {
+        name: "CompareAndSetModuleSetting",
+        handler: service.CompareAndSetModuleSetting,
+        input: {
+          protobuf: CompareAndSetModuleSettingRequest,
+          json: CompareAndSetModuleSettingRequestJSON,
+        },
+        output: {
+          protobuf: CompareAndSetModuleSettingResponse,
+          json: CompareAndSetModuleSettingResponseJSON,
         },
       },
       RegisterModuleSettings: {
@@ -610,6 +677,182 @@ export const SetModuleSettingRequest = {
         }
         case 4: {
           msg.valueType = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetModuleSettingRequest = {
+  /**
+   * Serializes CompareAndSetModuleSettingRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetModuleSettingRequest>,
+  ): Uint8Array {
+    return CompareAndSetModuleSettingRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompareAndSetModuleSettingRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompareAndSetModuleSettingRequest {
+    return CompareAndSetModuleSettingRequest._readMessage(
+      CompareAndSetModuleSettingRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetModuleSettingRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetModuleSettingRequest>,
+  ): CompareAndSetModuleSettingRequest {
+    return {
+      moduleId: "",
+      key: "",
+      expectedValue: "",
+      value: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetModuleSettingRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.key) {
+      writer.writeString(2, msg.key);
+    }
+    if (msg.expectedValue) {
+      writer.writeString(3, msg.expectedValue);
+    }
+    if (msg.value) {
+      writer.writeString(4, msg.value);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetModuleSettingRequest,
+    reader: protoscript.BinaryReader,
+  ): CompareAndSetModuleSettingRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.key = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.expectedValue = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.value = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetModuleSettingResponse = {
+  /**
+   * Serializes CompareAndSetModuleSettingResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetModuleSettingResponse>,
+  ): Uint8Array {
+    return CompareAndSetModuleSettingResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompareAndSetModuleSettingResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompareAndSetModuleSettingResponse {
+    return CompareAndSetModuleSettingResponse._readMessage(
+      CompareAndSetModuleSettingResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetModuleSettingResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetModuleSettingResponse>,
+  ): CompareAndSetModuleSettingResponse {
+    return {
+      swapped: false,
+      current: ModuleSettingRecord.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetModuleSettingResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.swapped) {
+      writer.writeBool(1, msg.swapped);
+    }
+    if (msg.current) {
+      writer.writeMessage(2, msg.current, ModuleSettingRecord._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetModuleSettingResponse,
+    reader: protoscript.BinaryReader,
+  ): CompareAndSetModuleSettingResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.swapped = reader.readBool();
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.current, ModuleSettingRecord._readMessage);
           break;
         }
         default: {
@@ -1368,6 +1611,165 @@ export const SetModuleSettingRequestJSON = {
     const _valueType_ = json["valueType"] ?? json["value_type"];
     if (_valueType_) {
       msg.valueType = _valueType_;
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetModuleSettingRequestJSON = {
+  /**
+   * Serializes CompareAndSetModuleSettingRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetModuleSettingRequest>,
+  ): string {
+    return JSON.stringify(
+      CompareAndSetModuleSettingRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes CompareAndSetModuleSettingRequest from JSON.
+   */
+  decode: function (json: string): CompareAndSetModuleSettingRequest {
+    return CompareAndSetModuleSettingRequestJSON._readMessage(
+      CompareAndSetModuleSettingRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetModuleSettingRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetModuleSettingRequest>,
+  ): CompareAndSetModuleSettingRequest {
+    return {
+      moduleId: "",
+      key: "",
+      expectedValue: "",
+      value: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetModuleSettingRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.key) {
+      json["key"] = msg.key;
+    }
+    if (msg.expectedValue) {
+      json["expectedValue"] = msg.expectedValue;
+    }
+    if (msg.value) {
+      json["value"] = msg.value;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetModuleSettingRequest,
+    json: any,
+  ): CompareAndSetModuleSettingRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _key_ = json["key"];
+    if (_key_) {
+      msg.key = _key_;
+    }
+    const _expectedValue_ = json["expectedValue"] ?? json["expected_value"];
+    if (_expectedValue_) {
+      msg.expectedValue = _expectedValue_;
+    }
+    const _value_ = json["value"];
+    if (_value_) {
+      msg.value = _value_;
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetModuleSettingResponseJSON = {
+  /**
+   * Serializes CompareAndSetModuleSettingResponse to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetModuleSettingResponse>,
+  ): string {
+    return JSON.stringify(
+      CompareAndSetModuleSettingResponseJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes CompareAndSetModuleSettingResponse from JSON.
+   */
+  decode: function (json: string): CompareAndSetModuleSettingResponse {
+    return CompareAndSetModuleSettingResponseJSON._readMessage(
+      CompareAndSetModuleSettingResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetModuleSettingResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetModuleSettingResponse>,
+  ): CompareAndSetModuleSettingResponse {
+    return {
+      swapped: false,
+      current: ModuleSettingRecordJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetModuleSettingResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.swapped) {
+      json["swapped"] = msg.swapped;
+    }
+    if (msg.current) {
+      const _current_ = ModuleSettingRecordJSON._writeMessage(msg.current);
+      if (Object.keys(_current_).length > 0) {
+        json["current"] = _current_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetModuleSettingResponse,
+    json: any,
+  ): CompareAndSetModuleSettingResponse {
+    const _swapped_ = json["swapped"];
+    if (_swapped_) {
+      msg.swapped = _swapped_;
+    }
+    const _current_ = json["current"];
+    if (_current_) {
+      ModuleSettingRecordJSON._readMessage(msg.current, _current_);
     }
     return msg;
   },
