@@ -199,7 +199,8 @@ triggering event.
 - **Idempotent.** The db proxy records each applied event by
   `(source, event id)` in the same transaction as the values, so a redelivered
   event is applied once. The record is kept for `FACT_DEDUPE_RETENTION_PERIOD`
-  (default 6 hours). Publishers must keep `(source, id)` unique per event: the
+  (default 6 hours) and pruned `FACT_DEDUPE_PRUNE_BATCH_SIZE` rows at a time
+  (default 1000). Publishers must keep `(source, id)` unique per event: the
   workflow service also drops a delivery whose pair it has recently seen.
 - **Not counted while loading.** Events that arrive before the first list of
   definitions succeeds (at startup, or while the db proxy is unreachable) are
@@ -456,6 +457,9 @@ viewer's facts, so an edge is published exactly when the membership change
 commits. The NATS subject equals the CloudEvent type, since workflow triggers
 match on type, and the source is `db-proxy`. The `platform` extension carries
 the viewer's platform, and `sessionid` the stream session when one is known.
+Extension names are lowercase, as CloudEvents requires, so a consumer reading
+the envelope must use `sessionid`, not the `sessionId` TypeScript publishers
+write; the same value is also in the data as `sessionId`.
 These are distinct from the segment lifecycle events,
 `db.viewer.segment.upserted.system` and `db.viewer.segment.deleted.system`.
 
@@ -563,6 +567,8 @@ included, is missing. That is the case for:
   once per pattern);
 - an anonymous event (its `anonymousWhen` field is true), or an event without
   a platform;
+- a workflow whose `event` is a wildcard pattern (`viewer.segment.*`,
+  `channel.*`): no registered trigger has that exact pattern;
 - a workflow no event triggers.
 
 A `not_exists` condition therefore holds for every event of a trigger that
