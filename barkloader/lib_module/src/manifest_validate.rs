@@ -38,6 +38,7 @@ use super::module_manifest::{
     ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
     WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
 };
+use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -1743,10 +1744,16 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 "{context} field #{i} ({id}): `select` needs `options` or a `source`"
             ));
         }
-        if field.field_type == "resource_ref" && field.resource_kind.is_none() {
-            return Err(anyhow!(
-                "{context} field #{i} ({id}): `resource_ref` needs `resourceKind`"
-            ));
+        if field.field_type == "resource_ref" {
+            let Some(kind) = field.resource_kind.as_deref() else {
+                return Err(anyhow!(
+                    "{context} field #{i} ({id}): `resource_ref` needs `resourceKind`"
+                ));
+            };
+            parse_kind_ref(
+                kind,
+                &format!("{context} field #{i} ({id}): `resourceKind`"),
+            )?;
         }
         if field.field_type == "button" && field.action.is_none() {
             return Err(anyhow!(
@@ -2022,7 +2029,7 @@ fn validate_resource_ref_setting(setting: &ManifestSetting, context: &str) -> Re
     let Some(kind) = setting.resource_kind.as_deref() else {
         return Err(anyhow!("{context}: `resource_ref` needs `resourceKind`"));
     };
-    validate_segment(kind, &format!("{context}: `resourceKind`"))?;
+    parse_kind_ref(kind, &format!("{context}: `resourceKind`"))?;
     // The value is an instance's canonical id, which only an existing
     // instance has; a manifest cannot know it ahead of install.
     if setting.default_value.is_some() {
