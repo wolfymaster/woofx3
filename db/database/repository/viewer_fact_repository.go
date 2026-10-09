@@ -1,9 +1,11 @@
 package repository
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,8 +28,8 @@ func NewViewerFactRepository(db *gorm.DB) *ViewerFactRepository {
 //
 // Op must be the aggregate function of the definition at Revision; the
 // caller computed the delta from that definition. Num and Str carry the value
-// the aggregate reads: Num for sum, min and max, either for last, neither for
-// the rest.
+// the aggregate reads: Num for sum, min and max, exactly one for last (the
+// one the definition's value kind names), neither for the rest.
 type FactDelta struct {
 	FactID      string
 	Revision    int64
@@ -56,10 +58,13 @@ type FactBatch struct {
 }
 
 // FactValueState is a stored value. A nil *FactValueState is a value that
-// does not exist yet.
+// does not exist yet. At is value_at_ms: when the value was last folded, in
+// epoch milliseconds. Two states are the same value when Num and Str agree,
+// whatever their At.
 type FactValueState struct {
 	Num *float64
 	Str *string
+	At  *int64
 }
 
 // FactChange is a value an apply changed, with what it was and what it is.
@@ -75,23 +80,32 @@ type FactChange struct {
 
 // FactApplyResult is the outcome of applying a batch. Applied is false when
 // the event had been applied before, in which case nothing was written.
-// Dropped counts deltas computed against a revision that is no longer
-// current, or against a definition that no longer exists.
+//
+// Every delta of an applied batch is folded or counted in exactly one of:
+//   - Dropped: computed against a revision that is no longer current, or a
+//     definition that no longer exists. Expected while definitions change.
+//   - Invalid: does not fit its definition (another op, missing or
+//     non-finite input, a value of another kind), or repeats the fact and
+//     viewer of an earlier delta in the batch. A caller bug; the rest of the
+//     batch still applies.
+//   - Skipped: needs a stream session and none had started, with no stamp.
 type FactApplyResult struct {
 	Applied bool
 	Changes []FactChange
 	Dropped int
+	Invalid int
+	Skipped int
 }
 
 // Apply folds a batch into fact_values in one transaction.
 //
 // The dedupe row is the first write, so a redelivered event is refused before
-// anything else is read. Each value is created if absent and then locked
-// before it is read, so two batches touching one value serialize on it rather
-// than one overwriting the other's fold.
-//
-// A delta whose window or aggregate needs a stream session is skipped when
-// none can be resolved, which happens only before the first session exists.
+// anything else is read. The batch's definitions are then read under a share
+// lock in id order, so a concurrent revision bump (which takes them for
+// update and wipes their values) runs wholly before or after this apply,
+// never between the revision check and the fold. Deltas are applied in
+// (fact, platform, subject) order, so two batches lock shared values in one
+// order and cannot deadlock.
 func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) {
 	if batch.OccurredAt.IsZero() {
 		return nil, errors.New("fact batch: occurred_at is required")
@@ -99,6 +113,15 @@ func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) 
 	if !batch.SkipDedupe && (batch.Source == "" || batch.EventID == "") {
 		return nil, errors.New("fact batch: source and event_id are required")
 	}
+
+	deltas := slices.Clone(batch.Deltas)
+	slices.SortStableFunc(deltas, func(a, b FactDelta) int {
+		return cmp.Or(
+			cmp.Compare(a.FactID, b.FactID),
+			cmp.Compare(a.Platform, b.Platform),
+			cmp.Compare(a.SubjectID, b.SubjectID),
+		)
+	})
 
 	result := &FactApplyResult{Changes: []FactChange{}}
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -114,27 +137,41 @@ func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) 
 		}
 		result.Applied = true
 
-		definitions, err := txRepo.definitionsFor(batch.Deltas)
+		definitions, err := txRepo.definitionsFor(deltas)
 		if err != nil {
 			return err
 		}
 		sessions := &sessionResolver{repo: txRepo, occurredAt: batch.OccurredAt, stamp: batch.SessionStamp}
-		for _, delta := range batch.Deltas {
+		for i, delta := range deltas {
 			definition, ok := definitions[delta.FactID]
 			if !ok || definition.revision != delta.Revision {
 				result.Dropped++
 				continue
 			}
-			if delta.Op != definition.fn {
-				return fmt.Errorf("fact %s revision %d: delta op %q, definition folds with %q",
-					delta.FactID, delta.Revision, delta.Op, definition.fn)
+			// Within one batch the window is the same for every delta of a
+			// fact, so (fact, platform, subject) is the value's whole key. The
+			// stable sort keeps the first of the duplicates first.
+			if i > 0 && sameViewerFact(deltas[i-1], delta) {
+				result.Invalid++
+				continue
 			}
-			change, err := txRepo.applyDelta(delta, definition.windowKind, batch.OccurredAt, sessions)
+			if err := definition.check(delta); err != nil {
+				result.Invalid++
+				continue
+			}
+			outcome, change, err := txRepo.applyDelta(delta, definition, batch.OccurredAt, sessions)
 			if err != nil {
 				return err
 			}
-			if change != nil {
-				result.Changes = append(result.Changes, *change)
+			switch outcome {
+			case deltaSkipped:
+				result.Skipped++
+			case deltaInvalid:
+				result.Invalid++
+			case deltaFolded:
+				if change != nil {
+					result.Changes = append(result.Changes, *change)
+				}
 			}
 		}
 		return nil
@@ -143,6 +180,10 @@ func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) 
 		return nil, err
 	}
 	return result, nil
+}
+
+func sameViewerFact(a, b FactDelta) bool {
+	return a.FactID == b.FactID && a.Platform == b.Platform && a.SubjectID == b.SubjectID
 }
 
 // markEventApplied records (source, event_id) and reports whether this call
@@ -166,9 +207,40 @@ func (r *ViewerFactRepository) markEventApplied(source, eventID string) (bool, e
 type deltaDefinition struct {
 	revision   int64
 	windowKind string
+	valueKind  string
 	fn         string
 }
 
+// check reports why a delta does not fit the definition, or nil.
+func (d deltaDefinition) check(delta FactDelta) error {
+	if delta.Op != d.fn {
+		return fmt.Errorf("op %q, definition folds with %q", delta.Op, d.fn)
+	}
+	finite := func(v *float64) bool {
+		return v == nil || (!math.IsNaN(*v) && !math.IsInf(*v, 0))
+	}
+	if !finite(delta.Num) {
+		return fmt.Errorf("%s needs a finite number, got %v", d.fn, *delta.Num)
+	}
+	switch d.fn {
+	case models.FactAggregateSum, models.FactAggregateMin, models.FactAggregateMax:
+		if delta.Num == nil || delta.Str != nil {
+			return fmt.Errorf("%s needs a number and nothing else", d.fn)
+		}
+	case models.FactAggregateLast:
+		if (delta.Num == nil) == (delta.Str == nil) {
+			return errors.New("last needs a number or a string, not both or neither")
+		}
+		if (delta.Num != nil) != (d.valueKind == models.FactValueKindNumber) {
+			return fmt.Errorf("last stores a %s", d.valueKind)
+		}
+	}
+	return nil
+}
+
+// definitionsFor reads the definitions the deltas name under a share lock,
+// in id order. SQLite takes no row locks; its single writer serializes the
+// transactions instead.
 func (r *ViewerFactRepository) definitionsFor(deltas []FactDelta) (map[string]deltaDefinition, error) {
 	ids := make([]string, 0, len(deltas))
 	seen := make(map[string]bool, len(deltas))
@@ -183,17 +255,28 @@ func (r *ViewerFactRepository) definitionsFor(deltas []FactDelta) (map[string]de
 		return found, nil
 	}
 	var rows []*models.FactDefinition
-	if err := r.db.Where("id IN ?", ids).Find(&rows).Error; err != nil {
+	if err := r.db.Clauses(clause.Locking{Strength: "SHARE"}).
+		Select("id", "revision", "window_kind", "value_kind", "aggregate_fn").
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		body, err := row.Body()
-		if err != nil {
-			return nil, err
+		found[row.ID] = deltaDefinition{
+			revision:   row.Revision,
+			windowKind: row.WindowKind,
+			valueKind:  row.ValueKind,
+			fn:         row.AggregateFn,
 		}
-		found[row.ID] = deltaDefinition{revision: row.Revision, windowKind: row.WindowKind, fn: body.Aggregate.Fn}
 	}
 	return found, nil
+}
+
+// SessionRef is the stream session an instant belongs to.
+type SessionRef struct {
+	ID        string
+	StartedAt time.Time
 }
 
 // sessionResolver looks the batch's sessions up at most once each, since
@@ -203,52 +286,61 @@ type sessionResolver struct {
 	occurredAt time.Time
 	stamp      string
 
-	current         *string
-	previous        *string
-	previousCurrent string
+	current  *SessionRef
+	previous *string
 }
 
-func (s *sessionResolver) currentID() (string, error) {
+func (s *sessionResolver) currentSession() (SessionRef, error) {
 	if s.current == nil {
-		id, err := s.repo.SessionKeyAt(s.occurredAt, s.stamp)
+		session, err := s.repo.SessionAt(s.occurredAt, s.stamp)
 		if err != nil {
-			return "", err
+			return SessionRef{}, err
 		}
-		s.current = &id
+		s.current = &session
 	}
 	return *s.current, nil
 }
 
-func (s *sessionResolver) previousID(current string) (string, error) {
-	if s.previous == nil || s.previousCurrent != current {
-		id, err := s.repo.PreviousSessionID(current, s.occurredAt)
+func (s *sessionResolver) previousID() (string, error) {
+	if s.previous == nil {
+		current, err := s.currentSession()
+		if err != nil {
+			return "", err
+		}
+		id, err := s.repo.PreviousSessionID(current.ID, s.occurredAt)
 		if err != nil {
 			return "", err
 		}
 		s.previous = &id
-		s.previousCurrent = current
 	}
 	return *s.previous, nil
 }
 
-// SessionKeyAt returns the id of the stream session owning `at`: the one with
-// the latest started_at at or before it. A session owns everything from its
-// start to the next session's start, which is what a split preserves. Falls
-// back to stamp when no session started by then, and returns "" when that is
-// empty too.
-func (r *ViewerFactRepository) SessionKeyAt(at time.Time, stamp string) (string, error) {
-	var ids []string
-	if err := r.db.Model(&models.StreamSession{}).
+// SessionAt returns the stream session owning `at`: the one with the latest
+// started_at at or before it. A session owns everything from its start to the
+// next session's start, which is what a split preserves. Falls back to stamp,
+// taken to start at `at`, when no session started by then; the ID is "" when
+// the stamp is empty too.
+func (r *ViewerFactRepository) SessionAt(at time.Time, stamp string) (SessionRef, error) {
+	var sessions []models.StreamSession
+	if err := r.db.Select("id", "started_at").
 		Where("started_at <= ?", at.UTC()).
 		Order("started_at DESC").
 		Limit(1).
-		Pluck("id", &ids).Error; err != nil {
-		return "", err
+		Find(&sessions).Error; err != nil {
+		return SessionRef{}, err
 	}
-	if len(ids) == 1 {
-		return ids[0], nil
+	if len(sessions) == 1 {
+		return SessionRef{ID: sessions[0].ID.String(), StartedAt: sessions[0].StartedAt.UTC()}, nil
 	}
-	return stamp, nil
+	return SessionRef{ID: stamp, StartedAt: at.UTC()}, nil
+}
+
+// SessionKeyAt returns the id of the stream session owning `at`; see
+// SessionAt.
+func (r *ViewerFactRepository) SessionKeyAt(at time.Time, stamp string) (string, error) {
+	session, err := r.SessionAt(at, stamp)
+	return session.ID, err
 }
 
 // PreviousSessionID returns the latest session that started before `current`
@@ -293,172 +385,234 @@ func (r *ViewerFactRepository) PreviousSessionID(current string, at time.Time) (
 	return "", nil
 }
 
-func (r *ViewerFactRepository) applyDelta(delta FactDelta, windowKind string, occurredAt time.Time, sessions *sessionResolver) (*FactChange, error) {
-	needsSession := windowKind == models.FactWindowSession ||
+type deltaOutcome int
+
+const (
+	deltaFolded deltaOutcome = iota
+	deltaSkipped
+	deltaInvalid
+)
+
+func (r *ViewerFactRepository) applyDelta(delta FactDelta, definition deltaDefinition, occurredAt time.Time, sessions *sessionResolver) (deltaOutcome, *FactChange, error) {
+	needsSession := definition.windowKind == models.FactWindowSession ||
 		delta.Op == models.FactAggregateSessions ||
 		delta.Op == models.FactAggregateSessionStreak
-	sessionID := ""
+	var session SessionRef
 	if needsSession {
-		id, err := sessions.currentID()
+		resolved, err := sessions.currentSession()
 		if err != nil {
-			return nil, err
+			return deltaFolded, nil, err
 		}
-		if id == "" {
-			return nil, nil
+		if resolved.ID == "" {
+			return deltaSkipped, nil, nil
 		}
-		sessionID = id
+		session = resolved
 	}
-	windowKey := ""
-	if windowKind == models.FactWindowSession {
-		windowKey = sessionID
-	}
-
 	key := models.FactValue{
 		FactID:    delta.FactID,
 		Platform:  delta.Platform,
 		SubjectID: delta.SubjectID,
-		WindowKey: windowKey,
 	}
-	before, storedName, err := r.lockValue(key, delta.SubjectName)
-	if err != nil {
-		return nil, err
+	if definition.windowKind == models.FactWindowSession {
+		key.WindowKey = session.ID
 	}
 
-	fold := FactFold{Op: delta.Op, Num: delta.Num, Str: delta.Str, OccurredAt: occurredAt, SessionID: sessionID}
-	if delta.Op == models.FactAggregateSessionStreak && before != nil && !equalStr(before.Str, &sessionID) {
-		previous, err := sessions.previousID(sessionID)
+	fold := FactFold{
+		Op:               delta.Op,
+		Num:              delta.Num,
+		Str:              delta.Str,
+		OccurredAt:       occurredAt,
+		SessionID:        session.ID,
+		SessionStartedAt: session.StartedAt,
+	}
+	// The value is read under a row lock and written in the same
+	// transaction. A miss is inserted with ON CONFLICT DO NOTHING, and losing
+	// that race to a concurrent first fold re-reads the winner's row, now
+	// locked, and folds onto it.
+	for attempt := 0; attempt < 2; attempt++ {
+		before, storedName, found, err := r.lockValue(key)
 		if err != nil {
-			return nil, err
+			return deltaFolded, nil, err
 		}
-		fold.PreviousSessionID = previous
-	}
-	after, err := fold.Apply(before)
-	if err != nil {
-		return nil, fmt.Errorf("fact %s: %w", delta.FactID, err)
-	}
+		if fold.Op == models.FactAggregateSessionStreak && fold.countsNewSession(before) && before != nil {
+			previous, err := sessions.previousID()
+			if err != nil {
+				return deltaFolded, nil, err
+			}
+			fold.PreviousSessionID = previous
+		}
+		after, err := fold.Apply(before)
+		if err != nil {
+			return deltaInvalid, nil, nil
+		}
+		name := storedName
+		if delta.SubjectName != nil {
+			name = delta.SubjectName
+		}
 
-	name := storedName
-	if delta.SubjectName != nil {
-		name = delta.SubjectName
+		valueChanged := !equalState(before, after)
+		if found {
+			if !valueChanged && equalInt(before.At, after.At) && equalStr(name, storedName) {
+				return deltaFolded, nil, nil
+			}
+			if err := r.db.Model(&models.FactValue{}).
+				Where("fact_id = ? AND platform = ? AND subject_id = ? AND window_key = ?",
+					key.FactID, key.Platform, key.SubjectID, key.WindowKey).
+				Updates(map[string]interface{}{
+					"num_value":    after.Num,
+					"str_value":    after.Str,
+					"value_at_ms":  after.At,
+					"subject_name": name,
+					"updated_at":   time.Now().UTC(),
+				}).Error; err != nil {
+				return deltaFolded, nil, err
+			}
+		} else {
+			inserted := r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FactValue{
+				FactID:      key.FactID,
+				Platform:    key.Platform,
+				SubjectID:   key.SubjectID,
+				WindowKey:   key.WindowKey,
+				NumValue:    after.Num,
+				StrValue:    after.Str,
+				ValueAtMs:   after.At,
+				SubjectName: name,
+				UpdatedAt:   time.Now().UTC(),
+			})
+			if inserted.Error != nil {
+				return deltaFolded, nil, inserted.Error
+			}
+			if inserted.RowsAffected == 0 {
+				continue
+			}
+		}
+		if !valueChanged {
+			return deltaFolded, nil, nil
+		}
+		return deltaFolded, &FactChange{
+			FactID:      key.FactID,
+			Platform:    key.Platform,
+			SubjectID:   key.SubjectID,
+			WindowKey:   key.WindowKey,
+			SubjectName: name,
+			Before:      before,
+			After:       after,
+		}, nil
 	}
-	valueChanged := !equalState(before, after)
-	if !valueChanged && equalStr(name, storedName) {
-		return nil, nil
-	}
-	if err := r.db.Model(&models.FactValue{}).
-		Where("fact_id = ? AND platform = ? AND subject_id = ? AND window_key = ?",
-			key.FactID, key.Platform, key.SubjectID, key.WindowKey).
-		Updates(map[string]interface{}{
-			"num_value":    after.Num,
-			"str_value":    after.Str,
-			"subject_name": name,
-			"updated_at":   time.Now().UTC(),
-		}).Error; err != nil {
-		return nil, err
-	}
-	if !valueChanged {
-		return nil, nil
-	}
-	return &FactChange{
-		FactID:      key.FactID,
-		Platform:    key.Platform,
-		SubjectID:   key.SubjectID,
-		WindowKey:   key.WindowKey,
-		SubjectName: name,
-		Before:      before,
-		After:       after,
-	}, nil
+	return deltaFolded, nil, fmt.Errorf("fact %s: value for %s/%s was created concurrently and could not be read back",
+		key.FactID, key.Platform, key.SubjectID)
 }
 
-// lockValue returns the stored value under a row lock, creating the row when
-// absent so there is a row to lock. A created row reads as a nil state: its
-// value does not exist until the caller's fold writes one in the same
-// transaction. SQLite takes no row locks; its single writer serializes the
-// transactions instead.
-func (r *ViewerFactRepository) lockValue(key models.FactValue, name *string) (*FactValueState, *string, error) {
-	created := r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FactValue{
-		FactID:      key.FactID,
-		Platform:    key.Platform,
-		SubjectID:   key.SubjectID,
-		WindowKey:   key.WindowKey,
-		SubjectName: name,
-		UpdatedAt:   time.Now().UTC(),
-	})
-	if created.Error != nil {
-		return nil, nil, created.Error
-	}
-	if created.RowsAffected == 1 {
-		return nil, name, nil
-	}
-
-	var stored models.FactValue
+// lockValue reads the stored value under a row lock. found is false when
+// there is no row yet. SQLite takes no row locks; its single writer
+// serializes the transactions instead.
+func (r *ViewerFactRepository) lockValue(key models.FactValue) (*FactValueState, *string, bool, error) {
+	var stored []models.FactValue
 	if err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("fact_id = ? AND platform = ? AND subject_id = ? AND window_key = ?",
 			key.FactID, key.Platform, key.SubjectID, key.WindowKey).
-		First(&stored).Error; err != nil {
-		return nil, nil, err
+		Limit(1).
+		Find(&stored).Error; err != nil {
+		return nil, nil, false, err
 	}
-	return &FactValueState{Num: stored.NumValue, Str: stored.StrValue}, stored.SubjectName, nil
+	if len(stored) == 0 {
+		return nil, nil, false, nil
+	}
+	row := stored[0]
+	return &FactValueState{Num: row.NumValue, Str: row.StrValue, At: row.ValueAtMs}, row.SubjectName, true, nil
 }
 
-// FactFold is one aggregate step: the delta's inputs, and the session ids the
-// session aggregates compare against.
+// FactFold is one aggregate step: the delta's inputs, when the event
+// happened, and the session ids the session aggregates compare against.
 type FactFold struct {
 	Op         string
 	Num        *float64
 	Str        *string
 	OccurredAt time.Time
-	// SessionID is the session the event belongs to. Required by sessions
-	// and session_streak.
-	SessionID string
+	// SessionID is the session the event belongs to, and SessionStartedAt
+	// when it started. Required by sessions and session_streak.
+	SessionID        string
+	SessionStartedAt time.Time
 	// PreviousSessionID is the live session before SessionID, or "". Read by
-	// session_streak only when the stored value counted a different session.
+	// session_streak only when the event counts a new session.
 	PreviousSessionID string
 }
 
+// countsNewSession reports whether a session aggregate would count the
+// event's session: it is not the session already counted, and it did not
+// start before it. An event from an earlier session arrives out of order (a
+// backfill replays old events after live counting started) and is ignored.
+func (f FactFold) countsNewSession(before *FactValueState) bool {
+	if before == nil {
+		return true
+	}
+	if equalStr(before.Str, &f.SessionID) {
+		return false
+	}
+	return before.At == nil || f.SessionStartedAt.UnixMilli() >= *before.At
+}
+
 // Apply returns the value after folding into before. It never mutates before.
+//
+// At on the result is the event time, except for the session aggregates,
+// where it is the start of the counted session. `last` and the session
+// aggregates leave before as it is for an event older than it.
 func (f FactFold) Apply(before *FactValueState) (*FactValueState, error) {
+	eventAt := f.OccurredAt.UnixMilli()
+	laterAt := eventAt
+	if before != nil && before.At != nil && *before.At > laterAt {
+		laterAt = *before.At
+	}
+
 	switch f.Op {
 	case models.FactAggregateCount:
-		return numberState(beforeNum(before) + 1), nil
+		return numberState(beforeNum(before)+1, laterAt), nil
 	case models.FactAggregateSum:
 		n, err := f.number()
 		if err != nil {
 			return nil, err
 		}
-		return numberState(beforeNum(before) + n), nil
+		return numberState(beforeNum(before)+n, laterAt), nil
 	case models.FactAggregateMin, models.FactAggregateMax:
 		n, err := f.number()
 		if err != nil {
 			return nil, err
 		}
 		if before == nil || before.Num == nil {
-			return numberState(n), nil
+			return numberState(n, laterAt), nil
 		}
 		if f.Op == models.FactAggregateMin {
-			return numberState(math.Min(*before.Num, n)), nil
+			return numberState(math.Min(*before.Num, n), laterAt), nil
 		}
-		return numberState(math.Max(*before.Num, n)), nil
+		return numberState(math.Max(*before.Num, n), laterAt), nil
 	case models.FactAggregateLast:
-		if f.Num == nil && f.Str == nil {
-			return nil, errors.New("last needs a number or a string")
+		if (f.Num == nil) == (f.Str == nil) {
+			return nil, errors.New("last needs a number or a string, not both or neither")
 		}
-		return &FactValueState{Num: copyFloat(f.Num), Str: copyStr(f.Str)}, nil
+		if f.Num != nil {
+			if _, err := f.number(); err != nil {
+				return nil, err
+			}
+		}
+		if before != nil && before.At != nil && eventAt < *before.At {
+			return copyState(before), nil
+		}
+		return &FactValueState{Num: copyFloat(f.Num), Str: copyStr(f.Str), At: &eventAt}, nil
 	case models.FactAggregateFirstAt, models.FactAggregateLastAt:
-		at := float64(f.OccurredAt.UnixMilli())
+		at := float64(eventAt)
 		if before == nil || before.Num == nil {
-			return numberState(at), nil
+			return numberState(at, laterAt), nil
 		}
 		if f.Op == models.FactAggregateFirstAt {
-			return numberState(math.Min(*before.Num, at)), nil
+			return numberState(math.Min(*before.Num, at), laterAt), nil
 		}
-		return numberState(math.Max(*before.Num, at)), nil
+		return numberState(math.Max(*before.Num, at), laterAt), nil
 	case models.FactAggregateSessions, models.FactAggregateSessionStreak:
 		if f.SessionID == "" {
 			return nil, fmt.Errorf("%s needs a session", f.Op)
 		}
-		if before != nil && equalStr(before.Str, &f.SessionID) {
-			return &FactValueState{Num: copyFloat(before.Num), Str: copyStr(before.Str)}, nil
+		if !f.countsNewSession(before) {
+			return copyState(before), nil
 		}
 		next := 1.0
 		continues := f.Op == models.FactAggregateSessions ||
@@ -467,7 +621,8 @@ func (f FactFold) Apply(before *FactValueState) (*FactValueState, error) {
 			next = beforeNum(before) + 1
 		}
 		session := f.SessionID
-		return &FactValueState{Num: &next, Str: &session}, nil
+		startedAt := f.SessionStartedAt.UnixMilli()
+		return &FactValueState{Num: &next, Str: &session, At: &startedAt}, nil
 	default:
 		return nil, fmt.Errorf("unknown aggregate %q", f.Op)
 	}
@@ -490,8 +645,12 @@ func beforeNum(before *FactValueState) float64 {
 	return *before.Num
 }
 
-func numberState(n float64) *FactValueState {
-	return &FactValueState{Num: &n}
+func numberState(n float64, at int64) *FactValueState {
+	return &FactValueState{Num: &n, At: &at}
+}
+
+func copyState(state *FactValueState) *FactValueState {
+	return &FactValueState{Num: copyFloat(state.Num), Str: copyStr(state.Str), At: copyInt(state.At)}
 }
 
 func copyFloat(v *float64) *float64 {
@@ -510,6 +669,14 @@ func copyStr(v *string) *string {
 	return &c
 }
 
+func copyInt(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
+}
+
 func equalStr(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -518,6 +685,13 @@ func equalStr(a, b *string) bool {
 }
 
 func equalFloat(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func equalInt(a, b *int64) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}

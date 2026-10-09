@@ -23,8 +23,8 @@ func TestViewerFactsApplyPerSessionOnPostgres(t *testing.T) {
 	mustExec(t, db, `INSERT INTO stream_sessions (id, status, started_at, ended_at) VALUES (?, 'closed', ?, ?)`, first, start, start.Add(time.Hour))
 	mustExec(t, db, `INSERT INTO stream_session_segments (stream_session_id, started_at, ended_at) VALUES (?, ?, ?)`, first, start, start.Add(time.Hour))
 	mustExec(t, db, `INSERT INTO stream_sessions (id, status, started_at) VALUES (?, 'open', ?)`, second, start.Add(24*time.Hour))
-	mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, value_kind, window_kind)
-		VALUES ('user:fact:streak', 'Streak', '{"sources":[],"aggregate":{"fn":"session_streak"}}', 'number', 'lifetime')`)
+	mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
+		VALUES ('user:fact:streak', 'Streak', '{"sources":[],"aggregate":{"fn":"session_streak"}}', 'session_streak', 'number', 'lifetime')`)
 
 	repo := repository.NewViewerFactRepository(db)
 	delta := repository.FactDelta{FactID: "user:fact:streak", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: "session_streak"}

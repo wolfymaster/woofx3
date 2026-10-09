@@ -44,11 +44,22 @@ func openFactDb(t *testing.T) *gorm.DB {
 
 func defineFact(t *testing.T, db *gorm.DB, id, fn, window string) {
 	t.Helper()
+	createFact(t, db, id, fn, models.FactValueKindNumber, window)
+}
+
+func defineKindFact(t *testing.T, db *gorm.DB, id, fn, valueKind string) {
+	t.Helper()
+	createFact(t, db, id, fn, valueKind, models.FactWindowLifetime)
+}
+
+func createFact(t *testing.T, db *gorm.DB, id, fn, valueKind, window string) {
+	t.Helper()
 	err := db.Create(&models.FactDefinition{
 		ID:            id,
 		Name:          id,
-		Definition:    `{"sources":[{"trigger":"twitch:user_message","subject":"chatterId"}],"aggregate":{"fn":"` + fn + `"}}`,
-		ValueKind:     models.FactValueKindNumber,
+		Definition:    `{"sources":[{"trigger":"twitch:trigger:user_message","subject":"chatterId"}],"aggregate":{"fn":"` + fn + `"}}`,
+		AggregateFn:   fn,
+		ValueKind:     valueKind,
 		WindowKind:    window,
 		Revision:      1,
 		CountingSince: factEpoch,
@@ -208,24 +219,75 @@ func TestDeltasForAnotherRevisionOrAMissingFactAreDropped(t *testing.T) {
 	}
 }
 
-// A delta folded with another aggregate than its definition's is a caller
-// bug, and nothing of the batch may land, including its dedupe row.
-func TestAnOpThatDisagreesWithTheDefinitionFailsTheWholeBatch(t *testing.T) {
+// A delta that does not fit its definition is a caller bug confined to that
+// delta: the rest of the event still applies, so one bad definition cannot
+// stall every other fact the event feeds.
+func TestADeltaThatDoesNotFitIsCountedAndTheRestApplies(t *testing.T) {
 	db := openFactDb(t)
 	defineFact(t, db, "user:fact:messages", models.FactAggregateCount, models.FactWindowLifetime)
+	defineFact(t, db, "user:fact:bits", models.FactAggregateSum, models.FactWindowLifetime)
+	defineKindFact(t, db, "user:fact:last_word", models.FactAggregateLast, models.FactValueKindString)
 	repo := NewViewerFactRepository(db)
-	wrong := countDelta("user:fact:messages", "v2")
-	wrong.Op = models.FactAggregateLastAt
+	wrongOp := countDelta("user:fact:messages", "v2")
+	wrongOp.Op = models.FactAggregateLastAt
+	noNumber := FactDelta{FactID: "user:fact:bits", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: "sum"}
+	infinite := FactDelta{FactID: "user:fact:bits", Revision: 1, Platform: "twitch", SubjectID: "v2", Op: "sum", Num: num(math.Inf(1))}
+	both := FactDelta{FactID: "user:fact:last_word", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: "last", Num: num(1), Str: str("a")}
+	wrongKind := FactDelta{FactID: "user:fact:last_word", Revision: 1, Platform: "twitch", SubjectID: "v2", Op: "last", Num: num(1)}
 
-	if _, err := repo.Apply(chatBatch("e1", factEpoch, countDelta("user:fact:messages", "v1"), wrong)); err == nil {
-		t.Fatalf("Apply accepted a delta whose op disagrees with the definition")
+	result := mustApply(t, repo, chatBatch("e1", factEpoch,
+		countDelta("user:fact:messages", "v1"), wrongOp, noNumber, infinite, both, wrongKind))
+
+	if !result.Applied || result.Invalid != 5 || len(result.Changes) != 1 {
+		t.Fatalf("result = %+v, want five invalid and one change", result)
 	}
-	if got := storedNum(t, db, "user:fact:messages", "v1", ""); got != nil {
-		t.Fatalf("v1 = %v after a failed batch, want absent", *got)
+	wantNum(t, "v1 messages", storedNum(t, db, "user:fact:messages", "v1", ""), 1)
+	var n int64
+	db.Model(&models.FactValue{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("stored values = %d, want only v1's message count", n)
 	}
-	retried := mustApply(t, repo, chatBatch("e1", factEpoch, countDelta("user:fact:messages", "v1")))
-	if !retried.Applied {
-		t.Fatalf("the retried event was refused as already applied")
+}
+
+// Each fact counts an event once per viewer, so a repeat of a (fact, viewer)
+// within one batch is a caller bug: the first is applied, the rest counted.
+func TestADuplicateViewerFactInABatchAppliesOnce(t *testing.T) {
+	db := openFactDb(t)
+	defineFact(t, db, "user:fact:messages", models.FactAggregateCount, models.FactWindowLifetime)
+	defineFact(t, db, "user:fact:bits", models.FactAggregateSum, models.FactWindowLifetime)
+	repo := NewViewerFactRepository(db)
+	first := FactDelta{FactID: "user:fact:bits", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: "sum", Num: num(5)}
+	second := first
+	second.Num = num(100)
+
+	result := mustApply(t, repo, chatBatch("e1", factEpoch,
+		first, countDelta("user:fact:messages", "v1"), second, countDelta("user:fact:messages", "v1")))
+
+	if result.Invalid != 2 || len(result.Changes) != 2 {
+		t.Fatalf("result = %+v, want two invalid and two changes", result)
+	}
+	wantNum(t, "bits", storedNum(t, db, "user:fact:bits", "v1", ""), 5)
+	wantNum(t, "messages", storedNum(t, db, "user:fact:messages", "v1", ""), 1)
+}
+
+// A backfill replays events older than what live counting already stored.
+func TestLastIgnoresAnOlderEvent(t *testing.T) {
+	db := openFactDb(t)
+	defineKindFact(t, db, "user:fact:last_word", models.FactAggregateLast, models.FactValueKindString)
+	repo := NewViewerFactRepository(db)
+	word := func(w string) FactDelta {
+		return FactDelta{FactID: "user:fact:last_word", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: "last", Str: str(w)}
+	}
+
+	mustApply(t, repo, chatBatch("e1", factEpoch.Add(time.Hour), word("newer")))
+	older := mustApply(t, repo, chatBatch("e2", factEpoch, word("older")))
+	newest := mustApply(t, repo, chatBatch("e3", factEpoch.Add(2*time.Hour), word("newest")))
+
+	if len(older.Changes) != 0 {
+		t.Fatalf("an older event changed %+v", older.Changes)
+	}
+	if len(newest.Changes) != 1 || *newest.Changes[0].Before.Str != "newer" || *newest.Changes[0].After.Str != "newest" {
+		t.Fatalf("newest = %+v, want newer -> newest", newest.Changes)
 	}
 }
 
@@ -302,7 +364,7 @@ func TestTheStampIsUsedOnlyWhenNoSessionHadStarted(t *testing.T) {
 	if key := mustApply(t, repo, early).Changes[0].WindowKey; key != "stamp" {
 		t.Fatalf("early window key = %s, want the stamp", key)
 	}
-	if result := mustApply(t, repo, unowned); !result.Applied || len(result.Changes) != 0 {
+	if result := mustApply(t, repo, unowned); !result.Applied || result.Skipped != 1 || len(result.Changes) != 0 {
 		t.Fatalf("unowned = %+v, want applied and skipped", result)
 	}
 }
@@ -367,6 +429,31 @@ func TestPreviousSessionIDOfTheFirstSessionIsEmpty(t *testing.T) {
 	}
 	if got, err := repo.PreviousSessionID("not-a-session", inSession(2)); err != nil || got != sessionB {
 		t.Fatalf("PreviousSessionID(stamp during C) = %q, %v; want B", got, err)
+	}
+}
+
+func TestSessionAggregatesIgnoreAnEarlierSession(t *testing.T) {
+	db := openFactDb(t)
+	addSessions(t, db)
+	defineFact(t, db, "user:fact:streams", models.FactAggregateSessions, models.FactWindowLifetime)
+	defineFact(t, db, "user:fact:streak", models.FactAggregateSessionStreak, models.FactWindowLifetime)
+	repo := NewViewerFactRepository(db)
+	deltas := []FactDelta{
+		{FactID: "user:fact:streams", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: models.FactAggregateSessions},
+		{FactID: "user:fact:streak", Revision: 1, Platform: "twitch", SubjectID: "v1", Op: models.FactAggregateSessionStreak},
+	}
+
+	mustApply(t, repo, chatBatch("e1", inSession(3), deltas...))
+	late := mustApply(t, repo, chatBatch("e2", inSession(1), deltas...))
+	next := mustApply(t, repo, chatBatch("e3", inSession(4), deltas...))
+
+	if len(late.Changes) != 0 {
+		t.Fatalf("an event from an earlier session changed %+v", late.Changes)
+	}
+	wantNum(t, "streams", storedNum(t, db, "user:fact:streams", "v1", ""), 2)
+	wantNum(t, "streak", storedNum(t, db, "user:fact:streak", "v1", ""), 2)
+	if len(next.Changes) != 2 {
+		t.Fatalf("next = %+v, want both aggregates to count session E", next.Changes)
 	}
 }
 

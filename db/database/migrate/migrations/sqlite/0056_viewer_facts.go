@@ -22,6 +22,7 @@ func AddViewerFacts() *gormigrate.Migration {
 					name               TEXT                                NOT NULL,
 					description        TEXT     DEFAULT ''                 NOT NULL,
 					definition         TEXT                                NOT NULL,
+					aggregate_fn       TEXT                               NOT NULL CHECK (aggregate_fn IN ('count', 'sum', 'min', 'max', 'last', 'first_at', 'last_at', 'sessions', 'session_streak')),
 					value_kind         TEXT                                NOT NULL CHECK (value_kind IN ('number', 'string', 'timestamp')),
 					window_kind        TEXT                                NOT NULL CHECK (window_kind IN ('lifetime', 'session')),
 					revision           INTEGER  DEFAULT 1                  NOT NULL CHECK (revision >= 1),
@@ -39,6 +40,7 @@ func AddViewerFacts() *gormigrate.Migration {
 					window_key   TEXT     DEFAULT ''                 NOT NULL,
 					num_value    REAL                                NULL,
 					str_value    TEXT                                NULL,
+					value_at_ms  INTEGER                            NULL,
 					subject_name TEXT                                NULL,
 					updated_at   DATETIME DEFAULT (datetime('now'))  NOT NULL,
 					PRIMARY KEY (fact_id, platform, subject_id, window_key)

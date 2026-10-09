@@ -21,6 +21,9 @@ type FactDefinition struct {
 	Name        string `gorm:"column:name;type:text;not null"`
 	Description string `gorm:"column:description;type:text;not null;default:''"`
 	Definition  string `gorm:"column:definition;type:jsonb;not null"`
+	// AggregateFn repeats Definition's aggregate.fn, so the apply path reads
+	// it without decoding the body.
+	AggregateFn string `gorm:"column:aggregate_fn;type:varchar(20);not null"`
 	ValueKind   string `gorm:"column:value_kind;type:varchar(20);not null"`
 	WindowKind  string `gorm:"column:window_kind;type:varchar(20);not null"`
 	// Revision increments on every change to the definition. Values are
@@ -50,12 +53,17 @@ func (FactDefinition) TableName() string {
 // StrValue holds strings, and for the session aggregates the id of the last
 // session counted.
 type FactValue struct {
-	FactID      string    `gorm:"column:fact_id;type:varchar(255);primaryKey"`
-	Platform    string    `gorm:"column:platform;type:varchar(50);primaryKey"`
-	SubjectID   string    `gorm:"column:subject_id;type:varchar(100);primaryKey"`
-	WindowKey   string    `gorm:"column:window_key;type:varchar(100);primaryKey"`
-	NumValue    *float64  `gorm:"column:num_value"`
-	StrValue    *string   `gorm:"column:str_value"`
+	FactID    string   `gorm:"column:fact_id;type:varchar(255);primaryKey"`
+	Platform  string   `gorm:"column:platform;type:varchar(50);primaryKey"`
+	SubjectID string   `gorm:"column:subject_id;type:varchar(100);primaryKey"`
+	WindowKey string   `gorm:"column:window_key;type:varchar(100);primaryKey"`
+	NumValue  *float64 `gorm:"column:num_value"`
+	StrValue  *string  `gorm:"column:str_value"`
+	// ValueAtMs is when the value was last folded, in epoch milliseconds:
+	// the event time, or for the session aggregates the start of the session
+	// counted. An event older than it does not replace a `last` value or a
+	// counted session.
+	ValueAtMs   *int64    `gorm:"column:value_at_ms"`
 	SubjectName *string   `gorm:"column:subject_name;type:varchar(100)"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
 }

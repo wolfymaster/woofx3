@@ -4,16 +4,20 @@ import "testing"
 
 func TestViewerFactTablesHoldOneValuePerViewerWindow(t *testing.T) {
 	db := openMigratedTo(t, "0056_viewer_facts")
-	mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, value_kind, window_kind)
-		VALUES ('user:fact:messages', 'Messages', '{}', 'number', 'lifetime')`)
+	mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
+		VALUES ('user:fact:messages', 'Messages', '{}', 'count', 'number', 'lifetime')`)
 
-	if err := db.Exec(`INSERT INTO fact_definitions (id, name, definition, value_kind, window_kind)
-		VALUES ('user:fact:bad', 'Bad', '{}', 'number', 'rolling')`).Error; err == nil {
+	if err := db.Exec(`INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
+		VALUES ('user:fact:bad', 'Bad', '{}', 'count', 'number', 'rolling')`).Error; err == nil {
 		t.Error("an unknown window kind was accepted")
 	}
-	if err := db.Exec(`INSERT INTO fact_definitions (id, name, definition, value_kind, window_kind, revision)
-		VALUES ('user:fact:bad', 'Bad', '{}', 'number', 'lifetime', 0)`).Error; err == nil {
+	if err := db.Exec(`INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind, revision)
+		VALUES ('user:fact:bad', 'Bad', '{}', 'count', 'number', 'lifetime', 0)`).Error; err == nil {
 		t.Error("revision 0 was accepted")
+	}
+	if err := db.Exec(`INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
+		VALUES ('user:fact:bad', 'Bad', '{}', 'median', 'number', 'lifetime')`).Error; err == nil {
+		t.Error("an unknown aggregate was accepted")
 	}
 
 	insert := `INSERT INTO fact_values (fact_id, platform, subject_id, num_value) VALUES ('user:fact:messages', 'twitch', 'v1', 1)`

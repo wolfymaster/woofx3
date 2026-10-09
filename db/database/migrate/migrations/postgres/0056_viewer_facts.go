@@ -23,6 +23,15 @@ import (
 //     column. Session aggregates keep their count in num_value and the last
 //     session counted in str_value.
 //
+//   - value_at_ms is when the value was last folded, in epoch milliseconds:
+//     the event time for most aggregates, and the start of the counted
+//     session for the session aggregates. Events can arrive out of order (a
+//     backfill replays old ones after live counting started), so `last` and
+//     the session aggregates compare against it and ignore an older event.
+//
+//   - aggregate_fn repeats the definition's aggregate so applying an event
+//     reads it without decoding the definition body.
+//
 //   - revision increments on every change to a definition, which also deletes
 //     its values in the same transaction. A delta computed against an older
 //     revision is dropped rather than applied to the reset values.
@@ -42,6 +51,7 @@ func AddViewerFacts() *gormigrate.Migration {
 					name               TEXT                           NOT NULL,
 					description        TEXT        DEFAULT ''         NOT NULL,
 					definition         JSONB                          NOT NULL,
+					aggregate_fn       VARCHAR(20)                   NOT NULL CHECK (aggregate_fn IN ('count', 'sum', 'min', 'max', 'last', 'first_at', 'last_at', 'sessions', 'session_streak')),
 					value_kind         VARCHAR(20)                    NOT NULL CHECK (value_kind IN ('number', 'string', 'timestamp')),
 					window_kind        VARCHAR(20)                    NOT NULL CHECK (window_kind IN ('lifetime', 'session')),
 					revision           BIGINT      DEFAULT 1          NOT NULL CHECK (revision >= 1),
@@ -59,6 +69,7 @@ func AddViewerFacts() *gormigrate.Migration {
 					window_key   VARCHAR(100) DEFAULT ''     NOT NULL,
 					num_value    DOUBLE PRECISION            NULL,
 					str_value    TEXT                        NULL,
+					value_at_ms  BIGINT                      NULL,
 					subject_name VARCHAR(100)                NULL,
 					updated_at   TIMESTAMPTZ  DEFAULT NOW()  NOT NULL,
 					PRIMARY KEY (fact_id, platform, subject_id, window_key)
