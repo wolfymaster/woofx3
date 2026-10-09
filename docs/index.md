@@ -26,7 +26,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Local endpoints and the companion bridge](/services/local-endpoints)** - How the engine reaches a module's `local[]` endpoints: straight to the address, or through the woofx3 companion's bridge for a cloud engine
 - **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that
-- **[Viewer facts](/services/viewer-facts)** - Per-viewer values defined as data: fact definitions, aggregates, the `where` tree, and how events are counted before workflows run
+- **[Viewer facts](/services/viewer-facts)** - Per-viewer values defined as data: fact definitions, aggregates, the `where` tree, how events are counted before workflows run, segments and their enter/leave events, and `${viewer.*}` in workflows
 
 ## Getting Started
 

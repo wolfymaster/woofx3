@@ -297,6 +297,7 @@ All string values in task parameters, conditions, and workflow configs support t
 | `trigger` | The event that triggered the workflow | `${trigger.data.amount}`, `${trigger.type}`, `${trigger.id}` |
 | `<taskId>` | Exported values from a completed task | `${check-amount.result}`, `${fetch-user.name}` |
 | `env` | Environment variables | `${env.API_KEY}` |
+| `viewer` | Facts of the viewer the triggering event is about; see [Viewer facts](../services/viewer-facts.md#facts-in-workflows-viewer) | `${viewer.user.messages}`, `${viewer.name}` |
 
 ### Path Navigation
 
