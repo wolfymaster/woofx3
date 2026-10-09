@@ -193,11 +193,11 @@ func TestSegmentAnnouncesEachThresholdCrossingOnce(t *testing.T) {
 			data.ViewerName != "Wolfy" || data.Cause.Source != "twitch" || data.Cause.EventID != "e5" {
 			t.Fatalf("left edge data = %+v", data)
 		}
-		fact := data.Facts["user:fact:last_bits"]
-		if fact.Before != 300.0 || fact.After != 10.0 || len(data.Facts) != 1 {
+		fact := data.Facts["user"]["last_bits"]
+		if fact.Before != 300.0 || fact.After != 10.0 || len(data.Facts) != 1 || len(data.Facts["user"]) != 1 {
 			t.Fatalf("left edge facts = %+v, want last_bits 300 -> 10", data.Facts)
 		}
-		if first := edges[0].data.Facts["user:fact:last_bits"]; first.Before != 50.0 || first.After != 150.0 {
+		if first := edges[0].data.Facts["user"]["last_bits"]; first.Before != 50.0 || first.After != 150.0 {
 			t.Fatalf("entered edge facts = %+v, want 50 -> 150", first)
 		}
 	})
@@ -220,7 +220,7 @@ func TestTimeRelativeSegmentComparesTheEventsBeforeAndAfter(t *testing.T) {
 
 		seenAt("first", factNow)
 		edges := wantEdges(t, db, edgeEntered)
-		if edges[0].data.SegmentID != "user:segment:recent" || edges[0].data.Facts[seen.Id].Before != nil {
+		if edges[0].data.SegmentID != "user:segment:recent" || edges[0].data.Facts["user"]["last_seen"].Before != nil {
 			t.Fatalf("first sighting = %+v, want recent entered from nothing", edges[0].data)
 		}
 		seenAt("soon", factNow.Add(10*time.Minute))
@@ -231,7 +231,7 @@ func TestTimeRelativeSegmentComparesTheEventsBeforeAndAfter(t *testing.T) {
 		if edges[1].data.SegmentID != "user:segment:away" || edges[2].data.SegmentID != "user:segment:recent" {
 			t.Fatalf("return after 40 days = %v, want away left then recent entered", edges)
 		}
-		facts := edges[1].data.Facts[seen.Id]
+		facts := edges[1].data.Facts["user"]["last_seen"]
 		if facts.Before != float64(factNow.Add(10*time.Minute).UnixMilli()) || facts.After != float64(factNow.Add(40*24*time.Hour).UnixMilli()) {
 			t.Fatalf("away left with %+v, want the last sighting before and the return after", facts)
 		}
@@ -546,7 +546,7 @@ func TestASegmentReadingAnInactiveFactIsFrozen(t *testing.T) {
 		setArchived(false)
 		message("m3", 3)
 		edges := wantEdges(t, db, edgeEntered)
-		if edges[0].data.SegmentID != "user:segment:chatty_raider" || edges[0].data.Facts[raids.Id].After != 1.0 {
+		if edges[0].data.SegmentID != "user:segment:chatty_raider" || edges[0].data.Facts["user"]["raids"].After != 1.0 {
 			t.Fatalf("entered once raids was active again = %+v", edges[0].data)
 		}
 	})
@@ -790,4 +790,33 @@ func TestReadsSegmentEdgesFollowsNatsWildcards(t *testing.T) {
 			t.Errorf("readsSegmentEdges(%q) = %v, want %v", pattern, got, want)
 		}
 	}
+}
+
+// An edge nests each fact under its owner and slug, the path a workflow
+// expression can name; a fact id without that shape has no path.
+func TestAnEdgeNestsFactsByOwnerAndSlug(t *testing.T) {
+	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
+		messages := upsertFact(t, svc, messagesFact(""))
+		legacy := messagesFact("")
+		legacy.Id = "legacy_messages"
+		legacy = &client.UpsertFactDefinitionRequest{Id: legacy.Id, Name: legacy.Name, Definition: legacy.Definition, WindowKind: legacy.WindowKind}
+		upsertFact(t, svc, legacy)
+		upsertSegment(t, svc, "user:segment:talker", `{"all": [
+			{"fact": "user:fact:messages", "op": "gte", "value": 1},
+			{"fact": "legacy_messages", "op": "not_exists"}]}`)
+		applyDeltas(t, svc, "e1", factNow, "", false, "v1", opDelta(messages.Id, messages.Revision, "count"))
+
+		var event models.WorkerEvent
+		if err := db.Where("nats_subject = ?", edgeEntered).First(&event).Error; err != nil {
+			t.Fatalf("read edge: %v", err)
+		}
+		var data map[string]any
+		if err := json.Unmarshal([]byte(event.Payload), &data); err != nil {
+			t.Fatalf("edge payload: %v", err)
+		}
+		facts, _ := json.Marshal(data["facts"])
+		if string(facts) != `{"user":{"messages":{"after":1,"before":null}}}` {
+			t.Fatalf("facts = %s", facts)
+		}
+	})
 }

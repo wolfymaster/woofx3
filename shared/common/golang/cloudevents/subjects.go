@@ -188,7 +188,9 @@ const (
 	// proxy inside the transaction that changed those facts. The NATS subject
 	// equals the CloudEvent type because workflow triggers match on type.
 	// Data: { segmentId, platform, viewerId, viewerName, sessionId,
-	//         facts: { <factId>: { before, after } }, cause: { source, eventId } }
+	//         facts: { <owner>: { <slug>: { before, after } } }, cause: { source, eventId } }
+	// where a fact `{owner}:fact:{slug}` sits at facts.<owner>.<slug>, the path
+	// ${viewer.*} gives it, as an expression cannot name a key containing `:`.
 	SubjectViewerSegmentEntered Subject = "viewer.segment.entered"
 	SubjectViewerSegmentLeft    Subject = "viewer.segment.left"
 

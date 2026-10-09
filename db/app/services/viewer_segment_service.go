@@ -620,13 +620,17 @@ func (a *segmentApply) viewer(viewer repo.ViewerKey, changes []repo.FactChange, 
 // segmentEdgeEvent is the data of viewer.segment.entered and
 // viewer.segment.left.
 type segmentEdgeEvent struct {
-	SegmentID  string                     `json:"segmentId"`
-	Platform   string                     `json:"platform"`
-	ViewerID   string                     `json:"viewerId"`
-	ViewerName string                     `json:"viewerName"`
-	SessionID  string                     `json:"sessionId"`
-	Facts      map[string]segmentEdgeFact `json:"facts"`
-	Cause      segmentEdgeCause           `json:"cause"`
+	SegmentID  string `json:"segmentId"`
+	Platform   string `json:"platform"`
+	ViewerID   string `json:"viewerId"`
+	ViewerName string `json:"viewerName"`
+	SessionID  string `json:"sessionId"`
+	// Facts holds each fact the segment reads under its owner, then its slug:
+	// `{owner}:fact:{slug}` is at Facts[owner][slug], the path ${viewer.*}
+	// gives it, since a workflow expression cannot name a key containing `:`.
+	// A fact id of any other shape has no such path and is left out.
+	Facts map[string]map[string]segmentEdgeFact `json:"facts"`
+	Cause segmentEdgeCause                      `json:"cause"`
 }
 
 // segmentEdgeFact is one fact the segment reads, before and after the event:
@@ -654,10 +658,17 @@ func edgeExtensions(viewer repo.ViewerKey, session string) map[string]string {
 }
 
 func (a *segmentApply) edgeEvent(segmentID string, viewer repo.ViewerKey, viewerName, session string, before, after map[string]*factReading) segmentEdgeEvent {
-	facts := make(map[string]segmentEdgeFact, len(a.read[segmentID]))
+	facts := map[string]map[string]segmentEdgeFact{}
 	for _, id := range a.read[segmentID] {
-		kind := a.facts[id].valueKind
-		facts[id] = segmentEdgeFact{Before: plainReading(before[id], kind), After: plainReading(after[id], kind)}
+		owner, kind, slug, err := parseCanonicalID(id)
+		if err != nil || kind != "fact" {
+			continue
+		}
+		if facts[owner] == nil {
+			facts[owner] = map[string]segmentEdgeFact{}
+		}
+		valueKind := a.facts[id].valueKind
+		facts[owner][slug] = segmentEdgeFact{Before: plainReading(before[id], valueKind), After: plainReading(after[id], valueKind)}
 	}
 	return segmentEdgeEvent{
 		SegmentID:  segmentID,
