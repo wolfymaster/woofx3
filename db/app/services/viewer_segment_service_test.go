@@ -267,7 +267,12 @@ func TestSessionSegmentStartsEmptyInANewSessionWithoutAnnouncingIt(t *testing.T)
 		if resp.Definition.WindowKind != "session" {
 			t.Fatalf("window = %s, want session", resp.Definition.WindowKind)
 		}
+		// An event moves a session segment only in the current session, so the
+		// clock follows the events.
+		clock := factNow
+		svc.now = func() time.Time { return clock }
 		chat := func(id string, at time.Time) {
+			clock = at
 			applyDeltas(t, svc, id, at, "", false, "v1", opDelta(session.Id, session.Revision, "count"))
 		}
 
@@ -277,8 +282,9 @@ func TestSessionSegmentStartsEmptyInANewSessionWithoutAnnouncingIt(t *testing.T)
 		if edges[0].data.SessionID != first || edges[0].extensions["sessionid"] != first || edges[0].extensions["platform"] != "twitch" {
 			t.Fatalf("entered in session %q with extensions %v, want %s", edges[0].data.SessionID, edges[0].extensions, first)
 		}
-		// GetViewerSegments reads "now" an hour after factNow, in the second
-		// session, where v1 has not chatted.
+		// An hour after factNow is in the second session, where v1 has not
+		// chatted.
+		clock = factNow.Add(time.Hour)
 		if got := viewerSegments(t, svc, "v1"); len(got) != 0 {
 			t.Fatalf("v1's segments in the next session = %v, want none", got)
 		}
@@ -299,6 +305,39 @@ func TestSessionSegmentStartsEmptyInANewSessionWithoutAnnouncingIt(t *testing.T)
 		}
 		if got := viewerSegments(t, svc, "v1"); !slices.Equal(got, []string{"user:segment:chatty_tonight"}) {
 			t.Fatalf("v1's segments = %v", got)
+		}
+	})
+}
+
+// An event of an earlier session, late or replayed by a backfill, folds into
+// that session's values; it must not move membership of the current one.
+func TestALateEventLeavesTheCurrentSessionsMembershipAlone(t *testing.T) {
+	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
+		addStreamSession(t, db, factNow.Add(-2*time.Hour), factNow.Add(29*time.Minute))
+		second := addStreamSession(t, db, factNow.Add(30*time.Minute), time.Time{})
+		svc.now = func() time.Time { return factNow.Add(time.Hour) }
+		session := upsertFact(t, svc, &client.UpsertFactDefinitionRequest{
+			Id: "user:fact:session_messages", Name: "Messages this stream", Definition: factBody("count", "chatterId", "", ""), WindowKind: "session",
+		})
+		upsertSegment(t, svc, "user:segment:chatty_tonight", `{"fact": "user:fact:session_messages", "op": "gte", "value": 2}`)
+		chat := func(id string, at time.Time, silent bool) {
+			applyDeltas(t, svc, id, at, "", silent, "v1", opDelta(session.Id, session.Revision, "count"))
+		}
+
+		chat("b1", factNow.Add(40*time.Minute), false)
+		chat("b2", factNow.Add(41*time.Minute), false)
+		wantEdges(t, db, edgeEntered)
+		chat("", factNow.Add(-time.Hour), true)
+		chat("late", factNow.Add(-time.Hour+time.Minute), false)
+		chat("b3", factNow.Add(42*time.Minute), false)
+		wantEdges(t, db, edgeEntered)
+
+		var rows []models.SegmentMember
+		if err := db.Find(&rows).Error; err != nil {
+			t.Fatalf("read members: %v", err)
+		}
+		if len(rows) != 1 || rows[0].WindowKey != second {
+			t.Fatalf("members = %+v, want v1 in %s", rows, second)
 		}
 	})
 }
@@ -465,9 +504,11 @@ func TestUpsertSegmentDefinitionRefusesWhatCannotBeEvaluated(t *testing.T) {
 	})
 }
 
-// A fact whose trigger is no longer registered stops counting, and a segment
-// reading it must not keep trusting the value it had: it reads as missing.
-func TestASegmentReadsAnInactiveFactAsMissing(t *testing.T) {
+// A fact whose trigger is no longer registered stops counting. A segment
+// reading it is frozen rather than re-evaluated with the fact missing, which
+// would move every viewer whose value it hides each time a module upgrade
+// drops the trigger for a moment.
+func TestASegmentReadingAnInactiveFactIsFrozen(t *testing.T) {
 	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
 		registerTrigger(t, db, "raids", "raid", "channel.raid", `{"fields": [{"path": "raiderId", "type": "string", "identity": "viewer"}]}`)
 		messages := upsertFact(t, svc, messagesFact(""))
@@ -477,22 +518,114 @@ func TestASegmentReadsAnInactiveFactAsMissing(t *testing.T) {
 			WindowKind: "lifetime",
 		})
 		applyDeltas(t, svc, "raid", factNow, "", false, "v1", opDelta(raids.Id, raids.Revision, "count"))
-		upsertSegment(t, svc, "user:segment:chatty_non_raider", `{"all": [
-			{"fact": "user:fact:messages", "op": "gte", "value": 1},
-			{"fact": "user:fact:raids", "op": "not_exists"}]}`)
-
-		applyDeltas(t, svc, "m1", factNow.Add(time.Minute), "", false, "v1", opDelta(messages.Id, messages.Revision, "count"))
-		wantEdges(t, db)
-
-		if err := db.Exec(`UPDATE triggers SET archived_at = ? WHERE manifest_id = 'raid'`, factNow).Error; err != nil {
-			t.Fatalf("archive trigger: %v", err)
+		upsertSegment(t, svc, "user:segment:chatty_raider", `{"all": [
+			{"fact": "user:fact:messages", "op": "gte", "value": 2},
+			{"fact": "user:fact:raids", "op": "exists"}]}`)
+		message := func(id string, minute int) {
+			applyDeltas(t, svc, id, factNow.Add(time.Duration(minute)*time.Minute), "", false, "v1", opDelta(messages.Id, messages.Revision, "count"))
 		}
-		edges := func() []segmentEdge {
-			applyDeltas(t, svc, "m2", factNow.Add(2*time.Minute), "", false, "v1", opDelta(messages.Id, messages.Revision, "count"))
-			return wantEdges(t, db, edgeEntered)
+		setArchived := func(archived bool) {
+			var at any
+			if archived {
+				at = factNow
+			}
+			if err := db.Exec(`UPDATE triggers SET archived_at = ? WHERE manifest_id = 'raid'`, at).Error; err != nil {
+				t.Fatalf("archive trigger: %v", err)
+			}
+		}
+
+		message("m1", 1)
+		setArchived(true)
+		message("m2", 2)
+		wantEdges(t, db)
+		upsertSegment(t, svc, "user:segment:raider", `{"fact": "user:fact:raids", "op": "exists"}`)
+		if got := viewerSegments(t, svc, "v1"); len(got) != 0 {
+			t.Fatalf("v1's segments while raids is inactive = %v, want none", got)
+		}
+
+		setArchived(false)
+		message("m3", 3)
+		edges := wantEdges(t, db, edgeEntered)
+		if edges[0].data.SegmentID != "user:segment:chatty_raider" || edges[0].data.Facts[raids.Id].After != 1.0 {
+			t.Fatalf("entered once raids was active again = %+v", edges[0].data)
+		}
+	})
+}
+
+// A fact revision refills the segments reading it while applies of other
+// facts diff the same segments. The refill locks the segments for update, so
+// an apply diffs them wholly before or after it: no deadlock, and the
+// membership matches the values at the end.
+func TestAFactRevisionRacingAppliesLeavesMembershipConsistent(t *testing.T) {
+	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
+		if db.Dialector.Name() != "postgres" {
+			t.Skip("SQLite serializes every write transaction")
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			t.Fatalf("sql db: %v", err)
+		}
+		sqlDB.SetMaxOpenConns(12)
+		messages := upsertFact(t, svc, messagesFact(""))
+		bits := upsertFact(t, svc, lastBitsFact())
+		viewers := []string{"v0", "v1", "v2", "v3", "v4", "v5"}
+		for _, viewer := range viewers {
+			applyDeltas(t, svc, "seed-"+viewer, factNow, "", false, viewer, opDelta(messages.Id, messages.Revision, "count"), lastDelta(bits.Id, bits.Revision, 5))
+		}
+		// Bystanders make the revision's refill long enough for applies to
+		// read the values inside it.
+		if err := db.Exec(`INSERT INTO fact_values (fact_id, platform, subject_id, window_key, num_value, updated_at)
+			SELECT f.id, 'twitch', 'bystander-' || n, '', 1, NOW() FROM generate_series(1, 20000) AS n, (VALUES (?), (?)) AS f(id)`,
+			messages.Id, bits.Id).Error; err != nil {
+			t.Fatalf("seed bystanders: %v", err)
+		}
+		upsertSegment(t, svc, "user:segment:quiet_or_cheering", `{"any": [
+			{"not": {"fact": "user:fact:messages", "op": "exists"}},
+			{"fact": "user:fact:last_bits", "op": "gte", "value": 1}]}`)
+
+		// The revision starts first; the applies land while it wipes and
+		// refills, and none comes after it to repair what a stale one did.
+		const workers = 8
+		var wg sync.WaitGroup
+		errs := make(chan error, workers+1)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := svc.UpsertFactDefinition(context.Background(), messagesFact(`{"path": "message", "op": "contains", "value": "apple"}`)); err != nil {
+				errs <- err
+			}
 		}()
-		if facts := edges[0].data.Facts["user:fact:raids"]; facts.Before != nil || facts.After != nil {
-			t.Fatalf("the inactive fact was reported as %+v, want null", facts)
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func(w int) {
+				defer wg.Done()
+				time.Sleep(time.Duration(60+20*w) * time.Millisecond)
+				deltas := make([]*client.FactDelta, len(viewers))
+				for i := range viewers {
+					delta := lastDelta(bits.Id, bits.Revision, 0)
+					delta.Platform = "twitch"
+					delta.SubjectId = viewers[(i+w)%len(viewers)]
+					deltas[i] = delta
+				}
+				_, err := svc.ApplyFactDeltas(context.Background(), &client.ApplyFactDeltasRequest{
+					Source: "twitch", EventId: fmt.Sprintf("w%d", w), OccurredAt: timestamppb.New(factNow.Add(time.Duration(w+1) * time.Second)), Deltas: deltas,
+				})
+				if err != nil {
+					errs <- err
+				}
+			}(w)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Errorf("apply or revision: %v", err)
+		}
+
+		// Every viewer's messages were wiped, so every viewer is in.
+		var members int64
+		db.Model(&models.SegmentMember{}).Where("subject_id IN ?", viewers).Count(&members)
+		if members != int64(len(viewers)) {
+			t.Fatalf("members = %d, want %d: an apply that read the values before the revision undid the refill", members, len(viewers))
 		}
 	})
 }
@@ -579,8 +712,16 @@ func TestAFactCannotCountSegmentEdges(t *testing.T) {
 		}
 		for _, createdByType := range []string{"USER", "MODULE"} {
 			_, err := svc.UpsertFactDefinition(context.Background(), entries(createdByType))
-			if twirpCode(err) != twirp.FailedPrecondition || !strings.Contains(err.Error(), "viewer.* segment events") {
-				t.Fatalf("%s fact over segment edges: %v, want failed_precondition", createdByType, err)
+			if twirpCode(err) != twirp.InvalidArgument || !strings.Contains(err.Error(), "receives the engine's segment events") {
+				t.Fatalf("%s fact over segment edges: %v, want invalid_argument", createdByType, err)
+			}
+		}
+		for manifestID, pattern := range map[string]string{"any_viewer": "viewer.>", "any_leave": "*.segment.left", "everything": ">"} {
+			registerTrigger(t, db, "wild", manifestID, pattern, edgeEmits)
+			req := entries("USER")
+			req.Definition = strings.Replace(req.Definition, "woofx3:trigger:viewer_segment_entered", "wild:trigger:"+manifestID, 1)
+			if _, err := svc.UpsertFactDefinition(context.Background(), req); twirpCode(err) != twirp.InvalidArgument {
+				t.Fatalf("fact over %q: %v, want invalid_argument", pattern, err)
 			}
 		}
 
@@ -592,7 +733,7 @@ func TestAFactCannotCountSegmentEdges(t *testing.T) {
 		if def := upsertFact(t, svc, late); def.Status != "unresolved" {
 			t.Fatalf("status before the trigger = %s, want unresolved", def.Status)
 		}
-		registerTrigger(t, db, "woofx3", "viewer_segment_left", "viewer.segment.left", edgeEmits)
+		registerTrigger(t, db, "woofx3", "viewer_segment_left", "*.segment.*", edgeEmits)
 		list, err := svc.ListFactDefinitions(context.Background(), &client.ListFactDefinitionsRequest{})
 		if err != nil {
 			t.Fatalf("ListFactDefinitions: %v", err)
@@ -626,4 +767,27 @@ func TestGetViewerFactsLeavesOutFactsThatAreNotActive(t *testing.T) {
 			t.Fatalf("values after the raid trigger went away = %v, want messages only", values)
 		}
 	})
+}
+
+func TestReadsSegmentEdgesFollowsNatsWildcards(t *testing.T) {
+	cases := map[string]bool{
+		"viewer.segment.entered": true,
+		"viewer.anything":        true,
+		"viewer.>":               true,
+		"*.segment.left":         true,
+		"*.*.*":                  true,
+		">":                      true,
+		"*.>":                    true,
+		"viewer.segment.*":       true,
+		"chat.message.>":         false,
+		"*.segment":              false,
+		"*.*.*.*":                false,
+		"user.message":           false,
+		"viewerx.segment.left":   false,
+	}
+	for pattern, want := range cases {
+		if got := readsSegmentEdges(pattern); got != want {
+			t.Errorf("readsSegmentEdges(%q) = %v, want %v", pattern, got, want)
+		}
+	}
 }

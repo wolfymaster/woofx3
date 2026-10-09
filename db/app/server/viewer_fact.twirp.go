@@ -72,12 +72,15 @@ type ViewerFactService interface {
 	// evaluated for that viewer, its membership updated, and each viewer that
 	// entered or left it announced as `viewer.segment.entered` or
 	// `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
-	// apply updates membership and announces nothing.
+	// apply updates membership and announces nothing. A segment reading a fact
+	// that is not active, or whose condition no longer fits its facts, is
+	// frozen: neither its membership nor its edges move until it fits again. A
+	// session segment moves only for an event of the current stream session.
 	ApplyFactDeltas(context.Context, *ApplyFactDeltasRequest) (*ApplyFactDeltasResponse, error)
 
 	// One viewer's lifetime values and their values in the current stream
 	// session, of active facts only: a fact that is not active has stopped
-	// counting, and segments read it as missing too.
+	// counting, so its stored value is stale.
 	GetViewerFacts(context.Context, *GetViewerFactsRequest) (*GetViewerFactsResponse, error)
 
 	// Creates or replaces a segment: a condition over one viewer's facts. A

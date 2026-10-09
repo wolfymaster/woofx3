@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -31,7 +32,8 @@ type segmentFact struct {
 	valueKind  string
 	windowKind string
 	// active is false when the fact's definition does not resolve against the
-	// triggers registered now. Its stored values are then read as missing.
+	// triggers registered now. A segment reading it is then frozen (see
+	// segmentFrozen).
 	active bool
 }
 
@@ -210,9 +212,10 @@ func (s *viewerFactService) recordSegmentChange(op string) repo.RecordSegmentDef
 
 // refillSegmentsReading silently refills the membership of every segment
 // reading factID, inside the transaction that revised the fact and deleted its
-// values.
+// values. The segments are locked for update, so no apply diffs their
+// membership against the values while they are refilled.
 func (s *viewerFactService) refillSegmentsReading(tx *gorm.DB, factID string) error {
-	dependents, err := s.segments.WithDB(tx).DependentSegments([]string{factID})
+	dependents, err := s.segments.WithDB(tx).DependentSegmentsForUpdate([]string{factID})
 	if err != nil {
 		return err
 	}
@@ -232,7 +235,8 @@ func (s *viewerFactService) refillSegmentsReading(tx *gorm.DB, factID string) er
 // of a condition such as not_exists that such a viewer would satisfy.
 //
 // The segment's window follows the facts it reads, which a fact revision can
-// change, so it is rewritten here when it moved.
+// change, so it is rewritten here when it moved. A frozen segment (see
+// segmentFrozen) is left exactly as it is.
 func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefinition, now time.Time) error {
 	segments := s.segments.WithDB(tx)
 	read, err := segments.FactsRead([]string{segment.ID})
@@ -247,6 +251,9 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 	condition, _, err := parseSegmentCondition(segment.Condition)
 	if err != nil {
 		return fmt.Errorf("stored condition: %w", err)
+	}
+	if segmentFrozen(condition, factIDs, facts) {
+		return nil
 	}
 	window := segmentWindow(factIDs, facts)
 	if window != segment.WindowKind {
@@ -327,7 +334,10 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 // with the state after, both at the event's time, and keeps the membership in
 // step. That is what announces "last seen older than 30 days" as left when
 // the viewer returns.
-func (s *viewerFactService) diffSegments(tx *gorm.DB, batch repo.FactBatch, changes []repo.FactChange, announce bool) error {
+//
+// A frozen segment is skipped, and a session segment is skipped for an event
+// of any session but the current one (see segmentApply.sessionCurrent).
+func (s *viewerFactService) diffSegments(tx *gorm.DB, batch repo.FactBatch, changes []repo.FactChange, session func() (repo.SessionRef, error), announce bool) error {
 	segments := s.segments.WithDB(tx)
 	changedFacts := make([]string, 0, len(changes))
 	byViewer := map[repo.ViewerKey][]repo.FactChange{}
@@ -352,80 +362,148 @@ func (s *viewerFactService) diffSegments(tx *gorm.DB, batch repo.FactBatch, chan
 		return err
 	}
 	var factIDs []string
-	conditions := make(map[string]*segmentCondition, len(dependents))
 	for _, segment := range dependents {
 		factIDs = append(factIDs, read[segment.ID]...)
-		condition, _, err := parseSegmentCondition(segment.Condition)
-		if err != nil {
-			return fmt.Errorf("segment %s: stored condition: %w", segment.ID, err)
-		}
-		conditions[segment.ID] = condition
 	}
 	slices.Sort(factIDs)
 	factIDs = slices.Compact(factIDs)
+	// One status resolution for every fact any reached segment reads, with
+	// each trigger looked up once.
 	facts, err := loadSegmentFacts(segments, repo.NewModuleRepository(tx), factIDs)
 	if err != nil {
 		return err
 	}
-	session, err := repo.NewViewerFactRepository(tx).SessionAt(batch.OccurredAt, batch.SessionStamp)
-	if err != nil {
-		return err
+	live := make([]*models.SegmentDefinition, 0, len(dependents))
+	conditions := make(map[string]*segmentCondition, len(dependents))
+	for _, segment := range dependents {
+		condition, _, err := parseSegmentCondition(segment.Condition)
+		if err != nil {
+			return fmt.Errorf("segment %s: stored condition: %w", segment.ID, err)
+		}
+		if segmentFrozen(condition, read[segment.ID], facts) {
+			continue
+		}
+		conditions[segment.ID] = condition
+		live = append(live, segment)
+	}
+	if len(live) == 0 {
+		return nil
 	}
 
+	apply := &segmentApply{
+		service:  s,
+		tx:       tx,
+		segments: segments,
+		batch:    batch,
+		facts:    facts,
+		read:     read,
+		session:  session,
+		announce: announce,
+	}
 	viewers := make([]repo.ViewerKey, 0, len(byViewer))
 	for viewer := range byViewer {
 		viewers = append(viewers, viewer)
 	}
-	// Viewer locks are taken in one order, so two applies cannot deadlock on
+	// Viewer locks are taken in key order, so two applies cannot deadlock on
 	// them.
 	slices.SortFunc(viewers, func(a, b repo.ViewerKey) int {
-		return strings.Compare(a.Platform+"\x00"+a.SubjectID, b.Platform+"\x00"+b.SubjectID)
+		return cmp.Or(
+			cmp.Compare(repo.ViewerLockKey(a), repo.ViewerLockKey(b)),
+			strings.Compare(a.Platform, b.Platform),
+			strings.Compare(a.SubjectID, b.SubjectID),
+		)
 	})
 	for _, viewer := range viewers {
-		pass := segmentViewerPass{
-			service:  s,
-			segments: segments,
-			batch:    batch,
-			viewer:   viewer,
-			changes:  byViewer[viewer],
-			facts:    facts,
-			read:     read,
-			session:  session.ID,
-			announce: announce,
-		}
-		if err := pass.run(tx, dependents, conditions); err != nil {
+		if err := apply.viewer(viewer, byViewer[viewer], live, conditions); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// segmentViewerPass diffs one viewer's membership of the segments an apply's
-// changes can move.
-type segmentViewerPass struct {
-	service  *viewerFactService
-	segments *repo.ViewerSegmentRepository
-	batch    repo.FactBatch
-	viewer   repo.ViewerKey
-	changes  []repo.FactChange
-	facts    map[string]segmentFact
-	read     map[string][]string
-	session  string
-	announce bool
+// segmentFrozen reports whether a segment must be left as it is: a fact it
+// reads is missing or not active, or its condition no longer fits the facts'
+// kinds. Evaluating it then would move every viewer whose stored value the
+// inactive fact hides, so a module upgrade that drops a trigger for a moment
+// would announce a storm of edges, and another when it comes back. The
+// segment resumes once everything it reads is active again.
+func segmentFrozen(condition *segmentCondition, factIDs []string, facts map[string]segmentFact) bool {
+	for _, id := range factIDs {
+		if fact, ok := facts[id]; !ok || !fact.active {
+			return true
+		}
+	}
+	return condition.checkFacts(facts) != nil
 }
 
-func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinition, conditions map[string]*segmentCondition) error {
-	changed := make(map[string]bool, len(p.changes))
-	for _, change := range p.changes {
+// segmentApply is the segment side of one apply: what every viewer's pass
+// shares, with the sessions resolved at most once and only when needed.
+type segmentApply struct {
+	service  *viewerFactService
+	tx       *gorm.DB
+	segments *repo.ViewerSegmentRepository
+	batch    repo.FactBatch
+	facts    map[string]segmentFact
+	read     map[string][]string
+	session  func() (repo.SessionRef, error)
+	announce bool
+
+	current *string
+}
+
+// eventSession is the stream session the event belongs to, as the fold
+// resolved it, or "" when none had started and the event carried no stamp.
+func (a *segmentApply) eventSession() (string, error) {
+	session, err := a.session()
+	return session.ID, err
+}
+
+// sessionCurrent reports whether the event belongs to the current stream
+// session. Only then may it move a session segment's membership: an event of
+// an earlier session (late, or replayed by a backfill) would otherwise
+// evaluate that session's values and replace or drop a membership of the
+// current one.
+func (a *segmentApply) sessionCurrent() (bool, error) {
+	event, err := a.eventSession()
+	if err != nil || event == "" {
+		return false, err
+	}
+	if a.current == nil {
+		current, err := repo.NewViewerFactRepository(a.tx).SessionAt(a.service.now(), a.batch.SessionStamp)
+		if err != nil {
+			return false, err
+		}
+		a.current = &current.ID
+	}
+	return event == *a.current, nil
+}
+
+func (a *segmentApply) viewer(viewer repo.ViewerKey, changes []repo.FactChange, live []*models.SegmentDefinition, conditions map[string]*segmentCondition) error {
+	changed := make(map[string]bool, len(changes))
+	for _, change := range changes {
 		changed[change.FactID] = true
 	}
 	var affected []*models.SegmentDefinition
 	var needed []string
-	for _, segment := range dependents {
-		if slices.ContainsFunc(p.read[segment.ID], func(id string) bool { return changed[id] }) {
-			affected = append(affected, segment)
-			needed = append(needed, p.read[segment.ID]...)
+	session := ""
+	for _, segment := range live {
+		if !slices.ContainsFunc(a.read[segment.ID], func(id string) bool { return changed[id] }) {
+			continue
 		}
+		if segmentWindow(a.read[segment.ID], a.facts) == models.FactWindowSession {
+			current, err := a.sessionCurrent()
+			if err != nil {
+				return err
+			}
+			if !current {
+				continue
+			}
+			if session, err = a.eventSession(); err != nil {
+				return err
+			}
+		}
+		affected = append(affected, segment)
+		needed = append(needed, a.read[segment.ID]...)
 	}
 	if len(affected) == 0 {
 		return nil
@@ -433,14 +511,14 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 	slices.Sort(needed)
 	needed = slices.Compact(needed)
 
-	if err := p.segments.LockViewer(p.viewer); err != nil {
+	if err := a.segments.LockViewer(viewer); err != nil {
 		return err
 	}
-	values, err := p.segments.FactValues(activeFactIDs(needed, p.facts), p.session, &p.viewer)
+	values, err := a.segments.FactValues(needed, session, &viewer)
 	if err != nil {
 		return err
 	}
-	after := readingsByViewer(values, p.facts, p.session)[p.viewer]
+	after := readingsByViewer(values, a.facts, session)[viewer]
 	if after == nil {
 		after = map[string]*factReading{}
 	}
@@ -449,12 +527,12 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 		before[id] = reading
 	}
 	viewerName := ""
-	for _, change := range p.changes {
+	for _, change := range changes {
 		if viewerName == "" && change.SubjectName != nil {
 			viewerName = *change.SubjectName
 		}
-		fact, ok := p.facts[change.FactID]
-		if !ok || !fact.active || change.WindowKey != factWindowKey(fact, p.session) {
+		fact, ok := a.facts[change.FactID]
+		if !ok || change.WindowKey != factWindowKey(fact, session) {
 			continue
 		}
 		before[change.FactID] = readingOf(change.Before)
@@ -464,7 +542,7 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 	for i, segment := range affected {
 		affectedIDs[i] = segment.ID
 	}
-	rows, err := p.segments.ViewerMembers(p.viewer, affectedIDs)
+	rows, err := a.segments.ViewerMembers(viewer, affectedIDs)
 	if err != nil {
 		return err
 	}
@@ -473,16 +551,11 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 		stored[row.SegmentID] = row
 	}
 
-	now := p.batch.OccurredAt
+	now := a.batch.OccurredAt
 	for _, segment := range affected {
 		windowKey := ""
-		if segmentWindow(p.read[segment.ID], p.facts) == models.FactWindowSession {
-			// No session has started and the event carried no stamp: there is
-			// no window for a session segment to hold anyone in.
-			if p.session == "" {
-				continue
-			}
-			windowKey = p.session
+		if segmentWindow(a.read[segment.ID], a.facts) == models.FactWindowSession {
+			windowKey = session
 		}
 		condition := conditions[segment.ID]
 		isIn := condition.evaluate(after, now)
@@ -491,10 +564,10 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 
 		edge := ""
 		if isIn && !member {
-			entered, err := p.segments.Enter(models.SegmentMember{
+			entered, err := a.segments.Enter(models.SegmentMember{
 				SegmentID: segment.ID,
-				Platform:  p.viewer.Platform,
-				SubjectID: p.viewer.SubjectID,
+				Platform:  viewer.Platform,
+				SubjectID: viewer.SubjectID,
 				WindowKey: windowKey,
 				EnteredAt: now.UTC(),
 			})
@@ -506,7 +579,7 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 			}
 		}
 		if !isIn && hasRow {
-			left, err := p.segments.Leave(segment.ID, p.viewer)
+			left, err := a.segments.Leave(segment.ID, viewer)
 			if err != nil {
 				return err
 			}
@@ -526,10 +599,18 @@ func (p *segmentViewerPass) run(tx *gorm.DB, dependents []*models.SegmentDefinit
 				edge = string(cloudevents.SubjectViewerSegmentLeft)
 			}
 		}
-		if edge == "" || !p.announce || p.service.publisher == nil {
+		if edge == "" || !a.announce || a.service.publisher == nil {
 			continue
 		}
-		if err := p.service.publisher.PublishEventIn(tx, edge, segment.ID, p.edgeExtensions(), p.edgeEvent(segment.ID, viewerName, before, after)); err != nil {
+		// The edge names the event's session even for a lifetime segment;
+		// resolving it only here keeps it off the path of events that move
+		// nobody.
+		eventSession, err := a.eventSession()
+		if err != nil {
+			return err
+		}
+		edgeData := a.edgeEvent(segment.ID, viewer, viewerName, eventSession, before, after)
+		if err := a.service.publisher.PublishEventIn(a.tx, edge, segment.ID, edgeExtensions(viewer, eventSession), edgeData); err != nil {
 			return err
 		}
 	}
@@ -550,7 +631,7 @@ type segmentEdgeEvent struct {
 
 // segmentEdgeFact is one fact the segment reads, before and after the event:
 // a number (timestamps in epoch milliseconds), a string, or null for a value
-// the viewer does not have or a fact that is not active.
+// the viewer does not have.
 type segmentEdgeFact struct {
 	Before any `json:"before"`
 	After  any `json:"after"`
@@ -564,28 +645,28 @@ type segmentEdgeCause struct {
 // edgeExtensions are the CloudEvent extensions an edge carries besides its
 // data: the workflow service reads an event's platform and stream session
 // from the envelope.
-func (p *segmentViewerPass) edgeExtensions() map[string]string {
-	extensions := map[string]string{"platform": p.viewer.Platform}
-	if p.session != "" {
-		extensions["sessionid"] = p.session
+func edgeExtensions(viewer repo.ViewerKey, session string) map[string]string {
+	extensions := map[string]string{"platform": viewer.Platform}
+	if session != "" {
+		extensions["sessionid"] = session
 	}
 	return extensions
 }
 
-func (p *segmentViewerPass) edgeEvent(segmentID, viewerName string, before, after map[string]*factReading) segmentEdgeEvent {
-	facts := make(map[string]segmentEdgeFact, len(p.read[segmentID]))
-	for _, id := range p.read[segmentID] {
-		kind := p.facts[id].valueKind
+func (a *segmentApply) edgeEvent(segmentID string, viewer repo.ViewerKey, viewerName, session string, before, after map[string]*factReading) segmentEdgeEvent {
+	facts := make(map[string]segmentEdgeFact, len(a.read[segmentID]))
+	for _, id := range a.read[segmentID] {
+		kind := a.facts[id].valueKind
 		facts[id] = segmentEdgeFact{Before: plainReading(before[id], kind), After: plainReading(after[id], kind)}
 	}
 	return segmentEdgeEvent{
 		SegmentID:  segmentID,
-		Platform:   p.viewer.Platform,
-		ViewerID:   p.viewer.SubjectID,
+		Platform:   viewer.Platform,
+		ViewerID:   viewer.SubjectID,
 		ViewerName: viewerName,
-		SessionID:  p.session,
+		SessionID:  session,
 		Facts:      facts,
-		Cause:      segmentEdgeCause{Source: p.batch.Source, EventID: p.batch.EventID},
+		Cause:      segmentEdgeCause{Source: a.batch.Source, EventID: a.batch.EventID},
 	}
 }
 
@@ -614,11 +695,12 @@ func readingOf(state *repo.FactValueState) *factReading {
 
 // loadSegmentFacts reads the named facts' kinds and resolves whether each is
 // active. A fact that does not exist is absent from the result.
-func loadSegmentFacts(segments *repo.ViewerSegmentRepository, triggers *repo.ModuleRepository, ids []string) (map[string]segmentFact, error) {
+func loadSegmentFacts(segments *repo.ViewerSegmentRepository, triggers activeTriggers, ids []string) (map[string]segmentFact, error) {
 	definitions, err := segments.FactDefinitions(ids)
 	if err != nil {
 		return nil, fmt.Errorf("read segment facts: %w", err)
 	}
+	triggers = newMemoTriggers(triggers)
 	out := make(map[string]segmentFact, len(definitions))
 	for id, definition := range definitions {
 		resolved, err := resolveStoredFact(triggers, definition.Definition, definition.WindowKind, definition.ValueKind)

@@ -114,11 +114,12 @@ func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) 
 }
 
 // FactApplyHook runs inside an apply's transaction once every delta is
-// folded, with the result so far. The segment service uses it to diff
-// membership against the changed values, so the values, the membership and
-// its announcements commit or roll back together. Returning an error rolls
-// the apply back.
-type FactApplyHook func(tx *gorm.DB, result *FactApplyResult) error
+// folded, with the result so far and the stream session the event belongs to
+// (resolved at most once per apply, and only if asked for; see SessionAt).
+// The segment service uses it to diff membership against the changed values,
+// so the values, the membership and its announcements commit or roll back
+// together. Returning an error rolls the apply back.
+type FactApplyHook func(tx *gorm.DB, result *FactApplyResult, session func() (SessionRef, error)) error
 
 // ApplyThen is Apply, running `after` (when non-nil) in the transaction once
 // the batch is folded, if it was applied and changed any value.
@@ -193,7 +194,7 @@ func (r *ViewerFactRepository) ApplyThen(batch FactBatch, after FactApplyHook) (
 		if after == nil || len(result.Changes) == 0 {
 			return nil
 		}
-		return after(tx, result)
+		return after(tx, result, sessions.currentSession)
 	})
 	if err != nil {
 		return nil, err

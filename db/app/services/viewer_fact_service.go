@@ -11,6 +11,7 @@ import (
 
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -127,9 +128,6 @@ func (s *viewerFactService) UpsertFactDefinition(ctx context.Context, req *clien
 	resolved, err := resolveFact(s.triggers, body)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(err)
-	}
-	if resolved.status == factStatusInvalid && resolved.readsSegmentEdges {
-		return nil, twirp.NewError(twirp.FailedPrecondition, resolved.reason)
 	}
 	if resolved.status == factStatusInvalid {
 		return nil, twirp.InvalidArgumentError("definition", resolved.reason)
@@ -263,8 +261,8 @@ func (s *viewerFactService) ApplyFactDeltas(ctx context.Context, req *client.App
 		SkipDedupe:   req.Silent,
 		Deltas:       deltas,
 	}
-	result, err := s.facts.ApplyThen(batch, func(tx *gorm.DB, result *repo.FactApplyResult) error {
-		return s.diffSegments(tx, batch, result.Changes, !req.Silent)
+	result, err := s.facts.ApplyThen(batch, func(tx *gorm.DB, result *repo.FactApplyResult, session func() (repo.SessionRef, error)) error {
+		return s.diffSegments(tx, batch, result.Changes, session, !req.Silent)
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("apply fact deltas: %w", err))
@@ -337,8 +335,8 @@ func (s *viewerFactService) GetViewerFacts(ctx context.Context, req *client.GetV
 }
 
 // activeValues leaves out the values of facts that are not active. Such a
-// fact has stopped counting, so its stored value is stale; segments read it
-// as missing too, and a workflow reading ${viewer.*} must agree with them.
+// fact has stopped counting, so its stored value is stale, and a workflow
+// reading ${viewer.*} reads it as missing.
 func (s *viewerFactService) activeValues(values []repo.ViewerFactValue) ([]repo.ViewerFactValue, error) {
 	ids := make([]string, 0, len(values))
 	for _, value := range values {
@@ -418,7 +416,7 @@ func (s *viewerFactService) definitionToProto(definition *models.FactDefinition)
 // resolveStoredFact re-resolves a stored definition against the triggers
 // registered now. A body that no longer validates, or a `last` value field
 // whose kind changed from what the fact stores, makes it invalid.
-func resolveStoredFact(triggers *repo.ModuleRepository, definition, windowKind, valueKind string) (resolvedFact, error) {
+func resolveStoredFact(triggers activeTriggers, definition, windowKind, valueKind string) (resolvedFact, error) {
 	body, _, err := parseFactBody(definition)
 	if err == nil {
 		err = validateFactShape(body, windowKind)
@@ -707,9 +705,6 @@ type resolvedFact struct {
 	// valueKind is what the fact stores, or "" when it depends on a value
 	// field none of whose triggers resolved.
 	valueKind string
-	// readsSegmentEdges is true when a source's trigger fires on the engine's
-	// own viewer.* events, which makes the definition invalid.
-	readsSegmentEdges bool
 }
 
 // viewerEventPrefix is the namespace of the engine's segment edge events.
@@ -718,11 +713,73 @@ type resolvedFact struct {
 // segments again, looping through the outbox.
 const viewerEventPrefix = "viewer."
 
+// readsSegmentEdges reports whether a trigger's event pattern receives the
+// engine's segment edges: it is in the viewer. namespace, or its NATS
+// wildcards (`*`, `>`) match an edge's subject.
+func readsSegmentEdges(pattern string) bool {
+	if strings.HasPrefix(pattern, viewerEventPrefix) {
+		return true
+	}
+	for _, edge := range []cloudevents.Subject{cloudevents.SubjectViewerSegmentEntered, cloudevents.SubjectViewerSegmentLeft} {
+		if natsPatternMatches(pattern, string(edge)) {
+			return true
+		}
+	}
+	return false
+}
+
+// natsPatternMatches reports whether a NATS subscription pattern receives
+// subject: `*` matches one token and a final `>` one or more.
+func natsPatternMatches(pattern, subject string) bool {
+	patternTokens := strings.Split(pattern, ".")
+	subjectTokens := strings.Split(subject, ".")
+	for i, token := range patternTokens {
+		if token == ">" && i == len(patternTokens)-1 {
+			return len(subjectTokens) > i
+		}
+		if i >= len(subjectTokens) || (token != "*" && token != subjectTokens[i]) {
+			return false
+		}
+	}
+	return len(patternTokens) == len(subjectTokens)
+}
+
+// activeTriggers is how a fact resolves the triggers its sources name.
+type activeTriggers interface {
+	GetActiveTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error)
+}
+
+// memoTriggers answers each trigger lookup once, for resolving many facts
+// that share triggers (most chat facts read the one chat trigger).
+type memoTriggers struct {
+	triggers activeTriggers
+	found    map[string]memoTrigger
+}
+
+type memoTrigger struct {
+	trigger *models.Trigger
+	err     error
+}
+
+func newMemoTriggers(triggers activeTriggers) *memoTriggers {
+	return &memoTriggers{triggers: triggers, found: map[string]memoTrigger{}}
+}
+
+func (m *memoTriggers) GetActiveTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error) {
+	key := moduleID + ":" + manifestID
+	if hit, ok := m.found[key]; ok {
+		return hit.trigger, hit.err
+	}
+	trigger, err := m.triggers.GetActiveTriggerByModuleAndManifestID(moduleID, manifestID)
+	m.found[key] = memoTrigger{trigger: trigger, err: err}
+	return trigger, err
+}
+
 // resolveFact looks each source's trigger up and checks the source against what
 // that trigger emits. A source that does not fit makes the definition
 // invalid; a trigger that is not registered makes it unresolved, unless
 // another source is invalid. The error is a failure to read the triggers.
-func resolveFact(triggers *repo.ModuleRepository, body *models.FactDefinitionBody) (resolvedFact, error) {
+func resolveFact(triggers activeTriggers, body *models.FactDefinitionBody) (resolvedFact, error) {
 	out := resolvedFact{sources: make([]*client.ResolvedFactSource, len(body.Sources)), status: factStatusActive}
 	fn := body.Aggregate.Fn
 	switch aggregateReads(fn) {
@@ -758,10 +815,9 @@ func resolveFact(triggers *repo.ModuleRepository, body *models.FactDefinitionBod
 			return out, fmt.Errorf("look up trigger %s: %w", source.Trigger, err)
 		}
 		resolved.Event = trigger.Event
-		if strings.HasPrefix(trigger.Event, viewerEventPrefix) {
-			out.readsSegmentEdges = true
-			return invalidFact(out, fmt.Errorf("sources[%d]: trigger %s fires on the engine's %s* segment events, which a fact cannot count without feeding the segments that publish them",
-				i, source.Trigger, viewerEventPrefix)), nil
+		if readsSegmentEdges(trigger.Event) {
+			return invalidFact(out, fmt.Errorf("sources[%d]: trigger %s fires on %q, which receives the engine's segment events; a fact cannot count them without feeding the segments that publish them",
+				i, source.Trigger, trigger.Event)), nil
 		}
 
 		var emits emitsShape
