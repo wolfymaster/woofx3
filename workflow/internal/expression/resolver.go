@@ -28,7 +28,7 @@ var ErrPathNotFound = errors.New("path not found")
 
 type Resolver struct {
 	sources         map[string]any
-	lazySources     map[string]func() any
+	lazySources     map[string]LazyLoader
 	assetURLBase    string
 	hasAssetURLBase bool
 }
@@ -36,13 +36,17 @@ type Resolver struct {
 func NewResolver() *Resolver {
 	return &Resolver{
 		sources:     make(map[string]any),
-		lazySources: make(map[string]func() any),
+		lazySources: make(map[string]LazyLoader),
 	}
 }
 
 func (r *Resolver) AddSource(name string, data any) {
 	r.sources[name] = data
 }
+
+// LazyLoader reads a lazy source's data. An error fails every reference to
+// the source.
+type LazyLoader func() (any, error)
 
 // AddLazySource adds a source whose data costs something to read: load runs
 // the first time an expression references the source, and never when none
@@ -52,7 +56,7 @@ func (r *Resolver) AddSource(name string, data any) {
 // A lazy source's keys are open-ended, so a reference to one that is absent
 // asks about a value that is not there, which is not a mistake in the
 // expression.
-func (r *Resolver) AddLazySource(name string, load func() any) {
+func (r *Resolver) AddLazySource(name string, load LazyLoader) {
 	if load == nil {
 		panic(fmt.Sprintf("expression: lazy source %q has no loader", name))
 	}
@@ -160,7 +164,10 @@ func (r *Resolver) evaluateReference(expr string) (any, error) {
 	if load, lazy := r.lazySources[source]; lazy {
 		data, loaded := r.sources[source]
 		if !loaded {
-			data = load()
+			var err error
+			if data, err = load(); err != nil {
+				return nil, fmt.Errorf("%s: %w", source, err)
+			}
 			r.sources[source] = data
 		}
 		value, err := ResolvePath(data, path)

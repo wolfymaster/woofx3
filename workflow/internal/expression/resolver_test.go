@@ -1,6 +1,7 @@
 package expression
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -65,9 +66,9 @@ func TestLazySourceLoadsOnlyWhenReferencedAndOnce(t *testing.T) {
 	loads := 0
 	r := NewResolver()
 	r.AddSource("trigger", map[string]any{"name": "wolfy"})
-	r.AddLazySource("viewer", func() any {
+	r.AddLazySource("viewer", func() (any, error) {
 		loads++
-		return map[string]any{"id": "u1", "user": map[string]any{"apples": 3.0}}
+		return map[string]any{"id": "u1", "user": map[string]any{"apples": 3.0}}, nil
 	})
 
 	if got, err := r.ResolveString("hi ${trigger.name}"); err != nil || got != "hi wolfy" {
@@ -103,7 +104,7 @@ func TestLazySourceResolvesAnAbsentPathToNil(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := NewResolver()
-			r.AddLazySource("viewer", func() any { return data })
+			r.AddLazySource("viewer", func() (any, error) { return data, nil })
 			got, err := r.ResolveString("${viewer.user.apples}")
 			if err != nil || got != nil {
 				t.Fatalf("full expression = %v, %v; want nil, nil", got, err)
@@ -124,12 +125,12 @@ func TestLazySourceCannotShadowASource(t *testing.T) {
 			t.Fatal("a lazy source shadowed a source")
 		}
 	}()
-	r.AddLazySource("viewer", func() any { return nil })
+	r.AddLazySource("viewer", func() (any, error) { return nil, nil })
 }
 
 func TestConditionOnAbsentValueOnlyMeetsPresenceOperators(t *testing.T) {
 	r := NewResolver()
-	r.AddLazySource("viewer", func() any { return map[string]any{} })
+	r.AddLazySource("viewer", func() (any, error) { return map[string]any{}, nil })
 	for _, tc := range []struct {
 		op    string
 		value any
@@ -148,5 +149,22 @@ func TestConditionOnAbsentValueOnlyMeetsPresenceOperators(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Errorf("absent %s %v = %v, %v; want %v", tc.op, tc.value, got, err, tc.want)
 		}
+	}
+}
+
+func TestLazySourceLoadErrorFailsEveryReference(t *testing.T) {
+	unavailable := errors.New("unavailable")
+	r := NewResolver()
+	r.AddLazySource("viewer", func() (any, error) { return nil, unavailable })
+	for _, expr := range []string{"${viewer.user.apples}", "${viewer.user.apples > 2}", "${viewer}"} {
+		if _, err := r.ResolveString(expr); !errors.Is(err, unavailable) {
+			t.Errorf("%s: err = %v, want the load error", expr, err)
+		}
+	}
+	if _, err := Evaluate(&Condition{Field: "${viewer.user.apples}", Operator: "not_exists"}, r); !errors.Is(err, unavailable) {
+		t.Fatalf("not_exists on an unloadable source: err = %v, want the load error", err)
+	}
+	if got, err := r.ResolveString("has ${viewer.user.apples} apples"); err != nil || got != "has ${viewer.user.apples} apples" {
+		t.Fatalf("embedded = %q, %v; want the token left in place", got, err)
 	}
 }
