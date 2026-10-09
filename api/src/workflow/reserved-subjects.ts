@@ -38,6 +38,7 @@ export const RESERVED_SUBJECT_PREFIXES: readonly string[] = [
   "stream.offline",
   "stream.online",
   "user.message",
+  "viewer.",
   "widget.event",
   "workflow.health.",
   "workflow.run.",

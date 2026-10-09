@@ -38,8 +38,9 @@ var CommandSubjectPrefixes = []string{
 
 // EngineEventSubjectPrefixes are the events engine services assert about the
 // platform and about themselves: a follow or a cheer, a stream going live, a
-// session boundary, a module installed, a run finished. A workflow publishing
-// one would forge that fact for every workflow and service that acts on it.
+// session boundary, a module installed, a run finished, a viewer entering a
+// segment. A workflow publishing one would forge that fact for every workflow
+// and service that acts on it.
 // Modules are not held to this tier: a platform module declares the platform
 // events it brings, which is what CommandSubjectPrefixes leaves room for.
 var EngineEventSubjectPrefixes = []string{
@@ -56,6 +57,7 @@ var EngineEventSubjectPrefixes = []string{
 	"stream.offline",
 	"stream.online",
 	"user.message",
+	"viewer.",
 	"widget.event",
 	"workflow.health.",
 	"workflow.run.",
