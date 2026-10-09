@@ -116,6 +116,21 @@ async function findInstalledModule(
   return found;
 }
 
+/**
+ * A `list` module setting is stored as a JSON array of row objects, which is
+ * what barkloader hands the module's functions and the scene manager hands
+ * its widgets; anything else would read as no rows.
+ */
+export function isListSettingValue(value: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return false;
+  }
+  return Array.isArray(parsed) && parsed.every((row) => row !== null && typeof row === "object" && !Array.isArray(row));
+}
+
 import { parseInstanceSettings } from "../module-event-handlers";
 import { readModuleCatalogFields } from "./helpers";
 import type { UninstallModuleResponse } from "./types";
@@ -439,6 +454,9 @@ export const modulesRoutes = routeModule({
     const existing = await this.db.listModuleSettings({ moduleId });
     const current = existing.settings.find((s) => s.key === key);
     const valueType = current?.valueType ?? "string";
+    if (valueType === "list" && !isListSettingValue(value)) {
+      throw new Error(`updateModuleSetting: ${key} is a list setting; value must be a JSON array of rows`);
+    }
     return this.db.setModuleSetting({ moduleId, key, value, valueType });
   },
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/twitchtv/twirp"
+
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/secrets"
 	"github.com/wolfymaster/woofx3/db/app/workers"
@@ -83,6 +85,42 @@ func (s *ModuleSettingService) SetModuleSetting(ctx context.Context, req *client
 	}
 	s.publishChange(saved)
 	return toProtoSetting(saved), nil
+}
+
+// CompareAndSetModuleSetting writes a value only while the setting still holds
+// the expected one, so concurrent read-modify-write updates, such as two
+// function runs each adding an entry to a list, can't lose one another's
+// change. A secret is refused: its stored value is sealed, so there is nothing
+// to compare the caller's against. A refusal answers with the value stored
+// now, for the caller to retry from.
+func (s *ModuleSettingService) CompareAndSetModuleSetting(ctx context.Context, req *client.CompareAndSetModuleSettingRequest) (*client.CompareAndSetModuleSettingResponse, error) {
+	rows, err := s.repo.ListByModule(req.ModuleId)
+	if err != nil {
+		return nil, err
+	}
+	existing, ok := findSetting(rows, req.Key)
+	if !ok {
+		return &client.CompareAndSetModuleSettingResponse{Swapped: false}, nil
+	}
+	if existing.ValueType == SecretSettingType {
+		return nil, twirp.InvalidArgumentError("key", "a secret setting cannot be compared and set")
+	}
+	swapped, err := s.repo.CompareAndSet(req.ModuleId, req.Key, req.ExpectedValue, req.Value)
+	if err != nil {
+		return nil, err
+	}
+	rows, err = s.repo.ListByModule(req.ModuleId)
+	if err != nil {
+		return nil, err
+	}
+	current, ok := findSetting(rows, req.Key)
+	if !ok {
+		return &client.CompareAndSetModuleSettingResponse{Swapped: false}, nil
+	}
+	if swapped {
+		s.publishChange(current)
+	}
+	return &client.CompareAndSetModuleSettingResponse{Swapped: swapped, Current: toProtoSetting(current)}, nil
 }
 
 // publishChange announces a written setting as `db.module.setting.updated`,

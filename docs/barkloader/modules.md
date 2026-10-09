@@ -920,9 +920,10 @@ types have nothing to bind to.
 | `id` | string | yes | Manifest-local setting key, e.g. `clientId`. Combined with the module id to key the `module_settings` row (`module_id` + `key`, unique). This is the key a function reads via `ctx.module.settings.<id>`. |
 | `label` | string | yes | Display label for the settings UI. |
 | `description` | string | no | Defaults to `""`. |
-| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button` — or `secret` for a credential, or `url` for a URL the streamer enters, whose origin `ctx.http` may then reach (see [Where `ctx.http` may connect](#where-ctx-http-may-connect)). `secret` and `url` are valid only here, never on a trigger, action or widget field, and neither may declare `defaultValue`. Validated at install. |
+| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle`, `list` or `button` — or `secret` for a credential, or `url` for a URL the streamer enters, whose origin `ctx.http` may then reach (see [Where `ctx.http` may connect](#where-ctx-http-may-connect)). `secret` and `url` are valid only here, never on a trigger, action or widget field, and neither may declare `defaultValue`. Validated at install. |
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
-| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. Rejected on `type: "secret"`: the manifest would ship the secret. |
+| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, `"[]"` for `type: "list"`, and `""` otherwise. On a `list` it must be a JSON array, as text. Rejected on `type: "secret"`: the manifest would ship the secret. |
+| `itemFields` | array | no | Required for `type: "list"`, and only allowed there: the fields of one row, as on any other [`list` field](#field-types). See [List settings](#list-settings). |
 | `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
 | `resourceKind` | string | no | Required for `type: "resource_ref"`, and only allowed there: the kind of resource instance the setting links to (`timer`). Its value is that instance's canonical id. A `resource_ref` setting takes no `defaultValue`. See [Linking a resource](#linking-a-resource). |
 | `create` | object | no | Only on a `resource_ref` setting: `{ instanceId, displayName, settings? }`, the instance install creates and links while the setting is empty. See [Linking a resource](#linking-a-resource). |
@@ -1010,6 +1011,53 @@ reads as it does everywhere else (a timer as `{ running, remainingMs, durationMs
 `linkedResources` is fixed when the frame loads, so choosing another instance in the
 settings takes effect when the scene next loads.
 
+#### List settings
+
+A `list` setting holds rows the streamer adds and removes on the module's settings
+page, in the same editor every other `list` field uses, and the module's functions
+can change them too. Use one for data the streamer curates and the module also
+writes, like the entries on a wheel:
+
+```json
+{
+  "id": "items",
+  "label": "Entries on the wheel",
+  "type": "list",
+  "itemFields": [{ "id": "label", "label": "Entry", "type": "text", "required": true }]
+}
+```
+
+The value is stored as a JSON array of objects keyed by the `itemFields` ids, and
+read that way everywhere:
+
+- **Functions** read the rows as an array in `ctx.module.settings.<id>` (`[]` when
+  empty). To change them, use `ctx.module.compareAndSetSetting(id, expected, value)`,
+  which writes only while the setting still holds `expected` and answers
+  `{ swapped, current }`. A run and the streamer, or two runs, changing the list at
+  the same moment then can't lose one another's change: on `swapped: false`, apply the
+  change again to `current` and retry. The comparison is by meaning (key order,
+  `1` vs `1.0`), so the array a function read matches the stored list however it was
+  saved. `ctx.module.settings` is read once per run, so retry from `current`, not
+  from the settings.
+- **Widgets** of the module subscribe to `"setting:" + id` to get the rows, sent
+  again whenever the setting is saved. The scene manager serves only `list`
+  settings this way; any other setting reads as `null`.
+
+```js
+function add(ctx, label) {
+  var current = ctx.module.settings.items;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    var next = current.concat([{ label: label }]);
+    var outcome = ctx.module.compareAndSetSetting("items", current, next);
+    if (outcome.swapped) {
+      return next;
+    }
+    current = outcome.current;
+  }
+  throw new Error("the list kept changing; try again");
+}
+```
+
 #### Reading settings at runtime — `ctx.module`
 
 Both the QuickJS and Lua sandbox runtimes expose the invoking function's module
@@ -1021,13 +1069,16 @@ ctx.module = {
   name: string,       // manifest display name
   version: string,    // semver string from the manifest
   settings: {          // one key per module_settings row for this module
-    [key: string]: string | number | boolean
-  }
+    [key: string]: string | number | boolean | object[]
+  },
+  setSetting(key, value),                        // write a string, unconditionally
+  compareAndSetSetting(key, expected, value)     // write only while it holds expected
 }
 ```
 
 Values are stored as `TEXT` in the database and coerced to a native `string` /
-`number` / `boolean` at read time based on the setting's declared `type`
+`number` / `boolean`, or a `list` setting's array of rows, at read time based on the
+setting's declared `type`
 (`HttpSettingsClient::coerce_value` in barkloader). Example, from
 `modules/platform/spotify/functions/poll_current_track.js` (**woofx3-modules**):
 

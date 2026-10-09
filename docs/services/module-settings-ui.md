@@ -52,6 +52,9 @@ to at runtime), not the composite `{id}:{version}:{hash}` key used for actions/w
   fixed at install time.
 - **`value` is validated as a string.** A non-string `value` throws rather than being
   passed through.
+- **A `list` setting's `value` is a JSON array of row objects, as text**, keyed by the
+  manifest's `itemFields` ids (`'[{"label":"Pizza"}]'`). Anything else throws: it
+  would read as no rows to the module's functions and widgets.
 - **Listing a module with no registered settings returns an empty array**, not an
   error — `ListModuleSettings` on the db side is a plain filter query, not an
   existence check.

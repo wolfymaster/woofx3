@@ -275,6 +275,42 @@ pub fn set_module_setting(
     host.settings.set(module_id, key, value)
 }
 
+/// `ctx.module.compareAndSetSetting(key, expected, value)` — write one of the
+/// module's own settings only while it still holds `expected`, the safe way to
+/// change a setting other runs, or the streamer, may be changing at the same
+/// moment. Refused for the same keys `setSetting` refuses.
+///
+/// Returns `{ swapped, current }` for the module to marshal back: `current`
+/// is the setting as the module reads it now, which is what a caller that
+/// lost the race retries from. The invocation's `ctx.module.settings`
+/// snapshot is not refreshed, the same as after `setSetting`.
+pub fn compare_and_set_module_setting(
+    host: &HostContext,
+    module_id: &str,
+    url_settings: &std::collections::HashSet<String>,
+    key: &str,
+    expected: &Value,
+    value: &Value,
+) -> Result<Value, String> {
+    if crate::oauth::is_reserved_setting_key(key) {
+        return Err(format!(
+            "ctx.module.compareAndSetSetting: {key:?} is reserved for the tokens ctx.oauth keeps"
+        ));
+    }
+    if url_settings.contains(key) {
+        return Err(format!(
+            "ctx.module.compareAndSetSetting: {key:?} is a url setting, which only the streamer sets"
+        ));
+    }
+    let outcome = host
+        .settings
+        .compare_and_set(module_id, key, expected, value)?;
+    Ok(serde_json::json!({
+        "swapped": outcome.swapped,
+        "current": outcome.current.unwrap_or(Value::Null),
+    }))
+}
+
 /// `ctx.module.settings`: the module's settings, without the tokens
 /// `ctx.oauth` keeps among them (`crate::oauth`), which module code never sees.
 pub fn module_settings_snapshot(host: &HostContext, module_id: &str) -> HashMap<String, Value> {
