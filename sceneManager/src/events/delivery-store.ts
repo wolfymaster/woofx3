@@ -32,6 +32,7 @@ export interface OpenDeliveryRef {
   eventId: string;
   type: string;
   key: string;
+  value: unknown;
   startedAt: number | null;
 }
 
@@ -272,7 +273,13 @@ export class DeliveryStore {
       }
       this.deleteOpen(sceneId, eventId, instanceId);
       if (delivery) {
-        closed.push({ eventId, type: delivery.type, key: delivery.key, startedAt: delivery.startedAt });
+        closed.push({
+          eventId,
+          type: delivery.type,
+          key: delivery.key,
+          value: delivery.value,
+          startedAt: delivery.startedAt,
+        });
       }
     }
     return closed;
@@ -335,6 +342,7 @@ export class DeliveryStore {
         eventId: delivery.eventId,
         type: delivery.type,
         key: delivery.key,
+        value: delivery.value,
         startedAt: delivery.startedAt,
       });
     }
@@ -355,7 +363,7 @@ export class DeliveryStore {
         continue;
       }
       if (delivery.startedAt === null) {
-        firsts.push({ eventId, type: delivery.type, key: delivery.key, startedAt: now });
+        firsts.push({ eventId, type: delivery.type, key: delivery.key, value: delivery.value, startedAt: now });
       }
       delivery.startedAt = now;
     }

@@ -43,6 +43,9 @@ impl serde::Serialize for Alert {
         if !self.error.is_empty() {
             len += 1;
         }
+        if self.version != 0 {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.Alert", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -80,6 +83,11 @@ impl serde::Serialize for Alert {
         if !self.error.is_empty() {
             struct_ser.serialize_field("error", &self.error)?;
         }
+        if self.version != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("version", ToString::to_string(&self.version).as_str())?;
+        }
         struct_ser.end()
     }
 }
@@ -110,6 +118,7 @@ impl<'de> serde::Deserialize<'de> for Alert {
             "completed_at",
             "completedAt",
             "error",
+            "version",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -126,6 +135,7 @@ impl<'de> serde::Deserialize<'de> for Alert {
             PlayedAt,
             CompletedAt,
             Error,
+            Version,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -159,6 +169,7 @@ impl<'de> serde::Deserialize<'de> for Alert {
                             "playedAt" | "played_at" => Ok(GeneratedField::PlayedAt),
                             "completedAt" | "completed_at" => Ok(GeneratedField::CompletedAt),
                             "error" => Ok(GeneratedField::Error),
+                            "version" => Ok(GeneratedField::Version),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -190,6 +201,7 @@ impl<'de> serde::Deserialize<'de> for Alert {
                 let mut played_at__ = None;
                 let mut completed_at__ = None;
                 let mut error__ = None;
+                let mut version__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -264,6 +276,14 @@ impl<'de> serde::Deserialize<'de> for Alert {
                             }
                             error__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Version => {
+                            if version__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("version"));
+                            }
+                            version__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
                     }
                 }
                 Ok(Alert {
@@ -279,6 +299,7 @@ impl<'de> serde::Deserialize<'de> for Alert {
                     played_at: played_at__,
                     completed_at: completed_at__,
                     error: error__.unwrap_or_default(),
+                    version: version__.unwrap_or_default(),
                 })
             }
         }
@@ -1109,6 +1130,9 @@ impl serde::Serialize for UpdateAlertLifecycleRequest {
         if !self.error.is_empty() {
             len += 1;
         }
+        if !self.id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.UpdateAlertLifecycleRequest", len)?;
         if !self.envelope_id.is_empty() {
             struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
@@ -1118,6 +1142,9 @@ impl serde::Serialize for UpdateAlertLifecycleRequest {
         }
         if !self.error.is_empty() {
             struct_ser.serialize_field("error", &self.error)?;
+        }
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
         }
         struct_ser.end()
     }
@@ -1133,6 +1160,7 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
             "envelopeId",
             "status",
             "error",
+            "id",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1140,6 +1168,7 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
             EnvelopeId,
             Status,
             Error,
+            Id,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1164,6 +1193,7 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
                             "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
                             "status" => Ok(GeneratedField::Status),
                             "error" => Ok(GeneratedField::Error),
+                            "id" => Ok(GeneratedField::Id),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1186,6 +1216,7 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
                 let mut envelope_id__ = None;
                 let mut status__ = None;
                 let mut error__ = None;
+                let mut id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::EnvelopeId => {
@@ -1206,12 +1237,19 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
                             }
                             error__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateAlertLifecycleRequest {
                     envelope_id: envelope_id__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
                     error: error__.unwrap_or_default(),
+                    id: id__.unwrap_or_default(),
                 })
             }
         }

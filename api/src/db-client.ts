@@ -475,8 +475,9 @@ export class DbClient {
     return alert.ListAlerts(req, this.config);
   }
 
-  async updateAlertStatus(req: alert.UpdateAlertStatusRequest): Promise<alert.AlertResponse> {
-    return alert.UpdateAlertStatus(req, this.config);
+  // `replayed` is the only status UpdateAlertStatus accepts.
+  async markAlertReplayed(req: { id: string }): Promise<alert.AlertResponse> {
+    return alert.UpdateAlertStatus({ id: req.id, status: "replayed" }, this.config);
   }
 
   async updateAlertLifecycle(req: alert.UpdateAlertLifecycleRequest): Promise<alert.AlertResponse> {

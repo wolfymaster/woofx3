@@ -7,6 +7,7 @@ function fakeLogger() {
 }
 
 type LifecycleRequest = {
+  id: string;
   envelopeId: string;
   status: string;
   error: string;
@@ -26,16 +27,17 @@ function writer(result: () => Promise<unknown> = async () => ({})) {
 }
 
 describe("reportAlertNotPlayed", () => {
-  it("records the refusal against the envelope id the engine minted", async () => {
+  it("records the refusal against the row the engine recorded", async () => {
     const { calls, client } = writer();
 
     await reportAlertNotPlayed(client, fakeLogger(), {
-      alertId: "env-1",
+      target: { rowId: "row-1", envelopeId: "env-1" },
       reason: "layout must be an object, got nothing",
     });
 
     expect(calls).toEqual([
       {
+        id: "row-1",
         envelopeId: "env-1",
         status: "failed",
         error: "layout must be an object, got nothing",
@@ -54,7 +56,7 @@ describe("reportAlertNotPlayed", () => {
     });
 
     await reportAlertNotPlayed(client, logger, {
-      alertId: "env-1",
+      target: { rowId: "", envelopeId: "env-1" },
       reason: "the layout contains no widgets",
     });
 
@@ -67,7 +69,7 @@ describe("reportAlertNotPlayed", () => {
     const { calls, client } = writer();
 
     await reportAlertNotPlayed(client, fakeLogger(), {
-      alertId: "env-1",
+      target: { rowId: "row-1", envelopeId: "env-1" },
       reason: 'no alert widget named "sidebar" on a running scene',
     });
 

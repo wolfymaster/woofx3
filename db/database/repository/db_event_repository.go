@@ -17,6 +17,12 @@ func NewDbEventRepository(db *gorm.DB) *DbEventRepository {
 	return &DbEventRepository{db: db}
 }
 
+// WithDB returns a repository that runs on `db`, such as a caller's
+// transaction.
+func (r *DbEventRepository) WithDB(db *gorm.DB) *DbEventRepository {
+	return &DbEventRepository{db: db}
+}
+
 func (r *DbEventRepository) Create(event *models.WorkerEvent) error {
 	if event.MaxAttempts == 0 {
 		event.MaxAttempts = 3
