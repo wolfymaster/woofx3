@@ -299,11 +299,22 @@ func validateInstanceSegment(value, label string) error {
 	return nil
 }
 
-func resourceInstanceToProto(module *models.Module, inst *models.ModuleResourceInstance) *client.ModuleResourceInstance {
-	moduleName := ""
-	if module != nil {
-		moduleName = module.Name
+// instanceModuleName is the module segment of an instance's canonical id: the
+// owning module's manifest id, which is what modules, workflows and the
+// dashboard address instances by. `Name` is the manifest's display name and is
+// only a fallback for a row installed before the manifest id was recorded.
+func instanceModuleName(module *models.Module) string {
+	if module == nil {
+		return ""
 	}
+	if module.ModuleID != "" {
+		return module.ModuleID
+	}
+	return module.Name
+}
+
+func resourceInstanceToProto(module *models.Module, inst *models.ModuleResourceInstance) *client.ModuleResourceInstance {
+	moduleName := instanceModuleName(module)
 	canonicalID := ""
 	if moduleName != "" {
 		canonicalID = canonicalIDFor(moduleName, inst.Kind, inst.InstanceID)
@@ -355,10 +366,9 @@ func instanceSettingsOrEmpty(settings string) string {
 // `db.module.resource.instance.{created,deleted}.system` outbox events.
 // Mirrors the trigger / action builders in module_event_payload.go.
 func buildResourceInstanceData(module *models.Module, inst *models.ModuleResourceInstance) map[string]interface{} {
-	moduleName := ""
+	moduleName := instanceModuleName(module)
 	moduleKey := ""
 	if module != nil {
-		moduleName = module.Name
 		moduleKey = module.ModuleKey
 	}
 	canonicalID := ""
