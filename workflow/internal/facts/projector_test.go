@@ -92,7 +92,7 @@ func TestProjectCountsAMatchingMessageInOneBatch(t *testing.T) {
 			chatSource(where(t, `{"path":"message","op":"contains","value":"apple"}`))),
 		definition("woofx3:fact:messages", AggregateCount, chatSource(nil)),
 	)
-	err := p.Project(context.Background(), chatEvent(map[string]any{
+	_, err := p.Project(context.Background(), chatEvent(map[string]any{
 		"chatterId": "u1", "chatterName": "Wolfy", "chatterIsAnonymous": false, "message": "apple pie",
 	}))
 	if err != nil {
@@ -119,12 +119,12 @@ func TestProjectCountsAMatchingMessageInOneBatch(t *testing.T) {
 func TestProjectMakesNoCallWhenNothingMatches(t *testing.T) {
 	p, client := newProjector(t, definition("f", AggregateCount,
 		chatSource(where(t, `{"path":"message","op":"contains","value":"apple"}`))))
-	if err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": "u1", "message": "pear"})); err != nil {
+	if _, err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": "u1", "message": "pear"})); err != nil {
 		t.Fatalf("project: %v", err)
 	}
 	other := chatEvent(map[string]any{"chatterId": "u1", "message": "apple"})
 	other.Type = "channel.cheer"
-	if err := p.Project(context.Background(), other); err != nil {
+	if _, err := p.Project(context.Background(), other); err != nil {
 		t.Fatalf("project: %v", err)
 	}
 	if len(client.applied) != 0 {
@@ -150,7 +150,7 @@ func TestProjectSkipsEventsThatAreNotAViewerAction(t *testing.T) {
 		"api": api, "dry run": dry, "no platform": noPlatform,
 		"anonymous": anonymous, "no viewer": noViewer, "empty viewer": emptyViewer,
 	} {
-		if err := p.Project(context.Background(), event); err != nil {
+		if _, err := p.Project(context.Background(), event); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if len(client.applied) != 0 {
@@ -271,7 +271,7 @@ func TestProjectUsesNowWhenTheEventHasNoTime(t *testing.T) {
 func TestProjectSkipsASourceWithoutItsValue(t *testing.T) {
 	def := definition("f", AggregateSum, FactSource{EventPattern: "channel.cheer", IdentityPath: "userId", Value: "bits"})
 	p, client := newProjector(t, def)
-	if err := p.Project(context.Background(), &types.Event{
+	if _, err := p.Project(context.Background(), &types.Event{
 		ID: "c1", Type: "channel.cheer", Source: "twitch", Platform: "twitch", Data: map[string]any{"userId": "u1"},
 	}); err != nil {
 		t.Fatalf("project: %v", err)
@@ -286,7 +286,7 @@ func TestProjectReportsAWrongTypeAndKeepsTheOtherDeltas(t *testing.T) {
 		definition("bits", AggregateSum, FactSource{Trigger: "cheer", EventPattern: "channel.cheer", IdentityPath: "userId", Value: "bits"}),
 		definition("cheers", AggregateCount, FactSource{Trigger: "cheer", EventPattern: "channel.cheer", IdentityPath: "userId"}),
 	)
-	err := p.Project(context.Background(), &types.Event{
+	_, err := p.Project(context.Background(), &types.Event{
 		ID: "c1", Type: "channel.cheer", Source: "twitch", Platform: "twitch", Time: eventTime,
 		Data: map[string]any{"userId": "u1", "bits": "lots"},
 	})
@@ -307,7 +307,7 @@ func TestProjectMultiSourceCountsAnEventOncePerViewer(t *testing.T) {
 	)
 	p, client := newProjector(t, support)
 	for _, typ := range []string{"channel.cheer", "channel.subscribe", "channel.follow"} {
-		if err := p.Project(context.Background(), &types.Event{
+		if _, err := p.Project(context.Background(), &types.Event{
 			ID: typ, Type: typ, Source: "twitch", Platform: "twitch", Time: eventTime,
 			Data: map[string]any{"userId": "u1", "bits": float64(500)},
 		}); err != nil {
@@ -415,7 +415,7 @@ func TestReplaceOwnsItsWhereTrees(t *testing.T) {
 func TestProjectReturnsTheApplyError(t *testing.T) {
 	p, client := newProjector(t, definition("f", AggregateCount, chatSource(nil)))
 	client.applyErr = errors.New("timeout")
-	err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": "u1"}))
+	_, err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": "u1"}))
 	if err == nil || !strings.Contains(err.Error(), "apply fact deltas for event evt-1: timeout") {
 		t.Fatalf("got %v", err)
 	}
@@ -423,7 +423,7 @@ func TestProjectReturnsTheApplyError(t *testing.T) {
 
 func TestProjectRejectsANonStringIdentity(t *testing.T) {
 	p, client := newProjector(t, definition("f", AggregateCount, chatSource(nil)))
-	err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": float64(7)}))
+	_, err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": float64(7)}))
 	var sourceErr *SourceError
 	if !errors.As(err, &sourceErr) || sourceErr.FactID != "f" || !strings.Contains(err.Error(), "identity chatterId is float64, not a string or a list") {
 		t.Fatalf("got %v", err)
@@ -436,7 +436,7 @@ func TestProjectRejectsANonStringIdentity(t *testing.T) {
 func TestProjectRejectsANonStringIdInAList(t *testing.T) {
 	p, client := newProjector(t, definition("f", AggregateCount,
 		FactSource{Trigger: "presence", EventPattern: "chat.presence", IdentityPath: "chatterIds"}))
-	err := p.Project(context.Background(), &types.Event{
+	_, err := p.Project(context.Background(), &types.Event{
 		ID: "p1", Type: "chat.presence", Source: "twitch", Platform: "twitch", Time: eventTime,
 		Data: map[string]any{"chatterIds": []any{"a", map[string]any{"id": "b"}}},
 	})
@@ -490,14 +490,14 @@ func TestProjectAnonymousWhenSkipsAListIdentity(t *testing.T) {
 	}))
 	data := map[string]any{"recipientIds": []any{"a", "b"}, "isAnonymous": true}
 	event := &types.Event{ID: "g1", Type: "channel.gift", Source: "twitch", Platform: "twitch", Time: eventTime, Data: data}
-	if err := p.Project(context.Background(), event); err != nil {
+	if _, err := p.Project(context.Background(), event); err != nil {
 		t.Fatalf("project: %v", err)
 	}
 	if len(client.applied) != 0 {
 		t.Fatal("an anonymous event produced a call")
 	}
 	data["isAnonymous"] = false
-	if err := p.Project(context.Background(), event); err != nil {
+	if _, err := p.Project(context.Background(), event); err != nil {
 		t.Fatalf("project: %v", err)
 	}
 	if len(client.applied) != 1 || len(client.applied[0].Deltas) != 2 {
@@ -533,4 +533,32 @@ func TestReplaceRunsConcurrentlyWithRequest(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+func TestProjectReportsWhetherADefinitionListened(t *testing.T) {
+	p, _ := newProjector(t, definition("f", AggregateCount, chatSource(where(t, `{"path":"message","op":"eq","value":"hi"}`))))
+	filteredOut := chatEvent(map[string]any{"chatterId": "u1", "message": "bye"})
+	simulated := chatEvent(map[string]any{"chatterId": "u1", "message": "hi"})
+	simulated.Source = apiSource
+	dryRun := chatEvent(map[string]any{"chatterId": "u1", "message": "hi"})
+	dryRun.DryRun = true
+	other := chatEvent(map[string]any{"chatterId": "u1"})
+	other.Type = "channel.raid"
+
+	for _, tc := range []struct {
+		name  string
+		event *types.Event
+		want  bool
+	}{
+		{"a matching event", chatEvent(map[string]any{"chatterId": "u1", "message": "hi"}), true},
+		{"an event the where filter rejects", filteredOut, true},
+		{"a dashboard simulation", simulated, false},
+		{"a dry run", dryRun, false},
+		{"an event of another type", other, false},
+	} {
+		listened, err := p.Project(context.Background(), tc.event)
+		if err != nil || listened != tc.want {
+			t.Errorf("%s: listened = %v, err = %v, want %v", tc.name, listened, err, tc.want)
+		}
+	}
 }

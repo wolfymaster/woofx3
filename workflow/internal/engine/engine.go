@@ -430,6 +430,7 @@ type HandleOptions struct {
 	NoMatchExpected bool
 }
 
+// HandleEvent is HandleEventWith with the default options.
 func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
 	return e.HandleEventWith(event, HandleOptions{})
 }

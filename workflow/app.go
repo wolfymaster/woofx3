@@ -71,6 +71,9 @@ type WorkflowApp struct {
 	// go straight to the engine.
 	facts      *facts.Projector
 	factErrors *factErrorLog
+	// factCtx is the app's run context, which every fact write derives from
+	// so that shutdown cancels one in flight.
+	factCtx context.Context
 }
 
 func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
@@ -279,7 +282,8 @@ func (a *WorkflowApp) startViewerFacts(ctx context.Context, natsClient *natsclie
 		a.logger.Warn("No viewer fact db client; viewer facts will not count")
 		return
 	}
-	a.facts = facts.NewProjector(newViewerFactClient(a.factDbClient, a.logger))
+	a.factCtx = ctx
+	a.facts = facts.NewProjector(newFactWriteBreaker(newViewerFactClient(a.factDbClient, a.logger), a.logger))
 	reloader := newFactReloader(a.facts, newFactSubscriptions(eventReg), a.logger)
 	for _, subject := range []string{subjectDbViewerFactPattern, subjectDbModuleTriggerPattern} {
 		// Non-fatal: the reloader's periodic re-list still converges.
@@ -664,22 +668,23 @@ func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 		return
 	}
 
-	// Promoted from Debug → Info: the chain of "did the engine see the
-	// event, was a workflow matched, was it dispatched" is the most
-	// common debugging path when a trigger appears not to fire, so this
-	// belongs in default-level logs. If event volume becomes a concern
-	// (very high QPS triggers), demote per-subject behind a config flag.
-	a.logger.Info("Received trigger event",
+	factsListened := a.projectFacts(event)
+
+	// "Did the engine see the event, did a workflow match, was it
+	// dispatched" is the usual question when a trigger appears not to fire,
+	// so the chain is logged at Info. An event a fact listens for is often
+	// one no workflow does, such as every chat message; for those the
+	// engine's match lines carry the Info signal and these stay at Debug.
+	received := a.logger.Info
+	if factsListened {
+		received = a.logger.Debug
+	}
+	received("Received trigger event",
 		"type", event.Type,
 		"id", event.ID,
 		"subject", subject)
 
-	// An event the projector listens for is often one no workflow does, so
-	// matching none is then expected rather than worth an Info line.
-	factsListen := a.projectFacts(event)
-
-	// Route to engine for workflow matching and execution
-	if err := a.engine.HandleEventWith(event, engine.HandleOptions{NoMatchExpected: factsListen}); err != nil {
+	if err := a.engine.HandleEventWith(event, engine.HandleOptions{NoMatchExpected: factsListened}); err != nil {
 		a.logger.Error("Failed to handle trigger event",
 			"error", err,
 			"type", event.Type,

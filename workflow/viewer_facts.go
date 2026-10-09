@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -22,7 +23,7 @@ import (
 const (
 	// factApplyTimeout bounds the fact write that sits in front of workflow
 	// dispatch for every event a definition matches. A db proxy slower than
-	// this costs the event its fact deltas, never its workflows.
+	// this may cost the event its fact deltas, never its workflows.
 	factApplyTimeout = time.Second
 
 	// Fact definitions change when one is saved or deleted, and when a
@@ -252,36 +253,39 @@ func newFactSubscriptions(registrar factPatternRegistrar) *factSubscriptions {
 	return &factSubscriptions{registrar: registrar, registered: make(map[string]struct{})}
 }
 
-// sync makes the registered patterns exactly patterns. A pattern that fails
-// to register is left out and retried by the next sync.
-func (s *factSubscriptions) sync(patterns []string) error {
+// sync makes the registered patterns exactly patterns, and returns the error
+// of each pattern it could not subscribe or unsubscribe. A pattern that fails
+// to register is left out and retried by the next sync. New patterns are
+// registered before old ones are released, so that events of a subject an old
+// and a new pattern both match keep arriving across the change.
+func (s *factSubscriptions) sync(patterns []string) map[string]error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	wanted := make(map[string]struct{}, len(patterns))
 	for _, pattern := range patterns {
 		wanted[pattern] = struct{}{}
 	}
-	var errs []error
+	failed := make(map[string]error)
+	for _, pattern := range sortedKeys(wanted) {
+		if _, done := s.registered[pattern]; done {
+			continue
+		}
+		if err := s.registrar.Register(factSubscriptionOwnerPrefix+pattern, factTrigger(pattern)); err != nil {
+			failed[pattern] = fmt.Errorf("subscribe: %w", err)
+			continue
+		}
+		s.registered[pattern] = struct{}{}
+	}
 	for _, pattern := range sortedKeys(s.registered) {
 		if _, keep := wanted[pattern]; keep {
 			continue
 		}
 		delete(s.registered, pattern)
 		if err := s.registrar.Unregister(factSubscriptionOwnerPrefix+pattern, factTrigger(pattern)); err != nil {
-			errs = append(errs, fmt.Errorf("unsubscribe facts from %s: %w", pattern, err))
+			failed[pattern] = fmt.Errorf("unsubscribe: %w", err)
 		}
 	}
-	for _, pattern := range sortedKeys(wanted) {
-		if _, done := s.registered[pattern]; done {
-			continue
-		}
-		if err := s.registrar.Register(factSubscriptionOwnerPrefix+pattern, factTrigger(pattern)); err != nil {
-			errs = append(errs, fmt.Errorf("subscribe facts to %s: %w", pattern, err))
-			continue
-		}
-		s.registered[pattern] = struct{}{}
-	}
-	return errors.Join(errs...)
+	return failed
 }
 
 func factTrigger(pattern string) *types.TriggerConfig {
@@ -313,9 +317,12 @@ type factReloader struct {
 	minBackoff time.Duration
 	maxBackoff time.Duration
 	requests   chan struct{}
-	// lastCompileErr is the compile failure last logged, so that a periodic
-	// re-list of an unchanged bad definition is silent.
+	// The failures last logged, so that a retry or a periodic re-list that
+	// fails the same way is silent: the list failure, the compile failure,
+	// and the failure per event pattern the bus would not subscribe.
+	lastListErr    string
 	lastCompileErr string
+	lastSubErrs    map[string]string
 }
 
 func newFactReloader(projector *facts.Projector, subscriptions *factSubscriptions, logger tasks.Logger) *factReloader {
@@ -331,6 +338,7 @@ func newFactReloader(projector *facts.Projector, subscriptions *factSubscription
 		minBackoff:    time.Second,
 		maxBackoff:    30 * time.Second,
 		requests:      make(chan struct{}, 1),
+		lastSubErrs:   make(map[string]string),
 	}
 }
 
@@ -387,20 +395,26 @@ func (r *factReloader) awaitBurst(ctx context.Context) bool {
 }
 
 // reload lists the definitions and syncs the subscriptions to them. It
-// reports false when either should be retried soon.
+// reports false only when the list failed, the one failure worth retrying
+// soon. A pattern the bus would not subscribe is retried by the next reload,
+// and its events go uncounted until then.
 func (r *factReloader) reload(ctx context.Context) bool {
 	loadCtx, cancel := context.WithTimeout(ctx, reconcileListTimeout)
 	defer cancel()
 	err := r.projector.Load(loadCtx)
 	if errors.Is(err, errFactDefinitionsUnavailable) {
-		r.logger.Warn("Fact definitions unavailable; retrying", "error", err)
+		if err.Error() != r.lastListErr {
+			r.lastListErr = err.Error()
+			r.logger.Warn("Fact definitions unavailable; retrying", "error", err)
+		}
 		return false
+	}
+	if r.lastListErr != "" {
+		r.lastListErr = ""
+		r.logger.Info("Fact definitions listed after earlier failures")
 	}
 	r.reportCompileErr(err)
-	if err := r.subscriptions.sync(r.projector.Patterns()); err != nil {
-		r.logger.Error("Fact subscriptions incomplete; retrying", "error", err)
-		return false
-	}
+	r.reportSubscriptionErrs(r.subscriptions.sync(r.projector.Patterns()))
 	return true
 }
 
@@ -414,6 +428,119 @@ func (r *factReloader) reportCompileErr(err error) {
 	}
 	r.lastCompileErr = err.Error()
 	r.logger.Error("Fact definitions left out of the projector", "error", err)
+}
+
+func (r *factReloader) reportSubscriptionErrs(failed map[string]error) {
+	for pattern := range r.lastSubErrs {
+		if _, still := failed[pattern]; !still {
+			delete(r.lastSubErrs, pattern)
+		}
+	}
+	for pattern, err := range failed {
+		if r.lastSubErrs[pattern] == err.Error() {
+			continue
+		}
+		r.lastSubErrs[pattern] = err.Error()
+		r.logger.Error("Fact event pattern not subscribed; its events go uncounted",
+			"pattern", pattern,
+			"error", err)
+	}
+}
+
+// errFactWritesPaused fails a fact write without sending it, while
+// factWriteBreaker considers the db proxy unreachable.
+var errFactWritesPaused = errors.New("fact writes paused: db proxy unreachable")
+
+// factWriteBreaker stops sending fact writes to a db proxy that keeps timing
+// out or refusing connections. Every event a definition matches waits on its
+// write before the event's workflows dispatch, so a stalled proxy would add
+// the full write timeout to each of them. After threshold consecutive such
+// failures it fails writes at once for cooldown, then lets them try again.
+// An error the proxy answered with is not counted: it says the proxy is up.
+type factWriteBreaker struct {
+	client    facts.Client
+	logger    tasks.Logger
+	threshold int
+	cooldown  time.Duration
+	now       func() time.Time
+
+	mu        sync.Mutex
+	failures  int
+	open      bool
+	openUntil time.Time
+}
+
+func newFactWriteBreaker(client facts.Client, logger tasks.Logger) *factWriteBreaker {
+	if client == nil || logger == nil {
+		panic("viewer facts: newFactWriteBreaker needs a client and a logger")
+	}
+	return &factWriteBreaker{
+		client:    client,
+		logger:    logger,
+		threshold: 5,
+		cooldown:  30 * time.Second,
+		now:       time.Now,
+	}
+}
+
+func (b *factWriteBreaker) ListFactDefinitions(ctx context.Context) ([]facts.FactDefinition, error) {
+	return b.client.ListFactDefinitions(ctx)
+}
+
+func (b *factWriteBreaker) ApplyFactDeltas(ctx context.Context, req *facts.ApplyFactDeltasRequest) error {
+	if !b.allow() {
+		return errFactWritesPaused
+	}
+	err := b.client.ApplyFactDeltas(ctx, req)
+	// A write cut short by shutdown says nothing about the proxy.
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return err
+	}
+	b.record(isUnreachable(err))
+	return err
+}
+
+func (b *factWriteBreaker) allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return !b.open || !b.now().Before(b.openUntil)
+}
+
+func (b *factWriteBreaker) record(unreachable bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !unreachable {
+		b.failures = 0
+		if b.open {
+			b.open = false
+			b.logger.Info("Fact writes resumed")
+		}
+		return
+	}
+	b.failures++
+	if b.open {
+		// The trial write after a cooldown failed as well.
+		b.openUntil = b.now().Add(b.cooldown)
+		return
+	}
+	if b.failures >= b.threshold {
+		b.open = true
+		b.openUntil = b.now().Add(b.cooldown)
+		b.logger.Error("Fact writes paused; db proxy unreachable",
+			"consecutive_failures", b.failures,
+			"retry_in", b.cooldown)
+	}
+}
+
+// isUnreachable reports whether a write failed without the proxy answering:
+// a timeout, or a request the transport could not complete. The db client
+// wraps both, but keeps them reachable through errors.Is and errors.As.
+func isUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var urlErr *url.Error
+	return errors.Is(err, context.DeadlineExceeded) || errors.As(err, &urlErr)
 }
 
 // factErrorLog logs a projection error that is a property of a definition
@@ -468,19 +595,19 @@ func splitSourceErrors(err error) (sourceErrs []*facts.SourceError, others []err
 }
 
 // projectFacts applies the fact deltas an event causes, and reports whether
-// any definition listens for the event. It runs before the event reaches the
+// a definition listens for the event. It runs before the event reaches the
 // engine so that a workflow the event starts reads facts that already include
 // it. A failure costs the event its deltas only: it is logged and the event
 // still goes on to the engine.
 func (a *WorkflowApp) projectFacts(event *types.Event) bool {
-	if a.facts == nil || !a.facts.ListensFor(event.Type) {
+	if a.facts == nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), factApplyTimeout)
+	ctx, cancel := context.WithTimeout(a.factCtx, factApplyTimeout)
 	defer cancel()
-	err := a.facts.Project(ctx, event)
+	listened, err := a.facts.Project(ctx, event)
 	if err == nil {
-		return true
+		return listened
 	}
 	sourceErrs, others := splitSourceErrors(err)
 	for _, sourceErr := range sourceErrs {
@@ -494,10 +621,15 @@ func (a *WorkflowApp) projectFacts(event *types.Event) bool {
 		}
 	}
 	for _, other := range others {
+		// The breaker logged when it paused writes; an event skipped while
+		// they are paused is not worth a line of its own.
+		if errors.Is(other, errFactWritesPaused) {
+			continue
+		}
 		a.logger.Error("Failed to apply fact deltas",
 			"error", other,
 			"type", event.Type,
 			"id", event.ID)
 	}
-	return true
+	return listened
 }

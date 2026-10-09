@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/workflow/internal/facts"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
+	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -74,7 +76,7 @@ type fakeFactClient struct {
 	applyErr error
 	applied  []*facts.ApplyFactDeltasRequest
 	// onApply runs inside ApplyFactDeltas, before it returns.
-	onApply func()
+	onApply func(ctx context.Context)
 }
 
 func (f *fakeFactClient) ListFactDefinitions(context.Context) ([]facts.FactDefinition, error) {
@@ -86,9 +88,9 @@ func (f *fakeFactClient) ListFactDefinitions(context.Context) ([]facts.FactDefin
 	return append([]facts.FactDefinition(nil), f.defs...), nil
 }
 
-func (f *fakeFactClient) ApplyFactDeltas(_ context.Context, req *facts.ApplyFactDeltasRequest) error {
+func (f *fakeFactClient) ApplyFactDeltas(ctx context.Context, req *facts.ApplyFactDeltasRequest) error {
 	if f.onApply != nil {
-		f.onApply()
+		f.onApply(ctx)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -122,6 +124,7 @@ func countChatters(revision int64, pattern string) facts.FactDefinition {
 func factApp(t *testing.T, client *fakeFactClient, logger *factLogger) (*WorkflowApp, <-chan struct{}) {
 	t.Helper()
 	app := NewWorkflowApp(logger)
+	app.factCtx = context.Background()
 	app.facts = facts.NewProjector(client)
 	if err := app.facts.Replace(client.defs); err != nil {
 		t.Fatalf("Replace: %v", err)
@@ -173,17 +176,30 @@ func awaitRuns(t *testing.T, ran <-chan struct{}, want int) {
 func TestHandleTriggerEventAppliesFactsBeforeDispatch(t *testing.T) {
 	client := &fakeFactClient{defs: []facts.FactDefinition{countChatters(1, "message.user.twitch")}}
 	app, ran := factApp(t, client, &factLogger{})
-	runsBeforeApply := -1
-	client.onApply = func() { runsBeforeApply = len(ran) }
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	client.onApply = func(context.Context) {
+		close(entered)
+		<-release
+	}
 
-	app.handleTriggerEvent(chatPayload("e1", "u1"), "message.user.twitch")
+	handled := make(chan struct{})
+	go func() {
+		app.handleTriggerEvent(chatPayload("e1", "u1"), "message.user.twitch")
+		close(handled)
+	}()
+	<-entered
+	select {
+	case <-ran:
+		t.Fatal("a workflow ran while the fact write was still in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
 
+	close(release)
+	<-handled
 	awaitRuns(t, ran, 1)
 	if client.appliedCount() != 1 {
 		t.Fatalf("applied %d batches, want 1", client.appliedCount())
-	}
-	if runsBeforeApply != 0 {
-		t.Fatalf("a workflow ran before the fact deltas were applied (%d runs)", runsBeforeApply)
 	}
 	if got := client.applied[0].Deltas[0].SubjectID; got != "u1" {
 		t.Fatalf("delta subject = %q, want u1", got)
@@ -242,17 +258,43 @@ func TestNoWorkflowMatchIsDebugForAnEventFactsListenFor(t *testing.T) {
 	app, _ := factApp(t, client, logger)
 	const noMatch = "Event matched no workflows"
 
+	const received = "Received trigger event"
+
 	app.handleTriggerEvent([]byte(`{"id":"p1","type":"chat.presence","source":"twitch","platform":"twitch","data":{"chatterId":"u1"}}`), "chat.presence")
-	if logger.count(infosOf, noMatch) != 0 || logger.count(debugsOf, noMatch) != 1 {
-		t.Fatalf("a facts-only event logged no match at Info (infos %v)", logger.infos)
+	if len(logger.infos) != 0 || logger.count(debugsOf, noMatch) != 1 || logger.count(debugsOf, received) != 1 {
+		t.Fatalf("a facts-only event logged at Info: %v", logger.infos)
 	}
 	if client.appliedCount() != 1 {
 		t.Fatalf("applied %d batches, want 1", client.appliedCount())
 	}
 
+	// A dashboard simulation never counts toward a fact, so facts do not
+	// listen for it and its trail stays at Info.
+	app.handleTriggerEvent([]byte(`{"id":"p2","type":"chat.presence","source":"api","platform":"twitch","data":{"chatterId":"u1"}}`), "chat.presence")
+	if logger.count(infosOf, noMatch) != 1 || logger.count(infosOf, received) != 1 {
+		t.Fatalf("a simulated event did not log at Info: %v", logger.infos)
+	}
+
 	app.handleTriggerEvent([]byte(`{"id":"r1","type":"channel.raid","source":"twitch","data":{}}`), "channel.raid")
-	if logger.count(infosOf, noMatch) != 1 {
-		t.Fatal("an event nothing listens for no longer logs no match at Info")
+	if logger.count(infosOf, noMatch) != 2 || logger.count(infosOf, received) != 2 {
+		t.Fatalf("an event nothing listens for did not log at Info: %v", logger.infos)
+	}
+}
+
+func TestFactWriteIsCancelledWithTheApp(t *testing.T) {
+	client := &fakeFactClient{defs: []facts.FactDefinition{countChatters(1, "message.user.twitch")}}
+	app, ran := factApp(t, client, &factLogger{})
+	ctx, cancel := context.WithCancel(context.Background())
+	app.factCtx = ctx
+	var writeErr error
+	client.onApply = func(ctx context.Context) { writeErr = ctx.Err() }
+
+	cancel()
+	app.handleTriggerEvent(chatPayload("e1", "u1"), "message.user.twitch")
+
+	awaitRuns(t, ran, 1)
+	if !errors.Is(writeErr, context.Canceled) {
+		t.Fatalf("the write's context was %v after the app stopped, want canceled", writeErr)
 	}
 }
 
@@ -442,6 +484,8 @@ type fakePatternRegistrar struct {
 	mu      sync.Mutex
 	owners  map[string]string
 	failFor string
+	// calls is every Register and Unregister, in order.
+	calls []string
 }
 
 func (f *fakePatternRegistrar) Register(ownerID string, trigger *types.TriggerConfig) error {
@@ -450,13 +494,15 @@ func (f *fakePatternRegistrar) Register(ownerID string, trigger *types.TriggerCo
 	if trigger.Event == f.failFor {
 		return errors.New("bus refused")
 	}
+	f.calls = append(f.calls, "+"+trigger.Event)
 	f.owners[ownerID] = trigger.Event
 	return nil
 }
 
-func (f *fakePatternRegistrar) Unregister(ownerID string, _ *types.TriggerConfig) error {
+func (f *fakePatternRegistrar) Unregister(ownerID string, trigger *types.TriggerConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls = append(f.calls, "-"+trigger.Event)
 	delete(f.owners, ownerID)
 	return nil
 }
@@ -476,6 +522,7 @@ func (f *fakePatternRegistrar) snapshot() string {
 
 func newTestReloader(client *fakeFactClient, registrar *fakePatternRegistrar) *factReloader {
 	r := newFactReloader(facts.NewProjector(client), newFactSubscriptions(registrar), &factLogger{})
+	r.interval = time.Hour
 	r.settle = time.Millisecond
 	r.minBackoff = time.Millisecond
 	r.maxBackoff = 5 * time.Millisecond
@@ -501,6 +548,7 @@ func TestFactReloaderSyncsSubscriptionsToDefinitions(t *testing.T) {
 		t.Fatalf("owners = %s", got)
 	}
 
+	registrar.calls = nil
 	client.defs = []facts.FactDefinition{countChatters(2, "message.user.*")}
 	if !r.reload(context.Background()) {
 		t.Fatal("reload failed")
@@ -508,20 +556,41 @@ func TestFactReloaderSyncsSubscriptionsToDefinitions(t *testing.T) {
 	if got := registrar.snapshot(); got != "facts:message.user.*" {
 		t.Fatalf("owners after a reload = %s", got)
 	}
+	if got := strings.Join(registrar.calls, " "); got != "+message.user.* -cheer.*.twitch -message.user.twitch" {
+		t.Fatalf("calls = %s, want the new pattern registered before the old ones are released", got)
+	}
 
+	logger := r.logger.(*factLogger)
+	const unavailable = "Fact definitions unavailable; retrying"
 	client.listErr = errors.New("connection refused")
-	if r.reload(context.Background()) {
-		t.Fatal("a failed list reported success")
+	for i := 0; i < 3; i++ {
+		if r.reload(context.Background()) {
+			t.Fatal("a failed list reported success")
+		}
+	}
+	if n := logger.count(warnsOf, unavailable); n != 1 {
+		t.Fatalf("one list failure logged %d times, want once", n)
 	}
 	if got := registrar.snapshot(); got != "facts:message.user.*" {
 		t.Fatalf("a failed list changed the subscriptions: %s", got)
 	}
+	client.listErr = errors.New("connection reset")
+	r.reload(context.Background())
+	if n := logger.count(warnsOf, unavailable); n != 2 {
+		t.Fatalf("a different list failure was not logged (%d)", n)
+	}
 
+	const notSubscribed = "Fact event pattern not subscribed; its events go uncounted"
 	client.listErr = nil
 	client.defs = []facts.FactDefinition{countChatters(3, "message.user.twitch")}
 	registrar.failFor = "message.user.twitch"
-	if r.reload(context.Background()) {
-		t.Fatal("a refused subscription reported success")
+	for i := 0; i < 3; i++ {
+		if !r.reload(context.Background()) {
+			t.Fatal("a refused subscription failed the reload, which would retry it at list-failure speed")
+		}
+	}
+	if n := logger.count(errorsOf, notSubscribed); n != 1 {
+		t.Fatalf("one refused pattern logged %d times, want once", n)
 	}
 	registrar.failFor = ""
 	if !r.reload(context.Background()) {
@@ -529,6 +598,165 @@ func TestFactReloaderSyncsSubscriptionsToDefinitions(t *testing.T) {
 	}
 	if got := registrar.snapshot(); got != "facts:message.user.twitch" {
 		t.Fatalf("a refused subscription was not retried: %s", got)
+	}
+}
+
+// recordingSubscriber is a bus for the real event registrar: it delivers a
+// subject to every live subscription on it.
+type recordingSubscriber struct {
+	mu       sync.Mutex
+	handlers map[*recordingSubscription]func([]byte, string)
+	subjects map[*recordingSubscription]string
+}
+
+type recordingSubscription struct {
+	parent *recordingSubscriber
+}
+
+func (s *recordingSubscription) Unsubscribe() error {
+	s.parent.mu.Lock()
+	defer s.parent.mu.Unlock()
+	delete(s.parent.handlers, s)
+	delete(s.parent.subjects, s)
+	return nil
+}
+
+func (r *recordingSubscriber) Subscribe(subject string, handler func([]byte, string)) (triggers.Subscription, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	sub := &recordingSubscription{parent: r}
+	r.handlers[sub] = handler
+	r.subjects[sub] = subject
+	return sub, nil
+}
+
+func (r *recordingSubscriber) deliver(subject string) int {
+	r.mu.Lock()
+	var handlers []func([]byte, string)
+	for sub, handler := range r.handlers {
+		if r.subjects[sub] == subject {
+			handlers = append(handlers, handler)
+		}
+	}
+	r.mu.Unlock()
+	for _, handler := range handlers {
+		handler(nil, subject)
+	}
+	return len(handlers)
+}
+
+// A workflow and a fact on one pattern share the registrar's subscription;
+// the fact going away must not take the workflow's events with it.
+func TestFactSubscriptionsShareTheRegistrarWithWorkflows(t *testing.T) {
+	bus := &recordingSubscriber{
+		handlers: map[*recordingSubscription]func([]byte, string){},
+		subjects: map[*recordingSubscription]string{},
+	}
+	delivered := 0
+	registrar := triggers.NewEventTriggerRegistrar(bus, func([]byte, string) { delivered++ }, nil)
+	const pattern = "message.user.twitch"
+	if err := registrar.Register("wf-chat", &types.TriggerConfig{Type: "event", Event: pattern}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	subscriptions := newFactSubscriptions(registrar)
+
+	if failed := subscriptions.sync([]string{pattern}); len(failed) != 0 {
+		t.Fatalf("sync: %v", failed)
+	}
+	if n := bus.deliver(pattern); n != 1 {
+		t.Fatalf("%d subscriptions on %s, want the one shared subscription", n, pattern)
+	}
+
+	if failed := subscriptions.sync(nil); len(failed) != 0 {
+		t.Fatalf("sync: %v", failed)
+	}
+	if n := bus.deliver(pattern); n != 1 || delivered != 2 {
+		t.Fatalf("after the fact left: %d subscriptions, %d deliveries; the workflow lost its events", n, delivered)
+	}
+}
+
+// breakerClock is a settable clock for factWriteBreaker.
+type breakerClock struct {
+	at time.Time
+}
+
+func (c *breakerClock) now() time.Time { return c.at }
+
+func TestFactWriteBreakerPausesWritesToAnUnreachableProxy(t *testing.T) {
+	unreachable := &url.Error{Op: "Post", URL: "http://db", Err: errors.New("connection refused")}
+	client := &fakeFactClient{applyErr: unreachable}
+	logger := &factLogger{}
+	clock := &breakerClock{at: time.Unix(0, 0)}
+	breaker := newFactWriteBreaker(client, logger)
+	breaker.now = clock.now
+	write := func() error {
+		return breaker.ApplyFactDeltas(context.Background(), &facts.ApplyFactDeltasRequest{EventID: "e"})
+	}
+	const paused, resumed = "Fact writes paused; db proxy unreachable", "Fact writes resumed"
+
+	for i := 0; i < breaker.threshold; i++ {
+		if err := write(); !errors.Is(err, unreachable) {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	if err := write(); !errors.Is(err, errFactWritesPaused) || client.appliedCount() != breaker.threshold {
+		t.Fatalf("after %d failures the write was sent (%v)", breaker.threshold, err)
+	}
+	if logger.count(errorsOf, paused) != 1 {
+		t.Fatal("pausing was not logged once")
+	}
+
+	clock.at = clock.at.Add(breaker.cooldown)
+	if err := write(); !errors.Is(err, unreachable) {
+		t.Fatalf("the trial write after the cooldown was not sent: %v", err)
+	}
+	if err := write(); !errors.Is(err, errFactWritesPaused) {
+		t.Fatalf("a failed trial did not pause again: %v", err)
+	}
+	if logger.count(errorsOf, paused) != 1 {
+		t.Fatal("a failed trial logged the pause again")
+	}
+
+	clock.at = clock.at.Add(breaker.cooldown)
+	client.applyErr = nil
+	if err := write(); err != nil {
+		t.Fatalf("the proxy came back but the write failed: %v", err)
+	}
+	if logger.count(infosOf, resumed) != 1 {
+		t.Fatal("resuming was not logged once")
+	}
+
+	// An error the proxy answered with says it is reachable.
+	client.applyErr = errors.New("invalid_argument")
+	for i := 0; i < breaker.threshold*2; i++ {
+		_ = write()
+	}
+	if err := write(); errors.Is(err, errFactWritesPaused) {
+		t.Fatal("errors the proxy answered with paused writes")
+	}
+}
+
+func TestIsUnreachable(t *testing.T) {
+	// The generated client wraps a refused connection in its own error type;
+	// it must still read as unreachable.
+	refused := newViewerFactClient(dbv1.NewViewerFactServiceProtobufClient("http://127.0.0.1:1", newFactHTTPClient()), &factLogger{})
+	refusedErr := refused.ApplyFactDeltas(context.Background(), &facts.ApplyFactDeltasRequest{Source: "twitch", EventID: "e"})
+	if refusedErr == nil || !isUnreachable(refusedErr) {
+		t.Fatalf("a refused connection (%v) is not unreachable", refusedErr)
+	}
+
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{context.DeadlineExceeded, true},
+		{fmt.Errorf("apply: %w", &url.Error{Op: "Post", URL: "http://db", Err: errors.New("refused")}), true},
+		{errors.New("internal: db locked"), false},
+	} {
+		if got := isUnreachable(tc.err); got != tc.want {
+			t.Errorf("isUnreachable(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }
 
