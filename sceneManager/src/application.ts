@@ -86,6 +86,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
             draftLayoutJson: "",
             clearDraft: false,
             editorStateJson: "",
+            clearEditorState: false,
             ...write,
           }),
       },

@@ -138,16 +138,31 @@ describe("OverlayHost.loadSceneById — drafts", () => {
     expect((await host.loadSceneById("scene-1", "draft"))!.instances.map((i) => i.id)).toEqual(["published"]);
   });
 
-  it("carries the stored editor state with either version", async () => {
-    const editorStateJson = '{"v":4,"headId":"e.4","clients":{}}';
-    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson });
-    expect((await host.loadSceneById("scene-1"))?.editorStateJson).toBe(editorStateJson);
-    expect((await host.loadSceneById("scene-1", "draft"))?.editorStateJson).toBe(editorStateJson);
+  it("keeps the stored editor state out of every loaded version", async () => {
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson: '{"v":4}' });
+    expect(Object.keys((await host.loadSceneById("scene-1"))!)).not.toContain("editorStateJson");
+    expect(Object.keys((await host.loadSceneById("scene-1", "draft"))!)).not.toContain("editorStateJson");
   });
 
-  it("leaves editor state absent when none is stored", async () => {
+  it("loads both versions and the editor state from one read for the scene documents", async () => {
+    const editorStateJson = '{ "v": 4, "headId": "e.4", "clients": {} }';
+    const host = hostWith({
+      widgetsJson: placements("published"),
+      layoutJson: "{}",
+      hasDraft: true,
+      draftWidgetsJson: placements("draft"),
+      draftLayoutJson: "{}",
+      editorStateJson,
+    });
+    const editable = await host.loadEditableScene("scene-1");
+    expect(editable!.published.instances.map((i) => i.id)).toEqual(["published"]);
+    expect(editable!.draft.instances.map((i) => i.id)).toEqual(["draft"]);
+    expect(editable!.editorStateJson).toBe(editorStateJson);
+  });
+
+  it("loads no editor state when none is stored", async () => {
     const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson: "" });
-    expect((await host.loadSceneById("scene-1"))?.editorStateJson).toBeUndefined();
+    expect((await host.loadEditableScene("scene-1"))!.editorStateJson).toBeNull();
   });
 
   it("keeps each placement as stored", async () => {

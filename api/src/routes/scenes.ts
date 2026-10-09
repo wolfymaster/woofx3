@@ -131,6 +131,7 @@ export const scenesRoutes = routeModule({
       draftLayoutJson: "",
       clearDraft: false,
       editorStateJson: "",
+      clearEditorState: false,
     });
     if (!updated) {
       return { success: false };

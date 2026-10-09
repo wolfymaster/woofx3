@@ -106,14 +106,20 @@ export interface UpdateSceneRequest {
    */
   clearDraft: boolean;
   /**
-   * Store the scene editor's sync state. Written in the same row update
-   * as the documents and draft in this request, so the state never
-   * describes documents other than the stored ones. Empty leaves it
-   * unchanged, unless the request writes a document (widgets, layout,
-   * draft or clear_draft): the stored state is then cleared, since it
-   * described the documents being replaced.
+   * Store the scene editor's sync state, a JSON object. Written in the
+   * same row update as the documents and draft in this request, so the
+   * state never describes documents other than the stored ones. Empty
+   * leaves it unchanged, unless the request writes a document (widgets,
+   * layout, draft or clear_draft): the stored state is then cleared,
+   * since it described the documents being replaced. Anything that is
+   * not a JSON object is refused and nothing in the request is written.
    */
   editorStateJson: string;
+  /**
+   * Drop the stored editor state in the same row update. Refused
+   * together with `editor_state_json`.
+   */
+  clearEditorState: boolean;
 }
 
 export interface DeleteSceneRequest {
@@ -808,6 +814,7 @@ export const UpdateSceneRequest = {
       draftLayoutJson: "",
       clearDraft: false,
       editorStateJson: "",
+      clearEditorState: false,
       ...msg,
     };
   },
@@ -845,6 +852,9 @@ export const UpdateSceneRequest = {
     }
     if (msg.editorStateJson) {
       writer.writeString(9, msg.editorStateJson);
+    }
+    if (msg.clearEditorState) {
+      writer.writeBool(10, msg.clearEditorState);
     }
     return writer;
   },
@@ -893,6 +903,10 @@ export const UpdateSceneRequest = {
         }
         case 9: {
           msg.editorStateJson = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.clearEditorState = reader.readBool();
           break;
         }
         default: {
@@ -1566,6 +1580,7 @@ export const UpdateSceneRequestJSON = {
       draftLayoutJson: "",
       clearDraft: false,
       editorStateJson: "",
+      clearEditorState: false,
       ...msg,
     };
   },
@@ -1603,6 +1618,9 @@ export const UpdateSceneRequestJSON = {
     }
     if (msg.editorStateJson) {
       json["editorStateJson"] = msg.editorStateJson;
+    }
+    if (msg.clearEditorState) {
+      json["clearEditorState"] = msg.clearEditorState;
     }
     return json;
   },
@@ -1652,6 +1670,11 @@ export const UpdateSceneRequestJSON = {
       json["editorStateJson"] ?? json["editor_state_json"];
     if (_editorStateJson_) {
       msg.editorStateJson = _editorStateJson_;
+    }
+    const _clearEditorState_ =
+      json["clearEditorState"] ?? json["clear_editor_state"];
+    if (_clearEditorState_) {
+      msg.clearEditorState = _clearEditorState_;
     }
     return msg;
   },

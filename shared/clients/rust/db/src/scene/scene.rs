@@ -100,14 +100,19 @@ pub struct UpdateSceneRequest {
     /// set in the same request.
     #[prost(bool, tag="8")]
     pub clear_draft: bool,
-    /// Store the scene editor's sync state. Written in the same row update
-    /// as the documents and draft in this request, so the state never
-    /// describes documents other than the stored ones. Empty leaves it
-    /// unchanged, unless the request writes a document (widgets, layout,
-    /// draft or clear_draft): the stored state is then cleared, since it
-    /// described the documents being replaced.
+    /// Store the scene editor's sync state, a JSON object. Written in the
+    /// same row update as the documents and draft in this request, so the
+    /// state never describes documents other than the stored ones. Empty
+    /// leaves it unchanged, unless the request writes a document (widgets,
+    /// layout, draft or clear_draft): the stored state is then cleared,
+    /// since it described the documents being replaced. Anything that is
+    /// not a JSON object is refused and nothing in the request is written.
     #[prost(string, tag="9")]
     pub editor_state_json: ::prost::alloc::string::String,
+    /// Drop the stored editor state in the same row update. Refused
+    /// together with `editor_state_json`.
+    #[prost(bool, tag="10")]
+    pub clear_editor_state: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteSceneRequest {

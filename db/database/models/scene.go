@@ -30,9 +30,10 @@ type Scene struct {
 	// published scene.
 	DraftWidgetsJSON *string `gorm:"column:draft_widgets_json;type:jsonb"`
 	DraftLayoutJSON  *string `gorm:"column:draft_layout_json;type:jsonb"`
-	// The scene editor's sync state, opaque to the engine. Nil until an
-	// editor has synced the scene.
-	EditorStateJSON *string `gorm:"column:editor_state_json;type:jsonb"`
+	// The scene editor's sync state, a JSON object stored as text so it
+	// reads back exactly as written. Nil until an editor has synced the
+	// scene, or after it was cleared.
+	EditorStateJSON *string `gorm:"column:editor_state_json;type:text"`
 
 	// Origin metadata — same convention as `WorkflowDefinition`.
 	// `USER` for UI-authored scenes, `MODULE` if a future manifest

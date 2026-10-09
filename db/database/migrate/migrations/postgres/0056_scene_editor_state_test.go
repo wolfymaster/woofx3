@@ -23,7 +23,15 @@ func TestAddSceneEditorStateKeepsExistingScenesAndRollsBack(t *testing.T) {
 	if n := count(t, db, `SELECT COUNT(*) FROM scenes WHERE id = ? AND editor_state_json IS NULL`, scene); n != 1 {
 		t.Fatalf("existing scene has editor state after the migration")
 	}
-	mustExec(t, db, `UPDATE scenes SET editor_state_json = ?::jsonb WHERE id = ?`, `{"v": 3}`, scene)
+	const state = `{"v": 3,  "headId":"e.3"}`
+	mustExec(t, db, `UPDATE scenes SET editor_state_json = ? WHERE id = ?`, state, scene)
+	var stored string
+	if err := db.Raw(`SELECT editor_state_json FROM scenes WHERE id = ?`, scene).Scan(&stored).Error; err != nil {
+		t.Fatalf("read editor state: %v", err)
+	}
+	if stored != state {
+		t.Fatalf("editor state stored as %q, want it byte for byte: %q", stored, state)
+	}
 
 	if err := migrator.RollbackLast(); err != nil {
 		t.Fatalf("rollback: %v", err)

@@ -1125,6 +1125,9 @@ impl serde::Serialize for UpdateSceneRequest {
         if !self.editor_state_json.is_empty() {
             len += 1;
         }
+        if self.clear_editor_state {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.UpdateSceneRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -1153,6 +1156,9 @@ impl serde::Serialize for UpdateSceneRequest {
         if !self.editor_state_json.is_empty() {
             struct_ser.serialize_field("editorStateJson", &self.editor_state_json)?;
         }
+        if self.clear_editor_state {
+            struct_ser.serialize_field("clearEditorState", &self.clear_editor_state)?;
+        }
         struct_ser.end()
     }
 }
@@ -1178,6 +1184,8 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
             "clearDraft",
             "editor_state_json",
             "editorStateJson",
+            "clear_editor_state",
+            "clearEditorState",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1191,6 +1199,7 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
             DraftLayoutJson,
             ClearDraft,
             EditorStateJson,
+            ClearEditorState,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1221,6 +1230,7 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                             "draftLayoutJson" | "draft_layout_json" => Ok(GeneratedField::DraftLayoutJson),
                             "clearDraft" | "clear_draft" => Ok(GeneratedField::ClearDraft),
                             "editorStateJson" | "editor_state_json" => Ok(GeneratedField::EditorStateJson),
+                            "clearEditorState" | "clear_editor_state" => Ok(GeneratedField::ClearEditorState),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1249,6 +1259,7 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                 let mut draft_layout_json__ = None;
                 let mut clear_draft__ = None;
                 let mut editor_state_json__ = None;
+                let mut clear_editor_state__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -1305,6 +1316,12 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                             }
                             editor_state_json__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ClearEditorState => {
+                            if clear_editor_state__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("clearEditorState"));
+                            }
+                            clear_editor_state__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateSceneRequest {
@@ -1317,6 +1334,7 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                     draft_layout_json: draft_layout_json__.unwrap_or_default(),
                     clear_draft: clear_draft__.unwrap_or_default(),
                     editor_state_json: editor_state_json__.unwrap_or_default(),
+                    clear_editor_state: clear_editor_state__.unwrap_or_default(),
                 })
             }
         }

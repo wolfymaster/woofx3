@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -133,6 +135,15 @@ func (s *sceneService) GetScene(ctx context.Context, req *client.GetSceneRequest
 	}, nil
 }
 
+// isJSONObject reports whether text is valid JSON whose top level is an object.
+func isJSONObject(text string) bool {
+	if !json.Valid([]byte(text)) {
+		return false
+	}
+	trimmed := strings.TrimLeft(text, " \t\r\n")
+	return strings.HasPrefix(trimmed, "{")
+}
+
 // The columns holding a scene's documents; writing any of them without
 // editor state clears the stored editor state.
 var sceneDocumentColumns = []string{"widgets_json", "layout_json", "draft_widgets_json", "draft_layout_json"}
@@ -141,6 +152,12 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+	}
+	if req.EditorStateJson != "" && req.ClearEditorState {
+		return nil, twirp.InvalidArgumentError("clear_editor_state", "cannot be set together with editor_state_json")
+	}
+	if req.EditorStateJson != "" && !isJSONObject(req.EditorStateJson) {
+		return nil, twirp.InvalidArgumentError("editor_state_json", "must be a JSON object")
 	}
 	scene, err := s.repo.GetByID(id)
 	if err != nil {
@@ -179,7 +196,7 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	// describe other documents, so it is cleared and the editor starts over.
 	if req.EditorStateJson != "" {
 		columns["editor_state_json"] = req.EditorStateJson
-	} else if changesDocuments {
+	} else if req.ClearEditorState || changesDocuments {
 		columns["editor_state_json"] = nil
 	}
 
