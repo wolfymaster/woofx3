@@ -63,8 +63,13 @@ describe("parseAlertCreated", () => {
     expect(parseAlertCreated(ce).event?.alert.version).toBe(2);
   });
 
+  it("reads a version written as its decimal string, and sends it as a number", () => {
+    const { event } = parseAlertCreated(snakeCe({ id: ALERT_ID, payload: "{}", version: "4" }));
+    expect(event?.alert.version).toBe(4);
+  });
+
   it("sends a row without a usable version, leaving the version out", () => {
-    for (const version of [undefined, 0, 1.5, "3"]) {
+    for (const version of [undefined, 0, 1.5, "0", "03", "1.5", "9007199254740993"]) {
       const ce = { client_id: "client-1", data: { id: ALERT_ID, payload: "{}", status: "sent", version } };
       const alert = parseAlertCreated(ce).event?.alert;
       expect(alert?.id).toBe(ALERT_ID);

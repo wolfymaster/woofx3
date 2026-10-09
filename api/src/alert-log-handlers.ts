@@ -83,9 +83,16 @@ function formatAlertTimestamp(date: Date): string {
   return date.toISOString().replace(/\.(\d{3})Z$/, ".$1000000Z");
 }
 
-/** The row's version: a positive integer, or null when it is not one. */
+const DECIMAL_INTEGER = /^[1-9][0-9]*$/;
+
+/**
+ * The row's version: a positive safe integer, or null when it is not one. The
+ * db proxy writes it as a JSON number; its decimal string, the form protobuf's
+ * JSON mapping gives an int64, is read too. Sent on as a number either way.
+ */
 function readVersion(row: RawAlertRow): number | null {
-  const value = row.Version ?? row.version;
+  const raw = row.Version ?? row.version;
+  const value = typeof raw === "string" && DECIMAL_INTEGER.test(raw) ? Number(raw) : raw;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     return null;
   }
