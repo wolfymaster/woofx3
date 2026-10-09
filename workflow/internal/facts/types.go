@@ -69,8 +69,8 @@ type FactSource struct {
 	// AnonymousWhenPath, when set, reads a boolean that is true for an event
 	// with no real viewer behind it.
 	AnonymousWhenPath string
-	// DisplayNamePath, when set, reads the viewer's display name: a string
-	// for one viewer, or a list parallel to the list of ids.
+	// DisplayNamePath, when set, reads the viewer's display name. Only a
+	// single-viewer identity has one; ids read from a list carry no name.
 	DisplayNamePath string
 	// Where filters the trigger's events; nil matches every event.
 	Where *expression.ConditionTree

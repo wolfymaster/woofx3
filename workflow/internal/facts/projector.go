@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,9 @@ type Projector struct {
 	client Client
 	index  atomic.Pointer[index]
 	now    func() time.Time
+	// replaceMu orders listing and swapping, so a list that started earlier
+	// can never overwrite the index built from a later one.
+	replaceMu sync.Mutex
 }
 
 // NewProjector returns a projector with no definitions; it produces nothing
@@ -41,17 +45,25 @@ func NewProjector(client Client) *Projector {
 // Load lists the definitions from the db and replaces the projector's with
 // them. See Replace for what an error after a successful list means.
 func (p *Projector) Load(ctx context.Context) error {
+	p.replaceMu.Lock()
+	defer p.replaceMu.Unlock()
 	defs, err := p.client.ListFactDefinitions(ctx)
 	if err != nil {
 		return fmt.Errorf("list fact definitions: %w", err)
 	}
-	return p.Replace(defs)
+	return p.replaceLocked(defs)
 }
 
 // Replace compiles defs and swaps them in. Definitions that do not compile
 // are left out and named in the returned error; the rest are in use either
 // way.
 func (p *Projector) Replace(defs []FactDefinition) error {
+	p.replaceMu.Lock()
+	defer p.replaceMu.Unlock()
+	return p.replaceLocked(defs)
+}
+
+func (p *Projector) replaceLocked(defs []FactDefinition) error {
 	idx, err := buildIndex(defs)
 	p.index.Store(idx)
 	return err
@@ -65,8 +77,8 @@ func (p *Projector) Patterns() []string {
 
 // Project sends the db every delta the event causes, in one call, and makes
 // no call when it causes none. An error from a single source (a value of the
-// wrong type) is returned alongside the deltas of every other source rather
-// than in place of them.
+// wrong type) is a *SourceError, returned alongside the deltas of every other
+// source rather than in place of them.
 func (p *Projector) Project(ctx context.Context, event *types.Event) error {
 	req, projectErr := p.Request(event)
 	if req == nil {
@@ -104,12 +116,11 @@ func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error)
 		event:      event,
 		occurredAt: occurredAt,
 		atoms:      make([]atomResult, len(idx.atoms)),
-		seen:       make(map[deltaKey]struct{}),
 	}
 	var errs []error
 	for _, cs := range sources {
 		if err := pe.project(cs); err != nil {
-			errs = append(errs, fmt.Errorf("fact %s from %s: %w", cs.factID, cs.source.Trigger, err))
+			errs = append(errs, &SourceError{FactID: cs.factID, Trigger: cs.source.Trigger, Err: err})
 		}
 	}
 	err := errors.Join(errs...)
@@ -123,6 +134,24 @@ func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error)
 		SessionStamp: event.SessionID,
 		Deltas:       pe.deltas,
 	}, err
+}
+
+// SourceError is a source of a definition that could not read an event: a
+// value of the wrong type at one of its paths. It is a property of the
+// definition and the trigger's payload rather than of one event, so the same
+// error recurs on every matching event.
+type SourceError struct {
+	FactID  string
+	Trigger string
+	Err     error
+}
+
+func (e *SourceError) Error() string {
+	return fmt.Sprintf("fact %s from %s: %v", e.FactID, e.Trigger, e.Err)
+}
+
+func (e *SourceError) Unwrap() error {
+	return e.Err
 }
 
 type atomResult int8
@@ -146,15 +175,27 @@ type projection struct {
 	event      *types.Event
 	occurredAt time.Time
 	atoms      []atomResult
+	// identities caches subjects by identity path, since every definition
+	// counting the same trigger reads the same one.
+	identities map[string]identityRead
 	seen       map[deltaKey]struct{}
 	deltas     []FactDelta
+}
+
+type identityRead struct {
+	subjects []subject
+	err      error
 }
 
 func (pe *projection) project(cs *compiledSource) error {
 	data := pe.event.Data
 	if cs.source.Where != nil {
 		matched, err := cs.source.Where.EvaluateAtoms(func(atom *expression.ConditionTree) (bool, error) {
-			return pe.decide(cs.atomIDs[atom])
+			slot, ok := cs.atomIDs[atom]
+			if !ok {
+				panic(fmt.Sprintf("facts: atom %s of fact %s has no pooled slot", atom.Path, cs.factID))
+			}
+			return pe.decide(slot)
 		})
 		if err != nil || !matched {
 			return err
@@ -172,6 +213,9 @@ func (pe *projection) project(cs *compiledSource) error {
 	num, str, ok, err := pe.value(cs)
 	if err != nil || !ok {
 		return err
+	}
+	if pe.seen == nil {
+		pe.seen = make(map[deltaKey]struct{})
 	}
 	for _, subject := range subjects {
 		key := deltaKey{factID: cs.factID, subjectID: subject.id}
@@ -208,7 +252,14 @@ func (pe *projection) decide(slot int) (bool, error) {
 	if atom.re != nil {
 		// Same reading of the value as the operator's own regex check, with
 		// the pattern compiled once per index instead of once per event.
-		matched = actual != nil && atom.re.MatchString(fmt.Sprintf("%v", actual))
+		switch v := actual.(type) {
+		case nil:
+			matched = false
+		case string:
+			matched = atom.re.MatchString(v)
+		default:
+			matched = atom.re.MatchString(fmt.Sprintf("%v", v))
+		}
 	} else {
 		var err error
 		matched, err = expression.EvaluateAtomValue(atom.op, actual, atom.expected)
@@ -230,32 +281,43 @@ type subject struct {
 }
 
 // subjects reads the viewer ids a source names: one id, or a list of ids to
-// fan out to. An event without the id is not about a viewer and yields none.
+// fan out to. An event without the id is not about a viewer and yields none,
+// and an empty or null entry in a list is passed over.
 func (pe *projection) subjects(src FactSource) ([]subject, error) {
-	data := pe.event.Data
+	key := src.IdentityPath + "\x00" + src.DisplayNamePath
+	if read, ok := pe.identities[key]; ok {
+		return read.subjects, read.err
+	}
+	subjects, err := readSubjects(pe.event.Data, src)
+	if pe.identities == nil {
+		pe.identities = make(map[string]identityRead)
+	}
+	pe.identities[key] = identityRead{subjects: subjects, err: err}
+	return subjects, err
+}
+
+func readSubjects(data map[string]any, src FactSource) ([]subject, error) {
 	raw, found := lookup(data, src.IdentityPath)
 	if !found || raw == nil {
 		return nil, nil
 	}
-	var names any
-	if src.DisplayNamePath != "" {
-		names, _ = lookup(data, src.DisplayNamePath)
-	}
-
 	switch ids := raw.(type) {
 	case string:
 		if ids == "" {
 			return nil, nil
 		}
-		name, _ := names.(string)
-		return []subject{{id: ids, name: name}}, nil
-	case []any:
-		parallel, _ := names.([]any)
-		if len(parallel) != len(ids) {
-			parallel = nil
+		s := subject{id: ids}
+		if src.DisplayNamePath != "" {
+			name, _ := lookup(data, src.DisplayNamePath)
+			s.name, _ = name.(string)
 		}
+		return []subject{s}, nil
+	case []any:
 		out := make([]subject, 0, len(ids))
 		for i, item := range ids {
+			if item == nil {
+				continue
+			}
 			id, ok := item.(string)
 			if !ok {
 				return nil, fmt.Errorf("identity %s[%d] is %T, not a string", src.IdentityPath, i, item)
@@ -263,11 +325,7 @@ func (pe *projection) subjects(src FactSource) ([]subject, error) {
 			if id == "" {
 				continue
 			}
-			s := subject{id: id}
-			if parallel != nil {
-				s.name, _ = parallel[i].(string)
-			}
-			out = append(out, s)
+			out = append(out, subject{id: id})
 		}
 		return out, nil
 	default:

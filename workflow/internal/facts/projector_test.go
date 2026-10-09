@@ -161,18 +161,16 @@ func TestProjectSkipsEventsThatAreNotAViewerAction(t *testing.T) {
 
 func TestProjectFansOutToEveryViewerInAList(t *testing.T) {
 	src := FactSource{
-		Trigger:         "twitch:chat_presence",
-		EventPattern:    "chat.presence",
-		IdentityPath:    "chatterIds[]",
-		DisplayNamePath: "chatterNames",
-		Value:           "intervalSeconds",
+		Trigger:      "twitch:chat_presence",
+		EventPattern: "chat.presence",
+		IdentityPath: "chatterIds",
+		Value:        "intervalSeconds",
 	}
 	p, _ := newProjector(t, definition("woofx3:fact:watch_seconds", AggregateSum, src))
 	req, err := p.Request(&types.Event{
 		ID: "p1", Type: "chat.presence", Source: "twitch", Platform: "twitch", Time: eventTime,
 		Data: map[string]any{
-			"chatterIds":      []any{"a", "b", "a", ""},
-			"chatterNames":    []any{"Ann", "Bob", "Ann", "nobody"},
+			"chatterIds":      []any{"a", nil, "b", "a", ""},
 			"intervalSeconds": float64(60),
 		},
 	})
@@ -180,28 +178,13 @@ func TestProjectFansOutToEveryViewerInAList(t *testing.T) {
 		t.Fatalf("request: %v", err)
 	}
 	got := subjectsOf(req)
-	if !reflect.DeepEqual(got, []string{"a=Ann", "b=Bob"}) {
+	if !reflect.DeepEqual(got, []string{"a=", "b="}) {
 		t.Fatalf("got subjects %v", got)
 	}
 	for _, d := range req.Deltas {
 		if d.Op != "sum" || d.Num == nil || *d.Num != 60 {
 			t.Fatalf("delta %+v does not carry the interval", d)
 		}
-	}
-}
-
-func TestProjectNamesAreDroppedWhenNotParallelToIds(t *testing.T) {
-	src := FactSource{EventPattern: "chat.presence", IdentityPath: "ids", DisplayNamePath: "names"}
-	p, _ := newProjector(t, definition("f", AggregateCount, src))
-	req, err := p.Request(&types.Event{
-		ID: "p1", Type: "chat.presence", Source: "twitch", Platform: "twitch", Time: eventTime,
-		Data: map[string]any{"ids": []any{"a", "b"}, "names": []any{"Ann"}},
-	})
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	if got := subjectsOf(req); !reflect.DeepEqual(got, []string{"a=", "b="}) {
-		t.Fatalf("got subjects %v", got)
 	}
 }
 
@@ -441,10 +424,113 @@ func TestProjectReturnsTheApplyError(t *testing.T) {
 func TestProjectRejectsANonStringIdentity(t *testing.T) {
 	p, client := newProjector(t, definition("f", AggregateCount, chatSource(nil)))
 	err := p.Project(context.Background(), chatEvent(map[string]any{"chatterId": float64(7)}))
-	if err == nil || !strings.Contains(err.Error(), "not a string or a list") {
+	var sourceErr *SourceError
+	if !errors.As(err, &sourceErr) || sourceErr.FactID != "f" || !strings.Contains(err.Error(), "identity chatterId is float64, not a string or a list") {
 		t.Fatalf("got %v", err)
 	}
 	if len(client.applied) != 0 {
 		t.Fatal("a bad identity produced a call")
 	}
+}
+
+func TestProjectRejectsANonStringIdInAList(t *testing.T) {
+	p, client := newProjector(t, definition("f", AggregateCount,
+		FactSource{Trigger: "presence", EventPattern: "chat.presence", IdentityPath: "chatterIds"}))
+	err := p.Project(context.Background(), &types.Event{
+		ID: "p1", Type: "chat.presence", Source: "twitch", Platform: "twitch", Time: eventTime,
+		Data: map[string]any{"chatterIds": []any{"a", map[string]any{"id": "b"}}},
+	})
+	if err == nil || err.Error() != "fact f from presence: identity chatterIds[1] is map[string]interface {}, not a string" {
+		t.Fatalf("got %v", err)
+	}
+	if len(client.applied) != 0 {
+		t.Fatal("a bad id list produced a call")
+	}
+}
+
+func TestProjectFirstMatchingSourceSetsTheValue(t *testing.T) {
+	p, _ := newProjector(t, definition("f", AggregateSum,
+		FactSource{EventPattern: "channel.cheer", IdentityPath: "userId", Value: "bits"},
+		FactSource{EventPattern: "channel.*", IdentityPath: "userId", Value: "bonus"},
+	))
+	req, err := p.Request(&types.Event{
+		ID: "c1", Type: "channel.cheer", Source: "twitch", Platform: "twitch", Time: eventTime,
+		Data: map[string]any{"userId": "u1", "bits": float64(100), "bonus": float64(7)},
+	})
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if len(req.Deltas) != 1 || *req.Deltas[0].Num != 100 {
+		t.Fatalf("got %+v", req.Deltas)
+	}
+}
+
+func TestProjectSecondSourceCountsWhenTheFirstSkips(t *testing.T) {
+	p, _ := newProjector(t, definition("f", AggregateSum,
+		FactSource{EventPattern: "channel.cheer", IdentityPath: "userId", Value: "bits",
+			Where: where(t, `{"path":"bits","op":"gt","value":1000}`)},
+		FactSource{EventPattern: "channel.cheer", IdentityPath: "userId", Value: "missing"},
+		FactSource{EventPattern: "channel.cheer", IdentityPath: "userId", Value: "bonus"},
+	))
+	req, err := p.Request(&types.Event{
+		ID: "c1", Type: "channel.cheer", Source: "twitch", Platform: "twitch", Time: eventTime,
+		Data: map[string]any{"userId": "u1", "bits": float64(100), "bonus": float64(7)},
+	})
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if len(req.Deltas) != 1 || *req.Deltas[0].Num != 7 {
+		t.Fatalf("got %+v", req.Deltas)
+	}
+}
+
+func TestProjectAnonymousWhenSkipsAListIdentity(t *testing.T) {
+	p, client := newProjector(t, definition("f", AggregateCount, FactSource{
+		EventPattern: "channel.gift", IdentityPath: "recipientIds", AnonymousWhenPath: "isAnonymous",
+	}))
+	data := map[string]any{"recipientIds": []any{"a", "b"}, "isAnonymous": true}
+	event := &types.Event{ID: "g1", Type: "channel.gift", Source: "twitch", Platform: "twitch", Time: eventTime, Data: data}
+	if err := p.Project(context.Background(), event); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if len(client.applied) != 0 {
+		t.Fatal("an anonymous event produced a call")
+	}
+	data["isAnonymous"] = false
+	if err := p.Project(context.Background(), event); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if len(client.applied) != 1 || len(client.applied[0].Deltas) != 2 {
+		t.Fatalf("got %+v", client.applied)
+	}
+}
+
+func TestReplaceRunsConcurrentlyWithRequest(t *testing.T) {
+	defs := []FactDefinition{
+		definition("a", AggregateCount, chatSource(where(t, `{"path":"message","op":"regex","value":"apple"}`))),
+		definition("b", AggregateCount, FactSource{EventPattern: "user.*", IdentityPath: "chatterId"}),
+	}
+	p, _ := newProjector(t, defs...)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			if err := p.Replace(defs); err != nil {
+				t.Errorf("replace: %v", err)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			req, err := p.Request(chatEvent(map[string]any{"chatterId": "u1", "message": "apple"}))
+			if err != nil || req == nil || len(req.Deltas) != 2 {
+				t.Errorf("request: %+v, %v", req, err)
+				return
+			}
+		}
+	}()
+	wg.Wait()
 }

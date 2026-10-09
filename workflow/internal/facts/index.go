@@ -28,6 +28,7 @@ type index struct {
 
 type wildcardSources struct {
 	pattern string
+	tokens  []string
 	sources []*compiledSource
 }
 
@@ -91,7 +92,10 @@ func buildIndex(defs []FactDefinition) (*index, error) {
 			if !seen {
 				slot = len(idx.wildcard)
 				wildcards[pattern] = slot
-				idx.wildcard = append(idx.wildcard, wildcardSources{pattern: pattern})
+				idx.wildcard = append(idx.wildcard, wildcardSources{
+					pattern: pattern,
+					tokens:  strings.Split(pattern, "."),
+				})
 				idx.patterns = append(idx.patterns, pattern)
 			}
 			idx.wildcard[slot].sources = append(idx.wildcard[slot].sources, cs)
@@ -206,13 +210,34 @@ func atomKey(path, op string, value any) string {
 }
 
 // sourcesFor returns every source listening for an event type, in
-// declaration order.
+// declaration order. The result may be the index's own slice and must not be
+// modified.
 func (idx *index) sourcesFor(eventType string) []*compiledSource {
-	matched := append([]*compiledSource(nil), idx.exact[eventType]...)
-	for _, w := range idx.wildcard {
-		if eventmatch.Matches(w.pattern, eventType) {
-			matched = append(matched, w.sources...)
+	exact := idx.exact[eventType]
+	if len(idx.wildcard) == 0 {
+		return exact
+	}
+	subject := strings.Split(eventType, ".")
+	var groups [][]*compiledSource
+	if len(exact) > 0 {
+		groups = append(groups, exact)
+	}
+	for i := range idx.wildcard {
+		if eventmatch.MatchesTokens(idx.wildcard[i].tokens, subject) {
+			groups = append(groups, idx.wildcard[i].sources)
 		}
+	}
+	// Each group is already in declaration order; only sources drawn from
+	// several groups need merging.
+	switch len(groups) {
+	case 0:
+		return nil
+	case 1:
+		return groups[0]
+	}
+	var matched []*compiledSource
+	for _, group := range groups {
+		matched = append(matched, group...)
 	}
 	sort.Slice(matched, func(i, j int) bool {
 		return matched[i].order < matched[j].order
