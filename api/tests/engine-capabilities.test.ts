@@ -26,10 +26,10 @@ describe("getEngineCapabilities", () => {
     expect([...result.capabilities].sort()).toEqual(advertised.sort());
   });
 
-  test("does not advertise scene editor protocol 2 while sceneManager serves protocol 1", async () => {
+  test("advertises scene editor protocol 2 and no longer protocol 1", async () => {
     const { capabilities } = await getEngineCapabilities();
-    expect(capabilities).toContain(ENGINE_CAPABILITIES.scenesEditorSessions);
-    expect(capabilities).not.toContain(ENGINE_CAPABILITIES.scenesEditorSync);
+    expect(capabilities).toContain(ENGINE_CAPABILITIES.scenesEditorSync);
+    expect(capabilities).not.toContain(ENGINE_CAPABILITIES.scenesEditorSessions);
   });
 
   test("returns the list sorted and without duplicates", async () => {

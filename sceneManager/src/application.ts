@@ -221,7 +221,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
 
   async terminate(ctx: Context): Promise<void> {
     // Edits still waiting to be written would otherwise be lost with the process.
-    await this.sceneDocuments?.flush();
+    await this.sceneDocuments?.close();
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
