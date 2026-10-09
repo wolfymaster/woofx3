@@ -135,6 +135,7 @@ func chatEvent(id string, data map[string]any) *types.Event {
 }
 
 func TestViewerFactReaderMapsFactIDsToPaths(t *testing.T) {
+	chatterName := "Wolfy"
 	db := &fakeViewerReads{respond: func(*dbv1.GetViewerFactsRequest) *dbv1.GetViewerFactsResponse {
 		return &dbv1.GetViewerFactsResponse{Values: []*dbv1.ViewerFactValue{
 			{FactId: "user:fact:apple_mentions", WindowKind: "lifetime", ValueKind: "number", Value: num(3)},
@@ -146,14 +147,18 @@ func TestViewerFactReaderMapsFactIDsToPaths(t *testing.T) {
 			{FactId: "not-canonical", ValueKind: "number", Value: num(1)},
 			{FactId: "user:segment:fans", ValueKind: "number", Value: num(1)},
 			{FactId: "id:fact:shadow", ValueKind: "number", Value: num(1)},
-		}}
+			{FactId: "platform:fact:shadow", ValueKind: "number", Value: num(1)},
+			{FactId: "name:fact:shadow", ValueKind: "number", Value: num(1)},
+		}, SubjectName: &chatterName}
 	}}
-	reader := newViewerFactReader(db, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), &factLogger{})
+	logger := &factLogger{}
+	reader := newViewerFactReader(db, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), logger)
 
 	got := reader.Viewer(context.Background(), chatEvent("e1", map[string]any{"chatterId": "u1"}))
 	want := map[string]any{
 		"id":       "u1",
 		"platform": "twitch",
+		"name":     "Wolfy",
 		"user": map[string]any{
 			"apple_mentions": 3.0,
 			"last_word":      "apple",
@@ -167,6 +172,20 @@ func TestViewerFactReaderMapsFactIDsToPaths(t *testing.T) {
 	}
 	if len(db.reads) != 1 || db.reads[0].GetPlatform() != "twitch" || db.reads[0].GetSubjectId() != "u1" {
 		t.Fatalf("reads = %v, want one for twitch/u1", db.reads)
+	}
+
+	const reserved = "Fact's owner is a reserved ${viewer.*} key; the fact cannot be read there"
+	reader.Viewer(context.Background(), chatEvent("e2", map[string]any{"chatterId": "u1"}))
+	if n := logger.count(warnsOf, reserved); n != 3 {
+		t.Fatalf("logged %d reserved-owner facts across two reads, want one line for each of 3", n)
+	}
+}
+
+func TestViewerFactReaderLeavesNameOutWhenTheDbHasNone(t *testing.T) {
+	reader := newViewerFactReader(&fakeViewerReads{}, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), &factLogger{})
+	got := reader.Viewer(context.Background(), chatEvent("e1", map[string]any{"chatterId": "u1"}))
+	if _, ok := got["name"]; ok {
+		t.Fatalf("Viewer = %v, want no name", got)
 	}
 }
 

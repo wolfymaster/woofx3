@@ -30,11 +30,17 @@ const (
 	emitsIdentityViewer = "viewer"
 )
 
-// Keys of `${viewer.*}` that are not facts.
+// Keys of `${viewer.*}` that are not facts. A fact whose owner is one of
+// them has no path.
 const (
 	viewerKeyID       = "id"
 	viewerKeyPlatform = "platform"
+	viewerKeyName     = "name"
 )
+
+func isReservedViewerKey(key string) bool {
+	return key == viewerKeyID || key == viewerKeyPlatform || key == viewerKeyName
+}
 
 // triggerIdentity is where the viewer an event is about sits in the data of
 // one trigger's events.
@@ -234,6 +240,9 @@ type viewerFactReader struct {
 	// failing is set while reads fail, so that an outage is logged once
 	// rather than once per run.
 	failing bool
+	// reserved is each fact id already logged for having an owner that is a
+	// reserved key.
+	reserved map[string]struct{}
 }
 
 func newViewerFactReader(db dbv1.ViewerFactService, catalog *triggerIdentityCatalog, logger tasks.Logger) *viewerFactReader {
@@ -241,18 +250,20 @@ func newViewerFactReader(db dbv1.ViewerFactService, catalog *triggerIdentityCata
 		panic("viewer resolver: newViewerFactReader needs a db client, a catalog and a logger")
 	}
 	return &viewerFactReader{
-		db:      db,
-		catalog: catalog,
-		breaker: newProxyBreaker(logger, "Viewer fact reads paused; db proxy unreachable", "Viewer fact reads resumed"),
-		logger:  logger,
-		timeout: viewerReadTimeout,
+		db:       db,
+		catalog:  catalog,
+		breaker:  newProxyBreaker(logger, "Viewer fact reads paused; db proxy unreachable", "Viewer fact reads resumed"),
+		logger:   logger,
+		timeout:  viewerReadTimeout,
+		reserved: make(map[string]struct{}),
 	}
 }
 
 // Viewer returns `${viewer.*}` for the viewer event names: `id`, `platform`,
-// and each fact the viewer has a value for, a fact `{owner}:fact:{slug}` at
-// `{owner}.{slug}`. A session fact reads its current session's value. When
-// the facts cannot be read, only `id` and `platform` are there.
+// `name` when the db knows the viewer's display name, and each fact the
+// viewer has a value for, a fact `{owner}:fact:{slug}` at `{owner}.{slug}`.
+// A session fact reads its current session's value. When the facts cannot be
+// read, only `id` and `platform` are there.
 func (r *viewerFactReader) Viewer(ctx context.Context, event *types.Event) map[string]any {
 	subjectID, ok := r.viewerOf(event)
 	if !ok {
@@ -265,7 +276,10 @@ func (r *viewerFactReader) Viewer(ctx context.Context, event *types.Event) map[s
 		return viewer
 	}
 	r.reportSuccess()
-	addFactValues(viewer, resp.GetValues())
+	if name := resp.GetSubjectName(); name != "" {
+		viewer[viewerKeyName] = name
+	}
+	r.reportReserved(addFactValues(viewer, resp.GetValues()))
 	return viewer
 }
 
@@ -333,17 +347,37 @@ func (r *viewerFactReader) reportSuccess() {
 	}
 }
 
-// addFactValues adds each value at its fact's path. A fact id that is not
-// `{owner}:fact:{slug}`, or whose owner is a key `${viewer.*}` already has,
-// has no path and is left out.
-func addFactValues(viewer map[string]any, values []*dbv1.ViewerFactValue) {
+// reportReserved logs, once per fact, each fact left out of `${viewer.*}`
+// because its owner is a reserved key.
+func (r *viewerFactReader) reportReserved(factIDs []string) {
+	if len(factIDs) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, id := range factIDs {
+		if _, logged := r.reserved[id]; logged {
+			continue
+		}
+		r.reserved[id] = struct{}{}
+		r.logger.Warn("Fact's owner is a reserved ${viewer.*} key; the fact cannot be read there",
+			"fact", id,
+			"reserved", []string{viewerKeyID, viewerKeyPlatform, viewerKeyName})
+	}
+}
+
+// addFactValues adds each value at its fact's path, and returns the ids of
+// the facts left out because their owner is a reserved key. A fact id that
+// is not `{owner}:fact:{slug}` has no path and is left out too.
+func addFactValues(viewer map[string]any, values []*dbv1.ViewerFactValue) (reserved []string) {
 	for _, v := range values {
 		parts := strings.Split(v.GetFactId(), ":")
 		if len(parts) != 3 || parts[0] == "" || parts[1] != "fact" || parts[2] == "" {
 			continue
 		}
 		owner, slug := parts[0], parts[2]
-		if owner == viewerKeyID || owner == viewerKeyPlatform {
+		if isReservedViewerKey(owner) {
+			reserved = append(reserved, v.GetFactId())
 			continue
 		}
 		value, ok := factValue(v)
@@ -357,6 +391,7 @@ func addFactValues(viewer map[string]any, values []*dbv1.ViewerFactValue) {
 		}
 		facts[slug] = value
 	}
+	return reserved
 }
 
 // factValue is a stored value as expressions see it: a string fact's text,
