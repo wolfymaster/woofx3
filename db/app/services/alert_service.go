@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -157,12 +158,9 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 	if req.EnvelopeId == "" {
 		return nil, twirp.RequiredArgumentError("envelope_id")
 	}
-	switch req.Status {
-	case "dispatched", "playing", "completed", "failed", "timed_out", "skipped":
-		// allowed
-	default:
+	if !repo.IsEnvelopeLifecycleStatus(req.Status) {
 		return nil, twirp.InvalidArgumentError("status",
-			"must be one of: dispatched, playing, completed, failed, timed_out, skipped")
+			"must be one of: "+strings.Join(repo.EnvelopeLifecycleStatuses(), ", "))
 	}
 	alert, applied, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error, s.recordChange("updated"))
 	if err != nil {
@@ -184,12 +182,12 @@ func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.Update
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
 	switch req.Status {
-	case "replayed":
+	case repo.AlertStatusReplayed:
 		// allowed
 	case "":
 		return nil, twirp.RequiredArgumentError("status")
 	default:
-		return nil, twirp.InvalidArgumentError("status", "must be replayed")
+		return nil, twirp.InvalidArgumentError("status", "must be "+repo.AlertStatusReplayed)
 	}
 	alert, applied, err := s.repo.MarkReplayed(id, s.recordChange("updated"))
 	if err != nil {
@@ -201,7 +199,9 @@ func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.Update
 	return s.transitionResponse(alert, applied), nil
 }
 
-// transitionResponse answers with the row as it stands.
+// transitionResponse answers with the row the transition concerned, as it
+// stands: moved when the transition applied, unchanged when it was refused. The
+// message says which.
 //
 // A refused transition is not an error; reporters (several widgets playing
 // one alert, a second replay of one row) routinely send transitions the row

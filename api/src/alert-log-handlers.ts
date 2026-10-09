@@ -96,10 +96,9 @@ function readVersion(row: RawAlertRow): number | null {
  * The snapshot an outbox row carries, or null when it has no id to name the
  * alert.
  *
- * A row without a version is still sent, without one: during a rolling
- * deploy, a db proxy not yet upgraded and outbox rows written before the
- * upgrade publish none, and dropping them would lose the callback outright.
- * Receivers order such a snapshot by stage and `updatedAt`.
+ * An outbox row may carry no version. Its snapshot is still sent, without
+ * one, because dropping it would lose the callback outright; receivers order
+ * a snapshot without a version by its stage and `updatedAt`.
  */
 function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
   const row = readRow<RawAlertRow>(ce);

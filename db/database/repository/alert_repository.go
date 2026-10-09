@@ -10,7 +10,6 @@ import (
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // AlertRepository wraps gorm.DB with Alert-specific helpers — same
@@ -106,6 +105,11 @@ func (r *AlertRepository) Count() (int64, error) {
 	return n, err
 }
 
+// alertsNewestFirst orders an envelope's rows so the first is the one its
+// lifecycle reports concern: the newest. The id breaks a tie between rows
+// written at the same instant, so every reader picks the same row.
+const alertsNewestFirst = "created_at DESC, id DESC"
+
 // GetByEnvelopeID looks up the most recent alert row for a given
 // AlertPayload envelope id. Returns gorm.ErrRecordNotFound when no row
 // matches.
@@ -113,16 +117,32 @@ func (r *AlertRepository) GetByEnvelopeID(envelopeID string) (*models.Alert, err
 	if envelopeID == "" {
 		return nil, fmt.Errorf("envelope_id is required")
 	}
-	var a models.Alert
-	err := r.db.
-		Where("envelope_id = ?", envelopeID).
-		Order("created_at DESC").
-		First(&a).Error
-	return &a, err
+	return newestForEnvelope(r.db, envelopeID)
 }
 
+func newestForEnvelope(tx *gorm.DB, envelopeID string) (*models.Alert, error) {
+	var a models.Alert
+	err := tx.Where("envelope_id = ?", envelopeID).Order(alertsNewestFirst).First(&a).Error
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// The statuses an alert row can hold.
+const (
+	AlertStatusSent       = "sent"
+	AlertStatusDispatched = "dispatched"
+	AlertStatusPlaying    = "playing"
+	AlertStatusCompleted  = "completed"
+	AlertStatusFailed     = "failed"
+	AlertStatusTimedOut   = "timed_out"
+	AlertStatusSkipped    = "skipped"
+	AlertStatusReplayed   = "replayed"
+)
+
 // Stages of an alert's lifecycle. A transition applies only when it moves the
-// row to a later stage, with the verdict exceptions in transitionUpdateSQL.
+// row to a later stage, or replaces a verdict alertVerdictReplacements lists.
 const (
 	alertStageInitial = iota
 	alertStageDispatched
@@ -131,21 +151,63 @@ const (
 	alertStageReplayed
 )
 
-// alertLifecycleStages ranks every status an alert row can hold.
+// alertLifecycleStages ranks every status an alert row can hold, and is the
+// one list of them: the SQL rule and the RPC validators derive from it.
 //
 // Verdicts share a stage, so the first verdict stands apart from the
-// exceptions transitionUpdateSQL lists. `replayed` ranks above them: an
+// replacements alertVerdictReplacements lists. `replayed` ranks above them: an
 // operator superseded the row, and a straggling report for the original play
 // does not undo that.
 var alertLifecycleStages = map[string]int{
-	"sent":       alertStageInitial,
-	"dispatched": alertStageDispatched,
-	"playing":    alertStagePlaying,
-	"completed":  alertStageVerdict,
-	"failed":     alertStageVerdict,
-	"timed_out":  alertStageVerdict,
-	"skipped":    alertStageVerdict,
-	"replayed":   alertStageReplayed,
+	AlertStatusSent:       alertStageInitial,
+	AlertStatusDispatched: alertStageDispatched,
+	AlertStatusPlaying:    alertStagePlaying,
+	AlertStatusCompleted:  alertStageVerdict,
+	AlertStatusFailed:     alertStageVerdict,
+	AlertStatusTimedOut:   alertStageVerdict,
+	AlertStatusSkipped:    alertStageVerdict,
+	AlertStatusReplayed:   alertStageReplayed,
+}
+
+// alertVerdictReplacements lists, for each verdict, the verdicts it replaces
+// although they share its stage. Any other verdict stands once written.
+//
+//   - `completed` replaces any other verdict. An alert fans out to every
+//     widget that answers to its target, and one widget playing it to the end
+//     means viewers saw it, whatever another widget or the queue reported.
+//   - `failed` and `skipped` replace `timed_out`. The timeout is the engine
+//     giving up on hearing back; a late report is the truth.
+var alertVerdictReplacements = map[string][]string{
+	AlertStatusCompleted: {AlertStatusFailed, AlertStatusTimedOut, AlertStatusSkipped},
+	AlertStatusFailed:    {AlertStatusTimedOut},
+	AlertStatusSkipped:   {AlertStatusTimedOut},
+}
+
+// IsEnvelopeLifecycleStatus reports whether `status` is one an overlay or the
+// queue reports against an envelope (see UpdateLifecycle): every status but
+// the one a row is created with and `replayed`, which is written by row id.
+func IsEnvelopeLifecycleStatus(status string) bool {
+	_, known := alertLifecycleStages[status]
+	return known && status != AlertStatusSent && status != AlertStatusReplayed
+}
+
+// EnvelopeLifecycleStatuses lists the statuses IsEnvelopeLifecycleStatus
+// accepts, in lifecycle order.
+func EnvelopeLifecycleStatuses() []string {
+	statuses := make([]string, 0, len(alertLifecycleStages))
+	for status := range alertLifecycleStages {
+		if IsEnvelopeLifecycleStatus(status) {
+			statuses = append(statuses, status)
+		}
+	}
+	sort.Slice(statuses, func(i, j int) bool {
+		si, sj := alertLifecycleStages[statuses[i]], alertLifecycleStages[statuses[j]]
+		if si != sj {
+			return si < sj
+		}
+		return statuses[i] < statuses[j]
+	})
+	return statuses
 }
 
 // alertStageSQL is the stage of a row's current status as a SQL expression.
@@ -168,24 +230,26 @@ var alertStageSQL = func() string {
 
 // sqliteTimestampLayout is how a write stamps a SQLite timestamp column: UTC
 // with six fractional digits and an explicit offset, a layout the driver
-// decodes into time.Time. Fixed width, so stored values sort as text in time
-// order.
+// decodes into time.Time. Fixed width and one zone, so stored values sort as
+// text in time order; rows written before the engine used it are rewritten to
+// it by migration 0055_alert_timestamps_utc, which must use the same layout.
 const sqliteTimestampLayout = "2006-01-02 15:04:05.000000-07:00"
 
 // writeClock is the clock one write stamps every timestamp column with: a SQL
 // expression for the columns, and the value of the `@now` argument it may
-// reference.
+// reference. Every write is a single statement, so each column it stamps gets
+// the same value.
 //
-// Postgres: statement_timestamp(), fixed for the whole statement at
-// microsecond precision. A transition locks its rows before issuing the UPDATE
-// (see transition), so the statement starts after any earlier write to the
-// row committed, and the row's writes are stamped in the order they were
-// applied.
+// Postgres: statement_timestamp(), at microsecond precision. It is read when
+// the statement starts, which can be before the statement waits for a
+// concurrent write to the same row to commit, so two racing writes may stamp
+// `updated_at` out of the order they were applied in by a few microseconds.
+// `version` is what orders a row's writes.
 //
 // SQLite: its own clock has only millisecond precision, so the time is read
-// here, at microseconds, and bound as one argument for every column. The
-// engine holds a single SQLite connection, so a write that reads the clock
-// inside its transaction is stamped in the order the writes were applied.
+// here, at microseconds, and bound as one argument. The engine holds a single
+// SQLite connection and reads the clock inside the write's transaction, so
+// writes are stamped in the order they were applied.
 func (r *AlertRepository) writeClock() (string, string) {
 	if r.isPostgres() {
 		return "statement_timestamp()", ""
@@ -197,39 +261,31 @@ func (r *AlertRepository) isPostgres() bool {
 	return database.Dialect(r.db.Dialector.Name()) == database.DialectPostgres
 }
 
-// forUpdate makes a read inside a transaction lock the rows it returns.
-// SQLite has no row locks; its single writer serialises transitions instead.
-func (r *AlertRepository) forUpdate(tx *gorm.DB) *gorm.DB {
-	if r.isPostgres() {
-		return tx.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
-	return tx
-}
-
 // MarkReplayed moves the row with `id` to `replayed` under the same rule as
-// UpdateLifecycle, so a row is marked replayed once. It returns the row and
-// whether the write applied.
+// UpdateLifecycle, so a row is marked replayed once. It returns the row as it
+// stands and whether the write applied.
 func (r *AlertRepository) MarkReplayed(id uuid.UUID, record RecordAlertChange) (*models.Alert, bool, error) {
-	return r.transition("replayed", "", record, func(tx *gorm.DB) ([]*models.Alert, error) {
-		var a models.Alert
-		if err := r.forUpdate(tx).Where("id = ?", id).First(&a).Error; err != nil {
-			return nil, err
-		}
-		return []*models.Alert{&a}, nil
+	return r.transition(AlertStatusReplayed, "", record, alertTarget{
+		sql:  "@id",
+		args: map[string]interface{}{"id": id},
+		current: func(tx *gorm.DB) (*models.Alert, error) {
+			var a models.Alert
+			if err := tx.Where("id = ?", id).First(&a).Error; err != nil {
+				return nil, err
+			}
+			return &a, nil
+		},
 	})
 }
 
-// UpdateLifecycle moves every row for an envelope to a lifecycle status, each
-// under the rule in transitionUpdateSQL, and returns the newest row and
-// whether the write applied to any row.
+// UpdateLifecycle moves the newest row for an envelope to a lifecycle status,
+// under the rule in transitionUpdateSQL, and returns that row as it stands and
+// whether the write applied.
 //
-// Every row rather than the newest: one envelope can have several rows, when a
-// workflow pins the envelope id with `parameters.id` or a write of the row was
-// retried, and an overlay's report names the envelope, not a row. A row the
-// report does not concern, an earlier run's, refuses it in all but one case:
-// `completed` replaces an earlier run's other verdict. Pinned ids are for tests
-// and replays, so that misattribution is accepted over leaving duplicate rows
-// stuck at `sent`.
+// One envelope can have several rows, when a workflow pins the envelope id
+// with `parameters.id` or an operator replays a row. Each row is a separate
+// play of the alert, and an overlay's report names the envelope, not a row,
+// so it concerns the newest play. An earlier row keeps the status it reached.
 func (r *AlertRepository) UpdateLifecycle(
 	envelopeID string,
 	status string,
@@ -239,108 +295,88 @@ func (r *AlertRepository) UpdateLifecycle(
 	if envelopeID == "" {
 		return nil, false, fmt.Errorf("envelope_id is required")
 	}
-	return r.transition(status, errorMsg, record, func(tx *gorm.DB) ([]*models.Alert, error) {
-		var rows []*models.Alert
-		// One lock order for every writer, so two transitions on the same
-		// envelope cannot deadlock.
-		err := r.forUpdate(tx).
-			Where("envelope_id = ?", envelopeID).
-			Order("created_at DESC").
-			Order("id").
-			Find(&rows).Error
-		if err != nil {
-			return nil, err
-		}
-		if len(rows) == 0 {
-			return nil, gorm.ErrRecordNotFound
-		}
-		return rows, nil
+	if !IsEnvelopeLifecycleStatus(status) {
+		return nil, false, fmt.Errorf("unsupported envelope lifecycle status %q", status)
+	}
+	return r.transition(status, errorMsg, record, alertTarget{
+		sql:  "(SELECT id FROM alerts WHERE envelope_id = @envelope_id ORDER BY " + alertsNewestFirst + " LIMIT 1)",
+		args: map[string]interface{}{"envelope_id": envelopeID},
+		current: func(tx *gorm.DB) (*models.Alert, error) {
+			return newestForEnvelope(tx, envelopeID)
+		},
 	})
 }
 
-// transition applies one lifecycle write to each row `find` locks, and
-// returns the first of them as it stands and whether the write applied to any.
+// alertTarget names the one row a transition writes: `sql` is a SQL
+// expression for its id over `args`, and `current` reads the row as it stands.
+type alertTarget struct {
+	sql     string
+	args    map[string]interface{}
+	current func(tx *gorm.DB) (*models.Alert, error)
+}
+
+// transition applies one lifecycle write to the target row, and returns the
+// row as it stands and whether the write applied.
 //
-// The forward-only check is part of the UPDATE itself, so concurrent writers
-// cannot interleave around it. A refused write changes nothing and records
-// nothing, because an entry for it would tell receivers the row moved when it
-// did not. An applied write is recorded in its transaction, so it is
-// published if and only if it commits.
+// The write is a single conditional UPDATE: the forward-only check is in its
+// WHERE clause, which the database re-evaluates against the latest version of
+// a row a concurrent write changed, so concurrent writers cannot interleave
+// around it. A refused write changes nothing and records nothing, because an
+// entry for it would tell receivers the row moved when it did not. An applied
+// write is recorded in its transaction, so it is published if and only if it
+// commits.
 func (r *AlertRepository) transition(
 	status string,
 	errorMsg string,
 	record RecordAlertChange,
-	find func(tx *gorm.DB) ([]*models.Alert, error),
+	target alertTarget,
 ) (*models.Alert, bool, error) {
-	if _, known := alertLifecycleStages[status]; !known {
-		return nil, false, fmt.Errorf("unsupported lifecycle status %q", status)
-	}
-	var first *models.Alert
+	var row *models.Alert
 	applied := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		rows, err := find(tx)
-		if err != nil {
-			return err
-		}
 		now, at := r.writeClock()
-		update, err := transitionUpdateSQL(status, now)
+		update, err := transitionUpdateSQL(status, target.sql, now)
 		if err != nil {
 			return err
 		}
-		for i, current := range rows {
-			row, rowApplied, err := applyTransition(tx, update, current, status, errorMsg, at, record)
+		args := map[string]interface{}{
+			"status": status,
+			"stage":  alertLifecycleStages[status],
+			"error":  errorMsg,
+			"now":    at,
+		}
+		for name, value := range target.args {
+			args[name] = value
+		}
+		var updated models.Alert
+		res := tx.Raw(update, args).Scan(&updated)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			current, err := target.current(tx)
 			if err != nil {
 				return err
 			}
-			if i == 0 {
-				first = row
-			}
-			applied = applied || rowApplied
+			row = current
+			return nil
 		}
+		if err := record(tx, &updated); err != nil {
+			return err
+		}
+		row = &updated
+		applied = true
 		return nil
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return first, applied, nil
+	return row, applied, nil
 }
 
-// applyTransition runs the conditional UPDATE on one locked row and records it
-// when it applied. A refused write returns `current`: the row is locked (on
-// Postgres by find, on SQLite by the single connection), so it is the row as
-// it stands.
-func applyTransition(
-	tx *gorm.DB,
-	update string,
-	current *models.Alert,
-	status string,
-	errorMsg string,
-	at string,
-	record RecordAlertChange,
-) (*models.Alert, bool, error) {
-	var updated models.Alert
-	res := tx.Raw(update, map[string]interface{}{
-		"id":     current.ID,
-		"status": status,
-		"stage":  alertLifecycleStages[status],
-		"error":  errorMsg,
-		"now":    at,
-	}).Scan(&updated)
-	if res.Error != nil {
-		return nil, false, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return current, false, nil
-	}
-	if err := record(tx, &updated); err != nil {
-		return nil, false, err
-	}
-	return &updated, true, nil
-}
-
-// transitionUpdateSQL is the conditional UPDATE that moves a row to `status`,
-// returning the row as stored when it applies. `now` is the write's clock
-// (see writeClock).
+// transitionUpdateSQL is the conditional UPDATE that moves the row whose id is
+// `target` to `status`, returning the row as stored when it applies. `now` is
+// the write's clock (see writeClock).
 //
 // What each status stamps:
 //   - "dispatched" → dispatched_at
@@ -352,44 +388,46 @@ func applyTransition(
 //   - "replayed"   → nothing else   (an operator replayed it as a new row)
 //
 // Which transitions apply: a write applies only when the new status is at a
-// later stage than the current one, so the first verdict wins, with two
-// exceptions:
-//   - `completed` replaces any other verdict. An alert fans out to every
-//     widget that answers to its target, and one widget playing it to the end
-//     means viewers saw it, whatever another widget or the queue reported.
-//   - `failed` and `skipped` replace `timed_out`. The timeout is the engine
-//     giving up on hearing back; a late report is the truth.
+// later stage than the current one, so the first verdict wins, apart from the
+// replacements alertVerdictReplacements lists. A verdict always rewrites
+// `error`, so a success that replaces a failure carries no error.
 //
-// A verdict always rewrites `error`, so a success that replaces a failure
-// carries no error. Receivers must apply the same rule: see
-// convex/lib/engineAlertLifecycle.ts in woofx3-ui.
+// This is the only place the rule is enforced. Receivers of the published
+// snapshots keep the one with the highest version and do not re-check it.
 //
 // An applied write increments `version` and sets `updated_at` in the same
 // statement. Lifecycle timestamps keep the first transition (COALESCE).
-func transitionUpdateSQL(status string, now string) (string, error) {
+func transitionUpdateSQL(status string, target string, now string) (string, error) {
 	sets := []string{"status = @status", "version = version + 1", "updated_at = " + now}
-	where := alertStageSQL + " < @stage"
 	switch status {
-	case "dispatched":
+	case AlertStatusDispatched:
 		sets = append(sets, "dispatched_at = COALESCE(dispatched_at, "+now+")")
-	case "playing":
+	case AlertStatusPlaying:
 		sets = append(sets, "played_at = COALESCE(played_at, "+now+")")
-	case "completed":
+	case AlertStatusCompleted, AlertStatusSkipped:
 		sets = append(sets, "completed_at = COALESCE(completed_at, "+now+")", "error = ''")
-		where = "(" + where + " OR status IN ('failed', 'timed_out', 'skipped'))"
-	case "skipped":
-		sets = append(sets, "completed_at = COALESCE(completed_at, "+now+")", "error = ''")
-		where = "(" + where + " OR status = 'timed_out')"
-	case "failed":
+	case AlertStatusFailed, AlertStatusTimedOut:
 		sets = append(sets, "completed_at = COALESCE(completed_at, "+now+")", "error = @error")
-		where = "(" + where + " OR status = 'timed_out')"
-	case "timed_out":
-		sets = append(sets, "completed_at = COALESCE(completed_at, "+now+")", "error = @error")
-	case "replayed":
+	case AlertStatusReplayed:
 	default:
 		return "", fmt.Errorf("unsupported lifecycle status %q", status)
 	}
-	return "UPDATE alerts SET " + strings.Join(sets, ", ") + " WHERE id = @id AND " + where + " RETURNING *", nil
+	where := alertStageSQL + " < @stage"
+	if replaced := alertVerdictReplacements[status]; len(replaced) > 0 {
+		where = "(" + where + " OR status IN (" + sqlStringList(replaced) + "))"
+	}
+	return "UPDATE alerts SET " + strings.Join(sets, ", ") +
+		" WHERE id = " + target + " AND " + where + " RETURNING *", nil
+}
+
+// sqlStringList renders constant strings as a SQL list of literals. Only for
+// values defined in this file: nothing is escaped.
+func sqlStringList(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = "'" + value + "'"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // ListPending returns alerts that have never been
@@ -404,17 +442,22 @@ func (r *AlertRepository) ListPending() ([]*models.Alert, error) {
 	return alerts, err
 }
 
-// Delete removes the row with `id`, recording it as it stood before, in the
-// same transaction. Returns gorm.ErrRecordNotFound when no row matches.
+// Delete removes the row with `id` and records it in the same transaction,
+// with its version incremented past the row's last write: the deletion is the
+// row's final write, and a receiver that keeps the highest version of each row
+// takes it over every snapshot published before. Returns
+// gorm.ErrRecordNotFound when no row matches.
 func (r *AlertRepository) Delete(id uuid.UUID, record RecordAlertChange) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		var a models.Alert
-		if err := r.forUpdate(tx).Where("id = ?", id).First(&a).Error; err != nil {
-			return err
+		var deleted models.Alert
+		res := tx.Raw(`DELETE FROM alerts WHERE id = @id RETURNING *`, map[string]interface{}{"id": id}).Scan(&deleted)
+		if res.Error != nil {
+			return res.Error
 		}
-		if err := tx.Where("id = ?", id).Delete(&models.Alert{}).Error; err != nil {
-			return err
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
 		}
-		return record(tx, &a)
+		deleted.Version++
+		return record(tx, &deleted)
 	})
 }

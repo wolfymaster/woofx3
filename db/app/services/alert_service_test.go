@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -375,29 +376,81 @@ func TestAlertLifecycleEndsCompletedUnderConcurrentVerdicts(t *testing.T) {
 	})
 }
 
-func TestAlertLifecycleMovesEveryRowOfAnEnvelope(t *testing.T) {
+// A workflow that pins the envelope id plays the alert again as a new row. A
+// report names the envelope, so it concerns the newest play; the earlier row
+// keeps the verdict it reached, even one the report would otherwise replace.
+func TestAlertLifecycleMovesOnlyTheNewestRowOfAnEnvelope(t *testing.T) {
 	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
 		older := createAlert(t, svc, "env-1")
+		moveAlertWithError(t, svc, "env-1", "failed", "missing media")
+		olderBefore := storedAlert(t, db, older.Id)
 		newer := createAlert(t, svc, "env-1")
 
-		got := moveAlert(t, svc, "env-1", "playing")
-		moveAlert(t, svc, "env-1", "completed")
+		playing := moveAlert(t, svc, "env-1", "playing")
+		completed := moveAlert(t, svc, "env-1", "completed")
 
-		if got.Id != newer.Id {
-			t.Fatalf("returned row %s, want the newest row %s", got.Id, newer.Id)
+		if playing.Id != newer.Id || completed.Id != newer.Id {
+			t.Fatalf("returned rows %s and %s, want the newest row %s", playing.Id, completed.Id, newer.Id)
 		}
-		for _, id := range []string{older.Id, newer.Id} {
-			if stored := storedAlert(t, db, id); stored.Status != "completed" || stored.Version != 3 {
-				t.Fatalf("row %s = %s v%d, want completed v3", id, stored.Status, stored.Version)
-			}
+		if stored := storedAlert(t, db, newer.Id); stored.Status != "completed" || stored.Version != 3 {
+			t.Fatalf("newest row = %s v%d, want completed v3", stored.Status, stored.Version)
 		}
+		assertUnchanged(t, olderBefore, storedAlert(t, db, older.Id))
 		published := map[string]int{}
 		for _, snapshot := range publishedAlerts(t, db) {
 			published[snapshot["id"].(string)]++
 		}
-		if published[older.Id] != 3 || published[newer.Id] != 3 {
-			t.Fatalf("published %v, want three snapshots of each row", published)
+		if published[older.Id] != 2 || published[newer.Id] != 3 {
+			t.Fatalf("published %v, want the older row's two writes and the newest row's three", published)
 		}
+	})
+}
+
+// A refused report answers with the row it concerned as it stands, so a caller
+// is never told about a row the report did not move.
+func TestAlertLifecycleRefusalAnswersWithTheNewestRowAsItStands(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		createAlert(t, svc, "env-1")
+		newer := createAlert(t, svc, "env-1")
+		moveAlert(t, svc, "env-1", "completed")
+
+		resp, err := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+			EnvelopeId: "env-1",
+			Status:     "failed",
+			Error:      "late",
+		})
+		if err != nil {
+			t.Fatalf("UpdateAlertLifecycle: %v", err)
+		}
+
+		if resp.Alert.Id != newer.Id || resp.Alert.Status != "completed" || resp.Alert.Version != 2 {
+			t.Fatalf("returned %s %s v%d, want the newest row %s as it stands (completed v2)",
+				resp.Alert.Id, resp.Alert.Status, resp.Alert.Version, newer.Id)
+		}
+		if resp.Status.Message == "Alert updated successfully" {
+			t.Fatalf("message = %q, want the refusal said", resp.Status.Message)
+		}
+	})
+}
+
+func TestAlertLifecycleRejectsAStatusNotReportedAgainstAnEnvelope(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		createAlert(t, svc, "env-1")
+		for _, status := range []string{"", "sent", "replayed", "pending", "anything"} {
+			_, err := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+				EnvelopeId: "env-1",
+				Status:     status,
+			})
+			twerr, ok := err.(twirp.Error)
+			if !ok || twerr.Code() != twirp.InvalidArgument {
+				t.Fatalf("%q: err = %v, want invalid_argument", status, err)
+			}
+			want := "must be one of: dispatched, playing, completed, failed, skipped, timed_out"
+			if !strings.Contains(twerr.Msg(), want) {
+				t.Fatalf("%q: message = %q, want it to list %q", status, twerr.Msg(), want)
+			}
+		}
+		assertPublished(t, db, []publishedStep{{"sent", 1}})
 	})
 }
 
@@ -471,7 +524,21 @@ func TestAlertDeletePublishesTheRowItRemoved(t *testing.T) {
 		if twerr, ok := err.(twirp.Error); !ok || twerr.Code() != twirp.NotFound {
 			t.Fatalf("second delete err = %v, want not_found", err)
 		}
-		assertPublished(t, db, []publishedStep{{"sent", 1}, {"sent", 1}})
+		// The deletion is published as the row's final write, after the one
+		// that created it.
+		assertPublished(t, db, []publishedStep{{"sent", 1}, {"sent", 2}})
+	})
+}
+
+func TestAlertDeleteIsVersionedPastTheRowsLastWrite(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		created := createAlert(t, svc, "env-1")
+		moveAlert(t, svc, "env-1", "playing")
+		moveAlert(t, svc, "env-1", "completed")
+		if _, err := svc.DeleteAlert(context.Background(), &client.DeleteAlertRequest{Id: created.Id}); err != nil {
+			t.Fatalf("DeleteAlert: %v", err)
+		}
+		assertPublished(t, db, []publishedStep{{"sent", 1}, {"playing", 2}, {"completed", 3}, {"completed", 4}})
 	})
 }
 

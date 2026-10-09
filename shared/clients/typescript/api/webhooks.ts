@@ -948,6 +948,10 @@ export interface AlertSnapshot {
    * back, repeat its status, replace a verdict otherwise, or replay a row
    * already replayed. `"timed_out"` has a callback (`alert.timed_out`) but no
    * engine service writes it yet.
+   *
+   * A report names the alert's envelope, and moves only the newest row for
+   * it: an earlier row with the same envelope id is an earlier play and keeps
+   * the status it reached.
    */
   status: string;
   /**
@@ -973,12 +977,13 @@ export interface AlertSnapshot {
    *
    * Lifecycle callbacks are retried independently and can arrive out of
    * order: a receiver keeps the snapshot with the highest version. An equal
-   * version is the same write delivered again.
+   * version is the same write delivered again, and a lower one is a write the
+   * receiver has already moved past. The engine alone enforces the lifecycle
+   * rule (see `status`) and publishes only the writes it applied, so a
+   * receiver does not re-check it.
    *
-   * Present on every snapshot from a current engine. A snapshot published
-   * before the engine counted versions (a db proxy not yet upgraded, or an
-   * outbox row written before the upgrade) has none; a receiver orders it by
-   * the lifecycle stage and `updatedAt` instead.
+   * A snapshot may lack a version; a receiver then orders it by the lifecycle
+   * stage and `updatedAt`.
    */
   version?: number;
   /** Every timestamp in a snapshot is RFC 3339 in UTC with nine fractional
