@@ -6,6 +6,7 @@ pub mod frame_cache;
 pub mod heartbeat;
 pub mod http_client;
 pub mod http_storage_client;
+pub mod media_budget;
 pub mod media_proxy;
 pub mod module_drift;
 pub mod module_settings_client;

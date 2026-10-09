@@ -120,9 +120,11 @@ pub fn verify(secret: &str, token: &str, now: i64) -> Result<Url, TokenError> {
 /// Whether the proxy may connect to `ip`: a globally routable unicast
 /// address. Beyond `lib_sandbox::net::is_restricted_ip` (loopback, private,
 /// link-local and so cloud metadata, CGNAT, unique local), this refuses
-/// multicast, reserved and documentation ranges, IPv6 outside global unicast
-/// (2000::/3), and IPv6 forms that carry an IPv4 address (mapped, compatible,
-/// translated, NAT64, 6to4) unless that address is public itself. Teredo is
+/// multicast, reserved and documentation ranges, the deprecated 6to4 relay
+/// anycast range (192.88.99.0/24, whose relay is not the destination), IPv6
+/// outside global unicast (2000::/3), and IPv6 forms that carry an IPv4
+/// address (mapped, compatible, translated, NAT64, 6to4) unless that address
+/// is public itself. Teredo is
 /// refused outright: the IPv4 address it carries is obfuscated and the relay
 /// it names is not the destination.
 pub fn is_public_ip(ip: IpAddr) -> bool {
@@ -137,6 +139,7 @@ pub fn is_public_ip(ip: IpAddr) -> bool {
                 || a >= 240
                 || (a == 192 && b == 0 && c == 0)
                 || (a == 192 && b == 0 && c == 2)
+                || (a == 192 && b == 88 && c == 99)
                 || (a == 198 && (b & 0xFE) == 18)
                 || (a == 198 && b == 51 && c == 100)
                 || (a == 203 && b == 0 && c == 113))
@@ -724,6 +727,9 @@ mod tests {
             Ipv4Addr::new(255, 255, 255, 255).into(),
             Ipv4Addr::new(192, 0, 0, 170).into(),
             Ipv4Addr::new(198, 18, 0, 1).into(),
+            // 6to4 relay anycast.
+            Ipv4Addr::new(192, 88, 99, 1).into(),
+            Ipv4Addr::new(192, 88, 99, 255).into(),
             Ipv6Addr::LOCALHOST.into(),
             v6("fd00:ec2::254"),
             v6("fe80::1"),
@@ -768,6 +774,8 @@ mod tests {
         let allowed: Vec<IpAddr> = vec![
             Ipv4Addr::new(93, 184, 216, 34).into(),
             Ipv4Addr::new(1, 1, 1, 1).into(),
+            Ipv4Addr::new(192, 88, 98, 1).into(),
+            Ipv4Addr::new(192, 88, 100, 1).into(),
             v6("2606:4700:4700::1111"),
             v6("::ffff:93.184.216.34"),
             v6("::ffff:0:93.184.216.34"),
