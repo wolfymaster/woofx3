@@ -72,6 +72,47 @@ function isVersion(value: unknown): value is SceneVersion {
   return value === "published" || value === "draft";
 }
 
+/** What an editor socket error answers: opening the socket, or one message the editor sent. */
+export type EditorErrorFor = "open" | "submit" | "publish" | "discard" | "snapshot" | "presence";
+
+export interface EditorError {
+  type: "error";
+  for: EditorErrorFor;
+  reason: "not_found" | "failed";
+  /** The failed submit's op id, so the editor can settle the op it is waiting on; only on a submit's error. */
+  opId?: string | null;
+  version?: SceneVersion;
+}
+
+/**
+ * The error that answers a message which threw. It names the message, and a
+ * submit's op id and version, so an editor with several messages in flight
+ * knows which one failed.
+ */
+export function failedMessageError(message: Record<string, unknown>): EditorError {
+  switch (message.type) {
+    case "submit": {
+      const error: EditorError = {
+        type: "error",
+        for: "submit",
+        reason: "failed",
+        opId: typeof message.opId === "string" ? message.opId : null,
+      };
+      if (isVersion(message.version)) {
+        error.version = message.version;
+      }
+      return error;
+    }
+    case "publish":
+    case "discard":
+    case "snapshot":
+    case "presence":
+      return { type: "error", for: message.type, reason: "failed" };
+    default:
+      throw new Error(`no error reply for an editor message of type ${String(message.type)}`);
+  }
+}
+
 /**
  * What the editor socket says, as JSON messages.
  *
@@ -91,6 +132,11 @@ function isVersion(value: unknown): value is SceneVersion {
  *   { type: "published" | "discarded", hasDraft }
  *   { type: "presence", editorId, name, selection }  another editor's, on open and as it changes
  *   { type: "presence", editorId, left: true }       another editor closed the scene
+ *   { type: "error", for: "open", reason: "not_found" }
+ *       the scene does not exist; the socket closes with 4404
+ *   { type: "error", for, reason: "failed", opId?, version? }
+ *       the message of type `for` failed; a submit's carries its opId and
+ *       version, and that submit gets no ack or reject
  *
  * Presence is relayed between the scene's editors as it is and kept nowhere:
  * it is who is looking at what right now, not part of the scene.
@@ -117,7 +163,8 @@ export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorS
         send(ws, { type: "ops", ...event, hasDraft: docs.hasDraft(sceneId) });
       });
       if (!unsubscribe) {
-        send(ws, { type: "error", reason: "not_found" });
+        const notFound: EditorError = { type: "error", for: "open", reason: "not_found" };
+        send(ws, notFound);
         ws.close(4404, "scene not found");
         return;
       }
@@ -201,7 +248,7 @@ export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorS
           type: String(message.type),
           error: err instanceof Error ? err.message : String(err),
         });
-        send(ws, { type: "error", reason: "failed" });
+        send(ws, failedMessageError(message));
       }
     },
     close(ws) {

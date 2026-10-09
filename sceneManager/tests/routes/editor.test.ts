@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "../../src/routes/editor";
+import {
+  type EditorSocketData,
+  editorSocketHandlers,
+  failedMessageError,
+  handleEditorUpgrade,
+} from "../../src/routes/editor";
 import { SceneDocuments } from "../../src/scene/scene-documents";
 import type { OverlaySceneState } from "../../src/scene/scene-host";
 import { SessionTokenService } from "../../src/scene/session-token";
@@ -48,9 +53,16 @@ function start() {
   server = Bun.serve<EditorSocketData>({
     port: 0,
     websocket: editorSocketHandlers(deps),
-    fetch: (req, srv) => handleEditorUpgrade(req, srv, "s1", deps),
+    fetch: (req, srv) => {
+      const sceneId = decodeURIComponent(new URL(req.url).pathname.split("/")[2] ?? "");
+      return handleEditorUpgrade(req, srv, sceneId, deps);
+    },
   });
-  return { sessionTokens, url: (token: string) => `ws://localhost:${server!.port}/scene/s1/edit?token=${token}` };
+  return {
+    sessionTokens,
+    sceneDocuments,
+    url: (token: string, sceneId = "s1") => `ws://localhost:${server!.port}/scene/${sceneId}/edit?token=${token}`,
+  };
 }
 
 /** A socket whose messages are read in order. */
@@ -142,6 +154,62 @@ describe("editor socket", () => {
     expect((await fetch(http(await sessionTokens.mint({ sceneId: "s1" })))).status).toBe(401);
     expect((await fetch(http(await sessionTokens.mintEditor({ sceneId: "s2" })))).status).toBe(401);
     expect((await fetch(http("garbage"))).status).toBe(401);
+  });
+});
+
+describe("editor socket — errors", () => {
+  it("names the open as what a missing scene's error answers, and closes", async () => {
+    const { sessionTokens, url } = start();
+    const editor = await connect(url(await sessionTokens.mintEditor({ sceneId: "gone" }), "gone"));
+    const closed = new Promise<number>((resolve) => editor.socket.addEventListener("close", (e) => resolve(e.code)));
+    expect(await editor.next()).toEqual({ type: "error", for: "open", reason: "not_found" });
+    expect(await closed).toBe(4404);
+  });
+
+  it("names the failed submit by its op id and version", async () => {
+    const { sessionTokens, sceneDocuments, url } = start();
+    const editor = await connect(url(await sessionTokens.mintEditor({ sceneId: "s1" })));
+    await editor.next();
+    await editor.next();
+    sceneDocuments.submit = async () => {
+      throw new Error("boom");
+    };
+    editor.send({ type: "submit", version: "draft", base: 0, opId: "op-9", ops: [] });
+    expect(await editor.next()).toEqual({
+      type: "error",
+      for: "submit",
+      reason: "failed",
+      opId: "op-9",
+      version: "draft",
+    });
+    editor.socket.close();
+  });
+
+  it("names a failed publish and discard", async () => {
+    const { sessionTokens, sceneDocuments, url } = start();
+    const editor = await connect(url(await sessionTokens.mintEditor({ sceneId: "s1" })));
+    await editor.next();
+    await editor.next();
+    sceneDocuments.publish = async () => {
+      throw new Error("boom");
+    };
+    sceneDocuments.discard = async () => {
+      throw new Error("boom");
+    };
+    editor.send({ type: "publish" });
+    expect(await editor.next()).toEqual({ type: "error", for: "publish", reason: "failed" });
+    editor.send({ type: "discard" });
+    expect(await editor.next()).toEqual({ type: "error", for: "discard", reason: "failed" });
+    editor.socket.close();
+  });
+
+  it("gives a submit without a usable op id or version a null op id and no version", () => {
+    expect(failedMessageError({ type: "submit", version: "nope", opId: 7 })).toEqual({
+      type: "error",
+      for: "submit",
+      reason: "failed",
+      opId: null,
+    });
   });
 });
 

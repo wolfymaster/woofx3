@@ -88,6 +88,15 @@ once. Every change is pushed to every editor, its own tagged with its op id,
 and each submit is answered with `ack` or `reject`; a `resync` reject comes
 with a fresh snapshot.
 
+A message that fails on the engine's side is answered with
+`{ type: "error", for, reason: "failed" }`, where `for` is the failed
+message's type (`submit`, `publish`, `discard`, `snapshot` or `presence`).
+A failed submit's error also carries its `opId` and `version`, and that
+submit gets no `ack` or `reject`, so an editor settles the op from the
+error. Opening the editor on a scene that does not exist sends
+`{ type: "error", for: "open", reason: "not_found" }` and closes the socket
+with code 4404.
+
 Editors also tell each other who they are and which widget each has
 selected (`presence`), so the editor can show where others are working.
 That is relayed between the scene's open editors as it is and kept nowhere:
