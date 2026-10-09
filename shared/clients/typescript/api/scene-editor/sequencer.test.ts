@@ -478,6 +478,17 @@ describe("external changes", () => {
     expect(commit(state, plan, {}, null, 0)).toBeNull();
     expect(state.v).toBe(0);
   });
+
+  test("with no ops but changed meta commit an entry carrying only the meta", () => {
+    const state = newState();
+    const plan = planOf(prepare(state, 0, { kind: "external", version: "published", ops: [], mirrorIntoDraft: true }));
+    const meta = {
+      published: { w: { moduleId: "m", hostsSurface: "", frameUrl: "/frames/w?v=2", linkedResources: {} } },
+    };
+    const entry = commit(state, plan, meta, null, 0);
+    expect(entry).toMatchObject({ v: 1, kind: "external", changes: {}, meta });
+    expect(state.v).toBe(1);
+  });
 });
 
 describe("item size", () => {

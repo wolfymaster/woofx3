@@ -134,7 +134,11 @@ export interface Plan {
   kind: EntryKind;
   /** The head the plan was prepared against. */
   head: number;
-  /** Empty for an edit that comes to nothing: committed as a no-op, answered with `ack`. */
+  /**
+   * Empty for an edit that comes to nothing: committed as a no-op, answered
+   * with `ack`, unless the commit brings meta changes (a save made elsewhere
+   * that only reframes placements), which still make an entry.
+   */
   changes: Partial<Record<Version, Ops>>;
   docs: Record<Version, SceneDocument>;
   docBytes: Record<Version, number>;
@@ -380,8 +384,9 @@ export function entriesAfter(state: SequencerState, base: number): Entry[] | nul
 
 /**
  * Install a plan: the head moves to a new entry, which is returned, or for a
- * plan that changes nothing the head stays and null is returned (answer with
- * `ack`). `src`'s watermark records the item as applied either way.
+ * plan that changes no document and no meta the head stays and null is
+ * returned (answer with `ack`). `src`'s watermark records the item as applied
+ * either way.
  *
  * Synchronous and made only of assignments, so it cannot fail part way for
  * a plan `prepare` just made against this head. The assertions run before
@@ -398,7 +403,11 @@ export function commit(
   if (src !== null) {
     assertNewSeq(state, src);
   }
-  const changesNothing = plan.changes.draft === undefined && plan.changes.published === undefined;
+  const changesNothing =
+    plan.changes.draft === undefined &&
+    plan.changes.published === undefined &&
+    meta.draft === undefined &&
+    meta.published === undefined;
   if (changesNothing && (plan.kind === "edit" || plan.kind === "external")) {
     if (src !== null) {
       recordClient(state, src.clientId, { seq: src.seq, outcome: "applied", at: now });
