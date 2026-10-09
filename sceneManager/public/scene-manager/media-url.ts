@@ -103,38 +103,56 @@ export function externalMediaUrls(value: unknown): string[] {
 }
 
 /**
- * When a media proxy URL stops working, in unix seconds, or null when `url`
- * is not one. A token is `{payload}.{expiresAt}.{signature}`; the page reads
- * the expiry to fetch fresh URLs before it passes (see index.ts).
+ * A media proxy token: `{base64url(url)}.{expiresAt}.{hex HMAC-SHA256}`. Must
+ * match the format `MediaProxy.urlFor` mints (src/scene/media-proxy.ts) and
+ * barkloader verifies.
  */
-export function mediaProxyExpiry(url: string): number | null {
-  let pathname: string;
-  try {
-    pathname = new URL(url).pathname;
-  } catch {
+const MEDIA_PROXY_TOKEN = /^[A-Za-z0-9_-]+\.(\d+)\.[0-9a-f]{64}$/;
+
+/**
+ * When a media proxy URL stops working, in unix seconds, or null when `url`
+ * is not one minted under `base` (a placement's `mediaProxyBase`). The page
+ * reads the expiry to fetch fresh URLs before it passes (see index.ts). Only
+ * URLs under the placement's own proxy base count, so an external URL that
+ * merely looks like a token never schedules a refresh.
+ */
+export function mediaProxyExpiry(url: string, base: string): number | null {
+  if (!url.startsWith(base)) {
     return null;
   }
-  const at = pathname.lastIndexOf(MEDIA_PROXY_PATH);
-  if (at < 0) {
-    return null;
-  }
-  const [, expiresAt, ...rest] = pathname.slice(at + MEDIA_PROXY_PATH.length).split(".");
-  if (rest.length !== 1 || expiresAt === undefined || !/^\d+$/.test(expiresAt)) {
-    return null;
-  }
-  return Number(expiresAt);
+  const match = MEDIA_PROXY_TOKEN.exec(url.slice(base.length));
+  return match ? Number(match[1]) : null;
 }
 
-/** The soonest a media proxy URL in `value` expires, in unix seconds, or null when it holds none. */
-export function earliestMediaProxyExpiry(value: unknown): number | null {
+/**
+ * The soonest a media proxy URL under `base` in `value` expires, in unix
+ * seconds, or null when it holds none or the placement has no proxy base.
+ */
+export function earliestMediaProxyExpiry(value: unknown, base: string | undefined): number | null {
+  if (base === undefined) {
+    return null;
+  }
   let earliest: number | null = null;
   for (const url of externalMediaUrls(value)) {
-    const expiry = mediaProxyExpiry(url);
+    const expiry = mediaProxyExpiry(url, base);
     if (expiry !== null && (earliest === null || expiry < earliest)) {
       earliest = expiry;
     }
   }
   return earliest;
+}
+
+/**
+ * `value` with each external media value whose `url` is a key of `urls`
+ * pointed at the URL it maps to. The server builds an overlay's view of a
+ * placement with this (src/scene/media-proxy.ts), and the page applies the
+ * proxy URLs a draft answer carries with it, so both rewrite alike.
+ */
+export function replaceMediaUrls<T>(value: T, urls: ReadonlyMap<string, string>): T {
+  if (urls.size === 0) {
+    return value;
+  }
+  return rewriteExternalMedia(value, (url) => urls.get(url));
 }
 
 /**

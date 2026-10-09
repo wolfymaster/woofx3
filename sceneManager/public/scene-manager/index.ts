@@ -26,7 +26,7 @@ import {
   settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
-import { earliestMediaProxyExpiry, externalMediaUrls, parseMediaUrls, rewriteExternalMedia } from "./media-url";
+import { earliestMediaProxyExpiry, externalMediaUrls, parseMediaUrls, replaceMediaUrls } from "./media-url";
 import { applySceneBackground } from "./scene-background";
 import {
   parseSceneConfig,
@@ -59,10 +59,10 @@ const REFRESH_INTERVAL_MS = 50_000;
 const DRAFT_SETTLE_MS = 400;
 
 // Media proxy URLs expire (see src/scene/media-proxy.ts, which hands out
-// ones good for a week or more). The page fetches its scene again this long
+// ones good for a day or more). The page fetches its scene again this long
 // before the soonest expiry it holds, which brings fresh URLs, so an overlay
 // left open for days keeps its media.
-const MEDIA_REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
+const MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
 // Never sooner than this, so a URL that is already close to expiring cannot
 // make the page fetch in a loop.
 const MIN_MEDIA_REFRESH_DELAY_MS = 60_000;
@@ -458,7 +458,7 @@ function main(): void {
     }
     let earliest: number | null = null;
     for (const entry of mounted.values()) {
-      const expiry = earliestMediaProxyExpiry(entry.config.settings);
+      const expiry = earliestMediaProxyExpiry(entry.config.settings, entry.config.mediaProxyBase);
       if (expiry !== null && (earliest === null || expiry < earliest)) {
         earliest = expiry;
       }
@@ -498,7 +498,7 @@ function main(): void {
   const draftSettingsOf = (placement: Record<string, unknown>): Record<string, unknown> => {
     const signed = signedMediaOf(placement);
     const settings = settingsOf(placement);
-    return signed ? rewriteExternalMedia(settings, (url) => signed.get(url)) : settings;
+    return signed ? replaceMediaUrls(settings, signed) : settings;
   };
   // What the server has to see a draft again for: a new widget or theme, and
   // an external media URL it has not signed. A URL it will not sign (the

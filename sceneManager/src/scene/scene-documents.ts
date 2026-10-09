@@ -128,15 +128,6 @@ export function storedPlacementOf(id: string, p: PlacementDocument, zIndex: numb
   };
 }
 
-/** What each placement of a framed scene state needs beyond the document. */
-export function metaOf(state: OverlaySceneState): Record<string, PlacementMeta> {
-  const meta: Record<string, PlacementMeta> = {};
-  for (const instance of state.instances) {
-    meta[instance.id] = placementMetaOf(instance);
-  }
-  return meta;
-}
-
 function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
   return {
     moduleId: instance.moduleId,
@@ -147,8 +138,36 @@ function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
   };
 }
 
+/**
+ * What each placement of a framed scene state needs beyond the document, and
+ * the placements whose frame barkloader did not give.
+ */
+interface Framing {
+  meta: Record<string, PlacementMeta>;
+  /** Placement ids framed without barkloader's answer (`OverlayWidgetInstance.frameUnavailable`). */
+  unframed: Set<string>;
+}
+
+function framingOf(instances: readonly OverlayWidgetInstance[]): Framing {
+  const meta: Record<string, PlacementMeta> = {};
+  const unframed = new Set<string>();
+  for (const instance of instances) {
+    meta[instance.id] = placementMetaOf(instance);
+    if (instance.frameUnavailable === true && instance.resolved) {
+      unframed.add(instance.id);
+    }
+  }
+  return { meta, unframed };
+}
+
 /** How long a version waits after its last change before it is written back. */
 export const AUTOSAVE_DELAY_MS = 2000;
+/**
+ * How long after a placement is framed without barkloader's answer it is
+ * framed again, doubling on each failure up to `REFRAME_RETRY_MAX_MS`.
+ */
+export const REFRAME_RETRY_MS = 10_000;
+export const REFRAME_RETRY_MAX_MS = 5 * 60_000;
 /** Recent ops kept per version to transform a late editor's ops against. */
 export const OP_LOG_LIMIT = 500;
 /** Largest ops one submit may carry, and largest a document may grow. */
@@ -252,6 +271,9 @@ interface HeldVersion {
   saveTimer: ReturnType<typeof setTimeout> | null;
   /** The document last written back, to know the database's echo of it. */
   written: SceneDocument | null;
+  /** Placements whose meta was worked out without barkloader's answer, so
+   *  their frame URL is unversioned and their `mediaProxyBase` unknown. */
+  unframed: Set<string>;
 }
 
 interface HeldScene {
@@ -260,11 +282,16 @@ interface HeldScene {
   /** Whether the draft differs from the published scene in storage. */
   hasDraft: boolean;
   editors: Set<EditorListener>;
+  /** The pending retry of `unframed` placements, and the wait before the next. */
+  reframeTimer: ReturnType<typeof setTimeout> | null;
+  reframeDelayMs: number;
 }
 
 export interface SceneDocumentsOptions {
   persister?: ScenePersister;
   autosaveMs?: number;
+  /** First wait before framing again a placement barkloader gave no frame for. */
+  reframeRetryMs?: number;
   /** What overlays see of a document: external media pointed at the proxy
    *  for the placements that need it. Overlays see the document as it is
    *  when absent. */
@@ -294,6 +321,7 @@ export class SceneDocuments {
   private readonly queues = new Map<string, Promise<unknown>>();
   private readonly persister: ScenePersister | null;
   private readonly autosaveMs: number;
+  private readonly reframeRetryMs: number;
   private readonly mediaProxy: MediaProxy | null;
 
   constructor(
@@ -304,6 +332,7 @@ export class SceneDocuments {
   ) {
     this.persister = options.persister ?? null;
     this.autosaveMs = options.autosaveMs ?? AUTOSAVE_DELAY_MS;
+    this.reframeRetryMs = options.reframeRetryMs ?? REFRAME_RETRY_MS;
     this.mediaProxy = options.mediaProxy ?? null;
   }
 
@@ -311,7 +340,13 @@ export class SceneDocuments {
   async snapshot(sceneId: string, version: SceneVersion = "published"): Promise<SceneSnapshot | null> {
     await this.queues.get(sceneId);
     const held = await this.hold(sceneId);
-    return held ? held[version].snapshot : null;
+    if (!held) {
+      return null;
+    }
+    // An overlay opening a scene held since its last retry gave up starts
+    // the retries again.
+    this.scheduleReframe(sceneId, held);
+    return held[version].snapshot;
   }
 
   /**
@@ -535,11 +570,13 @@ export class SceneDocuments {
         return;
       }
       const ops = diffDocuments(held.published.snapshot.doc, doc);
-      const metaChanges = changedMeta(held.published.snapshot.meta, metaOf(state));
+      const framing = framingOf(state.instances);
+      const metaChanges = changedMeta(held.published.snapshot.meta, framing.meta);
       if (ops.length === 0 && Object.keys(metaChanges).length === 0) {
+        held.published.unframed = framing.unframed;
         return;
       }
-      await this.commit(held, "published", ops, doc, null, false, metaOf(state), state.name);
+      await this.commit(held, "published", ops, doc, null, false, framing, state.name);
       held.published.written = doc;
       if (!held.hasDraft) {
         await this.mirrorIntoDraft(held, ops);
@@ -614,26 +651,34 @@ export class SceneDocuments {
     if (!published || !draft) {
       return null;
     }
-    const version = (state: OverlaySceneState): HeldVersion => ({
-      snapshot: { sceneId, name: state.name, seq: 0, doc: documentOf(state), meta: metaOf(state) },
-      log: [],
-      saveTimer: null,
-      written: null,
-    });
+    const version = (state: OverlaySceneState): HeldVersion => {
+      const framing = framingOf(state.instances);
+      return {
+        snapshot: { sceneId, name: state.name, seq: 0, doc: documentOf(state), meta: framing.meta },
+        log: [],
+        saveTimer: null,
+        written: null,
+        unframed: framing.unframed,
+      };
+    };
     const held: HeldScene = {
       published: version(published),
       draft: version(draft),
       hasDraft: published.hasDraft === true,
       editors: new Set(),
+      reframeTimer: null,
+      reframeDelayMs: this.reframeRetryMs,
     };
     this.scenes.set(sceneId, held);
+    this.scheduleReframe(sceneId, held);
     return held;
   }
 
   /**
    * Stamp a version's change with its next number, keep it, and push it.
-   * Meta is worked out again for placements that are new, or whose widget or
-   * theme changed, unless the caller already knows it.
+   * Meta is worked out again for placements that are new, whose widget or
+   * theme changed, or that were framed without barkloader's answer, unless
+   * the caller already knows it.
    */
   private async commit(
     held: HeldScene,
@@ -642,15 +687,17 @@ export class SceneDocuments {
     doc: SceneDocument,
     opId: string | null,
     autosave = true,
-    knownMeta?: Record<string, PlacementMeta>,
+    knownFraming?: Framing,
     name?: string
   ): Promise<void> {
     const target = held[version];
     const before = target.snapshot;
-    const meta = knownMeta ?? (await this.metaFor(before.sceneId, before.doc, doc, before.meta));
+    const { meta, unframed } =
+      knownFraming ?? (await this.metaFor(before.sceneId, before.doc, doc, before.meta, target.unframed));
     const metaChanges = changedMeta(before.meta, meta);
     const seq = before.seq + 1;
     target.snapshot = { ...before, name: name ?? before.name, seq, doc, meta };
+    target.unframed = unframed;
     target.log.push({ seq, ops, opId });
     if (target.log.length > OP_LOG_LIMIT) {
       target.log.splice(0, target.log.length - OP_LOG_LIMIT);
@@ -675,6 +722,54 @@ export class SceneDocuments {
     if (autosave) {
       this.scheduleSave(held, version);
     }
+    this.scheduleReframe(before.sceneId, held);
+  }
+
+  /**
+   * Frame again, a while from now, the placements framed without
+   * barkloader's answer. Until then such a placement has an unversioned
+   * frame URL and no `mediaProxyBase`, while the frame itself may already be
+   * served under the theme policy, which blocks its external media. Retries
+   * back off to `REFRAME_RETRY_MAX_MS`, and stop once the scene is let go or
+   * nobody has it open.
+   */
+  private scheduleReframe(sceneId: string, held: HeldScene): void {
+    if (held.reframeTimer !== null || this.scenes.get(sceneId) !== held) {
+      return;
+    }
+    if (held.published.unframed.size === 0 && held.draft.unframed.size === 0) {
+      held.reframeDelayMs = this.reframeRetryMs;
+      return;
+    }
+    const delay = held.reframeDelayMs;
+    held.reframeDelayMs = Math.min(delay * 2, REFRAME_RETRY_MAX_MS);
+    held.reframeTimer = setTimeout(() => {
+      held.reframeTimer = null;
+      if (this.scenes.get(sceneId) !== held || this.idle(sceneId, held)) {
+        return;
+      }
+      void this.reframe(sceneId, held).then(() => this.scheduleReframe(sceneId, held));
+    }, delay);
+    held.reframeTimer.unref?.();
+  }
+
+  /** Frame the `unframed` placements of both versions again, pushing any meta that changed. */
+  private reframe(sceneId: string, held: HeldScene): Promise<void> {
+    return this.serial(sceneId, async () => {
+      for (const version of ["published", "draft"] as const) {
+        const target = held[version];
+        if (target.unframed.size === 0) {
+          continue;
+        }
+        const { doc, meta } = target.snapshot;
+        const framing = await this.metaFor(sceneId, doc, doc, meta, target.unframed);
+        if (Object.keys(changedMeta(meta, framing.meta)).length === 0) {
+          target.unframed = framing.unframed;
+          continue;
+        }
+        await this.commit(held, version, [], doc, null, false, framing);
+      }
+    }).then(() => undefined);
   }
 
   /**
@@ -730,15 +825,18 @@ export class SceneDocuments {
     sceneId: string,
     before: SceneDocument,
     after: SceneDocument,
-    meta: Record<string, PlacementMeta>
-  ): Promise<Record<string, PlacementMeta>> {
+    meta: Record<string, PlacementMeta>,
+    unframed: ReadonlySet<string>
+  ): Promise<Framing> {
     const next: Record<string, PlacementMeta> = {};
+    const nextUnframed = new Set<string>();
     const reframe: string[] = [];
     for (const [id, placement] of Object.entries(after.widgets)) {
       const old = before.widgets[id];
       if (
         !meta[id] ||
         !old ||
+        unframed.has(id) ||
         old.widget !== placement.widget ||
         themeOf(old.settings) !== themeOf(placement.settings)
       ) {
@@ -750,11 +848,13 @@ export class SceneDocuments {
     if (reframe.length > 0) {
       const order = stackOrder(after);
       const entries = reframe.map((id) => storedPlacementOf(id, after.widgets[id]!, order.indexOf(id)));
-      for (const instance of await this.loader.framePlacements(sceneId, entries)) {
-        next[instance.id] = placementMetaOf(instance);
+      const framing = framingOf(await this.loader.framePlacements(sceneId, entries));
+      Object.assign(next, framing.meta);
+      for (const id of framing.unframed) {
+        nextUnframed.add(id);
       }
     }
-    return next;
+    return { meta: next, unframed: nextUnframed };
   }
 
   /**

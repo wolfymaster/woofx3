@@ -195,6 +195,7 @@ export function configOfSnapshot(snapshot: SceneSnapshot): SceneConfig {
       hostsSurface: meta.hostsSurface,
       frameUrl: meta.frameUrl,
       linkedResources: meta.linkedResources,
+      ...(meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase }),
       visible: placement.visible,
     });
   }

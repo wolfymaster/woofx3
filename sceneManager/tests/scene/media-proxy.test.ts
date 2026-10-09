@@ -6,6 +6,7 @@ import {
   externalMediaUrls,
   mediaProxyExpiry,
   parseMediaUrls,
+  replaceMediaUrls,
   rewriteExternalMedia,
 } from "../../public/scene-manager/media-url";
 import { applyOps, type PlacementMeta } from "../../public/scene-manager/scene-document";
@@ -90,12 +91,23 @@ describe("external media detection", () => {
 
 describe("media proxy URLs on the page", () => {
   it("reads a proxy URL's expiry, and nothing from other URLs", () => {
-    expect(mediaProxyExpiry(EXTERNAL_PROXIED)).toBe(EXPIRES_AT);
-    expect(mediaProxyExpiry(`https://host.example/engine/assets/media/${EXTERNAL_TOKEN}`)).toBe(EXPIRES_AT);
-    expect(mediaProxyExpiry(EXTERNAL)).toBeNull();
-    expect(mediaProxyExpiry(`${BASE}payload.soon.sig`)).toBeNull();
-    expect(mediaProxyExpiry(`${BASE}payload.sig`)).toBeNull();
-    expect(mediaProxyExpiry("not a url")).toBeNull();
+    expect(mediaProxyExpiry(EXTERNAL_PROXIED, BASE)).toBe(EXPIRES_AT);
+    const prefixed = "https://host.example/engine/assets/media/";
+    expect(mediaProxyExpiry(`${prefixed}${EXTERNAL_TOKEN}`, prefixed)).toBe(EXPIRES_AT);
+    expect(mediaProxyExpiry(EXTERNAL, BASE)).toBeNull();
+    expect(mediaProxyExpiry(`${BASE}payload.soon.sig`, BASE)).toBeNull();
+    expect(mediaProxyExpiry(`${BASE}payload.sig`, BASE)).toBeNull();
+    expect(mediaProxyExpiry(`${BASE}payload.123.${"0".repeat(63)}`, BASE)).toBeNull();
+    expect(mediaProxyExpiry(`${EXTERNAL_PROXIED}/more`, BASE)).toBeNull();
+    expect(mediaProxyExpiry("not a url", BASE)).toBeNull();
+  });
+
+  it("ignores an external URL shaped like a token but not under the placement's proxy base", () => {
+    const lookalike = `https://cdn.example.com/assets/media/${EXTERNAL_TOKEN}`;
+    expect(mediaProxyExpiry(lookalike, BASE)).toBeNull();
+    expect(mediaProxyExpiry("https://cdn.example.com/assets/media/clip.1700000000.mp4", BASE)).toBeNull();
+    expect(earliestMediaProxyExpiry({ a: external(lookalike) }, BASE)).toBeNull();
+    expect(earliestMediaProxyExpiry({ b: { ...external(), url: EXTERNAL_PROXIED } }, undefined)).toBeNull();
   });
 
   it("finds the soonest expiry in a placement's settings", () => {
@@ -105,8 +117,8 @@ describe("media proxy URLs on the page", () => {
       b: { ...external(), url: EXTERNAL_PROXIED },
       c: library,
     };
-    expect(earliestMediaProxyExpiry(settings)).toBe(EXPIRES_AT);
-    expect(earliestMediaProxyExpiry({ c: library, d: external() })).toBeNull();
+    expect(earliestMediaProxyExpiry(settings, BASE)).toBe(EXPIRES_AT);
+    expect(earliestMediaProxyExpiry({ c: library, d: external() }, BASE)).toBeNull();
   });
 
   it("parses a draft answer's media URLs by placement, dropping anything malformed", () => {
@@ -156,7 +168,7 @@ describe("MediaProxy", () => {
     expect(proxy.urlFor("https://engine.example.com/clips/a.png", BASE)).toBeUndefined();
     const long = `https://media.example.com/${"a".repeat(MAX_UPSTREAM_URL_BYTES)}`;
     expect(proxy.urlFor(long, BASE)).toBeUndefined();
-    expect(proxy.settings({ image: external(long) }, BASE).image.url).toBe(long);
+    expect(proxy.overlaySettings({ image: external(long) }, BASE).settings.image.url).toBe(long);
   });
 
   it("refuses an empty secret", () => {
@@ -164,20 +176,35 @@ describe("MediaProxy", () => {
   });
 
   it("does not rewrite a proxied value again", () => {
-    const once = proxy.settings({ image: external() }, BASE);
+    const once = proxy.overlaySettings({ image: external() }, BASE).settings;
     expect(once.image.url).toBe(EXTERNAL_PROXIED);
-    expect(proxy.settings(once, BASE)).toBe(once);
+    expect(proxy.overlaySettings(once, BASE).settings).toBe(once);
   });
 
   it("signs only what `signable` allows", () => {
     const other = "https://media.example.com/clips/b.png";
     const settings = { a: external(), b: external(other) };
     const signable = (url: string) => url === EXTERNAL;
-    expect(proxy.settings(settings, BASE, signable)).toEqual({
+    const view = proxy.overlaySettings(settings, BASE, signable);
+    expect(view.settings).toEqual({
       a: { ...external(), url: EXTERNAL_PROXIED },
       b: external(other),
     });
-    expect(proxy.urlsIn(settings, BASE, signable)).toEqual({ [EXTERNAL]: EXTERNAL_PROXIED });
+    expect([...view.signed]).toEqual([[EXTERNAL, EXTERNAL_PROXIED]]);
+  });
+
+  it("leaves settings as entered without a proxy base", () => {
+    const settings = { a: external() };
+    const view = proxy.overlaySettings(settings, undefined);
+    expect(view.settings).toBe(settings);
+    expect(view.signed.size).toBe(0);
+  });
+
+  it("rewrites with the same helper the page applies a draft answer's URLs with", () => {
+    const settings = { a: external(), b: library };
+    const view = proxy.overlaySettings(settings, BASE);
+    expect(replaceMediaUrls(settings, view.signed)).toEqual(view.settings);
+    expect(replaceMediaUrls(settings, new Map())).toBe(settings);
   });
 
   it("rewrites only the widgets of a page scene config that have a media proxy base", () => {
@@ -190,9 +217,15 @@ describe("MediaProxy", () => {
       ],
     };
     const view = proxy.sceneConfig(scene);
-    expect(view.widgets[0]!.settings.image.url).toBe(EXTERNAL_PROXIED);
-    expect(view.widgets[1]).toBe(scene.widgets[1]!);
-    expect(proxy.sceneConfig(null)).toBeNull();
+    expect(view.scene.widgets[0]!.settings.image.url).toBe(EXTERNAL_PROXIED);
+    expect(view.scene.widgets[1]).toBe(scene.widgets[1]!);
+    expect(view.mediaUrls).toEqual({ themed: { [EXTERNAL]: EXTERNAL_PROXIED } });
+    expect(proxy.sceneConfig(null)).toEqual({ scene: null, mediaUrls: {} });
+  });
+
+  it("passes a scene config whose widgets are not a list through", () => {
+    const scene = { id: "s1", layout: {}, widgets: "nope" };
+    expect(proxy.sceneConfig(scene)).toEqual({ scene, mediaUrls: {} });
   });
 });
 
@@ -338,6 +371,105 @@ describe("FrameCatalog — media proxy base", () => {
   it("sets it for a widget with a theme contract, and not for one without", async () => {
     expect((await frame(THEME))[0]!.mediaProxyBase).toBe(BASE);
     expect((await frame(null))[0]!.mediaProxyBase).toBeUndefined();
+    expect((await frame(THEME))[0]!.frameUnavailable).toBeUndefined();
+  });
+
+  it("marks a placement unframed when barkloader fails or gives no frame", async () => {
+    const failing = new FrameCatalog(
+      {
+        fetchWidgetFrame: async () => {
+          throw new Error("timed out");
+        },
+      },
+      logger()
+    );
+    const [failed] = await failing.frame([instance("a", {}, false)]);
+    expect(failed!.frameUnavailable).toBe(true);
+    expect(failed!.mediaProxyBase).toBeUndefined();
+    expect(failed!.frameUrl).toContain("v=unavailable");
+    const empty = new FrameCatalog({ fetchWidgetFrame: async () => null }, logger());
+    expect((await empty.frame([instance("a", {}, false)]))[0]!.frameUnavailable).toBe(true);
+  });
+});
+
+describe("SceneDocuments — placements framed while barkloader was unavailable", () => {
+  function unframed(id: string, settings: Record<string, unknown>): OverlayWidgetInstance {
+    return {
+      ...instance(id, settings, false),
+      frameUrl: "/frames/woofx3/timer?v=unavailable",
+      frameUnavailable: true,
+    };
+  }
+
+  async function until(condition: () => boolean): Promise<void> {
+    for (let i = 0; i < 200 && !condition(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(condition()).toBe(true);
+  }
+
+  it("frames them again until barkloader answers, then pushes the proxy base and the proxied view", async () => {
+    const state: OverlaySceneState = {
+      sceneId: "s1",
+      name: "Main",
+      layout: {},
+      instances: [unframed("themed", { image: external() })],
+    };
+    const framedAgain: OverlayWidgetInstance[][] = [
+      [unframed("themed", { image: external() })],
+      [{ ...instance("themed", { image: external() }, true), frameUrl: "/frames/woofx3/timer?v=abc" }],
+    ];
+    const sent: Array<{ event: string; data: any }> = [];
+    let attempts = 0;
+    const docs = new SceneDocuments(
+      {
+        loadFramedSceneById: async () => state,
+        framePlacements: async () => framedAgain[Math.min(attempts++, framedAgain.length - 1)]!,
+      },
+      { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+      logger(),
+      { mediaProxy: proxy, reframeRetryMs: 1 }
+    );
+    const before = await docs.overlaySnapshot("s1");
+    expect(before!.meta.themed!.mediaProxyBase).toBeUndefined();
+    expect(before!.doc.widgets.themed!.settings.image).toEqual(external());
+
+    const published = () => sent.filter((s) => s.event === "scene-ops" && s.data.version === "published");
+    await until(() => published().length > 0);
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    const event = published()[0]!.data;
+    expect(event.meta.themed).toMatchObject({ mediaProxyBase: BASE, frameUrl: "/frames/woofx3/timer?v=abc" });
+    const overlay = applyOps(before!.doc, event.ops);
+    expect(overlay.widgets.themed!.settings.image).toEqual({ ...external(), url: EXTERNAL_PROXIED });
+    expect(overlay).toEqual((await docs.overlaySnapshot("s1"))!.doc);
+
+    const settled = attempts;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(attempts).toBe(settled);
+  });
+
+  it("stops retrying while nobody has the scene open", async () => {
+    let attempts = 0;
+    const docs = new SceneDocuments(
+      {
+        loadFramedSceneById: async () => ({
+          sceneId: "s1",
+          name: "Main",
+          layout: {},
+          instances: [unframed("themed", { image: external() })],
+        }),
+        framePlacements: async () => {
+          attempts++;
+          return [unframed("themed", { image: external() })];
+        },
+      },
+      { broadcast: () => {}, connectedSceneIds: () => [] },
+      logger(),
+      { mediaProxy: proxy, reframeRetryMs: 1 }
+    );
+    await docs.snapshot("s1");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(attempts).toBe(0);
   });
 });
 
@@ -423,6 +555,26 @@ describe("handleSceneDraftConfigRoute — media", () => {
     expect(body.scene.widgets[0].settings.other.url).toBe(typed);
     expect(body.scene.widgets[1].settings.image.url).toBe(EXTERNAL);
     expect(body.mediaUrls).toEqual({ themed: { [EXTERNAL]: EXTERNAL_PROXIED } });
+  });
+
+  it("answers a scene config without a widget list as it is", async () => {
+    const deps = {
+      sessionTokens: { verify: async () => ({ sceneId: "s1" }) },
+      host: { buildDraftConfig: async () => ({ scene: { id: "s1", name: "Main", layout: {} } }) },
+      sceneDocuments: { editedMediaUrls: async () => new Set<string>() },
+      mediaProxy: proxy,
+    } as unknown as HttpDeps;
+    const resp = await handleSceneDraftConfigRoute(
+      new Request("http://scene.test/scene/s1/draft-config", {
+        method: "POST",
+        headers: { Cookie: "sm_session_s1=good" },
+        body: JSON.stringify({ widgets: [] }),
+      }),
+      "s1",
+      deps
+    );
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ scene: { id: "s1", name: "Main", layout: {} }, mediaUrls: {} });
   });
 
   it("signs nothing a page sends that is not in the scene", async () => {

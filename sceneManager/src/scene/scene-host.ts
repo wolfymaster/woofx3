@@ -44,6 +44,11 @@ export interface OverlayWidgetInstance {
   /** Set by framing for a widget whose frame runs under the theme policy
    *  (see `PlacementMeta.mediaProxyBase`). */
   mediaProxyBase?: string;
+  /** Set by framing when barkloader gave no frame for the widget (it failed,
+   *  timed out, or does not know the widget yet). The frame URL is then
+   *  unversioned and `mediaProxyBase` unknown, so the placement is framed
+   *  again later (see `SceneDocuments`). Never sent to pages. */
+  frameUnavailable?: true;
   /** False for a placement hidden in the editor. */
   visible: boolean;
   /** The placement exactly as stored, for writing the scene back without

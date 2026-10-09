@@ -135,6 +135,13 @@ export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
  * placement's settings name reaches the frame through the engine's media
  * proxy (see media-proxy.ts), so it needs no outside host here either.
  *
+ * Only picker-shaped settings (`{ source: "url", url }`, see media-url.ts) are
+ * proxied, so a themeable widget cannot load external media that arrives any
+ * other way: a URL in a bare string setting, or one in event data other than
+ * a Twitch CDN image. That is a deliberate limit, not an oversight: listing
+ * more hosts here would let a theme stylesheet reach them too. A widget that
+ * needs such media should not declare a theme contract.
+ *
  * `'self'` alone is not enough: the frame is sandboxed and its resources
  * come from barkloader's public origin, not the scene manager's, so each
  * engine origin is listed. `'unsafe-inline'` is for the widget's own inline

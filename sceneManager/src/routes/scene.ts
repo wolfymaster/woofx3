@@ -37,7 +37,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   const snapshot = await deps.sceneDocuments.overlaySnapshot(state.sceneId, viewOf(url));
   const scene = snapshot
     ? configOfSnapshot(snapshot)
-    : deps.mediaProxy.sceneConfig((await deps.host.buildConfig(token)).scene);
+    : deps.mediaProxy.sceneConfig((await deps.host.buildConfig(token)).scene).scene;
   const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
 
   return new Response(renderSceneShell({ scene, document: snapshot }), {
@@ -123,16 +123,9 @@ export async function handleSceneDraftConfigRoute(req: Request, sceneId: string,
     return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
   const edited = await deps.sceneDocuments.editedMediaUrls(sceneId);
-  const signable = (url: string) => edited.has(url);
-  const mediaUrls: Record<string, Record<string, string>> = {};
-  for (const widget of (scene as { widgets?: unknown }).widgets as unknown[]) {
-    const { id, settings, mediaProxyBase } = widget as { id?: unknown; settings?: unknown; mediaProxyBase?: unknown };
-    if (typeof id === "string" && typeof mediaProxyBase === "string") {
-      mediaUrls[id] = deps.mediaProxy.urlsIn(settings, mediaProxyBase, signable);
-    }
-  }
+  const view = deps.mediaProxy.sceneConfig(scene, (url) => edited.has(url));
   return Response.json(
-    { ...config, scene: deps.mediaProxy.sceneConfig(scene, signable), mediaUrls },
+    { ...config, scene: view.scene, mediaUrls: view.mediaUrls },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

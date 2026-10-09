@@ -2,7 +2,7 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
-import { type MediaProxy, mediaProxyBaseOf } from "./media-proxy";
+import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
@@ -377,11 +377,10 @@ export class FrameAssembler {
    * it directly.
    */
   private bootSettings(settings: Record<string, unknown>, frameInfo: BarkloaderFrameInfo): Record<string, unknown> {
-    const base = frameInfo.theme ? mediaProxyBaseOf(frameInfo.resourceBaseUrl) : null;
-    if (!this.opts.mediaProxy || base === null) {
+    if (!this.opts.mediaProxy) {
       return settings;
     }
-    return this.opts.mediaProxy.settings(settings, base);
+    return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
   }
 
   /** The entry document with the scaffold, theme stylesheet and policy. */

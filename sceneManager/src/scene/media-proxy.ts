@@ -1,11 +1,12 @@
 import { createHmac } from "node:crypto";
-import { externalMediaUrls, MEDIA_PROXY_PATH, rewriteExternalMedia } from "../../public/scene-manager/media-url";
+import { externalMediaUrls, MEDIA_PROXY_PATH, replaceMediaUrls } from "../../public/scene-manager/media-url";
 import type {
   PlacementDocument,
   PlacementMeta,
   SceneDocument,
   SceneSnapshot,
 } from "../../public/scene-manager/scene-document";
+import type { BarkloaderFrameInfo } from "./frame-assembler";
 
 /**
  * Separates media proxy signatures from every other use of the engine
@@ -17,8 +18,13 @@ const KEY_LABEL = "woofx3 media proxy v1";
 /** Longest upstream URL signed. Must match `MAX_UPSTREAM_URL_BYTES` in media_proxy.rs. */
 export const MAX_UPSTREAM_URL_BYTES = 2048;
 
-/** The shortest time a proxy URL is good for once handed out. */
-export const MEDIA_TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
+/**
+ * The shortest time a proxy URL is good for once handed out. Short, because a
+ * leaked URL lets anyone have barkloader fetch that file until it expires;
+ * overlays fetch their scene again before then (see `earliestMediaProxyExpiry`
+ * in media-url.ts), so a long-open overlay keeps working.
+ */
+export const MEDIA_TOKEN_LIFETIME_SECONDS = 24 * 60 * 60;
 
 /**
  * Expiries are rounded up to a multiple of this, so every proxy URL minted for
@@ -54,8 +60,37 @@ export function mediaProxyBaseOf(resourceBaseUrl: string): string | null {
   return `${url.origin}${url.pathname.slice(0, at)}${MEDIA_PROXY_PATH}`;
 }
 
+/**
+ * The media proxy URL prefix for a widget's frame, or undefined when its
+ * external media loads directly. A widget that declares a theme contract runs
+ * under the theme policy whether or not a theme is selected (see
+ * `FrameAssembler.render`), so it is the contract, not the selection, that
+ * decides. Both where a placement is framed and where a frame is served ask
+ * this, so the two agree.
+ */
+export function frameMediaProxyBase(info: BarkloaderFrameInfo): string | undefined {
+  if (!info.theme) {
+    return undefined;
+  }
+  return mediaProxyBaseOf(info.resourceBaseUrl) ?? undefined;
+}
+
 /** Whether an upstream URL may be signed; every one may when absent. */
 export type SignableUrl = (upstream: string) => boolean;
+
+/** Settings as an overlay sees them, and the proxy URL of each URL signed in them. */
+export interface OverlaySettings<T> {
+  settings: T;
+  /** Upstream URL to proxy URL, for every external media URL rewritten. */
+  signed: Map<string, string>;
+}
+
+/** A page scene config as overlays see it, with what was signed per placement. */
+export interface OverlaySceneConfig<T> {
+  scene: T;
+  /** Placement id, then upstream URL, to proxy URL; only placements with a proxy base. */
+  mediaUrls: Record<string, Record<string, string>>;
+}
 
 /**
  * Turns external media URLs in placement settings into signed media proxy
@@ -63,13 +98,17 @@ export type SignableUrl = (upstream: string) => boolean;
  * are is per placement: `PlacementMeta.mediaProxyBase` is set for them, and
  * other placements keep external URLs as entered, loading them directly.
  *
+ * Every path that hands settings to an overlay or a frame derives them with
+ * `overlaySettings`: documents, snapshots and ops (`placement`), page scene
+ * configs (`sceneConfig`), and a frame's boot settings.
+ *
  * A token is `{base64url(url)}.{expiresAt}.{hex HMAC-SHA256}`, good until
  * `expiresAt` (unix seconds). An overlay stays open for a whole stream, and
- * often for days, so a token lives at least `MEDIA_TOKEN_LIFETIME_SECONDS`,
- * and the page fetches its scene again before the soonest expiry it holds,
- * which brings it fresh URLs (see `earliestMediaProxyExpiry`). What a token
- * grants is narrow: barkloader fetching that one URL, under the proxy's
- * limits, until it expires. Rotating the engine secret revokes all of them.
+ * often for days, so the page fetches its scene again before the soonest
+ * expiry it holds, which brings it fresh URLs (see `earliestMediaProxyExpiry`).
+ * What a token grants is narrow: barkloader fetching that one URL, under the
+ * proxy's limits, until it expires. Rotating the engine secret revokes all
+ * of them.
  */
 export class MediaProxy {
   private readonly key: Buffer;
@@ -107,26 +146,27 @@ export class MediaProxy {
     return `${base}${signed}.${signature}`;
   }
 
-  /** `settings` with every signable external media value pointed at the proxy under `base`. */
-  settings<T>(settings: T, base: string, signable?: SignableUrl): T {
-    return rewriteExternalMedia(settings, (url) =>
-      signable === undefined || signable(url) ? this.urlFor(url, base) : undefined
-    );
-  }
-
-  /** The proxy URL of every signable external media URL in `settings`, by upstream URL. */
-  urlsIn(settings: unknown, base: string, signable?: SignableUrl): Record<string, string> {
-    const urls: Record<string, string> = {};
+  /**
+   * A placement's settings as an overlay or frame is handed them: with no
+   * `mediaProxyBase` they are as entered; with one, every signable external
+   * media value points at the proxy under it. `signable` limits which
+   * upstream URLs are signed; every one is when it is absent.
+   */
+  overlaySettings<T>(settings: T, mediaProxyBase: string | undefined, signable?: SignableUrl): OverlaySettings<T> {
+    const signed = new Map<string, string>();
+    if (mediaProxyBase === undefined) {
+      return { settings, signed };
+    }
     for (const upstream of externalMediaUrls(settings)) {
       if (signable !== undefined && !signable(upstream)) {
         continue;
       }
-      const proxied = this.urlFor(upstream, base);
+      const proxied = this.urlFor(upstream, mediaProxyBase);
       if (proxied !== undefined) {
-        urls[upstream] = proxied;
+        signed.set(upstream, proxied);
       }
     }
-    return urls;
+    return { settings: replaceMediaUrls(settings, signed), signed };
   }
 
   /** Whether an overlay's view of the placement can differ from the placement as entered. */
@@ -138,10 +178,7 @@ export class MediaProxy {
 
   /** A placement as overlays see it. */
   placement(placement: PlacementDocument, meta: PlacementMeta | undefined): PlacementDocument {
-    if (meta?.mediaProxyBase === undefined) {
-      return placement;
-    }
-    const settings = this.settings(placement.settings, meta.mediaProxyBase);
+    const { settings } = this.overlaySettings(placement.settings, meta?.mediaProxyBase);
     return settings === placement.settings ? placement : { ...placement, settings };
   }
 
@@ -164,30 +201,33 @@ export class MediaProxy {
   }
 
   /**
-   * A page scene config (`{ widgets: [{ settings, mediaProxyBase }] }`) as
-   * overlays see it: each placement with a `mediaProxyBase` gets its
-   * signable external media pointed at the proxy.
+   * A page scene config (`{ widgets: [{ id, settings, mediaProxyBase }] }`)
+   * as overlays see it, and the URLs signed for each placement that has a
+   * `mediaProxyBase`. Anything not of that shape is passed through.
    */
-  sceneConfig<T>(scene: T, signable?: SignableUrl): T {
+  sceneConfig<T>(scene: T, signable?: SignableUrl): OverlaySceneConfig<T> {
+    const mediaUrls: Record<string, Record<string, string>> = {};
     if (typeof scene !== "object" || scene === null) {
-      return scene;
+      return { scene, mediaUrls };
     }
     const widgets = (scene as { widgets?: unknown }).widgets;
     if (!Array.isArray(widgets)) {
-      return scene;
+      return { scene, mediaUrls };
     }
-    return {
-      ...scene,
-      widgets: widgets.map((widget: unknown) => {
-        if (typeof widget !== "object" || widget === null) {
-          return widget;
-        }
-        const { settings, mediaProxyBase } = widget as { settings?: unknown; mediaProxyBase?: unknown };
-        if (typeof mediaProxyBase !== "string" || settings === undefined) {
-          return widget;
-        }
-        return { ...widget, settings: this.settings(settings, mediaProxyBase, signable) };
-      }),
-    };
+    const viewed = widgets.map((widget: unknown) => {
+      if (typeof widget !== "object" || widget === null) {
+        return widget;
+      }
+      const { id, settings, mediaProxyBase } = widget as { id?: unknown; settings?: unknown; mediaProxyBase?: unknown };
+      if (typeof mediaProxyBase !== "string" || settings === undefined) {
+        return widget;
+      }
+      const view = this.overlaySettings(settings, mediaProxyBase, signable);
+      if (typeof id === "string") {
+        mediaUrls[id] = Object.fromEntries(view.signed);
+      }
+      return view.settings === settings ? widget : { ...widget, settings: view.settings };
+    });
+    return { scene: { ...scene, widgets: viewed }, mediaUrls };
   }
 }

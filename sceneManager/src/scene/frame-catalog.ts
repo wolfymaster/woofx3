@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Logger } from "@woofx3/common/runtime";
 import type { BarkloaderFrameClient, BarkloaderFrameInfo } from "./frame-assembler";
-import { mediaProxyBaseOf } from "./media-proxy";
+import { frameMediaProxyBase } from "./media-proxy";
 import type { OverlayWidgetInstance } from "./scene-host";
 import { selectedThemeId } from "./widget-theme";
 
@@ -52,6 +52,8 @@ interface Framing {
   frameUrl: string;
   /** Set when the frame runs under the theme policy (see `PlacementMeta.mediaProxyBase`). */
   mediaProxyBase?: string;
+  /** Set when barkloader gave no frame (see `OverlayWidgetInstance.frameUnavailable`). */
+  frameUnavailable?: true;
 }
 
 /** Gives each placement of a scene config its frame URL and linked resources. */
@@ -100,21 +102,15 @@ export class FrameCatalog implements PlacementFraming {
   }
 
   /**
-   * A widget that declares a theme contract runs under the theme policy
-   * whether or not a theme is selected (see `FrameAssembler.render`), so it is
-   * the contract, not the selection, that sends its media through the proxy.
-   * When barkloader cannot be asked the frame will not load either, and the
-   * placement is left unproxied.
+   * The frame URL, versioned by barkloader's answer, and the media proxy base
+   * the frame's policy calls for (`frameMediaProxyBase`). When barkloader
+   * cannot be asked, or does not answer with a frame, neither is known: the
+   * placement is marked `frameUnavailable` and framed again later.
    */
   private async framing(moduleId: string, manifestId: string, themeId: string | undefined): Promise<Framing> {
-    let version = UNAVAILABLE_VERSION;
-    let mediaProxyBase: string | null = null;
+    let info: BarkloaderFrameInfo | null = null;
     try {
-      const info = await this.barkloader.fetchWidgetFrame(moduleId, manifestId, themeId);
-      if (info) {
-        version = frameVersion(info);
-        mediaProxyBase = info.theme ? mediaProxyBaseOf(info.resourceBaseUrl) : null;
-      }
+      info = await this.barkloader.fetchWidgetFrame(moduleId, manifestId, themeId);
     } catch (err) {
       this.logger.warn("barkloader frame fetch failed while versioning a frame URL", {
         moduleId,
@@ -122,8 +118,12 @@ export class FrameCatalog implements PlacementFraming {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const frameUrl = frameDocumentUrl(moduleId, manifestId, themeId, version);
-    return mediaProxyBase === null ? { frameUrl } : { frameUrl, mediaProxyBase };
+    if (info === null) {
+      return { frameUrl: frameDocumentUrl(moduleId, manifestId, themeId, UNAVAILABLE_VERSION), frameUnavailable: true };
+    }
+    const frameUrl = frameDocumentUrl(moduleId, manifestId, themeId, frameVersion(info));
+    const mediaProxyBase = frameMediaProxyBase(info);
+    return mediaProxyBase === undefined ? { frameUrl } : { frameUrl, mediaProxyBase };
   }
 
   /** A widget still renders when its module's settings cannot be read; it

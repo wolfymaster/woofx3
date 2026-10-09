@@ -1930,6 +1930,7 @@ function configOfSnapshot(snapshot) {
       hostsSurface: meta.hostsSurface,
       frameUrl: meta.frameUrl,
       linkedResources: meta.linkedResources,
+      ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
       visible: placement.visible
     });
   }
@@ -2369,7 +2370,6 @@ function applyPreviewLayout(elements, layout) {
 }
 
 // public/scene-manager/media-url.ts
-var MEDIA_PROXY_PATH = "/assets/media/";
 var MAX_DEPTH = 32;
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -2429,32 +2429,32 @@ function externalMediaUrls(value) {
   });
   return [...urls];
 }
-function mediaProxyExpiry(url) {
-  let pathname;
-  try {
-    pathname = new URL(url).pathname;
-  } catch {
+var MEDIA_PROXY_TOKEN = /^[A-Za-z0-9_-]+\.(\d+)\.[0-9a-f]{64}$/;
+function mediaProxyExpiry(url, base) {
+  if (!url.startsWith(base)) {
     return null;
   }
-  const at = pathname.lastIndexOf(MEDIA_PROXY_PATH);
-  if (at < 0) {
-    return null;
-  }
-  const [, expiresAt, ...rest] = pathname.slice(at + MEDIA_PROXY_PATH.length).split(".");
-  if (rest.length !== 1 || expiresAt === undefined || !/^\d+$/.test(expiresAt)) {
-    return null;
-  }
-  return Number(expiresAt);
+  const match = MEDIA_PROXY_TOKEN.exec(url.slice(base.length));
+  return match ? Number(match[1]) : null;
 }
-function earliestMediaProxyExpiry(value) {
+function earliestMediaProxyExpiry(value, base) {
+  if (base === undefined) {
+    return null;
+  }
   let earliest = null;
   for (const url of externalMediaUrls(value)) {
-    const expiry = mediaProxyExpiry(url);
+    const expiry = mediaProxyExpiry(url, base);
     if (expiry !== null && (earliest === null || expiry < earliest)) {
       earliest = expiry;
     }
   }
   return earliest;
+}
+function replaceMediaUrls(value, urls) {
+  if (urls.size === 0) {
+    return value;
+  }
+  return rewriteExternalMedia(value, (url) => urls.get(url));
 }
 function parseMediaUrls(value) {
   const placements = new Map;
@@ -2492,7 +2492,7 @@ function applySceneBackground(element, layout) {
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
-var MEDIA_REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
+var MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
 var MIN_MEDIA_REFRESH_DELAY_MS = 60000;
 var MAX_TIMER_DELAY_MS = 2147483647;
 var SWAP_TIMEOUT_MS = 2000;
@@ -2766,7 +2766,7 @@ function main() {
     }
     let earliest = null;
     for (const entry of mounted.values()) {
-      const expiry = earliestMediaProxyExpiry(entry.config.settings);
+      const expiry = earliestMediaProxyExpiry(entry.config.settings, entry.config.mediaProxyBase);
       if (expiry !== null && (earliest === null || expiry < earliest)) {
         earliest = expiry;
       }
@@ -2790,7 +2790,7 @@ function main() {
   const draftSettingsOf = (placement) => {
     const signed = signedMediaOf(placement);
     const settings = settingsOf(placement);
-    return signed ? rewriteExternalMedia(settings, (url) => signed.get(url)) : settings;
+    return signed ? replaceMediaUrls(settings, signed) : settings;
   };
   const draftKeyOf = (placements) => draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") + JSON.stringify(placements.flatMap((raw) => {
     const placement = asRecord(raw);
