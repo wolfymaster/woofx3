@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1598,6 +1598,126 @@
             "path": "firstReachedAt",
             "type": "number",
             "description": "When it first reached that goal, in milliseconds since the epoch."
+          }
+        ]
+      }
+    },
+    {
+      "id": "viewer_segment_entered",
+      "name": "Viewer entered segment",
+      "description": "Fires when something a viewer does makes them match a segment. Creating or changing a segment enrolls the viewers who already match without firing.",
+      "type": "eventbus",
+      "event": "viewer.segment.entered",
+      "taxonomy": [
+        "system.viewer"
+      ],
+      "schema": [
+        {
+          "id": "segment",
+          "label": "Segment",
+          "type": "text",
+          "required": true,
+          "placeholder": "user:segment:superfans",
+          "eventPath": "segmentId",
+          "operator": "eq",
+          "description": "The segment, by canonical id.",
+          "missingText": "a segment you have not picked"
+        }
+      ],
+      "sentence": "a viewer enters {segment}",
+      "emits": {
+        "fields": [
+          {
+            "path": "viewerId",
+            "type": "string",
+            "description": "The viewer, by platform user id.",
+            "identity": "viewer",
+            "displayName": "viewerName"
+          },
+          {
+            "path": "viewerName",
+            "type": "string",
+            "description": "The viewer's display name, or empty when the event that moved them did not carry one."
+          },
+          {
+            "path": "segmentId",
+            "type": "string",
+            "description": "The segment, by canonical id."
+          },
+          {
+            "path": "platform",
+            "type": "string",
+            "description": "The platform the viewer is on."
+          },
+          {
+            "path": "sessionId",
+            "type": "string",
+            "description": "The stream session the change happened in."
+          },
+          {
+            "path": "facts",
+            "type": "object",
+            "description": "Every fact the segment reads, keyed by fact id, each as { before, after } around the change."
+          }
+        ]
+      }
+    },
+    {
+      "id": "viewer_segment_left",
+      "name": "Viewer left segment",
+      "description": "Fires when something a viewer does makes them stop matching a segment. Changing or deleting a segment drops the viewers who no longer match without firing.",
+      "type": "eventbus",
+      "event": "viewer.segment.left",
+      "taxonomy": [
+        "system.viewer"
+      ],
+      "schema": [
+        {
+          "id": "segment",
+          "label": "Segment",
+          "type": "text",
+          "required": true,
+          "placeholder": "user:segment:superfans",
+          "eventPath": "segmentId",
+          "operator": "eq",
+          "description": "The segment, by canonical id.",
+          "missingText": "a segment you have not picked"
+        }
+      ],
+      "sentence": "a viewer leaves {segment}",
+      "emits": {
+        "fields": [
+          {
+            "path": "viewerId",
+            "type": "string",
+            "description": "The viewer, by platform user id.",
+            "identity": "viewer",
+            "displayName": "viewerName"
+          },
+          {
+            "path": "viewerName",
+            "type": "string",
+            "description": "The viewer's display name, or empty when the event that moved them did not carry one."
+          },
+          {
+            "path": "segmentId",
+            "type": "string",
+            "description": "The segment, by canonical id."
+          },
+          {
+            "path": "platform",
+            "type": "string",
+            "description": "The platform the viewer is on."
+          },
+          {
+            "path": "sessionId",
+            "type": "string",
+            "description": "The stream session the change happened in."
+          },
+          {
+            "path": "facts",
+            "type": "object",
+            "description": "Every fact the segment reads, keyed by fact id, each as { before, after } around the change."
           }
         ]
       }
