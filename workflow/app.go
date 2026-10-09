@@ -180,7 +180,8 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	a.engine.Registry().SetLogger(a.logger)
 
 	// Before any workflow subscribes, so that every delivery sees the
-	// projector the handler will use.
+	// projector the handler will use and the engine's `${viewer.*}` source.
+	a.startViewerResolver(ctx, natsClient)
 	a.startViewerFacts(ctx, natsClient, eventReg)
 
 	// Load workflows from DB now that the registrar is attached. Loading
@@ -295,6 +296,27 @@ func (a *WorkflowApp) startViewerFacts(ctx context.Context, natsClient *natsclie
 	}
 	go reloader.Run(ctx)
 	a.logger.Info("Viewer fact projector started", "interval", reloader.interval)
+}
+
+// startViewerResolver gives the engine its `${viewer.*}` source. The trigger
+// catalog it reads the viewer's identity field from loads in the background:
+// until it does, `${viewer.*}` resolves as missing.
+func (a *WorkflowApp) startViewerResolver(ctx context.Context, natsClient *natsclient.Client) {
+	if a.factDbClient == nil || a.moduleDbClient == nil {
+		a.logger.Warn("No viewer fact or module db client; ${viewer.*} will resolve as missing")
+		return
+	}
+	catalog := newTriggerIdentityCatalog()
+	reloader := newTriggerCatalogReloader(catalog, a.moduleDbClient, a.logger)
+	// Non-fatal: the reloader's periodic re-list still converges.
+	if _, err := natsClient.Subscribe(subjectDbModuleTriggerPattern, func(natsclient.Msg) {
+		reloader.Request()
+	}); err != nil {
+		a.logger.Error("Failed to subscribe to trigger changes", "subject", subjectDbModuleTriggerPattern, "error", err)
+	}
+	a.engine.SetViewerFacts(newViewerFactReader(a.factDbClient, catalog, a.logger))
+	go reloader.Run(ctx)
+	a.logger.Info("Viewer resolver started", "interval", reloader.interval)
 }
 
 func (a *WorkflowApp) Terminate(ctx context.Context) error {

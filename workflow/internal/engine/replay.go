@@ -74,7 +74,7 @@ func (e *Engine[TServices]) Replay(req ReplayRequest) error {
 	}
 
 	go func() {
-		execution := e.beginExecutionAs(def, event, req.DryRun)
+		execution := e.beginExecutionAs(def, event, req.DryRun, e.viewerLoader(event))
 		e.logger.Info("Replaying workflow run",
 			"workflow", def.ID,
 			"execution", execution.ID,
