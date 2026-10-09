@@ -579,3 +579,17 @@ func TestPruneAppliedEventsLetsAnOldEventApplyAgain(t *testing.T) {
 func float64Ptr(v float64) *float64 {
 	return &v
 }
+
+// A definition change is announced with the fact id as the outbox entity, and
+// fact ids are longer than the uuids that column was first sized for.
+func TestAFactIDLongerThanAUUIDSavesAndIsAnnounced(t *testing.T) {
+	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
+		req := messagesFact("")
+		req.Id = "twitch_platform:fact:messages_sent_while_subscribed"
+		upsertFact(t, svc, req)
+		events := factOutbox(t, db)
+		if len(events) != 1 || events[0].id != req.Id {
+			t.Fatalf("outbox = %+v, want one event for %s", events, req.Id)
+		}
+	})
+}
