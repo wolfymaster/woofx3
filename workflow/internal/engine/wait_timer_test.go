@@ -127,7 +127,7 @@ func (h *waitHarness) fire(t *testing.T, wait *types.WaitConfig) {
 		},
 	}
 	trigger := &types.Event{ID: "raid-1", Type: "channel.raid", Source: "test", Time: time.Now(), Data: map[string]any{}}
-	go h.engine.executeWorkflow(def, trigger, h.engine.viewerLoader(trigger))
+	go h.engine.executeWorkflow(def, trigger, h.engine.newViewerLoader(viewerTrigger(def), trigger))
 }
 
 func (h *waitHarness) awaitArmed(t *testing.T) {

@@ -206,7 +206,7 @@ func TestEventsARunCausesCarryItsChain(t *testing.T) {
 	}
 
 	rootEvent := &types.Event{ID: "e1", Type: "parent.run", Source: "test", Time: time.Now(), WorkflowChain: "wf-root"}
-	engine.executeWorkflow(parent, rootEvent, engine.viewerLoader(rootEvent))
+	engine.executeWorkflow(parent, rootEvent, engine.newViewerLoader(viewerTrigger(parent), rootEvent))
 	select {
 	case <-subRan:
 	case <-time.After(5 * time.Second):

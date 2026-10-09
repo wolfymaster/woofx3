@@ -299,8 +299,10 @@ func (a *WorkflowApp) startViewerFacts(ctx context.Context, natsClient *natsclie
 }
 
 // startViewerResolver gives the engine its `${viewer.*}` source. The trigger
-// catalog it reads the viewer's identity field from loads in the background:
-// until it does, `${viewer.*}` resolves as missing.
+// catalog it reads the viewer's identity field from is loaded once before
+// returning, for at most triggerCatalogStartTimeout, then kept current in the
+// background. Until a load succeeds, a trigger condition reading
+// `${viewer.*}` fails and a step reads it as missing.
 func (a *WorkflowApp) startViewerResolver(ctx context.Context, natsClient *natsclient.Client) {
 	if a.factDbClient == nil || a.moduleDbClient == nil {
 		a.logger.Warn("No viewer fact or module db client; ${viewer.*} will resolve as missing")
@@ -315,6 +317,7 @@ func (a *WorkflowApp) startViewerResolver(ctx context.Context, natsClient *natsc
 		a.logger.Error("Failed to subscribe to trigger changes", "subject", subjectDbModuleTriggerPattern, "error", err)
 	}
 	a.engine.SetViewerFacts(newViewerFactReader(a.factDbClient, catalog, a.logger))
+	reloader.LoadNow(ctx, triggerCatalogStartTimeout)
 	go reloader.Run(ctx)
 	a.logger.Info("Viewer resolver started", "interval", reloader.interval)
 }

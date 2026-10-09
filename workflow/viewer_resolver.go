@@ -12,7 +12,6 @@ import (
 	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
-	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -21,8 +20,15 @@ import (
 const (
 	// viewerReadTimeout bounds the fact read a trigger condition or step
 	// waits on the first time it references `${viewer.*}`. A db proxy slower
-	// than this leaves the viewer's facts missing for that event.
+	// than this leaves the viewer's facts unread for that event.
 	viewerReadTimeout = time.Second
+
+	// triggerCatalogStartTimeout bounds the trigger list made before
+	// workflows subscribe. Until a list succeeds, every trigger condition
+	// reading `${viewer.*}` fails, so start-up waits this long for one
+	// rather than refusing the first events; after it, loading continues in
+	// the background.
+	triggerCatalogStartTimeout = 2 * time.Second
 
 	// emitsIdentityViewer is the identity annotation on an emits field that
 	// names a viewer. Must match emitsIdentityViewer in
@@ -42,8 +48,8 @@ func isReservedViewerKey(key string) bool {
 	return key == viewerKeyID || key == viewerKeyPlatform || key == viewerKeyName
 }
 
-// triggerIdentity is where the viewer an event is about sits in the data of
-// one trigger's events.
+// triggerIdentity is where the viewer sits in the data of one trigger's
+// events.
 type triggerIdentity struct {
 	trigger string
 	pattern string
@@ -54,18 +60,35 @@ type triggerIdentity struct {
 	// anonymousWhen is the emits path of the boolean that is true when the
 	// platform withheld the identity, or empty.
 	anonymousWhen string
+	// displayName is the emits path of the viewer's name, or empty.
+	displayName string
 }
 
-// triggerIdentityCatalog maps an event to the identity field of the triggers
-// whose pattern matches it. Triggers that mark no identity are left out.
+// identityLookup is what the catalog knows about one trigger pattern.
+type identityLookup int
+
+const (
+	// identityFound: the pattern's triggers name one viewer, at one path.
+	identityFound identityLookup = iota
+	// identityNone: no trigger with the pattern names exactly one viewer.
+	identityNone
+	// identityConflict: the pattern's triggers name the viewer at
+	// different paths, so no path can be trusted.
+	identityConflict
+	// identityUnknown: the catalog has not loaded yet.
+	identityUnknown
+)
+
+// triggerIdentityCatalog maps a registered trigger's event pattern to the
+// identity field of the triggers registered with it. Triggers that mark no
+// identity are left out.
 type triggerIdentityCatalog struct {
+	// entries is nil until the first load.
 	entries atomic.Pointer[[]triggerIdentity]
 }
 
 func newTriggerIdentityCatalog() *triggerIdentityCatalog {
-	c := &triggerIdentityCatalog{}
-	c.entries.Store(&[]triggerIdentity{})
-	return c
+	return &triggerIdentityCatalog{}
 }
 
 // emitsShape is the part of a trigger's emits the catalog reads: the identity
@@ -77,12 +100,14 @@ type emitsShape struct {
 		Type          string `json:"type"`
 		Identity      string `json:"identity"`
 		AnonymousWhen string `json:"anonymousWhen"`
+		DisplayName   string `json:"displayName"`
 	} `json:"fields"`
 }
 
 // replace swaps the catalog for one built from triggers, and returns the
 // error of each trigger whose emits it could not read. Such a trigger is left
-// out, as if it marked no identity.
+// out, as if it marked no identity. triggers must hold active triggers only;
+// ListTriggers leaves archived ones out.
 func (c *triggerIdentityCatalog) replace(triggers []*dbv1.Trigger) map[string]error {
 	entries := make([]triggerIdentity, 0, len(triggers))
 	failed := make(map[string]error)
@@ -120,6 +145,7 @@ func identityOf(trigger *dbv1.Trigger) (entry triggerIdentity, marked bool, err 
 		if field.Type == "string" {
 			entry.path = field.Path
 			entry.anonymousWhen = field.AnonymousWhen
+			entry.displayName = field.DisplayName
 		}
 	}
 	if identities == 0 {
@@ -128,6 +154,7 @@ func identityOf(trigger *dbv1.Trigger) (entry triggerIdentity, marked bool, err 
 	if identities > 1 {
 		entry.path = ""
 		entry.anonymousWhen = ""
+		entry.displayName = ""
 	}
 	return entry, true, nil
 }
@@ -136,27 +163,40 @@ func canonicalTriggerID(trigger *dbv1.Trigger) string {
 	return trigger.GetCreatedByRef() + ":trigger:" + trigger.GetManifestId()
 }
 
-// lookup returns where the viewer sits in events of eventType. It reports
-// false unless every trigger matching the event that marks an identity marks
-// the same single string field: with none, or with triggers that disagree,
-// the event does not say which of its fields is the viewer.
-func (c *triggerIdentityCatalog) lookup(eventType string) (triggerIdentity, bool) {
-	var found triggerIdentity
-	matched := false
-	for _, entry := range *c.entries.Load() {
-		if !eventmatch.Matches(entry.pattern, eventType) {
-			continue
-		}
-		if entry.path == "" {
-			return triggerIdentity{}, false
-		}
-		if matched && (entry.path != found.path || entry.anonymousWhen != found.anonymousWhen) {
-			return triggerIdentity{}, false
-		}
-		found = entry
-		matched = true
+// lookup returns where the viewer sits in the events of the triggers
+// registered with pattern, the event a workflow's trigger listens for. Only
+// triggers with exactly that pattern count: another trigger whose pattern
+// also matches an event emits its own shape, not the one the workflow was
+// written against. With a conflict, the ids of the triggers are returned.
+func (c *triggerIdentityCatalog) lookup(pattern string) (triggerIdentity, identityLookup, []string) {
+	entries := c.entries.Load()
+	if entries == nil {
+		return triggerIdentity{}, identityUnknown, nil
 	}
-	return found, matched
+	var matched []triggerIdentity
+	for _, entry := range *entries {
+		if entry.pattern == pattern {
+			matched = append(matched, entry)
+		}
+	}
+	if len(matched) == 0 {
+		return triggerIdentity{}, identityNone, nil
+	}
+	first := matched[0]
+	for _, entry := range matched[1:] {
+		if entry.path != first.path || entry.anonymousWhen != first.anonymousWhen || entry.displayName != first.displayName {
+			ids := make([]string, len(matched))
+			for i, m := range matched {
+				ids[i] = m.trigger
+			}
+			sort.Strings(ids)
+			return triggerIdentity{}, identityConflict, ids
+		}
+	}
+	if first.path == "" {
+		return triggerIdentity{}, identityNone, nil
+	}
+	return first, identityFound, nil
 }
 
 // triggerCatalogReloader keeps the catalog current with the registered
@@ -188,7 +228,7 @@ func (r *triggerCatalogReloader) reload(ctx context.Context) bool {
 	if err != nil {
 		if err.Error() != r.lastListErr {
 			r.lastListErr = err.Error()
-			r.logger.Warn("Triggers unavailable; ${viewer.*} resolves as missing until they list", "error", err)
+			r.logger.Warn("Triggers unavailable; ${viewer.*} cannot name a viewer until they list", "error", err)
 		}
 		return false
 	}
@@ -227,6 +267,15 @@ func (r *triggerCatalogReloader) reportBad(failed map[string]error) {
 // db proxy unreachable.
 var errViewerReadsPaused = errors.New("viewer fact reads paused: db proxy unreachable")
 
+// errTriggersNotLoaded marks a viewer that cannot be named because the
+// trigger catalog has not loaded yet.
+var errTriggersNotLoaded = errors.New("triggers not listed yet")
+
+// maxLoggedViewerErrors bounds the distinct read errors remembered as
+// logged. An answered error can carry the viewer's id, so the set is cleared
+// rather than left to grow with every viewer.
+const maxLoggedViewerErrors = 256
+
 // viewerFactReader is the engine's `${viewer.*}` source: the facts of the
 // viewer named by the event's identity field, read from the db proxy.
 type viewerFactReader struct {
@@ -237,9 +286,14 @@ type viewerFactReader struct {
 	timeout time.Duration
 
 	mu sync.Mutex
-	// failing is set while reads fail, so that an outage is logged once
-	// rather than once per run.
-	failing bool
+	// outage is set while the proxy cannot be reached, so that an outage is
+	// logged once rather than once per run.
+	outage bool
+	// logged is each error the proxy answered with that was logged.
+	logged map[string]struct{}
+	// conflicts is each trigger pattern logged for triggers that disagree
+	// on the viewer, with the ids of those triggers.
+	conflicts map[string]string
 	// reserved is each fact id already logged for having an owner that is a
 	// reserved key.
 	reserved map[string]struct{}
@@ -250,50 +304,74 @@ func newViewerFactReader(db dbv1.ViewerFactService, catalog *triggerIdentityCata
 		panic("viewer resolver: newViewerFactReader needs a db client, a catalog and a logger")
 	}
 	return &viewerFactReader{
-		db:       db,
-		catalog:  catalog,
-		breaker:  newProxyBreaker(logger, "Viewer fact reads paused; db proxy unreachable", "Viewer fact reads resumed"),
-		logger:   logger,
-		timeout:  viewerReadTimeout,
-		reserved: make(map[string]struct{}),
+		db:        db,
+		catalog:   catalog,
+		breaker:   newProxyBreaker(logger, "Viewer fact reads paused; db proxy unreachable", "Viewer fact reads resumed"),
+		logger:    logger,
+		timeout:   viewerReadTimeout,
+		logged:    make(map[string]struct{}),
+		conflicts: make(map[string]string),
+		reserved:  make(map[string]struct{}),
 	}
 }
 
 // Viewer returns `${viewer.*}` for the viewer event names: `id`, `platform`,
-// `name` when the db knows the viewer's display name, and each fact the
-// viewer has a value for, a fact `{owner}:fact:{slug}` at `{owner}.{slug}`.
-// A session fact reads its current session's value. When the facts cannot be
-// read, only `id` and `platform` are there.
-func (r *viewerFactReader) Viewer(ctx context.Context, event *types.Event) map[string]any {
-	subjectID, ok := r.viewerOf(event)
+// `name` when the db or the event knows the viewer's display name, and each
+// fact the viewer has a value for, a fact `{owner}:fact:{slug}` at
+// `{owner}.{slug}`. A session fact reads its current session's value.
+//
+// It fails when the catalog has not loaded or the facts cannot be read; the
+// data then holds only what the event says.
+func (r *viewerFactReader) Viewer(ctx context.Context, trigger string, event *types.Event) (map[string]any, error) {
+	identity, err := r.identityFor(trigger, event)
+	if err != nil || identity.path == "" {
+		return nil, err
+	}
+	subjectID, ok := viewerOf(identity, event)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	viewer := map[string]any{viewerKeyID: subjectID, viewerKeyPlatform: event.Platform}
+	if identity.displayName != "" {
+		if name, err := expression.ResolvePath(event.Data, identity.displayName); err == nil {
+			if name, ok := name.(string); ok && name != "" {
+				viewer[viewerKeyName] = name
+			}
+		}
+	}
 	resp, err := r.read(ctx, event.Platform, subjectID)
 	if err != nil {
 		r.reportFailure(err, event)
-		return viewer
+		return viewer, err
 	}
 	r.reportSuccess()
 	if name := resp.GetSubjectName(); name != "" {
 		viewer[viewerKeyName] = name
 	}
 	r.reportReserved(addFactValues(viewer, resp.GetValues()))
-	return viewer
+	return viewer, nil
 }
 
-// viewerOf returns the id of the one viewer event is about. An event without
-// a platform cannot name a viewer, since a viewer id is only unique within
-// its platform.
-func (r *viewerFactReader) viewerOf(event *types.Event) (string, bool) {
+// identityFor returns where the viewer sits in event, with an empty path when
+// the event names no single viewer. An event without a platform cannot name a
+// viewer, since a viewer id is only unique within its platform.
+func (r *viewerFactReader) identityFor(trigger string, event *types.Event) (triggerIdentity, error) {
 	if event.Platform == "" {
-		return "", false
+		return triggerIdentity{}, nil
 	}
-	identity, ok := r.catalog.lookup(event.Type)
-	if !ok {
-		return "", false
+	identity, found, conflicting := r.catalog.lookup(trigger)
+	switch found {
+	case identityFound:
+		return identity, nil
+	case identityUnknown:
+		return triggerIdentity{}, errTriggersNotLoaded
+	case identityConflict:
+		r.reportConflict(trigger, conflicting)
 	}
+	return triggerIdentity{}, nil
+}
+
+func viewerOf(identity triggerIdentity, event *types.Event) (string, bool) {
 	if identity.anonymousWhen != "" {
 		if anonymous, err := expression.ResolvePath(event.Data, identity.anonymousWhen); err == nil && anonymous == true {
 			return "", false
@@ -321,18 +399,34 @@ func (r *viewerFactReader) read(ctx context.Context, platform, subjectID string)
 	return resp, err
 }
 
+// reportFailure logs a failed read: an outage once until reads succeed
+// again, and an error the proxy answered with once per distinct error.
 func (r *viewerFactReader) reportFailure(err error, event *types.Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.failing {
+	if errors.Is(err, errViewerReadsPaused) || isUnreachable(err) {
+		if r.outage {
+			return
+		}
+		r.outage = true
+		// The breaker logged when it paused reads.
+		if errors.Is(err, errViewerReadsPaused) {
+			return
+		}
+		r.logger.Warn("Viewer facts unreadable; db proxy unreachable",
+			"error", err,
+			"type", event.Type,
+			"id", event.ID)
 		return
 	}
-	r.failing = true
-	// The breaker logged when it paused reads.
-	if errors.Is(err, errViewerReadsPaused) {
+	if _, seen := r.logged[err.Error()]; seen {
 		return
 	}
-	r.logger.Warn("Viewer facts unreadable; ${viewer.*} facts resolve as missing",
+	if len(r.logged) >= maxLoggedViewerErrors {
+		clear(r.logged)
+	}
+	r.logged[err.Error()] = struct{}{}
+	r.logger.Warn("Viewer facts read failed",
 		"error", err,
 		"type", event.Type,
 		"id", event.ID)
@@ -341,10 +435,25 @@ func (r *viewerFactReader) reportFailure(err error, event *types.Event) {
 func (r *viewerFactReader) reportSuccess() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.failing {
-		r.failing = false
+	if r.outage {
+		r.outage = false
 		r.logger.Info("Viewer facts readable again")
 	}
+}
+
+// reportConflict logs, once per pattern and set of triggers, triggers that
+// disagree on which field of their events names the viewer.
+func (r *viewerFactReader) reportConflict(pattern string, triggers []string) {
+	key := strings.Join(triggers, ",")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.conflicts[pattern] == key {
+		return
+	}
+	r.conflicts[pattern] = key
+	r.logger.Warn("Triggers disagree on which field names the viewer; ${viewer.*} is missing for their events",
+		"event", pattern,
+		"triggers", triggers)
 }
 
 // reportReserved logs, once per fact, each fact left out of `${viewer.*}`

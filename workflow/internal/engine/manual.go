@@ -80,7 +80,7 @@ func (e *Engine[TServices]) RunManual(req ManualRun) (ManualRunResult, error) {
 			return ManualRunResult{}, fmt.Errorf("RunManual: %w", err)
 		}
 	}
-	viewer := e.viewerLoader(event)
+	viewer := e.newViewerLoader(viewerTrigger(def), event)
 	if req.TriggerData != nil && !req.SkipConditions {
 		if unmet := e.unmetTriggerConditions(def, event, viewer); len(unmet) > 0 {
 			e.logger.Info("Manual run refused: trigger conditions not met",

@@ -37,7 +37,7 @@ func TestEvaluateTrigger_AcceptsWhenConditionsMatch(t *testing.T) {
 		Time: time.Now(),
 		Data: map[string]any{"amount": 500},
 	}
-	if err := newTestEngine().evaluateTrigger(wf, event, func() any { return nil }); err != nil {
+	if err := newTestEngine().evaluateTrigger(wf, event, func() (any, error) { return nil, nil }); err != nil {
 		t.Errorf("evaluateTrigger returned %v, want nil", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestEvaluateTrigger_RejectsWhenConditionFails(t *testing.T) {
 		Time: time.Now(),
 		Data: map[string]any{"amount": 50},
 	}
-	err := newTestEngine().evaluateTrigger(wf, event, func() any { return nil })
+	err := newTestEngine().evaluateTrigger(wf, event, func() (any, error) { return nil, nil })
 	if err == nil {
 		t.Fatal("expected evaluateTrigger to return an error when condition fails")
 	}
@@ -77,7 +77,7 @@ func TestEvaluateTrigger_NoConditionsAlwaysAccepts(t *testing.T) {
 		Time: time.Now(),
 		Data: map[string]any{},
 	}
-	if err := newTestEngine().evaluateTrigger(wf, event, func() any { return nil }); err != nil {
+	if err := newTestEngine().evaluateTrigger(wf, event, func() (any, error) { return nil, nil }); err != nil {
 		t.Errorf("evaluateTrigger returned %v, want nil", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestEvaluateTrigger_RejectsEventMismatchEvenWithMatchingConditions(t *testi
 		Time: time.Now(),
 		Data: map[string]any{"amount": 500},
 	}
-	if err := newTestEngine().evaluateTrigger(wf, event, func() any { return nil }); err == nil {
+	if err := newTestEngine().evaluateTrigger(wf, event, func() (any, error) { return nil, nil }); err == nil {
 		t.Fatal("expected event-mismatch error before condition evaluation")
 	}
 }

@@ -296,6 +296,9 @@ type reloadLoop struct {
 	minBackoff time.Duration
 	maxBackoff time.Duration
 	requests   chan struct{}
+	// primed is set by a LoadNow that succeeded, so Run's first load waits
+	// for the interval rather than repeating it at once.
+	primed bool
 }
 
 func newReloadLoop(load func(ctx context.Context) bool) *reloadLoop {
@@ -350,12 +353,23 @@ func (r *reloadLoop) Request() {
 	}
 }
 
+// LoadNow loads once, giving up after timeout, and reports whether the load
+// succeeded. It must be called before Run.
+func (r *reloadLoop) LoadNow(ctx context.Context, timeout time.Duration) bool {
+	loadCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	r.primed = r.load(loadCtx)
+	return r.primed
+}
+
 // Run blocks until ctx is cancelled.
 func (r *reloadLoop) Run(ctx context.Context) {
 	backoff := r.minBackoff
 	for {
 		wait := r.interval
-		if r.load(ctx) {
+		if r.primed {
+			r.primed = false
+		} else if r.load(ctx) {
 			backoff = r.minBackoff
 		} else {
 			wait = backoff

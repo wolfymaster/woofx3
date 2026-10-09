@@ -447,7 +447,7 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 	e.processWaitingExecutions(event)
 
 	workflows := e.workflowRegistry.GetByEvent(event.Type)
-	viewer := e.viewerLoader(event)
+	viewers := make(map[string]expression.LazyLoader)
 
 	// "I received the event, here's what I'm doing about it" — without
 	// these lines, the most common debug question ("trigger fired but
@@ -472,6 +472,7 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 		"match_count", len(workflows))
 
 	for _, wf := range workflows {
+		viewer := e.viewerFor(viewers, wf, event)
 		if err := e.evaluateTrigger(wf, event, viewer); err != nil {
 			// `evaluateTrigger` returns errors for legitimate
 			// non-matches (event-type mismatch, trigger conditions
@@ -508,7 +509,7 @@ func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Eve
 	if err != nil {
 		return fmt.Errorf("FireByWorkflowID: %w", err)
 	}
-	go e.executeWorkflow(def, event, e.viewerLoader(event))
+	go e.executeWorkflow(def, event, e.newViewerLoader(viewerTrigger(def), event))
 	return nil
 }
 
@@ -676,7 +677,7 @@ func removeWaitingExecution(list []*WaitingExecution, target *WaitingExecution) 
 	return kept
 }
 
-func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event *types.Event, viewer func() any) error {
+func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) error {
 	if wf.Trigger == nil {
 		return fmt.Errorf("workflow has no trigger")
 	}
@@ -713,6 +714,9 @@ type UnmetCondition struct {
 // unmetTriggerConditions evaluates a workflow's trigger conditions against an
 // event, with `${trigger.data.X}` resolving against the event payload -- the
 // same syntax as step conditions, and `${viewer.*}` reading through viewer.
+// A `${viewer.*}` reference viewer cannot load fails its condition: a
+// condition such as "has never chatted" must not hold for everyone while the
+// viewer's facts cannot be read.
 // Conditions are ANDed; there is no
 // `conditionLogic` on TriggerConfig.
 //
@@ -720,7 +724,7 @@ type UnmetCondition struct {
 // a caller testing a workflow is told all the reasons a sample did not match.
 // Nothing a condition reads can have a side effect, so evaluating the rest
 // changes only the explanation, never the decision.
-func (e *Engine[TServices]) unmetTriggerConditions(wf *types.WorkflowDefinition, event *types.Event, viewer func() any) []UnmetCondition {
+func (e *Engine[TServices]) unmetTriggerConditions(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) []UnmetCondition {
 	if wf.Trigger == nil || len(wf.Trigger.Conditions) == 0 {
 		return nil
 	}
@@ -784,13 +788,13 @@ func (e *Engine[TServices]) workflowName(id string) string {
 }
 
 func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *types.Event) *types.WorkflowExecution {
-	return e.beginExecutionAs(wf, event, false, e.viewerLoader(event))
+	return e.beginExecutionAs(wf, event, false, e.newViewerLoader(viewerTrigger(wf), event))
 }
 
 // beginExecutionAs is beginExecution for a run that may be a dry run. The mark
 // is set before the run is announced or recorded, so the history never holds
 // a dry run that reads as a real one. viewer is the run's `${viewer.*}` loader.
-func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event *types.Event, dryRun bool, viewer func() any) *types.WorkflowExecution {
+func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event *types.Event, dryRun bool, viewer expression.LazyLoader) *types.WorkflowExecution {
 	execution := &types.WorkflowExecution{
 		DryRun:       dryRun,
 		ID:           uuid.New().String(),
@@ -805,7 +809,7 @@ func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event
 
 	e.executionsMu.Lock()
 	e.executions[execution.ID] = execution
-	e.registerRunLocked(execution.ID, viewer)
+	e.registerRunLocked(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
 	e.executionsMu.Unlock()
 
 	e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", execution.ID)
@@ -821,7 +825,7 @@ func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event
 	return execution
 }
 
-func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event, viewer func() any) {
+func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) {
 	e.runExecution(wf, e.beginExecutionAs(wf, event, event.DryRun, viewer), event)
 }
 
@@ -1579,7 +1583,7 @@ func (e *Engine[TServices]) buildResolver(execution *types.WorkflowExecution, tr
 	for taskID, exports := range taskExports {
 		resolver.AddSource(taskID, exports)
 	}
-	addViewerSource(resolver, e.runViewer(execution, triggerEvent), taskExports)
+	addViewerSource(resolver, e.stepViewer(execution), taskExports)
 
 	if e.assetURLResolver != nil {
 		resolver.SetAssetURLBase(e.assetURLResolver.Resolve() + "/assets")
@@ -1824,7 +1828,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 
 	e.executionsMu.Lock()
 	e.executions[executionID] = execution
-	e.registerRunLocked(executionID, e.viewerLoader(event))
+	e.registerRunLocked(executionID, newRunViewer(viewerTrigger(wf), event, e.newViewerLoader(viewerTrigger(wf), event)))
 	e.executionsMu.Unlock()
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
@@ -1942,6 +1946,8 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 
 	e.logger.Info("Resuming workflow execution after sub-workflow completion", "workflow", waiter.ParentWorkflowID, "execution", waiter.ParentExecutionID, "fromTask", waiter.TaskID, "subExecution", subExecution.ID)
 
+	e.refreshViewer(execution.ID)
+
 	e.executeTasksFromIndex(execution, waiter.ExecutionOrder, waiter.CurrentIndex+1, waiter.TaskExports, waiter.TriggerEvent)
 }
 
@@ -1972,6 +1978,8 @@ func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
 	execution.Status = types.ExecutionStatusRunning
 
 	e.logger.Info("Resuming workflow execution", "workflow", w.WorkflowID, "execution", w.ExecutionID, "fromTask", w.TaskID)
+
+	e.refreshViewer(w.ExecutionID)
 
 	e.runTasksFrom(execution, w.ExecutionOrder, w.CurrentIndex, w.TaskExports, w.TriggerEvent, w.SkippedTasks)
 }

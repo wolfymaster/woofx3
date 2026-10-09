@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,16 +14,26 @@ import (
 
 // countingViewer is a ViewerFacts that counts its reads.
 type countingViewer struct {
-	mu     sync.Mutex
-	reads  int
-	viewer map[string]any
+	mu       sync.Mutex
+	reads    int
+	triggers []string
+	viewer   map[string]any
+	err      error
 }
 
-func (v *countingViewer) Viewer(context.Context, *types.Event) map[string]any {
+func (v *countingViewer) Viewer(_ context.Context, trigger string, _ *types.Event) (map[string]any, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.reads++
-	return v.viewer
+	v.triggers = append(v.triggers, trigger)
+	return v.viewer, v.err
+}
+
+func (v *countingViewer) set(viewer map[string]any, err error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.viewer = viewer
+	v.err = err
 }
 
 func (v *countingViewer) readCount() int {
@@ -225,4 +237,94 @@ func TestEngineWithoutViewerFactsResolvesViewerAsMissing(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the run did not reach its step")
 	}
+}
+
+func TestViewerIsReadThroughTheWorkflowsTrigger(t *testing.T) {
+	h := newViewerHarness(t, apples(1))
+	h.register(t, "wf", nil, captureStep("a", map[string]any{"apples": "${viewer.user.apple_mentions}"}))
+	h.fire(t)
+	h.awaitCalls(t, 1)
+	h.facts.mu.Lock()
+	defer h.facts.mu.Unlock()
+	if len(h.facts.triggers) != 1 || h.facts.triggers[0] != "message.user.twitch" {
+		t.Fatalf("read through %v, want the workflow's trigger event", h.facts.triggers)
+	}
+}
+
+func TestUnavailableViewerFailsTriggerConditionsClosed(t *testing.T) {
+	h := newViewerHarness(t, nil)
+	h.facts.set(nil, errors.New("triggers not listed yet"))
+	h.register(t, "wf-first-chat",
+		[]types.ConditionConfig{{Field: "${viewer.user.messages}", Operator: "not_exists"}},
+		captureStep("a", nil))
+
+	h.fire(t)
+	h.awaitCalls(t, 0)
+
+	wf, err := h.engine.GetWorkflow("wf-first-chat")
+	if err != nil {
+		t.Fatalf("GetWorkflow: %v", err)
+	}
+	event := chatTriggerEvent()
+	unmet := h.engine.unmetTriggerConditions(wf, event, h.engine.newViewerLoader(viewerTrigger(wf), event))
+	if len(unmet) != 1 || !strings.Contains(unmet[0].Error, "viewer facts unavailable") {
+		t.Fatalf("unmet = %+v, want the condition failed with the load error", unmet)
+	}
+}
+
+func TestUnavailableViewerReadsAsMissingInSteps(t *testing.T) {
+	h := newViewerHarness(t, nil)
+	h.facts.set(map[string]any{"id": "u1", "platform": "twitch"}, errors.New("db proxy unreachable"))
+	h.register(t, "wf", nil,
+		captureStep("a", map[string]any{"apples": "${viewer.user.apple_mentions}", "who": "${viewer.id}"}),
+		captureStep("b", map[string]any{"apples": "${viewer.user.apple_mentions}"}, "a"))
+
+	h.fire(t)
+	calls := h.awaitCalls(t, 2)
+	if calls[0]["apples"] != nil || calls[0]["who"] != "u1" || calls[1]["apples"] != nil {
+		t.Fatalf("steps read %v, want missing facts and the event's own id", calls)
+	}
+	if n := h.facts.readCount(); n != 1 {
+		t.Fatalf("read %d times, want 1", n)
+	}
+}
+
+func TestResumeAfterAWaitReadsFreshFacts(t *testing.T) {
+	h := newViewerHarness(t, apples(1))
+	h.register(t, "wf", nil,
+		captureStep("before", map[string]any{"apples": "${viewer.user.apple_mentions}"}),
+		types.TaskDefinition{ID: "pause", Type: "wait", DependsOn: []string{"before"}, Wait: &types.WaitConfig{Type: "event", Event: "test.resume"}},
+		captureStep("after", map[string]any{"apples": "${viewer.user.apple_mentions}"}, "pause"))
+
+	h.fire(t)
+	if before := h.awaitCalls(t, 1); before[0]["apples"] != 1.0 {
+		t.Fatalf("before the wait: apples = %v, want 1", before[0]["apples"])
+	}
+	h.facts.set(apples(5), nil)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		h.engine.waitingMu.RLock()
+		armed := len(h.engine.armedWaits)
+		h.engine.waitingMu.RUnlock()
+		if armed == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the wait was never armed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := h.engine.HandleEvent(&types.Event{ID: "r1", Type: "test.resume", Source: "test", Time: time.Now()}); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	if after := h.awaitCalls(t, 1); after[0]["apples"] != 5.0 {
+		t.Fatalf("after the wait: apples = %v, want 5", after[0]["apples"])
+	}
+	if n := h.facts.readCount(); n != 2 {
+		t.Fatalf("read %d times, want once before and once after the wait", n)
+	}
+}
+
+func chatTriggerEvent() *types.Event {
+	return &types.Event{ID: "e1", Type: "message.user.twitch", Source: "twitch", Platform: "twitch", Time: time.Now(), Data: map[string]any{"chatterId": "u1"}}
 }

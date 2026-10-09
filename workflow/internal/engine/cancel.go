@@ -58,10 +58,9 @@ type runControl struct {
 	// stop, so it settles as failed rather than cancelled.
 	stopped bool
 
-	// viewer loads the run's `${viewer.*}` data. Kept here, beside the rest of
-	// the run's lifetime state, so every step and a resume after a wait share
-	// one read.
-	viewer func() any
+	// viewer is the run's `${viewer.*}` source, kept beside the rest of the
+	// run's lifetime state so its steps share one read until a pause.
+	viewer *runViewer
 }
 
 // claimSettle marks the run settled with `status`, or reports that it already
@@ -136,7 +135,7 @@ func isTerminalStatus(status types.ExecutionStatus) bool {
 // Stop ends the engine, and it is not a request to cancel every run in flight,
 // which would record as cancelled runs nobody asked to stop. Stop gives runs
 // time to finish and abandons the rest one by one (see abandonRun).
-func (e *Engine[TServices]) registerRunLocked(executionID string, viewer func() any) {
+func (e *Engine[TServices]) registerRunLocked(executionID string, viewer *runViewer) {
 	if viewer == nil {
 		panic(fmt.Sprintf("engine: run %s registered without a viewer loader", executionID))
 	}

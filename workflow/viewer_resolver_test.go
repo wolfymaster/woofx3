@@ -15,6 +15,8 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
+const chatTrigger = "message.user.twitch"
+
 const chatEmits = `{"fields":[` +
 	`{"path":"chatterId","type":"string","identity":"viewer","displayName":"chatterName"},` +
 	`{"path":"chatterName","type":"string"},{"path":"message","type":"string"}]}`
@@ -40,55 +42,65 @@ func TestTriggerIdentityCatalogLookup(t *testing.T) {
 	plain := `{"fields":[{"path":"amount","type":"number"}]}`
 
 	for _, tc := range []struct {
-		name      string
-		triggers  []*dbv1.Trigger
-		eventType string
-		want      string
+		name     string
+		triggers []*dbv1.Trigger
+		pattern  string
+		want     string
+		result   identityLookup
 	}{
-		{"string identity", []*dbv1.Trigger{moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)}, "message.user.twitch", "chatterId"},
-		{"no trigger for the event", []*dbv1.Trigger{moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)}, "channel.cheer", ""},
-		{"array identity", []*dbv1.Trigger{moduleTrigger("twitch", "presence", "chat.presence", presence)}, "chat.presence", ""},
-		{"several identities", []*dbv1.Trigger{moduleTrigger("twitch", "raid", "channel.raid", several)}, "channel.raid", ""},
-		{"no identity", []*dbv1.Trigger{moduleTrigger("twitch", "tip", "channel.tip", plain)}, "channel.tip", ""},
-		{"no emits", []*dbv1.Trigger{moduleTrigger("twitch", "tip", "channel.tip", "")}, "channel.tip", ""},
-		{"pattern", []*dbv1.Trigger{moduleTrigger("twitch", "cheer", "channel.*", cheer)}, "channel.cheer", "userId"},
-		{"agreeing triggers", []*dbv1.Trigger{
-			moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits),
-			moduleTrigger("other", "chat", "message.user.twitch", chatEmits),
-		}, "message.user.twitch", "chatterId"},
-		{"a trigger marking nothing does not vote", []*dbv1.Trigger{
-			moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits),
-			moduleTrigger("old", "chat", "message.user.twitch", plain),
-		}, "message.user.twitch", "chatterId"},
-		{"disagreeing triggers", []*dbv1.Trigger{
-			moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits),
+		{"string identity", []*dbv1.Trigger{moduleTrigger("twitch", "chat", chatTrigger, chatEmits)}, chatTrigger, "chatterId", identityFound},
+		{"no trigger with the pattern", []*dbv1.Trigger{moduleTrigger("twitch", "chat", chatTrigger, chatEmits)}, "channel.cheer", "", identityNone},
+		{"array identity", []*dbv1.Trigger{moduleTrigger("twitch", "presence", "chat.presence", presence)}, "chat.presence", "", identityNone},
+		{"several identities", []*dbv1.Trigger{moduleTrigger("twitch", "raid", "channel.raid", several)}, "channel.raid", "", identityNone},
+		{"no identity", []*dbv1.Trigger{moduleTrigger("twitch", "tip", "channel.tip", plain)}, "channel.tip", "", identityNone},
+		{"no emits", []*dbv1.Trigger{moduleTrigger("twitch", "tip", "channel.tip", "")}, "channel.tip", "", identityNone},
+		{"wildcard pattern by its own pattern", []*dbv1.Trigger{moduleTrigger("twitch", "cheer", "channel.*", cheer)}, "channel.*", "userId", identityFound},
+		{"wildcard pattern does not answer for a subject it matches", []*dbv1.Trigger{moduleTrigger("twitch", "cheer", "channel.*", cheer)}, "channel.cheer", "", identityNone},
+		{"another pattern matching the same events is not consulted", []*dbv1.Trigger{
+			moduleTrigger("twitch", "chat", chatTrigger, chatEmits),
 			moduleTrigger("other", "cheer", "message.user.*", cheer),
-		}, "message.user.twitch", ""},
+		}, chatTrigger, "chatterId", identityFound},
+		{"agreeing triggers", []*dbv1.Trigger{
+			moduleTrigger("twitch", "chat", chatTrigger, chatEmits),
+			moduleTrigger("other", "chat", chatTrigger, chatEmits),
+		}, chatTrigger, "chatterId", identityFound},
+		{"a trigger marking nothing does not vote", []*dbv1.Trigger{
+			moduleTrigger("twitch", "chat", chatTrigger, chatEmits),
+			moduleTrigger("old", "chat", chatTrigger, plain),
+		}, chatTrigger, "chatterId", identityFound},
+		{"disagreeing triggers", []*dbv1.Trigger{
+			moduleTrigger("twitch", "chat", chatTrigger, chatEmits),
+			moduleTrigger("other", "cheer", chatTrigger, cheer),
+		}, chatTrigger, "", identityConflict},
 		{"an array identity beside a string one", []*dbv1.Trigger{
 			moduleTrigger("twitch", "chat", "chat.presence", chatEmits),
 			moduleTrigger("twitch", "presence", "chat.presence", presence),
-		}, "chat.presence", ""},
+		}, "chat.presence", "", identityConflict},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := catalogOf(t, tc.triggers...).lookup(tc.eventType)
-			if ok != (tc.want != "") || got.path != tc.want {
-				t.Fatalf("lookup = %q, %v; want %q", got.path, ok, tc.want)
+			got, result, _ := catalogOf(t, tc.triggers...).lookup(tc.pattern)
+			if result != tc.result || got.path != tc.want {
+				t.Fatalf("lookup = %q, %v; want %q, %v", got.path, result, tc.want, tc.result)
 			}
 		})
+	}
+
+	if _, result, _ := newTriggerIdentityCatalog().lookup(chatTrigger); result != identityUnknown {
+		t.Fatalf("an unloaded catalog answered %v, want identityUnknown", result)
 	}
 }
 
 func TestTriggerIdentityCatalogReportsUnreadableEmits(t *testing.T) {
 	c := newTriggerIdentityCatalog()
 	failed := c.replace([]*dbv1.Trigger{
-		moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits),
-		moduleTrigger("broken", "thing", "message.user.twitch", `{"fields":`),
+		moduleTrigger("twitch", "chat", chatTrigger, chatEmits),
+		moduleTrigger("broken", "thing", chatTrigger, `{"fields":`),
 	})
 	if _, ok := failed["broken:trigger:thing"]; !ok || len(failed) != 1 {
 		t.Fatalf("failed = %v, want the broken trigger alone", failed)
 	}
-	if got, ok := c.lookup("message.user.twitch"); !ok || got.path != "chatterId" {
-		t.Fatalf("lookup = %q, %v; the readable trigger was lost", got.path, ok)
+	if got, result, _ := c.lookup(chatTrigger); result != identityFound || got.path != "chatterId" {
+		t.Fatalf("lookup = %q, %v; the readable trigger was lost", got.path, result)
 	}
 }
 
@@ -131,7 +143,12 @@ func num(n float64) *dbv1.FactValue { return &dbv1.FactValue{Num: &n} }
 func str(s string) *dbv1.FactValue  { return &dbv1.FactValue{Str: &s} }
 
 func chatEvent(id string, data map[string]any) *types.Event {
-	return &types.Event{ID: id, Type: "message.user.twitch", Source: "twitch", Platform: "twitch", Time: time.Now(), Data: data}
+	return &types.Event{ID: id, Type: chatTrigger, Source: "twitch", Platform: "twitch", Time: time.Now(), Data: data}
+}
+
+func chatReader(t *testing.T, db dbv1.ViewerFactService, logger *factLogger) *viewerFactReader {
+	t.Helper()
+	return newViewerFactReader(db, catalogOf(t, moduleTrigger("twitch", "chat", chatTrigger, chatEmits)), logger)
 }
 
 func TestViewerFactReaderMapsFactIDsToPaths(t *testing.T) {
@@ -152,9 +169,12 @@ func TestViewerFactReaderMapsFactIDsToPaths(t *testing.T) {
 		}, SubjectName: &chatterName}
 	}}
 	logger := &factLogger{}
-	reader := newViewerFactReader(db, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), logger)
+	reader := chatReader(t, db, logger)
 
-	got := reader.Viewer(context.Background(), chatEvent("e1", map[string]any{"chatterId": "u1"}))
+	got, err := reader.Viewer(context.Background(), chatTrigger, chatEvent("e1", map[string]any{"chatterId": "u1", "chatterName": "wolfy_old"}))
+	if err != nil {
+		t.Fatalf("Viewer: %v", err)
+	}
 	want := map[string]any{
 		"id":       "u1",
 		"platform": "twitch",
@@ -175,43 +195,55 @@ func TestViewerFactReaderMapsFactIDsToPaths(t *testing.T) {
 	}
 
 	const reserved = "Fact's owner is a reserved ${viewer.*} key; the fact cannot be read there"
-	reader.Viewer(context.Background(), chatEvent("e2", map[string]any{"chatterId": "u1"}))
+	if _, err := reader.Viewer(context.Background(), chatTrigger, chatEvent("e2", map[string]any{"chatterId": "u1"})); err != nil {
+		t.Fatalf("Viewer: %v", err)
+	}
 	if n := logger.count(warnsOf, reserved); n != 3 {
 		t.Fatalf("logged %d reserved-owner facts across two reads, want one line for each of 3", n)
 	}
 }
 
-func TestViewerFactReaderLeavesNameOutWhenTheDbHasNone(t *testing.T) {
-	reader := newViewerFactReader(&fakeViewerReads{}, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), &factLogger{})
-	got := reader.Viewer(context.Background(), chatEvent("e1", map[string]any{"chatterId": "u1"}))
-	if _, ok := got["name"]; ok {
-		t.Fatalf("Viewer = %v, want no name", got)
+func TestViewerNameFallsBackToTheEventsDisplayName(t *testing.T) {
+	reader := chatReader(t, &fakeViewerReads{}, &factLogger{})
+	got, err := reader.Viewer(context.Background(), chatTrigger, chatEvent("e1", map[string]any{"chatterId": "u1", "chatterName": "wolfy"}))
+	if err != nil || got["name"] != "wolfy" {
+		t.Fatalf("name = %v (%v), want the event's display name", got["name"], err)
+	}
+	got, err = reader.Viewer(context.Background(), chatTrigger, chatEvent("e2", map[string]any{"chatterId": "u1"}))
+	if _, ok := got["name"]; ok || err != nil {
+		t.Fatalf("Viewer = %v (%v), want no name when neither the db nor the event has one", got, err)
 	}
 }
 
 func TestViewerFactReaderNamesNoViewer(t *testing.T) {
 	cheer := `{"fields":[{"path":"userId","type":"string","identity":"viewer","anonymousWhen":"isAnonymous"},` +
 		`{"path":"isAnonymous","type":"boolean"}]}`
+	conflicting := `{"fields":[{"path":"userId","type":"string","identity":"viewer"}]}`
 	catalog := catalogOf(t,
-		moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits),
-		moduleTrigger("twitch", "cheer", "channel.cheer", cheer))
+		moduleTrigger("twitch", "chat", chatTrigger, chatEmits),
+		moduleTrigger("twitch", "cheer", "channel.cheer", cheer),
+		moduleTrigger("twitch", "raid", "channel.raid", chatEmits),
+		moduleTrigger("other", "raid", "channel.raid", conflicting))
 
 	for _, tc := range []struct {
-		name  string
-		event *types.Event
+		name    string
+		trigger string
+		event   *types.Event
 	}{
-		{"no platform", &types.Event{ID: "e", Type: "message.user.twitch", Data: map[string]any{"chatterId": "u1"}}},
-		{"unknown trigger", &types.Event{ID: "e", Type: "channel.follow", Platform: "twitch", Data: map[string]any{"userId": "u1"}}},
-		{"anonymous", &types.Event{ID: "e", Type: "channel.cheer", Platform: "twitch", Data: map[string]any{"userId": "ananonymouscheerer", "isAnonymous": true}}},
-		{"identity absent", chatEvent("e", map[string]any{"message": "hi"})},
-		{"identity empty", chatEvent("e", map[string]any{"chatterId": ""})},
-		{"identity not a string", chatEvent("e", map[string]any{"chatterId": 42})},
+		{"no platform", chatTrigger, &types.Event{ID: "e", Type: chatTrigger, Data: map[string]any{"chatterId": "u1"}}},
+		{"no trigger", "", chatEvent("e", map[string]any{"chatterId": "u1"})},
+		{"unknown trigger", "channel.follow", &types.Event{ID: "e", Type: "channel.follow", Platform: "twitch", Data: map[string]any{"userId": "u1"}}},
+		{"conflicting triggers", "channel.raid", &types.Event{ID: "e", Type: "channel.raid", Platform: "twitch", Data: map[string]any{"chatterId": "u1", "userId": "u1"}}},
+		{"anonymous", "channel.cheer", &types.Event{ID: "e", Type: "channel.cheer", Platform: "twitch", Data: map[string]any{"userId": "ananonymouscheerer", "isAnonymous": true}}},
+		{"identity absent", chatTrigger, chatEvent("e", map[string]any{"message": "hi"})},
+		{"identity empty", chatTrigger, chatEvent("e", map[string]any{"chatterId": ""})},
+		{"identity not a string", chatTrigger, chatEvent("e", map[string]any{"chatterId": 42})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := &fakeViewerReads{}
 			reader := newViewerFactReader(db, catalog, &factLogger{})
-			if got := reader.Viewer(context.Background(), tc.event); got != nil {
-				t.Fatalf("Viewer = %v, want nil", got)
+			if got, err := reader.Viewer(context.Background(), tc.trigger, tc.event); got != nil || err != nil {
+				t.Fatalf("Viewer = %v, %v; want nil, nil", got, err)
 			}
 			if db.readCount() != 0 {
 				t.Fatal("read facts for an event that names no viewer")
@@ -220,32 +252,76 @@ func TestViewerFactReaderNamesNoViewer(t *testing.T) {
 	}
 
 	db := &fakeViewerReads{}
-	named := newViewerFactReader(db, catalog, &factLogger{}).Viewer(context.Background(),
+	named, err := newViewerFactReader(db, catalog, &factLogger{}).Viewer(context.Background(), "channel.cheer",
 		&types.Event{ID: "e", Type: "channel.cheer", Platform: "twitch", Data: map[string]any{"userId": "u7", "isAnonymous": false}})
-	if named["id"] != "u7" {
-		t.Fatalf("a cheer that is not anonymous named %v", named["id"])
+	if err != nil || named["id"] != "u7" {
+		t.Fatalf("a cheer that is not anonymous named %v (%v)", named["id"], err)
 	}
 }
 
-func TestViewerFactReaderFailureLeavesFactsMissingAndLogsOnce(t *testing.T) {
+func TestViewerFactReaderLogsATriggerConflictOnce(t *testing.T) {
+	logger := &factLogger{}
+	reader := newViewerFactReader(&fakeViewerReads{}, catalogOf(t,
+		moduleTrigger("twitch", "raid", "channel.raid", chatEmits),
+		moduleTrigger("other", "raid", "channel.raid", `{"fields":[{"path":"userId","type":"string","identity":"viewer"}]}`)), logger)
+	event := &types.Event{ID: "e", Type: "channel.raid", Platform: "twitch", Data: map[string]any{"chatterId": "u1"}}
+	for i := 0; i < 3; i++ {
+		_, _ = reader.Viewer(context.Background(), "channel.raid", event)
+	}
+	if n := logger.count(warnsOf, "Triggers disagree on which field names the viewer; ${viewer.*} is missing for their events"); n != 1 {
+		t.Fatalf("logged the conflict %d times, want 1", n)
+	}
+}
+
+func TestViewerFactReaderFailsBeforeTheCatalogLoads(t *testing.T) {
+	db := &fakeViewerReads{}
+	reader := newViewerFactReader(db, newTriggerIdentityCatalog(), &factLogger{})
+	got, err := reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
+	if !errors.Is(err, errTriggersNotLoaded) || got != nil {
+		t.Fatalf("Viewer = %v, %v; want the catalog not loaded", got, err)
+	}
+	if db.readCount() != 0 {
+		t.Fatal("read facts without knowing the viewer")
+	}
+}
+
+func TestViewerFactReaderLogsAnsweredErrorsOncePerError(t *testing.T) {
 	db := &fakeViewerReads{err: errors.New("internal: db locked")}
 	logger := &factLogger{}
-	reader := newViewerFactReader(db, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), logger)
-	const unreadable, readable = "Viewer facts unreadable; ${viewer.*} facts resolve as missing", "Viewer facts readable again"
+	reader := chatReader(t, db, logger)
+	const failed = "Viewer facts read failed"
 
 	for i := 0; i < 3; i++ {
-		got := reader.Viewer(context.Background(), chatEvent("e", map[string]any{"chatterId": "u1"}))
-		if !reflect.DeepEqual(got, map[string]any{"id": "u1", "platform": "twitch"}) {
-			t.Fatalf("Viewer = %v, want only the viewer's id and platform", got)
+		got, err := reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
+		if err == nil || !reflect.DeepEqual(got, map[string]any{"id": "u1", "platform": "twitch"}) {
+			t.Fatalf("Viewer = %v, %v; want an error and only what the event says", got, err)
 		}
 	}
-	if n := logger.count(warnsOf, unreadable); n != 1 {
-		t.Fatalf("logged the failure %d times, want 1", n)
+	db.fail(errors.New("internal: no such table"))
+	_, _ = reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
+	if n := logger.count(warnsOf, failed); n != 2 {
+		t.Fatalf("logged %d answered failures, want one per distinct error (2)", n)
 	}
+	if n := logger.count(warnsOf, "Viewer facts unreadable; db proxy unreachable"); n != 0 {
+		t.Fatal("an answered error was logged as an outage")
+	}
+}
 
+func TestViewerFactReaderLogsAnOutageOnceUntilItEnds(t *testing.T) {
+	db := &fakeViewerReads{err: &url.Error{Op: "Post", URL: "http://db", Err: errors.New("connection refused")}}
+	logger := &factLogger{}
+	reader := chatReader(t, db, logger)
+	const outage, readable = "Viewer facts unreadable; db proxy unreachable", "Viewer facts readable again"
+
+	for i := 0; i < 3; i++ {
+		_, _ = reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
+	}
+	if n := logger.count(warnsOf, outage); n != 1 {
+		t.Fatalf("logged the outage %d times, want 1", n)
+	}
 	db.fail(nil)
-	reader.Viewer(context.Background(), chatEvent("e", map[string]any{"chatterId": "u1"}))
-	reader.Viewer(context.Background(), chatEvent("e", map[string]any{"chatterId": "u1"}))
+	_, _ = reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
+	_, _ = reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
 	if n := logger.count(infosOf, readable); n != 1 {
 		t.Fatalf("logged the recovery %d times, want 1", n)
 	}
@@ -254,10 +330,13 @@ func TestViewerFactReaderFailureLeavesFactsMissingAndLogsOnce(t *testing.T) {
 func TestViewerFactReaderStopsReadingFromAnUnreachableProxy(t *testing.T) {
 	db := &fakeViewerReads{err: &url.Error{Op: "Post", URL: "http://db", Err: errors.New("connection refused")}}
 	logger := &factLogger{}
-	reader := newViewerFactReader(db, catalogOf(t, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits)), logger)
+	reader := chatReader(t, db, logger)
 
 	for i := 0; i < reader.breaker.threshold+3; i++ {
-		reader.Viewer(context.Background(), chatEvent("e", map[string]any{"chatterId": "u1"}))
+		_, err := reader.Viewer(context.Background(), chatTrigger, chatEvent("e", map[string]any{"chatterId": "u1"}))
+		if err == nil {
+			t.Fatal("a failed or skipped read reported no error")
+		}
 	}
 	if n := db.readCount(); n != reader.breaker.threshold {
 		t.Fatalf("sent %d reads, want %d before the breaker opened", n, reader.breaker.threshold)
@@ -315,7 +394,7 @@ func TestTriggerCatalogReloaderRetriesThenFollowsTriggerChanges(t *testing.T) {
 		t.Helper()
 		deadline := time.Now().Add(2 * time.Second)
 		for {
-			got, _ := catalog.lookup("message.user.twitch")
+			got, _, _ := catalog.lookup(chatTrigger)
 			if got.path == want {
 				return
 			}
@@ -329,7 +408,7 @@ func TestTriggerCatalogReloaderRetriesThenFollowsTriggerChanges(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	db.set(nil, moduleTrigger("twitch", "chat", "message.user.twitch", chatEmits))
 	awaitPath("chatterId")
-	if logger.count(warnsOf, "Triggers unavailable; ${viewer.*} resolves as missing until they list") != 1 {
+	if logger.count(warnsOf, "Triggers unavailable; ${viewer.*} cannot name a viewer until they list") != 1 {
 		t.Fatal("the list failure was not logged once across retries")
 	}
 
@@ -407,4 +486,101 @@ func TestViewerConditionSeesTheTriggeringEvent(t *testing.T) {
 	if n := reads.readCount(); n != 2 {
 		t.Fatalf("read the viewer's facts %d times for two events, want 2", n)
 	}
+}
+
+func TestUnloadedCatalogFailsTriggerConditionsAndLeavesStepsMissing(t *testing.T) {
+	logger := &factLogger{}
+	app := NewWorkflowApp(logger)
+	reads := &fakeViewerReads{}
+	app.engine.SetViewerFacts(newViewerFactReader(reads, newTriggerIdentityCatalog(), logger))
+	ran := make(chan map[string]any, 4)
+	if err := app.engine.RegisterAction("record", func(_ tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		ran <- params
+		return nil, nil
+	}); err != nil {
+		t.Fatalf("RegisterAction: %v", err)
+	}
+	for _, wf := range []*types.WorkflowDefinition{
+		{
+			ID: "wf-first-chat", Name: "first chat",
+			Trigger: &types.TriggerConfig{Type: "event", Event: chatTrigger,
+				Conditions: []types.ConditionConfig{{Field: "${viewer.user.messages}", Operator: "not_exists"}}},
+			Tasks: []types.TaskDefinition{{ID: "greet", Type: "action", Action: "record", Parameters: map[string]any{"from": "first-chat"}}},
+		},
+		{
+			ID: "wf-echo", Name: "echo",
+			Trigger: &types.TriggerConfig{Type: "event", Event: chatTrigger},
+			Tasks: []types.TaskDefinition{{ID: "echo", Type: "action", Action: "record",
+				Parameters: map[string]any{"from": "echo", "messages": "${viewer.user.messages}"}}},
+		},
+	} {
+		if err := app.engine.RegisterWorkflow(wf); err != nil {
+			t.Fatalf("RegisterWorkflow: %v", err)
+		}
+	}
+	t.Cleanup(func() { _ = app.engine.Stop() })
+
+	app.handleTriggerEvent(chatPayload("e1", "u1"), chatTrigger)
+	select {
+	case params := <-ran:
+		if params["from"] != "echo" || params["messages"] != nil {
+			t.Fatalf("ran %v, want only the echo step with missing messages", params)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the workflow without a viewer condition did not run")
+	}
+	select {
+	case params := <-ran:
+		t.Fatalf("a viewer condition held while the catalog was not loaded: %v", params)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if reads.readCount() != 0 {
+		t.Fatal("read facts without knowing the viewer")
+	}
+	if n := logger.count(warnsOf, "${viewer.*} unavailable; this run's steps read the viewer's facts as missing"); n != 1 {
+		t.Fatalf("the step's missing viewer was logged %d times, want 1", n)
+	}
+}
+
+func TestTriggerCatalogLoadNowSparesRunItsFirstLoad(t *testing.T) {
+	db := &countingModuleService{fakeModuleService: fakeModuleService{triggers: []*dbv1.Trigger{moduleTrigger("twitch", "chat", chatTrigger, chatEmits)}}}
+	catalog := newTriggerIdentityCatalog()
+	r := newTriggerCatalogReloader(catalog, db, &factLogger{})
+	r.interval = time.Hour
+	if !r.LoadNow(context.Background(), time.Second) {
+		t.Fatal("LoadNow failed")
+	}
+	if _, result, _ := catalog.lookup(chatTrigger); result != identityFound {
+		t.Fatalf("lookup after LoadNow = %v", result)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+	if n := db.listCount(); n != 1 {
+		t.Fatalf("listed %d times, want only LoadNow's", n)
+	}
+}
+
+type countingModuleService struct {
+	fakeModuleService
+	lists int
+}
+
+func (f *countingModuleService) ListTriggers(ctx context.Context, req *dbv1.ListTriggersRequest) (*dbv1.ListTriggersResponse, error) {
+	f.mu.Lock()
+	f.lists++
+	f.mu.Unlock()
+	return f.fakeModuleService.ListTriggers(ctx, req)
+}
+
+func (f *countingModuleService) listCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lists
 }
