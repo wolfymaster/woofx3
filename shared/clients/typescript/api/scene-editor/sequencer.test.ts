@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { diffDocuments, type EntrySource, type Ops, type SceneDocument, sameValue } from "./document";
+import {
+  diffDocuments,
+  type EntrySource,
+  MAX_DOCUMENT_BYTES,
+  MAX_ITEM_BYTES,
+  MAX_OPS_BYTES,
+  type Ops,
+  type SceneDocument,
+  sameValue,
+} from "./document";
 import type { ItemBody } from "./protocol";
 import {
   CLIENT_RETENTION_COUNT,
@@ -395,5 +404,152 @@ describe("decideWelcome", () => {
     submit(reloaded, A, 3, edit("draft", [{ p: ["layout", "x"], oi: 1 }]));
     submit(reloaded, { clientId: A.clientId, seq: 2 }, 4, edit("draft", [{ p: ["layout", "y"], oi: 1 }]));
     expect(decideWelcome(reloaded, { v: 5, id: "e1.5" })).toEqual({ kind: "snapshot", diverged: true });
+  });
+});
+
+describe("a live edit copied into the draft, per touched field", () => {
+  test("a live layout edit keeps the draft's own edits to other layout keys", () => {
+    const state = newState();
+    submit(state, A, 0, edit("draft", [{ p: ["layout", "theme"], oi: "dark" }]));
+    submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("published", [{ p: ["layout", "width"], od: 1920, oi: 1280 }])
+    );
+    expect(state.docs.draft.layout).toEqual({ width: 1280, height: 1080, theme: "dark" });
+  });
+
+  test("a live edit to a placement the draft removed does not bring it back", () => {
+    const state = newState(sceneDoc({ w: placement(), v: placement() }));
+    submit(state, A, 0, edit("draft", [{ p: ["widgets", "w"], od: placement() }]));
+    const reply = submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("published", [{ p: ["widgets", "w", "x"], od: 0, oi: 3 }])
+    );
+    expect(reply).toMatchObject({
+      type: "entry",
+      changes: { published: [{ p: ["widgets", "w", "x"], od: 0, oi: 3 }] },
+    });
+    expect(Object.keys(state.docs.draft.widgets)).toEqual(["v"]);
+  });
+
+  test("a live replacement of a placement the draft removed does not bring it back; a live addition does add", () => {
+    const state = newState(sceneDoc({ w: placement() }));
+    submit(state, A, 0, edit("draft", [{ p: ["widgets", "w"], od: placement() }]));
+    submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("published", [
+        { p: ["widgets", "w"], od: placement(), oi: placement({ x: 9 }) },
+        { p: ["widgets", "n"], oi: placement({ x: 4 }) },
+      ])
+    );
+    expect(Object.keys(state.docs.draft.widgets)).toEqual(["n"]);
+  });
+});
+
+describe("external changes", () => {
+  test("are not bound by the size limit on an editor's item, only by the document's", () => {
+    const state = newState();
+    const big = "x".repeat(MAX_OPS_BYTES * 2);
+    const plan = prepare(state, 0, {
+      kind: "external",
+      version: "published",
+      ops: [{ p: ["layout", "note"], oi: big }],
+      mirrorIntoDraft: true,
+    });
+    expect(plan.refused).toBe(false);
+    const huge = prepare(state, 0, {
+      kind: "external",
+      version: "published",
+      ops: [{ p: ["layout", "note"], oi: "x".repeat(MAX_DOCUMENT_BYTES) }],
+      mirrorIntoDraft: true,
+    });
+    expect(huge).toMatchObject({ refused: true, code: "invalid", detail: "the scene would be too large" });
+  });
+
+  test("with no ops change nothing", () => {
+    const state = newState();
+    const plan = planOf(prepare(state, 0, { kind: "external", version: "published", ops: [], mirrorIntoDraft: true }));
+    expect(commit(state, plan, {}, null, 0)).toBeNull();
+    expect(state.v).toBe(0);
+  });
+});
+
+describe("item size", () => {
+  test("an item larger than a client queues, as transforms can make it, is taken up to MAX_ITEM_BYTES", () => {
+    const state = newState();
+    const grown = prepare(state, 0, edit("draft", [{ p: ["layout", "note"], oi: "x".repeat(MAX_OPS_BYTES * 2) }]));
+    expect(grown.refused).toBe(false);
+    const tooLarge = prepare(
+      state,
+      0,
+      edit("draft", [{ p: ["layout", "note"], od: "x".repeat(MAX_ITEM_BYTES), oi: 1 }])
+    );
+    expect(tooLarge).toMatchObject({ refused: true, code: "invalid", detail: "ops too large" });
+  });
+
+  test("text spliced past a field's limit is refused", () => {
+    const state = newState(sceneDoc({ w: placement({ name: "x".repeat(256) }) }));
+    expect(prepare(state, 0, edit("draft", [{ p: ["widgets", "w", "name", 0], si: "y" }]))).toMatchObject({
+      refused: true,
+      code: "invalid",
+      detail: "placement w would not be valid",
+    });
+  });
+});
+
+describe("bounded state", () => {
+  test("an entry larger than the log's byte budget is still kept as the newest", () => {
+    const doc = sceneDoc();
+    const state = createSequencerState({
+      docs: { draft: { ...doc, layout: { ...doc.layout, big: "x".repeat(LOG_MAX_BYTES + 1) } }, published: doc },
+      hasDraft: true,
+      editorState: { ...EMPTY_EDITOR_STATE, clients: {} },
+      epoch: "e1",
+    });
+    submit(state, A, 0, { kind: "publish" });
+    expect(state.log.map((entry) => entry.v)).toEqual([1]);
+    const behind = prepare(state, 0, edit("draft", [{ p: ["layout", "width"], od: 1920, oi: 1280 }]));
+    expect(behind.refused).toBe(false);
+  });
+
+  test(`the in-memory watermarks are pruned to the ${CLIENT_RETENTION_COUNT} most recent`, () => {
+    const state = newState();
+    for (let i = 0; i < CLIENT_RETENTION_COUNT + 20; i++) {
+      submit(state, { clientId: `c${i}`, seq: 1 }, state.v, edit("draft", [{ p: ["layout", "n"], oi: i }]), i);
+    }
+    expect(state.clients.size).toBeLessThanOrEqual(CLIENT_RETENTION_COUNT);
+    expect(state.clients.has(`c${CLIENT_RETENTION_COUNT + 19}`)).toBe(true);
+    expect(state.clients.has("c0")).toBe(false);
+  });
+
+  test("the document size is tracked exactly as edits, live copies, publishes and discards land", () => {
+    const state = newState(sceneDoc({ w: placement({ name: "ab" }), v: placement() }));
+    const exact = () => ({
+      draft: JSON.stringify(state.docs.draft).length,
+      published: JSON.stringify(state.docs.published).length,
+    });
+    let seq = 1;
+    const send = (body: ItemBody) => submit(state, { clientId: "a", seq: seq++ }, state.v, body);
+    send(edit("draft", [{ p: ["widgets", "w", "name", 1], si: "xyz" }]));
+    expect(state.docBytes).toEqual(exact());
+    send(edit("draft", [{ p: ["layout", "theme"], oi: "dark" }]));
+    send(edit("published", [{ p: ["widgets", "n"], oi: placement({ settings: { a: "b" } }) }]));
+    expect(state.docBytes).toEqual(exact());
+    send(edit("published", [{ p: ["widgets", "v"], od: placement() }]));
+    send(edit("draft", [{ p: ["widgets", "n", "settings", "a"], od: "b" }]));
+    expect(state.docBytes).toEqual(exact());
+    send({ kind: "publish" });
+    expect(state.docBytes).toEqual(exact());
+    send(edit("draft", [{ p: ["widgets", "w"], od: state.docs.draft.widgets.w }]));
+    send(edit("draft", [{ p: ["widgets", "n"], od: state.docs.draft.widgets.n }]));
+    expect(state.docBytes).toEqual(exact());
+    send({ kind: "discard" });
+    expect(state.docBytes).toEqual(exact());
   });
 });

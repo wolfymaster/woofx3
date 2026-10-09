@@ -130,10 +130,24 @@ export interface SceneOpsEvent {
   version?: Version;
 }
 
-/** Largest ops one item may carry, measured by `opsSize`. */
+/**
+ * Largest edit a client queues as one item, measured by `opsSize`. The client
+ * cuts a larger edit into items of at most this size, and refuses an edit
+ * holding a single component larger than this when it is made.
+ */
 export const MAX_OPS_BYTES = 64 * 1024;
 /** Largest a document may grow, measured as its JSON length. */
 export const MAX_DOCUMENT_BYTES = 1024 * 1024;
+/**
+ * Largest item the server takes, measured by `opsSize`. Larger than
+ * `MAX_OPS_BYTES` because an item that was within it when made can grow
+ * before it is sent: transforming it updates the values it removes (`od`) to
+ * what others changed them to, and moving it onto a snapshot sets whole
+ * fields. Either way it is still a change between two documents within
+ * `MAX_DOCUMENT_BYTES`, so what it removes and what it inserts are each at
+ * most that size; the third share covers paths and JSON punctuation.
+ */
+export const MAX_ITEM_BYTES = 3 * MAX_DOCUMENT_BYTES;
 
 /**
  * The size the limits are measured in: the JSON length in UTF-16 units. The
@@ -216,56 +230,117 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 }
 
 /**
- * The ops that turn `from` into `to`, as small as their shape allows: an
- * object is compared key by key, text changes as one splice, and anything
- * else is replaced whole. Every component carries what it removes, so the
- * result can be inverted.
+ * The ops that turn `from` into `to`, as small as their shape allows, and
+ * only in the shapes `invalidOps` accepts: a layout key is set or removed
+ * whole; a placement is inserted, removed or replaced whole; a placement's
+ * field is replaced whole, except that its name changes as one text splice
+ * and its settings and extra change key by key, with text as splices. Every
+ * component carries what it removes, so the result can be inverted.
+ *
+ * A placement in `to` with a field removed or added is replaced whole, and
+ * a field of the wrong type is replaced as it is; `invalidOps` refuses
+ * both, so such a change is turned down where it was made.
  */
 export function diffDocuments(from: SceneDocument, to: SceneDocument): Ops {
   const ops: Ops = [];
-  diffValue([], from, to, ops);
+  if (!isPlainObject(from.layout) || !isPlainObject(to.layout)) {
+    pushReplace(["layout"], from.layout, to.layout, ops);
+  } else {
+    diffKeys(["layout"], from.layout, to.layout, ops, pushReplace);
+  }
+  if (!isPlainObject(from.widgets) || !isPlainObject(to.widgets)) {
+    pushReplace(["widgets"], from.widgets, to.widgets, ops);
+  } else {
+    diffKeys(["widgets"], from.widgets, to.widgets, ops, diffPlacement);
+  }
   return ops;
 }
 
-function diffValue(path: (string | number)[], from: unknown, to: unknown, ops: Ops): void {
+type DiffValue = (path: (string | number)[], from: unknown, to: unknown, ops: Ops) => void;
+
+/** Keys only `from` has are removed, keys only `to` has are inserted, and shared keys are compared by `diffValue`. */
+function diffKeys(
+  path: (string | number)[],
+  from: Record<string, unknown>,
+  to: Record<string, unknown>,
+  ops: Ops,
+  diffValue: DiffValue
+): void {
+  for (const key of Object.keys(from)) {
+    if (!Object.hasOwn(to, key)) {
+      ops.push({ p: [...path, key], od: from[key] });
+    }
+  }
+  for (const key of Object.keys(to)) {
+    if (!Object.hasOwn(from, key)) {
+      ops.push({ p: [...path, key], oi: to[key] });
+    } else {
+      diffValue([...path, key], from[key], to[key], ops);
+    }
+  }
+}
+
+function pushReplace(path: (string | number)[], from: unknown, to: unknown, ops: Ops): void {
+  if (!sameValue(from, to)) {
+    ops.push({ p: path, od: from, oi: to });
+  }
+}
+
+function diffPlacement(path: (string | number)[], from: unknown, to: unknown, ops: Ops): void {
+  if (sameValue(from, to)) {
+    return;
+  }
+  if (!hasPlacementFields(from) || !hasPlacementFields(to)) {
+    pushReplace(path, from, to, ops);
+    return;
+  }
+  for (const field of Object.keys(PLACEMENT_FIELDS)) {
+    const fieldPath = [...path, field];
+    const fromValue = from[field];
+    const toValue = to[field];
+    if (TEXT_FIELDS.has(field) && typeof fromValue === "string" && typeof toValue === "string") {
+      diffText(fieldPath, fromValue, toValue, ops);
+    } else if (FREEFORM_FIELDS.has(field)) {
+      diffFreeform(fieldPath, fromValue, toValue, ops);
+    } else {
+      pushReplace(fieldPath, fromValue, toValue, ops);
+    }
+  }
+}
+
+function diffFreeform(path: (string | number)[], from: unknown, to: unknown, ops: Ops): void {
   if (sameValue(from, to)) {
     return;
   }
   if (isPlainObject(from) && isPlainObject(to)) {
-    for (const key of Object.keys(from)) {
-      if (!Object.hasOwn(to, key)) {
-        ops.push({ p: [...path, key], od: from[key] });
-      }
-    }
-    for (const key of Object.keys(to)) {
-      if (!Object.hasOwn(from, key)) {
-        ops.push({ p: [...path, key], oi: to[key] });
-      } else {
-        diffValue([...path, key], from[key], to[key], ops);
-      }
-    }
+    diffKeys(path, from, to, ops, diffFreeform);
     return;
   }
-  if (typeof from === "string" && typeof to === "string" && path.length > 0) {
-    let start = 0;
-    while (start < from.length && start < to.length && from[start] === to[start]) {
-      start++;
-    }
-    let endFrom = from.length;
-    let endTo = to.length;
-    while (endFrom > start && endTo > start && from[endFrom - 1] === to[endTo - 1]) {
-      endFrom--;
-      endTo--;
-    }
-    if (endFrom > start) {
-      ops.push({ p: [...path, start], sd: from.slice(start, endFrom) });
-    }
-    if (endTo > start) {
-      ops.push({ p: [...path, start], si: to.slice(start, endTo) });
-    }
+  if (typeof from === "string" && typeof to === "string") {
+    diffText(path, from, to, ops);
     return;
   }
-  ops.push({ p: path, od: from, oi: to });
+  pushReplace(path, from, to, ops);
+}
+
+/** One splice: what lies between the common prefix and the common suffix is deleted, then inserted. */
+function diffText(path: (string | number)[], from: string, to: string, ops: Ops): void {
+  let start = 0;
+  while (start < from.length && start < to.length && from[start] === to[start]) {
+    start++;
+  }
+  let endFrom = from.length;
+  let endTo = to.length;
+  while (endFrom > start && endTo > start && from[endFrom - 1] === to[endTo - 1]) {
+    endFrom--;
+    endTo--;
+  }
+  if (endFrom > start) {
+    ops.push({ p: [...path, start], sd: from.slice(start, endFrom) });
+  }
+  if (endTo > start) {
+    ops.push({ p: [...path, start], si: to.slice(start, endTo) });
+  }
 }
 
 /** A stacking key for the placement at `index`, bottom first. */
@@ -356,6 +431,27 @@ const PLACEMENT_FIELDS: Record<keyof PlacementDocument, (value: unknown) => bool
   extra: isPlainObject,
 };
 
+/**
+ * Placement fields edited as text, so concurrent edits to them merge. Every
+ * other plain field is replaced whole: `z` and `widget` are identifiers, and
+ * merging two splices of one would make a value neither side wrote.
+ */
+const TEXT_FIELDS: ReadonlySet<string> = new Set(["name"]);
+/** Placement fields holding the widget's and the editor's own data: edited key by key, at any depth. */
+const FREEFORM_FIELDS: ReadonlySet<string> = new Set(["settings", "extra"]);
+const COMPONENT_KEYS: ReadonlySet<string> = new Set(["p", "oi", "od", "si", "sd"]);
+
+/** Whether `value` has exactly a placement's fields, whatever their values. */
+function hasPlacementFields(value: unknown): value is Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const keys = Object.keys(value);
+  return (
+    keys.length === Object.keys(PLACEMENT_FIELDS).length && keys.every((key) => Object.hasOwn(PLACEMENT_FIELDS, key))
+  );
+}
+
 export function isPlacement(value: unknown): value is PlacementDocument {
   return (
     isPlainObject(value) &&
@@ -365,45 +461,128 @@ export function isPlacement(value: unknown): value is PlacementDocument {
 }
 
 /**
- * Why ops may not be applied to a scene document, or null when they may:
- * every path stays inside the layout or a placement, a placement inserted
- * whole is complete, and a placement's own fields keep their types. Settings
- * and layout values are the widget's and the editor's business. Whether the
- * ops apply to a given document is checked by applying them.
+ * Why ops may not be applied to a scene document, or null when they may.
+ * Each component must be one of these shapes, which are all `diffDocuments`
+ * makes and all that transforming them can turn them into:
+ *
+ * - `layout.<key>`: insert, remove or replace (`oi`, `od`, or both).
+ * - `widgets.<id>`: insert, remove or replace a whole, valid placement.
+ * - `widgets.<id>.<field>`: replace (`od` and `oi`) with a valid value. A
+ *   field is never inserted or removed alone: a placement has all of them.
+ * - `widgets.<id>.name.<index>`: insert or delete text (`si` or `sd`).
+ * - `widgets.<id>.<settings|extra>.<key>...`: insert, remove or replace a
+ *   value under string keys, or insert or delete text in one (`...<index>`).
+ *
+ * Anything else (number adds, list and subtype ops, replacing the layout or
+ * every placement at once, paths into lists) is refused. Size is checked by
+ * the caller, against its own limit. What these shapes cannot rule out (text
+ * spliced past a field's length limit) is checked on the result by
+ * `invalidResult`, and whether the ops apply at all by applying them.
  */
 export function invalidOps(ops: unknown): string | null {
   if (!Array.isArray(ops) || ops.length === 0) {
     return "ops must be a non-empty list";
   }
-  if (opsSize(ops) > MAX_OPS_BYTES) {
-    return "ops too large";
-  }
   for (const component of ops) {
-    if (!isPlainObject(component) || !Array.isArray(component.p) || component.p.length === 0) {
-      return "every op needs a path";
+    const invalid = invalidComponent(component);
+    if (invalid !== null) {
+      return invalid;
     }
-    const p = component.p as unknown[];
-    if (!p.every((segment) => typeof segment === "string" || (typeof segment === "number" && segment >= 0))) {
-      return "a path is made of keys and indexes";
+  }
+  return null;
+}
+
+function invalidComponent(component: unknown): string | null {
+  if (!isPlainObject(component) || !Array.isArray(component.p) || component.p.length === 0) {
+    return "every op needs a path";
+  }
+  if (!Object.keys(component).every((key) => COMPONENT_KEYS.has(key))) {
+    return "an op may only insert, remove or replace a value, or splice text";
+  }
+  const p = component.p as unknown[];
+  if (
+    !p.every((segment) => typeof segment === "string" || (Number.isSafeInteger(segment) && (segment as number) >= 0))
+  ) {
+    return "a path is made of keys and indexes";
+  }
+  const isSplice = "si" in component || "sd" in component;
+  if (isSplice) {
+    const text = "si" in component ? component.si : component.sd;
+    if (("si" in component && "sd" in component) || "oi" in component || "od" in component) {
+      return "a text splice either inserts or deletes, and nothing else";
     }
-    if (p[0] === "layout") {
-      continue;
+    if (typeof text !== "string" || text.length === 0) {
+      return "a text splice carries non-empty text";
     }
-    if (p[0] !== "widgets" || p.length < 2 || typeof p[1] !== "string" || p[1].length === 0 || p[1].length > 128) {
-      return "a path must start at the layout or a placement";
+  } else if (!("oi" in component) && !("od" in component)) {
+    return "an op must change something";
+  }
+  if (p[0] === "layout") {
+    if (p.length !== 2 || typeof p[1] !== "string" || isSplice) {
+      return "the layout changes one key at a time, replaced whole";
     }
-    if (p.length === 2) {
-      if ("oi" in component && !isPlacement(component.oi)) {
-        return "a placement must be inserted whole";
-      }
-      continue;
+    return null;
+  }
+  if (p[0] !== "widgets" || p.length < 2 || typeof p[1] !== "string" || p[1].length === 0 || p[1].length > 128) {
+    return "a path must start at a layout key or a placement";
+  }
+  if (p.length === 2) {
+    if (isSplice) {
+      return "a placement is not text";
     }
-    const field = p[2];
-    if (typeof field !== "string" || !Object.hasOwn(PLACEMENT_FIELDS, field)) {
-      return `a placement has no field ${String(field)}`;
+    if ("oi" in component && !isPlacement(component.oi)) {
+      return "a placement must be inserted whole";
     }
-    if (p.length === 3 && "oi" in component && !PLACEMENT_FIELDS[field as keyof PlacementDocument](component.oi)) {
+    return null;
+  }
+  const field = p[2];
+  if (typeof field !== "string" || !Object.hasOwn(PLACEMENT_FIELDS, field)) {
+    return `a placement has no field ${String(field)}`;
+  }
+  if (p.length === 3) {
+    if (isSplice || !("oi" in component) || !("od" in component)) {
+      return `${field} can only be replaced`;
+    }
+    if (!PLACEMENT_FIELDS[field as keyof PlacementDocument](component.oi)) {
       return `invalid ${field}`;
+    }
+    return null;
+  }
+  if (TEXT_FIELDS.has(field)) {
+    if (p.length !== 4 || !isSplice || typeof p[3] !== "number") {
+      return `${field} changes by text splices`;
+    }
+    return null;
+  }
+  if (!FREEFORM_FIELDS.has(field)) {
+    return `${field} can only be replaced`;
+  }
+  const keys = isSplice ? p.slice(3, -1) : p.slice(3);
+  if (keys.length === 0 || !keys.every((key) => typeof key === "string")) {
+    return `${field} changes key by key`;
+  }
+  if (isSplice && typeof p[p.length - 1] !== "number") {
+    return `a text splice in ${field} ends at an index`;
+  }
+  return null;
+}
+
+/**
+ * Why `doc`, the result of applying `ops`, is not a valid scene, or null
+ * when it is. Only what `ops` touched is checked: every placement they
+ * reached must still be a valid placement.
+ */
+export function invalidResult(doc: SceneDocument, ops: readonly Json0Component[]): string | null {
+  const checked = new Set<string>();
+  for (const component of ops) {
+    const [root, id] = component.p;
+    if (root !== "widgets" || typeof id !== "string" || checked.has(id)) {
+      continue;
+    }
+    checked.add(id);
+    const result = doc.widgets[id];
+    if (result !== undefined && !isPlacement(result)) {
+      return `placement ${id} would not be valid`;
     }
   }
   return null;

@@ -1,15 +1,17 @@
-// Moving pending edits onto a snapshot when they cannot be transformed.
+// Copying what an edit touched from one document onto another, field by
+// field, where its ops cannot be transformed.
 //
 // A client that reconnects after the server's log moved past it gets a
 // snapshot instead of the entries it missed, so its pending ops have nothing
 // to be transformed against. Each pending edit is replayed as "set every
 // field it touched to the value it meant", which keeps the user's intent per
-// field (last writer wins) at the cost of merging concurrent text edits.
+// field (last writer wins) at the cost of merging concurrent text edits. The
+// sequencer copies a live edit into the draft the same way.
 
 import {
   applyOps,
   diffDocuments,
-  type Ops,
+  type Json0Component,
   type PlacementDocument,
   type SceneDocument,
   type Version,
@@ -19,13 +21,9 @@ import type { ItemBody } from "./protocol";
 /**
  * `bodies`, made in order on `base`, remade in order on `target`.
  *
- * For each edit, the fields it touches are its paths cut to: a layout key
- * (or the whole layout), a placement (`widgets.<id>`), or a placement field
- * (`widgets.<id>.<field>`). Each is set to the value it has after the edit on
- * the old chain. A field edit to a placement `target` does not have is
- * dropped, as is a whole-placement edit to a placement that existed before
- * the edit but is gone from `target`; adding a placement is kept. Commands
- * pass through unchanged.
+ * Each edit is replayed as `copyTouched` from the old chain onto the new one:
+ * every field it touched is set to the value it has after the edit on the
+ * old chain. Commands pass through unchanged.
  *
  * An edit comes back with empty ops when nothing of it is left, and as null
  * when its ops did not apply to the old chain, which only a corrupted queue
@@ -52,7 +50,7 @@ export function rebaseFieldwise(
       rebased.push(null);
       continue;
     }
-    const next = withIntendedValues(before[version], after, current[version], touchedPaths(body.ops));
+    const next = copyTouched(before[version], after, current[version], body.ops);
     rebased.push({ kind: "edit", version, ops: diffDocuments(current[version], next) });
     before[version] = after;
     current[version] = next;
@@ -60,49 +58,32 @@ export function rebaseFieldwise(
   return rebased;
 }
 
-type TouchedPath =
-  | { kind: "layout" }
-  | { kind: "layoutKey"; key: string }
-  | { kind: "placement"; id: string }
-  | { kind: "field"; id: string; field: string };
-
 /**
- * The fields `ops` touch, field paths before placement paths: a placement
- * the edit replaced or removed wins over its own field edits.
+ * `into` with every field `ops` touched set to its value in `after`, where
+ * `ops` turned `before` into `after`. The sequencer uses it to copy a live
+ * edit into the draft, and `rebaseFieldwise` to move pending edits onto a
+ * snapshot, so both work at the same grain. A field is one of:
+ *
+ * - a layout key: set, or removed when `after` has no such key;
+ * - a placement (an op on `widgets.<id>` itself): removed when `after` has
+ *   none; otherwise copied whole when `into` has it, or when `before` did
+ *   not (the ops added it). A placement `before` had and `into` lacks was
+ *   removed on `into`'s side, and stays removed;
+ * - a placement's field (any op inside `widgets.<id>.<field>`, so settings
+ *   are copied whole): set when both `into` and `after` have the placement,
+ *   else skipped, so an edit never brings back a placement `into` removed.
+ *
+ * Field paths are applied before placement paths, so a placement the ops
+ * replaced or removed wins over the ops' own edits to its fields.
  */
-function touchedPaths(ops: Ops): TouchedPath[] {
-  const fields = new Map<string, TouchedPath>();
-  const placements = new Map<string, TouchedPath>();
-  for (const component of ops) {
-    const [root, second, third] = component.p;
-    if (root === "layout") {
-      if (typeof second === "string") {
-        fields.set(`layout.${second}`, { kind: "layoutKey", key: second });
-      } else {
-        placements.set("layout", { kind: "layout" });
-      }
-      continue;
-    }
-    if (root !== "widgets" || typeof second !== "string") {
-      continue;
-    }
-    if (typeof third === "string") {
-      fields.set(`widgets.${second}.${third}`, { kind: "field", id: second, field: third });
-    } else {
-      placements.set(`widgets.${second}`, { kind: "placement", id: second });
-    }
-  }
-  return [...fields.values(), ...placements.values()];
-}
-
-function withIntendedValues(
+export function copyTouched(
   before: SceneDocument,
   after: SceneDocument,
-  current: SceneDocument,
-  paths: TouchedPath[]
+  into: SceneDocument,
+  ops: readonly Json0Component[]
 ): SceneDocument {
-  const next: SceneDocument = structuredClone(current);
-  for (const path of paths) {
+  const next: SceneDocument = structuredClone(into);
+  for (const path of touchedPaths(ops)) {
     switch (path.kind) {
       case "layout": {
         next.layout = structuredClone(after.layout);
@@ -138,4 +119,39 @@ function withIntendedValues(
     }
   }
   return next;
+}
+
+type TouchedPath =
+  | { kind: "layout" }
+  | { kind: "layoutKey"; key: string }
+  | { kind: "placement"; id: string }
+  | { kind: "field"; id: string; field: string };
+
+/**
+ * The fields `ops` touch, field paths before placement paths: a placement
+ * the edit replaced or removed wins over its own field edits.
+ */
+function touchedPaths(ops: readonly Json0Component[]): TouchedPath[] {
+  const fields = new Map<string, TouchedPath>();
+  const placements = new Map<string, TouchedPath>();
+  for (const component of ops) {
+    const [root, second, third] = component.p;
+    if (root === "layout") {
+      if (typeof second === "string") {
+        fields.set(`layout.${second}`, { kind: "layoutKey", key: second });
+      } else {
+        placements.set("layout", { kind: "layout" });
+      }
+      continue;
+    }
+    if (root !== "widgets" || typeof second !== "string") {
+      continue;
+    }
+    if (typeof third === "string") {
+      fields.set(`widgets.${second}.${third}`, { kind: "field", id: second, field: third });
+    } else {
+      placements.set(`widgets.${second}`, { kind: "placement", id: second });
+    }
+  }
+  return [...fields.values(), ...placements.values()];
 }

@@ -509,4 +509,39 @@ describe("client and sequencer", () => {
     expect(w.reports.get("a")).toEqual([]);
     expectConverged(w.server, a, b);
   });
+  test("a snapshot that confirms the in-flight addition keeps the edits queued on top of it", async () => {
+    const w = world();
+    const a = w.client("a");
+    const b = w.client("b");
+    await w.quiet(200);
+    a.edit("draft", (doc) => {
+      doc.widgets.n = placement({ name: "new" });
+      return doc;
+    });
+    a.edit("draft", (doc) => {
+      doc.widgets.n!.x = 40;
+      doc.widgets.n!.name = "newer";
+      return doc;
+    });
+    const link = w.server.links.find((candidate) => candidate.clientId === "a" && !candidate.closed)!;
+    w.server.flushToServer(link);
+    w.server.cut(link);
+    w.server.unreachable = true;
+    for (let i = 0; i < 1005; i++) {
+      b.edit("draft", (doc) => {
+        doc.layout.counter = i;
+        return doc;
+      });
+      await w.server.run();
+      await w.clock.advance(100);
+    }
+    w.server.unreachable = false;
+    await w.quiet();
+
+    expect(w.server.received.filter((source) => source.startsWith("a:"))).toEqual(["a:1", "a:2"]);
+    expect(committedSources(w.server).filter((source) => source.startsWith("a:"))).toEqual(["a:2"]);
+    expect(w.server.state.docs.draft.widgets.n).toMatchObject({ x: 40, name: "newer" });
+    expect(w.reports.get("a")).toEqual([]);
+    expectConverged(w.server, a, b);
+  });
 });

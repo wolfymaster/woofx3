@@ -2,16 +2,18 @@ import { describe, expect, test } from "bun:test";
 import {
   assertSyncInvariants,
   BACKOFF_BASE_MS,
+  BACKOFF_MAX_MS,
   CLIENT_RESTART_CLOSE_CODE,
   DRAIN_DEADLINE_MS,
   SceneSyncClient,
   SEND_SPACING_MS,
+  SESSION_HEALTHY_MS,
   type SyncReport,
   type SyncSocket,
   type SyncSocketHandlers,
   UNAVAILABLE_RETRY_MS,
 } from "./client";
-import { type Entry, MAX_OPS_BYTES, type Ops, type SceneDocument, type Version } from "./document";
+import { type Entry, MAX_OPS_BYTES, type Ops, opsSize, type SceneDocument, type Version } from "./document";
 import {
   CLOSE_CODES,
   type ClientMessage,
@@ -182,7 +184,7 @@ async function inflightAndQueued(h: Harness): Promise<void> {
 async function reconnecting(h: Harness, given: (h: Harness) => Promise<void>): Promise<void> {
   await given(h);
   h.socket().serverClose(1006);
-  await h.clock.advance(0);
+  await h.clock.advance(BACKOFF_BASE_MS);
   h.socket().open();
 }
 
@@ -353,7 +355,8 @@ const rows: Row[] = [
     expectAfter: async (h) => {
       expect(h.sockets[0]!.closed?.code).toBe(CLIENT_RESTART_CLOSE_CODE);
       expect(h.client.getState().conn).toBe("offline");
-      await h.clock.advance(0);
+      await h.clock.advance(BACKOFF_BASE_MS);
+      expect(h.sockets).toHaveLength(2);
       h.socket().open();
       expect(h.socket().hello().have).toBeNull();
     },
@@ -415,7 +418,8 @@ const rows: Row[] = [
     message: { type: "nack", seq: 1, code: "stale_base", retryable: true, detail: "" },
     expectAfter: async (h) => {
       expect(h.client.getState().conn).toBe("offline");
-      await h.clock.advance(0);
+      await h.clock.advance(BACKOFF_BASE_MS);
+      expect(h.sockets).toHaveLength(2);
       h.socket().open();
       expect(h.socket().hello().have).toEqual({ v: 0, id: "" });
     },
@@ -469,7 +473,8 @@ const rows: Row[] = [
     given: ready,
     message: { type: "error", code: "protocol", detail: "bad item" },
     expectAfter: async (h) => {
-      await h.clock.advance(0);
+      await h.clock.advance(BACKOFF_BASE_MS);
+      expect(h.sockets).toHaveLength(2);
       h.socket().open();
       expect(h.socket().hello().have).toBeNull();
     },
@@ -542,9 +547,10 @@ describe("SceneSyncClient transitions by event", () => {
     expect(h.sockets).toHaveLength(1);
   });
 
-  test("socket closed: offline, then reconnects with backoff 0, 1 s, 2 s", async () => {
+  test("a socket that closes after a healthy session: offline, then reconnects with backoff 0, 1 s, 2 s", async () => {
     const h = harness();
     await ready(h);
+    await h.clock.advance(SESSION_HEALTHY_MS);
     h.socket().serverClose(1006);
     expect(h.client.getState().conn).toBe("offline");
     await h.clock.advance(0);
@@ -712,9 +718,222 @@ describe("SceneSyncClient transitions by event", () => {
     h.client.setPresence("w", "draft");
     expect(h.socket().sent[h.socket().sent.length - 1]).toEqual({ type: "presence", selection: "w", version: "draft" });
     h.socket().serverClose(1006);
-    await h.clock.advance(0);
+    await h.clock.advance(BACKOFF_BASE_MS);
     h.socket().open();
     h.socket().deliver(catchupWelcome([]));
     expect(h.socket().sent).toContainEqual({ type: "presence", selection: "w", version: "draft" });
+  });
+});
+
+describe("SceneSyncClient welcome settling the in-flight item", () => {
+  function addN(doc: SceneDocument): SceneDocument {
+    doc.widgets.n = placement({ name: "new" });
+    return doc;
+  }
+
+  test("snapshot confirming an in-flight addition: a queued edit to it is kept and sent", async () => {
+    const h = harness();
+    await ready(h);
+    h.client.edit("draft", addN);
+    h.client.edit("draft", (doc) => {
+      doc.widgets.n!.x = 5;
+      return doc;
+    });
+    await reconnecting(h, async () => {});
+    const confirmed = sceneDoc({ w: placement({ name: "ab" }), n: placement({ name: "new" }) });
+    h.socket().deliver(
+      snapshotWelcome({ draft: confirmed, published: START }, { v: 1, last: { seq: 1, outcome: "applied" } })
+    );
+
+    expect(h.client.getState().conn).toBe("ready");
+    expect(h.reports).toEqual([]);
+    expect(h.client.getState().local?.draft.widgets.n).toMatchObject({ x: 5 });
+    await h.clock.advance(SEND_SPACING_MS);
+    expect(h.socket().items()).toEqual([
+      {
+        type: "item",
+        seq: 2,
+        base: 1,
+        body: { kind: "edit", version: "draft", ops: [{ p: ["widgets", "n", "x"], od: 0, oi: 5 }] },
+      },
+    ]);
+    assertSyncInvariants(h.client.inspect());
+  });
+
+  test("snapshot confirming an in-flight text splice: a queued splice after it lands where it was typed", async () => {
+    const h = harness();
+    await ready(h);
+    h.client.edit("draft", (doc) => {
+      doc.widgets.w!.name = "aXb";
+      return doc;
+    });
+    h.client.edit("draft", (doc) => {
+      doc.widgets.w!.name = "aXYb";
+      return doc;
+    });
+    await reconnecting(h, async () => {});
+    h.socket().deliver(
+      snapshotWelcome(
+        { draft: sceneDoc({ w: placement({ name: "aXb" }) }), published: START },
+        { v: 1, last: { seq: 1, outcome: "applied" } }
+      )
+    );
+
+    expect(localW(h, "draft").name).toBe("aXYb");
+    expect(h.reports).toEqual([]);
+    assertSyncInvariants(h.client.inspect());
+  });
+
+  test("snapshot rejecting the in-flight item: it is rolled back out of the queue and reported", async () => {
+    const h = harness();
+    await ready(h);
+    h.client.edit("draft", (doc) => {
+      doc.widgets.w!.name = "aXb";
+      return doc;
+    });
+    h.client.edit("draft", (doc) => {
+      doc.widgets.w!.name = "aXYb";
+      return doc;
+    });
+    await reconnecting(h, async () => {});
+    h.socket().deliver(
+      snapshotWelcome(bothDocs(START), { v: 0, last: { seq: 1, outcome: "rejected", code: "invalid" } })
+    );
+
+    expect(localW(h, "draft").name).toBe("aYb");
+    expect(h.reports).toEqual([
+      { reason: "rejected", items: [{ kind: "edits", version: "draft", sent: true }], detail: expect.any(String) },
+    ]);
+    assertSyncInvariants(h.client.inspect());
+  });
+
+  test("a failure while handling a message restarts the session on a snapshot instead of escaping", async () => {
+    const h = harness();
+    await ready(h);
+    h.client.edit("draft", addN);
+    h.client.edit("draft", (doc) => {
+      doc.widgets.n!.x = 5;
+      return doc;
+    });
+    await reconnecting(h, async () => {});
+    // The watermark has the addition applied, but no entry of it: the queued
+    // edit to the new placement does not apply to the server's documents.
+    expect(() => h.socket().deliver(catchupWelcome([], { seq: 1, outcome: "applied" }))).not.toThrow();
+
+    expect(h.client.getState().conn).toBe("offline");
+    expect(h.client.inspect().inflight?.seq).toBe(1);
+    assertSyncInvariants(h.client.inspect());
+    await h.clock.advance(BACKOFF_MAX_MS);
+    h.socket().open();
+    expect(h.socket().hello().have).toBeNull();
+  });
+
+  test("a roll-back that fails during a welcome leaves the queue untouched and the session not ready", async () => {
+    const h = harness();
+    await ready(h);
+    h.client.edit("draft", (doc) => {
+      doc.widgets.w!.name = "aXb";
+      return doc;
+    });
+    h.client.edit("draft", setY(2));
+    h.client.edit("published", setX(9));
+    h.client.edit("draft", (doc) => {
+      doc.widgets.w!.name = "aXbc";
+      return doc;
+    });
+    // A queued delete of text the refused insert's inverse also deletes,
+    // but different text: json0 cannot transform the one past the other.
+    const queue = (h.client as unknown as { queue: Array<{ body: { kind: string; ops: Ops } }> }).queue;
+    queue[2]!.body.ops = [{ p: ["widgets", "w", "name", 1], sd: "Q" }];
+    const before = structuredClone(queue.map((item) => item.body));
+    await reconnecting(h, async () => {});
+    h.socket().deliver(catchupWelcome([], { seq: 1, outcome: "rejected", code: "invalid" }));
+
+    expect(h.client.getState().conn).toBe("offline");
+    expect(queue.map((item) => item.body)).toEqual(before);
+    expect(h.client.inspect().inflight?.seq).toBe(1);
+    expect(h.socket().sent.filter((message) => message.type !== "hello")).toEqual([]);
+    expect(h.reports).toEqual([]);
+  });
+});
+
+describe("SceneSyncClient item size", () => {
+  test("an in-flight edit that outgrew the limit while queued is split before it is resent, keeping its seq", async () => {
+    const h = harness();
+    const chunk = (fill: string) => fill.repeat(MAX_OPS_BYTES / 6);
+    const settings = { a: chunk("a"), b: chunk("b"), c: chunk("c") };
+    const doc = sceneDoc({ w: placement({ settings }) });
+    await connected(h);
+    h.socket().deliver(snapshotWelcome(bothDocs(doc)));
+    h.client.edit("draft", (d) => {
+      d.widgets.w!.settings.d = 1;
+      return d;
+    });
+    await reconnecting(h, async () => {});
+    const theirs = sceneDoc({ w: placement({ settings: { a: chunk("x"), b: chunk("y"), c: chunk("z") } }) });
+    h.socket().deliver(snapshotWelcome({ draft: theirs, published: doc }, { v: 50 }));
+
+    const sent = h.socket().items();
+    expect(sent[0]!.seq).toBe(1);
+    expect(sent[0]!.body.kind === "edit" && opsSize(sent[0]!.body.ops)).toBeLessThanOrEqual(MAX_OPS_BYTES);
+    expect(h.client.inspect().queue.length).toBeGreaterThan(0);
+    for (const item of h.client.inspect().queue) {
+      expect(item.body.kind === "edit" && opsSize(item.body.ops)).toBeLessThanOrEqual(MAX_OPS_BYTES);
+    }
+    expect(localW(h, "draft").settings).toEqual({ ...settings, d: 1 });
+    assertSyncInvariants(h.client.inspect());
+  });
+});
+
+describe("SceneSyncClient reconnect backoff", () => {
+  test("a session that fails right after every welcome is retried with a growing backoff, not at once", async () => {
+    const h = harness();
+    await ready(h);
+    const waits: number[] = [];
+    for (let round = 0; round < 4; round++) {
+      h.socket().deliver("{not json");
+      const sockets = h.sockets.length;
+      let waited = 0;
+      while (h.sockets.length === sockets) {
+        await h.clock.advance(100);
+        waited += 100;
+      }
+      waits.push(waited);
+      h.socket().open();
+      h.socket().deliver(snapshotWelcome());
+    }
+    expect(waits[0]).toBeGreaterThanOrEqual(BACKOFF_BASE_MS);
+    for (let i = 1; i < waits.length; i++) {
+      expect(waits[i]).toBeGreaterThanOrEqual(waits[i - 1]!);
+    }
+    expect(waits[waits.length - 1]).toBeGreaterThan(BACKOFF_BASE_MS);
+  });
+
+  test("a session that stayed healthy starts the backoff over", async () => {
+    const h = harness();
+    await ready(h);
+    h.socket().deliver("{not json");
+    await h.clock.advance(BACKOFF_BASE_MS);
+    h.socket().open();
+    h.socket().deliver(snapshotWelcome());
+    await h.clock.advance(SESSION_HEALTHY_MS);
+    h.socket().serverClose(1006);
+    await h.clock.advance(0);
+    expect(h.sockets).toHaveLength(3);
+  });
+});
+
+describe("SceneSyncClient local documents", () => {
+  test("an entry leaves the local document of a version it did not change as it was", async () => {
+    const h = harness();
+    await inflight(h);
+    h.client.edit("published", setY(4));
+    const published = h.client.getState().local!.published;
+    h.socket().deliver({
+      type: "entry",
+      ...entryOf(1, { draft: [{ p: ["widgets", "w", "name", 0], si: "R" }] }, { clientId: "peer", seq: 1 }),
+    });
+    expect(h.client.getState().local!.published).toBe(published);
+    assertSyncInvariants(h.client.inspect());
   });
 });

@@ -21,8 +21,11 @@ import {
   type EntrySource,
   entryIdOf,
   invalidOps,
+  invalidResult,
   isPlainObject,
+  type Json0Component,
   MAX_DOCUMENT_BYTES,
+  MAX_ITEM_BYTES,
   type MetaChanges,
   type Ops,
   opsSize,
@@ -39,12 +42,17 @@ import {
   nackOf,
   type Watermark,
 } from "./protocol";
+import { copyTouched } from "./rebase";
 
 /** Most entries the in-memory log keeps for transforming late items and catching up reconnects. */
 export const LOG_MAX_ENTRIES = 1000;
 /** Most bytes of ops the in-memory log keeps, measured by `opsSize`. */
 export const LOG_MAX_BYTES = 512 * 1024;
-/** A client's watermark is forgotten after this long without an item... */
+/**
+ * A client's watermark is forgotten after this long without an item... The
+ * in-memory map is pruned by the same rules whenever it holds more than
+ * `CLIENT_RETENTION_COUNT`, so it stays bounded between saves.
+ */
 export const CLIENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** ...or when it is not among the most recent this many. */
 export const CLIENT_RETENTION_COUNT = 500;
@@ -73,10 +81,12 @@ export interface SequencerState {
   epoch: string;
   /** Replaced on commit, never changed in place: plans and entries share these objects. */
   docs: Record<Version, SceneDocument>;
+  /** `docs` measured as their JSON length, kept up to date by measuring only what each change touched. */
+  docBytes: Record<Version, number>;
   hasDraft: boolean;
   /** The most recent entries, oldest first, contiguous and ending at `v` when non-empty. */
   log: Entry[];
-  /** `opsSize` of every entry's changes in `log`, summed. */
+  /** `opsSize` of every entry's changes in `log`, summed. Over `LOG_MAX_BYTES` only when the newest entry alone is. */
   logBytes: number;
   clients: Map<string, ClientRecord>;
 }
@@ -96,6 +106,7 @@ export function createSequencerState(init: SequencerInit): SequencerState {
     headId: init.editorState.headId,
     epoch: init.epoch,
     docs: { draft: structuredClone(init.docs.draft), published: structuredClone(init.docs.published) },
+    docBytes: { draft: JSON.stringify(init.docs.draft).length, published: JSON.stringify(init.docs.published).length },
     hasDraft: init.hasDraft,
     log: [],
     logBytes: 0,
@@ -107,7 +118,9 @@ export function createSequencerState(init: SequencerInit): SequencerState {
  * A change the engine makes itself (a workflow step, a save made elsewhere),
  * made against the head. `mirrorIntoDraft` copies a change to the published
  * scene into the draft as a live edit does; a save made elsewhere while a
- * draft exists leaves the draft alone.
+ * draft exists leaves the draft alone. Not bound by the size limit on an
+ * editor's item (it is the engine's own change, as large as the difference
+ * it saves), only by the document size limit; empty ops change nothing.
  */
 export interface ExternalBody {
   kind: "external";
@@ -124,6 +137,7 @@ export interface Plan {
   /** Empty for an edit that comes to nothing: committed as a no-op, answered with `ack`. */
   changes: Partial<Record<Version, Ops>>;
   docs: Record<Version, SceneDocument>;
+  docBytes: Record<Version, number>;
   hasDraft: boolean;
   /** `opsSize` of `changes`, counted against the log's byte budget. */
   bytes: number;
@@ -163,6 +177,7 @@ export function prepare(state: SequencerState, base: number, body: ItemBody | Ex
       const changes = diffDocuments(state.docs.published, state.docs.draft);
       return planOf(state, "publish", changes.length > 0 ? { published: changes } : {}, {
         docs: { draft: state.docs.draft, published: structuredClone(state.docs.draft) },
+        docBytes: { draft: state.docBytes.draft, published: state.docBytes.draft },
         hasDraft: false,
       });
     }
@@ -170,6 +185,7 @@ export function prepare(state: SequencerState, base: number, body: ItemBody | Ex
       const changes = diffDocuments(state.docs.draft, state.docs.published);
       return planOf(state, "discard", changes.length > 0 ? { draft: changes } : {}, {
         docs: { draft: structuredClone(state.docs.published), published: state.docs.published },
+        docBytes: { draft: state.docBytes.published, published: state.docBytes.published },
         hasDraft: false,
       });
     }
@@ -181,9 +197,17 @@ function prepareEdit(
   base: number,
   body: Extract<ItemBody, { kind: "edit" }> | ExternalBody
 ): Plan | Refusal {
+  const kind: EntryKind = body.kind === "external" ? "external" : "edit";
+  const unchanged = { docs: state.docs, docBytes: state.docBytes, hasDraft: state.hasDraft };
+  if (body.kind === "external" && body.ops.length === 0) {
+    return planOf(state, kind, {}, unchanged);
+  }
   const invalid = invalidOps(body.ops);
   if (invalid !== null) {
     return refuse("invalid", invalid);
+  }
+  if (body.kind === "edit" && opsSize(body.ops) > MAX_ITEM_BYTES) {
+    return refuse("invalid", "ops too large");
   }
   const missed = entriesAfter(state, base);
   if (missed === null) {
@@ -201,9 +225,8 @@ function prepareEdit(
   } catch (err) {
     return refuse("invalid", `ops do not transform: ${errorText(err)}`);
   }
-  const kind: EntryKind = body.kind === "external" ? "external" : "edit";
   if (ops.length === 0) {
-    return planOf(state, kind, {}, { docs: state.docs, hasDraft: state.hasDraft });
+    return planOf(state, kind, {}, unchanged);
   }
   let doc: SceneDocument;
   try {
@@ -211,7 +234,12 @@ function prepareEdit(
   } catch (err) {
     return refuse("invalid", `ops do not apply: ${errorText(err)}`);
   }
-  if (JSON.stringify(doc).length > MAX_DOCUMENT_BYTES) {
+  const invalidDoc = invalidResult(doc, ops);
+  if (invalidDoc !== null) {
+    return refuse("invalid", invalidDoc);
+  }
+  const bytes = documentBytesAfter(state.docs[version], doc, state.docBytes[version], ops);
+  if (bytes > MAX_DOCUMENT_BYTES) {
     return refuse("invalid", "the scene would be too large");
   }
   if (version === "draft") {
@@ -219,57 +247,123 @@ function prepareEdit(
       state,
       kind,
       { draft: ops },
-      { docs: { draft: doc, published: state.docs.published }, hasDraft: true }
+      {
+        docs: { draft: doc, published: state.docs.published },
+        docBytes: { draft: bytes, published: state.docBytes.published },
+        hasDraft: true,
+      }
     );
   }
   const mirror = body.kind === "edit" || body.mirrorIntoDraft;
-  const draft = mirror ? mirrorIntoDraft(state.docs.draft, doc, ops) : state.docs.draft;
+  if (!mirror) {
+    return planOf(
+      state,
+      kind,
+      { published: ops },
+      {
+        docs: { draft: state.docs.draft, published: doc },
+        docBytes: { draft: state.docBytes.draft, published: bytes },
+        hasDraft: state.hasDraft,
+      }
+    );
+  }
+  const draft = mirrorIntoDraft(state.docs.draft, state.docs.published, doc, ops);
   const draftOps = diffDocuments(state.docs.draft, draft);
+  const draftBytes = documentBytesAfter(state.docs.draft, draft, state.docBytes.draft, draftOps);
+  if (draftBytes > MAX_DOCUMENT_BYTES) {
+    return refuse("invalid", "the draft would be too large");
+  }
   const changes: Partial<Record<Version, Ops>> =
     draftOps.length > 0 ? { published: ops, draft: draftOps } : { published: ops };
-  return planOf(state, kind, changes, { docs: { draft, published: doc }, hasDraft: state.hasDraft });
+  return planOf(state, kind, changes, {
+    docs: { draft, published: doc },
+    docBytes: { draft: draftBytes, published: bytes },
+    hasDraft: state.hasDraft,
+  });
 }
 
 function planOf(
   state: SequencerState,
   kind: EntryKind,
   changes: Partial<Record<Version, Ops>>,
-  result: { docs: Record<Version, SceneDocument>; hasDraft: boolean }
+  result: { docs: Record<Version, SceneDocument>; docBytes: Record<Version, number>; hasDraft: boolean }
 ): Plan {
   const bytes = (changes.draft ? opsSize(changes.draft) : 0) + (changes.published ? opsSize(changes.published) : 0);
-  return { refused: false, kind, head: state.v, changes, docs: result.docs, hasDraft: result.hasDraft, bytes };
+  return {
+    refused: false,
+    kind,
+    head: state.v,
+    changes,
+    docs: result.docs,
+    docBytes: result.docBytes,
+    hasDraft: result.hasDraft,
+    bytes,
+  };
 }
 
 /**
- * The draft with what `ops` changed on the published scene copied in, field
- * by field: a live edit wins over the draft's own value for each field it
- * touched, and the draft keeps every other edit it has. A placement the live
- * edit removed is removed from the draft; one it touched that the draft does
- * not have is copied whole.
+ * The draft with what a live edit (`ops`, which turned the published scene
+ * `before` into `after`) changed copied in, at the grain `copyTouched`
+ * defines: per layout key, per placement field, and per placement added or
+ * removed. The live edit wins over the draft's own value for each of those
+ * it touched, and the draft keeps every other edit it has. A live edit to a
+ * placement the draft removed is skipped: the draft keeps it removed, and
+ * publishing the draft removes it from the live scene too.
  */
-export function mirrorIntoDraft(draft: SceneDocument, published: SceneDocument, ops: Ops): SceneDocument {
-  const target: SceneDocument = structuredClone(draft);
+export function mirrorIntoDraft(
+  draft: SceneDocument,
+  before: SceneDocument,
+  after: SceneDocument,
+  ops: readonly Json0Component[]
+): SceneDocument {
+  return copyTouched(before, after, draft, ops);
+}
+
+/**
+ * The JSON length of `after`, which `ops` made from `before` (`beforeBytes`
+ * long), measuring only the layout keys and placements the ops touched:
+ * each one's entry (key, colon and value) before and after, and the commas
+ * between entries, which follow from how many entries the object has.
+ * Exact, since a document's JSON is exactly those parts.
+ */
+function documentBytesAfter(
+  before: SceneDocument,
+  after: SceneDocument,
+  beforeBytes: number,
+  ops: readonly Json0Component[]
+): number {
+  const touched = { layout: new Set<string>(), widgets: new Set<string>() };
   for (const component of ops) {
-    const [root, id, field] = component.p;
-    if (root === "layout") {
-      target.layout = structuredClone(published.layout);
-      continue;
+    const [root, key] = component.p;
+    if ((root !== "layout" && root !== "widgets") || typeof key !== "string") {
+      return JSON.stringify(after).length;
     }
-    if (root !== "widgets" || typeof id !== "string") {
-      continue;
-    }
-    const live = published.widgets[id];
-    if (!live) {
-      delete target.widgets[id];
-    } else if (typeof field !== "string" || !target.widgets[id]) {
-      target.widgets[id] = structuredClone(live);
-    } else {
-      (target.widgets[id] as unknown as Record<string, unknown>)[field] = structuredClone(
-        (live as unknown as Record<string, unknown>)[field]
-      );
-    }
+    touched[root].add(key);
   }
-  return target;
+  let bytes = beforeBytes;
+  for (const root of ["layout", "widgets"] as const) {
+    if (touched[root].size === 0) {
+      continue;
+    }
+    const from = before[root] as Record<string, unknown>;
+    const to = after[root] as Record<string, unknown>;
+    for (const key of touched[root]) {
+      bytes += memberBytes(to, key) - memberBytes(from, key);
+    }
+    bytes += commas(Object.keys(to).length) - commas(Object.keys(from).length);
+  }
+  return bytes;
+}
+
+function memberBytes(record: Record<string, unknown>, key: string): number {
+  if (!Object.hasOwn(record, key)) {
+    return 0;
+  }
+  return JSON.stringify(key).length + 1 + JSON.stringify(record[key]).length;
+}
+
+function commas(entries: number): number {
+  return Math.max(0, entries - 1);
 }
 
 /** The entries after `base`, oldest first, or null when the log no longer has them all. */
@@ -307,7 +401,7 @@ export function commit(
   const changesNothing = plan.changes.draft === undefined && plan.changes.published === undefined;
   if (changesNothing && (plan.kind === "edit" || plan.kind === "external")) {
     if (src !== null) {
-      state.clients.set(src.clientId, { seq: src.seq, outcome: "applied", at: now });
+      recordClient(state, src.clientId, { seq: src.seq, outcome: "applied", at: now });
     }
     return null;
   }
@@ -324,12 +418,13 @@ export function commit(
   state.v = v;
   state.headId = entry.id;
   state.docs = plan.docs;
+  state.docBytes = plan.docBytes;
   state.hasDraft = plan.hasDraft;
   state.log.push(entry);
   state.logBytes += plan.bytes;
   trimLog(state);
   if (src !== null) {
-    state.clients.set(src.clientId, { seq: src.seq, outcome: "applied", at: now });
+    recordClient(state, src.clientId, { seq: src.seq, outcome: "applied", at: now });
   }
   return entry;
 }
@@ -343,7 +438,7 @@ export function recordRefusal(state: SequencerState, src: EntrySource, refusal: 
   const reply = nackOf(src.seq, refusal.code, refusal.detail);
   if (!reply.retryable) {
     assertNewSeq(state, src);
-    state.clients.set(src.clientId, { seq: src.seq, outcome: "rejected", code: refusal.code, at: now });
+    recordClient(state, src.clientId, { seq: src.seq, outcome: "rejected", code: refusal.code, at: now });
   }
   return reply;
 }
@@ -409,11 +504,18 @@ export function decideWelcome(state: SequencerState, have: EntryRef | null): Wel
   return { kind: "catchup", entries: state.log.slice(have.v - first.v + 1) };
 }
 
-/** Drop the oldest entries until the log is within `LOG_MAX_ENTRIES` and `LOG_MAX_BYTES`. */
+/**
+ * Drop the oldest entries until the log is within `LOG_MAX_ENTRIES` and
+ * `LOG_MAX_BYTES`, always keeping the newest entry, so an item made one
+ * entry behind the head is still transformed rather than refused as
+ * `stale_base`. An entry larger than `LOG_MAX_BYTES` on its own (a big
+ * publish) is then the whole log, and a client that has to catch up across
+ * it reconnects onto a snapshot.
+ */
 function trimLog(state: SequencerState): void {
   let drop = 0;
   let bytes = state.logBytes;
-  while (drop < state.log.length && (state.log.length - drop > LOG_MAX_ENTRIES || bytes > LOG_MAX_BYTES)) {
+  while (state.log.length - drop > 1 && (state.log.length - drop > LOG_MAX_ENTRIES || bytes > LOG_MAX_BYTES)) {
     bytes -= entryBytes(state.log[drop]!);
     drop++;
   }
@@ -513,6 +615,14 @@ function isClientRecord(value: unknown): value is ClientRecord {
     value.outcome === "rejected" &&
     (value.code === "invalid" || value.code === "stale_base" || value.code === "unavailable")
   );
+}
+
+/** Set a client's watermark, pruning the map by the retention rules once it holds more than it keeps. */
+function recordClient(state: SequencerState, clientId: string, record: ClientRecord): void {
+  state.clients.set(clientId, record);
+  if (state.clients.size > CLIENT_RETENTION_COUNT) {
+    state.clients = new Map(Object.entries(retainedClients(state.clients, record.at)));
+  }
 }
 
 // ---------------------------------------------------------------------------

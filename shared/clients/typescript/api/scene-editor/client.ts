@@ -26,6 +26,7 @@ import {
   diffDocuments,
   type Entry,
   invalidOps,
+  invalidResult,
   invertOps,
   MAX_OPS_BYTES,
   mergeMeta,
@@ -62,6 +63,13 @@ export const UNAVAILABLE_RETRY_MS = 30_000;
 /** Backoff for reconnects and for resending after `unavailable`: 1 s, 2 s, 4 s, ... capped. */
 export const BACKOFF_BASE_MS = 1000;
 export const BACKOFF_MAX_MS = 10_000;
+/**
+ * How long a session must stay ready before the reconnect backoff starts
+ * over. A session that ends sooner (one that fails right after its welcome)
+ * waits at least `BACKOFF_BASE_MS` and keeps growing the backoff, so a
+ * failure that repeats on every welcome cannot spin.
+ */
+export const SESSION_HEALTHY_MS = 10_000;
 /** The close code the client uses when it drops a socket to start the session over. */
 export const CLIENT_RESTART_CLOSE_CODE = 4000;
 
@@ -198,6 +206,8 @@ export class SceneSyncClient {
   private forceSnapshot = false;
   private reconnectAttempt = 0;
   private reconnectTimer: unknown = null;
+  /** When the current session was welcomed; null while there is none. */
+  private readySince: number | null = null;
   private resendAttempt = 0;
   private resendTimer: unknown = null;
   private pumpTimer: unknown = null;
@@ -260,7 +270,7 @@ export class SceneSyncClient {
     }
     const chunks = splitOps(ops);
     for (const chunk of chunks) {
-      const invalid = invalidOps(chunk);
+      const invalid = invalidOps(chunk) ?? (opsSize(chunk) > MAX_OPS_BYTES ? "ops too large" : null);
       if (invalid !== null) {
         return { ok: false, detail: invalid };
       }
@@ -270,6 +280,10 @@ export class SceneSyncClient {
       applied = applyOps(current, ops);
     } catch (err) {
       return { ok: false, detail: `the change does not apply: ${errorText(err)}` };
+    }
+    const invalidDoc = invalidResult(applied, ops);
+    if (invalidDoc !== null) {
+      return { ok: false, detail: invalidDoc };
     }
     for (const chunk of chunks) {
       this.enqueueEdit(version, chunk);
@@ -440,9 +454,35 @@ export class SceneSyncClient {
   private sendInflight(): void {
     const inflight = this.inflight;
     assert(inflight !== null && this.server !== null, "only an in-flight item is sent");
+    this.splitInflight(inflight);
     inflight.base = this.server.v;
     this.lastSentAt = this.options.clock.now();
     this.send({ type: "item", seq: inflight.seq, base: inflight.base, body: inflight.body });
+  }
+
+  /**
+   * Keep an in-flight edit within `MAX_OPS_BYTES` before it goes out: an
+   * edit can outgrow it after it was queued, as transforms and rebasing
+   * rewrite it. The in-flight item keeps the first run of components and its
+   * seq; the rest go back to the front of the queue as new items, so the
+   * order of every component is unchanged (I2). This never splits a seq the
+   * server may have decided: an item is sent or resent only while its seq is
+   * above the watermark (first send, after a welcome below it, or after
+   * `unavailable`). A single component larger than the limit stays whole;
+   * the server takes it up to `MAX_ITEM_BYTES`.
+   */
+  private splitInflight(inflight: SentItem): void {
+    const body = inflight.body;
+    if (body.kind !== "edit" || opsSize(body.ops) <= MAX_OPS_BYTES) {
+      return;
+    }
+    const [first, ...rest] = splitOps(body.ops);
+    if (first === undefined || rest.length === 0) {
+      return;
+    }
+    inflight.body = { kind: "edit", version: body.version, ops: first };
+    this.queue.unshift(...rest.map((ops) => this.newItem({ kind: "edit", version: body.version, ops })));
+    this.changed();
   }
 
   // -------------------------------------------------------------------------
@@ -539,19 +579,25 @@ export class SceneSyncClient {
       this.socket = null;
       socket.close(CLIENT_RESTART_CLOSE_CODE, "reconnecting");
     }
+    const readyFor = this.readySince === null ? null : this.options.clock.now() - this.readySince;
+    this.readySince = null;
+    if (readyFor !== null && readyFor >= SESSION_HEALTHY_MS) {
+      this.reconnectAttempt = 0;
+    }
     this.clearResend();
     this.welcomed = false;
     this.conn = "offline";
     this.peers.clear();
-    this.scheduleReconnect();
+    this.scheduleReconnect(readyFor !== null && readyFor < SESSION_HEALTHY_MS ? BACKOFF_BASE_MS : 0);
     this.changed();
   }
 
-  private scheduleReconnect(): void {
+  /** Reconnect after the backoff, and no sooner than `minDelay`. */
+  private scheduleReconnect(minDelay = 0): void {
     if (this.reconnectTimer !== null) {
       this.options.clock.clearTimeout(this.reconnectTimer);
     }
-    const delay = backoff(this.reconnectAttempt++);
+    const delay = Math.max(minDelay, backoff(this.reconnectAttempt++));
     if (this.stopping !== null && this.options.clock.now() + delay >= this.stopping.deadline) {
       // The drain deadline comes first and reports what is left.
       this.reconnectTimer = null;
@@ -567,7 +613,25 @@ export class SceneSyncClient {
     this.socket.send(JSON.stringify(message));
   }
 
+  /**
+   * Handle one message. Nothing thrown while handling it escapes to the
+   * socket: each step works out its result before assigning any of it, so a
+   * failure leaves the client as it was, and the session starts over on a
+   * snapshot.
+   */
   private receive(text: string): void {
+    try {
+      this.handle(text);
+    } catch (err) {
+      if (this.isEnded()) {
+        this.log("handling a message failed after the client ended", { error: errorText(err) });
+        return;
+      }
+      this.restartSession(`handling a message failed: ${errorText(err)}`, true);
+    }
+  }
+
+  private handle(text: string): void {
     const message = decodeServerMessage(text);
     if (message === null) {
       this.restartSession("the server sent a message that is not protocol 2", true);
@@ -623,23 +687,13 @@ export class SceneSyncClient {
       return;
     }
     if (isWelcomeSnapshot(message)) {
-      this.resolveInflightByWatermark(message.last);
-      this.adoptSnapshot(message.snapshot, message.diverged);
-    } else {
-      if (this.server === null) {
-        this.restartSession("a catch-up before any snapshot", true);
-        return;
-      }
-      for (const entry of message.catchup) {
-        if (!this.applyEntry(entry)) {
-          return;
-        }
-      }
-      this.resolveInflightByWatermark(message.last);
+      this.welcomeSnapshot(message.snapshot, message.last, message.diverged);
+    } else if (!this.welcomeCatchup(message.catchup, message.last)) {
+      return;
     }
     this.welcomed = true;
     this.forceSnapshot = false;
-    this.reconnectAttempt = 0;
+    this.readySince = this.options.clock.now();
     this.conn = "ready";
     this.peers.clear();
     if (this.stopping !== null) {
@@ -663,65 +717,115 @@ export class SceneSyncClient {
     this.finishIfDrained();
   }
 
-  /**
-   * After a welcome, the in-flight item is decided when the watermark has
-   * reached its seq: applied (its entry, if any, is in what the client has
-   * now) or rejected.
-   */
-  private resolveInflightByWatermark(last: Watermark | null): void {
-    const inflight = this.inflight;
-    if (inflight === null || last === null || last.seq < inflight.seq) {
-      return;
+  /** Apply the entries missed, then settle the in-flight item by the watermark. False when the session restarted. */
+  private welcomeCatchup(entries: readonly Entry[], last: Watermark | null): boolean {
+    if (this.server === null) {
+      this.restartSession("a catch-up before any snapshot", true);
+      return false;
     }
-    if (last.seq === inflight.seq && last.outcome === "rejected") {
-      this.rejectInflight("this change could not be saved");
-      return;
+    for (const entry of entries) {
+      if (!this.applyEntry(entry)) {
+        return false;
+      }
+    }
+    const inflight = this.inflight;
+    const decided = decisionOf(inflight, last);
+    if (inflight === null || decided === null) {
+      return true;
+    }
+    if (decided === "rejected") {
+      return this.rejectInflight("this change could not be saved");
+    }
+    // Applied, yet its entry was not among those missed: it committed
+    // nothing, as an `ack` would have said.
+    let local: Record<Version, SceneDocument>;
+    try {
+      local = localOf(
+        this.server.docs,
+        this.queue.map((item) => item.body)
+      );
+    } catch (err) {
+      this.restartSession(`the queue does not apply without the confirmed item: ${errorText(err)}`, true);
+      return false;
     }
     this.leave(inflight);
     this.inflight = null;
-    this.recomputeLocal();
+    this.local = local;
+    return true;
   }
 
-  private adoptSnapshot(snapshot: EditorSnapshot, diverged: boolean): void {
-    const pending = this.pendingItems();
-    const sentId = this.inflight === null ? null : this.inflight.id;
-    let kept: QueuedItem[] = pending;
-    const dropped: QueuedItem[] = [];
-    if (this.server !== null && pending.length > 0) {
-      const rebased = rebaseFieldwise(
-        this.server.docs,
-        pending.map((item) => item.body),
-        snapshot.docs
+  /**
+   * Adopt the server's documents and move what is pending onto them with
+   * `rebaseFieldwise`. An in-flight item the watermark has decided is not
+   * carried over, but the queue was made on top of it: when it was applied,
+   * the queue is rebased from the old documents with it applied (the
+   * snapshot has its effect already); when it was rejected, the queue is
+   * first rolled back past it as for a `nack`. Cannot fail: whatever cannot
+   * be moved is dropped and reported.
+   */
+  private welcomeSnapshot(snapshot: EditorSnapshot, last: Watermark | null, diverged: boolean): void {
+    const inflight = this.inflight;
+    const decided = decisionOf(inflight, last);
+    const settled =
+      inflight !== null && decided !== null ? { body: inflight.body, applied: decided === "applied" } : null;
+    const carried = settled === null ? this.pendingItems() : [...this.queue];
+    assert(
+      this.server !== null || (inflight === null && carried.length === 0),
+      "nothing is pending before the scene first loads"
+    );
+    const sentId = settled === null && inflight !== null ? inflight.id : null;
+    const target: Record<Version, SceneDocument> = {
+      draft: structuredClone(snapshot.docs.draft),
+      published: structuredClone(snapshot.docs.published),
+    };
+    let moved: { bodies: Array<ItemBody | null>; local: Record<Version, SceneDocument> };
+    try {
+      moved = carryOntoSnapshot(
+        this.server?.docs ?? null,
+        settled,
+        carried.map((item) => item.body),
+        target
       );
-      kept = [];
-      pending.forEach((item, index) => {
-        const body = rebased[index];
-        if (body === null || body === undefined) {
-          dropped.push(item);
-        } else {
-          item.body = body;
-          kept.push(item);
-        }
-      });
+    } catch (err) {
+      this.log("pending changes could not be moved onto the snapshot", { error: errorText(err) });
+      moved = { bodies: carried.map(() => null), local: { draft: target.draft, published: target.published } };
     }
-    assert(this.server !== null || pending.length === 0, "nothing is pending before the scene first loads");
-    if (this.inflight !== null && !kept.includes(this.inflight)) {
-      this.inflight = null;
+    const kept: QueuedItem[] = [];
+    const dropped: QueuedItem[] = [];
+    carried.forEach((item, index) => {
+      const body = moved.bodies[index];
+      if (body === null || body === undefined) {
+        dropped.push(item);
+      } else {
+        item.body = body;
+        kept.push(item);
+      }
+    });
+    if (settled !== null && inflight !== null) {
+      this.leave(inflight);
     }
+    this.inflight = inflight !== null && settled === null && kept.includes(inflight) ? inflight : null;
     this.queue = kept.filter((item) => item !== this.inflight);
     this.server = {
       v: snapshot.v,
       id: snapshot.id,
-      docs: structuredClone(snapshot.docs),
+      docs: target,
       meta: structuredClone(snapshot.meta),
       hasDraft: snapshot.hasDraft,
       name: snapshot.name,
     };
-    this.recomputeLocal();
+    this.local = moved.local;
+    for (const item of dropped) {
+      this.leave(item);
+    }
+    if (settled !== null && !settled.applied && inflight !== null) {
+      this.report({
+        reason: "rejected",
+        items: reportItems([inflight], inflight.id, false),
+        detail: "this change could not be saved",
+      });
+    }
     if (dropped.length > 0) {
-      for (const item of dropped) {
-        this.leave(item);
-      }
       this.report({
         reason: "rejected",
         items: reportItems(dropped, sentId, false),
@@ -753,7 +857,8 @@ export class SceneSyncClient {
     let inflightBody = inflight?.body ?? null;
     const queueBodies = this.queue.map((item) => item.body);
     const docs = { ...server.docs };
-    let local: Record<Version, SceneDocument>;
+    assert(this.local !== null, "a loaded scene has local documents");
+    const local: Record<Version, SceneDocument> = { ...this.local };
     try {
       for (const version of VERSIONS) {
         const ops = entry.changes[version];
@@ -782,8 +887,17 @@ export class SceneSyncClient {
           remote = transformOps(remote, body.ops, "right");
         }
       }
+      // Only the versions this entry changed (and the one the confirmed item
+      // edited) can differ: every other version's documents and pending ops
+      // are as they were.
       const remaining = own ? queueBodies : [...(inflightBody === null ? [] : [inflightBody]), ...queueBodies];
-      local = localOf(docs, remaining);
+      for (const version of VERSIONS) {
+        const confirmed =
+          own && inflight !== null && inflight.body.kind === "edit" && inflight.body.version === version;
+        if (entry.changes[version] !== undefined || confirmed) {
+          local[version] = withEdits(docs[version], version, remaining);
+        }
+      }
     } catch (err) {
       this.restartSession(`entry ${entry.v} does not apply: ${errorText(err)}`, true);
       return false;
@@ -822,10 +936,20 @@ export class SceneSyncClient {
       this.restartSession(`ack at ${v} while at ${this.server.v}`, true);
       return;
     }
+    let local: Record<Version, SceneDocument>;
+    try {
+      local = localOf(
+        this.server.docs,
+        this.queue.map((item) => item.body)
+      );
+    } catch (err) {
+      this.restartSession(`the queue does not apply without the acknowledged item: ${errorText(err)}`, true);
+      return;
+    }
     this.leave(inflight);
     this.inflight = null;
+    this.local = local;
     this.resendSucceeded();
-    this.recomputeLocal();
     this.changed();
     this.pump();
   }
@@ -838,9 +962,10 @@ export class SceneSyncClient {
     switch (message.code) {
       case "invalid": {
         this.resendSucceeded();
-        this.rejectInflight(message.detail);
-        this.changed();
-        this.pump();
+        if (this.rejectInflight(message.detail)) {
+          this.changed();
+          this.pump();
+        }
         break;
       }
       case "stale_base": {
@@ -866,31 +991,33 @@ export class SceneSyncClient {
   /**
    * The server refused the in-flight item, so nothing of it changed there.
    * An edit is rolled back softly: its inverse is treated as a remote change,
-   * so edits queued after it keep what they can.
+   * so edits queued after it keep what they can. The rolled-back queue is
+   * worked out before anything is assigned; when that fails the client is
+   * left as it was and the session restarts on a snapshot, where the
+   * watermark settles the item again. False when the session restarted.
    */
-  private rejectInflight(detail: string): void {
+  private rejectInflight(detail: string): boolean {
     const inflight = this.inflight;
     assert(inflight !== null && this.server !== null, "a rejection names the in-flight item");
+    let queueBodies = this.queue.map((item) => item.body);
+    let local: Record<Version, SceneDocument>;
+    try {
+      if (inflight.body.kind === "edit") {
+        queueBodies = rollBack(inflight.body, queueBodies);
+      }
+      local = localOf(this.server.docs, queueBodies);
+    } catch (err) {
+      this.restartSession(`rolling back a refused change failed: ${errorText(err)}`, true);
+      return false;
+    }
+    this.queue.forEach((item, index) => {
+      item.body = queueBodies[index]!;
+    });
     this.inflight = null;
     this.leave(inflight);
-    if (inflight.body.kind === "edit") {
-      const version = inflight.body.version;
-      try {
-        let remote = invertOps(inflight.body.ops);
-        for (const item of this.queue) {
-          if (item.body.kind !== "edit" || item.body.version !== version) {
-            continue;
-          }
-          const mine = item.body.ops;
-          item.body = { ...item.body, ops: transformOps(mine, remote, "left") };
-          remote = transformOps(remote, mine, "right");
-        }
-        this.recomputeLocal();
-      } catch (err) {
-        this.restartSession(`rolling back a refused change failed: ${errorText(err)}`, true);
-      }
-    }
+    this.local = local;
     this.report({ reason: "rejected", items: reportItems([inflight], inflight.id, false), detail });
+    return true;
   }
 
   private resendSucceeded(): void {
@@ -1038,13 +1165,95 @@ export function localOf(
   docs: Readonly<Record<Version, SceneDocument>>,
   bodies: readonly ItemBody[]
 ): Record<Version, SceneDocument> {
-  const local: Record<Version, SceneDocument> = { draft: docs.draft, published: docs.published };
-  for (const body of bodies) {
-    if (body.kind === "edit" && body.ops.length > 0) {
-      local[body.version] = applyOps(local[body.version], body.ops);
+  return { draft: withEdits(docs.draft, "draft", bodies), published: withEdits(docs.published, "published", bodies) };
+}
+
+/** `doc` with the ops of every edit to `version` in `bodies` applied in order: `doc` itself when there are none. */
+function withEdits(doc: SceneDocument, version: Version, bodies: readonly ItemBody[]): SceneDocument {
+  const ops = bodies.flatMap((body) => (body.kind === "edit" && body.version === version ? body.ops : []));
+  return ops.length === 0 ? doc : applyOps(doc, ops);
+}
+
+/**
+ * Whether the watermark in a welcome has decided the in-flight item: null
+ * while its seq is above the watermark. A watermark past the item's seq
+ * means the server applied it and went on to later items.
+ */
+function decisionOf(inflight: SentItem | null, last: Watermark | null): "applied" | "rejected" | null {
+  if (inflight === null || last === null || last.seq < inflight.seq) {
+    return null;
+  }
+  return last.seq === inflight.seq && last.outcome === "rejected" ? "rejected" : "applied";
+}
+
+/**
+ * `bodies`, made after the refused edit `refused`, rewritten as if it had
+ * never been made: its inverse is transformed through them as a remote
+ * change. Throws when an op does not transform.
+ */
+function rollBack(refused: Extract<ItemBody, { kind: "edit" }>, bodies: readonly ItemBody[]): ItemBody[] {
+  let remote = invertOps(refused.ops);
+  return bodies.map((body) => {
+    if (body.kind !== "edit" || body.version !== refused.version) {
+      return body;
+    }
+    const rewritten: ItemBody = { ...body, ops: transformOps(body.ops, remote, "left") };
+    remote = transformOps(remote, body.ops, "right");
+    return rewritten;
+  });
+}
+
+/**
+ * `bodies`, pending on the documents `docs`, moved onto `target` with
+ * `rebaseFieldwise`, and the documents the editor then shows. `settled` is
+ * an item the server decided that `bodies` were made after: one it applied
+ * is a prefix of the old chain (its effect is in `target`); one it rejected
+ * is rolled back out of `bodies` first, or, when that does not transform,
+ * kept as a prefix so the later edits still apply to the old chain. A body
+ * comes back null when it could not be moved.
+ */
+function carryOntoSnapshot(
+  docs: Readonly<Record<Version, SceneDocument>> | null,
+  settled: { body: ItemBody; applied: boolean } | null,
+  bodies: readonly ItemBody[],
+  target: Readonly<Record<Version, SceneDocument>>
+): { bodies: Array<ItemBody | null>; local: Record<Version, SceneDocument> } {
+  if (bodies.length === 0 || docs === null) {
+    assert(bodies.length === 0, "nothing is pending before the scene first loads");
+    return { bodies: [], local: { draft: target.draft, published: target.published } };
+  }
+  let base: Readonly<Record<Version, SceneDocument>> = docs;
+  let carried: readonly ItemBody[] = bodies;
+  if (settled !== null && settled.body.kind === "edit") {
+    const refused = settled.body;
+    if (!settled.applied) {
+      try {
+        carried = rollBack(refused, bodies);
+      } catch {
+        base = withPrefix(docs, refused);
+      }
+    } else {
+      base = withPrefix(docs, refused);
     }
   }
-  return local;
+  const rebased = rebaseFieldwise(base, carried, target);
+  const local = localOf(
+    target,
+    rebased.filter((body): body is ItemBody => body !== null)
+  );
+  return { bodies: rebased, local };
+}
+
+/** `docs` with `prefix` applied, or `docs` when it does not apply; later edits that needed it then fail to move. */
+function withPrefix(
+  docs: Readonly<Record<Version, SceneDocument>>,
+  prefix: Extract<ItemBody, { kind: "edit" }>
+): Readonly<Record<Version, SceneDocument>> {
+  try {
+    return localOf(docs, [prefix]);
+  } catch {
+    return docs;
+  }
 }
 
 /** `ops` cut into consecutive runs no larger than `MAX_OPS_BYTES`; a single larger component stays alone. */
