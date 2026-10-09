@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -125,6 +126,99 @@ func (s *moduleService) UpdateResourceInstance(ctx context.Context, req *client.
 		},
 		Instance: resourceInstanceToProto(module, inst),
 	}, nil
+}
+
+// instanceSettingCASAttempts bounds how often CompareAndSetResourceInstanceSetting
+// re-reads an instance whose settings changed between its read and its write.
+// Each retry means another writer swapped in the meantime, so the bound is
+// only reached under sustained contention, which answers as not swapped.
+const instanceSettingCASAttempts = 8
+
+// CompareAndSetResourceInstanceSetting writes one key of an instance's
+// settings only while that key still holds the expected value, so concurrent
+// read-modify-write updates, such as two runs each adding an entry to a
+// wheel's list, can't lose one another's change. Only the module that owns the
+// instance may write it: a kind's settings mean something only to the module
+// that declares the kind.
+//
+// The settings are one JSON object, so the write replaces the whole object
+// only while it is still the one this call read. A change to another key in
+// the meantime is not a conflict for this one; the call reads again and
+// decides afresh.
+func (s *moduleService) CompareAndSetResourceInstanceSetting(ctx context.Context, req *client.CompareAndSetResourceInstanceSettingRequest) (*client.CompareAndSetResourceInstanceSettingResponse, error) {
+	if s.instanceRepo == nil {
+		return nil, twirp.NewError(twirp.Internal, "resource instance repository not configured")
+	}
+	if req.Key == "" {
+		return nil, twirp.RequiredArgumentError("key")
+	}
+	caller := strings.TrimSpace(req.ModuleName)
+	if caller == "" {
+		return nil, twirp.RequiredArgumentError("module_name")
+	}
+	expected, err := decodeOptionalJSON(req.ExpectedJson)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("expected_json", err.Error())
+	}
+	if strings.TrimSpace(req.ValueJson) == "" {
+		return nil, twirp.RequiredArgumentError("value_json")
+	}
+	var value json.RawMessage
+	if err := json.Unmarshal([]byte(req.ValueJson), &value); err != nil {
+		return nil, twirp.InvalidArgumentError("value_json", fmt.Sprintf("must be JSON: %v", err))
+	}
+
+	module, inst, err := s.resolveInstanceFromCanonical(req.CanonicalId)
+	if err != nil {
+		return nil, err
+	}
+	if owner := instanceModuleName(module); owner != caller {
+		return nil, twirp.NewError(twirp.PermissionDenied,
+			fmt.Sprintf("module %q may not write the settings of %q, which module %q owns", caller, req.CanonicalId, owner))
+	}
+
+	for attempt := 0; attempt < instanceSettingCASAttempts; attempt++ {
+		read := instanceSettingsOrEmpty(inst.Settings)
+		settings := map[string]json.RawMessage{}
+		if err := json.Unmarshal([]byte(read), &settings); err != nil || settings == nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("instance %q holds settings that are not a JSON object", req.CanonicalId))
+		}
+		current, present := settings[req.Key]
+		matches, err := instanceSettingMatches(current, present, expected)
+		if err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("read setting %q of %q: %w", req.Key, req.CanonicalId, err))
+		}
+		if !matches {
+			return &client.CompareAndSetResourceInstanceSettingResponse{Swapped: false, CurrentJson: string(current)}, nil
+		}
+
+		settings[req.Key] = emptyListWhereAListWas(current, value)
+		written, err := encodeInstanceSettings(settings)
+		if err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("encode settings of %q: %w", req.CanonicalId, err))
+		}
+		swapped, err := s.instanceRepo.CompareAndSetSettings(inst.ID, inst.Settings, written)
+		if err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("write settings of %q: %w", req.CanonicalId, err))
+		}
+		if swapped {
+			inst.Settings = written
+			s.publishInstanceEvent(req.RequestContext, module, inst, "updated")
+			return &client.CompareAndSetResourceInstanceSettingResponse{Swapped: true, CurrentJson: string(settings[req.Key])}, nil
+		}
+
+		inst, err = s.instanceRepo.GetByID(inst.ID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, twirp.NotFoundError(fmt.Sprintf("instance %q not found", req.CanonicalId))
+			}
+			return nil, twirp.InternalErrorWith(fmt.Errorf("load instance: %w", err))
+		}
+	}
+
+	settings := map[string]json.RawMessage{}
+	_ = json.Unmarshal([]byte(instanceSettingsOrEmpty(inst.Settings)), &settings)
+	return &client.CompareAndSetResourceInstanceSettingResponse{Swapped: false, CurrentJson: string(settings[req.Key])}, nil
 }
 
 func (s *moduleService) DeleteResourceInstance(ctx context.Context, req *client.DeleteResourceInstanceRequest) (*client.ResponseStatus, error) {
@@ -386,4 +480,105 @@ func buildResourceInstanceData(module *models.Module, inst *models.ModuleResourc
 		"module_key":    moduleKey,
 		"settings_json": instanceSettingsOrEmpty(inst.Settings),
 	}
+}
+
+// decodeOptionalJSON reads a JSON value that may be left out: empty text and
+// `null` both read as nil.
+func decodeOptionalJSON(raw string) (any, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return nil, fmt.Errorf("must be JSON: %w", err)
+	}
+	return value, nil
+}
+
+// instanceSettingMatches reports whether a settings key holds what a caller
+// expects. A key the instance does not hold reads as null, which is what a
+// function reading it sees (undefined in JavaScript, nil in Lua), so a nil
+// expectation matches it.
+func instanceSettingMatches(current json.RawMessage, present bool, expected any) (bool, error) {
+	if !present {
+		return expected == nil, nil
+	}
+	var stored any
+	if err := json.Unmarshal(current, &stored); err != nil {
+		return false, err
+	}
+	return settingValuesEqual(stored, expected), nil
+}
+
+// settingValuesEqual reports whether two decoded JSON values are the same as a
+// module function reads them: numbers by value (1 equals 1.0), objects
+// regardless of key order, and an empty object equal to an empty array,
+// because Lua has one empty table for both. Must match `setting_values_equal`
+// in barkloader/lib_sandbox/src/host/mod.rs.
+func settingValuesEqual(a, b any) bool {
+	switch x := a.(type) {
+	case []any:
+		switch y := b.(type) {
+		case []any:
+			if len(x) != len(y) {
+				return false
+			}
+			for i := range x {
+				if !settingValuesEqual(x[i], y[i]) {
+					return false
+				}
+			}
+			return true
+		case map[string]any:
+			return len(x) == 0 && len(y) == 0
+		default:
+			return false
+		}
+	case map[string]any:
+		switch y := b.(type) {
+		case map[string]any:
+			if len(x) != len(y) {
+				return false
+			}
+			for k, v := range x {
+				w, ok := y[k]
+				if !ok || !settingValuesEqual(v, w) {
+					return false
+				}
+			}
+			return true
+		case []any:
+			return len(x) == 0 && len(y) == 0
+		default:
+			return false
+		}
+	default:
+		return a == b
+	}
+}
+
+// emptyListWhereAListWas writes an empty object replacing a list as an empty
+// list. Lua has one empty table for both, so a Lua function clearing a list
+// hands over `{}`, and every reader of the list expects an array.
+func emptyListWhereAListWas(current, value json.RawMessage) json.RawMessage {
+	if !strings.HasPrefix(strings.TrimSpace(string(current)), "[") {
+		return value
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(value, &object); err != nil || object == nil || len(object) != 0 {
+		return value
+	}
+	return json.RawMessage("[]")
+}
+
+// encodeInstanceSettings writes settings back as compact JSON. HTML escaping is
+// off so text a streamer typed is stored as they typed it.
+func encodeInstanceSettings(settings map[string]json.RawMessage) (string, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(settings); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(buf.String(), "\n"), nil
 }

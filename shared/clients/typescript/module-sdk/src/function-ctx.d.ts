@@ -248,6 +248,29 @@ export interface CtxResources {
    * the providing module does. Throws on refusal or failure.
    */
   run(canonicalId: string, verb: string, params?: Record<string, unknown>): unknown;
+  /**
+   * Write `settings[key]` on an instance this module owns, only while it
+   * still holds `expected`: the safe way to change a setting the streamer,
+   * or another run, may be changing at the same moment, such as adding an
+   * entry to a `list` field of the kind's `schema`. Compared by meaning
+   * (key order, `1` vs `1.0`, `[]` vs `{}` don't matter), so pass back what
+   * you read from `get(canonicalId).settings[key]`. `undefined` or `null`
+   * matches a key the instance does not hold, which is how a field the
+   * streamer never saved reads.
+   *
+   * Answers `{ swapped, current }`: `current` is the setting as it reads now
+   * (the value written, or the one that stopped the write, to retry from),
+   * `undefined` when the instance does not hold the key. A swap is announced
+   * as an instance update, the same as a streamer's edit. Throws for an
+   * instance another module owns, an instance that does not exist, or a
+   * value JSON cannot hold.
+   */
+  compareAndSetSetting(
+    canonicalId: string,
+    key: string,
+    expected: unknown,
+    value: unknown,
+  ): CtxCompareAndSetSettingResult;
 }
 
 /**

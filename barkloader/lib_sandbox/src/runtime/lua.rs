@@ -309,6 +309,38 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
             },
         )?;
         resources.set("run", run_fn)?;
+
+        // `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`
+        // -- write one setting of an instance this module owns, only while it
+        // still holds `expected`; answers `{ swapped, current }`.
+        let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let compare_and_set_setting_fn =
+            lua.create_function(
+                move |lua,
+                      (canonical_id, key, expected, value): (
+                    String,
+                    String,
+                    LuaValue,
+                    LuaValue,
+                )| {
+                    let json_expected: Value = serde_json::to_value(&expected)
+                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    let json_val: Value = serde_json::to_value(&value)
+                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    let outcome = super::host_bindings::resources_compare_and_set_setting(
+                        &host,
+                        &module_id,
+                        &canonical_id,
+                        &key,
+                        &json_expected,
+                        &json_val,
+                    )
+                    .map_err(mlua::Error::RuntimeError)?;
+                    lua.to_value(&outcome)
+                },
+            )?;
+        resources.set("compareAndSetSetting", compare_and_set_setting_fn)?;
     }
     ctx.set("resources", resources)?;
 
@@ -967,5 +999,46 @@ mod tests {
             *settings.items.lock().unwrap(),
             serde_json::json!([{ "label": "Pizza" }])
         );
+    }
+
+    // Lua has one empty table for `[]` and `{}`, and nil for a key the
+    // streamer never saved; both must still match what the instance holds.
+    #[test]
+    fn lua_ctx_resources_compare_and_set_setting_writes_from_what_was_read() {
+        let instance = std::sync::Arc::new(crate::host::recording::InstanceSettings::new(
+            "wheel_spin:wheel:prizes",
+            serde_json::json!({ "winners": [] }),
+        ));
+        let mut host = noop_host_context();
+        host.resources = instance.clone();
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "wheel_spin".to_string(),
+            module_name: "Wheel Spin".to_string(),
+            module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        let code = r#"
+            function run(ctx)
+                local id = "wheel_spin:wheel:prizes"
+                local settings = ctx.resources.get(id).settings
+                local items = ctx.resources.compareAndSetSetting(id, "items", settings.items, { { label = "Pizza" } })
+                local winners = ctx.resources.compareAndSetSetting(id, "winners", settings.winners, { "Ann" })
+                local stale = ctx.resources.compareAndSetSetting(id, "items", nil, {})
+                return { items = items.swapped, winners = winners.swapped, stale = stale.swapped }
+            end
+        "#;
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["items"], true);
+        assert_eq!(result["winners"], true);
+        assert_eq!(result["stale"], false);
+        let settings = instance.settings.lock().unwrap();
+        assert_eq!(settings["items"], serde_json::json!([{ "label": "Pizza" }]));
+        assert_eq!(settings["winners"], serde_json::json!(["Ann"]));
     }
 }

@@ -91,6 +91,36 @@ message UpdateResourceInstanceRequest {
   common.RequestContext request_context = 4;
 }
 
+// Writes `settings[key] = value` on one instance only while `settings[key]`
+// still holds `expected`: the safe way for the owning module's functions to
+// change a setting the streamer, or another run, may be changing at the same
+// moment, such as adding an entry to a list.
+//
+// Values are JSON text and compare by meaning, the way a function reads them:
+// numbers by value (1 equals 1.0), objects regardless of key order, and an
+// empty object equals an empty array. An `expected` of null (or empty) matches
+// a key the instance does not hold, which is what a function reads as
+// undefined. Only the module that owns the instance may write it.
+message CompareAndSetResourceInstanceSettingRequest {
+  string canonical_id = 1;
+  // Manifest id of the module asking. Refused unless it owns the instance.
+  string module_name = 2;
+  string key = 3;
+  // JSON text of what `settings[key]` must hold for the write to happen.
+  string expected_json = 4;
+  // JSON text of the value to write.
+  string value_json = 5;
+  common.RequestContext request_context = 6;
+}
+
+message CompareAndSetResourceInstanceSettingResponse {
+  bool swapped = 1;
+  // JSON text of `settings[key]` after the call: the value written when
+  // swapped, else what it holds now, which is what the caller retries from.
+  // Empty when the instance has no such key.
+  string current_json = 2;
+}
+
 message DeleteResourceInstanceRequest {
   string canonical_id = 1;
   common.RequestContext request_context = 2;

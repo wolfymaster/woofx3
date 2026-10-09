@@ -1877,6 +1877,296 @@ impl<'de> serde::Deserialize<'de> for CheckModuleResourceUsageResponse {
         deserializer.deserialize_struct("module.CheckModuleResourceUsageResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for CompareAndSetResourceInstanceSettingRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.canonical_id.is_empty() {
+            len += 1;
+        }
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        if !self.key.is_empty() {
+            len += 1;
+        }
+        if !self.expected_json.is_empty() {
+            len += 1;
+        }
+        if !self.value_json.is_empty() {
+            len += 1;
+        }
+        if self.request_context.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.CompareAndSetResourceInstanceSettingRequest", len)?;
+        if !self.canonical_id.is_empty() {
+            struct_ser.serialize_field("canonicalId", &self.canonical_id)?;
+        }
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        if !self.key.is_empty() {
+            struct_ser.serialize_field("key", &self.key)?;
+        }
+        if !self.expected_json.is_empty() {
+            struct_ser.serialize_field("expectedJson", &self.expected_json)?;
+        }
+        if !self.value_json.is_empty() {
+            struct_ser.serialize_field("valueJson", &self.value_json)?;
+        }
+        if let Some(v) = self.request_context.as_ref() {
+            struct_ser.serialize_field("requestContext", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompareAndSetResourceInstanceSettingRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "canonical_id",
+            "canonicalId",
+            "module_name",
+            "moduleName",
+            "key",
+            "expected_json",
+            "expectedJson",
+            "value_json",
+            "valueJson",
+            "request_context",
+            "requestContext",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            CanonicalId,
+            ModuleName,
+            Key,
+            ExpectedJson,
+            ValueJson,
+            RequestContext,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "canonicalId" | "canonical_id" => Ok(GeneratedField::CanonicalId),
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            "key" => Ok(GeneratedField::Key),
+                            "expectedJson" | "expected_json" => Ok(GeneratedField::ExpectedJson),
+                            "valueJson" | "value_json" => Ok(GeneratedField::ValueJson),
+                            "requestContext" | "request_context" => Ok(GeneratedField::RequestContext),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompareAndSetResourceInstanceSettingRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.CompareAndSetResourceInstanceSettingRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompareAndSetResourceInstanceSettingRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut canonical_id__ = None;
+                let mut module_name__ = None;
+                let mut key__ = None;
+                let mut expected_json__ = None;
+                let mut value_json__ = None;
+                let mut request_context__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::CanonicalId => {
+                            if canonical_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("canonicalId"));
+                            }
+                            canonical_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Key => {
+                            if key__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("key"));
+                            }
+                            key__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ExpectedJson => {
+                            if expected_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("expectedJson"));
+                            }
+                            expected_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ValueJson => {
+                            if value_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("valueJson"));
+                            }
+                            value_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::RequestContext => {
+                            if request_context__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("requestContext"));
+                            }
+                            request_context__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(CompareAndSetResourceInstanceSettingRequest {
+                    canonical_id: canonical_id__.unwrap_or_default(),
+                    module_name: module_name__.unwrap_or_default(),
+                    key: key__.unwrap_or_default(),
+                    expected_json: expected_json__.unwrap_or_default(),
+                    value_json: value_json__.unwrap_or_default(),
+                    request_context: request_context__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.CompareAndSetResourceInstanceSettingRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for CompareAndSetResourceInstanceSettingResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.swapped {
+            len += 1;
+        }
+        if !self.current_json.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.CompareAndSetResourceInstanceSettingResponse", len)?;
+        if self.swapped {
+            struct_ser.serialize_field("swapped", &self.swapped)?;
+        }
+        if !self.current_json.is_empty() {
+            struct_ser.serialize_field("currentJson", &self.current_json)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompareAndSetResourceInstanceSettingResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "swapped",
+            "current_json",
+            "currentJson",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Swapped,
+            CurrentJson,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "swapped" => Ok(GeneratedField::Swapped),
+                            "currentJson" | "current_json" => Ok(GeneratedField::CurrentJson),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompareAndSetResourceInstanceSettingResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.CompareAndSetResourceInstanceSettingResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompareAndSetResourceInstanceSettingResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut swapped__ = None;
+                let mut current_json__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Swapped => {
+                            if swapped__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("swapped"));
+                            }
+                            swapped__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CurrentJson => {
+                            if current_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("currentJson"));
+                            }
+                            current_json__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(CompareAndSetResourceInstanceSettingResponse {
+                    swapped: swapped__.unwrap_or_default(),
+                    current_json: current_json__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.CompareAndSetResourceInstanceSettingResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for CompleteModuleDeleteRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
