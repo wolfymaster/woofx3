@@ -36,7 +36,8 @@ pub struct FactDefinition {
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="13")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
-    /// `active`, `unresolved` (a source's trigger is not registered) or
+    /// `active`, `unresolved` (a source's trigger is not registered, or was
+    /// archived when its module dropped it) or
     /// `invalid` (a source no longer fits what its trigger emits). Resolved when
     /// the definition is read, against the triggers registered then.
     #[prost(string, tag="14")]
@@ -48,6 +49,9 @@ pub struct FactDefinition {
     /// resolve has an empty `event`.
     #[prost(message, repeated, tag="16")]
     pub sources: ::prost::alloc::vec::Vec<ResolvedFactSource>,
+    /// The aggregate function the fact folds with, the body's `aggregate.fn`.
+    #[prost(string, tag="17")]
+    pub aggregate: ::prost::alloc::string::String,
 }
 /// A source with its trigger resolved: what the workflow service needs to
 /// match events and extract the viewer without reading the trigger itself.
@@ -146,11 +150,12 @@ pub struct FactDelta {
     pub subject_id: ::prost::alloc::string::String,
     #[prost(string, optional, tag="5")]
     pub subject_name: ::core::option::Option<::prost::alloc::string::String>,
-    /// The definition's aggregate function; a mismatch fails the whole apply.
+    /// The definition's aggregate function; a delta naming another is counted
+    /// invalid.
     #[prost(string, tag="6")]
     pub op: ::prost::alloc::string::String,
-    /// The value the aggregate reads: `num` for sum, min and max, either for
-    /// last, neither for the rest.
+    /// The value the aggregate reads: `num` for sum, min and max, exactly one
+    /// for last (the one its value kind names), neither for the rest.
     #[prost(double, optional, tag="7")]
     pub num: ::core::option::Option<f64>,
     #[prost(string, optional, tag="8")]
@@ -210,6 +215,16 @@ pub struct ApplyFactDeltasResponse {
     pub dropped: i32,
     #[prost(message, repeated, tag="4")]
     pub changes: ::prost::alloc::vec::Vec<FactValueChange>,
+    /// Deltas that do not fit their definition (another op, a missing, extra
+    /// or non-finite input, a value of another kind), or that repeat the fact
+    /// and viewer of an earlier delta of the event. The rest of the event is
+    /// applied regardless.
+    #[prost(int32, tag="5")]
+    pub invalid: i32,
+    /// Deltas that need a stream session when none had started and no stamp
+    /// was given.
+    #[prost(int32, tag="6")]
+    pub skipped: i32,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetViewerFactsRequest {

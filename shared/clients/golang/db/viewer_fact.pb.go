@@ -45,7 +45,8 @@ type FactDefinition struct {
 	BackfilledThrough *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=backfilled_through,json=backfilledThrough,proto3,oneof" json:"backfilled_through,omitempty"`
 	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	// `active`, `unresolved` (a source's trigger is not registered) or
+	// `active`, `unresolved` (a source's trigger is not registered, or was
+	// archived when its module dropped it) or
 	// `invalid` (a source no longer fits what its trigger emits). Resolved when
 	// the definition is read, against the triggers registered then.
 	Status string `protobuf:"bytes,14,opt,name=status,proto3" json:"status,omitempty"`
@@ -53,7 +54,9 @@ type FactDefinition struct {
 	Reason string `protobuf:"bytes,15,opt,name=reason,proto3" json:"reason,omitempty"`
 	// One per source, in definition order. A source whose trigger did not
 	// resolve has an empty `event`.
-	Sources       []*ResolvedFactSource `protobuf:"bytes,16,rep,name=sources,proto3" json:"sources,omitempty"`
+	Sources []*ResolvedFactSource `protobuf:"bytes,16,rep,name=sources,proto3" json:"sources,omitempty"`
+	// The aggregate function the fact folds with, the body's `aggregate.fn`.
+	Aggregate     string `protobuf:"bytes,17,opt,name=aggregate,proto3" json:"aggregate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -198,6 +201,13 @@ func (x *FactDefinition) GetSources() []*ResolvedFactSource {
 		return x.Sources
 	}
 	return nil
+}
+
+func (x *FactDefinition) GetAggregate() string {
+	if x != nil {
+		return x.Aggregate
+	}
+	return ""
 }
 
 // A source with its trigger resolved: what the workflow service needs to
@@ -655,10 +665,11 @@ type FactDelta struct {
 	Platform    string  `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
 	SubjectId   string  `protobuf:"bytes,4,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
 	SubjectName *string `protobuf:"bytes,5,opt,name=subject_name,json=subjectName,proto3,oneof" json:"subject_name,omitempty"`
-	// The definition's aggregate function; a mismatch fails the whole apply.
+	// The definition's aggregate function; a delta naming another is counted
+	// invalid.
 	Op string `protobuf:"bytes,6,opt,name=op,proto3" json:"op,omitempty"`
-	// The value the aggregate reads: `num` for sum, min and max, either for
-	// last, neither for the rest.
+	// The value the aggregate reads: `num` for sum, min and max, exactly one
+	// for last (the one its value kind names), neither for the rest.
 	Num           *float64 `protobuf:"fixed64,7,opt,name=num,proto3,oneof" json:"num,omitempty"`
 	Str           *string  `protobuf:"bytes,8,opt,name=str,proto3,oneof" json:"str,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -943,8 +954,16 @@ type ApplyFactDeltasResponse struct {
 	// False when the event had been applied before; nothing was written.
 	Applied bool `protobuf:"varint,2,opt,name=applied,proto3" json:"applied,omitempty"`
 	// Deltas dropped for a stale revision or a deleted definition.
-	Dropped       int32              `protobuf:"varint,3,opt,name=dropped,proto3" json:"dropped,omitempty"`
-	Changes       []*FactValueChange `protobuf:"bytes,4,rep,name=changes,proto3" json:"changes,omitempty"`
+	Dropped int32              `protobuf:"varint,3,opt,name=dropped,proto3" json:"dropped,omitempty"`
+	Changes []*FactValueChange `protobuf:"bytes,4,rep,name=changes,proto3" json:"changes,omitempty"`
+	// Deltas that do not fit their definition (another op, a missing, extra
+	// or non-finite input, a value of another kind), or that repeat the fact
+	// and viewer of an earlier delta of the event. The rest of the event is
+	// applied regardless.
+	Invalid int32 `protobuf:"varint,5,opt,name=invalid,proto3" json:"invalid,omitempty"`
+	// Deltas that need a stream session when none had started and no stamp
+	// was given.
+	Skipped       int32 `protobuf:"varint,6,opt,name=skipped,proto3" json:"skipped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1005,6 +1024,20 @@ func (x *ApplyFactDeltasResponse) GetChanges() []*FactValueChange {
 		return x.Changes
 	}
 	return nil
+}
+
+func (x *ApplyFactDeltasResponse) GetInvalid() int32 {
+	if x != nil {
+		return x.Invalid
+	}
+	return 0
+}
+
+func (x *ApplyFactDeltasResponse) GetSkipped() int32 {
+	if x != nil {
+		return x.Skipped
+	}
+	return 0
 }
 
 type GetViewerFactsRequest struct {
@@ -1213,7 +1246,7 @@ var File_viewer_fact_proto protoreflect.FileDescriptor
 
 const file_viewer_fact_proto_rawDesc = "" +
 	"\n" +
-	"\x11viewer_fact.proto\x12\vviewer_fact\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xab\x05\n" +
+	"\x11viewer_fact.proto\x12\vviewer_fact\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x05\n" +
 	"\x0eFactDefinition\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1237,7 +1270,8 @@ const file_viewer_fact_proto_rawDesc = "" +
 	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
 	"\x06status\x18\x0e \x01(\tR\x06status\x12\x16\n" +
 	"\x06reason\x18\x0f \x01(\tR\x06reason\x129\n" +
-	"\asources\x18\x10 \x03(\v2\x1f.viewer_fact.ResolvedFactSourceR\asourcesB\x15\n" +
+	"\asources\x18\x10 \x03(\v2\x1f.viewer_fact.ResolvedFactSourceR\asources\x12\x1c\n" +
+	"\taggregate\x18\x11 \x01(\tR\taggregateB\x15\n" +
 	"\x13_backfilled_through\"\x90\x02\n" +
 	"\x12ResolvedFactSource\x12\x18\n" +
 	"\atrigger\x18\x01 \x01(\tR\atrigger\x12\x14\n" +
@@ -1307,12 +1341,14 @@ const file_viewer_fact_proto_rawDesc = "" +
 	"\fsubject_name\x18\x05 \x01(\tH\x00R\vsubjectName\x88\x01\x01\x12.\n" +
 	"\x06before\x18\x06 \x01(\v2\x16.viewer_fact.FactValueR\x06before\x12,\n" +
 	"\x05after\x18\a \x01(\v2\x16.viewer_fact.FactValueR\x05afterB\x0f\n" +
-	"\r_subject_name\"\xb5\x01\n" +
+	"\r_subject_name\"\xe9\x01\n" +
 	"\x17ApplyFactDeltasResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x18\n" +
 	"\aapplied\x18\x02 \x01(\bR\aapplied\x12\x18\n" +
 	"\adropped\x18\x03 \x01(\x05R\adropped\x126\n" +
-	"\achanges\x18\x04 \x03(\v2\x1c.viewer_fact.FactValueChangeR\achanges\"R\n" +
+	"\achanges\x18\x04 \x03(\v2\x1c.viewer_fact.FactValueChangeR\achanges\x12\x18\n" +
+	"\ainvalid\x18\x05 \x01(\x05R\ainvalid\x12\x18\n" +
+	"\askipped\x18\x06 \x01(\x05R\askipped\"R\n" +
 	"\x15GetViewerFactsRequest\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1d\n" +
 	"\n" +

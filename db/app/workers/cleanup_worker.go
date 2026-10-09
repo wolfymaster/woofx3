@@ -14,6 +14,8 @@ type CleanupWorker struct {
 	logger          *slog.Logger
 	cleanupInterval time.Duration
 	retentionPeriod time.Duration
+	factRetention   time.Duration
+	factPruneBatch  int
 	ctx             context.Context
 	cancel          context.CancelFunc
 }
@@ -24,6 +26,8 @@ func NewCleanupWorker(
 	logger *slog.Logger,
 	cleanupInterval time.Duration,
 	retentionPeriod time.Duration,
+	factRetention time.Duration,
+	factPruneBatch int,
 ) *CleanupWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -33,6 +37,8 @@ func NewCleanupWorker(
 		logger:          logger,
 		cleanupInterval: cleanupInterval,
 		retentionPeriod: retentionPeriod,
+		factRetention:   factRetention,
+		factPruneBatch:  factPruneBatch,
 		ctx:             ctx,
 		cancel:          cancel,
 	}
@@ -42,6 +48,7 @@ func (w *CleanupWorker) Start() {
 	w.logger.Info("cleanup worker starting",
 		"cleanup_interval", w.cleanupInterval,
 		"retention_period", w.retentionPeriod,
+		"fact_dedupe_retention", w.factRetention,
 	)
 
 	go w.run()
@@ -78,9 +85,7 @@ func (w *CleanupWorker) cleanup() error {
 		return err
 	}
 
-	// A fact event is redelivered within seconds of its first delivery, so
-	// the outbox retention outlasts any redelivery by far.
-	pruned, err := w.facts.PruneAppliedEvents(time.Now().Add(-w.retentionPeriod))
+	pruned, err := w.facts.PruneAppliedEvents(time.Now().Add(-w.factRetention), w.factPruneBatch)
 	if err != nil {
 		return err
 	}

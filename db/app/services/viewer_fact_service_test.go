@@ -172,7 +172,7 @@ func TestUpsertFactDefinitionResolvesItsSources(t *testing.T) {
 	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
 		definition := upsertFact(t, svc, messagesFact(`{"not": {"path": "message", "op": "starts_with", "value": "!"}}`))
 
-		if definition.Status != "active" || definition.Revision != 1 || definition.ValueKind != "number" {
+		if definition.Status != "active" || definition.Revision != 1 || definition.ValueKind != "number" || definition.Aggregate != "count" {
 			t.Fatalf("definition = %s rev %d kind %s (%s), want active rev 1 number",
 				definition.Status, definition.Revision, definition.ValueKind, definition.Reason)
 		}
@@ -226,6 +226,8 @@ func TestUpsertFactDefinitionRefusesWhatDoesNotFitTheTrigger(t *testing.T) {
 			{"where reads a missing path", factBody("count", "chatterId", "", `{"path": "text", "op": "contains", "value": "a"}`), "lifetime", "does not emit"},
 			{"where sets two kinds", factBody("count", "chatterId", "", `{"path": "message", "op": "eq", "all": [{"path": "bits", "op": "gt", "value": 1}]}`), "lifetime", "exactly one"},
 			{"where has an empty group", factBody("count", "chatterId", "", `{"any": []}`), "lifetime", "no conditions"},
+			{"where atom has an unknown key", factBody("count", "chatterId", "", `{"path": "message", "op": "eq", "vaule": "a"}`), "lifetime", "unknown field"},
+			{"where node has an unknown key", factBody("count", "chatterId", "", `{"all": [{"path": "message", "op": "eq", "value": "a"}], "note": "x"}`), "lifetime", "unknown field"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -277,6 +279,63 @@ func TestOnlyAModuleMaySaveAFactOverAnUnregisteredTrigger(t *testing.T) {
 
 // A `last` fact takes its kind from its value field, so with no registered
 // trigger there is nothing to store it as.
+// An archived trigger is one its module dropped; nothing fires it any more.
+func TestAnArchivedTriggerDoesNotResolve(t *testing.T) {
+	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
+		upsertFact(t, svc, &client.UpsertFactDefinitionRequest{
+			Id: "twitch:fact:messages", Name: "Messages", Definition: factBody("count", "chatterId", "", ""),
+			WindowKind: "lifetime", CreatedByType: "MODULE", CreatedByRef: "twitch",
+		})
+		if err := db.Model(&models.Trigger{}).Where("manifest_id = ?", "user_message").
+			Update("archived_at", factNow).Error; err != nil {
+			t.Fatalf("archive trigger: %v", err)
+		}
+
+		listed, err := svc.ListFactDefinitions(context.Background(), &client.ListFactDefinitionsRequest{})
+		if err != nil {
+			t.Fatalf("ListFactDefinitions: %v", err)
+		}
+		if got := listed.Definitions[0]; got.Status != "unresolved" || got.Sources[0].Event != "" {
+			t.Fatalf("listed = %s (%s), want unresolved", got.Status, got.Reason)
+		}
+		_, err = svc.UpsertFactDefinition(context.Background(), messagesFact(""))
+		wantTwirpCode(t, err, twirp.FailedPrecondition)
+	})
+}
+
+// The rest of an event still applies around a delta that does not fit, and
+// the response says how many did not.
+func TestApplyFactDeltasCountsInvalidAndSkippedDeltas(t *testing.T) {
+	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
+		upsertFact(t, svc, messagesFact(""))
+		upsertFact(t, svc, &client.UpsertFactDefinitionRequest{
+			Id: "user:fact:stream_messages", Name: "Messages this stream",
+			Definition: factBody("count", "chatterId", "", ""), WindowKind: "session",
+		})
+		count := func(factID, viewer string) *client.FactDelta {
+			return &client.FactDelta{FactId: factID, Revision: 1, Platform: "twitch", SubjectId: viewer, Op: "count"}
+		}
+		wrongOp := count("user:fact:messages", "v2")
+		wrongOp.Op = "sum"
+		wrongOp.Num = float64Ptr(1)
+
+		resp, err := svc.ApplyFactDeltas(context.Background(), &client.ApplyFactDeltasRequest{
+			Source: "twitch", EventId: "e1", OccurredAt: timestamppb.New(factNow),
+			Deltas: []*client.FactDelta{
+				count("user:fact:messages", "v1"), wrongOp, count("user:fact:messages", "v1"),
+				count("user:fact:stream_messages", "v1"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("ApplyFactDeltas: %v", err)
+		}
+		if !resp.Applied || resp.Invalid != 2 || resp.Skipped != 1 || resp.Dropped != 0 || len(resp.Changes) != 1 {
+			t.Fatalf("resp = applied %v invalid %d skipped %d dropped %d changes %d; want true 2 1 0 1",
+				resp.Applied, resp.Invalid, resp.Skipped, resp.Dropped, len(resp.Changes))
+		}
+	})
+}
+
 func TestAnUnresolvedLastFactIsRefused(t *testing.T) {
 	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
 		_, err := svc.UpsertFactDefinition(context.Background(), &client.UpsertFactDefinitionRequest{
@@ -431,10 +490,13 @@ func TestApplyFactDeltasRefusesMalformedRequests(t *testing.T) {
 		other.FactId = "user:fact:other"
 
 		cases := map[string]*client.ApplyFactDeltasRequest{
-			"no occurred_at":   {Source: "twitch", EventId: "e1", Deltas: []*client.FactDelta{delta()}},
-			"no event id":      {Source: "twitch", OccurredAt: at, Deltas: []*client.FactDelta{delta()}},
-			"subject too long": {Source: "twitch", EventId: "e1", OccurredAt: at, Deltas: []*client.FactDelta{long}},
-			"silent over two":  {Silent: true, OccurredAt: at, Deltas: []*client.FactDelta{delta(), other}},
+			"no occurred_at":    {Source: "twitch", EventId: "e1", Deltas: []*client.FactDelta{delta()}},
+			"no event id":       {Source: "twitch", OccurredAt: at, Deltas: []*client.FactDelta{delta()}},
+			"subject too long":  {Source: "twitch", EventId: "e1", OccurredAt: at, Deltas: []*client.FactDelta{long}},
+			"silent over two":   {Silent: true, OccurredAt: at, Deltas: []*client.FactDelta{delta(), other}},
+			"event id too long": {Source: "twitch", EventId: strings.Repeat("e", 256), OccurredAt: at, Deltas: []*client.FactDelta{delta()}},
+			"source too long":   {Source: strings.Repeat("s", 256), EventId: "e1", OccurredAt: at, Deltas: []*client.FactDelta{delta()}},
+			"stamp too long":    {Source: "twitch", EventId: "e1", SessionStamp: strings.Repeat("x", 101), OccurredAt: at, Deltas: []*client.FactDelta{delta()}},
 		}
 		for name, req := range cases {
 			t.Run(name, func(t *testing.T) {
@@ -497,14 +559,16 @@ func TestGetViewerFactsReadsLifetimeAndTheCurrentSession(t *testing.T) {
 func TestPruneAppliedEventsLetsAnOldEventApplyAgain(t *testing.T) {
 	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
 		upsertFact(t, svc, messagesFact(""))
-		applyCount(t, svc, "e1", factNow, "user:fact:messages", 1, "v1")
+		for _, id := range []string{"e1", "e2", "e3", "e4", "e5"} {
+			applyCount(t, svc, id, factNow, "user:fact:messages", 1, "v1")
+		}
 
 		facts := repo.NewViewerFactRepository(db)
-		if n, err := facts.PruneAppliedEvents(time.Now().Add(-time.Hour)); err != nil || n != 0 {
+		if n, err := facts.PruneAppliedEvents(time.Now().Add(-time.Hour), 2); err != nil || n != 0 {
 			t.Fatalf("prune of nothing old = %d, %v", n, err)
 		}
-		if n, err := facts.PruneAppliedEvents(time.Now().Add(time.Hour)); err != nil || n != 1 {
-			t.Fatalf("prune = %d, %v; want 1", n, err)
+		if n, err := facts.PruneAppliedEvents(time.Now().Add(time.Hour), 2); err != nil || n != 5 {
+			t.Fatalf("prune in batches of 2 = %d, %v; want all 5", n, err)
 		}
 		if again := applyCount(t, svc, "e1", factNow, "user:fact:messages", 1, "v1"); !again.Applied {
 			t.Fatalf("a pruned event was still refused")

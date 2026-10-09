@@ -51,7 +51,8 @@ export interface FactDefinition {
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
   /**
-   * `active`, `unresolved` (a source's trigger is not registered) or
+   * `active`, `unresolved` (a source's trigger is not registered, or was
+   * archived when its module dropped it) or
    * `invalid` (a source no longer fits what its trigger emits). Resolved when
    * the definition is read, against the triggers registered then.
    */
@@ -65,6 +66,10 @@ export interface FactDefinition {
    * resolve has an empty `event`.
    */
   sources: ResolvedFactSource[];
+  /**
+   * The aggregate function the fact folds with, the body's `aggregate.fn`.
+   */
+  aggregate: string;
 }
 
 /**
@@ -164,12 +169,13 @@ export interface FactDelta {
   subjectId: string;
   subjectName?: string | null | undefined;
   /**
-   * The definition's aggregate function; a mismatch fails the whole apply.
+   * The definition's aggregate function; a delta naming another is counted
+   * invalid.
    */
   op: string;
   /**
-   * The value the aggregate reads: `num` for sum, min and max, either for
-   * last, neither for the rest.
+   * The value the aggregate reads: `num` for sum, min and max, exactly one
+   * for last (the one its value kind names), neither for the rest.
    */
   num?: number | null | undefined;
   str?: string | null | undefined;
@@ -227,6 +233,18 @@ export interface ApplyFactDeltasResponse {
    */
   dropped: number;
   changes: FactValueChange[];
+  /**
+   * Deltas that do not fit their definition (another op, a missing, extra
+   * or non-finite input, a value of another kind), or that repeat the fact
+   * and viewer of an earlier delta of the event. The rest of the event is
+   * applied regardless.
+   */
+  invalid: number;
+  /**
+   * Deltas that need a stream session when none had started and no stamp
+   * was given.
+   */
+  skipped: number;
 }
 
 export interface GetViewerFactsRequest {
@@ -333,7 +351,10 @@ export async function ListFactDefinitions(
  *
  * Idempotent on (source, event_id): applying an event again writes nothing
  * and returns `applied` false. A delta computed against a revision that is
- * no longer current, or against a deleted definition, is dropped.
+ * no longer current, or against a deleted definition, is dropped; one that
+ * does not fit its definition is counted invalid. Neither fails the rest of
+ * the event. `last` and the session aggregates ignore an event older than
+ * the stored value, so a replay of old events cannot move them back.
  */
 export async function ApplyFactDeltas(
   applyFactDeltasRequest: ApplyFactDeltasRequest,
@@ -433,7 +454,10 @@ export async function ListFactDefinitionsJSON(
  *
  * Idempotent on (source, event_id): applying an event again writes nothing
  * and returns `applied` false. A delta computed against a revision that is
- * no longer current, or against a deleted definition, is dropped.
+ * no longer current, or against a deleted definition, is dropped; one that
+ * does not fit its definition is counted invalid. Neither fails the rest of
+ * the event. `last` and the session aggregates ignore an event older than
+ * the stored value, so a replay of old events cannot move them back.
  */
 export async function ApplyFactDeltasJSON(
   applyFactDeltasRequest: ApplyFactDeltasRequest,
@@ -518,7 +542,10 @@ export interface ViewerFactService<Context = unknown> {
    *
    * Idempotent on (source, event_id): applying an event again writes nothing
    * and returns `applied` false. A delta computed against a revision that is
-   * no longer current, or against a deleted definition, is dropped.
+   * no longer current, or against a deleted definition, is dropped; one that
+   * does not fit its definition is counted invalid. Neither fails the rest of
+   * the event. `last` and the session aggregates ignore an event older than
+   * the stored value, so a replay of old events cannot move them back.
    */
   ApplyFactDeltas: (
     applyFactDeltasRequest: ApplyFactDeltasRequest,
@@ -650,6 +677,7 @@ export const FactDefinition = {
       status: "",
       reason: "",
       sources: [],
+      aggregate: "",
       ...msg,
     };
   },
@@ -728,6 +756,9 @@ export const FactDefinition = {
         msg.sources as any,
         ResolvedFactSource._writeMessage,
       );
+    }
+    if (msg.aggregate) {
+      writer.writeString(17, msg.aggregate);
     }
     return writer;
   },
@@ -813,6 +844,10 @@ export const FactDefinition = {
           const m = ResolvedFactSource.initialize();
           reader.readMessage(m, ResolvedFactSource._readMessage);
           msg.sources.push(m);
+          break;
+        }
+        case 17: {
+          msg.aggregate = reader.readString();
           break;
         }
         default: {
@@ -1819,6 +1854,8 @@ export const ApplyFactDeltasResponse = {
       applied: false,
       dropped: 0,
       changes: [],
+      invalid: 0,
+      skipped: 0,
       ...msg,
     };
   },
@@ -1845,6 +1882,12 @@ export const ApplyFactDeltasResponse = {
         msg.changes as any,
         FactValueChange._writeMessage,
       );
+    }
+    if (msg.invalid) {
+      writer.writeInt32(5, msg.invalid);
+    }
+    if (msg.skipped) {
+      writer.writeInt32(6, msg.skipped);
     }
     return writer;
   },
@@ -1875,6 +1918,14 @@ export const ApplyFactDeltasResponse = {
           const m = FactValueChange.initialize();
           reader.readMessage(m, FactValueChange._readMessage);
           msg.changes.push(m);
+          break;
+        }
+        case 5: {
+          msg.invalid = reader.readInt32();
+          break;
+        }
+        case 6: {
+          msg.skipped = reader.readInt32();
           break;
         }
         default: {
@@ -2212,6 +2263,7 @@ export const FactDefinitionJSON = {
       status: "",
       reason: "",
       sources: [],
+      aggregate: "",
       ...msg,
     };
   },
@@ -2275,6 +2327,9 @@ export const FactDefinitionJSON = {
     }
     if (msg.sources?.length) {
       json["sources"] = msg.sources.map(ResolvedFactSourceJSON._writeMessage);
+    }
+    if (msg.aggregate) {
+      json["aggregate"] = msg.aggregate;
     }
     return json;
   },
@@ -2351,6 +2406,10 @@ export const FactDefinitionJSON = {
         ResolvedFactSourceJSON._readMessage(m, item);
         msg.sources.push(m);
       }
+    }
+    const _aggregate_ = json["aggregate"];
+    if (_aggregate_) {
+      msg.aggregate = _aggregate_;
     }
     return msg;
   },
@@ -3233,6 +3292,8 @@ export const ApplyFactDeltasResponseJSON = {
       applied: false,
       dropped: 0,
       changes: [],
+      invalid: 0,
+      skipped: 0,
       ...msg,
     };
   },
@@ -3258,6 +3319,12 @@ export const ApplyFactDeltasResponseJSON = {
     }
     if (msg.changes?.length) {
       json["changes"] = msg.changes.map(FactValueChangeJSON._writeMessage);
+    }
+    if (msg.invalid) {
+      json["invalid"] = msg.invalid;
+    }
+    if (msg.skipped) {
+      json["skipped"] = msg.skipped;
     }
     return json;
   },
@@ -3288,6 +3355,14 @@ export const ApplyFactDeltasResponseJSON = {
         FactValueChangeJSON._readMessage(m, item);
         msg.changes.push(m);
       }
+    }
+    const _invalid_ = json["invalid"];
+    if (_invalid_) {
+      msg.invalid = protoscript.parseNumber(_invalid_);
+    }
+    const _skipped_ = json["skipped"];
+    if (_skipped_) {
+      msg.skipped = protoscript.parseNumber(_skipped_);
     }
     return msg;
   },

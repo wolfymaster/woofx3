@@ -198,6 +198,12 @@ impl serde::Serialize for ApplyFactDeltasResponse {
         if !self.changes.is_empty() {
             len += 1;
         }
+        if self.invalid != 0 {
+            len += 1;
+        }
+        if self.skipped != 0 {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("viewer_fact.ApplyFactDeltasResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
@@ -210,6 +216,12 @@ impl serde::Serialize for ApplyFactDeltasResponse {
         }
         if !self.changes.is_empty() {
             struct_ser.serialize_field("changes", &self.changes)?;
+        }
+        if self.invalid != 0 {
+            struct_ser.serialize_field("invalid", &self.invalid)?;
+        }
+        if self.skipped != 0 {
+            struct_ser.serialize_field("skipped", &self.skipped)?;
         }
         struct_ser.end()
     }
@@ -225,6 +237,8 @@ impl<'de> serde::Deserialize<'de> for ApplyFactDeltasResponse {
             "applied",
             "dropped",
             "changes",
+            "invalid",
+            "skipped",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -233,6 +247,8 @@ impl<'de> serde::Deserialize<'de> for ApplyFactDeltasResponse {
             Applied,
             Dropped,
             Changes,
+            Invalid,
+            Skipped,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -258,6 +274,8 @@ impl<'de> serde::Deserialize<'de> for ApplyFactDeltasResponse {
                             "applied" => Ok(GeneratedField::Applied),
                             "dropped" => Ok(GeneratedField::Dropped),
                             "changes" => Ok(GeneratedField::Changes),
+                            "invalid" => Ok(GeneratedField::Invalid),
+                            "skipped" => Ok(GeneratedField::Skipped),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -281,6 +299,8 @@ impl<'de> serde::Deserialize<'de> for ApplyFactDeltasResponse {
                 let mut applied__ = None;
                 let mut dropped__ = None;
                 let mut changes__ = None;
+                let mut invalid__ = None;
+                let mut skipped__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -309,6 +329,22 @@ impl<'de> serde::Deserialize<'de> for ApplyFactDeltasResponse {
                             }
                             changes__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Invalid => {
+                            if invalid__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("invalid"));
+                            }
+                            invalid__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::Skipped => {
+                            if skipped__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("skipped"));
+                            }
+                            skipped__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
                     }
                 }
                 Ok(ApplyFactDeltasResponse {
@@ -316,6 +352,8 @@ impl<'de> serde::Deserialize<'de> for ApplyFactDeltasResponse {
                     applied: applied__.unwrap_or_default(),
                     dropped: dropped__.unwrap_or_default(),
                     changes: changes__.unwrap_or_default(),
+                    invalid: invalid__.unwrap_or_default(),
+                    skipped: skipped__.unwrap_or_default(),
                 })
             }
         }
@@ -469,6 +507,9 @@ impl serde::Serialize for FactDefinition {
         if !self.sources.is_empty() {
             len += 1;
         }
+        if !self.aggregate.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("viewer_fact.FactDefinition", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -520,6 +561,9 @@ impl serde::Serialize for FactDefinition {
         if !self.sources.is_empty() {
             struct_ser.serialize_field("sources", &self.sources)?;
         }
+        if !self.aggregate.is_empty() {
+            struct_ser.serialize_field("aggregate", &self.aggregate)?;
+        }
         struct_ser.end()
     }
 }
@@ -554,6 +598,7 @@ impl<'de> serde::Deserialize<'de> for FactDefinition {
             "status",
             "reason",
             "sources",
+            "aggregate",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -574,6 +619,7 @@ impl<'de> serde::Deserialize<'de> for FactDefinition {
             Status,
             Reason,
             Sources,
+            Aggregate,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -611,6 +657,7 @@ impl<'de> serde::Deserialize<'de> for FactDefinition {
                             "status" => Ok(GeneratedField::Status),
                             "reason" => Ok(GeneratedField::Reason),
                             "sources" => Ok(GeneratedField::Sources),
+                            "aggregate" => Ok(GeneratedField::Aggregate),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -646,6 +693,7 @@ impl<'de> serde::Deserialize<'de> for FactDefinition {
                 let mut status__ = None;
                 let mut reason__ = None;
                 let mut sources__ = None;
+                let mut aggregate__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -746,6 +794,12 @@ impl<'de> serde::Deserialize<'de> for FactDefinition {
                             }
                             sources__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Aggregate => {
+                            if aggregate__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("aggregate"));
+                            }
+                            aggregate__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(FactDefinition {
@@ -765,6 +819,7 @@ impl<'de> serde::Deserialize<'de> for FactDefinition {
                     status: status__.unwrap_or_default(),
                     reason: reason__.unwrap_or_default(),
                     sources: sources__.unwrap_or_default(),
+                    aggregate: aggregate__.unwrap_or_default(),
                 })
             }
         }

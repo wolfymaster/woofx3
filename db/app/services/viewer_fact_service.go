@@ -65,12 +65,15 @@ const (
 	factStatusInvalid    = "invalid"
 )
 
-// Column widths of fact_values. Postgres refuses a longer value and SQLite
-// stores it, so they are checked here for both.
+// Column widths of the fact tables, and the session id a session stamp
+// becomes as a window key. Postgres refuses a longer value and SQLite stores
+// it, so they are checked here for both.
 const (
 	maxFactIDLength       = 255
 	maxFactPlatformLength = 50
 	maxFactSubjectLength  = 100
+	maxFactEventIDLength  = 255
+	maxFactSessionLength  = 100
 )
 
 // Identity annotation values on an emits field. They must match
@@ -200,6 +203,15 @@ func (s *viewerFactService) ApplyFactDeltas(ctx context.Context, req *client.App
 			return nil, twirp.RequiredArgumentError("event_id")
 		}
 	}
+	if len(req.Source) > maxFactEventIDLength {
+		return nil, twirp.InvalidArgumentError("source", fmt.Sprintf("must be at most %d characters", maxFactEventIDLength))
+	}
+	if len(req.EventId) > maxFactEventIDLength {
+		return nil, twirp.InvalidArgumentError("event_id", fmt.Sprintf("must be at most %d characters", maxFactEventIDLength))
+	}
+	if len(req.SessionStamp) > maxFactSessionLength {
+		return nil, twirp.InvalidArgumentError("session_stamp", fmt.Sprintf("must be at most %d characters", maxFactSessionLength))
+	}
 	deltas := make([]repo.FactDelta, len(req.Deltas))
 	for i, in := range req.Deltas {
 		if err := validateFactDelta(in); err != nil {
@@ -250,6 +262,8 @@ func (s *viewerFactService) ApplyFactDeltas(ctx context.Context, req *client.App
 		Status:  &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: "Fact deltas applied"},
 		Applied: result.Applied,
 		Dropped: int32(result.Dropped),
+		Invalid: int32(result.Invalid),
+		Skipped: int32(result.Skipped),
 		Changes: changes,
 	}, nil
 }
@@ -325,6 +339,7 @@ func (s *viewerFactService) definitionToProto(definition *models.FactDefinition)
 		Revision:      definition.Revision,
 		CreatedByType: definition.CreatedByType,
 		CreatedByRef:  definition.CreatedByRef,
+		Aggregate:     definition.AggregateFn,
 		CountingSince: timestamppb.New(definition.CountingSince),
 		CreatedAt:     timestamppb.New(definition.CreatedAt),
 		UpdatedAt:     timestamppb.New(definition.UpdatedAt),
@@ -481,8 +496,8 @@ func validateFactShape(body *models.FactDefinitionBody, windowKind string) error
 			return fmt.Errorf("sources[%d].value is required by %s", i, fn)
 		}
 		if len(source.Where) > 0 {
-			var tree factCondition
-			if err := json.Unmarshal(source.Where, &tree); err != nil {
+			tree, err := parseFactCondition(source.Where)
+			if err != nil {
 				return fmt.Errorf("sources[%d].where: %w", i, err)
 			}
 			if err := tree.validate(); err != nil {
@@ -519,6 +534,18 @@ type factCondition struct {
 	Path  string          `json:"path,omitempty"`
 	Op    string          `json:"op,omitempty"`
 	Value json.RawMessage `json:"value,omitempty"`
+}
+
+// parseFactCondition decodes a condition tree, refusing unknown keys on every
+// node so a misspelt key fails the save rather than being dropped.
+func parseFactCondition(raw json.RawMessage) (*factCondition, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var tree factCondition
+	if err := decoder.Decode(&tree); err != nil {
+		return nil, err
+	}
+	return &tree, nil
 }
 
 func (c *factCondition) validate() error {
@@ -648,7 +675,7 @@ func (s *viewerFactService) resolve(body *models.FactDefinitionBody) (resolvedFa
 		if err != nil {
 			return invalidFact(out, fmt.Errorf("sources[%d].trigger: %w", i, err)), nil
 		}
-		trigger, err := s.triggers.GetTriggerByModuleAndManifestID(id.moduleID, id.manifestID)
+		trigger, err := s.triggers.GetActiveTriggerByModuleAndManifestID(id.moduleID, id.manifestID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			unresolved = append(unresolved, source.Trigger)
 			continue
@@ -708,8 +735,8 @@ func checkSourceAgainstEmits(source models.FactSource, fn string, emits *emitsSh
 	resolved.DisplayName = subject.DisplayName
 
 	if len(source.Where) > 0 {
-		var tree factCondition
-		if err := json.Unmarshal(source.Where, &tree); err != nil {
+		tree, err := parseFactCondition(source.Where)
+		if err != nil {
 			return "", fmt.Errorf("where: %w", err)
 		}
 		for _, path := range tree.paths(nil) {

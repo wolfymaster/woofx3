@@ -762,6 +762,19 @@ func (r *ViewerFactRepository) ListDefinitions() ([]*models.FactDefinition, erro
 // (created_by_type, created_by_ref). record runs for every write and never
 // for FactDefinitionUnchanged.
 func (r *ViewerFactRepository) UpsertDefinition(in *models.FactDefinition, record RecordFactDefinitionChange) (*models.FactDefinition, FactDefinitionWrite, error) {
+	stored, write, err := r.upsertDefinitionOnce(in, record)
+	// Two first saves of one id both find no row; the loser's insert does
+	// nothing. Its second attempt finds the winner's row and compares against
+	// it like any later save.
+	if errors.Is(err, errFactDefinitionCreatedConcurrently) {
+		stored, write, err = r.upsertDefinitionOnce(in, record)
+	}
+	return stored, write, err
+}
+
+var errFactDefinitionCreatedConcurrently = errors.New("fact definition was created concurrently")
+
+func (r *ViewerFactRepository) upsertDefinitionOnce(in *models.FactDefinition, record RecordFactDefinitionChange) (*models.FactDefinition, FactDefinitionWrite, error) {
 	var stored models.FactDefinition
 	write := FactDefinitionUnchanged
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -779,8 +792,12 @@ func (r *ViewerFactRepository) UpsertDefinition(in *models.FactDefinition, recor
 			stored.BackfilledThrough = nil
 			stored.CreatedAt = now
 			stored.UpdatedAt = now
-			if err := tx.Create(&stored).Error; err != nil {
-				return err
+			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&stored)
+			if created.Error != nil {
+				return created.Error
+			}
+			if created.RowsAffected == 0 {
+				return errFactDefinitionCreatedConcurrently
 			}
 			write = FactDefinitionCreated
 			return record(tx, &stored)
@@ -901,10 +918,25 @@ func sameJSON(a, b string) (bool, error) {
 }
 
 // PruneAppliedEvents deletes the dedupe rows of events applied before
-// `before` and returns how many it deleted. An event redelivered after its
-// row is pruned would be applied again, so `before` must be older than any
-// redelivery.
-func (r *ViewerFactRepository) PruneAppliedEvents(before time.Time) (int64, error) {
-	result := r.db.Where("applied_at < ?", before.UTC()).Delete(&models.FactAppliedEvent{})
-	return result.RowsAffected, result.Error
+// `before`, `batchSize` rows per statement, and returns how many it deleted.
+// Batches keep each statement's locks short on a table every apply writes
+// to. An event redelivered after its row is pruned would be applied again, so
+// `before` must be older than any redelivery.
+func (r *ViewerFactRepository) PruneAppliedEvents(before time.Time, batchSize int) (int64, error) {
+	if batchSize < 1 {
+		return 0, fmt.Errorf("prune batch size must be at least 1, got %d", batchSize)
+	}
+	var total int64
+	for {
+		result := r.db.Exec(`DELETE FROM fact_applied_events WHERE (source, event_id) IN (
+			SELECT source, event_id FROM fact_applied_events WHERE applied_at < ? LIMIT ?)`,
+			before.UTC(), batchSize)
+		if result.Error != nil {
+			return total, result.Error
+		}
+		total += result.RowsAffected
+		if result.RowsAffected < int64(batchSize) {
+			return total, nil
+		}
+	}
 }

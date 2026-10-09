@@ -39,7 +39,10 @@ service ViewerFactService {
   //
   // Idempotent on (source, event_id): applying an event again writes nothing
   // and returns `applied` false. A delta computed against a revision that is
-  // no longer current, or against a deleted definition, is dropped.
+  // no longer current, or against a deleted definition, is dropped; one that
+  // does not fit its definition is counted invalid. Neither fails the rest of
+  // the event. `last` and the session aggregates ignore an event older than
+  // the stored value, so a replay of old events cannot move them back.
   rpc ApplyFactDeltas(ApplyFactDeltasRequest) returns (ApplyFactDeltasResponse);
   // One viewer's lifetime values and their values in the current stream
   // session.
@@ -68,7 +71,8 @@ message FactDefinition {
   optional google.protobuf.Timestamp backfilled_through = 11;
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
-  // `active`, `unresolved` (a source's trigger is not registered) or
+  // `active`, `unresolved` (a source's trigger is not registered, or was
+  // archived when its module dropped it) or
   // `invalid` (a source no longer fits what its trigger emits). Resolved when
   // the definition is read, against the triggers registered then.
   string status = 14;
@@ -77,6 +81,8 @@ message FactDefinition {
   // One per source, in definition order. A source whose trigger did not
   // resolve has an empty `event`.
   repeated ResolvedFactSource sources = 16;
+  // The aggregate function the fact folds with, the body's `aggregate.fn`.
+  string aggregate = 17;
 }
 
 // A source with its trigger resolved: what the workflow service needs to
@@ -147,10 +153,11 @@ message FactDelta {
   string platform = 3;
   string subject_id = 4;
   optional string subject_name = 5;
-  // The definition's aggregate function; a mismatch fails the whole apply.
+  // The definition's aggregate function; a delta naming another is counted
+  // invalid.
   string op = 6;
-  // The value the aggregate reads: `num` for sum, min and max, either for
-  // last, neither for the rest.
+  // The value the aggregate reads: `num` for sum, min and max, exactly one
+  // for last (the one its value kind names), neither for the rest.
   optional double num = 7;
   optional string str = 8;
 }
@@ -191,6 +198,14 @@ message ApplyFactDeltasResponse {
   // Deltas dropped for a stale revision or a deleted definition.
   int32 dropped = 3;
   repeated FactValueChange changes = 4;
+  // Deltas that do not fit their definition (another op, a missing, extra
+  // or non-finite input, a value of another kind), or that repeat the fact
+  // and viewer of an earlier delta of the event. The rest of the event is
+  // applied regardless.
+  int32 invalid = 5;
+  // Deltas that need a stream session when none had started and no stamp
+  // was given.
+  int32 skipped = 6;
 }
 
 message GetViewerFactsRequest {
