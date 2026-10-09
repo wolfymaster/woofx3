@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import {
   linkedResources,
+  listSettingRows,
   MODULE_STATE_EVENT,
   type ModuleStateDb,
   ModuleStateWatch,
@@ -18,12 +19,19 @@ const logger = {
 const COUNTER = "woofx3:counter:deaths";
 const COUNTER_KEY = `state:${COUNTER}`;
 
-function fakeDb(stored: Record<string, unknown>, instances: Record<string, { kind: string; settingsJson: string }>) {
+type SettingRow = { key: string; value: string; valueType: string };
+
+function fakeDb(
+  stored: Record<string, unknown>,
+  instances: Record<string, { kind: string; settingsJson: string }>,
+  settings: Record<string, SettingRow[]> = {}
+) {
   const db: ModuleStateDb = {
     getModuleStorageValue: mock(async (namespace: string, key: string) => {
       return stored[`${namespace}/${key}`];
     }),
     getResourceInstance: mock(async (canonicalId: string) => instances[canonicalId] ?? null),
+    listModuleSettings: mock(async (moduleId: string) => settings[moduleId] ?? []),
   };
   return db;
 }
@@ -323,6 +331,90 @@ describe("ModuleStateWatch.resourceUpdated", () => {
     const scenes = fakeScenes(["scene-1"]);
     const watch = new ModuleStateWatch(fakeDb({}, {}), scenes, logger);
     await watch.resourceUpdated(COUNTER);
+    expect(scenes.pushed).toEqual([]);
+  });
+});
+
+const WHEEL = "woofx3_wheel_spin";
+
+function wheelSettings(items: string, valueType = "list"): Record<string, SettingRow[]> {
+  return {
+    [WHEEL]: [
+      { key: "items", value: items, valueType },
+      { key: "password", value: "", valueType: "secret" },
+    ],
+  };
+}
+
+describe("listSettingRows", () => {
+  it("reads a list setting as its rows", () => {
+    expect(listSettingRows(wheelSettings('[{"label":"Pizza"}]')[WHEEL]!, "items")).toEqual([{ label: "Pizza" }]);
+  });
+
+  it("reads an empty or broken list as no rows, and drops rows that are not objects", () => {
+    expect(listSettingRows(wheelSettings("")[WHEEL]!, "items")).toEqual([]);
+    expect(listSettingRows(wheelSettings("nope")[WHEEL]!, "items")).toEqual([]);
+    expect(listSettingRows(wheelSettings('[{"label":"A"},"B",null]')[WHEEL]!, "items")).toEqual([{ label: "A" }]);
+  });
+
+  it("serves nothing for a setting that is not a list", () => {
+    expect(listSettingRows(wheelSettings("[]")[WHEEL]!, "password")).toBeNull();
+    expect(listSettingRows(wheelSettings('[{"label":"A"}]', "text")[WHEEL]!, "items")).toBeNull();
+    expect(listSettingRows(wheelSettings("[]")[WHEEL]!, "missing")).toBeNull();
+  });
+});
+
+describe("ModuleStateWatch list settings", () => {
+  it("reads a list setting from the settings, not from storage", async () => {
+    const db = fakeDb({ [`${WHEEL}/setting:items`]: "from storage" }, {}, wheelSettings('[{"label":"Pizza"}]'));
+    const watch = new ModuleStateWatch(db, fakeScenes([]), logger);
+
+    expect(await watch.read("scene-1", WHEEL, "setting:items")).toEqual([{ label: "Pizza" }]);
+    expect(db.getModuleStorageValue).not.toHaveBeenCalled();
+  });
+
+  it("never serves a secret setting", async () => {
+    const watch = new ModuleStateWatch(fakeDb({}, {}, wheelSettings("[]")), fakeScenes([]), logger);
+
+    expect(await watch.read("scene-1", WHEEL, "setting:password")).toBeNull();
+  });
+
+  it("pushes a changed list setting to each connected scene watching it", async () => {
+    const settings = wheelSettings('[{"label":"Pizza"}]');
+    const scenes = fakeScenes(["scene-1", "scene-2"]);
+    const watch = new ModuleStateWatch(fakeDb({}, {}, settings), scenes, logger);
+    await watch.read("scene-1", WHEEL, "setting:items");
+
+    settings[WHEEL]![0]!.value = '[{"label":"Pizza"},{"label":"Tacos"}]';
+    await watch.settingUpdated(WHEEL, "items");
+
+    expect(scenes.pushed).toEqual([
+      {
+        sceneId: "scene-1",
+        event: MODULE_STATE_EVENT,
+        data: { moduleId: WHEEL, key: "setting:items", value: [{ label: "Pizza" }, { label: "Tacos" }] },
+      },
+    ]);
+  });
+
+  it("reads nothing when no scene watches the changed setting", async () => {
+    const db = fakeDb({}, {}, wheelSettings("[]"));
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = new ModuleStateWatch(db, scenes, logger);
+
+    await watch.settingUpdated(WHEEL, "items");
+
+    expect(scenes.pushed).toEqual([]);
+    expect(db.listModuleSettings).not.toHaveBeenCalled();
+  });
+
+  it("ignores a storage write under the setting prefix", async () => {
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = new ModuleStateWatch(fakeDb({}, {}, wheelSettings("[]")), scenes, logger);
+    await watch.read("scene-1", WHEEL, "setting:items");
+
+    await watch.publish(WHEEL, "setting:items", "spoofed");
+
     expect(scenes.pushed).toEqual([]);
   });
 });

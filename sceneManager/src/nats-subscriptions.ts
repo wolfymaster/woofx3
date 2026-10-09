@@ -51,7 +51,7 @@ interface StorageChangedEnvelope {
 }
 
 interface ModuleSettingUpdatedEnvelope {
-  data?: { moduleId?: unknown };
+  data?: { moduleId?: unknown; key?: unknown };
 }
 
 interface SceneUpdatedEnvelope {
@@ -312,8 +312,9 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
 
   // db-proxy announces every module setting write, naming the setting but
   // never its value. A change to the OBS module's connection reconnects with
-  // the new details (obs/settings.ts reads them on each attempt).
-  await nats.subscribe("db.module.setting.updated.*", (msg) => {
+  // the new details (obs/settings.ts reads them on each attempt), and a
+  // module's widgets reading one of its list settings get its new rows.
+  await nats.subscribe("db.module.setting.updated.*", async (msg) => {
     let envelope: ModuleSettingUpdatedEnvelope;
     try {
       envelope = msg.json<ModuleSettingUpdatedEnvelope>();
@@ -325,6 +326,11 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     }
     if (envelope.data?.moduleId === OBS_MODULE_ID) {
       obs.reconnectNow("OBS module settings changed");
+    }
+    const moduleId = typeof envelope.data?.moduleId === "string" ? envelope.data.moduleId : "";
+    const key = typeof envelope.data?.key === "string" ? envelope.data.key : "";
+    if (moduleId && key) {
+      await moduleState.settingUpdated(moduleId, key);
     }
   });
   logger.info("Subscribed to db.module.setting.updated.*");

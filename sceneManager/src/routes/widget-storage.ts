@@ -19,7 +19,8 @@ function jsonResponse(status: number, body: unknown): Response {
  * its `hello`, and nothing checks that claim, so the module is taken from the
  * scene record instead. A widget reads its own module's storage, and beyond it
  * only the value of a resource instance its module's settings link, read from
- * the instance owner's storage (see `storageModuleFor`).
+ * the instance owner's storage (see `storageModuleFor`), and its own module's
+ * `list` settings, at `setting:<settingId>`.
  *
  * The key travels as a query parameter because storage keys carry colons
  * (`state:woofx3:counter:deaths`).
