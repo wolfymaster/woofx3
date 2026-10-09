@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.0](https://github.com/wolfymaster/woofx3/compare/v0.20.0...v0.21.0) (2026-10-09)
+
+### Features
+
+* **barkloader:** identify resource kinds by module and kind ([854fb19](https://github.com/wolfymaster/woofx3/commit/854fb1970aaf1023672389840c48beba55469fc7))
+
 ## [0.20.0](https://github.com/wolfymaster/woofx3/compare/v0.19.1...v0.20.0) (2026-10-09)
 
 ### Features

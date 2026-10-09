@@ -624,6 +624,8 @@ mod test_support {
         /// Provenance the last `create_module` was called with, so tests can
         /// assert what the module row would be stamped with.
         provenance: Mutex<Option<InstallProvenance>>,
+        /// The manifest JSON the last `create_module` stored.
+        stored_manifest: Mutex<Option<String>>,
         /// The module's commands as the db would hold them.
         commands: Mutex<Vec<ModuleCommandRow>>,
         /// A command whose `register_command` fails, for failing an install
@@ -649,6 +651,7 @@ mod test_support {
                 calls: Mutex::new(Vec::new()),
                 fail_on: methods.into_iter().collect(),
                 provenance: Mutex::new(None),
+                stored_manifest: Mutex::new(None),
                 commands: Mutex::new(Vec::new()),
                 failing_command: None,
                 registered_commands: Mutex::new(Vec::new()),
@@ -739,6 +742,13 @@ mod test_support {
             self.calls.lock().expect("calls mutex poisoned").clone()
         }
 
+        pub fn stored_manifest(&self) -> Option<String> {
+            self.stored_manifest
+                .lock()
+                .expect("stored_manifest mutex poisoned")
+                .clone()
+        }
+
         pub fn create_module_provenance(&self) -> Option<InstallProvenance> {
             *self.provenance.lock().expect("provenance mutex poisoned")
         }
@@ -762,7 +772,7 @@ mod test_support {
             _display_name: &str,
             _module_id: &str,
             _version: &str,
-            _manifest_json: &str,
+            manifest_json: &str,
             _archive_key: &str,
             _functions: &[CreateModuleFunctionJson],
             _module_key: &str,
@@ -770,6 +780,10 @@ mod test_support {
             provenance: InstallProvenance,
         ) -> Result<String> {
             self.record("create_module")?;
+            self.stored_manifest
+                .lock()
+                .expect("stored_manifest mutex poisoned")
+                .replace(manifest_json.to_string());
             self.provenance
                 .lock()
                 .expect("provenance mutex poisoned")

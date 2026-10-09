@@ -14,6 +14,7 @@ pub mod module_manifest;
 mod module_plan;
 mod module_service;
 pub mod registry_loader;
+pub mod resource_kind_ref;
 pub mod theme;
 
 pub use manifest_validate::{InstallProvenance, SystemOnlyActions};
