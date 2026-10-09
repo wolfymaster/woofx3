@@ -64,6 +64,7 @@ type WorkflowApp struct {
 	alertDbClient    dbv1.AlertService
 	workflowDbClient dbv1.WorkflowService
 	scheduleReg      *triggers.ScheduleTriggerRegistrar
+	deliveries       *recentDeliveries
 }
 
 func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
@@ -72,6 +73,7 @@ func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
 		BaseApplication: runtime.NewBaseApplication(),
 		engine:          engine,
 		logger:          logger,
+		deliveries:      newRecentDeliveries(recentDeliveryCapacity),
 	}
 
 	// Create manager without a db client; SetServices wires it after config is loaded.
@@ -615,6 +617,15 @@ func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 			"error", err,
 			"subject", subject,
 			"raw_data", string(payload))
+		return
+	}
+
+	// Overlapping subscriptions each deliver the event; see recentDeliveries.
+	if !a.deliveries.first(event.Source, event.ID) {
+		a.logger.Debug("Dropped another delivery of a handled event",
+			"type", event.Type,
+			"id", event.ID,
+			"subject", subject)
 		return
 	}
 
