@@ -133,6 +133,10 @@ func (s *sceneService) GetScene(ctx context.Context, req *client.GetSceneRequest
 	}, nil
 }
 
+// The columns holding a scene's documents; writing any of them without
+// editor state clears the stored editor state.
+var sceneDocumentColumns = []string{"widgets_json", "layout_json", "draft_widgets_json", "draft_layout_json"}
+
 func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneRequest) (*client.SceneResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
@@ -146,34 +150,50 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	// Patch semantics — empty string means "leave unchanged" for now.
 	// Same convention as `UpdateWorkflowRequest`; revisit when the
 	// rest of the request migrates to `optional` scalars.
+	columns := map[string]any{}
 	if req.Name != "" {
-		scene.Name = req.Name
+		columns["name"] = req.Name
 	}
 	if req.Description != "" {
-		scene.Description = req.Description
+		columns["description"] = req.Description
 	}
 	if req.WidgetsJson != "" {
-		scene.WidgetsJSON = req.WidgetsJson
+		columns["widgets_json"] = req.WidgetsJson
 	}
 	if req.LayoutJson != "" {
-		scene.LayoutJSON = req.LayoutJson
-	}
-	if req.DraftWidgetsJson != "" && req.DraftLayoutJson != "" {
-		widgets, layout := req.DraftWidgetsJson, req.DraftLayoutJson
-		scene.DraftWidgetsJSON, scene.DraftLayoutJSON = &widgets, &layout
+		columns["layout_json"] = req.LayoutJson
 	}
 	if req.ClearDraft {
-		scene.DraftWidgetsJSON, scene.DraftLayoutJSON = nil, nil
+		columns["draft_widgets_json"], columns["draft_layout_json"] = nil, nil
+	} else if req.DraftWidgetsJson != "" && req.DraftLayoutJson != "" {
+		columns["draft_widgets_json"], columns["draft_layout_json"] = req.DraftWidgetsJson, req.DraftLayoutJson
 	}
+	changesDocuments := false
+	for _, column := range sceneDocumentColumns {
+		if _, ok := columns[column]; ok {
+			changesDocuments = true
+		}
+	}
+	// Editor state describes the documents stored beside it. A document
+	// write that carries no state (an external save) makes the stored state
+	// describe other documents, so it is cleared and the editor starts over.
 	if req.EditorStateJson != "" {
-		editorState := req.EditorStateJson
-		scene.EditorStateJSON = &editorState
+		columns["editor_state_json"] = req.EditorStateJson
+	} else if changesDocuments {
+		columns["editor_state_json"] = nil
 	}
 
-	// One statement writes every column, so documents, draft and editor
-	// state are stored together or not at all.
-	if err := s.repo.Update(scene); err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
+	// Only the named columns are written, in one statement: a concurrent
+	// writer's columns survive, and documents, draft and editor state are
+	// stored together or not at all.
+	if len(columns) > 0 {
+		if err := s.repo.UpdateColumns(id, columns); err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
+		}
+	}
+	scene, err = s.repo.GetByID(id)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to reload scene: %w", err))
 	}
 	s.syncSceneEdges(scene)
 

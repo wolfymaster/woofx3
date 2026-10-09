@@ -283,3 +283,89 @@ func TestSceneService_Update_StoresEditorStateWithTheDocuments(t *testing.T) {
 		t.Fatalf("publish with editor state: %+v", scene)
 	}
 }
+
+// Editor state describes the documents stored beside it: a document write
+// that carries none (an external save) clears it, a rename keeps it.
+func TestSceneService_Update_DocumentWriteWithoutEditorStateClearsIt(t *testing.T) {
+	sceneSvc, _, _, db := newSceneSvc(t)
+	sceneID := seedScene(t, db, "main")
+	ctx := context.Background()
+	const state = `{"v":3,"headId":"e.3","clients":{}}`
+	store := func() {
+		t.Helper()
+		_, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: sceneID.String(), EditorStateJson: state})
+		if err != nil {
+			t.Fatalf("store editor state: %v", err)
+		}
+	}
+	update := func(req *client.UpdateSceneRequest) *client.Scene {
+		t.Helper()
+		req.Id = sceneID.String()
+		resp, err := sceneSvc.UpdateScene(ctx, req)
+		if err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		return resp.Scene
+	}
+
+	store()
+	if scene := update(&client.UpdateSceneRequest{Name: "renamed", Description: "described"}); scene.EditorStateJson != state {
+		t.Fatalf("a rename changed the editor state to %q", scene.EditorStateJson)
+	}
+
+	documentWrites := map[string]*client.UpdateSceneRequest{
+		"widgets":     {WidgetsJson: `[{"id":"w1"}]`},
+		"layout":      {LayoutJson: `{"width":1920}`},
+		"draft":       {DraftWidgetsJson: `[]`, DraftLayoutJson: `{}`},
+		"clear draft": {ClearDraft: true},
+	}
+	for name, req := range documentWrites {
+		store()
+		if scene := update(req); scene.EditorStateJson != "" {
+			t.Fatalf("%s write kept editor state %q", name, scene.EditorStateJson)
+		}
+	}
+}
+
+// An update writes only the columns it names. A writer that lands between
+// this update's read and its write keeps its columns.
+func TestSceneService_Update_KeepsAConcurrentWritersColumns(t *testing.T) {
+	sceneSvc, _, _, db := newSceneSvc(t)
+	sceneID := seedScene(t, db, "main")
+	ctx := context.Background()
+
+	const state = `{"v":1,"headId":"e.1","clients":{}}`
+	interleaved := false
+	err := db.Callback().Update().Before("gorm:update").Register("test:concurrent_writer", func(tx *gorm.DB) {
+		if interleaved {
+			return
+		}
+		interleaved = true
+		err := tx.Session(&gorm.Session{NewDB: true}).Exec(
+			`UPDATE scenes SET widgets_json = ?, editor_state_json = ? WHERE id = ?`,
+			`[{"id":"w1"}]`, state, sceneID.String(),
+		).Error
+		if err != nil {
+			t.Errorf("concurrent write: %v", err)
+		}
+	})
+	if err != nil {
+		t.Fatalf("register callback: %v", err)
+	}
+
+	if _, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: sceneID.String(), Name: "renamed"}); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if !interleaved {
+		t.Fatalf("the concurrent write never ran")
+	}
+
+	resp, err := sceneSvc.GetScene(ctx, &client.GetSceneRequest{Id: sceneID.String()})
+	if err != nil {
+		t.Fatalf("get scene: %v", err)
+	}
+	scene := resp.Scene
+	if scene.Name != "renamed" || scene.WidgetsJson != `[{"id":"w1"}]` || scene.EditorStateJson != state {
+		t.Fatalf("an update overwrote a concurrent writer's columns: %+v", scene)
+	}
+}

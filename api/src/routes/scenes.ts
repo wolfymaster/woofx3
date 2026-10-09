@@ -124,10 +124,13 @@ export const scenesRoutes = routeModule({
       description: data.description ?? "",
       widgetsJson: data.widgetsJson ?? "",
       layoutJson: data.layoutJson ?? "",
-      // Drafts are written by sceneManager's editor; this path leaves them be.
+      // Drafts and editor sync state are written by sceneManager's editor;
+      // this path names neither. A widgets or layout write here makes the
+      // db clear the editor state, which describes the replaced documents.
       draftWidgetsJson: "",
       draftLayoutJson: "",
       clearDraft: false,
+      editorStateJson: "",
     });
     if (!updated) {
       return { success: false };

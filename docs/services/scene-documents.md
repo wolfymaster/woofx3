@@ -131,7 +131,12 @@ through autosave.
 
 The scene row also has a nullable `editor_state_json` column for the scene
 editor's sync state, opaque to the db proxy. `UpdateScene` stores it in the
-same row update as the documents and draft named in the request, and a
-request without it leaves it unchanged. A loaded scene carries it as
+same row update as the documents and draft named in the request. A request
+without it leaves it unchanged, unless the request writes a document
+(widgets, layout, draft or `clearDraft`): the stored state then describes
+documents that were replaced, so the db proxy clears it in the same write.
+`UpdateScene` writes only the columns a request names, so concurrent writers
+of different columns (an editor's autosave, a rename) do not overwrite each
+other. A loaded scene carries it as
 `editorStateJson` (absent when the column is NULL), and a `SceneWrite` can
 include it. The documents described on this page neither read nor write it.

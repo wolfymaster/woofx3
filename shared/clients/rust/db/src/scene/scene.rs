@@ -103,7 +103,9 @@ pub struct UpdateSceneRequest {
     /// Store the scene editor's sync state. Written in the same row update
     /// as the documents and draft in this request, so the state never
     /// describes documents other than the stored ones. Empty leaves it
-    /// unchanged.
+    /// unchanged, unless the request writes a document (widgets, layout,
+    /// draft or clear_draft): the stored state is then cleared, since it
+    /// described the documents being replaced.
     #[prost(string, tag="9")]
     pub editor_state_json: ::prost::alloc::string::String,
 }
