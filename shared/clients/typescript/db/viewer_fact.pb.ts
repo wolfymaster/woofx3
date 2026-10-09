@@ -318,9 +318,11 @@ export interface SegmentDefinition {
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
   /**
-   * `active`, or `invalid` when the condition no longer fits the facts it
-   * reads (a fact's value kind changed). Resolved when the definition is
-   * read.
+   * `active`; `invalid` when the condition no longer fits the facts it reads
+   * (a fact's value kind changed); or `frozen` when a fact it reads is not
+   * active, so its membership is not kept and was not filled. A frozen
+   * segment is refilled silently once every fact it reads is active again,
+   * which the db checks whenever triggers are registered or removed.
    */
   status: string;
   /**
@@ -510,10 +512,14 @@ export async function GetViewerFacts(
  * workflows with edges. A change to the name or description alone keeps
  * both.
  *
- * Fails with `invalid_argument` when the condition is malformed, reads a
- * fact that does not exist, or applies an operator the fact's value kind
- * does not support, and with `failed_precondition` when the id is owned by
- * a different creator.
+ * A segment saved while a fact it reads is not active is `frozen`: it is
+ * saved, but its membership is filled only once that fact is active again,
+ * which the response's status and message say.
+ *
+ * Fails with `invalid_argument` when the condition is malformed or applies
+ * an operator the fact's value kind does not support, with `not_found` when
+ * it reads a fact that does not exist, and with `failed_precondition` when
+ * the id is owned by a different creator.
  */
 export async function UpsertSegmentDefinition(
   upsertSegmentDefinitionRequest: UpsertSegmentDefinitionRequest,
@@ -696,10 +702,14 @@ export async function GetViewerFactsJSON(
  * workflows with edges. A change to the name or description alone keeps
  * both.
  *
- * Fails with `invalid_argument` when the condition is malformed, reads a
- * fact that does not exist, or applies an operator the fact's value kind
- * does not support, and with `failed_precondition` when the id is owned by
- * a different creator.
+ * A segment saved while a fact it reads is not active is `frozen`: it is
+ * saved, but its membership is filled only once that fact is active again,
+ * which the response's status and message say.
+ *
+ * Fails with `invalid_argument` when the condition is malformed or applies
+ * an operator the fact's value kind does not support, with `not_found` when
+ * it reads a fact that does not exist, and with `failed_precondition` when
+ * the id is owned by a different creator.
  */
 export async function UpsertSegmentDefinitionJSON(
   upsertSegmentDefinitionRequest: UpsertSegmentDefinitionRequest,
@@ -851,10 +861,14 @@ export interface ViewerFactService<Context = unknown> {
    * workflows with edges. A change to the name or description alone keeps
    * both.
    *
-   * Fails with `invalid_argument` when the condition is malformed, reads a
-   * fact that does not exist, or applies an operator the fact's value kind
-   * does not support, and with `failed_precondition` when the id is owned by
-   * a different creator.
+   * A segment saved while a fact it reads is not active is `frozen`: it is
+   * saved, but its membership is filled only once that fact is active again,
+   * which the response's status and message say.
+   *
+   * Fails with `invalid_argument` when the condition is malformed or applies
+   * an operator the fact's value kind does not support, with `not_found` when
+   * it reads a fact that does not exist, and with `failed_precondition` when
+   * the id is owned by a different creator.
    */
   UpsertSegmentDefinition: (
     upsertSegmentDefinitionRequest: UpsertSegmentDefinitionRequest,

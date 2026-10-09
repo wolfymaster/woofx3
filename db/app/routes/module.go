@@ -14,6 +14,11 @@ func ModuleRoutes(mux *http.ServeMux, app *types.App) {
 	refRepository := repo.NewResourceReferenceRepository(app.Db)
 	instanceRepository := repo.NewModuleResourceInstanceRepository(app.Db)
 	moduleService := svc.NewModuleService(moduleRepository, refRepository, instanceRepository, app.EventPublisher)
+	moduleService.SetSegmentReconciler(svc.NewSegmentReconciler(
+		repo.NewViewerFactRepository(app.Db),
+		repo.NewViewerSegmentRepository(app.Db),
+		moduleRepository,
+	))
 	moduleHandler := client.NewModuleServiceServer(moduleService)
 	mux.Handle(moduleHandler.PathPrefix(), moduleHandler)
 }

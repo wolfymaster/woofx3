@@ -23,6 +23,7 @@ import (
 const (
 	segmentStatusActive  = "active"
 	segmentStatusInvalid = "invalid"
+	segmentStatusFrozen  = "frozen"
 )
 
 const maxSegmentIDLength = 255
@@ -62,28 +63,44 @@ func (s *viewerFactService) UpsertSegmentDefinition(ctx context.Context, req *cl
 		return nil, twirp.InvalidArgumentError("when", err.Error())
 	}
 	factIDs := condition.facts()
-	facts, err := loadSegmentFacts(s.segments, s.triggers, factIDs)
-	if err != nil {
-		return nil, twirp.InternalErrorWith(err)
-	}
-	if err := condition.checkFacts(facts); err != nil {
-		return nil, twirp.InvalidArgumentError("when", err.Error())
-	}
 
+	// The condition is checked against the facts inside the save, once they
+	// are locked, so a fact revised in between cannot leave a segment whose
+	// condition no longer fits.
+	var facts map[string]segmentFact
+	var conditionErr error
+	prepare := func(tx *gorm.DB, in *models.SegmentDefinition) error {
+		loaded, err := loadSegmentFacts(s.segments.WithDB(tx), repo.NewModuleRepository(tx), factIDs)
+		if err != nil {
+			return err
+		}
+		if err := condition.checkFacts(loaded); err != nil {
+			conditionErr = err
+			return err
+		}
+		facts = loaded
+		in.WindowKind = segmentWindow(factIDs, loaded)
+		in.TimeRelative = condition.timeRelative()
+		return nil
+	}
+	fill := segmentFill{}
 	stored, write, err := s.segments.UpsertDefinition(&models.SegmentDefinition{
 		ID:            id,
 		Name:          name,
 		Description:   req.Description,
 		Condition:     canonical,
-		WindowKind:    segmentWindow(factIDs, facts),
-		TimeRelative:  condition.timeRelative(),
 		CreatedByType: createdByType,
 		CreatedByRef:  req.CreatedByRef,
-	}, factIDs, s.recordSegmentChange("upserted"))
-	if errors.Is(err, repo.ErrSegmentDefinitionOwned) {
+	}, factIDs, prepare, s.recordSegmentChange("upserted", &fill))
+	var missing *repo.SegmentFactsMissingError
+	switch {
+	case errors.As(err, &missing):
+		return nil, twirp.NotFoundError(fmt.Sprintf("when: %s", missing.Error()))
+	case conditionErr != nil:
+		return nil, twirp.InvalidArgumentError("when", conditionErr.Error())
+	case errors.Is(err, repo.ErrSegmentDefinitionOwned):
 		return nil, twirp.NewError(twirp.FailedPrecondition, err.Error())
-	}
-	if err != nil {
+	case err != nil:
 		return nil, twirp.InternalErrorWith(fmt.Errorf("save segment definition %s: %w", id, err))
 	}
 
@@ -93,17 +110,28 @@ func (s *viewerFactService) UpsertSegmentDefinition(ctx context.Context, req *cl
 		repo.SegmentDefinitionRenamed:   "Segment definition renamed",
 		repo.SegmentDefinitionRevised:   "Segment definition revised; its members were refilled",
 	}[write]
+	if fill.frozen {
+		message = "Segment definition saved, but a fact it reads is not active, so its members were not filled; " +
+			"they are filled once every fact it reads is active again"
+	}
 	return &client.SegmentDefinitionResponse{
 		Status:     &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: message},
 		Definition: segmentDefinitionToProto(stored, factIDs, facts),
 	}, nil
 }
 
+// segmentFill reports what a definition write's fill did.
+type segmentFill struct {
+	// frozen is true when the fill was skipped because the segment is
+	// frozen, which leaves it marked stale.
+	frozen bool
+}
+
 func (s *viewerFactService) DeleteSegmentDefinition(ctx context.Context, req *client.DeleteSegmentDefinitionRequest) (*client.ResponseStatus, error) {
 	if req.Id == "" {
 		return nil, twirp.RequiredArgumentError("id")
 	}
-	err := s.segments.DeleteDefinition(req.Id, s.recordSegmentChange("deleted"))
+	err := s.segments.DeleteDefinition(req.Id, s.recordSegmentChange("deleted", nil))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, twirp.NotFoundError(fmt.Sprintf("no segment definition %q", req.Id))
 	}
@@ -185,13 +213,17 @@ func (s *viewerFactService) GetViewerSegments(ctx context.Context, req *client.G
 
 // recordSegmentChange runs inside a segment write's transaction: a created
 // or revised segment's membership is filled silently from the stored values,
-// then the `op` outbox event is written. Without a publisher it records no
-// event.
-func (s *viewerFactService) recordSegmentChange(op string) repo.RecordSegmentDefinitionChange {
+// reporting into `fill` (when non-nil), then the `op` outbox event is
+// written. Without a publisher it records no event.
+func (s *viewerFactService) recordSegmentChange(op string, fill *segmentFill) repo.RecordSegmentDefinitionChange {
 	return func(tx *gorm.DB, definition *models.SegmentDefinition, write repo.SegmentDefinitionWrite) error {
 		if write == repo.SegmentDefinitionCreated || write == repo.SegmentDefinitionRevised {
-			if err := s.fillSegment(tx, definition, s.now()); err != nil {
+			filled, err := s.fillSegment(tx, definition, s.now())
+			if err != nil {
 				return fmt.Errorf("fill segment %s: %w", definition.ID, err)
+			}
+			if fill != nil {
+				fill.frozen = !filled
 			}
 		}
 		if s.publisher == nil {
@@ -220,8 +252,72 @@ func (s *viewerFactService) refillSegmentsReading(tx *gorm.DB, factID string) er
 		return err
 	}
 	for _, segment := range dependents {
-		if err := s.fillSegment(tx, segment, s.now()); err != nil {
+		if _, err := s.fillSegment(tx, segment, s.now()); err != nil {
 			return fmt.Errorf("refill segment %s: %w", segment.ID, err)
+		}
+	}
+	return nil
+}
+
+// NewSegmentReconciler returns the pass the db runs after it registers or
+// removes triggers, which can make the facts segments read active or not;
+// see reconcileSegments.
+func NewSegmentReconciler(
+	facts *repo.ViewerFactRepository,
+	segments *repo.ViewerSegmentRepository,
+	triggers *repo.ModuleRepository,
+) func() error {
+	service := NewViewerFactService(facts, segments, triggers, nil).(*viewerFactService)
+	return service.reconcileSegments
+}
+
+// reconcileSegments brings every segment's stale flag and membership in line
+// with the facts' statuses now: a segment that is frozen is marked stale, as
+// the applies it misses while frozen leave its membership behind, and a stale
+// segment that is no longer frozen is refilled silently and unmarked. Each
+// segment is handled in its own transaction, locked as a save locks it. It
+// never runs inside an apply.
+func (s *viewerFactService) reconcileSegments() error {
+	definitions, err := s.segments.ListDefinitions()
+	if err != nil {
+		return fmt.Errorf("list segments: %w", err)
+	}
+	ids := make([]string, len(definitions))
+	for i, definition := range definitions {
+		ids[i] = definition.ID
+	}
+	read, err := s.segments.FactsRead(ids)
+	if err != nil {
+		return fmt.Errorf("list segment facts: %w", err)
+	}
+	var factIDs []string
+	for _, ids := range read {
+		factIDs = append(factIDs, ids...)
+	}
+	slices.Sort(factIDs)
+	facts, err := loadSegmentFacts(s.segments, s.triggers, slices.Compact(factIDs))
+	if err != nil {
+		return err
+	}
+	for _, definition := range definitions {
+		condition, _, err := parseSegmentCondition(definition.Condition)
+		if err != nil {
+			return fmt.Errorf("segment %s: stored condition: %w", definition.ID, err)
+		}
+		frozen := segmentFrozen(condition, read[definition.ID], facts)
+		if frozen == definition.Stale {
+			continue
+		}
+		err = s.segments.Transaction(func(tx *gorm.DB) error {
+			locked, err := s.segments.WithDB(tx).LockForRefill(definition.ID)
+			if err != nil || locked == nil {
+				return err
+			}
+			_, err = s.fillSegment(tx, locked, s.now())
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("reconcile segment %s: %w", definition.ID, err)
 		}
 	}
 	return nil
@@ -236,29 +332,36 @@ func (s *viewerFactService) refillSegmentsReading(tx *gorm.DB, factID string) er
 //
 // The segment's window follows the facts it reads, which a fact revision can
 // change, so it is rewritten here when it moved. A frozen segment (see
-// segmentFrozen) is left exactly as it is.
-func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefinition, now time.Time) error {
+// segmentFrozen) is left as it is, window included, and marked stale for
+// reconcileSegments to refill; filled reports which happened.
+func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefinition, now time.Time) (filled bool, err error) {
 	segments := s.segments.WithDB(tx)
 	read, err := segments.FactsRead([]string{segment.ID})
 	if err != nil {
-		return err
+		return false, err
 	}
 	factIDs := read[segment.ID]
 	facts, err := loadSegmentFacts(segments, repo.NewModuleRepository(tx), factIDs)
 	if err != nil {
-		return err
+		return false, err
 	}
 	condition, _, err := parseSegmentCondition(segment.Condition)
 	if err != nil {
-		return fmt.Errorf("stored condition: %w", err)
+		return false, fmt.Errorf("stored condition: %w", err)
 	}
 	if segmentFrozen(condition, factIDs, facts) {
-		return nil
+		if !segment.Stale {
+			if err := segments.SetStale(segment.ID, true); err != nil {
+				return false, err
+			}
+			segment.Stale = true
+		}
+		return false, nil
 	}
 	window := segmentWindow(factIDs, facts)
 	if window != segment.WindowKind {
 		if err := segments.SetWindowKind(segment.ID, window); err != nil {
-			return err
+			return false, err
 		}
 		segment.WindowKind = window
 	}
@@ -267,7 +370,7 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 	if window == models.FactWindowSession {
 		session, err := repo.NewViewerFactRepository(tx).SessionAt(now, "")
 		if err != nil {
-			return err
+			return false, err
 		}
 		sessionID = session.ID
 	}
@@ -275,9 +378,9 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 	// A session segment has no window before the first session starts, so
 	// nobody is in it.
 	if window == models.FactWindowLifetime || sessionID != "" {
-		values, err := segments.FactValues(activeFactIDs(factIDs, facts), sessionID, nil)
+		values, err := segments.FactValues(factIDs, sessionID, nil)
 		if err != nil {
-			return err
+			return false, err
 		}
 		for viewer, readings := range readingsByViewer(values, facts, sessionID) {
 			if condition.evaluate(readings, now) {
@@ -288,7 +391,7 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 
 	existing, err := segments.Members(segment.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	current := make(map[repo.ViewerKey]bool, len(existing))
 	var leave []repo.ViewerKey
@@ -317,9 +420,18 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 		return strings.Compare(a.Platform+"\x00"+a.SubjectID, b.Platform+"\x00"+b.SubjectID)
 	})
 	if err := segments.EnterAll(enter); err != nil {
-		return err
+		return false, err
 	}
-	return segments.LeaveAll(segment.ID, leave)
+	if err := segments.LeaveAll(segment.ID, leave); err != nil {
+		return false, err
+	}
+	if segment.Stale {
+		if err := segments.SetStale(segment.ID, false); err != nil {
+			return false, err
+		}
+		segment.Stale = false
+	}
+	return true, nil
 }
 
 // diffSegments runs inside an apply's transaction once its deltas are folded.
@@ -463,13 +575,25 @@ func (a *segmentApply) eventSession() (string, error) {
 // an earlier session (late, or replayed by a backfill) would otherwise
 // evaluate that session's values and replace or drop a membership of the
 // current one.
+//
+// "Current" is the session owning the later of now and the event's time, so
+// an event stamped slightly ahead of this clock at the start of a session is
+// not taken for a late one.
+//
+// The protection needs stream_sessions rows. Without any, a session is only
+// an event's stamp, and the current session is the event's own, so every
+// event counts as current and a late one moves membership like any other.
 func (a *segmentApply) sessionCurrent() (bool, error) {
 	event, err := a.eventSession()
 	if err != nil || event == "" {
 		return false, err
 	}
 	if a.current == nil {
-		current, err := repo.NewViewerFactRepository(a.tx).SessionAt(a.service.now(), a.batch.SessionStamp)
+		at := a.service.now()
+		if a.batch.OccurredAt.After(at) {
+			at = a.batch.OccurredAt
+		}
+		current, err := repo.NewViewerFactRepository(a.tx).SessionAt(at, a.batch.SessionStamp)
 		if err != nil {
 			return false, err
 		}
@@ -745,16 +869,6 @@ func factWindowKey(fact segmentFact, session string) string {
 	return ""
 }
 
-func activeFactIDs(ids []string, facts map[string]segmentFact) []string {
-	active := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if facts[id].active {
-			active = append(active, id)
-		}
-	}
-	return active
-}
-
 // readingsByViewer groups values by viewer, keeping each fact's value in its
 // current window only and leaving out facts that are not active.
 func readingsByViewer(values []models.FactValue, facts map[string]segmentFact, session string) map[repo.ViewerKey]map[string]*factReading {
@@ -796,9 +910,13 @@ func segmentDefinitionToProto(definition *models.SegmentDefinition, factIDs []st
 	if err == nil {
 		err = condition.checkFacts(facts)
 	}
-	if err != nil {
+	switch {
+	case err != nil:
 		out.Status = segmentStatusInvalid
 		out.Reason = err.Error()
+	case definition.Stale:
+		out.Status = segmentStatusFrozen
+		out.Reason = "a fact the segment reads is not active, so its membership is not kept; it is refilled once every fact it reads is active again"
 	}
 	return out
 }

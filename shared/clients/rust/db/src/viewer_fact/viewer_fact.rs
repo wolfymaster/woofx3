@@ -302,9 +302,11 @@ pub struct SegmentDefinition {
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="12")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
-    /// `active`, or `invalid` when the condition no longer fits the facts it
-    /// reads (a fact's value kind changed). Resolved when the definition is
-    /// read.
+    /// `active`; `invalid` when the condition no longer fits the facts it reads
+    /// (a fact's value kind changed); or `frozen` when a fact it reads is not
+    /// active, so its membership is not kept and was not filled. A frozen
+    /// segment is refilled silently once every fact it reads is active again,
+    /// which the db checks whenever triggers are registered or removed.
     #[prost(string, tag="13")]
     pub status: ::prost::alloc::string::String,
     /// Why the status is not `active`. Empty when it is.

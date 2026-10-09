@@ -713,6 +713,19 @@ type resolvedFact struct {
 // segments again, looping through the outbox.
 const viewerEventPrefix = "viewer."
 
+// checkEventPattern refuses a pattern the workflow service's matcher would
+// read differently from NATS: `>` matches the rest of a subject only as the
+// last token.
+func checkEventPattern(pattern string) error {
+	tokens := strings.Split(pattern, ".")
+	for i, token := range tokens[:len(tokens)-1] {
+		if token == ">" {
+			return fmt.Errorf("event %q has > as token %d of %d; > may only end a pattern", pattern, i+1, len(tokens))
+		}
+	}
+	return nil
+}
+
 // readsSegmentEdges reports whether a trigger's event pattern receives the
 // engine's segment edges: it is in the viewer. namespace, or its NATS
 // wildcards (`*`, `>`) match an edge's subject.
@@ -815,6 +828,9 @@ func resolveFact(triggers activeTriggers, body *models.FactDefinitionBody) (reso
 			return out, fmt.Errorf("look up trigger %s: %w", source.Trigger, err)
 		}
 		resolved.Event = trigger.Event
+		if err := checkEventPattern(trigger.Event); err != nil {
+			return invalidFact(out, fmt.Errorf("sources[%d]: trigger %s: %w", i, source.Trigger, err)), nil
+		}
 		if readsSegmentEdges(trigger.Event) {
 			return invalidFact(out, fmt.Errorf("sources[%d]: trigger %s fires on %q, which receives the engine's segment events; a fact cannot count them without feeding the segments that publish them",
 				i, source.Trigger, trigger.Event)), nil

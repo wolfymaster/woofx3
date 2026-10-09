@@ -46,7 +46,8 @@ func TestViewerSegmentMembershipStatementsOnPostgres(t *testing.T) {
 		WindowKind: models.FactWindowSession, CreatedByType: "USER",
 	}
 	record := func(*gorm.DB, *models.SegmentDefinition, repository.SegmentDefinitionWrite) error { return nil }
-	if _, _, err := segments.UpsertDefinition(definition, []string{"user:fact:messages"}, record); err != nil {
+	if _, _, err := segments.UpsertDefinition(definition, []string{"user:fact:messages"},
+		func(*gorm.DB, *models.SegmentDefinition) error { return nil }, record); err != nil {
 		t.Fatalf("define: %v", err)
 	}
 

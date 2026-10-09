@@ -1269,9 +1269,11 @@ type SegmentDefinition struct {
 	CreatedByRef  string                 `protobuf:"bytes,10,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	// `active`, or `invalid` when the condition no longer fits the facts it
-	// reads (a fact's value kind changed). Resolved when the definition is
-	// read.
+	// `active`; `invalid` when the condition no longer fits the facts it reads
+	// (a fact's value kind changed); or `frozen` when a fact it reads is not
+	// active, so its membership is not kept and was not filled. A frozen
+	// segment is refilled silently once every fact it reads is active again,
+	// which the db checks whenever triggers are registered or removed.
 	Status string `protobuf:"bytes,13,opt,name=status,proto3" json:"status,omitempty"`
 	// Why the status is not `active`. Empty when it is.
 	Reason        string `protobuf:"bytes,14,opt,name=reason,proto3" json:"reason,omitempty"`

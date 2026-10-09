@@ -90,10 +90,14 @@ type ViewerFactService interface {
 	// workflows with edges. A change to the name or description alone keeps
 	// both.
 	//
-	// Fails with `invalid_argument` when the condition is malformed, reads a
-	// fact that does not exist, or applies an operator the fact's value kind
-	// does not support, and with `failed_precondition` when the id is owned by
-	// a different creator.
+	// A segment saved while a fact it reads is not active is `frozen`: it is
+	// saved, but its membership is filled only once that fact is active again,
+	// which the response's status and message say.
+	//
+	// Fails with `invalid_argument` when the condition is malformed or applies
+	// an operator the fact's value kind does not support, with `not_found` when
+	// it reads a fact that does not exist, and with `failed_precondition` when
+	// the id is owned by a different creator.
 	UpsertSegmentDefinition(context.Context, *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error)
 
 	// Deletes a segment and its membership, announcing no edges. Fails with
