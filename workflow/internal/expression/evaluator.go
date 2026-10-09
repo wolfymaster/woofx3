@@ -214,11 +214,43 @@ func inCheck(actual, expected any) bool {
 	return false
 }
 
-func regexCheck(actual, expected any) (bool, error) {
-	pattern := fmt.Sprintf("%v", expected)
-	re, err := regexp.Compile(pattern)
+// checkExpected reports an expected value the operator cannot use, with the
+// error evaluating it would give.
+func checkExpected(canonical string, expected any) error {
+	switch canonical {
+	case "regex":
+		_, err := compilePattern(expected)
+		return err
+	case "between":
+		_, err := rangeBounds(expected)
+		return err
+	}
+	return nil
+}
+
+func compilePattern(expected any) (*regexp.Regexp, error) {
+	re, err := regexp.Compile(fmt.Sprintf("%v", expected))
 	if err != nil {
-		return false, fmt.Errorf("invalid regex pattern: %w", err)
+		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+	}
+	return re, nil
+}
+
+func rangeBounds(expected any) ([]any, error) {
+	bounds, ok := expected.([]any)
+	if !ok {
+		return nil, fmt.Errorf("between operator requires [min, max] array, got %T", expected)
+	}
+	if len(bounds) != 2 {
+		return nil, fmt.Errorf("between operator requires exactly 2 values [min, max], got %d", len(bounds))
+	}
+	return bounds, nil
+}
+
+func regexCheck(actual, expected any) (bool, error) {
+	re, err := compilePattern(expected)
+	if err != nil {
+		return false, err
 	}
 
 	actualStr := fmt.Sprintf("%v", actual)
@@ -226,13 +258,9 @@ func regexCheck(actual, expected any) (bool, error) {
 }
 
 func betweenCheck(actual, expected any) (bool, error) {
-	bounds, ok := expected.([]any)
-	if !ok {
-		return false, fmt.Errorf("between operator requires [min, max] array, got %T", expected)
-	}
-
-	if len(bounds) != 2 {
-		return false, fmt.Errorf("between operator requires exactly 2 values [min, max], got %d", len(bounds))
+	bounds, err := rangeBounds(expected)
+	if err != nil {
+		return false, err
 	}
 
 	min, max := bounds[0], bounds[1]

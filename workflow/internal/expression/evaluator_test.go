@@ -2,8 +2,8 @@ package expression
 
 import "testing"
 
-// A null field used to reach the ordering and text operators as the string
-// "<nil>", which sorts after every digit: `null gt 10` was true.
+// A null field is never compared as text: the string "<nil>" sorts after
+// every digit, which would make `null gt 10` true.
 func TestEvaluateNullFieldIsNeverAboveTen(t *testing.T) {
 	r := NewResolver()
 	r.AddSource("trigger", map[string]any{"data": map[string]any{"amount": nil}})
@@ -60,5 +60,23 @@ func TestEvaluatePresentFieldIsUnchanged(t *testing.T) {
 	ok, err := Evaluate(&Condition{Field: "${trigger.data.amount}", Operator: "gt", Value: 10}, r)
 	if err != nil || !ok {
 		t.Fatalf("500 gt 10 = %v, %v; want true", ok, err)
+	}
+}
+
+func TestEvaluateNullFieldStillRejectsAMalformedExpectedValue(t *testing.T) {
+	r := NewResolver()
+	r.AddSource("trigger", map[string]any{"data": map[string]any{"amount": nil}})
+	for _, tc := range []struct {
+		op    string
+		value any
+	}{
+		{"regex", "("},
+		{"between", 5},
+		{"between", []any{1}},
+		{"range", []any{1, 2, 3}},
+	} {
+		if _, err := Evaluate(&Condition{Field: "${trigger.data.amount}", Operator: tc.op, Value: tc.value}, r); err == nil {
+			t.Errorf("null %s %v was accepted", tc.op, tc.value)
+		}
 	}
 }
