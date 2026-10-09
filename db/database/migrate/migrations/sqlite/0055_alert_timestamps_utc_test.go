@@ -65,3 +65,46 @@ func TestNormaliseAlertTimestampsOrdersRowsOfEveryStoredLayoutByTime(t *testing.
 		}
 	}
 }
+
+// One value the driver cannot decode must not stop the engine from booting:
+// it is left as it is, and every other value is still rewritten.
+func TestNormaliseAlertTimestampsLeavesAnUnparseableValueAndCompletes(t *testing.T) {
+	db := openMigratedTo(t, "0054_alert_version")
+	mustExec(t, db, `INSERT INTO alerts (id, payload, created_at, updated_at, played_at) VALUES (?, '{}', ?, ?, ?)`,
+		"a", "not a time", "2026-03-08T09:00:00.25Z", "yesterday")
+	mustExec(t, db, `INSERT INTO alerts (id, payload, created_at, updated_at) VALUES (?, '{}', ?, ?)`,
+		"b", "2026-03-08 10:00:00", "2026-03-08 10:00:00")
+
+	if err := migrateAll(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var stored []struct {
+		ID        string
+		CreatedAt string
+		UpdatedAt string
+		PlayedAt  string
+	}
+	err := db.Raw(`SELECT id, CAST(created_at AS TEXT) AS created_at, CAST(updated_at AS TEXT) AS updated_at,
+		COALESCE(CAST(played_at AS TEXT), '') AS played_at FROM alerts ORDER BY id`).Scan(&stored).Error
+	if err != nil {
+		t.Fatalf("read alerts: %v", err)
+	}
+	want := []struct {
+		ID        string
+		CreatedAt string
+		UpdatedAt string
+		PlayedAt  string
+	}{
+		{"a", "not a time", "2026-03-08 09:00:00.250000+00:00", "yesterday"},
+		{"b", "2026-03-08 10:00:00.000000+00:00", "2026-03-08 10:00:00.000000+00:00", ""},
+	}
+	if len(stored) != len(want) {
+		t.Fatalf("read %d rows, want %d", len(stored), len(want))
+	}
+	for i := range want {
+		if stored[i] != want[i] {
+			t.Fatalf("row %d = %+v, want %+v", i, stored[i], want[i])
+		}
+	}
+}
