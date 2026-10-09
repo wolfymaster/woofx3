@@ -231,3 +231,21 @@ concurrent writers of different columns (an editor's autosave, a rename) do
 not overwrite each other. Overlay scene state never carries it:
 `OverlayHost.loadEditableScene` reads both versions and the editor state from
 one read of the row, for the scene documents alone.
+
+## Tests
+
+- `shared/clients/typescript/api/scene-editor/*.test.ts` cover the shared
+  core on its own: documents and ops, the protocol decoders, the sequencer
+  (including an external change that carries only placement meta), rebasing
+  pending edits onto a snapshot (touched fields are replaced whole, so text
+  two editors rebased concurrently is never spliced into a value neither
+  wrote), the client, and clients and sequencer together.
+- `sceneManager/tests/scene/scene-documents.test.ts` drives the real
+  `SceneDocuments` over an in-memory scene store
+  (`tests/scene/fake-scene-store.ts`, which applies writes the way the db
+  proxy does) on a controlled clock: items and their answers, saves made
+  elsewhere (a meta-only one included, and a refresh whose read fails, which
+  never rejects), editors reconnecting, writing back and its retries
+  (`close()` retrying a write that fails at shutdown), and restarts.
+- `sceneManager/tests/routes/editor.test.ts` covers the editor socket:
+  upgrade, session errors and presence.

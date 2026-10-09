@@ -94,7 +94,7 @@ function stateOf(row: SceneRow, version: SceneVersion, frameVersion: string): Ov
 }
 
 /** Apply an `UpdateScene` the way the db proxy does. */
-export function applyWrite(row: SceneRow, write: SceneWrite): void {
+function applyWrite(row: SceneRow, write: SceneWrite): void {
   const changesDocuments =
     write.widgetsJson !== undefined ||
     write.layoutJson !== undefined ||

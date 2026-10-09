@@ -75,7 +75,7 @@ export interface SceneBroadcaster {
   connectedSceneIds(): string[];
 }
 
-/** Time and timers, injected so a simulation can run the documents on a virtual clock. */
+/** Time and timers, injected so tests can run the documents on a controlled clock. */
 export interface SceneDocumentsClock {
   now(): number;
   setTimeout(callback: () => void, ms: number): unknown;
