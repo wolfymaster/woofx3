@@ -39,8 +39,31 @@ export interface WidgetHostStorage {
    * its storage: the rows, an array of objects keyed by the setting's
    * `itemFields` ids, again whenever the setting is saved. Any other kind of
    * setting reads as `null`.
+   *
+   * `"state:" + canonicalId` reads a resource instance's value as stored, and
+   * `"resource:" + canonicalId` reads the instance as a whole, a
+   * `WidgetResourceReading`, again whenever its value or its settings change.
+   * Either reads `null` for an instance neither the widget's module owns nor
+   * its settings link.
    */
   subscribe(key: string, cb: (value: unknown) => void): () => void;
+}
+
+/**
+ * A resource instance as a widget reads it at `resource:<canonicalId>`. What
+ * `value` and `settings` mean is the kind's, which the engine never learns.
+ */
+export interface WidgetResourceReading {
+  /** What the instance stores at `state:<canonicalId>`, or `null` when nothing. */
+  value: unknown;
+  /** The instance's own settings: its kind's `schema` field values. */
+  settings: Record<string, unknown>;
+  /**
+   * The host's clock, in epoch ms, when this was read. A stored moment (a
+   * timer's end) measured against it gives a duration the widget can count
+   * from on its own clock, so the two clocks need not agree.
+   */
+  readAt: number;
 }
 
 /**
