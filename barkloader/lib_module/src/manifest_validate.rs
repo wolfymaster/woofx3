@@ -38,6 +38,7 @@ use super::module_manifest::{
     ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
     WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
 };
+use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -1743,10 +1744,16 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 "{context} field #{i} ({id}): `select` needs `options` or a `source`"
             ));
         }
-        if field.field_type == "resource_ref" && field.resource_kind.is_none() {
-            return Err(anyhow!(
-                "{context} field #{i} ({id}): `resource_ref` needs `resourceKind`"
-            ));
+        if field.field_type == "resource_ref" {
+            let Some(kind) = field.resource_kind.as_deref() else {
+                return Err(anyhow!(
+                    "{context} field #{i} ({id}): `resource_ref` needs `resourceKind`"
+                ));
+            };
+            parse_kind_ref(
+                kind,
+                &format!("{context} field #{i} ({id}): `resourceKind`"),
+            )?;
         }
         if field.field_type == "button" && field.action.is_none() {
             return Err(anyhow!(
@@ -1827,13 +1834,23 @@ fn validate_operators(field: &ManifestConfigField, context: &str) -> Result<()> 
 
 /// A `list` field declares the fields of one row, and only a `list` does.
 fn validate_item_fields(field: &ManifestConfigField, context: &str) -> Result<()> {
-    let Some(item_fields) = &field.item_fields else {
-        if field.field_type == "list" {
+    validate_list_rows(&field.field_type, field.item_fields.as_deref(), context)
+}
+
+/// The `itemFields` rule for anything that can be a `list`: a field or a
+/// module setting.
+fn validate_list_rows(
+    field_type: &str,
+    item_fields: Option<&[ManifestConfigField]>,
+    context: &str,
+) -> Result<()> {
+    let Some(item_fields) = item_fields else {
+        if field_type == "list" {
             return Err(anyhow!("{context}: `list` needs `itemFields`"));
         }
         return Ok(());
     };
-    if field.field_type != "list" {
+    if field_type != "list" {
         return Err(anyhow!("{context}: only a `list` field takes `itemFields`"));
     }
     if item_fields.is_empty() {
@@ -1956,13 +1973,7 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
             validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
             reject_theme_field(&setting.setting_type, &format!("setting #{i} ({id})"))?;
         }
-        // A module setting declares no `itemFields`, so a list would render
-        // rows with nothing in them.
-        if setting.setting_type == "list" {
-            return Err(anyhow!(
-                "setting #{i} ({id}): a module setting cannot be a `list`"
-            ));
-        }
+        validate_list_setting(setting, &format!("setting #{i} ({id})"))?;
         if setting.setting_type == "button" && setting.action.is_null() {
             return Err(anyhow!("setting #{i} ({id}): `button` needs an `action`"));
         }
@@ -1970,6 +1981,31 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
         if !seen.insert(id) {
             return Err(anyhow!("duplicate setting `id` {id:?}"));
         }
+    }
+    Ok(())
+}
+
+/// A `list` setting declares the fields of one row, the same as a `list`
+/// field anywhere else, and only a `list` setting does. Its value is a JSON
+/// array, so a declared default must be one.
+fn validate_list_setting(setting: &ManifestSetting, context: &str) -> Result<()> {
+    validate_list_rows(
+        &setting.setting_type,
+        setting.item_fields.as_deref(),
+        context,
+    )?;
+    if setting.setting_type != "list" {
+        return Ok(());
+    }
+    if let Some(default) = &setting.default_value
+        && !matches!(
+            serde_json::from_str::<serde_json::Value>(default),
+            Ok(serde_json::Value::Array(_))
+        )
+    {
+        return Err(anyhow!(
+            "{context}: a `list` setting's `defaultValue` must be a JSON array, as text"
+        ));
     }
     Ok(())
 }
@@ -1993,7 +2029,7 @@ fn validate_resource_ref_setting(setting: &ManifestSetting, context: &str) -> Re
     let Some(kind) = setting.resource_kind.as_deref() else {
         return Err(anyhow!("{context}: `resource_ref` needs `resourceKind`"));
     };
-    validate_segment(kind, &format!("{context}: `resourceKind`"))?;
+    parse_kind_ref(kind, &format!("{context}: `resourceKind`"))?;
     // The value is an instance's canonical id, which only an existing
     // instance has; a manifest cannot know it ahead of install.
     if setting.default_value.is_some() {
@@ -3310,10 +3346,60 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_list_module_setting() {
+    fn accepts_a_list_module_setting_with_item_fields() {
+        let m = minimal(
+            r#", "settings": [{ "id": "items", "label": "Entries", "type": "list",
+                "itemFields": [{ "id": "label", "label": "Entry", "type": "text" }] }]"#,
+        );
+        validate(&m).expect("a list setting");
+        assert_eq!(m.settings[0].resolved_default(), "[]");
+    }
+
+    #[test]
+    fn rejects_a_list_module_setting_without_item_fields() {
         let m = minimal(r#", "settings": [{ "id": "goals", "label": "Goals", "type": "list" }]"#);
-        let err = validate(&m).expect_err("a list setting");
-        assert!(err.to_string().contains("cannot be a `list`"), "{err}");
+        let err = validate(&m).expect_err("a list setting with no rows");
+        assert!(
+            err.to_string().contains("`list` needs `itemFields`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_item_fields_on_a_module_setting_that_is_not_a_list() {
+        let m = minimal(
+            r#", "settings": [{ "id": "name", "label": "Name", "type": "text",
+                "itemFields": [{ "id": "label", "label": "Entry", "type": "text" }] }]"#,
+        );
+        let err = validate(&m).expect_err("itemFields on a text setting");
+        assert!(err.to_string().contains("only a `list`"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_list_module_setting_row_of_a_type_a_row_cannot_hold() {
+        let m = minimal(
+            r#", "settings": [{ "id": "items", "label": "Entries", "type": "list",
+                "itemFields": [{ "id": "nested", "label": "Nested", "type": "list",
+                    "itemFields": [{ "id": "x", "label": "X", "type": "text" }] }] }]"#,
+        );
+        assert!(validate(&m).is_err());
+    }
+
+    #[test]
+    fn a_list_module_setting_default_must_be_a_json_array() {
+        let ok = minimal(
+            r#", "settings": [{ "id": "items", "label": "Entries", "type": "list",
+                "itemFields": [{ "id": "label", "label": "Entry", "type": "text" }],
+                "defaultValue": "[{\"label\":\"Pizza\"}]" }]"#,
+        );
+        validate(&ok).expect("an array default");
+        let bad = minimal(
+            r#", "settings": [{ "id": "items", "label": "Entries", "type": "list",
+                "itemFields": [{ "id": "label", "label": "Entry", "type": "text" }],
+                "defaultValue": "Pizza" }]"#,
+        );
+        let err = validate(&bad).expect_err("a text default");
+        assert!(err.to_string().contains("JSON array"), "{err}");
     }
 
     #[test]

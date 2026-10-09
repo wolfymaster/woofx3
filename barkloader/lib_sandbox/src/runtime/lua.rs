@@ -385,6 +385,32 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         })?;
         module_tbl.set("setSetting", set_setting_fn)?;
 
+        // `ctx.module.compareAndSetSetting(key, expected, value)` — write
+        // only while the setting still holds `expected`; answers
+        // `{ swapped, current }`. Set directly on the table, like setSetting.
+        let host_for_cas = invocation.host.clone();
+        let module_id_for_cas = invocation.module_id.clone();
+        let url_settings_for_cas = invocation.url_settings.clone();
+        let compare_and_set_setting_fn = lua.create_function(
+            move |lua, (key, expected, value): (String, LuaValue, LuaValue)| {
+                let json_expected: Value = serde_json::to_value(&expected)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_val: Value = serde_json::to_value(&value)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let outcome = super::host_bindings::compare_and_set_module_setting(
+                    &host_for_cas,
+                    &module_id_for_cas,
+                    &url_settings_for_cas,
+                    &key,
+                    &json_expected,
+                    &json_val,
+                )
+                .map_err(mlua::Error::RuntimeError)?;
+                lua.to_value(&outcome)
+            },
+        )?;
+        module_tbl.set("compareAndSetSetting", compare_and_set_setting_fn)?;
+
         // `ctx.module.settings` is fetched lazily, on first access, rather
         // than unconditionally before the function body runs — most
         // invocations never read it, and the fetch is a synchronous host
@@ -868,5 +894,78 @@ mod tests {
         assert_eq!(result["id"], "mymod");
         assert_eq!(result["name"], "My Module");
         assert_eq!(result["version"], "2.0.0");
+    }
+
+    struct ListSettings {
+        items: std::sync::Mutex<serde_json::Value>,
+    }
+
+    impl crate::host::SettingsClient for ListSettings {
+        fn list_by_module(
+            &self,
+            _module_id: &str,
+        ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+            let items = self.items.lock().unwrap().clone();
+            Ok(std::collections::HashMap::from([(
+                "items".to_string(),
+                items,
+            )]))
+        }
+        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn compare_and_set(
+            &self,
+            _module_id: &str,
+            _key: &str,
+            expected: &serde_json::Value,
+            value: &serde_json::Value,
+        ) -> Result<crate::host::CompareAndSetOutcome, String> {
+            let mut items = self.items.lock().unwrap();
+            let swapped = crate::host::setting_values_equal(&items, expected);
+            if swapped {
+                *items = value.clone();
+            }
+            Ok(crate::host::CompareAndSetOutcome {
+                swapped,
+                current: Some(items.clone()),
+            })
+        }
+    }
+
+    // Lua has one empty table for `[]` and `{}`; reading an empty list and
+    // handing it back must still match.
+    #[test]
+    fn lua_ctx_module_compare_and_set_setting_matches_an_empty_list() {
+        let settings = std::sync::Arc::new(ListSettings {
+            items: std::sync::Mutex::new(serde_json::json!([])),
+        });
+        let mut host = noop_host_context();
+        host.settings = settings.clone();
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        let code = r#"
+            function run(ctx)
+                local items = ctx.module.settings.items
+                local outcome = ctx.module.compareAndSetSetting("items", items, { { label = "Pizza" } })
+                return { swapped = outcome.swapped }
+            end
+        "#;
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["swapped"], true);
+        assert_eq!(
+            *settings.items.lock().unwrap(),
+            serde_json::json!([{ "label": "Pizza" }])
+        );
     }
 }

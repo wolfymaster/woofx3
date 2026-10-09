@@ -223,6 +223,7 @@ describe("module setting changes", () => {
   async function wire(relayConfigMovesObs: () => Promise<boolean> = async () => false) {
     const handlers = new Map<string, (msg: any) => unknown>();
     const reconnects: string[] = [];
+    const settingsUpdated: string[] = [];
     await initSubscriptions({
       nats: {
         subscribe: async (subject: string, handler: (msg: any) => unknown) => {
@@ -236,7 +237,11 @@ describe("module setting changes", () => {
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
-      moduleState: {} as any,
+      moduleState: {
+        settingUpdated: async (moduleId: string, key: string) => {
+          settingsUpdated.push(`${moduleId}/${key}`);
+        },
+      } as any,
       resolver: {} as any,
       sceneDocuments: { refresh: async () => {}, applyChange: async () => ({ ok: true as const }) },
       editorToken: async () => ({ ok: false, reason: "unused" }),
@@ -251,7 +256,7 @@ describe("module setting changes", () => {
     };
     const relayChanged = () =>
       handlers.get("engine.relay.config.updated")?.({ subject: "engine.relay.config.updated" });
-    return { deliver, relayChanged, reconnects };
+    return { deliver, relayChanged, reconnects, settingsUpdated };
   }
 
   it("reconnects to OBS when a relay configuration change moves it to another route", async () => {
@@ -284,6 +289,13 @@ describe("module setting changes", () => {
     const { deliver, reconnects } = await wire();
     await deliver({ moduleId: "woofx3_spotify", key: "clientId" });
     expect(reconnects).toEqual([]);
+  });
+
+  it("hands every module's changed setting to the widgets reading it", async () => {
+    const { deliver, settingsUpdated } = await wire();
+    await deliver({ moduleId: "woofx3_wheel_spin", key: "items" });
+    await deliver({ moduleId: "woofx3_wheel_spin" });
+    expect(settingsUpdated).toEqual(["woofx3_wheel_spin/items"]);
   });
 
   it("answers engine.obs.status with the connection's state", async () => {

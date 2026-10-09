@@ -1,4 +1,256 @@
 // @generated
+impl serde::Serialize for CompareAndSetModuleSettingRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.module_id.is_empty() {
+            len += 1;
+        }
+        if !self.key.is_empty() {
+            len += 1;
+        }
+        if !self.expected_value.is_empty() {
+            len += 1;
+        }
+        if !self.value.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module_setting.CompareAndSetModuleSettingRequest", len)?;
+        if !self.module_id.is_empty() {
+            struct_ser.serialize_field("moduleId", &self.module_id)?;
+        }
+        if !self.key.is_empty() {
+            struct_ser.serialize_field("key", &self.key)?;
+        }
+        if !self.expected_value.is_empty() {
+            struct_ser.serialize_field("expectedValue", &self.expected_value)?;
+        }
+        if !self.value.is_empty() {
+            struct_ser.serialize_field("value", &self.value)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompareAndSetModuleSettingRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "module_id",
+            "moduleId",
+            "key",
+            "expected_value",
+            "expectedValue",
+            "value",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ModuleId,
+            Key,
+            ExpectedValue,
+            Value,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
+                            "key" => Ok(GeneratedField::Key),
+                            "expectedValue" | "expected_value" => Ok(GeneratedField::ExpectedValue),
+                            "value" => Ok(GeneratedField::Value),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompareAndSetModuleSettingRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module_setting.CompareAndSetModuleSettingRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompareAndSetModuleSettingRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut module_id__ = None;
+                let mut key__ = None;
+                let mut expected_value__ = None;
+                let mut value__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ModuleId => {
+                            if module_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleId"));
+                            }
+                            module_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Key => {
+                            if key__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("key"));
+                            }
+                            key__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ExpectedValue => {
+                            if expected_value__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("expectedValue"));
+                            }
+                            expected_value__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Value => {
+                            if value__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("value"));
+                            }
+                            value__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(CompareAndSetModuleSettingRequest {
+                    module_id: module_id__.unwrap_or_default(),
+                    key: key__.unwrap_or_default(),
+                    expected_value: expected_value__.unwrap_or_default(),
+                    value: value__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module_setting.CompareAndSetModuleSettingRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for CompareAndSetModuleSettingResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.swapped {
+            len += 1;
+        }
+        if self.current.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module_setting.CompareAndSetModuleSettingResponse", len)?;
+        if self.swapped {
+            struct_ser.serialize_field("swapped", &self.swapped)?;
+        }
+        if let Some(v) = self.current.as_ref() {
+            struct_ser.serialize_field("current", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompareAndSetModuleSettingResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "swapped",
+            "current",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Swapped,
+            Current,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "swapped" => Ok(GeneratedField::Swapped),
+                            "current" => Ok(GeneratedField::Current),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompareAndSetModuleSettingResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module_setting.CompareAndSetModuleSettingResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompareAndSetModuleSettingResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut swapped__ = None;
+                let mut current__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Swapped => {
+                            if swapped__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("swapped"));
+                            }
+                            swapped__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Current => {
+                            if current__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("current"));
+                            }
+                            current__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(CompareAndSetModuleSettingResponse {
+                    swapped: swapped__.unwrap_or_default(),
+                    current: current__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module_setting.CompareAndSetModuleSettingResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for GetModuleSecretValuesRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>

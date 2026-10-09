@@ -46,6 +46,17 @@ func (r *memorySettingRepo) UpsertDefault(moduleID, key, value, valueType string
 	return nil
 }
 
+func (r *memorySettingRepo) CompareAndSet(moduleID, key, expected, value string) (bool, error) {
+	id := moduleID + "\x00" + key
+	row, ok := r.rows[id]
+	if !ok || row.Value != expected {
+		return false, nil
+	}
+	row.Value = value
+	r.rows[id] = row
+	return true, nil
+}
+
 func newSettingService(t *testing.T) (*ModuleSettingService, *memorySettingRepo) {
 	t.Helper()
 	box, err := secrets.NewBox(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
@@ -254,5 +265,81 @@ func TestRegisteringSettingsAnnouncesNothing(t *testing.T) {
 
 	if len(publisher.published) != 0 {
 		t.Errorf("published %d events on register, want 0", len(publisher.published))
+	}
+}
+
+func compareAndSet(t *testing.T, s *ModuleSettingService, key, expected, value string) *client.CompareAndSetModuleSettingResponse {
+	t.Helper()
+	resp, err := s.CompareAndSetModuleSetting(context.Background(), &client.CompareAndSetModuleSettingRequest{
+		ModuleId: "example_store", Key: key, ExpectedValue: expected, Value: value,
+	})
+	if err != nil {
+		t.Fatalf("CompareAndSetModuleSetting: %v", err)
+	}
+	return resp
+}
+
+func TestCompareAndSetSwapsAndAnswersWithTheWrittenValue(t *testing.T) {
+	box, err := secrets.NewBox(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatalf("NewBox: %v", err)
+	}
+	publisher := &recordingPublisher{}
+	s := NewModuleSettingService(newMemorySettingRepo(), box, publisher)
+	register(t, s, "items", "list")
+	set(t, s, "items", "[]", "list")
+	publisher.published = nil
+
+	resp := compareAndSet(t, s, "items", "[]", `[{"label":"Pizza"}]`)
+
+	if !resp.Swapped || resp.Current.GetValue() != `[{"label":"Pizza"}]` || resp.Current.GetValueType() != "list" {
+		t.Errorf("response = %+v", resp)
+	}
+	if len(publisher.published) != 1 {
+		t.Errorf("published %d events, want 1", len(publisher.published))
+	}
+}
+
+func TestCompareAndSetRefusalAnswersWithTheStoredValue(t *testing.T) {
+	box, err := secrets.NewBox(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatalf("NewBox: %v", err)
+	}
+	publisher := &recordingPublisher{}
+	s := NewModuleSettingService(newMemorySettingRepo(), box, publisher)
+	register(t, s, "items", "list")
+	set(t, s, "items", `[{"label":"Tacos"}]`, "list")
+	publisher.published = nil
+
+	resp := compareAndSet(t, s, "items", "[]", `[{"label":"Pizza"}]`)
+
+	if resp.Swapped || resp.Current.GetValue() != `[{"label":"Tacos"}]` {
+		t.Errorf("response = %+v", resp)
+	}
+	if len(publisher.published) != 0 {
+		t.Errorf("published %d events for a refused write, want 0", len(publisher.published))
+	}
+}
+
+func TestCompareAndSetOfAnUnknownSettingIsRefused(t *testing.T) {
+	s, _ := newSettingService(t)
+
+	resp := compareAndSet(t, s, "missing", "", "x")
+
+	if resp.Swapped || resp.Current != nil {
+		t.Errorf("response = %+v", resp)
+	}
+}
+
+func TestCompareAndSetRefusesASecret(t *testing.T) {
+	s, _ := newSettingService(t)
+	register(t, s, "password", SecretSettingType)
+
+	_, err := s.CompareAndSetModuleSetting(context.Background(), &client.CompareAndSetModuleSettingRequest{
+		ModuleId: "example_store", Key: "password", ExpectedValue: "", Value: "guess",
+	})
+
+	if err == nil {
+		t.Fatal("compare-and-set of a secret succeeded")
 	}
 }

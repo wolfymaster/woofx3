@@ -289,7 +289,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `min`, `max` | number | no | Bounds for `number` / `range`. |
 | `mediaType` | string | no | For `media` — `image`, `audio` or `video`. |
 | `kinds` | string[] | no | For `asset` — filter the picker by `ManifestAsset.kind`. |
-| `resourceKind` | string | no | Required for `resource_ref` — which resource kind the picker lists. |
+| `resourceKind` | string | no | Required for `resource_ref` — which resource kind the picker lists: `kind`, or `module:kind` to name the declaring module. See [Naming a kind](#naming-a-kind). |
 | `surface` | string | no | Required for `layout` — the surface whose widgets the layout places (`alert`). |
 | `itemFields` | array | no | Required for `list`, and only allowed there — the fields of one row. See [list fields](#list-fields). |
 | `action` | object | no | Required for `button` — the request the button fires. See [module-level settings](#module-level-settings-settings). |
@@ -899,6 +899,25 @@ Declaring a kind is necessary but not sufficient — the module must also expose
 
 See `modules/utility/counter/manifest.json` in the **woofx3-modules** repository for the canonical example.
 
+#### Naming a kind
+
+Kind names are an open namespace: two modules may each declare a `wheel`. A kind
+is therefore identified by its module and its name, `{module}:{kind}`, the two
+leading segments of every instance's canonical id. A `resourceKind` may be
+written either way:
+
+- `wheel` means this module's own `wheel` when it declares one, and otherwise
+  the one installed module that declares it.
+- `spinner:wheel` means the `wheel` that module `spinner` declares.
+
+Install resolves every `resourceKind` to `{module}:{kind}` before validating,
+registering or storing the manifest, so the stored manifest, registered schemas
+and the dashboard only ever see the qualified form, and a module installed
+later that declares the same name cannot change what an earlier install meant.
+Install fails when a bare kind is declared by no installed module or by several
+(write `module:kind` to say which), or when a qualified kind names a module that
+is not installed or does not declare it.
+
 ### Module-level settings (`settings[]`)
 
 A `settings[]` entry declares an engine-typed, module-scoped configuration value —
@@ -920,11 +939,12 @@ types have nothing to bind to.
 | `id` | string | yes | Manifest-local setting key, e.g. `clientId`. Combined with the module id to key the `module_settings` row (`module_id` + `key`, unique). This is the key a function reads via `ctx.module.settings.<id>`. |
 | `label` | string | yes | Display label for the settings UI. |
 | `description` | string | no | Defaults to `""`. |
-| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button` — or `secret` for a credential, or `url` for a URL the streamer enters, whose origin `ctx.http` may then reach (see [Where `ctx.http` may connect](#where-ctx-http-may-connect)). `secret` and `url` are valid only here, never on a trigger, action or widget field, and neither may declare `defaultValue`. Validated at install. |
+| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle`, `list` or `button` — or `secret` for a credential, or `url` for a URL the streamer enters, whose origin `ctx.http` may then reach (see [Where `ctx.http` may connect](#where-ctx-http-may-connect)). `secret` and `url` are valid only here, never on a trigger, action or widget field, and neither may declare `defaultValue`. Validated at install. |
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
-| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. Rejected on `type: "secret"`: the manifest would ship the secret. |
+| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, `"[]"` for `type: "list"`, and `""` otherwise. On a `list` it must be a JSON array, as text. Rejected on `type: "secret"`: the manifest would ship the secret. |
+| `itemFields` | array | no | Required for `type: "list"`, and only allowed there: the fields of one row, as on any other [`list` field](#field-types). See [List settings](#list-settings). |
 | `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
-| `resourceKind` | string | no | Required for `type: "resource_ref"`, and only allowed there: the kind of resource instance the setting links to (`timer`). Its value is that instance's canonical id. A `resource_ref` setting takes no `defaultValue`. See [Linking a resource](#linking-a-resource). |
+| `resourceKind` | string | no | Required for `type: "resource_ref"`, and only allowed there: the kind of resource instance the setting links to (`timer`, or `woofx3:timer`; see [Naming a kind](#naming-a-kind)). Its value is that instance's canonical id. A `resource_ref` setting takes no `defaultValue`. See [Linking a resource](#linking-a-resource). |
 | `create` | object | no | Only on a `resource_ref` setting: `{ instanceId, displayName, settings? }`, the instance install creates and links while the setting is empty. See [Linking a resource](#linking-a-resource). |
 
 Example — credentials for a Spotify integration. The client id is plain configuration;
@@ -988,14 +1008,13 @@ canonical id from `ctx.module.settings` and drive it with
 
 With `create`, the module works without the streamer making an instance first.
 After registering settings, install links every such setting that is still
-empty: the instance is `{module}:{resourceKind}:{instanceId}`, where `{module}`
-is the module that declares the kind — this one, or else the one installed
-module that does. It is created with `displayName` and `settings` when it does
+empty: the instance is `{module}:{kind}:{instanceId}`, where `{module}`
+is the module that declares the kind, resolved as [Naming a kind](#naming-a-kind)
+describes. It is created with `displayName` and `settings` when it does
 not exist and reused when it does, so a reinstall, or a second module asking for
 the same instance, links rather than fails. A setting that already holds a value
 is left alone, whether install linked it earlier or the streamer chose another
-instance since. Install fails when no installed module provides the kind, or
-when several do and none of them is the installing module.
+instance since.
 
 Uninstalling the module leaves the instance in place: it belongs to the module
 that provides the kind, and the streamer may have put it to other uses.
@@ -1010,6 +1029,53 @@ reads as it does everywhere else (a timer as `{ running, remainingMs, durationMs
 `linkedResources` is fixed when the frame loads, so choosing another instance in the
 settings takes effect when the scene next loads.
 
+#### List settings
+
+A `list` setting holds rows the streamer adds and removes on the module's settings
+page, in the same editor every other `list` field uses, and the module's functions
+can change them too. Use one for data the streamer curates and the module also
+writes, like the entries on a wheel:
+
+```json
+{
+  "id": "items",
+  "label": "Entries on the wheel",
+  "type": "list",
+  "itemFields": [{ "id": "label", "label": "Entry", "type": "text", "required": true }]
+}
+```
+
+The value is stored as a JSON array of objects keyed by the `itemFields` ids, and
+read that way everywhere:
+
+- **Functions** read the rows as an array in `ctx.module.settings.<id>` (`[]` when
+  empty). To change them, use `ctx.module.compareAndSetSetting(id, expected, value)`,
+  which writes only while the setting still holds `expected` and answers
+  `{ swapped, current }`. A run and the streamer, or two runs, changing the list at
+  the same moment then can't lose one another's change: on `swapped: false`, apply the
+  change again to `current` and retry. The comparison is by meaning (key order,
+  `1` vs `1.0`), so the array a function read matches the stored list however it was
+  saved. `ctx.module.settings` is read once per run, so retry from `current`, not
+  from the settings.
+- **Widgets** of the module subscribe to `"setting:" + id` to get the rows, sent
+  again whenever the setting is saved. The scene manager serves only `list`
+  settings this way; any other setting reads as `null`.
+
+```js
+function add(ctx, label) {
+  var current = ctx.module.settings.items;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    var next = current.concat([{ label: label }]);
+    var outcome = ctx.module.compareAndSetSetting("items", current, next);
+    if (outcome.swapped) {
+      return next;
+    }
+    current = outcome.current;
+  }
+  throw new Error("the list kept changing; try again");
+}
+```
+
 #### Reading settings at runtime — `ctx.module`
 
 Both the QuickJS and Lua sandbox runtimes expose the invoking function's module
@@ -1021,13 +1087,16 @@ ctx.module = {
   name: string,       // manifest display name
   version: string,    // semver string from the manifest
   settings: {          // one key per module_settings row for this module
-    [key: string]: string | number | boolean
-  }
+    [key: string]: string | number | boolean | object[]
+  },
+  setSetting(key, value),                        // write a string, unconditionally
+  compareAndSetSetting(key, expected, value)     // write only while it holds expected
 }
 ```
 
 Values are stored as `TEXT` in the database and coerced to a native `string` /
-`number` / `boolean` at read time based on the setting's declared `type`
+`number` / `boolean`, or a `list` setting's array of rows, at read time based on the
+setting's declared `type`
 (`HttpSettingsClient::coerce_value` in barkloader). Example, from
 `modules/platform/spotify/functions/poll_current_track.js` (**woofx3-modules**):
 
@@ -1392,7 +1461,7 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.create(kind, instanceId, displayName?, settings?)` | `{ canonical_id, module_name, kind, instance_id, display_name, settings }` | The owning module is implicit (taken from the function's canonical path). `settings` must be an object. |
 | `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
-| `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
+| `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns every instance of that name across every installed module; `module:kind` returns only that module's. |
 | `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
 
 `ctx.resources.run` is how a module drives a resource another module provides. The

@@ -16,6 +16,7 @@ use super::module_manifest::{
     ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger, WEBHOOK_EVENT_PREFIX,
     resolve_zip_file,
 };
+use super::resource_kind_ref;
 use super::theme::InstalledModule;
 
 /// `module_name` is the version-free manifest id — the value stored as
@@ -310,31 +311,6 @@ async fn prune_removed_resources(
                 resource_type, manifest_id, module_key
             );
         }
-    }
-}
-
-/// The installed module that declares resource `kind`, which owns the
-/// instances made of it. More than one declaring it leaves no single owner to
-/// create under, so the install says so rather than guessing.
-fn kind_owner(installed: &[InstalledModule], installing: &str, kind: &str) -> Result<String> {
-    let mut owners: Vec<&str> = installed
-        .iter()
-        .filter(|m| {
-            m.module_id != installing && m.manifest.resources.iter().any(|r| r.kind == kind)
-        })
-        .map(|m| m.module_id.as_str())
-        .collect();
-    owners.sort_unstable();
-    owners.dedup();
-    match owners.as_slice() {
-        [owner] => Ok((*owner).to_string()),
-        [] => Err(anyhow!(
-            "no installed module provides `{kind}` resources; install the module that does first"
-        )),
-        many => Err(anyhow!(
-            "several installed modules provide `{kind}` resources ({}), so there is no single one to create it under",
-            many.join(", ")
-        )),
     }
 }
 
@@ -768,9 +744,9 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .into_iter()
             .map(|s| (s.key, s.value))
             .collect();
-        let mut installed: Option<Vec<InstalledModule>> = None;
         for setting in &self.manifest.settings {
-            let (Some(create), Some(kind)) = (&setting.create, setting.resource_kind.as_deref())
+            let (Some(create), Some(kind_ref)) =
+                (&setting.create, setting.resource_kind.as_deref())
             else {
                 continue;
             };
@@ -780,28 +756,14 @@ impl<'a, R: Repository> SagaState<'a, R> {
             {
                 continue;
             }
-            let owner = if self.manifest.resources.iter().any(|r| r.kind == kind) {
-                self.manifest.id.clone()
-            } else {
-                if installed.is_none() {
-                    let records = db_proxy
-                        .list_modules()
-                        .await
-                        .map_err(|e| anyhow!("link resource settings: list modules: {e}"))?;
-                    installed = Some(
-                        records
-                            .into_iter()
-                            .filter_map(InstalledModule::from_record)
-                            .collect(),
-                    );
-                }
-                kind_owner(
-                    installed.as_deref().unwrap_or_default(),
-                    &self.manifest.id,
-                    kind,
-                )
-                .map_err(|e| anyhow!("setting `{}`: {e}", setting.id))?
+            let parsed = resource_kind_ref::parse_kind_ref(kind_ref, "resourceKind")?;
+            let Some(owner) = parsed.module else {
+                return Err(anyhow!(
+                    "setting `{}`: resourceKind {kind_ref:?} was not qualified before install",
+                    setting.id
+                ));
             };
+            let kind = parsed.kind;
             let canonical_id = format!("{owner}:{kind}:{}", create.instance_id);
             let existing = db_proxy
                 .get_resource_instance(&canonical_id)
@@ -815,7 +777,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
                     .unwrap_or_else(|| "{}".to_string());
                 db_proxy
                     .create_resource_instance(
-                        &owner,
+                        owner,
                         kind,
                         &create.instance_id,
                         &create.display_name,
@@ -1267,6 +1229,30 @@ pub async fn run_install_with_provenance<R: Repository>(
     // valid characters, per-kind uniqueness, resolvable references. Any
     // failure here aborts the install with no DB or filesystem state
     // touched.
+    // Before validation, because validation serializes the schemas that get
+    // registered: those must carry the qualified kinds. See
+    // `resource_kind_ref` for why a kind is fixed at install.
+    let qualified;
+    let manifest = match db_proxy {
+        Some(proxy) if resource_kind_ref::names_other_modules_kinds(manifest) => {
+            let installed: Vec<InstalledModule> = proxy
+                .list_modules()
+                .await
+                .map_err(|e| anyhow!("resolve resource kinds: list modules: {e}"))?
+                .into_iter()
+                .filter_map(InstalledModule::from_record)
+                .collect();
+            qualified = resource_kind_ref::qualify_resource_kinds(manifest, &installed)
+                .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
+            &qualified
+        }
+        _ => {
+            qualified = resource_kind_ref::qualify_resource_kinds(manifest, &[])
+                .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
+            &qualified
+        }
+    };
+
     let resolved = manifest_validate::validate_with_provenance(manifest, provenance)
         .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
     manifest_validate::refuse_system_only_references(&resolved, provenance, system_only)
@@ -2703,6 +2689,16 @@ mod link_resource_settings_tests {
         assert_eq!(instances[0].display_name, "Hype Board subathon");
         assert_eq!(instances[0].settings_json, r#"{"duration":3600}"#);
         assert_eq!(db.settings().get("timer").map(String::as_str), Some(LINKED));
+    }
+
+    #[tokio::test]
+    async fn the_stored_manifest_names_the_kind_with_its_module() {
+        let db = FakeDbProxyClient::new().with_installed([provider("woofx3")]);
+        install(&db).await.expect("install");
+
+        let stored: serde_json::Value =
+            serde_json::from_str(&db.stored_manifest().expect("module created")).expect("json");
+        assert_eq!(stored["settings"][0]["resourceKind"], "woofx3:timer");
     }
 
     #[tokio::test]

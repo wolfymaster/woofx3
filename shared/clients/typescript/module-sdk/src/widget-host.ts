@@ -34,6 +34,11 @@ export interface WidgetHostStorage {
    * Returns an unsubscribe function. The callback fires once at
    * subscription time with the cached value when one exists, then on
    * every subsequent change.
+   *
+   * `"setting:" + id` reads one of the module's `list` settings instead of
+   * its storage: the rows, an array of objects keyed by the setting's
+   * `itemFields` ids, again whenever the setting is saved. Any other kind of
+   * setting reads as `null`.
    */
   subscribe(key: string, cb: (value: unknown) => void): () => void;
 }

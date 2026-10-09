@@ -137,6 +137,29 @@ pub struct ResourceInstance {
     pub settings: Value,
 }
 
+/// Whether two setting values are the same as a module reads them. Numbers
+/// compare by value (`1` and `1.0` are equal), objects regardless of key
+/// order, and an empty object equals an empty array, because Lua has one
+/// empty table for both and a Lua module reading `[]` would otherwise never
+/// match it.
+pub fn setting_values_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(x, y)| setting_values_equal(x, y))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| setting_values_equal(v, w)))
+        }
+        (Value::Array(list), Value::Object(map)) | (Value::Object(map), Value::Array(list)) => {
+            list.is_empty() && map.is_empty()
+        }
+        _ => a == b,
+    }
+}
+
 /// Sandbox-side surface for the runtime-instance system. Concrete
 /// implementations live outside `lib_sandbox` (typically in the
 /// `barkloader` app, calling the db-proxy via Twirp). Modules invoke
@@ -154,6 +177,24 @@ pub trait SettingsClient: Send + Sync {
     /// Sets a single setting value, e.g. from `ctx.module.setSetting(key, value)`.
     /// Does not require the key to have been declared in the manifest.
     fn set(&self, module_id: &str, key: &str, value: &str) -> Result<(), String>;
+    /// `ctx.module.compareAndSetSetting(key, expected, value)`: writes `value`
+    /// only while the setting still holds `expected`, compared as the module
+    /// reads it (`setting_values_equal`), not
+    /// byte for byte, so a list the dashboard saved compares equal to the
+    /// same list a function read. `value` is stored as is when it is a
+    /// string, as JSON otherwise.
+    ///
+    /// `current` in the outcome is the setting as the module would read it
+    /// now, `None` when the module has no such setting.
+    fn compare_and_set(
+        &self,
+        _module_id: &str,
+        _key: &str,
+        _expected: &Value,
+        _value: &Value,
+    ) -> Result<CompareAndSetOutcome, String> {
+        Err("ctx.module.compareAndSetSetting is not available on this engine".to_string())
+    }
 }
 
 pub trait ResourceClient: Send + Sync {
@@ -312,5 +353,44 @@ mod tests {
             result["clientId"],
             serde_json::Value::String("abc".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod setting_values_equal_tests {
+    use super::setting_values_equal;
+    use serde_json::json;
+
+    #[test]
+    fn numbers_compare_by_value() {
+        assert!(setting_values_equal(&json!(1), &json!(1.0)));
+        assert!(!setting_values_equal(&json!(1), &json!(2)));
+    }
+
+    #[test]
+    fn objects_compare_regardless_of_key_order() {
+        let a: serde_json::Value = serde_json::from_str(r#"{"a":1,"b":"x"}"#).unwrap();
+        let b: serde_json::Value = serde_json::from_str(r#"{"b":"x","a":1}"#).unwrap();
+        assert!(setting_values_equal(&a, &b));
+        assert!(!setting_values_equal(&a, &json!({ "a": 1 })));
+    }
+
+    #[test]
+    fn lists_compare_in_order() {
+        assert!(setting_values_equal(
+            &json!([{ "label": "A" }]),
+            &json!([{ "label": "A" }])
+        ));
+        assert!(!setting_values_equal(
+            &json!(["A", "B"]),
+            &json!(["B", "A"])
+        ));
+    }
+
+    #[test]
+    fn an_empty_object_equals_an_empty_list_and_nothing_else_does() {
+        assert!(setting_values_equal(&json!([]), &json!({})));
+        assert!(!setting_values_equal(&json!(["A"]), &json!({})));
+        assert!(!setting_values_equal(&json!([]), &json!(null)));
     }
 }

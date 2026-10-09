@@ -2218,6 +2218,51 @@ pub async fn set_secret_module_setting(
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CompareAndSetModuleSettingResponseJson {
+    #[serde(default)]
+    pub swapped: bool,
+    #[serde(default)]
+    pub current: Option<ModuleSettingJson>,
+}
+
+/// Writes `value` only while the setting's stored text is exactly
+/// `expected`, in one statement on db-proxy. `current` is the row after the
+/// call, `None` when the module has no such setting.
+pub async fn compare_and_set_module_setting(
+    url: &str,
+    module_id: &str,
+    key: &str,
+    expected: &str,
+    value: &str,
+) -> Result<CompareAndSetModuleSettingResponseJson> {
+    let body = serde_json::json!({
+        "module_id": module_id,
+        "key": key,
+        "expected_value": expected,
+        "value": value,
+    });
+    let endpoint = format!(
+        "{}/twirp/module_setting.ModuleSettingService/CompareAndSetModuleSetting",
+        url
+    );
+    let response = HTTP_CLIENT
+        .clone()
+        .post(&endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("compare_and_set_module_setting request: {}", e))?;
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("compare_and_set_module_setting failed: {}", text));
+    }
+    response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse CompareAndSetModuleSetting response: {}", e))
+}
+
 pub async fn set_module_setting(url: &str, module_id: &str, key: &str, value: &str) -> Result<()> {
     let existing = get_module_settings(url, module_id)
         .await

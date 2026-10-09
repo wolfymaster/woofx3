@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -12,6 +14,10 @@ type ModuleSettingRepository interface {
 	// UpsertDefault inserts a setting only when no row exists for (module_id, key).
 	// Existing values are left untouched — preserves user-configured values on upgrade.
 	UpsertDefault(moduleID, key, value, valueType string) error
+	// CompareAndSet writes value only while the row still holds expected, in
+	// one statement, and reports whether it did. A missing row is never
+	// written.
+	CompareAndSet(moduleID, key, expected, value string) (bool, error)
 }
 
 type WidgetSettingRepository interface {
@@ -52,6 +58,13 @@ func (r *moduleSettingRepository) UpsertDefault(moduleID, key, value, valueType 
 		Columns:   []clause.Column{{Name: "module_id"}, {Name: "key"}},
 		DoNothing: true,
 	}).Create(&s).Error
+}
+
+func (r *moduleSettingRepository) CompareAndSet(moduleID, key, expected, value string) (bool, error) {
+	result := r.db.Model(&models.ModuleSetting{}).
+		Where("module_id = ? AND key = ? AND value = ?", moduleID, key, expected).
+		Updates(map[string]interface{}{"value": value, "updated_at": time.Now()})
+	return result.RowsAffected > 0, result.Error
 }
 
 type widgetSettingRepository struct {

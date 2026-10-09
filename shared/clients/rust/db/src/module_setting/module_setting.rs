@@ -39,6 +39,31 @@ pub struct SetModuleSettingRequest {
     #[prost(string, tag="4")]
     pub value_type: ::prost::alloc::string::String,
 }
+/// Writes `value` only while the setting still holds `expected_value`, in one
+/// statement: the safe way for a module's functions to change a setting that
+/// other runs, or the streamer, may be changing at the same moment. Refused for
+/// a `secret` setting, whose stored value is sealed and never compared.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompareAndSetModuleSettingRequest {
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub key: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub expected_value: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub value: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompareAndSetModuleSettingResponse {
+    #[prost(bool, tag="1")]
+    pub swapped: bool,
+    /// The setting as stored after the call: the written row when swapped, else
+    /// what it holds now, which is what the caller retries from. Absent when no
+    /// such setting exists.
+    #[prost(message, optional, tag="2")]
+    pub current: ::core::option::Option<ModuleSettingRecord>,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ManifestSettingInput {
     #[prost(string, tag="1")]

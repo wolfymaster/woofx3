@@ -135,8 +135,10 @@ ctx.module = {
   name: string,       // display name from the manifest
   version: string,    // semver string from the manifest
   settings: {          // one key per module_settings row for this module_id
-    [key: string]: string | number | boolean
-  }
+    [key: string]: string | number | boolean | object[]
+  },
+  setSetting(key, value),
+  compareAndSetSetting(key, expected, value)
 }
 ```
 
@@ -146,8 +148,17 @@ looking up the function's module in the `ModuleRegistry` metadata cache
 segment. `settings` comes from the host's `SettingsClient` trait — in production,
 `HttpSettingsClient` fetches the module's rows from db-proxy
 (`ModuleSettingService/ListModuleSettings`) and coerces each `TEXT` value to a native
-`string`/`number`/`boolean` based on the setting's declared type; a `NoopSettingsClient`
-(used in tests and builtin invocations without a live db-proxy) returns an empty map.
+`string`/`number`/`boolean`, or a `list` setting's array of rows, based on the setting's
+declared type; a `NoopSettingsClient` (used in tests and builtin invocations without a
+live db-proxy) returns an empty map.
+
+`compareAndSetSetting(key, expected, value)` writes only while the setting still
+holds `expected` and answers `{ swapped, current }`. `HttpSettingsClient` compares
+`expected` with the stored value as the module reads it, then has db-proxy
+(`ModuleSettingService/CompareAndSetModuleSetting`) write only while the stored text
+is still the text it compared, so the check is by meaning and the write is atomic.
+`value` is stored as is when it is a string and as JSON otherwise; a `list` setting
+takes only an array. It refuses the same keys `setSetting` does, and secrets.
 
 See [Module format → Module-level settings](./modules.md#module-level-settings-settings) for
 how a manifest declares these values and how they get registered at install time.

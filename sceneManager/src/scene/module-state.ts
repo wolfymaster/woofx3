@@ -16,12 +16,21 @@ import type { Logger } from "@woofx3/common/runtime";
  * runs is also a setting. A widget sees only its own settings, never the
  * instance's, so a `state:` key of a kind this knows is answered with the
  * instance's reading (see `resourceReading`) rather than with what is stored.
+ *
+ * A module's `list` settings are its own widgets' to read too, at
+ * `setting:<settingId>`: the rows a streamer keeps in the module's settings,
+ * like the entries on a wheel, which the module's functions read and change
+ * and its widget shows. They are answered from the settings, never from
+ * storage, and pushed again whenever db-proxy announces the setting written.
+ * Only `list` settings are served; any other reads as nothing, so a secret or
+ * a url setting never reaches a page.
  */
 
 /** The slice of DbClient this depends on (injectable for tests). */
 export interface ModuleStateDb {
   getModuleStorageValue(namespace: string, key: string): Promise<unknown>;
   getResourceInstance(canonicalId: string): Promise<{ kind: string; settingsJson: string } | null>;
+  listModuleSettings(moduleId: string): Promise<{ key: string; value: string; valueType: string }[]>;
 }
 
 /** Where changes are pushed: the scenes with an open event stream. `DeliveryStore` implements it. */
@@ -40,6 +49,36 @@ export interface ModuleStateFrame {
 }
 
 const RESOURCE_STATE_PREFIX = "state:";
+const MODULE_SETTING_PREFIX = "setting:";
+/** The only setting type served to widgets (see the note at the top). */
+const LIST_SETTING = "list";
+
+/**
+ * A `list` setting's rows as its widget reads them: the stored JSON array,
+ * keeping only rows that are objects. `null` when the module has no such
+ * list setting.
+ */
+export function listSettingRows(
+  settings: { key: string; value: string; valueType: string }[],
+  settingId: string
+): Record<string, unknown>[] | null {
+  const setting = settings.find((s) => s.key === settingId);
+  if (!setting || setting.valueType !== LIST_SETTING) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(setting.value || "[]");
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter(
+    (row): row is Record<string, unknown> => row !== null && typeof row === "object" && !Array.isArray(row)
+  );
+}
 
 export interface CounterGoal {
   value: number;
@@ -267,12 +306,20 @@ export class ModuleStateWatch {
     }
     as.add(readAs);
 
+    if (key.startsWith(MODULE_SETTING_PREFIX)) {
+      return this.settingReading(moduleId, key);
+    }
     const stored = await this.db.getModuleStorageValue(moduleId, key);
     return this.reading(moduleId, key, stored);
   }
 
   /** A change announced on the bus, pushed to every connected scene watching it. */
   async publish(moduleId: string, key: string, value: unknown): Promise<void> {
+    // A `setting:` key is the module's settings, not its storage: a storage
+    // write that happens to use the prefix changes nothing a widget reads.
+    if (key.startsWith(MODULE_SETTING_PREFIX)) {
+      return;
+    }
     const watching = this.watchingScenes(moduleId, key);
     if (watching.length === 0) {
       return;
@@ -312,6 +359,39 @@ export class ModuleStateWatch {
         this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
       }
     }
+  }
+
+  /**
+   * One of a module's settings was written. Read it again for each connected
+   * scene watching it and push it. Only a widget of the module itself reads
+   * its settings, so there is no other module to push it as.
+   */
+  async settingUpdated(moduleId: string, settingId: string): Promise<void> {
+    const key = `${MODULE_SETTING_PREFIX}${settingId}`;
+    const watching = this.watchingScenes(moduleId, key);
+    if (watching.length === 0) {
+      return;
+    }
+    let reading: unknown;
+    try {
+      reading = await this.settingReading(moduleId, key);
+    } catch (err) {
+      this.logger.warn("module state: re-read of a changed setting failed", {
+        moduleId,
+        settingId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    for (const { sceneId } of watching) {
+      const frame: ModuleStateFrame = { moduleId, key, value: reading };
+      this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+    }
+  }
+
+  private async settingReading(moduleId: string, key: string): Promise<unknown> {
+    const settings = await this.db.listModuleSettings(moduleId);
+    return listSettingRows(settings, key.slice(MODULE_SETTING_PREFIX.length));
   }
 
   private watchingScenes(moduleId: string, key: string): { sceneId: string; readAs: Set<string> }[] {
