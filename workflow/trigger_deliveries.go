@@ -17,7 +17,12 @@ const recentDeliveryCapacity = 8192
 // subject and another on `message.user.*`. The engine matches each copy
 // against every workflow, so without this each copy would dispatch both
 // workflows again.
-// CloudEvents makes (source, id) unique per event, which is the key here.
+//
+// The key is the CloudEvents (source, id), which a publisher must keep unique
+// per event: a new event reusing a remembered pair is taken for a copy and
+// dropped. The memory is a window of the last recentDeliveryCapacity events,
+// so a copy from a subscription lagging another by more than that window is
+// not recognised and runs its workflows a second time.
 //
 // Safe for concurrent use: the bus runs each subscription's handler on its
 // own goroutine, so the copies race and exactly one of them must win.
