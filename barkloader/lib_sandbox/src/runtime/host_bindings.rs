@@ -164,9 +164,19 @@ pub fn resources_run(
 }
 
 /// `ctx.resources.list(kind)`: call the resource client, then serialize
-/// the list to `Value`.
+/// the list to `Value`. A qualified `module:kind` keeps only that module's
+/// instances; a bare kind lists every module's.
 pub fn resources_list(host: &HostContext, kind: &str) -> Result<Value, String> {
-    let items = host.resources.list_by_kind(kind)?;
+    let (module, bare) = match kind.split_once(':') {
+        Some((module, bare)) => (Some(module), bare),
+        None => (None, kind),
+    };
+    let items: Vec<_> = host
+        .resources
+        .list_by_kind(bare)?
+        .into_iter()
+        .filter(|item| module.is_none_or(|m| item.module_name == m))
+        .collect();
     serde_json::to_value(&items).map_err(|e| e.to_string())
 }
 
@@ -690,6 +700,65 @@ mod tests {
         fn list_by_kind(&self, _kind: &str) -> Result<Vec<crate::host::ResourceInstance>, String> {
             Ok(Vec::new())
         }
+    }
+
+    /// Two modules' `wheel` instances, whatever kind is asked for.
+    struct TwoWheelsClient;
+    impl crate::host::ResourceClient for TwoWheelsClient {
+        fn create(
+            &self,
+            _owning_module_name: &str,
+            _kind: &str,
+            _instance_id: &str,
+            _display_name: &str,
+            _settings: &Value,
+        ) -> Result<crate::host::ResourceInstance, String> {
+            Err("not used".to_string())
+        }
+        fn delete(&self, _canonical_id: &str) -> Result<(), String> {
+            Err("not used".to_string())
+        }
+        fn get(
+            &self,
+            _canonical_id: &str,
+        ) -> Result<Option<crate::host::ResourceInstance>, String> {
+            Ok(None)
+        }
+        fn list_by_kind(&self, kind: &str) -> Result<Vec<crate::host::ResourceInstance>, String> {
+            assert_eq!(kind, "wheel", "the client is asked for the bare kind");
+            Ok(["spinner", "prizes"]
+                .iter()
+                .map(|module| crate::host::ResourceInstance {
+                    canonical_id: format!("{module}:wheel:main"),
+                    module_name: module.to_string(),
+                    kind: "wheel".to_string(),
+                    instance_id: "main".to_string(),
+                    display_name: "Main".to_string(),
+                    settings: serde_json::json!({}),
+                })
+                .collect())
+        }
+    }
+
+    #[test]
+    fn resources_list_keeps_one_modules_instances_for_a_qualified_kind() {
+        let mut host = noop_host_context();
+        host.resources = std::sync::Arc::new(TwoWheelsClient);
+        let canonical_ids = |v: Value| -> Vec<String> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|i| i["canonical_id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(
+            canonical_ids(resources_list(&host, "prizes:wheel").unwrap()),
+            vec!["prizes:wheel:main"]
+        );
+        assert_eq!(
+            canonical_ids(resources_list(&host, "wheel").unwrap()),
+            vec!["spinner:wheel:main", "prizes:wheel:main"]
+        );
     }
 
     #[test]
