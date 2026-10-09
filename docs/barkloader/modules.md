@@ -889,6 +889,7 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 | `description` | string | no | Short description. |
 | `icon` | string | no | Optional asset canonical id for picker affordances. |
 | `schema` | array | no | `ConfigField[]` — the fields a user fills in to create an instance of this kind; see [Field declarations](#field-declarations). The engine never renders the form and never validates an instance's value against it. |
+| `display.summary` | string | no | Where in an instance's value to look for the reading the dashboard shows beside its name: object keys and list indexes joined by `.` (`items`, `spin.item`, `entries.0`), each of `[A-Za-z0-9_-]`. A list reads as how many entries it holds, a number or text as itself. Left out, the whole value is read the same way, which suits a kind whose value is a number, text or a list; set it when the value is an object. |
 
 
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
