@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.0](https://github.com/wolfymaster/woofx3/compare/v0.19.1...v0.20.0) (2026-10-09)
+
+### Features
+
+* **api:** reject a list module setting value that isn't rows ([3110cd8](https://github.com/wolfymaster/woofx3/commit/3110cd899b908c15ea18673376b5660378ebe66d))
+* **barkloader:** list module settings and ctx.module.compareAndSetSetting ([3e32dc2](https://github.com/wolfymaster/woofx3/commit/3e32dc2b3c9e079127422162989fe03e90f7e61a))
+* **db:** compare-and-set for module settings ([fc594c8](https://github.com/wolfymaster/woofx3/commit/fc594c86579efd6183632a1f3b57d12d44a626e4))
+* **sceneManager:** serve a module's list settings to its widgets ([0783768](https://github.com/wolfymaster/woofx3/commit/07837687eeee889cdcbd3c3f7a17ecdc9353dbb3))
+
 ## [0.19.1](https://github.com/wolfymaster/woofx3/compare/v0.19.0...v0.19.1) (2026-10-08)
 
 ### Bug Fixes
