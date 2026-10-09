@@ -83,9 +83,16 @@ export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
  * `OverlayHost.buildDraftConfig`), for an overlay previewing a draft.
  * Authorized like `/config`.
  *
- * `mediaUrls` maps each external media URL in the placements to its proxy
- * URL. The editor also posts settings to the page as they are typed, with
- * external media as entered, and the page points them at the proxy with it.
+ * External media in the placements is pointed at the media proxy, for the
+ * placements whose frames need it, only when the URL is already in the
+ * scene's document (`SceneDocuments.editedMediaUrls`): an overlay session is
+ * held by anything showing the overlay, so the placements it sends are not
+ * trusted to choose what the engine fetches. The editor puts a value it picks
+ * into the document through its own authenticated socket, and the page asks
+ * again when that op arrives. `mediaUrls` maps, per placement id, each URL
+ * signed to its proxy URL; the editor also posts settings to the page as they
+ * are typed, with external media as entered, and the page points them at the
+ * proxy with it.
  */
 export async function handleSceneDraftConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
   const cookie = readSessionCookie(req, sceneId);
@@ -115,11 +122,17 @@ export async function handleSceneDraftConfigRoute(req: Request, sceneId: string,
   if (scene === null) {
     return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
-  const mediaUrls = deps.mediaProxy.urlsIn(
-    widgets.map((widget: unknown) => (widget as { settings?: unknown })?.settings)
-  );
+  const edited = await deps.sceneDocuments.editedMediaUrls(sceneId);
+  const signable = (url: string) => edited.has(url);
+  const mediaUrls: Record<string, Record<string, string>> = {};
+  for (const widget of (scene as { widgets?: unknown }).widgets as unknown[]) {
+    const { id, settings, mediaProxyBase } = widget as { id?: unknown; settings?: unknown; mediaProxyBase?: unknown };
+    if (typeof id === "string" && typeof mediaProxyBase === "string") {
+      mediaUrls[id] = deps.mediaProxy.urlsIn(settings, mediaProxyBase, signable);
+    }
+  }
   return Response.json(
-    { ...config, scene: deps.mediaProxy.sceneConfig(scene), mediaUrls },
+    { ...config, scene: deps.mediaProxy.sceneConfig(scene, signable), mediaUrls },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

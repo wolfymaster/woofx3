@@ -26,7 +26,7 @@ import {
   settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
-import { externalMediaUrls, rewriteExternalMedia } from "./media-url";
+import { earliestMediaProxyExpiry, externalMediaUrls, parseMediaUrls, rewriteExternalMedia } from "./media-url";
 import { applySceneBackground } from "./scene-background";
 import {
   parseSceneConfig,
@@ -57,6 +57,17 @@ const REFRESH_INTERVAL_MS = 50_000;
 // Adding a widget or changing a theme in the editor needs the server to
 // resolve the new frame; waiting for a pause asks it once.
 const DRAFT_SETTLE_MS = 400;
+
+// Media proxy URLs expire (see src/scene/media-proxy.ts, which hands out
+// ones good for a week or more). The page fetches its scene again this long
+// before the soonest expiry it holds, which brings fresh URLs, so an overlay
+// left open for days keeps its media.
+const MEDIA_REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
+// Never sooner than this, so a URL that is already close to expiring cannot
+// make the page fetch in a loop.
+const MIN_MEDIA_REFRESH_DELAY_MS = 60_000;
+// The longest delay setTimeout honours; a longer one would fire at once.
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 // A frame swapped in for another is shown once it reports it has painted, or
 // after this long, so a widget that never reports still appears.
@@ -436,6 +447,36 @@ function main(): void {
   }
   stack(sceneData.widgets.map((instance) => instance.id));
 
+  let mediaRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  // Fetch the scene again before the soonest media proxy URL on the page
+  // expires (see MEDIA_REFRESH_MARGIN_MS). Run whenever the page's settings
+  // are replaced, so the timer always follows what is on screen.
+  function scheduleMediaRefresh(): void {
+    if (mediaRefreshTimer !== null) {
+      clearTimeout(mediaRefreshTimer);
+      mediaRefreshTimer = null;
+    }
+    let earliest: number | null = null;
+    for (const entry of mounted.values()) {
+      const expiry = earliestMediaProxyExpiry(entry.config.settings);
+      if (expiry !== null && (earliest === null || expiry < earliest)) {
+        earliest = expiry;
+      }
+    }
+    if (earliest === null) {
+      return;
+    }
+    const delay = Math.min(
+      Math.max(earliest * 1000 - MEDIA_REFRESH_MARGIN_MS - Date.now(), MIN_MEDIA_REFRESH_DELAY_MS),
+      MAX_TIMER_DELAY_MS
+    );
+    mediaRefreshTimer = setTimeout(() => {
+      mediaRefreshTimer = null;
+      void updateScene();
+    }, delay);
+  }
+  scheduleMediaRefresh();
+
   // The editor's draft layout, kept so a scene update -- which places every
   // widget where it was saved -- doesn't undo a drag the editor has not saved.
   let previewLayout: PreviewWidgetLayout[] | null = null;
@@ -447,16 +488,31 @@ function main(): void {
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
   // The editor sends settings as entered, so external media in them still
   // names its own host, which a themeable widget's frame refuses. The server
-  // answers each draft with the proxy URL of every external media URL in it
-  // (`mediaUrls`), and settings from the editor are pointed at those.
-  const proxiedMedia = new Map<string, string>();
-  const draftSettingsOf = (placement: Record<string, unknown>): Record<string, unknown> =>
-    rewriteExternalMedia(settingsOf(placement), (url) => proxiedMedia.get(url));
-  // External media URLs the server has not signed yet: one appearing asks
-  // the server for a draft, like a new widget does.
-  const unsignedMediaKey = (placements: readonly unknown[]): string =>
+  // answers each draft with, per placement, the proxy URL of each external
+  // media URL it signed (`mediaUrls`), and settings from the editor are
+  // pointed at those. Each answer replaces the last, so this holds only what
+  // the newest draft named.
+  let proxiedMedia = new Map<string, Map<string, string>>();
+  const signedMediaOf = (placement: Record<string, unknown>): Map<string, string> | undefined =>
+    typeof placement.id === "string" ? proxiedMedia.get(placement.id) : undefined;
+  const draftSettingsOf = (placement: Record<string, unknown>): Record<string, unknown> => {
+    const signed = signedMediaOf(placement);
+    const settings = settingsOf(placement);
+    return signed ? rewriteExternalMedia(settings, (url) => signed.get(url)) : settings;
+  };
+  // What the server has to see a draft again for: a new widget or theme, and
+  // an external media URL it has not signed. A URL it will not sign (the
+  // widget loads it directly, or no editor has put it in the scene yet) stays
+  // in the key, so it asks once per change rather than once per message; the
+  // editor's op putting it in the scene brings the page back here.
+  const draftKeyOf = (placements: readonly unknown[]): string =>
+    draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") +
     JSON.stringify(
-      placements.flatMap((raw) => externalMediaUrls(settingsOf(asRecord(raw))).filter((url) => !proxiedMedia.has(url)))
+      placements.flatMap((raw) => {
+        const placement = asRecord(raw);
+        const signed = signedMediaOf(placement);
+        return externalMediaUrls(settingsOf(placement)).filter((url) => !signed?.has(url));
+      })
     );
 
   window.addEventListener("message", (event) => {
@@ -492,9 +548,7 @@ function main(): void {
             updateSettings(entry.config.id, settings);
           }
         }
-        const key =
-          draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") +
-          unsignedMediaKey(placements);
+        const key = draftKeyOf(placements);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -545,6 +599,7 @@ function main(): void {
       mount(instance);
     }
     stack(plan.order);
+    scheduleMediaRefresh();
     applySceneBackground(document.body, next.layout);
     if (previewLayout) {
       applyPreviewLayout(widgetElements, previewLayout);
@@ -616,11 +671,12 @@ function main(): void {
     }
     const body: unknown = resp.ok ? await resp.json().catch(() => null) : null;
     const config = parseSceneConfig(body);
-    if (draft) {
-      for (const [upstream, proxied] of Object.entries(asRecord(asRecord(body).mediaUrls))) {
-        if (typeof proxied === "string") {
-          proxiedMedia.set(upstream, proxied);
-        }
+    if (draft && config) {
+      proxiedMedia = parseMediaUrls(asRecord(body).mediaUrls);
+      // The newest draft's key, with what was just signed left out of it, so
+      // the same draft posted again does not ask a second time.
+      if (draftPlacements) {
+        draftKey = draftKeyOf(draftPlacements);
       }
     }
     if (config && config.id === sceneId) {

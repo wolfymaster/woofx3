@@ -50,6 +50,13 @@ export interface PlacementMeta {
   hostsSurface: string;
   frameUrl: string;
   linkedResources: Record<string, string>;
+  /**
+   * The engine's media proxy URL prefix, for a widget whose frame runs under
+   * the theme policy: overlays get external media in its settings pointed
+   * there (see src/scene/media-proxy.ts). Absent for every other placement,
+   * whose frames load external media directly.
+   */
+  mediaProxyBase?: string;
 }
 
 /** A scene as an overlay starts from it, or resyncs to. */

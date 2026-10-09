@@ -2,7 +2,7 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
-import type { MediaProxy } from "./media-proxy";
+import { type MediaProxy, mediaProxyBaseOf } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
@@ -111,8 +111,8 @@ export interface FrameAssemblerOptions {
   /** The instances a module links through its `resource_ref` settings (see
    *  module-state.ts `linkedResources`). None when absent. */
   linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
-  /** Points external media in the boot payload's settings at the engine's
-   *  media proxy. Settings pass through as they are when absent. */
+  /** Points external media in a themeable widget's boot settings at the
+   *  engine's media proxy. Settings pass through as they are when absent. */
   mediaProxy?: MediaProxy;
 }
 
@@ -361,13 +361,27 @@ export class FrameAssembler {
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
-      settings: this.opts.mediaProxy ? this.opts.mediaProxy.settings(target.settings) : target.settings,
+      settings: this.bootSettings(target.settings, frameInfo),
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
       linkedResources,
     };
     return this.render(frameInfo, boot, "no-store");
+  }
+
+  /**
+   * The settings a frame boots with. A widget with a theme contract runs
+   * under the theme policy (see `render`), which refuses external media, so
+   * its external media is pointed at the media proxy; any other widget loads
+   * it directly.
+   */
+  private bootSettings(settings: Record<string, unknown>, frameInfo: BarkloaderFrameInfo): Record<string, unknown> {
+    const base = frameInfo.theme ? mediaProxyBaseOf(frameInfo.resourceBaseUrl) : null;
+    if (!this.opts.mediaProxy || base === null) {
+      return settings;
+    }
+    return this.opts.mediaProxy.settings(settings, base);
   }
 
   /** The entry document with the scaffold, theme stylesheet and policy. */

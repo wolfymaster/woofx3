@@ -2369,6 +2369,7 @@ function applyPreviewLayout(elements, layout) {
 }
 
 // public/scene-manager/media-url.ts
+var MEDIA_PROXY_PATH = "/assets/media/";
 var MAX_DEPTH = 32;
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -2383,14 +2384,10 @@ function isAbsoluteHttpUrl(value) {
   return (url.protocol === "https:" || url.protocol === "http:") && url.hostname !== "";
 }
 function externalMediaUrl(value) {
-  if (!isPlainObject2(value) || typeof value.url !== "string" || !isAbsoluteHttpUrl(value.url)) {
+  if (!isPlainObject2(value) || value.source !== "url" || typeof value.url !== "string" || !isAbsoluteHttpUrl(value.url)) {
     return null;
   }
-  if (value.source === "url") {
-    return value.url;
-  }
-  const libraryId = typeof value.id === "string" && value.id !== "";
-  return !libraryId && typeof value.type === "string" ? value.url : null;
+  return value.url;
 }
 function rewriteExternalMedia(value, replace) {
   return rewrite(value, replace, 0);
@@ -2432,6 +2429,52 @@ function externalMediaUrls(value) {
   });
   return [...urls];
 }
+function mediaProxyExpiry(url) {
+  let pathname;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  const at = pathname.lastIndexOf(MEDIA_PROXY_PATH);
+  if (at < 0) {
+    return null;
+  }
+  const [, expiresAt, ...rest] = pathname.slice(at + MEDIA_PROXY_PATH.length).split(".");
+  if (rest.length !== 1 || expiresAt === undefined || !/^\d+$/.test(expiresAt)) {
+    return null;
+  }
+  return Number(expiresAt);
+}
+function earliestMediaProxyExpiry(value) {
+  let earliest = null;
+  for (const url of externalMediaUrls(value)) {
+    const expiry = mediaProxyExpiry(url);
+    if (expiry !== null && (earliest === null || expiry < earliest)) {
+      earliest = expiry;
+    }
+  }
+  return earliest;
+}
+function parseMediaUrls(value) {
+  const placements = new Map;
+  if (!isPlainObject2(value)) {
+    return placements;
+  }
+  for (const [id, urls] of Object.entries(value)) {
+    if (!isPlainObject2(urls)) {
+      continue;
+    }
+    const signed = new Map;
+    for (const [upstream, proxied] of Object.entries(urls)) {
+      if (typeof proxied === "string") {
+        signed.set(upstream, proxied);
+      }
+    }
+    placements.set(id, signed);
+  }
+  return placements;
+}
 
 // public/scene-manager/scene-background.ts
 function sceneBackground(layout) {
@@ -2449,6 +2492,9 @@ function applySceneBackground(element, layout) {
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
+var MEDIA_REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
+var MIN_MEDIA_REFRESH_DELAY_MS = 60000;
+var MAX_TIMER_DELAY_MS = 2147483647;
 var SWAP_TIMEOUT_MS = 2000;
 function generateNonce() {
   const bytes = new Uint8Array(16);
@@ -2712,13 +2758,45 @@ function main() {
     mount(instance);
   }
   stack(sceneData.widgets.map((instance) => instance.id));
+  let mediaRefreshTimer = null;
+  function scheduleMediaRefresh() {
+    if (mediaRefreshTimer !== null) {
+      clearTimeout(mediaRefreshTimer);
+      mediaRefreshTimer = null;
+    }
+    let earliest = null;
+    for (const entry of mounted.values()) {
+      const expiry = earliestMediaProxyExpiry(entry.config.settings);
+      if (expiry !== null && (earliest === null || expiry < earliest)) {
+        earliest = expiry;
+      }
+    }
+    if (earliest === null) {
+      return;
+    }
+    const delay = Math.min(Math.max(earliest * 1000 - MEDIA_REFRESH_MARGIN_MS - Date.now(), MIN_MEDIA_REFRESH_DELAY_MS), MAX_TIMER_DELAY_MS);
+    mediaRefreshTimer = setTimeout(() => {
+      mediaRefreshTimer = null;
+      updateScene();
+    }, delay);
+  }
+  scheduleMediaRefresh();
   let previewLayout = null;
   let draftPlacements = null;
   let draftKey = "";
   let draftTimer = null;
-  const proxiedMedia = new Map;
-  const draftSettingsOf = (placement) => rewriteExternalMedia(settingsOf(placement), (url) => proxiedMedia.get(url));
-  const unsignedMediaKey = (placements) => JSON.stringify(placements.flatMap((raw) => externalMediaUrls(settingsOf(asRecord(raw))).filter((url) => !proxiedMedia.has(url))));
+  let proxiedMedia = new Map;
+  const signedMediaOf = (placement) => typeof placement.id === "string" ? proxiedMedia.get(placement.id) : undefined;
+  const draftSettingsOf = (placement) => {
+    const signed = signedMediaOf(placement);
+    const settings = settingsOf(placement);
+    return signed ? rewriteExternalMedia(settings, (url) => signed.get(url)) : settings;
+  };
+  const draftKeyOf = (placements) => draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") + JSON.stringify(placements.flatMap((raw) => {
+    const placement = asRecord(raw);
+    const signed = signedMediaOf(placement);
+    return externalMediaUrls(settingsOf(placement)).filter((url) => !signed?.has(url));
+  }));
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
       bridge.handleMessage(event);
@@ -2745,7 +2823,7 @@ function main() {
             updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") + unsignedMediaKey(placements);
+        const key = draftKeyOf(placements);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -2790,6 +2868,7 @@ function main() {
       mount(instance);
     }
     stack(plan.order);
+    scheduleMediaRefresh();
     applySceneBackground(document.body, next.layout);
     if (previewLayout) {
       applyPreviewLayout(widgetElements, previewLayout);
@@ -2843,11 +2922,10 @@ function main() {
     }
     const body = resp.ok ? await resp.json().catch(() => null) : null;
     const config = parseSceneConfig(body);
-    if (draft) {
-      for (const [upstream, proxied] of Object.entries(asRecord(asRecord(body).mediaUrls))) {
-        if (typeof proxied === "string") {
-          proxiedMedia.set(upstream, proxied);
-        }
+    if (draft && config) {
+      proxiedMedia = parseMediaUrls(asRecord(body).mediaUrls);
+      if (draftPlacements) {
+        draftKey = draftKeyOf(draftPlacements);
       }
     }
     if (config && config.id === sceneId) {

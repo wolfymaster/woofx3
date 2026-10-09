@@ -5,16 +5,22 @@
 // `{ source: "url", name, url, type }` for a file hosted elsewhere. Themeable
 // widget frames only load media from the engine's origins, so the server
 // rewrites an external value's `url` to a signed engine media proxy URL
-// before settings reach an overlay (see src/scene/media-proxy.ts). This
-// module finds those values; it holds no secret, so the page can use it to
-// apply rewrites the server already made.
+// before settings reach such a frame (see src/scene/media-proxy.ts). This
+// module finds those values and reads proxy URLs; it holds no secret, so the
+// page can use it to apply rewrites the server already made.
 //
-// Detection is by shape, the same classification the dashboard's picker
-// uses: an object with an absolute http(s) `url` that is marked
-// `source: "url"`, or that has a `type` but no library `id`. A bare string is
-// left alone: without the widget's settings schema it cannot be told apart
-// from a link or an API endpoint a widget calls, and the picker never stores
-// one. Library values pass through untouched; their URLs are the engine's.
+// Detection is by the shape the dashboard's picker stores for a file hosted
+// elsewhere: an object marked `source: "url"` with an absolute http(s)
+// `url`. Nothing else is rewritten: a bare string, or an object the picker
+// did not make, cannot be told apart from a link or an API endpoint a
+// widget calls. Library values pass through untouched; their URLs are the
+// engine's.
+
+/**
+ * The path of the engine's media proxy under its public URL. Must match the
+ * route in barkloader/app/src/routes/media.rs and sceneManager's relay.
+ */
+export const MEDIA_PROXY_PATH = "/assets/media/";
 
 /** Nesting deeper than any settings form produces; deeper values are left as they are. */
 const MAX_DEPTH = 32;
@@ -36,14 +42,15 @@ export function isAbsoluteHttpUrl(value: string): boolean {
 
 /** The URL of an external media value, or null when `value` is not one. */
 export function externalMediaUrl(value: unknown): string | null {
-  if (!isPlainObject(value) || typeof value.url !== "string" || !isAbsoluteHttpUrl(value.url)) {
+  if (
+    !isPlainObject(value) ||
+    value.source !== "url" ||
+    typeof value.url !== "string" ||
+    !isAbsoluteHttpUrl(value.url)
+  ) {
     return null;
   }
-  if (value.source === "url") {
-    return value.url;
-  }
-  const libraryId = typeof value.id === "string" && value.id !== "";
-  return !libraryId && typeof value.type === "string" ? value.url : null;
+  return value.url;
 }
 
 /**
@@ -93,4 +100,63 @@ export function externalMediaUrls(value: unknown): string[] {
     return undefined;
   });
   return [...urls];
+}
+
+/**
+ * When a media proxy URL stops working, in unix seconds, or null when `url`
+ * is not one. A token is `{payload}.{expiresAt}.{signature}`; the page reads
+ * the expiry to fetch fresh URLs before it passes (see index.ts).
+ */
+export function mediaProxyExpiry(url: string): number | null {
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  const at = pathname.lastIndexOf(MEDIA_PROXY_PATH);
+  if (at < 0) {
+    return null;
+  }
+  const [, expiresAt, ...rest] = pathname.slice(at + MEDIA_PROXY_PATH.length).split(".");
+  if (rest.length !== 1 || expiresAt === undefined || !/^\d+$/.test(expiresAt)) {
+    return null;
+  }
+  return Number(expiresAt);
+}
+
+/** The soonest a media proxy URL in `value` expires, in unix seconds, or null when it holds none. */
+export function earliestMediaProxyExpiry(value: unknown): number | null {
+  let earliest: number | null = null;
+  for (const url of externalMediaUrls(value)) {
+    const expiry = mediaProxyExpiry(url);
+    if (expiry !== null && (earliest === null || expiry < earliest)) {
+      earliest = expiry;
+    }
+  }
+  return earliest;
+}
+
+/**
+ * A draft-config answer's `mediaUrls` (placement id, then upstream URL, to
+ * proxy URL), with anything not of that shape left out.
+ */
+export function parseMediaUrls(value: unknown): Map<string, Map<string, string>> {
+  const placements = new Map<string, Map<string, string>>();
+  if (!isPlainObject(value)) {
+    return placements;
+  }
+  for (const [id, urls] of Object.entries(value)) {
+    if (!isPlainObject(urls)) {
+      continue;
+    }
+    const signed = new Map<string, string>();
+    for (const [upstream, proxied] of Object.entries(urls)) {
+      if (typeof proxied === "string") {
+        signed.set(upstream, proxied);
+      }
+    }
+    placements.set(id, signed);
+  }
+  return placements;
 }

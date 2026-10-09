@@ -115,11 +115,23 @@ export function injectThemeStylesheet(html: string, stylesheetUrl: string): stri
 }
 
 /**
+ * Twitch's CDN for emotes, badges and profile pictures, which arrive in
+ * event data (chat messages, alerts) rather than in settings, so they never
+ * pass the media proxy. It is safe to allow in a themeable frame because it
+ * is a fixed platform host that no theme author controls: a theme stylesheet
+ * can make the frame request an image from it, but whatever the request
+ * carries in its URL lands with Twitch, never with someone who could read it.
+ * Exact host and https only, so no other Twitch host is opened with it.
+ */
+export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
+
+/**
  * The Content-Security-Policy for a themeable widget's frame: styles, fonts,
- * images and media from the engine only. A theme stylesheet is author data,
- * and its `url(...)` or `@import` could otherwise reach any host, carrying
- * whatever its selectors can read off the page; nothing a theme ships is a
- * script, so scripts and connections are left as they were. External media a
+ * images and media from the engine only, plus images from Twitch's CDN
+ * (`TWITCH_IMAGE_CDN`). A theme stylesheet is author data, and its `url(...)`
+ * or `@import` could otherwise reach any host, carrying whatever its
+ * selectors can read off the page; nothing a theme ships is a script, so
+ * scripts and connections are left as they were. External media a
  * placement's settings name reaches the frame through the engine's media
  * proxy (see media-proxy.ts), so it needs no outside host here either.
  *
@@ -133,7 +145,7 @@ export function themeContentSecurityPolicy(engineOrigins: string[]): string {
   return [
     `style-src ${origins} 'unsafe-inline'`,
     `font-src ${origins} data:`,
-    `img-src ${origins} data: blob:`,
+    `img-src ${origins} ${TWITCH_IMAGE_CDN} data: blob:`,
     `media-src ${origins} data: blob:`,
   ].join("; ");
 }

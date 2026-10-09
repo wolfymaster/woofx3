@@ -41,6 +41,9 @@ export interface OverlayWidgetInstance {
   /** The resource instances the widget's module links (see `linkedResources`
    *  in module-state.ts), handed to the frame with the placement. */
   linkedResources?: Record<string, string>;
+  /** Set by framing for a widget whose frame runs under the theme policy
+   *  (see `PlacementMeta.mediaProxyBase`). */
+  mediaProxyBase?: string;
   /** False for a placement hidden in the editor. */
   visible: boolean;
   /** The placement exactly as stored, for writing the scene back without
@@ -564,6 +567,7 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         hostsSurface: w.hostsSurface,
         frameUrl: w.frameUrl,
         linkedResources: w.linkedResources ?? {},
+        ...(w.mediaProxyBase === undefined ? {} : { mediaProxyBase: w.mediaProxyBase }),
         visible: w.visible,
         resolved: w.resolved,
       })),

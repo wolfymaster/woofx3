@@ -303,9 +303,15 @@ describe("FrameAssembler — widget themes", () => {
     expect(directives).toEqual({
       "style-src": ["'self'", "https://engine.example.com", "'unsafe-inline'"],
       "font-src": ["'self'", "https://engine.example.com", "data:"],
-      "img-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
+      "img-src": ["'self'", "https://engine.example.com", "https://static-cdn.jtvnw.net", "data:", "blob:"],
       "media-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
     });
+    expect(csp).toBe(
+      "style-src 'self' https://engine.example.com 'unsafe-inline'; " +
+        "font-src 'self' https://engine.example.com data:; " +
+        "img-src 'self' https://engine.example.com https://static-cdn.jtvnw.net data: blob:; " +
+        "media-src 'self' https://engine.example.com data: blob:"
+    );
     for (const sources of Object.values(directives) as string[][]) {
       for (const source of sources) {
         expect(["https:", "http:", "*"]).not.toContain(source);

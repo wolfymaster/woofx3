@@ -12,6 +12,7 @@ function deps() {
   const d = {
     sessionTokens: { verify: async (token: string) => (token === "good" ? { sceneId: "scene-1" } : null) },
     host: { buildDraftConfig },
+    sceneDocuments: { editedMediaUrls: async () => new Set<string>() },
     mediaProxy: new MediaProxy("test-secret"),
   };
   return { deps: d as unknown as HttpDeps, buildDraftConfig };

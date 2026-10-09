@@ -13,6 +13,7 @@ import {
   transformOps,
   zKey,
 } from "../../public/scene-manager/scene-document";
+import { externalMediaUrls } from "../../public/scene-manager/media-url";
 import { sameValue, themeOf } from "../../public/scene-manager/scene-update";
 import type { MediaProxy } from "./media-proxy";
 import type { OverlaySceneState, OverlayWidgetInstance, SceneVersion } from "./scene-host";
@@ -131,14 +132,19 @@ export function storedPlacementOf(id: string, p: PlacementDocument, zIndex: numb
 export function metaOf(state: OverlaySceneState): Record<string, PlacementMeta> {
   const meta: Record<string, PlacementMeta> = {};
   for (const instance of state.instances) {
-    meta[instance.id] = {
-      moduleId: instance.moduleId,
-      hostsSurface: instance.hostsSurface,
-      frameUrl: instance.frameUrl,
-      linkedResources: instance.linkedResources ?? {},
-    };
+    meta[instance.id] = placementMetaOf(instance);
   }
   return meta;
+}
+
+function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
+  return {
+    moduleId: instance.moduleId,
+    hostsSurface: instance.hostsSurface,
+    frameUrl: instance.frameUrl,
+    linkedResources: instance.linkedResources ?? {},
+    ...(instance.mediaProxyBase === undefined ? {} : { mediaProxyBase: instance.mediaProxyBase }),
+  };
 }
 
 /** How long a version waits after its last change before it is written back. */
@@ -259,8 +265,9 @@ interface HeldScene {
 export interface SceneDocumentsOptions {
   persister?: ScenePersister;
   autosaveMs?: number;
-  /** What overlays see of a document: external media pointed at the proxy.
-   *  Overlays see the document as it is when absent. */
+  /** What overlays see of a document: external media pointed at the proxy
+   *  for the placements that need it. Overlays see the document as it is
+   *  when absent. */
   mediaProxy?: MediaProxy;
 }
 
@@ -309,11 +316,35 @@ export class SceneDocuments {
 
   /**
    * A version of the scene as overlays see it: the snapshot with external
-   * media pointed at the proxy. Editors get `snapshot`, the values as entered.
+   * media pointed at the proxy where a placement's frame needs it. Editors
+   * get `snapshot`, the values as entered.
    */
   async overlaySnapshot(sceneId: string, version: SceneVersion = "published"): Promise<SceneSnapshot | null> {
     const snapshot = await this.snapshot(sceneId, version);
     return snapshot && this.mediaProxy ? this.mediaProxy.snapshot(snapshot) : snapshot;
+  }
+
+  /**
+   * Every external media URL in either version of the scene. Only an editor
+   * (through the editor socket) or a save puts a value into these, so this is
+   * the set of URLs someone allowed to edit the scene chose, as opposed to
+   * whatever a page holding an overlay session sends.
+   */
+  async editedMediaUrls(sceneId: string): Promise<Set<string>> {
+    await this.queues.get(sceneId);
+    const held = await this.hold(sceneId);
+    const urls = new Set<string>();
+    if (!held) {
+      return urls;
+    }
+    for (const version of [held.published, held.draft]) {
+      for (const placement of Object.values(version.snapshot.doc.widgets)) {
+        for (const url of externalMediaUrls(placement.settings)) {
+          urls.add(url);
+        }
+      }
+    }
+    return urls;
   }
 
   /** The number a version's overlays should be at; 0 when the scene is not held. */
@@ -628,7 +659,7 @@ export class SceneDocuments {
     this.broadcaster.broadcast(before.sceneId, SCENE_OPS_EVENT, {
       version,
       seq,
-      ops: this.overlayOps(ops, before.doc, doc),
+      ops: this.overlayOps(ops, before, target.snapshot, metaChanges),
       meta: metaChanges,
     } satisfies SceneOpsEvent);
     for (const listener of held.editors) {
@@ -649,18 +680,50 @@ export class SceneDocuments {
   /**
    * The ops that take an overlay's view of `before` to its view of `after`.
    * An overlay holds the document with external media rewritten (see
-   * `overlaySnapshot`), so an op that touches settings is recomputed between
-   * the two views rather than sent as made: an edit inside a media value's
-   * `url` only means something against the value as entered.
+   * `overlaySnapshot`), so an op on a placement whose view is rewritten,
+   * before or after, would mean something else against that view (a splice
+   * inside a `url` that is a proxy URL there). Such a placement is sent whole
+   * instead, as overlays see it; the ops for every other placement, and for
+   * the layout, go out as made. A placement whose meta changed is checked
+   * too, since meta decides whether its media is rewritten.
    */
-  private overlayOps(ops: Json0Component[], before: SceneDocument, after: SceneDocument): Json0Component[] {
-    const touchesSettings = ops.some(
-      (component) => component.p[0] === "widgets" && (component.p.length < 3 || component.p[2] === "settings")
-    );
-    if (!this.mediaProxy || !touchesSettings) {
+  private overlayOps(
+    ops: Json0Component[],
+    before: SceneSnapshot,
+    after: SceneSnapshot,
+    metaChanges: Record<string, PlacementMeta | null>
+  ): Json0Component[] {
+    const proxy = this.mediaProxy;
+    if (!proxy) {
       return ops;
     }
-    return diffDocuments(this.mediaProxy.document(before), this.mediaProxy.document(after));
+    const touched = new Set(Object.keys(metaChanges));
+    for (const component of ops) {
+      if (component.p[0] === "widgets" && typeof component.p[1] === "string") {
+        touched.add(component.p[1]);
+      }
+    }
+    const resent = [...touched].filter(
+      (id) =>
+        proxy.rewrites(before.doc.widgets[id], before.meta[id]) || proxy.rewrites(after.doc.widgets[id], after.meta[id])
+    );
+    if (resent.length === 0) {
+      return ops;
+    }
+    const replaced = new Set(resent);
+    const overlayOps = ops.filter(
+      (component) => !(component.p[0] === "widgets" && replaced.has(component.p[1] as string))
+    );
+    for (const id of resent) {
+      const old = before.doc.widgets[id];
+      const next = after.doc.widgets[id];
+      overlayOps.push({
+        p: ["widgets", id],
+        ...(old ? { od: proxy.placement(old, before.meta[id]) } : {}),
+        ...(next ? { oi: proxy.placement(next, after.meta[id]) } : {}),
+      });
+    }
+    return overlayOps;
   }
 
   private async metaFor(
@@ -688,12 +751,7 @@ export class SceneDocuments {
       const order = stackOrder(after);
       const entries = reframe.map((id) => storedPlacementOf(id, after.widgets[id]!, order.indexOf(id)));
       for (const instance of await this.loader.framePlacements(sceneId, entries)) {
-        next[instance.id] = {
-          moduleId: instance.moduleId,
-          hostsSurface: instance.hostsSurface,
-          frameUrl: instance.frameUrl,
-          linkedResources: instance.linkedResources ?? {},
-        };
+        next[instance.id] = placementMetaOf(instance);
       }
     }
     return next;
