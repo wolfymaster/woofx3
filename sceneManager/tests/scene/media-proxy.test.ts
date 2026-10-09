@@ -4,7 +4,11 @@ import {
   earliestMediaProxyExpiry,
   externalMediaUrl,
   externalMediaUrls,
+  MAX_MEDIA_REFRESH_RETRY_MS,
+  MEDIA_REFRESH_MARGIN_MS,
+  MIN_MEDIA_REFRESH_DELAY_MS,
   mediaProxyExpiry,
+  mediaRefreshDelay,
   parseMediaUrls,
   replaceMediaUrls,
   rewriteExternalMedia,
@@ -119,6 +123,23 @@ describe("media proxy URLs on the page", () => {
     };
     expect(earliestMediaProxyExpiry(settings, BASE)).toBe(EXPIRES_AT);
     expect(earliestMediaProxyExpiry({ c: library, d: external() }, BASE)).toBeNull();
+  });
+
+  it("refreshes the margin before the soonest expiry, and never sooner than a minute", () => {
+    const now = EXPIRES_AT * 1000 - 24 * 60 * 60 * 1000;
+    expect(mediaRefreshDelay(EXPIRES_AT, now, 0)).toBe(24 * 60 * 60 * 1000 - MEDIA_REFRESH_MARGIN_MS);
+    expect(mediaRefreshDelay(EXPIRES_AT, EXPIRES_AT * 1000 - 1000, 0)).toBe(MIN_MEDIA_REFRESH_DELAY_MS);
+  });
+
+  it("retries a failed refresh from a minute, doubling to half an hour, never past the expiry", () => {
+    const now = EXPIRES_AT * 1000 - MEDIA_REFRESH_MARGIN_MS;
+    expect(mediaRefreshDelay(EXPIRES_AT, now, 1)).toBe(MIN_MEDIA_REFRESH_DELAY_MS);
+    expect(mediaRefreshDelay(EXPIRES_AT, now, 2)).toBe(2 * MIN_MEDIA_REFRESH_DELAY_MS);
+    expect(mediaRefreshDelay(EXPIRES_AT, now, 3)).toBe(4 * MIN_MEDIA_REFRESH_DELAY_MS);
+    expect(mediaRefreshDelay(EXPIRES_AT, now, 50)).toBe(MAX_MEDIA_REFRESH_RETRY_MS);
+    const soon = EXPIRES_AT * 1000 - 10 * 60_000;
+    expect(mediaRefreshDelay(EXPIRES_AT, soon, 50)).toBe(10 * 60_000);
+    expect(mediaRefreshDelay(EXPIRES_AT, EXPIRES_AT * 1000 + 60_000, 50)).toBe(MIN_MEDIA_REFRESH_DELAY_MS);
   });
 
   it("parses a draft answer's media URLs by placement, dropping anything malformed", () => {
@@ -448,6 +469,34 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     expect(attempts).toBe(settled);
   });
 
+  it("leaves them to the timed retry when they are edited, so an edit never waits on barkloader", async () => {
+    let attempts = 0;
+    const docs = new SceneDocuments(
+      {
+        loadFramedSceneById: async () => ({
+          sceneId: "s1",
+          name: "Main",
+          layout: {},
+          instances: [unframed("themed", { image: external() })],
+        }),
+        framePlacements: async () => {
+          attempts++;
+          return new Promise<OverlayWidgetInstance[]>(() => {});
+        },
+      },
+      { broadcast: () => {}, connectedSceneIds: () => ["s1"] },
+      logger(),
+      { mediaProxy: proxy, reframeRetryMs: 60_000 }
+    );
+    await docs.snapshot("s1");
+    const result = await docs.submit("s1", "published", 0, [{ p: ["widgets", "themed", "x"], od: 0, oi: 5 }]);
+    expect(result.ok).toBe(true);
+    expect(attempts).toBe(0);
+    const after = (await docs.snapshot("s1"))!;
+    expect(after.doc.widgets.themed!.x).toBe(5);
+    expect(after.meta.themed!.frameUrl).toBe("/frames/woofx3/timer?v=unavailable");
+  });
+
   it("stops retrying while nobody has the scene open", async () => {
     let attempts = 0;
     const docs = new SceneDocuments(
@@ -474,7 +523,9 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
 });
 
 describe("FrameAssembler — alert widgets", () => {
-  async function bootSettings(theme: FrameTheme | null): Promise<unknown> {
+  const FROM_EVENT = "https://viewer.example/chosen.png";
+
+  async function bootSettings(theme: FrameTheme | null, edited: string[] = [EXTERNAL]): Promise<unknown> {
     const delivery = {
       alertId: "alert-1",
       layout: {
@@ -487,7 +538,7 @@ describe("FrameAssembler — alert widgets", () => {
             moduleId: "woofx3",
             manifestId: "timer",
             position: { x: 0, y: 0, width: 10, height: 10 },
-            settings: { image: external(), logo: library },
+            settings: { image: external(), avatar: external(FROM_EVENT), logo: library },
           },
         ],
       },
@@ -503,18 +554,30 @@ describe("FrameAssembler — alert widgets", () => {
         }),
       },
       mediaProxy: proxy,
+      editedMediaUrls: async (sceneId) => {
+        expect(sceneId).toBe("s1");
+        return new Set(edited);
+      },
     });
     const html = await (await assembler.assembleAlertWidget("s1", "evt-1", "t1", null)).text();
     const boot: WidgetBootPayload = JSON.parse(/window\.__WOOFX3_WIDGET_BOOT__ = (.*?);<\/script>/.exec(html)![1]!);
     return boot.settings;
   }
 
-  it("proxies external media in a themeable alert widget's boot settings", async () => {
-    expect(await bootSettings(THEME)).toEqual({ image: { ...external(), url: EXTERNAL_PROXIED }, logo: library });
+  it("proxies the external media an editor put in the scene, and not a URL the event supplied", async () => {
+    expect(await bootSettings(THEME)).toEqual({
+      image: { ...external(), url: EXTERNAL_PROXIED },
+      avatar: external(FROM_EVENT),
+      logo: library,
+    });
+  });
+
+  it("proxies none of an alert's external media that the scene does not hold", async () => {
+    expect(await bootSettings(THEME, [])).toEqual({ image: external(), avatar: external(FROM_EVENT), logo: library });
   });
 
   it("leaves a widget without a theme contract loading external media directly", async () => {
-    expect(await bootSettings(null)).toEqual({ image: external(), logo: library });
+    expect(await bootSettings(null)).toEqual({ image: external(), avatar: external(FROM_EVENT), logo: library });
   });
 });
 
@@ -624,6 +687,22 @@ describe("handleMediaProxyRoute", () => {
     expect(resp.headers.get("Set-Cookie")).toBeNull();
     expect(resp.headers.get("Access-Control-Allow-Origin")).toBeNull();
     expect(await resp.text()).toBe("0123456789");
+  });
+
+  it("relays barkloader's Retry-After on a refusal to fetch now", async () => {
+    const fetchFn = mock(
+      async () => new Response(null, { status: 503, headers: { "Retry-After": "5", "Cache-Control": "no-store" } })
+    );
+    const url = new URL(`http://scene.test${path}`);
+    const resp = await handleMediaProxyRoute(
+      new Request(url),
+      url,
+      "http://barkloader.test",
+      logger(),
+      fetchFn as never
+    );
+    expect(resp.status).toBe(503);
+    expect(resp.headers.get("Retry-After")).toBe("5");
   });
 
   it("refuses methods other than GET", async () => {

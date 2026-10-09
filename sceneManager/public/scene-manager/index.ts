@@ -26,7 +26,13 @@ import {
   settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
-import { earliestMediaProxyExpiry, externalMediaUrls, parseMediaUrls, replaceMediaUrls } from "./media-url";
+import {
+  earliestMediaProxyExpiry,
+  externalMediaUrls,
+  mediaRefreshDelay,
+  parseMediaUrls,
+  replaceMediaUrls,
+} from "./media-url";
 import { applySceneBackground } from "./scene-background";
 import {
   parseSceneConfig,
@@ -57,17 +63,6 @@ const REFRESH_INTERVAL_MS = 50_000;
 // Adding a widget or changing a theme in the editor needs the server to
 // resolve the new frame; waiting for a pause asks it once.
 const DRAFT_SETTLE_MS = 400;
-
-// Media proxy URLs expire (see src/scene/media-proxy.ts, which hands out
-// ones good for a day or more). The page fetches its scene again this long
-// before the soonest expiry it holds, which brings fresh URLs, so an overlay
-// left open for days keeps its media.
-const MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
-// Never sooner than this, so a URL that is already close to expiring cannot
-// make the page fetch in a loop.
-const MIN_MEDIA_REFRESH_DELAY_MS = 60_000;
-// The longest delay setTimeout honours; a longer one would fire at once.
-const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 // A frame swapped in for another is shown once it reports it has painted, or
 // after this long, so a widget that never reports still appears.
@@ -448,9 +443,12 @@ function main(): void {
   stack(sceneData.widgets.map((instance) => instance.id));
 
   let mediaRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  // Fetches of the scene that failed in a row since one last applied; a
+  // failure brings the next refresh forward (see mediaRefreshDelay).
+  let mediaRefreshFailures = 0;
   // Fetch the scene again before the soonest media proxy URL on the page
-  // expires (see MEDIA_REFRESH_MARGIN_MS). Run whenever the page's settings
-  // are replaced, so the timer always follows what is on screen.
+  // expires. Run whenever the page's settings are replaced, and after a fetch
+  // that brought nothing, so the timer always follows what is on screen.
   function scheduleMediaRefresh(): void {
     if (mediaRefreshTimer !== null) {
       clearTimeout(mediaRefreshTimer);
@@ -466,10 +464,7 @@ function main(): void {
     if (earliest === null) {
       return;
     }
-    const delay = Math.min(
-      Math.max(earliest * 1000 - MEDIA_REFRESH_MARGIN_MS - Date.now(), MIN_MEDIA_REFRESH_DELAY_MS),
-      MAX_TIMER_DELAY_MS
-    );
+    const delay = mediaRefreshDelay(earliest, Date.now(), mediaRefreshFailures);
     mediaRefreshTimer = setTimeout(() => {
       mediaRefreshTimer = null;
       void updateScene();
@@ -713,7 +708,11 @@ function main(): void {
           return;
         }
         if (target.kind === "apply") {
+          mediaRefreshFailures = 0;
           applySceneConfig(target.config, target.fromDraft);
+        } else {
+          mediaRefreshFailures += 1;
+          scheduleMediaRefresh();
         }
       }
     } finally {

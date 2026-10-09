@@ -134,6 +134,20 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     expect(warn.mock.calls[0]![0]).toContain("missing entryHtml");
   });
 
+  it("gives up on a barkloader that does not answer, which the assembler serves as unavailable", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const hung = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      })) as unknown as typeof fetch;
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, hung, 10);
+
+    await expect(client.fetchWidgetFrame("mymod", "mywid")).rejects.toThrow();
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), logger, { barkloader: client });
+    const resp = await assembler.assembleDocument("mymod", "mywid", null, null);
+    expect(resp.status).toBe(502);
+  });
+
   it("returns the parsed frame info on success without logging", async () => {
     const warn = mock((_message: string, _meta?: unknown) => {});
     const logger = { debug: () => {}, info: () => {}, warn, error: () => {} } as any;

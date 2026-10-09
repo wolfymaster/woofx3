@@ -20,6 +20,7 @@ const MEDIA_RELAY: BarkloaderRelay = {
     "X-Content-Type-Options",
     "Content-Security-Policy",
     "Referrer-Policy",
+    "Retry-After",
   ],
   failure: "barkloader media proxy request failed",
   loggedPath: () => `${MEDIA_PROXY_PATH}{token}`,

@@ -2450,6 +2450,18 @@ function earliestMediaProxyExpiry(value, base) {
   }
   return earliest;
 }
+var MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
+var MIN_MEDIA_REFRESH_DELAY_MS = 60000;
+var MAX_MEDIA_REFRESH_RETRY_MS = 30 * 60000;
+var MAX_TIMER_DELAY_MS = 2147483647;
+function mediaRefreshDelay(earliest, now, failures) {
+  const untilExpiry = earliest * 1000 - now;
+  if (failures === 0) {
+    return Math.min(Math.max(untilExpiry - MEDIA_REFRESH_MARGIN_MS, MIN_MEDIA_REFRESH_DELAY_MS), MAX_TIMER_DELAY_MS);
+  }
+  const backoff = Math.min(MIN_MEDIA_REFRESH_DELAY_MS * 2 ** Math.min(failures - 1, 30), MAX_MEDIA_REFRESH_RETRY_MS);
+  return Math.max(Math.min(backoff, untilExpiry), MIN_MEDIA_REFRESH_DELAY_MS);
+}
 function replaceMediaUrls(value, urls) {
   if (urls.size === 0) {
     return value;
@@ -2492,9 +2504,6 @@ function applySceneBackground(element, layout) {
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
-var MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
-var MIN_MEDIA_REFRESH_DELAY_MS = 60000;
-var MAX_TIMER_DELAY_MS = 2147483647;
 var SWAP_TIMEOUT_MS = 2000;
 function generateNonce() {
   const bytes = new Uint8Array(16);
@@ -2759,6 +2768,7 @@ function main() {
   }
   stack(sceneData.widgets.map((instance) => instance.id));
   let mediaRefreshTimer = null;
+  let mediaRefreshFailures = 0;
   function scheduleMediaRefresh() {
     if (mediaRefreshTimer !== null) {
       clearTimeout(mediaRefreshTimer);
@@ -2774,7 +2784,7 @@ function main() {
     if (earliest === null) {
       return;
     }
-    const delay = Math.min(Math.max(earliest * 1000 - MEDIA_REFRESH_MARGIN_MS - Date.now(), MIN_MEDIA_REFRESH_DELAY_MS), MAX_TIMER_DELAY_MS);
+    const delay = mediaRefreshDelay(earliest, Date.now(), mediaRefreshFailures);
     mediaRefreshTimer = setTimeout(() => {
       mediaRefreshTimer = null;
       updateScene();
@@ -2958,7 +2968,11 @@ function main() {
           return;
         }
         if (target.kind === "apply") {
+          mediaRefreshFailures = 0;
           applySceneConfig(target.config, target.fromDraft);
+        } else {
+          mediaRefreshFailures += 1;
+          scheduleMediaRefresh();
         }
       }
     } finally {

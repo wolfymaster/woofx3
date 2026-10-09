@@ -2,7 +2,7 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
-import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
+import { frameMediaProxyBase, type MediaProxy, type SignableUrl } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
@@ -58,13 +58,21 @@ export interface BarkloaderFrameClient {
   fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null>;
 }
 
+/**
+ * How long barkloader has to answer a frame request, body included. A hung
+ * barkloader then costs each frame lookup this long, and the lookup counts as
+ * failed (the callers' catch), rather than holding up whatever waits on it.
+ */
+export const FRAME_FETCH_TIMEOUT_MS = 5000;
+
 /** Real implementation — calls barkloader's `GET
  *  /widgets/{moduleKey}/{manifestId}/frame` endpoint. */
 export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
   constructor(
     private readonly barkloaderUrl: string,
     private readonly logger: Logger,
-    private readonly fetchFn: typeof fetch = fetch
+    private readonly fetchFn: typeof fetch = fetch,
+    private readonly timeoutMs: number = FRAME_FETCH_TIMEOUT_MS
   ) {}
 
   async fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null> {
@@ -72,7 +80,7 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     const url =
       `${this.barkloaderUrl.replace(/\/+$/, "")}/widgets/` +
       `${encodeURIComponent(moduleKey)}/${encodeURIComponent(manifestId)}/frame${query}`;
-    const response = await this.fetchFn(url);
+    const response = await this.fetchFn(url, { signal: AbortSignal.timeout(this.timeoutMs) });
     if (!response.ok) {
       // A non-OK response is not a transport error (loadFrameInfo's
       // catch never sees it) — log here or this is completely silent.
@@ -114,6 +122,13 @@ export interface FrameAssemblerOptions {
   /** Points external media in a themeable widget's boot settings at the
    *  engine's media proxy. Settings pass through as they are when absent. */
   mediaProxy?: MediaProxy;
+  /**
+   * The external media URLs an editor put in a scene (see
+   * `SceneDocuments.editedMediaUrls`). An alert widget's settings come from a
+   * workflow, which may fill a media setting from event data a viewer chose,
+   * so only these URLs are signed in them; no alert media is when absent.
+   */
+  editedMediaUrls?: (sceneId: string) => Promise<ReadonlySet<string>>;
 }
 
 /**
@@ -141,6 +156,8 @@ interface FrameTarget {
   widgetCanonicalId: string;
   settings: Record<string, unknown>;
   surface: WidgetSurface;
+  /** Which external media URLs in `settings` may be signed; every one when absent. */
+  signable?: SignableUrl;
 }
 
 /**
@@ -276,7 +293,9 @@ export class FrameAssembler {
   /**
    * One widget of the alert delivered to `sceneId` as scene event `eventId`.
    * The alert is read back from that event, so a frame can only ever show
-   * what the scene manager validated and delivered to this scene.
+   * what the scene manager validated and delivered to this scene. Its
+   * external media is proxied only where an editor put the same URL in the
+   * scene; any other loads directly, which a themeable widget's policy blocks.
    */
   async assembleAlertWidget(
     sceneId: string,
@@ -290,6 +309,7 @@ export class FrameAssembler {
     if (!widget) {
       return this.blankResponse();
     }
+    const edited = await this.loadEditedMediaUrls(sceneId);
     return this.assembleFrame(
       sceneId,
       {
@@ -299,9 +319,27 @@ export class FrameAssembler {
         widgetCanonicalId: widget.widgetCanonicalId,
         settings: widget.settings,
         surface: "alert",
+        signable: (url) => edited.has(url),
       },
       nonceParam
     );
+  }
+
+  /** An alert widget still renders when the scene cannot be read; none of
+   *  its external media is proxied then. */
+  private async loadEditedMediaUrls(sceneId: string): Promise<ReadonlySet<string>> {
+    if (!this.opts.editedMediaUrls) {
+      return new Set();
+    }
+    try {
+      return await this.opts.editedMediaUrls(sceneId);
+    } catch (err) {
+      this.logger.warn("scene unavailable; an alert widget's external media is not proxied", {
+        sceneId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return new Set();
+    }
   }
 
   /** A widget still renders when its module's settings cannot be read; it
@@ -361,7 +399,7 @@ export class FrameAssembler {
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
-      settings: this.bootSettings(target.settings, frameInfo),
+      settings: this.bootSettings(target.settings, frameInfo, target.signable),
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
@@ -376,11 +414,15 @@ export class FrameAssembler {
    * its external media is pointed at the media proxy; any other widget loads
    * it directly.
    */
-  private bootSettings(settings: Record<string, unknown>, frameInfo: BarkloaderFrameInfo): Record<string, unknown> {
+  private bootSettings(
+    settings: Record<string, unknown>,
+    frameInfo: BarkloaderFrameInfo,
+    signable: SignableUrl | undefined
+  ): Record<string, unknown> {
     if (!this.opts.mediaProxy) {
       return settings;
     }
-    return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
+    return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo), signable).settings;
   }
 
   /** The entry document with the scaffold, theme stylesheet and policy. */

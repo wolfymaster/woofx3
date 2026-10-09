@@ -676,9 +676,11 @@ export class SceneDocuments {
 
   /**
    * Stamp a version's change with its next number, keep it, and push it.
-   * Meta is worked out again for placements that are new, whose widget or
-   * theme changed, or that were framed without barkloader's answer, unless
-   * the caller already knows it.
+   * Meta is worked out again for placements that are new or whose widget or
+   * theme changed, unless the caller already knows it. A placement framed
+   * without barkloader's answer is left to the timed retry (see
+   * `scheduleReframe`): asking barkloader again here would make every edit
+   * wait on it while it is down or slow.
    */
   private async commit(
     held: HeldScene,
@@ -693,7 +695,7 @@ export class SceneDocuments {
     const target = held[version];
     const before = target.snapshot;
     const { meta, unframed } =
-      knownFraming ?? (await this.metaFor(before.sceneId, before.doc, doc, before.meta, target.unframed));
+      knownFraming ?? (await this.metaFor(before.sceneId, before.doc, doc, before.meta, target.unframed, false));
     const metaChanges = changedMeta(before.meta, meta);
     const seq = before.seq + 1;
     target.snapshot = { ...before, name: name ?? before.name, seq, doc, meta };
@@ -762,7 +764,7 @@ export class SceneDocuments {
           continue;
         }
         const { doc, meta } = target.snapshot;
-        const framing = await this.metaFor(sceneId, doc, doc, meta, target.unframed);
+        const framing = await this.metaFor(sceneId, doc, doc, meta, target.unframed, true);
         if (Object.keys(changedMeta(meta, framing.meta)).length === 0) {
           target.unframed = framing.unframed;
           continue;
@@ -821,12 +823,19 @@ export class SceneDocuments {
     return overlayOps;
   }
 
+  /**
+   * The meta of `after`'s placements, asking barkloader only for those that
+   * are new or whose widget or theme changed since `before`, and, when
+   * `retryUnframed`, those in `unframed`. An unframed placement not asked
+   * about keeps its meta and stays unframed.
+   */
   private async metaFor(
     sceneId: string,
     before: SceneDocument,
     after: SceneDocument,
     meta: Record<string, PlacementMeta>,
-    unframed: ReadonlySet<string>
+    unframed: ReadonlySet<string>,
+    retryUnframed: boolean
   ): Promise<Framing> {
     const next: Record<string, PlacementMeta> = {};
     const nextUnframed = new Set<string>();
@@ -836,13 +845,16 @@ export class SceneDocuments {
       if (
         !meta[id] ||
         !old ||
-        unframed.has(id) ||
+        (retryUnframed && unframed.has(id)) ||
         old.widget !== placement.widget ||
         themeOf(old.settings) !== themeOf(placement.settings)
       ) {
         reframe.push(id);
-      } else {
-        next[id] = meta[id]!;
+        continue;
+      }
+      next[id] = meta[id]!;
+      if (unframed.has(id)) {
+        nextUnframed.add(id);
       }
     }
     if (reframe.length > 0) {

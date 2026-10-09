@@ -68,11 +68,6 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const framing = new FrameCatalog(barkloader, ctx.logger, (moduleId) => linkedResources(db, moduleId));
     const host = new OverlayHost(resolver, db, ctx.logger, { framing });
     const mediaProxy = new MediaProxy(ctx.runtimeConfig.mediaProxySecret);
-    const frameAssembler = new FrameAssembler(host, ctx.logger, {
-      barkloader,
-      linkedResources: (moduleId) => linkedResources(db, moduleId),
-      mediaProxy,
-    });
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, ctx.logger);
@@ -94,6 +89,12 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       },
     });
     this.sceneDocuments = sceneDocuments;
+    const frameAssembler = new FrameAssembler(host, ctx.logger, {
+      barkloader,
+      linkedResources: (moduleId) => linkedResources(db, moduleId),
+      mediaProxy,
+      editedMediaUrls: (sceneId) => sceneDocuments.editedMediaUrls(sceneId),
+    });
     // Hydrate from the DB before accepting any traffic — a restart
     // must never silently drop in-flight events.
     await deliveryStore.hydrate();

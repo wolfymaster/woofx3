@@ -43,10 +43,12 @@ fails, times out or gives no frame, the placement gets an unversioned frame
 URL and no `mediaProxyBase`, while the frame itself may later be served
 under the theme policy, which would block its external media. Such a
 placement is framed again a while later (10 s, doubling up to 5 minutes,
-while anyone has the scene open), and on every change to the scene, and the
-meta barkloader's answer brings is pushed as a `scene-ops` event with no
-ops: the page swaps in the versioned frame and gets the placement's media
-pointed at the proxy.
+while anyone has the scene open), and the meta barkloader's answer brings
+is pushed as a `scene-ops` event with no ops: the page swaps in the
+versioned frame and gets the placement's media pointed at the proxy. An
+edit to such a placement does not ask barkloader again, so edits never wait
+on it while it is down; it is left to that retry. Barkloader has 5 s to
+answer a frame request, after which it counts as failed.
 
 The document lives in `public/scene-manager/scene-document.ts`, the page's
 wire format; the server imports it from there.

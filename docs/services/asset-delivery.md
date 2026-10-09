@@ -259,7 +259,8 @@ everywhere sceneManager hands settings to an overlay:
 - every SSE `scene-ops` event, so a live edit in the scene editor reaches a
   widget already pointed at the proxy without reloading its frame;
 - `POST /scene/{id}/draft-config` (below);
-- an alert widget's frame, whose boot payload carries its settings.
+- an alert widget's frame, whose boot payload carries its settings (see
+  below: only URLs an editor put in the scene are signed there).
 
 All of these derive the settings with one function,
 `MediaProxy.overlaySettings` (`sceneManager/src/scene/media-proxy.ts`),
@@ -291,6 +292,23 @@ its proxy URL. The editor posts settings to a previewing page as they are
 typed, and the page points them at the proxy with that map. Each answer
 replaces the last, so the page holds only what the newest draft names, and
 a URL it has signed no longer asks for another draft.
+
+### Alerts: only what an editor chose is signed
+
+An alert widget's settings come from the workflow's alert step, with its
+expressions resolved, so a setting may be filled from event data that a
+viewer chose (a chat message, a username's avatar link). An alert frame
+signs a URL only when it is in the scene's published or draft document, the
+same set a draft preview signs from; any other external URL is left as it
+is, and a themeable widget's policy blocks it.
+
+### On the page: refreshing before expiry
+
+The page fetches its scene again six hours before the soonest proxy URL it
+holds expires, which brings fresh URLs. When that fetch brings nothing (the
+server is unreachable, or a draft preview is refused), it tries again after
+a minute, doubling to half an hour, never later than the expiry, so a page
+that lost the server for a while gets its media back soon after.
 
 ### The token
 
@@ -351,7 +369,7 @@ the secret revokes every token.
   each request is also charged 256 KiB, so requests that relay nothing run
   out too. A request is admitted while budget is left, so the last one may
   overrun it by up to one file. Past it, the proxy answers 429 with a
-  `Retry-After` until the window ends. At most 4096 URLs are tracked at
+  `Retry-After` until the window ends, which sceneManager relays. At most 4096 URLs are tracked at
   once; past that an unseen URL gets 429 until a window ends.
 
 The response carries the upstream's `Content-Type`, `Content-Length`,

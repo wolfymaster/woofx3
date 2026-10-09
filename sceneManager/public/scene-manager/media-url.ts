@@ -143,6 +143,40 @@ export function earliestMediaProxyExpiry(value: unknown, base: string | undefine
 }
 
 /**
+ * Media proxy URLs expire (see src/scene/media-proxy.ts, which hands out ones
+ * good for a day or more). A page fetches its scene again this long before the
+ * soonest expiry it holds, which brings fresh URLs, so an overlay left open for
+ * days keeps its media.
+ */
+export const MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
+/**
+ * The soonest a page fetches again, so a URL already close to expiring cannot
+ * make it fetch in a loop; also the first wait after a fetch that failed.
+ */
+export const MIN_MEDIA_REFRESH_DELAY_MS = 60_000;
+/** The longest wait between fetches that keep failing. */
+export const MAX_MEDIA_REFRESH_RETRY_MS = 30 * 60_000;
+/** The longest delay setTimeout honours; a longer one would fire at once. */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/**
+ * How long a page waits, from `now` (ms), before fetching its scene again for
+ * fresh media proxy URLs, the soonest of which expires at `earliest` (unix
+ * seconds). After `failures` fetches in a row that brought nothing, it tries
+ * sooner than the margin would: a minute, doubling to half an hour, never
+ * later than the expiry, and every minute once it has passed, so a page that
+ * lost the server for a while gets fresh URLs soon after it is back.
+ */
+export function mediaRefreshDelay(earliest: number, now: number, failures: number): number {
+  const untilExpiry = earliest * 1000 - now;
+  if (failures === 0) {
+    return Math.min(Math.max(untilExpiry - MEDIA_REFRESH_MARGIN_MS, MIN_MEDIA_REFRESH_DELAY_MS), MAX_TIMER_DELAY_MS);
+  }
+  const backoff = Math.min(MIN_MEDIA_REFRESH_DELAY_MS * 2 ** Math.min(failures - 1, 30), MAX_MEDIA_REFRESH_RETRY_MS);
+  return Math.max(Math.min(backoff, untilExpiry), MIN_MEDIA_REFRESH_DELAY_MS);
+}
+
+/**
  * `value` with each external media value whose `url` is a key of `urls`
  * pointed at the URL it maps to. The server builds an overlay's view of a
  * placement with this (src/scene/media-proxy.ts), and the page applies the
