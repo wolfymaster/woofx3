@@ -189,10 +189,10 @@ async function reconnecting(h: Harness, given: (h: Harness) => Promise<void>): P
 }
 
 /** Placement `w` as the client shows it in `version`. */
-function localW(h: Harness, version: Version) {
-  const widget = h.client.getState().local?.[version].widgets.w;
+function localW(h: Harness, version: Version, id = "w") {
+  const widget = h.client.getState().local?.[version].widgets[id];
   if (widget === undefined) {
-    throw new Error(`no local ${version} placement w`);
+    throw new Error(`no local ${version} placement ${id}`);
   }
   return widget;
 }
@@ -861,16 +861,20 @@ describe("SceneSyncClient item size", () => {
   test("an in-flight edit that outgrew the limit while queued is split before it is resent, keeping its seq", async () => {
     const h = harness();
     const chunk = (fill: string) => fill.repeat(MAX_OPS_BYTES / 6);
-    const settings = { a: chunk("a"), b: chunk("b"), c: chunk("c") };
-    const doc = sceneDoc({ w: placement({ settings }) });
+    const ids = ["w1", "w2", "w3"];
+    const doc = sceneDoc(Object.fromEntries(ids.map((id) => [id, placement({ settings: { s: chunk("a") } })])));
     await connected(h);
     h.socket().deliver(snapshotWelcome(bothDocs(doc)));
     h.client.edit("draft", (d) => {
-      d.widgets.w!.settings.d = 1;
+      for (const id of ids) {
+        d.widgets[id]!.settings.d = 1;
+      }
       return d;
     });
     await reconnecting(h, async () => {});
-    const theirs = sceneDoc({ w: placement({ settings: { a: chunk("x"), b: chunk("y"), c: chunk("z") } }) });
+    // Moved onto the snapshot, each placement's settings are replaced whole:
+    // three replacements that together are larger than one item may be.
+    const theirs = sceneDoc(Object.fromEntries(ids.map((id) => [id, placement({ settings: { s: chunk("x") } })])));
     h.socket().deliver(snapshotWelcome({ draft: theirs, published: doc }, { v: 50 }));
 
     const sent = h.socket().items();
@@ -880,7 +884,9 @@ describe("SceneSyncClient item size", () => {
     for (const item of h.client.inspect().queue) {
       expect(item.body.kind === "edit" && opsSize(item.body.ops)).toBeLessThanOrEqual(MAX_OPS_BYTES);
     }
-    expect(localW(h, "draft").settings).toEqual({ ...settings, d: 1 });
+    for (const id of ids) {
+      expect(localW(h, "draft", id).settings).toEqual({ s: chunk("a"), d: 1 });
+    }
     assertSyncInvariants(h.client.inspect());
   });
 });

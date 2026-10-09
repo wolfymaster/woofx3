@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyOps, type Ops, type SceneDocument } from "./document";
+import { applyOps, type Ops, type SceneDocument, transformOps } from "./document";
 import type { ItemBody } from "./protocol";
 import { rebaseFieldwise } from "./rebase";
 import { bothDocs, placement, sceneDoc } from "./test-support";
@@ -33,6 +33,23 @@ describe("rebaseFieldwise", () => {
     const rebased = rebaseFieldwise(base, [edit("draft", [{ p: ["widgets", "w", "name", 0], si: "!" }])], target);
 
     expect(draftAfter(target.draft, rebased).widgets.w!.name).toBe("!abc");
+  });
+
+  test("a rebased edit replaces the fields it touched whole, so concurrent text is not merged into it", () => {
+    // Two editors rebase pending text onto the same snapshot. As splices their
+    // edits would interleave into a value neither wrote; as replacements the
+    // later one wins whole.
+    const base = bothDocs(sceneDoc({ w: placement({ name: "[a]" }) }));
+    const target = bothDocs(sceneDoc({ w: placement({ name: "[a][b]" }) }));
+    const mine = rebaseFieldwise(base, [edit("draft", [{ p: ["widgets", "w", "name", 3], si: "[m]" }])], target);
+    const theirs = rebaseFieldwise(base, [edit("draft", [{ p: ["widgets", "w", "name", 0], si: "[t]" }])], target);
+    const mineOps = (mine[0] as Extract<ItemBody, { kind: "edit" }>).ops;
+    const theirOps = (theirs[0] as Extract<ItemBody, { kind: "edit" }>).ops;
+    expect(mineOps).toEqual([{ p: ["widgets", "w", "name"], od: "[a][b]", oi: "[a][m]" }]);
+
+    const afterTheirs = applyOps(target.draft, theirOps);
+    const afterMine = applyOps(afterTheirs, transformOps(mineOps, theirOps, "left"));
+    expect(afterMine.widgets.w!.name).toBe("[a][m]");
   });
 
   test("an edit to a placement the snapshot no longer has is dropped", () => {

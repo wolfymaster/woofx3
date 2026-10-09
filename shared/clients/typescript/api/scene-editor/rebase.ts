@@ -10,10 +10,11 @@
 
 import {
   applyOps,
-  diffDocuments,
   type Json0Component,
+  type Ops,
   type PlacementDocument,
   type SceneDocument,
+  sameValue,
   type Version,
 } from "./document";
 import type { ItemBody } from "./protocol";
@@ -23,7 +24,8 @@ import type { ItemBody } from "./protocol";
  *
  * Each edit is replayed as `copyTouched` from the old chain onto the new one:
  * every field it touched is set to the value it has after the edit on the
- * old chain. Commands pass through unchanged.
+ * old chain, as whole-field replacements (`replacementsBetween`). Commands
+ * pass through unchanged.
  *
  * An edit comes back with empty ops when nothing of it is left, and as null
  * when its ops did not apply to the old chain, which only a corrupted queue
@@ -51,11 +53,59 @@ export function rebaseFieldwise(
       continue;
     }
     const next = copyTouched(before[version], after, current[version], body.ops);
-    rebased.push({ kind: "edit", version, ops: diffDocuments(current[version], next) });
+    rebased.push({ kind: "edit", version, ops: replacementsBetween(current[version], next) });
     before[version] = after;
     current[version] = next;
   }
   return rebased;
+}
+
+/**
+ * The ops that turn `from` into `to` by replacing whole fields: each layout
+ * key set, inserted or removed whole; each placement inserted or removed
+ * whole; each differing field of a placement both have replaced whole, text
+ * included. A rebased edit must say "this field is now this value": as text
+ * splices (what `diffDocuments` makes) it would be merged with concurrent
+ * splices character by character when the server transforms it, making a
+ * value neither side wrote, where a replacement is transformed as last
+ * writer wins.
+ */
+export function replacementsBetween(from: SceneDocument, to: SceneDocument): Ops {
+  const ops: Ops = [];
+  replaceKeys(["layout"], from.layout, to.layout, ops, (path, a, b) => {
+    ops.push({ p: path, od: a, oi: b });
+  });
+  replaceKeys(["widgets"], from.widgets, to.widgets, ops, (path, a, b) => {
+    const fromPlacement = a as unknown as Record<string, unknown>;
+    const toPlacement = b as unknown as Record<string, unknown>;
+    for (const field of Object.keys(toPlacement)) {
+      if (!sameValue(fromPlacement[field], toPlacement[field])) {
+        ops.push({ p: [...path, field], od: fromPlacement[field], oi: toPlacement[field] });
+      }
+    }
+  });
+  return ops;
+}
+
+function replaceKeys<T>(
+  path: string[],
+  from: Record<string, T>,
+  to: Record<string, T>,
+  ops: Ops,
+  replace: (path: string[], from: T, to: T) => void
+): void {
+  for (const key of Object.keys(from)) {
+    if (!Object.hasOwn(to, key)) {
+      ops.push({ p: [...path, key], od: from[key] });
+    }
+  }
+  for (const key of Object.keys(to)) {
+    if (!Object.hasOwn(from, key)) {
+      ops.push({ p: [...path, key], oi: to[key] });
+    } else if (!sameValue(from[key], to[key])) {
+      replace([...path, key], from[key]!, to[key]!);
+    }
+  }
 }
 
 /**
