@@ -188,11 +188,19 @@ triggering event.
   and every viewer, goes to the db proxy in one `ApplyFactDeltas` call. An event
   that matches no definition makes no call.
 - **Bounded.** The call has a 1 second timeout. A failure is logged and the
-  event still reaches the workflow engine: a slow db proxy costs an event its
-  fact deltas, never its workflows.
+  event still reaches the workflow engine: a slow db proxy may cost an event
+  its fact deltas, never its workflows. After 5 consecutive timeouts or
+  transport errors, fact writes pause for 30 seconds (logged once when they
+  pause and once when they resume), so a stalled db proxy does not delay every
+  workflow that shares the event's subscription.
 - **Idempotent.** The db proxy records each applied event by
   `(source, event id)` in the same transaction as the values, so a redelivered
-  event is applied once.
+  event is applied once. The record is kept for `FACT_DEDUPE_RETENTION_PERIOD`
+  (default 6 hours). Publishers must keep `(source, id)` unique per event: the
+  workflow service also drops a delivery whose pair it has recently seen.
+- **Not counted while loading.** Events that arrive before the first list of
+  definitions succeeds (at startup, or while the db proxy is unreachable) are
+  not counted.
 - **Not counted:** events with CloudEvents source `api` (dashboard simulations)
   and dry runs, since neither is something a viewer did.
 - **Definition changes** reach the projector through the `db.viewer.fact.>` and
@@ -220,10 +228,15 @@ a session again nor breaks a streak.
 
 ### Deltas that do not apply
 
-Each delta names the definition revision it was computed against. A delta for
-a stale revision, a deleted definition, or that does not fit its definition is
-dropped on its own, counted in the response's `dropped`, and the rest of the
-event's deltas apply.
+Each delta names the definition revision it was computed against. A delta that
+cannot apply is set aside on its own and the rest of the event's deltas apply.
+The response counts each kind:
+
+| Count | Delta |
+|---|---|
+| `dropped` | Computed against a stale revision, or for a deleted definition. |
+| `invalid` | Does not fit its definition: wrong aggregate, missing or extra input, a non-finite number, a value of the wrong kind, or a repeat of a fact and viewer already in the same event (the first is kept). |
+| `skipped` | Needs a session window, but no stream session resolves for the event's time. |
 
 ## Changing a definition
 
