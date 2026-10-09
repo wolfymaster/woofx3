@@ -31,9 +31,10 @@ use super::canonical_id::{
 use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
-    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
-    LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand,
-    ManifestConfigField, ManifestDataShape, ManifestFunction, ManifestResourceKind,
+    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DATA_SHAPE_IDENTITIES,
+    DATA_SHAPE_IDENTITY_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP, LIST_ITEM_FIELD_TYPES,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
+    ManifestDataShape, ManifestDataShapeField, ManifestFunction, ManifestResourceKind,
     ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWorkflow, ModuleManifest,
     ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
     WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
@@ -2110,6 +2111,8 @@ fn reject_theme_field(field_type: &str, context: &str) -> Result<()> {
 ///   - a `path` must be non-empty
 ///   - a `type` must be one of the accepted tokens
 ///   - paths must be unique within one shape
+///   - `identity`, `anonymousWhen` and `displayName` must be well-formed (see
+///     `validate_identity_annotation`), and appear only on a trigger's `emits`
 ///
 /// A duplicate path is rejected rather than deduplicated. A path is a
 /// variable's identity, so two entries under one path are either redundant or
@@ -2124,19 +2127,40 @@ fn reject_theme_field(field_type: &str, context: &str) -> Result<()> {
 fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]) -> Result<()> {
     for (i, t) in triggers.iter().enumerate() {
         if let Some(shape) = &t.emits {
-            validate_data_shape(shape, &format!("trigger #{i} ({}): `emits`", t.id))?;
+            validate_data_shape(
+                shape,
+                IdentityAnnotations::Allowed,
+                &format!("trigger #{i} ({}): `emits`", t.id),
+            )?;
         }
     }
     for (i, a) in actions.iter().enumerate() {
         if let Some(shape) = &a.returns {
-            validate_data_shape(shape, &format!("action #{i} ({}): `returns`", a.id))?;
+            validate_data_shape(
+                shape,
+                IdentityAnnotations::Forbidden,
+                &format!("action #{i} ({}): `returns`", a.id),
+            )?;
         }
     }
     Ok(())
 }
 
-fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
-    let mut seen: HashSet<&str> = HashSet::with_capacity(shape.fields.len());
+/// Whether a shape may mark fields with `identity`. Only an event payload says
+/// who an event is about; a function result never attributes anything, so an
+/// annotation on `returns` would be a promise nothing reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IdentityAnnotations {
+    Allowed,
+    Forbidden,
+}
+
+fn validate_data_shape(
+    shape: &ManifestDataShape,
+    identity_annotations: IdentityAnnotations,
+    context: &str,
+) -> Result<()> {
+    let mut types_by_path: HashMap<&str, &str> = HashMap::with_capacity(shape.fields.len());
     for (i, field) in shape.fields.iter().enumerate() {
         let path = field.path.trim();
         if path.is_empty() {
@@ -2151,11 +2175,97 @@ fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
                 DATA_SHAPE_FIELD_TYPES.join(", ")
             ));
         }
-        if !seen.insert(path) {
+        if types_by_path
+            .insert(path, field.field_type.as_str())
+            .is_some()
+        {
             return Err(anyhow!("{context}: duplicate `path` {path:?}"));
         }
     }
+    for (i, field) in shape.fields.iter().enumerate() {
+        let path = field.path.trim();
+        let field_context = format!("{context} field #{i} ({path})");
+        validate_identity_annotation(field, &types_by_path, identity_annotations, &field_context)?;
+    }
     Ok(())
+}
+
+/// Check one field's `identity`, `anonymousWhen` and `displayName`.
+///
+/// The two references are only meaningful relative to an identity, so either
+/// one without `identity` is rejected rather than ignored: it is a slip in
+/// the manifest, and dropping it would leave anonymous events attributed to
+/// whatever placeholder id the platform sends. A reference must name a field
+/// declared in the same shape with the type it is read as, because consumers
+/// read it from the very payload the identity came from.
+fn validate_identity_annotation(
+    field: &ManifestDataShapeField,
+    types_by_path: &HashMap<&str, &str>,
+    identity_annotations: IdentityAnnotations,
+    context: &str,
+) -> Result<()> {
+    let Some(identity) = field.identity.as_deref() else {
+        if field.anonymous_when.is_some() {
+            return Err(anyhow!(
+                "{context}: `anonymousWhen` is only allowed on a field with `identity`"
+            ));
+        }
+        if field.display_name.is_some() {
+            return Err(anyhow!(
+                "{context}: `displayName` is only allowed on a field with `identity`"
+            ));
+        }
+        return Ok(());
+    };
+    if identity_annotations == IdentityAnnotations::Forbidden {
+        return Err(anyhow!(
+            "{context}: `identity` is only allowed on a trigger's `emits`"
+        ));
+    }
+    if !DATA_SHAPE_IDENTITIES.contains(&identity) {
+        return Err(anyhow!(
+            "{context}: unknown `identity` {identity:?}; expected one of {}",
+            DATA_SHAPE_IDENTITIES.join(", ")
+        ));
+    }
+    if !DATA_SHAPE_IDENTITY_FIELD_TYPES.contains(&field.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `identity` requires `type` to be one of {}, not {:?}",
+            DATA_SHAPE_IDENTITY_FIELD_TYPES.join(", "),
+            field.field_type
+        ));
+    }
+    if let Some(reference) = field.anonymous_when.as_deref() {
+        validate_sibling_reference(
+            reference,
+            "anonymousWhen",
+            "boolean",
+            types_by_path,
+            context,
+        )?;
+    }
+    if let Some(reference) = field.display_name.as_deref() {
+        validate_sibling_reference(reference, "displayName", "string", types_by_path, context)?;
+    }
+    Ok(())
+}
+
+fn validate_sibling_reference(
+    reference: &str,
+    key: &str,
+    expected_type: &str,
+    types_by_path: &HashMap<&str, &str>,
+    context: &str,
+) -> Result<()> {
+    match types_by_path.get(reference) {
+        None => Err(anyhow!(
+            "{context}: `{key}` {reference:?} is not a `path` declared in the same shape"
+        )),
+        Some(&found) if found != expected_type => Err(anyhow!(
+            "{context}: `{key}` {reference:?} must name a `{expected_type}` field, not `{found}`"
+        )),
+        Some(_) => Ok(()),
+    }
 }
 
 /// Cheap manifest-time validation for `assets[]`: each entry must have
@@ -3706,6 +3816,117 @@ mod tests {
             "names the offending action: {msg}"
         );
         assert!(msg.contains("`returns`"), "{msg}");
+    }
+
+    fn trigger_emitting(fields: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": {{ "fields": [{fields}] }} }}]"#
+        ))
+    }
+
+    fn emits_rejection(fields: &str) -> String {
+        let msg = bad_err(&trigger_emitting(fields));
+        assert!(msg.contains("trigger #0 (t1)"), "names the trigger: {msg}");
+        assert!(msg.contains("`emits`"), "names the shape: {msg}");
+        msg
+    }
+
+    #[test]
+    fn accepts_a_viewer_identity_with_its_annotations() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "userId", "type": "string", "identity": "viewer",
+              "anonymousWhen": "isAnonymous", "displayName": "userName" },
+            { "path": "isAnonymous", "type": "boolean" },
+            { "path": "userName", "type": "string" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_a_viewer_identity_on_an_array_field() {
+        validate(&trigger_emitting(
+            r#"{ "path": "chatterIds", "type": "array", "identity": "viewer" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_an_unknown_identity() {
+        let msg = emits_rejection(r#"{ "path": "userId", "type": "string", "identity": "user" }"#);
+        assert!(msg.contains("\"user\""), "{msg}");
+        assert!(msg.contains("viewer"), "lists the accepted tokens: {msg}");
+    }
+
+    #[test]
+    fn rejects_an_identity_on_a_field_that_cannot_hold_an_id() {
+        let msg =
+            emits_rejection(r#"{ "path": "userId", "type": "number", "identity": "viewer" }"#);
+        assert!(msg.contains("userId"), "{msg}");
+        assert!(msg.contains("string, array"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_anonymous_when_and_display_name_without_identity() {
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "anonymousWhen": "isAnonymous" },
+            { "path": "isAnonymous", "type": "boolean" }"#,
+        );
+        assert!(msg.contains("`anonymousWhen`"), "{msg}");
+
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "displayName": "userName" },
+            { "path": "userName", "type": "string" }"#,
+        );
+        assert!(msg.contains("`displayName`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_reference_to_an_undeclared_path() {
+        let msg = emits_rejection(
+            r#"{ "path": "userId", "type": "string", "identity": "viewer",
+                 "anonymousWhen": "isAnonymous" }"#,
+        );
+        assert!(msg.contains("isAnonymous"), "{msg}");
+        assert!(msg.contains("not a `path` declared"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_reference_to_a_field_of_the_wrong_type() {
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "identity": "viewer",
+              "anonymousWhen": "isAnonymous" },
+            { "path": "isAnonymous", "type": "string" }"#,
+        );
+        assert!(msg.contains("must name a `boolean` field"), "{msg}");
+
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "identity": "viewer",
+              "displayName": "userName" },
+            { "path": "userName", "type": "object" }"#,
+        );
+        assert!(msg.contains("must name a `string` field"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_identity_on_returns() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "returns": { "fields": [
+                    { "path": "userId", "type": "string", "identity": "viewer" }
+                ] } }]"#,
+        );
+        let msg = bad_err(&m);
+        assert!(msg.contains("action #0 (a1)"), "{msg}");
+        assert!(msg.contains("`identity`"), "{msg}");
     }
 
     // Structure is serde's job; this pins that a malformed shape fails at
