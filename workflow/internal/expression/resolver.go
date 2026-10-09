@@ -28,18 +28,38 @@ var ErrPathNotFound = errors.New("path not found")
 
 type Resolver struct {
 	sources         map[string]any
+	lazySources     map[string]func() any
 	assetURLBase    string
 	hasAssetURLBase bool
 }
 
 func NewResolver() *Resolver {
 	return &Resolver{
-		sources: make(map[string]any),
+		sources:     make(map[string]any),
+		lazySources: make(map[string]func() any),
 	}
 }
 
 func (r *Resolver) AddSource(name string, data any) {
 	r.sources[name] = data
+}
+
+// AddLazySource adds a source whose data costs something to read: load runs
+// the first time an expression references the source, and never when none
+// does. The resolver keeps what load returned for its later references.
+//
+// A path the loaded data does not have resolves to nil rather than failing.
+// A lazy source's keys are open-ended, so a reference to one that is absent
+// asks about a value that is not there, which is not a mistake in the
+// expression.
+func (r *Resolver) AddLazySource(name string, load func() any) {
+	if load == nil {
+		panic(fmt.Sprintf("expression: lazy source %q has no loader", name))
+	}
+	if _, taken := r.sources[name]; taken {
+		panic(fmt.Sprintf("expression: lazy source %q shadows a source", name))
+	}
+	r.lazySources[name] = load
 }
 
 // SetAssetURLBase configures the base URL that `${woofx3_asset_url:<repositoryKey>}`
@@ -135,6 +155,19 @@ func (r *Resolver) evaluateReference(expr string) (any, error) {
 			return nil, fmt.Errorf("env requires a variable name")
 		}
 		return os.Getenv(path), nil
+	}
+
+	if load, lazy := r.lazySources[source]; lazy {
+		data, loaded := r.sources[source]
+		if !loaded {
+			data = load()
+			r.sources[source] = data
+		}
+		value, err := ResolvePath(data, path)
+		if errors.Is(err, ErrPathNotFound) {
+			return nil, nil
+		}
+		return value, err
 	}
 
 	data, ok := r.sources[source]
