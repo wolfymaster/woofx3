@@ -7,9 +7,10 @@ the scene manager answers both for widgets placed on a scene.
 
 The value a resource instance holds lives at `state:<canonicalId>` in the owning
 module's storage namespace, the convention resource kinds follow and the one the
-dashboard reads through `getResourceValues`. The bundled `woofx3` module's
-Counter and Timer widgets read this way: each subscribes to
-`state:<canonicalId>` of the instance chosen in its settings.
+dashboard reads through `getResourceValues`. A widget reads it there as
+stored, or reads the instance as a whole at `resource:<canonicalId>` (see
+[Resource readings](#resource-readings)). The bundled `woofx3` module's Counter
+and Timer widgets read the whole instance chosen in their settings.
 
 ## Shape
 
@@ -63,34 +64,40 @@ nothing has written yet, or whose session-scoped value was cleared (it arrives
 as a change with a null value; see [Stream sessions](./stream-sessions.md)),
 stores nothing and still reads as its starting value. And a counter's goals
 live in its settings, not in storage. A widget sees only its own settings, never
-the instance's, so it can know neither.
+the instance's, so from `state:<canonicalId>` alone it can know neither.
 
-So sceneManager answers a `state:<canonicalId>` key, on read and on change
-alike, with the instance's reading: `resourceReading` in
-`sceneManager/src/scene/module-state.ts`. A woofx3 counter reads as
-`{ value, reached, goals }`, with `goals` its `{ value, name }` rows smallest
-first. A woofx3 timer reads as `{ running, remainingMs, durationMs }`, a timer
-nothing has started being stopped at its full duration. These repeat rules the
-module owns, and must match them (`readState` and `parseGoals` in
-`modules/woofx3/functions/counter.js`, `readTimer` and `timerFromInstance` in
-`modules/woofx3/functions/timer.js`). A kind it does not know is served as
-stored.
+So sceneManager answers `resource:<canonicalId>`, on read and on change alike,
+with the instance as a whole:
 
-Because a reading depends on settings, editing an instance can change it
-without its storage changing. sceneManager listens for
-`db.module.resource.instance.updated.*` and pushes the instance's reading again
-to every connected scene watching it.
+```ts
+{ value: unknown; settings: Record<string, unknown>; readAt: number }
+```
+
+`value` is what it stores (or `null`), `settings` its own settings, and
+`readAt` sceneManager's clock at the moment of reading. Making sense of them is
+the widget's, as it is the module's functions': the engine never learns what a
+kind means, and sceneManager treats every kind alike. The woofx3 Counter and
+Timer widgets carry the same rules as the module's functions (`readState` and
+`parseGoals` in `modules/woofx3/functions/counter.js`, `readTimer` and
+`timerFromInstance` in `modules/woofx3/functions/timer.js`), and must match
+them.
+
+Because the reading carries settings, editing an instance changes it without
+its storage changing. sceneManager listens for
+`db.module.resource.instance.updated.*` and pushes the instance again to every
+connected scene reading it at `resource:`. `state:` is not pushed then, since
+its value did not change.
 
 ### Timers tick in the widget
 
 A running timer stores the moment it reaches zero and is not written again until
-something changes it, so its reading is a sync point, not a stream. sceneManager
-measures `remainingMs` as it sends the reading, and the widget counts down from
-the moment it arrives on its own monotonic clock (`performance.now()`), redrawing
-as each shown second turns over. Nothing crosses the wire while a timer runs;
-the next reading comes when it is started, paused, changed or ended. Sending time
-left rather than the end moment keeps the widget off the server's wall clock, so
-the two need not agree.
+something changes it, so its reading is a sync point, not a stream. The widget
+takes `endsAt - readAt` as its time left at the moment the reading arrives, and
+counts down from then on its own monotonic clock (`performance.now()`),
+redrawing as each shown second turns over. Nothing crosses the wire while a
+timer runs; the next reading comes when it is started, paused, changed or ended.
+Measuring against `readAt` rather than the page's wall clock keeps the widget
+off the server's clock, so the two need not agree.
 
 ## Which module
 
