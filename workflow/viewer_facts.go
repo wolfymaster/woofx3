@@ -157,30 +157,11 @@ func decodeFactDefinition(in *dbv1.FactDefinition) facts.FactDefinition {
 	return def
 }
 
-// factDefinitionBody is the part of the stored definition body the projector
-// needs beyond the resolved sources. Must match FactDefinitionBody in
-// db/database/models/viewer_fact.go.
-type factDefinitionBody struct {
-	Aggregate struct {
-		Fn string `json:"fn"`
-	} `json:"aggregate"`
-}
-
-// factAggregateFn reads the aggregate function out of the stored body.
-func factAggregateFn(in *dbv1.FactDefinition) (string, error) {
-	var body factDefinitionBody
-	if err := json.Unmarshal([]byte(in.GetDefinition()), &body); err != nil {
-		return "", fmt.Errorf("definition body: %w", err)
-	}
-	return body.Aggregate.Fn, nil
-}
-
 func decodeActiveDefinition(in *dbv1.FactDefinition, def *facts.FactDefinition) error {
-	fn, err := factAggregateFn(in)
-	if err != nil {
-		return err
+	if in.GetAggregate() == "" {
+		return fmt.Errorf("active but has no aggregate")
 	}
-	def.Aggregate = facts.Aggregate{Fn: fn}
+	def.Aggregate = facts.Aggregate{Fn: in.GetAggregate()}
 	def.Sources = make([]facts.FactSource, len(in.GetSources()))
 	for i, src := range in.GetSources() {
 		if !isCanonicalTriggerID(src.GetTrigger()) {

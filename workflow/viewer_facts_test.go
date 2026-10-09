@@ -345,6 +345,7 @@ func protoDefinition(id string, revision int64, status string, sources ...*dbv1.
 		Revision:   revision,
 		Status:     status,
 		Definition: `{"sources":[],"aggregate":{"fn":"sum"}}`,
+		Aggregate:  "sum",
 		Sources:    sources,
 	}
 }
