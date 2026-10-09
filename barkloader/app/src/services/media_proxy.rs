@@ -1,20 +1,21 @@
 //! The engine's media proxy: fetches an external image, audio or video file
-//! that a placement's settings name, so widget frames can load it from the
-//! engine's own origin.
+//! that a placement's settings name, so a themeable widget frame can load it
+//! from the engine's own origin.
 //!
 //! Themeable widget frames run under a Content-Security-Policy that limits
 //! images and media to the engine's origins (sceneManager's
 //! `themeContentSecurityPolicy`). Widening that policy would let a theme
 //! stylesheet's `url()` reach any host, so external media is relayed through
-//! here instead. sceneManager rewrites each external media URL it hands an
-//! overlay into `/assets/media/{token}` (sceneManager's `scene/media-proxy.ts`)
-//! and relays those requests to this process.
+//! here instead. sceneManager rewrites each external media URL it hands such a
+//! frame into `{public URL}/assets/media/{token}` (sceneManager's
+//! `scene/media-proxy.ts`) and relays those requests to this process.
 //!
 //! This must not become an open proxy or a way into the engine's network:
 //!
-//! - A token is `{base64url(url)}.{hex HMAC-SHA256}` under a key derived from
-//!   the engine secret, so only URLs the engine itself chose are fetched.
-//! - Upstream URLs are https only and carry no credentials.
+//! - A token is `{base64url(url)}.{expires_at}.{hex HMAC-SHA256}` under a key
+//!   derived from the engine secret, so only URLs the engine itself chose are
+//!   fetched, and only until `expires_at` (unix seconds).
+//! - Upstream URLs are http or https and carry no credentials.
 //! - Every address a host resolves to must be public (`is_public_ip`), checked
 //!   in the resolver the connection is made from, so the address vetted is
 //!   the address connected to. Redirects are followed here, each hop checked
@@ -24,18 +25,16 @@
 //!   the browser's request is forwarded except `Range` and `If-Range`.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use hmac::{Hmac, Mac};
 use reqwest::header::{self, HeaderMap, HeaderValue};
-use sha2::Sha256;
 use url::{Host, Url};
 
-type HmacSha256 = Hmac<Sha256>;
+use super::signing::{constant_time_eq, hmac_sha256, hmac_sha256_hex};
 
 /// Separates media proxy signatures from every other use of the engine
 /// secret. Must match `KEY_LABEL` in sceneManager/src/scene/media-proxy.ts.
@@ -66,49 +65,47 @@ const MAX_RANGE_HEADER_BYTES: usize = 256;
 pub enum TokenError {
     Malformed,
     BadSignature,
+    /// Signed, but past its `expires_at`.
+    Expired,
 }
 
-fn media_key(secret: &str) -> Vec<u8> {
-    let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts keys of any length");
-    mac.update(KEY_LABEL.as_bytes());
-    mac.finalize().into_bytes().to_vec()
+fn media_key(secret: &str) -> [u8; 32] {
+    hmac_sha256(secret.as_bytes(), KEY_LABEL.as_bytes())
 }
 
-fn signature(key: &[u8], payload: &str) -> String {
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts keys of any length");
-    mac.update(payload.as_bytes());
-    mac.finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect()
-}
-
-/// The token for `url`. sceneManager mints these in production; this is the
-/// same scheme, for tests and for anything in barkloader that needs one.
+/// The token for `url`, good until `expires_at`. sceneManager mints these in
+/// production; this is the same scheme, for tests and for anything in
+/// barkloader that needs one.
 #[cfg_attr(not(test), allow(dead_code))]
-pub fn sign(secret: &str, url: &str) -> String {
-    let payload = URL_SAFE_NO_PAD.encode(url.as_bytes());
-    let signature = signature(&media_key(secret), &payload);
-    format!("{payload}.{signature}")
+pub fn sign(secret: &str, url: &str, expires_at: i64) -> String {
+    let signed = format!("{}.{expires_at}", URL_SAFE_NO_PAD.encode(url.as_bytes()));
+    let signature = hmac_sha256_hex(&media_key(secret), signed.as_bytes());
+    format!("{signed}.{signature}")
 }
 
-/// The upstream URL a token authorizes. The signature is checked before the
-/// payload is decoded, so a forgery learns nothing about its payload.
-pub fn verify(secret: &str, token: &str) -> Result<Url, TokenError> {
+/// The upstream URL a token authorizes at `now` (unix seconds). The signature
+/// is checked before anything else is read from the token, so a forgery
+/// learns nothing about its payload, not even whether it has expired.
+pub fn verify(secret: &str, token: &str, now: i64) -> Result<Url, TokenError> {
     if secret.is_empty() {
         return Err(TokenError::BadSignature);
     }
-    let Some((payload, signature_hex)) = token.split_once('.') else {
+    let Some((signed, signature_hex)) = token.rsplit_once('.') else {
         return Err(TokenError::Malformed);
     };
-    if payload.is_empty() || signature_hex.is_empty() {
+    let Some((payload, expires_at)) = signed.split_once('.') else {
+        return Err(TokenError::Malformed);
+    };
+    if payload.is_empty() || expires_at.is_empty() || signature_hex.is_empty() {
         return Err(TokenError::Malformed);
     }
-    let expected = signature(&media_key(secret), payload);
+    let expected = hmac_sha256_hex(&media_key(secret), signed.as_bytes());
     if !constant_time_eq(expected.as_bytes(), signature_hex.as_bytes()) {
         return Err(TokenError::BadSignature);
+    }
+    let expires_at: i64 = expires_at.parse().map_err(|_| TokenError::Malformed)?;
+    if expires_at <= now {
+        return Err(TokenError::Expired);
     }
     let bytes = URL_SAFE_NO_PAD
         .decode(payload)
@@ -120,23 +117,14 @@ pub fn verify(secret: &str, token: &str) -> Result<Url, TokenError> {
     Url::parse(&text).map_err(|_| TokenError::Malformed)
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for i in 0..a.len() {
-        diff |= a[i] ^ b[i];
-    }
-    diff == 0
-}
-
 /// Whether the proxy may connect to `ip`: a globally routable unicast
 /// address. Beyond `lib_sandbox::net::is_restricted_ip` (loopback, private,
 /// link-local and so cloud metadata, CGNAT, unique local), this refuses
-/// multicast, reserved and documentation ranges, and IPv6 forms that carry an
-/// IPv4 address (mapped, compatible, NAT64, 6to4, Teredo) unless that address
-/// is public itself.
+/// multicast, reserved and documentation ranges, IPv6 outside global unicast
+/// (2000::/3), and IPv6 forms that carry an IPv4 address (mapped, compatible,
+/// translated, NAT64, 6to4) unless that address is public itself. Teredo is
+/// refused outright: the IPv4 address it carries is obfuscated and the relay
+/// it names is not the destination.
 pub fn is_public_ip(ip: IpAddr) -> bool {
     if lib_sandbox::net::is_restricted_ip(ip) {
         return false;
@@ -154,32 +142,53 @@ pub fn is_public_ip(ip: IpAddr) -> bool {
                 || (a == 203 && b == 0 && c == 113))
         }
         IpAddr::V6(v6) => {
-            let segments = v6.segments();
+            let s = v6.segments();
             if v6.is_multicast() {
                 return false;
             }
             let embedded_v4 = |high: u16, low: u16| {
-                IpAddr::V4(std::net::Ipv4Addr::new(
-                    (high >> 8) as u8,
-                    high as u8,
-                    (low >> 8) as u8,
-                    low as u8,
-                ))
+                let [a, b] = high.to_be_bytes();
+                let [c, d] = low.to_be_bytes();
+                IpAddr::V4(Ipv4Addr::new(a, b, c, d))
             };
-            // IPv4-compatible, ::a.b.c.d (deprecated, but still routed by some stacks).
-            if segments[..6].iter().all(|s| *s == 0) {
-                return is_public_ip(embedded_v4(segments[6], segments[7]));
+            let last_v4 = || embedded_v4(s[6], s[7]);
+            // IPv4-compatible ::a.b.c.d (deprecated, but still routed by
+            // some stacks) and IPv4-mapped ::ffff:a.b.c.d.
+            if s[..5] == [0; 5] && (s[5] == 0 || s[5] == 0xffff) {
+                return is_public_ip(last_v4());
             }
-            // NAT64, 64:ff9b::/96.
-            if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-                return is_public_ip(embedded_v4(segments[6], segments[7]));
+            // IPv4-translated (SIIT), ::ffff:0:a.b.c.d.
+            if s[..6] == [0, 0, 0, 0, 0xffff, 0] {
+                return is_public_ip(last_v4());
             }
-            // 6to4, 2002::/16.
-            if segments[0] == 0x2002 {
-                return is_public_ip(embedded_v4(segments[1], segments[2]));
+            // NAT64 well-known prefix, 64:ff9b::/96.
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public_ip(last_v4());
             }
-            // Teredo 2001::/32, and documentation 2001:db8::/32.
-            !(segments[0] == 0x2001 && (segments[1] == 0 || segments[1] == 0x0db8))
+            // NAT64 local-use prefix, 64:ff9b:1::/48 (RFC 8215). Its
+            // translator is on the local network; only the /96 layout, whose
+            // IPv4 address is the last 32 bits, is read, and any other use of
+            // the prefix is refused.
+            if s[..3] == [0x64, 0xff9b, 1] {
+                return s[3..6] == [0, 0, 0] && is_public_ip(last_v4());
+            }
+            // Only global unicast, 2000::/3, is routable on the internet.
+            // Everything else left at this point is refused, among it
+            // discard-only 100::/64, deprecated site-local fec0::/10 and
+            // whatever IANA has not allocated.
+            if (s[0] & 0xe000) != 0x2000 {
+                return false;
+            }
+            // 6to4, 2002::/16, carries its IPv4 address in bits 16-47.
+            if s[0] == 0x2002 {
+                return is_public_ip(embedded_v4(s[1], s[2]));
+            }
+            // Teredo 2001::/32, and documentation 2001:db8::/32 and
+            // 3fff::/20.
+            let teredo = s[0] == 0x2001 && s[1] == 0;
+            let documentation =
+                (s[0] == 0x2001 && s[1] == 0x0db8) || (s[0] == 0x3fff && (s[1] & 0xf000) == 0);
+            !(teredo || documentation)
         }
     }
 }
@@ -316,24 +325,24 @@ const RELAYED_HEADERS: [header::HeaderName; 5] = [
     header::LAST_MODIFIED,
 ];
 
+/// Upstream schemes the proxy fetches. Plain http is allowed because the
+/// browser never sees the upstream: the overlay loads the file from the
+/// engine either way, and the address checks are what keep the fetch off
+/// private networks.
+const ALLOWED_SCHEMES: [&str; 2] = ["http", "https"];
+
 pub struct MediaFetcher {
     client: reqwest::Client,
-    schemes: &'static [&'static str],
     ip_allowed: fn(IpAddr) -> bool,
 }
 
 impl MediaFetcher {
-    /// The production fetcher: https only, public addresses only, the system
-    /// resolver.
+    /// The production fetcher: public addresses only, the system resolver.
     pub fn new() -> Self {
-        Self::with(Lookup::System, &["https"], is_public_ip)
+        Self::with(Lookup::System, is_public_ip)
     }
 
-    fn with(
-        lookup: Lookup,
-        schemes: &'static [&'static str],
-        ip_allowed: fn(IpAddr) -> bool,
-    ) -> Self {
+    fn with(lookup: Lookup, ip_allowed: fn(IpAddr) -> bool) -> Self {
         let client = reqwest::Client::builder()
             // Followed in `fetch`, so each hop is checked like the first.
             .redirect(reqwest::redirect::Policy::none())
@@ -345,18 +354,14 @@ impl MediaFetcher {
             .no_proxy()
             .build()
             .expect("reqwest client with a custom resolver always builds");
-        Self {
-            client,
-            schemes,
-            ip_allowed,
-        }
+        Self { client, ip_allowed }
     }
 
     /// Why the proxy may not fetch `url` itself, before anything is resolved:
     /// its scheme, credentials in it, or a literal address that is not public.
     /// A host name is vetted when it resolves (`VettedResolver`).
     fn refusal(&self, url: &Url) -> Option<String> {
-        if !self.schemes.contains(&url.scheme()) {
+        if !ALLOWED_SCHEMES.contains(&url.scheme()) {
             return Some(format!("scheme {} is not allowed", url.scheme()));
         }
         if !url.username().is_empty() || url.password().is_some() {
@@ -533,15 +538,15 @@ pub(crate) mod testing {
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Mutex;
 
-    /// A fetcher for tests against a local server: plain http allowed, and
-    /// 127.0.0.1 treated as the one public address, so everything else
-    /// (other loopback addresses, private ranges) is still refused.
+    /// A fetcher for tests against a local server: 127.0.0.1 treated as the
+    /// one public address, so everything else (other loopback addresses,
+    /// private ranges) is still refused.
     pub fn local_fetcher(hosts: &[(&str, IpAddr)]) -> MediaFetcher {
         let mut table: HashMap<String, Vec<IpAddr>> = HashMap::new();
         for (host, ip) in hosts {
             table.entry(host.to_string()).or_default().push(*ip);
         }
-        MediaFetcher::with(Lookup::Fixed(Arc::new(table)), &["http", "https"], |ip| {
+        MediaFetcher::with(Lookup::Fixed(Arc::new(table)), |ip| {
             ip == IpAddr::V4(Ipv4Addr::LOCALHOST)
         })
     }
@@ -605,38 +610,86 @@ mod tests {
 
     const SECRET: &str = "test-barkloader-key";
     const EXTERNAL: &str = "https://media.example.com/clips/a.png";
+    const EXPIRES_AT: i64 = 1_700_006_400;
     /// Also asserted by sceneManager's media-proxy tests, so the two agree.
-    const EXTERNAL_TOKEN: &str = "aHR0cHM6Ly9tZWRpYS5leGFtcGxlLmNvbS9jbGlwcy9hLnBuZw.b8c7827a7687f452745b50c64e12054167aa6a4a06c7925cd16c1db79b0ca33c";
+    const EXTERNAL_TOKEN: &str = "aHR0cHM6Ly9tZWRpYS5leGFtcGxlLmNvbS9jbGlwcy9hLnBuZw.1700006400.0177fbe16b336d0a520eeeb2f31e4722d7cd99e96596233f1562fce6115e1bfd";
 
     #[test]
     fn signs_the_same_token_as_scene_manager() {
-        assert_eq!(sign(SECRET, EXTERNAL), EXTERNAL_TOKEN);
-        assert_eq!(verify(SECRET, EXTERNAL_TOKEN).unwrap().as_str(), EXTERNAL);
+        assert_eq!(sign(SECRET, EXTERNAL, EXPIRES_AT), EXTERNAL_TOKEN);
+        assert_eq!(
+            verify(SECRET, EXTERNAL_TOKEN, EXPIRES_AT - 1)
+                .unwrap()
+                .as_str(),
+            EXTERNAL
+        );
+    }
+
+    #[test]
+    fn refuses_a_token_once_it_expires() {
+        assert_eq!(
+            verify(SECRET, EXTERNAL_TOKEN, EXPIRES_AT),
+            Err(TokenError::Expired)
+        );
+        assert_eq!(
+            verify(SECRET, EXTERNAL_TOKEN, EXPIRES_AT + 86_400),
+            Err(TokenError::Expired)
+        );
     }
 
     #[test]
     fn refuses_unsigned_and_tampered_tokens() {
+        let now = EXPIRES_AT - 1;
         assert_eq!(
-            verify("another-secret", EXTERNAL_TOKEN),
+            verify("another-secret", EXTERNAL_TOKEN, now),
             Err(TokenError::BadSignature)
         );
-        let (_, signature) = EXTERNAL_TOKEN.split_once('.').unwrap();
+        let (signed, signature) = EXTERNAL_TOKEN.rsplit_once('.').unwrap();
         let forged = format!(
-            "{}.{signature}",
+            "{}.{EXPIRES_AT}.{signature}",
             URL_SAFE_NO_PAD.encode("https://169.254.169.254/latest/meta-data")
         );
-        assert_eq!(verify(SECRET, &forged), Err(TokenError::BadSignature));
+        assert_eq!(verify(SECRET, &forged, now), Err(TokenError::BadSignature));
+        let (payload, _) = signed.split_once('.').unwrap();
+        let extended = format!("{payload}.{}.{signature}", EXPIRES_AT + 86_400);
+        assert_eq!(
+            verify(SECRET, &extended, EXPIRES_AT),
+            Err(TokenError::BadSignature)
+        );
         let mut flipped = EXTERNAL_TOKEN.to_string();
         flipped.pop();
         flipped.push('0');
-        assert_eq!(verify(SECRET, &flipped), Err(TokenError::BadSignature));
-        assert_eq!(verify(SECRET, "no-dot"), Err(TokenError::Malformed));
-        assert_eq!(verify(SECRET, ".sig"), Err(TokenError::Malformed));
-        assert_eq!(verify(SECRET, "payload."), Err(TokenError::Malformed));
+        assert_eq!(verify(SECRET, &flipped, now), Err(TokenError::BadSignature));
+        assert_eq!(verify(SECRET, "no-dot", now), Err(TokenError::Malformed));
         assert_eq!(
-            verify("", &sign("", EXTERNAL)),
+            verify(SECRET, "payload.sig", now),
+            Err(TokenError::Malformed)
+        );
+        assert_eq!(verify(SECRET, ".1.sig", now), Err(TokenError::Malformed));
+        assert_eq!(
+            verify(SECRET, "payload..sig", now),
+            Err(TokenError::Malformed)
+        );
+        assert_eq!(
+            verify(SECRET, "payload.1.", now),
+            Err(TokenError::Malformed)
+        );
+        assert_eq!(
+            verify("", &sign("", EXTERNAL, EXPIRES_AT), now),
             Err(TokenError::BadSignature)
         );
+    }
+
+    #[test]
+    fn refuses_a_signed_token_with_an_unreadable_expiry() {
+        let token =
+            sign(SECRET, EXTERNAL, EXPIRES_AT).replace(&format!(".{EXPIRES_AT}."), ".soon.");
+        let (signed, _) = token.rsplit_once('.').unwrap();
+        let resigned = format!(
+            "{signed}.{}",
+            hmac_sha256_hex(&media_key(SECRET), signed.as_bytes())
+        );
+        assert_eq!(verify(SECRET, &resigned, 0), Err(TokenError::Malformed));
     }
 
     #[test]
@@ -646,14 +699,18 @@ mod tests {
             "a".repeat(MAX_UPSTREAM_URL_BYTES)
         );
         assert_eq!(
-            verify(SECRET, &sign(SECRET, &long)),
+            verify(SECRET, &sign(SECRET, &long, EXPIRES_AT), 0),
             Err(TokenError::Malformed)
         );
     }
 
+    fn v6(text: &str) -> IpAddr {
+        text.parse::<Ipv6Addr>().unwrap().into()
+    }
+
     #[test]
     fn only_public_addresses_are_allowed() {
-        let refused: [IpAddr; 22] = [
+        let refused: Vec<IpAddr> = vec![
             Ipv4Addr::new(127, 0, 0, 1).into(),
             Ipv4Addr::new(10, 1, 2, 3).into(),
             Ipv4Addr::new(172, 16, 0, 1).into(),
@@ -668,23 +725,56 @@ mod tests {
             Ipv4Addr::new(192, 0, 0, 170).into(),
             Ipv4Addr::new(198, 18, 0, 1).into(),
             Ipv6Addr::LOCALHOST.into(),
-            "fd00:ec2::254".parse::<Ipv6Addr>().unwrap().into(),
-            "fe80::1".parse::<Ipv6Addr>().unwrap().into(),
-            "ff02::1".parse::<Ipv6Addr>().unwrap().into(),
-            "::ffff:10.0.0.1".parse::<Ipv6Addr>().unwrap().into(),
-            "::10.0.0.1".parse::<Ipv6Addr>().unwrap().into(),
-            "64:ff9b::a9fe:a9fe".parse::<Ipv6Addr>().unwrap().into(),
-            "2002:7f00:1::".parse::<Ipv6Addr>().unwrap().into(),
-            "2001::1".parse::<Ipv6Addr>().unwrap().into(),
+            v6("fd00:ec2::254"),
+            v6("fe80::1"),
+            v6("ff02::1"),
+            // IPv4-mapped and IPv4-compatible.
+            v6("::ffff:10.0.0.1"),
+            v6("::ffff:127.0.0.1"),
+            v6("::10.0.0.1"),
+            // IPv4-translated (SIIT).
+            v6("::ffff:0:10.0.0.1"),
+            v6("::ffff:0:169.254.169.254"),
+            v6("::ffff:0:127.0.0.1"),
+            // NAT64, well-known and local-use prefixes.
+            v6("64:ff9b::a9fe:a9fe"),
+            v6("64:ff9b:1::a9fe:a9fe"),
+            v6("64:ff9b:1::10.0.0.1"),
+            v6("64:ff9b:1:5db8:d800:22::"),
+            // 6to4 around a private address.
+            v6("2002:7f00:1::"),
+            v6("2002:a00:1::1"),
+            v6("2002:a9fe:a9fe::"),
+            // Teredo, whatever it carries.
+            v6("2001::1"),
+            v6("2001:0:4136:e378:8000:63bf:3fff:fdd2"),
+            // Discard-only.
+            v6("100::"),
+            v6("100::1:2:3:4"),
+            // Deprecated site-local.
+            v6("fec0::1"),
+            v6("feff::1"),
+            // Documentation.
+            v6("2001:db8::1"),
+            v6("3fff::1"),
+            v6("3fff:fff::1"),
+            // Reserved, outside global unicast.
+            v6("100:0:0:1::"),
+            v6("4000::1"),
         ];
         for ip in refused {
             assert!(!is_public_ip(ip), "{ip} must be refused");
         }
-        let allowed: [IpAddr; 4] = [
+        let allowed: Vec<IpAddr> = vec![
             Ipv4Addr::new(93, 184, 216, 34).into(),
             Ipv4Addr::new(1, 1, 1, 1).into(),
-            "2606:4700:4700::1111".parse::<Ipv6Addr>().unwrap().into(),
-            "2002:5db8:d822::".parse::<Ipv6Addr>().unwrap().into(),
+            v6("2606:4700:4700::1111"),
+            v6("::ffff:93.184.216.34"),
+            v6("::ffff:0:93.184.216.34"),
+            v6("64:ff9b::93.184.216.34"),
+            v6("64:ff9b:1::93.184.216.34"),
+            v6("2002:5db8:d822::"),
+            v6("3fff:1000::1"),
         ];
         for ip in allowed {
             assert!(is_public_ip(ip), "{ip} must be allowed");
@@ -720,7 +810,12 @@ mod tests {
             |r: Result<MediaResponse, ProxyError>| matches!(r, Err(ProxyError::Refused(_)));
         assert!(refused(
             fetcher
-                .fetch(Url::parse("http://example.com/a.png").unwrap(), &none)
+                .fetch(Url::parse("ftp://example.com/a.png").unwrap(), &none)
+                .await
+        ));
+        assert!(refused(
+            fetcher
+                .fetch(Url::parse("http://10.0.0.1/a.png").unwrap(), &none)
                 .await
         ));
         assert!(refused(

@@ -15,6 +15,7 @@ pub mod public_url;
 pub mod sandbox_resources;
 pub mod scheduler;
 pub mod session;
+pub mod signing;
 pub mod storage_settings;
 pub mod thumbnail;
 pub mod upload_token;

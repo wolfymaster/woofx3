@@ -4,6 +4,7 @@
 //! a widget frame's Content-Security-Policy allows media from.
 
 use std::io;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_web::body::{BodyStream, SizedStream};
 use actix_web::http::StatusCode;
@@ -42,8 +43,8 @@ impl MediaProxyService {
     }
 }
 
-/// A token that does not verify gets a bare 404, like a missing asset, so the
-/// route tells a prober nothing about what it sent.
+/// A token that does not verify, or has expired, gets a bare 404, like a
+/// missing asset, so the route tells a prober nothing about what it sent.
 #[get("/assets/media/{token}")]
 #[tracing::instrument(name = "GET /assets/media/{token}", skip_all)]
 async fn media_handler(
@@ -51,7 +52,7 @@ async fn media_handler(
     token: Path<String>,
     request: HttpRequest,
 ) -> HttpResponse {
-    let Ok(url) = media_proxy::verify(&service.secret, &token) else {
+    let Ok(url) = media_proxy::verify(&service.secret, &token, unix_now()) else {
         return HttpResponse::NotFound().finish();
     };
     let header_text =
@@ -75,6 +76,13 @@ async fn media_handler(
                 .finish()
         }
     }
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn relay(media: MediaResponse) -> HttpResponse {
@@ -127,6 +135,10 @@ mod tests {
 
     const SECRET: &str = "test-barkloader-key";
 
+    fn valid_token(url: &str) -> String {
+        sign(SECRET, url, unix_now() + 3600)
+    }
+
     async fn call(token: &str, range: Option<&str>) -> actix_web::dev::ServiceResponse {
         let service = MediaProxyService::new(
             SECRET.to_string(),
@@ -163,7 +175,7 @@ mod tests {
                 b"2345",
             ),
         )]);
-        let token = sign(SECRET, &format!("http://media.test:{}/v.mp4", server.port));
+        let token = valid_token(&format!("http://media.test:{}/v.mp4", server.port));
         let response = call(&token, Some("bytes=2-5")).await;
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         let headers = response.headers().clone();
@@ -187,15 +199,21 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn refuses_an_unsigned_or_tampered_token() {
-        let token = sign("another-secret", "http://media.test/a.png");
+    async fn refuses_an_unsigned_tampered_or_expired_token() {
+        let token = sign(
+            "another-secret",
+            "http://media.test/a.png",
+            unix_now() + 3600,
+        );
         assert_eq!(call(&token, None).await.status(), StatusCode::NOT_FOUND);
+        let expired = sign(SECRET, "http://media.test/a.png", unix_now() - 1);
+        assert_eq!(call(&expired, None).await.status(), StatusCode::NOT_FOUND);
         assert_eq!(call("garbage", None).await.status(), StatusCode::NOT_FOUND);
     }
 
     #[actix_web::test]
     async fn refuses_a_private_destination_and_non_media() {
-        let token = sign(SECRET, "http://10.0.0.1/a.png");
+        let token = valid_token("http://10.0.0.1/a.png");
         assert_eq!(call(&token, None).await.status(), StatusCode::FORBIDDEN);
         let server = upstream(vec![(
             "/page",
@@ -205,7 +223,7 @@ mod tests {
                 b"hi",
             ),
         )]);
-        let token = sign(SECRET, &format!("http://media.test:{}/page", server.port));
+        let token = valid_token(&format!("http://media.test:{}/page", server.port));
         assert_eq!(call(&token, None).await.status(), StatusCode::BAD_GATEWAY);
     }
 }
