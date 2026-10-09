@@ -23,7 +23,10 @@ func (s *stubAlertService) CreateAlert(_ context.Context, req *dbv1.CreateAlertR
 	if s.err != nil {
 		return nil, s.err
 	}
-	return &dbv1.AlertResponse{Status: &dbv1.ResponseStatus{Code: dbv1.ResponseStatus_OK}}, nil
+	return &dbv1.AlertResponse{
+		Status: &dbv1.ResponseStatus{Code: dbv1.ResponseStatus_OK},
+		Alert:  &dbv1.Alert{Id: "row-1", EnvelopeId: req.EnvelopeId},
+	}, nil
 }
 
 func (s *stubAlertService) GetAlert(context.Context, *dbv1.GetAlertRequest) (*dbv1.AlertResponse, error) {
@@ -76,10 +79,13 @@ func TestRecordAlertDispatch_SendsTheAttributionTheRowNeeds(t *testing.T) {
 	stub := &stubAlertService{}
 	ctx := alertContext(AppServices{alertLog: stub}, &recordingLogger{}, &types.Event{ID: "evt-1"})
 
-	recordAlertDispatch(ctx, "env-1", []byte(`{"id":"env-1"}`))
+	rowID := recordAlertDispatch(ctx, "env-1", []byte(`{"id":"env-1"}`))
 
 	if len(stub.created) != 1 {
 		t.Fatalf("CreateAlert calls = %d, want 1", len(stub.created))
+	}
+	if rowID != "row-1" {
+		t.Errorf("row id = %q, want the recorded row row-1", rowID)
 	}
 	got := stub.created[0]
 	if got.EnvelopeId != "env-1" {
@@ -127,8 +133,11 @@ func TestRecordAlertDispatch_SurvivesAFailingAlertLog(t *testing.T) {
 	stub := &stubAlertService{err: fmt.Errorf("db proxy unreachable")}
 	ctx := alertContext(AppServices{alertLog: stub}, logger, &types.Event{ID: "evt-1"})
 
-	recordAlertDispatch(ctx, "env-1", []byte(`{}`))
+	rowID := recordAlertDispatch(ctx, "env-1", []byte(`{}`))
 
+	if rowID != "" {
+		t.Errorf("row id = %q, want none for an alert that was not recorded", rowID)
+	}
 	if len(logger.warns) != 1 {
 		t.Errorf("warnings = %d, want the failure reported once rather than swallowed", len(logger.warns))
 	}
@@ -139,5 +148,33 @@ func TestRecordAlertDispatch_SurvivesAFailingAlertLog(t *testing.T) {
 func TestRecordAlertDispatch_NoAlertLogIsNotAFailure(t *testing.T) {
 	ctx := alertContext(AppServices{}, &recordingLogger{}, &types.Event{ID: "evt-1"})
 
-	recordAlertDispatch(ctx, "env-1", []byte(`{}`))
+	if rowID := recordAlertDispatch(ctx, "env-1", []byte(`{}`)); rowID != "" {
+		t.Errorf("row id = %q, want none", rowID)
+	}
+}
+
+// The scene manager reports each play against its row; the stored envelope a
+// replay re-plays stays without one.
+func TestWithAlertRowID_AddsTheRowToThePublishedEnvelopeOnly(t *testing.T) {
+	payload := []byte(`{"event":null,"id":"env-1","parameters":{"target":"main"}}`)
+
+	message, err := withAlertRowID(payload, "row-1")
+	if err != nil {
+		t.Fatalf("withAlertRowID: %v", err)
+	}
+	want := `{"event":null,"id":"env-1","parameters":{"target":"main"},"rowId":"row-1"}`
+	if string(message) != want {
+		t.Errorf("message = %s, want %s", message, want)
+	}
+	if string(payload) != `{"event":null,"id":"env-1","parameters":{"target":"main"}}` {
+		t.Errorf("payload changed to %s", payload)
+	}
+
+	unrecorded, err := withAlertRowID(payload, "")
+	if err != nil {
+		t.Fatalf("withAlertRowID: %v", err)
+	}
+	if string(unrecorded) != string(payload) {
+		t.Errorf("message = %s, want the envelope as it is when no row was recorded", unrecorded)
+	}
 }

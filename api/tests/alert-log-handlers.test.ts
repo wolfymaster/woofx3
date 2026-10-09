@@ -5,12 +5,15 @@ import { initAlertLogHandlers, parseAlertCreated, parseAlertUpdated } from "../s
 const ALERT_ID = "22222222-2222-2222-2222-222222222222";
 const WORKFLOW_ID = "33333333-3333-3333-3333-333333333333";
 
+/** An outbox event for an alert row at version 1 unless `data` says otherwise. */
 function snakeCe(data: Record<string, unknown>) {
   return {
     client_id: "client-1",
-    data,
+    data: { version: 1, ...data },
   };
 }
+
+const NINE_DIGIT_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z$/;
 
 describe("parseAlertCreated", () => {
   it("decodes a snake_case row from buildAlertChangeData", () => {
@@ -48,6 +51,36 @@ describe("parseAlertCreated", () => {
     const ce = snakeCe({ payload: "{}" });
     const { event } = parseAlertCreated(ce);
     expect(event).toBeNull();
+  });
+
+  it("carries the row's version", () => {
+    const { event } = parseAlertCreated(snakeCe({ id: ALERT_ID, payload: "{}", version: 4 }));
+    expect(event?.alert.version).toBe(4);
+  });
+
+  it("accepts a capitalized Version", () => {
+    const ce = { client_id: "client-1", data: { ID: ALERT_ID, Payload: "{}", Version: 2 } };
+    expect(parseAlertCreated(ce).event?.alert.version).toBe(2);
+  });
+
+  it("reads a version written as its decimal string, and sends it as a number", () => {
+    const { event } = parseAlertCreated(snakeCe({ id: ALERT_ID, payload: "{}", version: "4" }));
+    expect(event?.alert.version).toBe(4);
+  });
+
+  it("sends a row without a usable version, leaving the version out", () => {
+    for (const version of [undefined, 0, 1.5, "0", "03", "1.5", "9007199254740993"]) {
+      const ce = { client_id: "client-1", data: { id: ALERT_ID, payload: "{}", status: "sent", version } };
+      const alert = parseAlertCreated(ce).event?.alert;
+      expect(alert?.id).toBe(ALERT_ID);
+      expect(alert).not.toHaveProperty("version");
+    }
+  });
+
+  it("falls back to timestamps in the db proxy's nine-digit UTC layout", () => {
+    const { event } = parseAlertCreated(snakeCe({ id: ALERT_ID, payload: "{}" }));
+    expect(event?.alert.createdAt).toMatch(NINE_DIGIT_UTC);
+    expect(event?.alert.updatedAt).toMatch(NINE_DIGIT_UTC);
   });
 
   it("defaults status to 'sent' when absent", () => {
@@ -123,11 +156,35 @@ describe("parseAlertUpdated", () => {
     expect(event?.type).toBe(EngineEventType.ALERT_SKIPPED);
   });
 
-  it("drops transitions without a webhook surface (e.g. status='playing')", () => {
-    const playing = snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" });
-    expect(parseAlertUpdated(playing).event).toBeNull();
-    const sent = snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" });
-    expect(parseAlertUpdated(sent).event).toBeNull();
+  it("emits ALERT_PLAYING for status='playing'", () => {
+    const ce = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "playing",
+      played_at: "2026-05-03T01:02:05.000Z",
+    });
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe(EngineEventType.ALERT_PLAYING);
+    expect(event?.alert.playedAt).toBe("2026-05-03T01:02:05.000Z");
+  });
+
+  it("drops a status with no callback", () => {
+    for (const status of ["sent", "dispatched", "pending", "toString", "constructor"]) {
+      const ce = snakeCe({ id: ALERT_ID, payload: "{}", status });
+      expect(parseAlertUpdated(ce).event).toBeNull();
+    }
+  });
+
+  it("carries the row's version", () => {
+    const ce = snakeCe({ id: ALERT_ID, payload: "{}", status: "completed", version: 5 });
+    expect(parseAlertUpdated(ce).event?.alert.version).toBe(5);
+  });
+
+  it("sends an update without a version, leaving the version out", () => {
+    const ce = { client_id: "client-1", data: { id: ALERT_ID, payload: "{}", status: "completed" } };
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe("alert.completed");
+    expect(event?.alert).not.toHaveProperty("version");
   });
 
   it("returns null when id is missing", () => {
@@ -215,12 +272,23 @@ describe("initAlertLogHandlers", () => {
     expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_REPLAYED);
   });
 
-  it("db.alert.updated.* with status=playing does not dispatch a webhook", async () => {
+  it("db.alert.updated.* with status=playing dispatches an ALERT_PLAYING webhook", async () => {
     const nats = new FakeNatsClient();
     const webhook = new FakeWebhookClient();
     await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
 
     await nats.dispatch("db.alert.updated.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" }));
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_PLAYING);
+  });
+
+  it("db.alert.updated.* with status=sent does not dispatch a webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.alert.updated.system", snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" }));
 
     expect(webhook.sentEvents).toHaveLength(0);
   });

@@ -60,7 +60,10 @@ type Alert struct {
 	CompletedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
 	// Failure reason captured from a `failed` ack. Empty when
 	// status is not `failed`.
-	Error         string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
+	// Incremented by every write that publishes the row. Receivers order
+	// snapshots of one row by it: two writes never share a version.
+	Version       int64 `protobuf:"varint,14,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -177,6 +180,13 @@ func (x *Alert) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *Alert) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type CreateAlertRequest struct {
@@ -344,19 +354,23 @@ func (x *GetAlertByEnvelopeIdRequest) GetEnvelopeId() string {
 	return ""
 }
 
-// Atomic transition of the lifecycle columns keyed on envelope id.
-// The status string is the target state (`playing` / `completed` /
-// `failed`); the db service decides which timestamp column to stamp:
-//   - playing   → played_at = NOW()
-//   - completed → completed_at = NOW()
-//   - failed    → completed_at = NOW(), error = <provided message>
+// Atomic, forward-only transition of one alert row's lifecycle. The status
+// string is the target state; the db service decides which timestamp column
+// to stamp (see AlertRepository.transitionUpdateSQL). `error` is ignored
+// unless status is `failed` or `timed_out`.
 //
-// `error` is ignored unless status is `failed`.
+// `id` names the row the report concerns: the row CreateAlert returned for
+// the play being reported. One envelope can have several rows (a workflow
+// that pins `parameters.id` plays the same envelope id more than once), so
+// only the row id says which play a report belongs to. The row must carry
+// `envelope_id`. A report without `id` moves the envelope's newest row, the
+// best guess for a delivery that never learned its row id.
 type UpdateAlertLifecycleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EnvelopeId    string                 `protobuf:"bytes,2,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	Id            string                 `protobuf:"bytes,5,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -408,6 +422,13 @@ func (x *UpdateAlertLifecycleRequest) GetStatus() string {
 func (x *UpdateAlertLifecycleRequest) GetError() string {
 	if x != nil {
 		return x.Error
+	}
+	return ""
+}
+
+func (x *UpdateAlertLifecycleRequest) GetId() string {
+	if x != nil {
+		return x.Id
 	}
 	return ""
 }
@@ -692,7 +713,7 @@ var File_alert_proto protoreflect.FileDescriptor
 
 const file_alert_proto_rawDesc = "" +
 	"\n" +
-	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
+	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa8\x04\n" +
 	"\x05Alert\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x1f\n" +
@@ -710,7 +731,8 @@ const file_alert_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\fdispatchedAt\x127\n" +
 	"\tplayed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bplayedAt\x12=\n" +
 	"\fcompleted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
-	"\x05error\x18\r \x01(\tR\x05errorJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xae\x01\n" +
+	"\x05error\x18\r \x01(\tR\x05error\x12\x18\n" +
+	"\aversion\x18\x0e \x01(\x03R\aversionJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xae\x01\n" +
 	"\x12CreateAlertRequest\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12\x1f\n" +
 	"\vworkflow_id\x18\x03 \x01(\tR\n" +
@@ -722,12 +744,13 @@ const file_alert_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"T\n" +
 	"\x1bGetAlertByEnvelopeIdRequest\x12\x1f\n" +
 	"\venvelope_id\x18\x02 \x01(\tR\n" +
-	"envelopeIdJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x82\x01\n" +
+	"envelopeIdJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x92\x01\n" +
 	"\x1bUpdateAlertLifecycleRequest\x12\x1f\n" +
 	"\venvelope_id\x18\x02 \x01(\tR\n" +
 	"envelopeId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05errorJ\x04\b\x01\x10\x02R\x0eapplication_id\"c\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\x12\x0e\n" +
+	"\x02id\x18\x05 \x01(\tR\x02idJ\x04\b\x01\x10\x02R\x0eapplication_id\"c\n" +
 	"\rAlertResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
 	"\x05alert\x18\x02 \x01(\v2\f.alert.AlertR\x05alert\"W\n" +

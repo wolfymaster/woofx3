@@ -7,6 +7,7 @@ import {
   replayAlert,
   skipCurrentAlerts,
 } from "../../src/events/alert-controls";
+import { dispatchAlert } from "../../src/events/alert-dispatch";
 import { CANCEL_EVENT, DeliveryStore } from "../../src/events/delivery-store";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
@@ -19,9 +20,9 @@ function fakeDb(alertRows: Record<string, { payload: string; workflowId?: string
   let nextEventId = 0;
   const writes = {
     completions: [] as Array<{ sceneEventId: string; instanceId: string }>,
-    lifecycle: [] as Array<{ envelopeId: string; status: string; error: string }>,
+    lifecycle: [] as Array<{ id: string; envelopeId: string; status: string; error: string }>,
     created: [] as Array<{ payload: string; workflowId: string; sourceEventId: string; envelopeId: string }>,
-    statuses: [] as Array<{ id: string; status: string }>,
+    replayed: [] as Array<{ id: string }>,
   };
   const db = {
     recordSceneEvent: async (req: { sceneId: string; type: string; key: string }) => {
@@ -35,7 +36,7 @@ function fakeDb(alertRows: Record<string, { payload: string; workflowId?: string
       writes.completions.push(req);
       return {};
     },
-    updateAlertLifecycle: async (req: { envelopeId: string; status: string; error: string }) => {
+    updateAlertLifecycle: async (req: { id: string; envelopeId: string; status: string; error: string }) => {
       writes.lifecycle.push(req);
       return {};
     },
@@ -55,10 +56,10 @@ function fakeDb(alertRows: Record<string, { payload: string; workflowId?: string
     },
     createAlert: async (req: { payload: string; workflowId: string; sourceEventId: string; envelopeId: string }) => {
       writes.created.push(req);
-      return {};
+      return { alert: { id: `row-${req.envelopeId}` } };
     },
-    updateAlertStatus: async (req: { id: string; status: string }) => {
-      writes.statuses.push(req);
+    markAlertReplayed: async (req: { id: string }) => {
+      writes.replayed.push(req);
       return {};
     },
   };
@@ -92,12 +93,19 @@ function fakeOverlay(store: DeliveryStore, sceneId: string) {
   };
 }
 
-async function queueAlert(store: DeliveryStore, sceneId: string, alertId: string, instanceIds: string[]) {
+/** Queue an alert as dispatchAlert does; without `rowId`, as one recorded before deliveries carried it. */
+async function queueAlert(
+  store: DeliveryStore,
+  sceneId: string,
+  alertId: string,
+  instanceIds: string[],
+  rowId?: string
+) {
   return store.recordEvent({
     sceneId,
     type: "alert",
     key: alertId,
-    value: { alertId },
+    value: rowId ? { alertId, rowId } : { alertId },
     targetInstanceIds: instanceIds,
   });
 }
@@ -183,8 +191,27 @@ describe("skipCurrentAlerts", () => {
       { sceneEventId: "evt-1", instanceId: "left" },
       { sceneEventId: "evt-1", instanceId: "right" },
     ]);
-    expect(writes.lifecycle).toEqual([{ envelopeId: "alert-a", status: "skipped", error: "" }]);
+    expect(writes.lifecycle).toEqual([{ id: "", envelopeId: "alert-a", status: "skipped", error: "" }]);
     expect(openIds(store, "scene-1")).toEqual({ left: ["evt-2"], right: ["evt-2"] });
+  });
+
+  // A workflow that pins the envelope id plays it more than once; two plays on
+  // different scenes can be on screen together, and each is its own row.
+  it("marks each overlapping play of one envelope skipped against its own row", async () => {
+    const { db, writes } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    fakeOverlay(store, "scene-1");
+    fakeOverlay(store, "scene-2");
+    await queueAlert(store, "scene-1", "alert-a", ["left", "right"], "row-1");
+    await queueAlert(store, "scene-2", "alert-a", ["inst-2"], "row-2");
+    store.markStarted("scene-1", "evt-1", ["left", "right"]);
+    store.markStarted("scene-2", "evt-2", ["inst-2"]);
+
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: true, skipped: 2 });
+    expect(writes.lifecycle).toEqual([
+      { id: "row-1", envelopeId: "alert-a", status: "skipped", error: "" },
+      { id: "row-2", envelopeId: "alert-a", status: "skipped", error: "" },
+    ]);
   });
 
   // The page acks an alert's end separately from the next one's start, so for
@@ -397,12 +424,15 @@ describe("replayAlert", () => {
     expect(result).toEqual({ ok: true, replayEnvelopeId: "env-replay" });
     expect(writes.created).toHaveLength(1);
     expect(writes.created[0]).toMatchObject({ envelopeId: "env-replay", workflowId: "run-1", sourceEventId: "ce-1" });
-    expect(JSON.parse(writes.created[0]!.payload).id).toBe("env-replay");
+    const stored = JSON.parse(writes.created[0]!.payload);
+    expect(stored.id).toBe("env-replay");
+    expect(stored.rowId).toBeUndefined();
     const delivered = overlays[0]!.deliveries();
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toMatchObject({ instanceId: "inst-1", type: "alert", key: "env-replay" });
     expect(delivered[0].value.event).toEqual({ type: "channel.raid", data: { raiders: 50 } });
-    expect(writes.statuses).toEqual([{ id: "row-1", status: "replayed" }]);
+    expect(delivered[0].value.rowId).toBe("row-env-replay");
+    expect(writes.replayed).toEqual([{ id: "row-1" }]);
   });
 
   it("refuses when no overlay is open, before touching the alert log", async () => {
@@ -440,9 +470,50 @@ describe("replayAlert", () => {
 
     expect(result).toEqual({ ok: false, reason: 'no alert widget named "sidebar" on a running scene' });
     expect(writes.lifecycle).toEqual([
-      { envelopeId: "env-replay", status: "failed", error: 'no alert widget named "sidebar" on a running scene' },
+      {
+        id: "row-env-replay",
+        envelopeId: "env-replay",
+        status: "failed",
+        error: 'no alert widget named "sidebar" on a running scene',
+      },
     ]);
-    expect(writes.statuses).toEqual([]);
+    expect(writes.replayed).toEqual([]);
+  });
+});
+
+describe("dispatchAlert", () => {
+  function setup(scenes: Record<string, OverlayWidgetInstance[]>) {
+    const { db, writes } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    const overlays = Object.keys(scenes).map((sceneId) => fakeOverlay(store, sceneId));
+    return {
+      writes,
+      overlays,
+      deps: { db, host: fakeHost(scenes) as any, deliveryStore: store, logger: fakeLogger() },
+    };
+  }
+
+  it("carries the engine's row id into the delivery", async () => {
+    const { overlays, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+
+    await dispatchAlert({ ...JSON.parse(envelope()), rowId: "row-9" }, deps);
+
+    expect(overlays[0]!.deliveries()[0].value).toMatchObject({ alertId: "env-original", rowId: "row-9" });
+  });
+
+  it("records a refusal against the engine's row", async () => {
+    const { writes, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+
+    await dispatchAlert({ ...JSON.parse(envelope("sidebar")), rowId: "row-9" }, deps);
+
+    expect(writes.lifecycle).toEqual([
+      {
+        id: "row-9",
+        envelopeId: "env-original",
+        status: "failed",
+        error: 'no alert widget named "sidebar" on a running scene',
+      },
+    ]);
   });
 });
 

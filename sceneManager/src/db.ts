@@ -143,11 +143,10 @@ export class DbClient {
     return widget_status.UpsertWidgetStatus(req, this.config);
   }
 
-  // Reports what became of an alert this service was asked to play, keyed on
-  // the envelope id the workflow engine minted and recorded as it published.
-  // That record is best-effort, so an alert whose row was never written answers
-  // NOT_FOUND — which means there is nothing to annotate, not that reporting
-  // failed.
+  // Reports what became of an alert this service was asked to play, against
+  // the row the workflow engine recorded as it published. That record is
+  // best-effort, so an alert whose row was never written answers NOT_FOUND —
+  // which means there is nothing to annotate, not that reporting failed.
   async updateAlertLifecycle(req: alert.UpdateAlertLifecycleRequest): Promise<alert.AlertResponse> {
     return alert.UpdateAlertLifecycle(req, this.config);
   }
@@ -162,8 +161,9 @@ export class DbClient {
     return alert.CreateAlert(req, this.config);
   }
 
-  async updateAlertStatus(req: alert.UpdateAlertStatusRequest): Promise<alert.AlertResponse> {
-    return alert.UpdateAlertStatus(req, this.config);
+  // `replayed` is the only status UpdateAlertStatus accepts.
+  async markAlertReplayed(req: { id: string }): Promise<alert.AlertResponse> {
+    return alert.UpdateAlertStatus({ id: req.id, status: "replayed" }, this.config);
   }
 
   async getSetting(key: string): Promise<string | null> {

@@ -61,6 +61,7 @@ export const EngineEventType = {
   SCENE_UPDATED: "scene.updated",
   SCENE_DELETED: "scene.deleted",
   ALERT_RECORDED: "alert.recorded",
+  ALERT_PLAYING: "alert.playing",
   ALERT_REPLAYED: "alert.replayed",
   ALERT_COMPLETED: "alert.completed",
   ALERT_FAILED: "alert.failed",
@@ -925,14 +926,33 @@ export interface AlertSnapshot {
   workflowId: string;
   /** Originating CloudEvent id from the trigger, when known. */
   sourceEventId: string;
-  /** Lifecycle:
-   *   `"sent"`       — engine published; overlay has not yet ack'd
-   *   `"playing"`    — overlay reported the widget mounted
-   *   `"completed"`  — overlay reported the widget finished playing
-   *   `"failed"`     — overlay reported a render / playback error
-   *   `"replayed"`   — operator re-fired this row from the UI
-   *  Phase 2 will add `"pending"`, `"dispatched"`, `"timed_out"`,
-   *  `"skipped"`. */
+  /**
+   * Lifecycle. The engine writes:
+   *   `"sent"`      — recorded as the engine published it; nothing has
+   *                   reported it since
+   *   `"playing"`   — an overlay started playing it: the in-progress signal
+   *   `"completed"` — an overlay finished playing it
+   *   `"failed"`    — it could not play (no overlay to play it on, or an
+   *                   overlay reported a render / playback error)
+   *   `"skipped"`   — an operator skipped or cleared it
+   *   `"replayed"`  — an operator re-fired this row; the re-fire is a row of
+   *                   its own
+   * A row only moves forward through these, and the first verdict
+   * (`completed`, `failed`, `timed_out`, `skipped`) wins, with two
+   * exceptions. `completed` replaces any other verdict: an alert plays on
+   * every widget that answers to its target, and one widget playing it to the
+   * end means viewers saw it. `failed` and `skipped` replace `timed_out`,
+   * because a timeout is the engine giving up on hearing back and a late
+   * report is the truth. `replayed` may follow any status but itself. Every
+   * other write is refused and publishes nothing: one that would move the row
+   * back, repeat its status, replace a verdict otherwise, or replay a row
+   * already replayed. `"timed_out"` has a callback (`alert.timed_out`) but no
+   * engine service writes it yet.
+   *
+   * A report names the alert's envelope, and moves only the newest row for
+   * it: an earlier row with the same envelope id is an earlier play and keeps
+   * the status it reached.
+   */
   status: string;
   /**
    * Denormalised AlertPayload envelope id (`payload->>'id'`). Stable
@@ -944,12 +964,36 @@ export interface AlertSnapshot {
   dispatchedAt?: string;
   /** Set when the overlay reported `playing`. */
   playedAt?: string;
-  /** Set when the overlay reported `completed` or `failed`. */
+  /** Set by the first verdict. */
   completedAt?: string;
-  /** Failure reason captured from a `failed` ack. Empty unless
-   *  status === `"failed"`. */
+  /** Failure reason captured with a `failed` or `timed_out` verdict. Absent
+   *  otherwise: `completed` or `skipped` replacing such a verdict clears it. */
   error?: string;
+  /**
+   * Counts the writes applied to the row, starting at 1 when it is recorded.
+   * The database increments it with every write it publishes, so each
+   * snapshot of an alert carries a distinct version, in the order the writes
+   * were applied.
+   *
+   * Lifecycle callbacks are retried independently and can arrive out of
+   * order: a receiver keeps the snapshot with the highest version. An equal
+   * version is the same write delivered again, and a lower one is a write the
+   * receiver has already moved past. The engine alone enforces the lifecycle
+   * rule (see `status`) and publishes only the writes it applied, so a
+   * receiver does not re-check it.
+   *
+   * A snapshot may lack a version; a receiver then orders it by the lifecycle
+   * stage and `updatedAt`.
+   */
+  version?: number;
+  /** Every timestamp in a snapshot is RFC 3339 in UTC with nine fractional
+   *  digits. */
   createdAt: string;
+  /**
+   * When the engine last wrote the row, by the database's clock. Order
+   * snapshots by `version`, which cannot tie; this is the fallback for a
+   * snapshot without one.
+   */
   updatedAt: string;
 }
 
@@ -1124,6 +1168,17 @@ export interface WorkflowRunStepRecordedEvent {
  */
 export interface AlertRecordedEvent {
   type: typeof EngineEventType.ALERT_RECORDED;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when an alert's row moves to `playing`: an overlay reported it started
+ * playing. Lets a receiver tell an alert that is on screen from one the engine
+ * lost track of, without waiting for the verdict. Sent once per alert: when
+ * several overlays play it, only the first start moves the row.
+ */
+export interface AlertPlayingEvent {
+  type: typeof EngineEventType.ALERT_PLAYING;
   alert: AlertSnapshot;
 }
 
@@ -1390,6 +1445,7 @@ export type CallbackEvent =
   | SceneUpdatedEvent
   | SceneDeletedEvent
   | AlertRecordedEvent
+  | AlertPlayingEvent
   | AlertReplayedEvent
   | AlertCompletedEvent
   | AlertFailedEvent
@@ -1451,6 +1507,7 @@ export type CallbackEventByType = {
   [EngineEventType.SCENE_UPDATED]: SceneUpdatedEvent;
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;
   [EngineEventType.ALERT_RECORDED]: AlertRecordedEvent;
+  [EngineEventType.ALERT_PLAYING]: AlertPlayingEvent;
   [EngineEventType.ALERT_REPLAYED]: AlertReplayedEvent;
   [EngineEventType.ALERT_COMPLETED]: AlertCompletedEvent;
   [EngineEventType.ALERT_FAILED]: AlertFailedEvent;

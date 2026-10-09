@@ -37,7 +37,12 @@ type Alert struct {
 	// Error captures the failure reason from a `failed` overlay ack
 	// (autoplay block, missing media, etc.). Empty string = "no error",
 	// matching the source_event_id convention.
-	Error     string    `gorm:"column:error;type:text;not null;default:''"`
+	Error string `gorm:"column:error;type:text;not null;default:''"`
+	// Version counts the writes applied to the row, starting at 1 when it is
+	// created. The database increments it in the same statement as each
+	// write, so it orders the row's published snapshots by when the writes
+	// were applied. See AlertRepository.UpdateLifecycle.
+	Version   int64     `gorm:"column:version;not null;default:1"`
 	CreatedAt time.Time `gorm:"column:created_at;index:idx_alerts_created_at,sort:desc"`
 	UpdatedAt time.Time
 }

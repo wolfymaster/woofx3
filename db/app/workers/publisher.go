@@ -8,6 +8,7 @@ import (
 
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
+	"gorm.io/gorm"
 )
 
 type EventPublisher struct {
@@ -36,6 +37,17 @@ type PublishOptions struct {
 }
 
 func (p *EventPublisher) Publish(opts PublishOptions) error {
+	return p.publishWith(p.repo, opts)
+}
+
+// PublishIn writes the event inside the caller's transaction `tx`, so the
+// event is published if and only if the change it describes commits: the
+// transactional outbox. The worker publishes it once the transaction commits.
+func (p *EventPublisher) PublishIn(tx *gorm.DB, opts PublishOptions) error {
+	return p.publishWith(p.repo.WithDB(tx), opts)
+}
+
+func (p *EventPublisher) publishWith(repo *repository.DbEventRepository, opts PublishOptions) error {
 	p.logger.Info("creating event for publishing",
 		"entity_type", opts.EntityType,
 		"entity_id", opts.EntityID,
@@ -89,7 +101,7 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 		"event_type", eventType,
 		"payload_size", len(payloadBytes))
 
-	if err := p.repo.Create(event); err != nil {
+	if err := repo.Create(event); err != nil {
 		p.logger.Error("failed to store event in database",
 			"entity_type", opts.EntityType,
 			"operation", opts.Operation,

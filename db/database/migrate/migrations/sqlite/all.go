@@ -60,5 +60,7 @@ func All() []*gormigrate.Migration {
 		AddWorkflowRunDryRun(),
 		AddSceneDrafts(),
 		FractionWidgetOpacity(),
+		AddAlertVersion(),
+		NormaliseAlertTimestamps(),
 	}
 }

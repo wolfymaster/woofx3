@@ -158,13 +158,15 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 // consume that subject and render the alert via a widget; the handler
 // itself is fire-and-forget and returns immediately.
 //
-// The published envelope is `{ id, parameters, event }`:
+// The published envelope is `{ id, parameters, event, rowId }`:
 //   - `parameters`: the step's params with expressions resolved: `target`,
 //     the name of the alert widgets to play on, and `layout`, the widgets
 //     the alert shows.
 //   - `event`: the originating CloudEvent that triggered the workflow,
 //     attached so layout widgets can read raw event fields. `null` for
 //     non-event triggers (manual, scheduled, chat command).
+//   - `rowId`: the alert log row recorded for this play (see withAlertRowID),
+//     absent when it could not be recorded.
 //
 // The step fails rather than publishing when `layout` is structurally
 // unusable (see validateAlertParams). Everything else about `parameters` is
@@ -188,8 +190,12 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		if err != nil {
 			return nil, err
 		}
-		recordAlertDispatch(ctx, envelopeID, payload)
-		if err := bus.Publish("ui.notify.alert", payload); err != nil {
+		rowID := recordAlertDispatch(ctx, envelopeID, payload)
+		message, err := withAlertRowID(payload, rowID)
+		if err != nil {
+			return nil, err
+		}
+		if err := bus.Publish("ui.notify.alert", message); err != nil {
 			return nil, fmt.Errorf("publish ui.notify.alert: %w", err)
 		}
 		return map[string]any{"published": true}, nil
@@ -224,20 +230,49 @@ func buildAlertEnvelope(params map[string]any, event *types.Event) ([]byte, stri
 	return payload, envelopeID, nil
 }
 
-// recordAlertDispatch writes the alert to the engine's alert log.
+// withAlertRowID adds the alert log row of this play to the envelope as
+// `rowId`, or returns the envelope as it is when there is no row.
 //
-// Before the publish, not after: a consumer that refuses the alert reports
-// against this row keyed on the envelope id, and a row that does not exist yet
+// The scene manager reports the play's lifecycle against this row. The
+// envelope id alone cannot name it: a workflow that pins `parameters.id`
+// publishes the same envelope id for every play, and plays can overlap. The
+// row id is added to the published message only, not to the stored payload,
+// which is the envelope a replay plays again as a new row of its own.
+func withAlertRowID(payload []byte, rowID string) ([]byte, error) {
+	if rowID == "" {
+		return payload, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return nil, fmt.Errorf("read alert envelope: %w", err)
+	}
+	encodedRowID, err := json.Marshal(rowID)
+	if err != nil {
+		return nil, fmt.Errorf("encode alert row id: %w", err)
+	}
+	envelope["rowId"] = encodedRowID
+	message, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal alert envelope: %w", err)
+	}
+	return message, nil
+}
+
+// recordAlertDispatch writes the alert to the engine's alert log and returns
+// the row's id, or "" when it was not recorded.
+//
+// Before the publish, not after: a consumer reports the play's lifecycle,
+// including a refusal, against this row, and a row that does not exist yet
 // cannot be updated.
 //
 // Best-effort, and deliberately so. An alert nobody logged is worth more than
 // an alert nobody saw, so a failure here is recorded and the dispatch
 // continues — which means every consumer downstream has to tolerate a missing
 // row rather than assume one.
-func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string, payload []byte) {
+func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string, payload []byte) string {
 	client := ctx.Services.AlertLog()
 	if client == nil {
-		return
+		return ""
 	}
 
 	sourceEventID := ""
@@ -245,7 +280,7 @@ func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string
 		sourceEventID = ctx.TriggerEvent.ID
 	}
 
-	_, err := client.CreateAlert(context.Background(), &dbv1.CreateAlertRequest{
+	resp, err := client.CreateAlert(context.Background(), &dbv1.CreateAlertRequest{
 		Payload: string(payload),
 		// Named for the workflow, but documented as the execution that fired
 		// the alert — and the run is the value that can answer "what produced
@@ -254,9 +289,16 @@ func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string
 		SourceEventId: sourceEventID,
 		EnvelopeId:    envelopeID,
 	})
-	if err != nil && ctx.Logger != nil {
-		ctx.Logger.Warn("alert dispatch not recorded", "envelopeId", envelopeID, "error", err)
+	if err != nil {
+		if ctx.Logger != nil {
+			ctx.Logger.Warn("alert dispatch not recorded", "envelopeId", envelopeID, "error", err)
+		}
+		return ""
 	}
+	if resp.GetAlert() == nil {
+		return ""
+	}
+	return resp.GetAlert().GetId()
 }
 
 // validateAlertParams rejects an alert whose `layout` cannot be framed,

@@ -353,7 +353,7 @@ const (
 
 | Subject | Direction | Payload | Pattern |
 |---------|-----------|---------|---------|
-| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
+| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event, rowId }` (`rowId` absent when the alert log row could not be recorded) | publish/subscribe |
 | `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
 | `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
 | `widget.queue.skip` | api → sceneManager | `{}`; reply `{ ok, skipped, reason? }` | NATS request/reply |
@@ -376,8 +376,11 @@ Alert-related outbox subjects:
 | Subject (wildcard) | Fired when | Webhook event |
 |---------------------|------------|----------------|
 | `db.alert.created.*` | streamware records a fresh alert envelope (`db.createAlert`) | `ALERT_RECORDED` |
-| `db.alert.updated.*` | streamware updates lifecycle (`dispatched` / `playing` / `completed` / `failed` / `timed_out` / `skipped` / `replayed`) | `ALERT_COMPLETED` / `ALERT_FAILED` / `ALERT_TIMED_OUT` / `ALERT_SKIPPED` / `ALERT_REPLAYED` (chosen by `alert.status`) |
+| `db.alert.updated.*` | the lifecycle of the newest alert row for an envelope moves forward (`dispatched` / `playing` / `completed` / `failed` / `timed_out` / `skipped` / `replayed`); a refused transition publishes nothing | `ALERT_PLAYING` / `ALERT_COMPLETED` / `ALERT_FAILED` / `ALERT_TIMED_OUT` / `ALERT_SKIPPED` / `ALERT_REPLAYED` (chosen by `alert.status`); `dispatched` has no webhook |
+| `db.alert.deleted.*` | an alert row is deleted; its snapshot carries the version after the row's last write | none |
 | `db.widget_status.updated.*` | streamware upserts a non-alert widget event (`db.upsertWidgetStatus`) | `WIDGET_STATUS_CHANGED` |
+
+Every alert snapshot carries the row's `version`, which the database increments with each write it publishes. The db proxy alone enforces the lifecycle rule; a receiver keeps the snapshot with the highest version of each row and does not re-check it.
 
 The full set of webhook event types is defined in `shared/clients/typescript/api/webhooks.ts`.
 

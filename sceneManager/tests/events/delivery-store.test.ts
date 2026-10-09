@@ -135,7 +135,7 @@ describe("DeliveryStore.ackCompleted", () => {
 
     const closed = await store.ackCompleted("scene-1", "evt-3", ["inst-a"]);
     expect(db.recordSceneEventCompletion).toHaveBeenCalledWith({ sceneEventId: "evt-3", instanceId: "inst-a" });
-    expect(closed).toEqual([{ eventId: "evt-3", type: "widget.event", key: "count", startedAt: null }]);
+    expect(closed).toEqual([{ eventId: "evt-3", type: "widget.event", key: "count", value: 1, startedAt: null }]);
     expect(await store.ackCompleted("scene-1", "evt-3", ["inst-a"])).toEqual([]);
 
     const { controller, frames } = fakeController();
