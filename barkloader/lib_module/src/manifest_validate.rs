@@ -1982,16 +1982,23 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
 /// field anywhere else, and only a `list` setting does. Its value is a JSON
 /// array, so a declared default must be one.
 fn validate_list_setting(setting: &ManifestSetting, context: &str) -> Result<()> {
-    validate_list_rows(&setting.setting_type, setting.item_fields.as_deref(), context)?;
+    validate_list_rows(
+        &setting.setting_type,
+        setting.item_fields.as_deref(),
+        context,
+    )?;
     if setting.setting_type != "list" {
         return Ok(());
     }
-    if let Some(default) = &setting.default_value {
-        if !matches!(serde_json::from_str::<serde_json::Value>(default), Ok(serde_json::Value::Array(_))) {
-            return Err(anyhow!(
-                "{context}: a `list` setting's `defaultValue` must be a JSON array, as text"
-            ));
-        }
+    if let Some(default) = &setting.default_value
+        && !matches!(
+            serde_json::from_str::<serde_json::Value>(default),
+            Ok(serde_json::Value::Array(_))
+        )
+    {
+        return Err(anyhow!(
+            "{context}: a `list` setting's `defaultValue` must be a JSON array, as text"
+        ));
     }
     Ok(())
 }
@@ -3345,7 +3352,10 @@ mod tests {
     fn rejects_a_list_module_setting_without_item_fields() {
         let m = minimal(r#", "settings": [{ "id": "goals", "label": "Goals", "type": "list" }]"#);
         let err = validate(&m).expect_err("a list setting with no rows");
-        assert!(err.to_string().contains("`list` needs `itemFields`"), "{err}");
+        assert!(
+            err.to_string().contains("`list` needs `itemFields`"),
+            "{err}"
+        );
     }
 
     #[test]

@@ -906,7 +906,10 @@ mod tests {
             _module_id: &str,
         ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
             let items = self.items.lock().unwrap().clone();
-            Ok(std::collections::HashMap::from([("items".to_string(), items)]))
+            Ok(std::collections::HashMap::from([(
+                "items".to_string(),
+                items,
+            )]))
         }
         fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
             Ok(())
@@ -923,7 +926,10 @@ mod tests {
             if swapped {
                 *items = value.clone();
             }
-            Ok(crate::host::CompareAndSetOutcome { swapped, current: Some(items.clone()) })
+            Ok(crate::host::CompareAndSetOutcome {
+                swapped,
+                current: Some(items.clone()),
+            })
         }
     }
 
@@ -931,7 +937,9 @@ mod tests {
     // handing it back must still match.
     #[test]
     fn lua_ctx_module_compare_and_set_setting_matches_an_empty_list() {
-        let settings = std::sync::Arc::new(ListSettings { items: std::sync::Mutex::new(serde_json::json!([])) });
+        let settings = std::sync::Arc::new(ListSettings {
+            items: std::sync::Mutex::new(serde_json::json!([])),
+        });
         let mut host = noop_host_context();
         host.settings = settings.clone();
         let adapter = LuaAdapter::new().unwrap();
@@ -955,6 +963,9 @@ mod tests {
         "#;
         let result = adapter.execute(code, "run", &invocation).unwrap();
         assert_eq!(result["swapped"], true);
-        assert_eq!(*settings.items.lock().unwrap(), serde_json::json!([{ "label": "Pizza" }]));
+        assert_eq!(
+            *settings.items.lock().unwrap(),
+            serde_json::json!([{ "label": "Pizza" }])
+        );
     }
 }

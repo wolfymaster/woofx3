@@ -88,7 +88,10 @@ impl HttpSettingsClient {
             .block_on(get_module_settings(&url, module_id))
             .map_err(|e| e.to_string())?;
         let Some(row) = rows.into_iter().find(|row| row.key == key) else {
-            return Ok(CompareAndSetOutcome { swapped: false, current: None });
+            return Ok(CompareAndSetOutcome {
+                swapped: false,
+                current: None,
+            });
         };
         if row.value_type == SECRET_SETTING_TYPE {
             return Err(format!(
@@ -97,7 +100,10 @@ impl HttpSettingsClient {
         }
         let current = coerce_value(&row.value, &row.value_type);
         if !setting_values_equal(&current, expected) {
-            return Ok(CompareAndSetOutcome { swapped: false, current: Some(current) });
+            return Ok(CompareAndSetOutcome {
+                swapped: false,
+                current: Some(current),
+            });
         }
         let text = setting_text(key, value, &row.value_type)?;
         let response = Handle::current()
@@ -197,7 +203,10 @@ mod tests {
 
     #[test]
     fn other_settings_store_strings_as_is_and_the_rest_as_json() {
-        assert_eq!(setting_text("name", &json!("Pizza"), "text").unwrap(), "Pizza");
+        assert_eq!(
+            setting_text("name", &json!("Pizza"), "text").unwrap(),
+            "Pizza"
+        );
         assert_eq!(setting_text("count", &json!(3), "number").unwrap(), "3");
     }
 }

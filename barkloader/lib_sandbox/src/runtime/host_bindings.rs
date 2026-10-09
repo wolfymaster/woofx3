@@ -302,7 +302,9 @@ pub fn compare_and_set_module_setting(
             "ctx.module.compareAndSetSetting: {key:?} is a url setting, which only the streamer sets"
         ));
     }
-    let outcome = host.settings.compare_and_set(module_id, key, expected, value)?;
+    let outcome = host
+        .settings
+        .compare_and_set(module_id, key, expected, value)?;
     Ok(serde_json::json!({
         "swapped": outcome.swapped,
         "current": outcome.current.unwrap_or(Value::Null),

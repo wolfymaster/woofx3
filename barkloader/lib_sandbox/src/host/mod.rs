@@ -150,7 +150,8 @@ pub fn setting_values_equal(a: &Value, b: &Value) -> bool {
         }
         (Value::Object(x), Value::Object(y)) => {
             x.len() == y.len()
-                && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| setting_values_equal(v, w)))
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| setting_values_equal(v, w)))
         }
         (Value::Array(list), Value::Object(map)) | (Value::Object(map), Value::Array(list)) => {
             list.is_empty() && map.is_empty()
@@ -376,8 +377,14 @@ mod setting_values_equal_tests {
 
     #[test]
     fn lists_compare_in_order() {
-        assert!(setting_values_equal(&json!([{ "label": "A" }]), &json!([{ "label": "A" }])));
-        assert!(!setting_values_equal(&json!(["A", "B"]), &json!(["B", "A"])));
+        assert!(setting_values_equal(
+            &json!([{ "label": "A" }]),
+            &json!([{ "label": "A" }])
+        ));
+        assert!(!setting_values_equal(
+            &json!(["A", "B"]),
+            &json!(["B", "A"])
+        ));
     }
 
     #[test]

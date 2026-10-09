@@ -1167,7 +1167,10 @@ mod tests {
             _module_id: &str,
         ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
             let items = self.items.lock().unwrap().clone();
-            Ok(std::collections::HashMap::from([("items".to_string(), items)]))
+            Ok(std::collections::HashMap::from([(
+                "items".to_string(),
+                items,
+            )]))
         }
         fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
             Ok(())
@@ -1180,14 +1183,20 @@ mod tests {
             value: &serde_json::Value,
         ) -> Result<crate::host::CompareAndSetOutcome, String> {
             if key != "items" {
-                return Ok(crate::host::CompareAndSetOutcome { swapped: false, current: None });
+                return Ok(crate::host::CompareAndSetOutcome {
+                    swapped: false,
+                    current: None,
+                });
             }
             let mut items = self.items.lock().unwrap();
             let swapped = crate::host::setting_values_equal(&items, expected);
             if swapped {
                 *items = value.clone();
             }
-            Ok(crate::host::CompareAndSetOutcome { swapped, current: Some(items.clone()) })
+            Ok(crate::host::CompareAndSetOutcome {
+                swapped,
+                current: Some(items.clone()),
+            })
         }
     }
 
@@ -1195,7 +1204,9 @@ mod tests {
         items: serde_json::Value,
         url_settings: std::collections::HashSet<String>,
     ) -> (InvocationContext, Arc<ListSettings>) {
-        let settings = Arc::new(ListSettings { items: std::sync::Mutex::new(items) });
+        let settings = Arc::new(ListSettings {
+            items: std::sync::Mutex::new(items),
+        });
         let mut host = noop_host_context();
         host.settings = settings.clone();
         let invocation = InvocationContext {
@@ -1214,8 +1225,10 @@ mod tests {
 
     #[test]
     fn quickjs_ctx_module_compare_and_set_setting_writes_from_what_was_read() {
-        let (invocation, settings) =
-            list_settings_invocation(serde_json::json!([{ "label": "Pizza" }]), Default::default());
+        let (invocation, settings) = list_settings_invocation(
+            serde_json::json!([{ "label": "Pizza" }]),
+            Default::default(),
+        );
         let adapter = QuickJSAdapter::new().unwrap();
         let code = "function run(ctx) { \
             const items = ctx.module.settings.items; \
