@@ -620,6 +620,132 @@ func TestAlertLifecycleForAnUnknownEnvelopeIsNotFound(t *testing.T) {
 	})
 }
 
+func moveAlertRow(t *testing.T, svc client.AlertService, row *client.Alert, status, errorMsg string) *client.Alert {
+	t.Helper()
+	resp, err := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+		Id:         row.Id,
+		EnvelopeId: row.EnvelopeId,
+		Status:     status,
+		Error:      errorMsg,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAlertLifecycle(%s, %s): %v", row.Id, status, err)
+	}
+	return resp.Alert
+}
+
+// A workflow that pins `parameters.id` plays one envelope id more than once,
+// and the plays can overlap. A report names its row, so each play settles the
+// row it belongs to, whatever was created after it.
+func TestAlertLifecycleSettlesEachOverlappingPlayOfAnEnvelopeByRowID(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		first := createAlert(t, svc, "env-1")
+		second := createAlert(t, svc, "env-1")
+
+		moveAlertRow(t, svc, first, "playing", "")
+		moveAlertRow(t, svc, second, "playing", "")
+		completed := moveAlertRow(t, svc, first, "completed", "")
+		failed := moveAlertRow(t, svc, second, "failed", "missing media")
+
+		if completed.Id != first.Id || failed.Id != second.Id {
+			t.Fatalf("returned rows %s and %s, want %s and %s", completed.Id, failed.Id, first.Id, second.Id)
+		}
+		stored := storedAlert(t, db, first.Id)
+		if stored.Status != "completed" || stored.Version != 3 || stored.Error != "" {
+			t.Fatalf("first play = %s v%d %q, want completed v3", stored.Status, stored.Version, stored.Error)
+		}
+		stored = storedAlert(t, db, second.Id)
+		if stored.Status != "failed" || stored.Version != 3 || stored.Error != "missing media" {
+			t.Fatalf("second play = %s v%d %q, want failed v3 with its error",
+				stored.Status, stored.Version, stored.Error)
+		}
+	})
+}
+
+// A refused report answers with the row it named, re-read by its id, never
+// another play of the envelope.
+func TestAlertLifecycleRefusalByRowIDAnswersWithThatRow(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		first := createAlert(t, svc, "env-1")
+		moveAlertRow(t, svc, first, "completed", "")
+		createAlert(t, svc, "env-1")
+
+		resp, err := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+			Id:         first.Id,
+			EnvelopeId: "env-1",
+			Status:     "playing",
+		})
+		if err != nil {
+			t.Fatalf("UpdateAlertLifecycle: %v", err)
+		}
+		if resp.Alert.Id != first.Id || resp.Alert.Status != "completed" || resp.Alert.Version != 2 {
+			t.Fatalf("returned %s %s v%d, want %s as it stands (completed v2)",
+				resp.Alert.Id, resp.Alert.Status, resp.Alert.Version, first.Id)
+		}
+		if resp.Status.Message == "Alert updated successfully" {
+			t.Fatalf("message = %q, want the refusal said", resp.Status.Message)
+		}
+	})
+}
+
+// A report for a row of another envelope moves nothing.
+func TestAlertLifecycleByRowIDRequiresTheRowsEnvelope(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		row := createAlert(t, svc, "env-1")
+		before := storedAlert(t, db, row.Id)
+
+		_, err := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+			Id:         row.Id,
+			EnvelopeId: "env-2",
+			Status:     "playing",
+		})
+		twerr, ok := err.(twirp.Error)
+		if !ok || twerr.Code() != twirp.NotFound {
+			t.Fatalf("err = %v, want not_found", err)
+		}
+		assertUnchanged(t, before, storedAlert(t, db, row.Id))
+
+		_, err = svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+			Id:         "not-a-uuid",
+			EnvelopeId: "env-1",
+			Status:     "playing",
+		})
+		twerr, ok = err.(twirp.Error)
+		if !ok || twerr.Code() != twirp.InvalidArgument {
+			t.Fatalf("err = %v, want invalid_argument", err)
+		}
+	})
+}
+
+// On SQLite, a report without a row id lands on the envelope's last-inserted
+// row even when two rows share a created_at.
+func TestAlertLifecycleWithoutRowIDBreaksACreatedAtTieByInsertionOrder(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		if db.Dialector.Name() != "sqlite" {
+			t.Skip("Postgres has no insertion order to break a tie by")
+		}
+		// Ids chosen so the later row sorts first, so an id tiebreak would pick
+		// the wrong one.
+		first := uuid.MustParse("ffffffff-ffff-4fff-bfff-ffffffffffff")
+		second := uuid.MustParse("00000000-0000-4000-8000-000000000000")
+		for _, id := range []uuid.UUID{first, second} {
+			err := db.Exec(`INSERT INTO alerts
+				(id, payload, envelope_id, status, error, version, created_at, updated_at)
+				VALUES (?, '{}', 'env-1', 'sent', '', 1, '2026-03-08 09:00:00.000000+00:00',
+				'2026-03-08 09:00:00.000000+00:00')`, id).Error
+			if err != nil {
+				t.Fatalf("insert alert: %v", err)
+			}
+		}
+
+		moved := moveAlert(t, svc, "env-1", "playing")
+
+		if moved.Id != second.String() {
+			t.Fatalf("moved %s, want the last-inserted row %s", moved.Id, second)
+		}
+	})
+}
+
 var nineDigitUTC = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z$`)
 
 var alertTimestampFields = []string{"created_at", "updated_at", "dispatched_at", "played_at", "completed_at"}

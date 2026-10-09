@@ -154,6 +154,10 @@ func (s *alertService) GetAlertByEnvelopeId(ctx context.Context, req *client.Get
 	}, nil
 }
 
+// UpdateAlertLifecycle moves the row `id` names, which must carry
+// `envelope_id`, to a lifecycle status. Without `id` it moves the envelope's
+// newest row: a delivery recorded before deliveries carried their row id
+// reports that way.
 func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.UpdateAlertLifecycleRequest) (*client.AlertResponse, error) {
 	if req.EnvelopeId == "" {
 		return nil, twirp.RequiredArgumentError("envelope_id")
@@ -162,7 +166,19 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 		return nil, twirp.InvalidArgumentError("status",
 			"must be one of: "+strings.Join(repo.EnvelopeLifecycleStatuses(), ", "))
 	}
-	alert, applied, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error, s.recordChange("updated"))
+	record := s.recordChange("updated")
+	var alert *models.Alert
+	var applied bool
+	var err error
+	if req.Id == "" {
+		alert, applied, err = s.repo.UpdateNewestLifecycle(req.EnvelopeId, req.Status, req.Error, record)
+	} else {
+		id, parseErr := uuid.Parse(req.Id)
+		if parseErr != nil {
+			return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+		}
+		alert, applied, err = s.repo.UpdateLifecycle(id, req.EnvelopeId, req.Status, req.Error, record)
+	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("alert not found for envelope")
@@ -175,7 +191,7 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 // UpdateAlertStatus marks a row, by id, `replayed`, through the same
 // forward-only transition as UpdateAlertLifecycle; a second replay of one row
 // is refused. Replay is its only use: verdicts carry an error and are reported
-// against the envelope, through UpdateAlertLifecycle.
+// through UpdateAlertLifecycle.
 func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.UpdateAlertStatusRequest) (*client.AlertResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {

@@ -204,8 +204,14 @@ Limits, as the server sees the pages:
   is what ends redelivery, so `scene_event_log` shows it as `completed`. The alert's
   row carries `skipped`.
 
+Each lifecycle report names the alert log row of the play it describes (the delivery
+carries `rowId` from the published envelope), so two plays of one envelope id, which a
+workflow pinning `parameters.id` produces, settle separately. A delivery recorded
+before deliveries carried `rowId` reports against the envelope id alone, and the db
+proxy moves that envelope's newest row.
+
 Replay reads the row, gives its stored envelope a fresh id, records that as a new row,
-and dispatches it exactly as `ui.notify.alert` would, so a layout or target that no
+and dispatches it with that row's id exactly as `ui.notify.alert` would, so a layout or target that no
 longer matches anything is refused with the same reason. The original row is marked
 `replayed` only once the replay was queued on at least one scene. A repeat replay of the
 same row while one is in flight, or within 30 s of one that succeeded, gets that replay's

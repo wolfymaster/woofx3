@@ -108,18 +108,23 @@ export interface GetAlertByEnvelopeIdRequest {
 }
 
 /**
- * Atomic transition of the lifecycle columns keyed on envelope id.
- * The status string is the target state (`playing` / `completed` /
- * `failed`); the db service decides which timestamp column to stamp:
- *   - playing   → played_at = NOW()
- *   - completed → completed_at = NOW()
- *   - failed    → completed_at = NOW(), error = <provided message>
- * `error` is ignored unless status is `failed`.
+ * Atomic, forward-only transition of one alert row's lifecycle. The status
+ * string is the target state; the db service decides which timestamp column
+ * to stamp (see AlertRepository.transitionUpdateSQL). `error` is ignored
+ * unless status is `failed` or `timed_out`.
+ *
+ * `id` names the row the report concerns: the row CreateAlert returned for
+ * the play being reported. One envelope can have several rows (a workflow
+ * that pins `parameters.id` plays the same envelope id more than once), so
+ * only the row id says which play a report belongs to. The row must carry
+ * `envelope_id`. A report without `id` moves the envelope's newest row, the
+ * best guess for a delivery that never learned its row id.
  */
 export interface UpdateAlertLifecycleRequest {
   envelopeId: string;
   status: string;
   error: string;
+  id: string;
 }
 
 export interface AlertResponse {
@@ -339,11 +344,11 @@ export async function DeleteAlertJSON(
  * streamware broadcasts it to overlays exactly like the original
  * dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
  *
- * Lifecycle path (Phase 1 widget-completion ack): the overlay sends
- * `playing` / `completed` / `failed` reports keyed on the AlertPayload
- * envelope id; the api forwards them via `UpdateAlertLifecycle` which
- * atomically advances `status` and stamps the matching timestamp
- * (played_at / completed_at) and optional error.
+ * Lifecycle path: the scene manager reports each play's `playing` /
+ * `completed` / `failed` / `skipped` against the row CreateAlert returned for
+ * it, via `UpdateAlertLifecycle`, which atomically advances `status` and
+ * stamps the matching timestamp (played_at / completed_at) and optional
+ * error.
  */
 export interface AlertService<Context = unknown> {
   CreateAlert: (
@@ -890,6 +895,7 @@ export const UpdateAlertLifecycleRequest = {
       envelopeId: "",
       status: "",
       error: "",
+      id: "",
       ...msg,
     };
   },
@@ -909,6 +915,9 @@ export const UpdateAlertLifecycleRequest = {
     }
     if (msg.error) {
       writer.writeString(4, msg.error);
+    }
+    if (msg.id) {
+      writer.writeString(5, msg.id);
     }
     return writer;
   },
@@ -933,6 +942,10 @@ export const UpdateAlertLifecycleRequest = {
         }
         case 4: {
           msg.error = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.id = reader.readString();
           break;
         }
         default: {
@@ -1715,6 +1728,7 @@ export const UpdateAlertLifecycleRequestJSON = {
       envelopeId: "",
       status: "",
       error: "",
+      id: "",
       ...msg,
     };
   },
@@ -1734,6 +1748,9 @@ export const UpdateAlertLifecycleRequestJSON = {
     }
     if (msg.error) {
       json["error"] = msg.error;
+    }
+    if (msg.id) {
+      json["id"] = msg.id;
     }
     return json;
   },
@@ -1756,6 +1773,10 @@ export const UpdateAlertLifecycleRequestJSON = {
     const _error_ = json["error"];
     if (_error_) {
       msg.error = _error_;
+    }
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
     }
     return msg;
   },

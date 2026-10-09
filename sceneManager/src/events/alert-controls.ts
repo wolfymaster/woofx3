@@ -2,7 +2,15 @@ import type { AlertClearResult, AlertReplayResult, AlertSkipResult } from "@woof
 import type { Logger } from "@woofx3/common/runtime";
 import { ALERT_EVENT_TYPE, ALERT_SURFACE } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
-import { type AlertDispatchDeps, type AlertEnvelope, type AlertLifecycleWriter, dispatchAlert } from "./alert-dispatch";
+import {
+  type AlertDispatchDeps,
+  type AlertEnvelope,
+  type AlertLifecycleWriter,
+  type AlertReportTarget,
+  alertReportTargets,
+  dispatchAlert,
+  updateAlertLifecycle,
+} from "./alert-dispatch";
 import type { DeliveryStore, OpenDeliveryRef } from "./delivery-store";
 
 /** Operator requests the api forwards; request/reply, answered by this service. */
@@ -22,8 +30,7 @@ export interface AlertQueueDeps {
 interface Cancellation {
   sceneId: string;
   instanceId: string;
-  eventIds: string[];
-  alertIds: string[];
+  deliveries: OpenDeliveryRef[];
 }
 
 /** Chooses, from one alert widget's open deliveries (oldest first), which to cancel. */
@@ -115,7 +122,7 @@ async function loadAlertWidgets(deps: AlertQueueDeps): Promise<Map<string, Set<s
  * and closing them, so the second request sees the first one's result and
  * never a queue that is half cancelled. The db writes then run together.
  *
- * Returns how many distinct alerts were cancelled: one alert plays on every
+ * Returns how many distinct plays were cancelled: one play shows on every
  * alert widget of its target name, and the operator asked about alerts, not
  * widgets.
  */
@@ -132,41 +139,35 @@ async function cancelAlerts(
       }
       const chosen = choose(open);
       if (chosen.length > 0) {
-        plan.push({
-          sceneId,
-          instanceId,
-          eventIds: chosen.map((delivery) => delivery.eventId),
-          alertIds: chosen.map((delivery) => delivery.key),
-        });
+        plan.push({ sceneId, instanceId, deliveries: chosen });
       }
     }
   }
 
   const writes: Promise<void>[] = [];
-  const alertIds = new Set<string>();
   for (const cancellation of plan) {
-    writes.push(deps.deliveryStore.cancel(cancellation.sceneId, cancellation.instanceId, cancellation.eventIds));
-    for (const alertId of cancellation.alertIds) {
-      alertIds.add(alertId);
-    }
+    const eventIds = cancellation.deliveries.map((delivery) => delivery.eventId);
+    writes.push(deps.deliveryStore.cancel(cancellation.sceneId, cancellation.instanceId, eventIds));
   }
-  for (const alertId of alertIds) {
-    writes.push(reportAlertSkipped(deps.db, deps.logger, alertId));
+  const targets = alertReportTargets(plan.flatMap((cancellation) => cancellation.deliveries));
+  for (const target of targets) {
+    writes.push(reportAlertSkipped(deps.db, deps.logger, target));
   }
   await Promise.all(writes);
-  return alertIds.size;
+  return targets.length;
 }
 
 /**
  * Best-effort, like every lifecycle write here: the engine's alert row is
  * itself best-effort, so a missing one answers NOT_FOUND and is not a fault.
  */
-async function reportAlertSkipped(db: AlertLifecycleWriter, logger: Logger, alertId: string): Promise<void> {
+async function reportAlertSkipped(db: AlertLifecycleWriter, logger: Logger, target: AlertReportTarget): Promise<void> {
   try {
-    await db.updateAlertLifecycle({ envelopeId: alertId, status: "skipped", error: "" });
+    await updateAlertLifecycle(db, target, "skipped", "");
   } catch (err) {
     logger.debug("alert queue: skip not recorded", {
-      alertId,
+      alertId: target.envelopeId,
+      rowId: target.rowId,
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -182,8 +183,8 @@ export interface AlertLogClient extends AlertLifecycleWriter {
     workflowId: string;
     sourceEventId: string;
     envelopeId: string;
-  }): Promise<unknown>;
-  updateAlertStatus(req: { id: string; status: string }): Promise<unknown>;
+  }): Promise<{ alert?: { id: string } | null }>;
+  markAlertReplayed(req: { id: string }): Promise<unknown>;
 }
 
 export interface AlertReplayDeps extends Omit<AlertDispatchDeps, "db"> {
@@ -292,12 +293,15 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
   const envelopeId = (deps.newEnvelopeId ?? (() => crypto.randomUUID()))();
   const envelope: AlertEnvelope = { ...(original as AlertEnvelope), id: envelopeId };
   try {
-    await db.createAlert({
+    const created = await db.createAlert({
       payload: JSON.stringify(envelope),
       workflowId: row.workflowId,
       sourceEventId: row.sourceEventId,
       envelopeId,
     });
+    if (created.alert?.id) {
+      envelope.rowId = created.alert.id;
+    }
   } catch (err) {
     logger.warn("alert replay: replay not recorded", {
       alertId: alertRowId,
@@ -312,7 +316,7 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
   }
 
   try {
-    await db.updateAlertStatus({ id: alertRowId, status: "replayed" });
+    await db.markAlertReplayed({ id: alertRowId });
   } catch (err) {
     logger.warn("alert replay: original not marked replayed", {
       alertId: alertRowId,

@@ -157,7 +157,7 @@ Plays an on-stream alert. The step publishes an envelope onto NATS `ui.notify.al
 
 An alert lasts as long as its longest widget. A widget with a length of its own (a sound, a video, anything with a duration set) holds the alert until it finishes; one without (a Text or Image with no duration) stays up for the rest of the alert. An alert with no timed widget stays up for 5 seconds.
 
-The action stamps a stable `id` onto every envelope at publish time (see `workflow/actions.go` `buildAlertEnvelope`). All three downstream layers — the api alert log, the streamware queue, and the overlay's lifecycle reports — key on this value end-to-end. A caller-supplied `parameters.id` overrides the generated UUID; this is useful for replays and deterministic tests.
+The action stamps a stable `id` onto every envelope at publish time (see `workflow/actions.go` `buildAlertEnvelope`), and records the alert in the alert log before it publishes. A caller-supplied `parameters.id` overrides the generated UUID; this is useful for replays and deterministic tests, but it means every play of the step shares one envelope id. The published envelope therefore also carries `rowId`, the alert log row recorded for that play, and the scene manager reports the play's lifecycle (`playing`, `completed`, `failed`, `skipped`) against that row, so overlapping plays of one envelope each settle their own row.
 
 Returns:
 

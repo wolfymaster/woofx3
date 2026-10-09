@@ -105,11 +105,6 @@ func (r *AlertRepository) Count() (int64, error) {
 	return n, err
 }
 
-// alertsNewestFirst orders an envelope's rows so the first is the one its
-// lifecycle reports concern: the newest. The id breaks a tie between rows
-// written at the same instant, so every reader picks the same row.
-const alertsNewestFirst = "created_at DESC, id DESC"
-
 // GetByEnvelopeID looks up the most recent alert row for a given
 // AlertPayload envelope id. Returns gorm.ErrRecordNotFound when no row
 // matches.
@@ -117,12 +112,24 @@ func (r *AlertRepository) GetByEnvelopeID(envelopeID string) (*models.Alert, err
 	if envelopeID == "" {
 		return nil, fmt.Errorf("envelope_id is required")
 	}
-	return newestForEnvelope(r.db, envelopeID)
+	return r.newestForEnvelope(r.db, envelopeID)
 }
 
-func newestForEnvelope(tx *gorm.DB, envelopeID string) (*models.Alert, error) {
+// newestForEnvelope reads the envelope's newest row, in creation order.
+//
+// SQLite breaks a tie on created_at by rowid, which is insertion order.
+// Postgres has no insertion order to read, so a tie there falls to the id,
+// which every reader agrees on but which is random: of two rows created in the
+// same microsecond, either may be taken as the newest. Lifecycle reports name
+// their row by id, so this order only decides where a report without one
+// lands.
+func (r *AlertRepository) newestForEnvelope(tx *gorm.DB, envelopeID string) (*models.Alert, error) {
+	order := "created_at DESC, rowid DESC"
+	if r.isPostgres() {
+		order = "created_at DESC, id DESC"
+	}
 	var a models.Alert
-	err := tx.Where("envelope_id = ?", envelopeID).Order(alertsNewestFirst).First(&a).Error
+	err := tx.Where("envelope_id = ?", envelopeID).Order(order).First(&a).Error
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +192,8 @@ var alertVerdictReplacements = map[string][]string{
 
 // IsEnvelopeLifecycleStatus reports whether `status` is one an overlay or the
 // queue reports against an envelope (see UpdateLifecycle): every status but
-// the one a row is created with and `replayed`, which is written by row id.
+// the one a row is created with and `replayed`, which an operator writes
+// through MarkReplayed.
 func IsEnvelopeLifecycleStatus(status string) bool {
 	_, known := alertLifecycleStages[status]
 	return known && status != AlertStatusSent && status != AlertStatusReplayed
@@ -228,13 +236,6 @@ var alertStageSQL = func() string {
 	return b.String()
 }()
 
-// sqliteTimestampLayout is how a write stamps a SQLite timestamp column: UTC
-// with six fractional digits and an explicit offset, a layout the driver
-// decodes into time.Time. Fixed width and one zone, so stored values sort as
-// text in time order; rows written before the engine used it are rewritten to
-// it by migration 0055_alert_timestamps_utc, which must use the same layout.
-const sqliteTimestampLayout = "2006-01-02 15:04:05.000000-07:00"
-
 // writeClock is the clock one write stamps every timestamp column with: a SQL
 // expression for the columns, and the value of the `@now` argument it may
 // reference. Every write is a single statement, so each column it stamps gets
@@ -254,7 +255,7 @@ func (r *AlertRepository) writeClock() (string, string) {
 	if r.isPostgres() {
 		return "statement_timestamp()", ""
 	}
-	return "@now", time.Now().UTC().Truncate(time.Microsecond).Format(sqliteTimestampLayout)
+	return "@now", time.Now().UTC().Truncate(time.Microsecond).Format(database.SQLiteTimestampLayout)
 }
 
 func (r *AlertRepository) isPostgres() bool {
@@ -265,100 +266,122 @@ func (r *AlertRepository) isPostgres() bool {
 // UpdateLifecycle, so a row is marked replayed once. It returns the row as it
 // stands and whether the write applied.
 func (r *AlertRepository) MarkReplayed(id uuid.UUID, record RecordAlertChange) (*models.Alert, bool, error) {
-	return r.transition(AlertStatusReplayed, "", record, alertTarget{
-		sql:  "@id",
-		args: map[string]interface{}{"id": id},
-		current: func(tx *gorm.DB) (*models.Alert, error) {
-			var a models.Alert
-			if err := tx.Where("id = ?", id).First(&a).Error; err != nil {
-				return nil, err
-			}
-			return &a, nil
-		},
+	return r.transition(AlertStatusReplayed, "", record, func(tx *gorm.DB) (uuid.UUID, error) {
+		return id, nil
 	})
 }
 
-// UpdateLifecycle moves the newest row for an envelope to a lifecycle status,
-// under the rule in transitionUpdateSQL, and returns that row as it stands and
-// whether the write applied.
+// UpdateLifecycle moves the row with `id` to a lifecycle status, under the rule
+// in transitionUpdateSQL, and returns that row as it stands and whether the
+// write applied. The row must carry `envelopeID`, so a report cannot move a
+// row of another alert; gorm.ErrRecordNotFound otherwise.
 //
 // One envelope can have several rows, when a workflow pins the envelope id
-// with `parameters.id` or an operator replays a row. Each row is a separate
-// play of the alert, and an overlay's report names the envelope, not a row,
-// so it concerns the newest play. An earlier row keeps the status it reached.
+// with `parameters.id`, and their plays can overlap. Each row is a separate
+// play, and the row id is what says which play a report belongs to.
 func (r *AlertRepository) UpdateLifecycle(
+	id uuid.UUID,
 	envelopeID string,
 	status string,
 	errorMsg string,
 	record RecordAlertChange,
 ) (*models.Alert, bool, error) {
-	if envelopeID == "" {
-		return nil, false, fmt.Errorf("envelope_id is required")
+	if err := checkLifecycleReport(envelopeID, status); err != nil {
+		return nil, false, err
 	}
-	if !IsEnvelopeLifecycleStatus(status) {
-		return nil, false, fmt.Errorf("unsupported envelope lifecycle status %q", status)
-	}
-	return r.transition(status, errorMsg, record, alertTarget{
-		sql:  "(SELECT id FROM alerts WHERE envelope_id = @envelope_id ORDER BY " + alertsNewestFirst + " LIMIT 1)",
-		args: map[string]interface{}{"envelope_id": envelopeID},
-		current: func(tx *gorm.DB) (*models.Alert, error) {
-			return newestForEnvelope(tx, envelopeID)
-		},
+	return r.transition(status, errorMsg, record, func(tx *gorm.DB) (uuid.UUID, error) {
+		var a models.Alert
+		if err := tx.Select("id").Where("id = ? AND envelope_id = ?", id, envelopeID).First(&a).Error; err != nil {
+			return uuid.Nil, err
+		}
+		return a.ID, nil
 	})
 }
 
-// alertTarget names the one row a transition writes: `sql` is a SQL
-// expression for its id over `args`, and `current` reads the row as it stands.
-type alertTarget struct {
-	sql     string
-	args    map[string]interface{}
-	current func(tx *gorm.DB) (*models.Alert, error)
+// UpdateNewestLifecycle moves the envelope's newest row (see
+// newestForEnvelope) to a lifecycle status, like UpdateLifecycle.
+//
+// It serves a report that does not know its row, from a delivery recorded
+// before deliveries carried one. When an envelope's plays overlap, such a
+// report can land on a later play than the one it describes; an earlier row
+// keeps the status it reached.
+func (r *AlertRepository) UpdateNewestLifecycle(
+	envelopeID string,
+	status string,
+	errorMsg string,
+	record RecordAlertChange,
+) (*models.Alert, bool, error) {
+	if err := checkLifecycleReport(envelopeID, status); err != nil {
+		return nil, false, err
+	}
+	return r.transition(status, errorMsg, record, func(tx *gorm.DB) (uuid.UUID, error) {
+		newest, err := r.newestForEnvelope(tx, envelopeID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return newest.ID, nil
+	})
 }
 
-// transition applies one lifecycle write to the target row, and returns the
-// row as it stands and whether the write applied.
+func checkLifecycleReport(envelopeID string, status string) error {
+	if envelopeID == "" {
+		return fmt.Errorf("envelope_id is required")
+	}
+	if !IsEnvelopeLifecycleStatus(status) {
+		return fmt.Errorf("unsupported envelope lifecycle status %q", status)
+	}
+	return nil
+}
+
+// resolveAlertRow returns the id of the one row a transition writes, read
+// inside the transition's transaction, or gorm.ErrRecordNotFound.
+type resolveAlertRow func(tx *gorm.DB) (uuid.UUID, error)
+
+// transition applies one lifecycle write to the row `resolve` names, and
+// returns that row as it stands and whether the write applied.
 //
-// The write is a single conditional UPDATE: the forward-only check is in its
-// WHERE clause, which the database re-evaluates against the latest version of
-// a row a concurrent write changed, so concurrent writers cannot interleave
-// around it. A refused write changes nothing and records nothing, because an
-// entry for it would tell receivers the row moved when it did not. An applied
-// write is recorded in its transaction, so it is published if and only if it
-// commits.
+// The write is a single conditional UPDATE of that row: the forward-only check
+// is in its WHERE clause, which the database re-evaluates against the latest
+// version of a row a concurrent write changed, so concurrent writers cannot
+// interleave around it. A refused write changes nothing and records nothing,
+// because an entry for it would tell receivers the row moved when it did not,
+// and answers with the same row re-read by its id. An applied write is
+// recorded in its transaction, so it is published if and only if it commits.
 func (r *AlertRepository) transition(
 	status string,
 	errorMsg string,
 	record RecordAlertChange,
-	target alertTarget,
+	resolve resolveAlertRow,
 ) (*models.Alert, bool, error) {
 	var row *models.Alert
 	applied := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		now, at := r.writeClock()
-		update, err := transitionUpdateSQL(status, target.sql, now)
+		id, err := resolve(tx)
 		if err != nil {
 			return err
 		}
-		args := map[string]interface{}{
+		now, at := r.writeClock()
+		update, err := transitionUpdateSQL(status, now)
+		if err != nil {
+			return err
+		}
+		var updated models.Alert
+		res := tx.Raw(update, map[string]interface{}{
+			"id":     id,
 			"status": status,
 			"stage":  alertLifecycleStages[status],
 			"error":  errorMsg,
 			"now":    at,
-		}
-		for name, value := range target.args {
-			args[name] = value
-		}
-		var updated models.Alert
-		res := tx.Raw(update, args).Scan(&updated)
+		}).Scan(&updated)
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			current, err := target.current(tx)
-			if err != nil {
+			var current models.Alert
+			if err := tx.Where("id = ?", id).First(&current).Error; err != nil {
 				return err
 			}
-			row = current
+			row = &current
 			return nil
 		}
 		if err := record(tx, &updated); err != nil {
@@ -374,9 +397,9 @@ func (r *AlertRepository) transition(
 	return row, applied, nil
 }
 
-// transitionUpdateSQL is the conditional UPDATE that moves the row whose id is
-// `target` to `status`, returning the row as stored when it applies. `now` is
-// the write's clock (see writeClock).
+// transitionUpdateSQL is the conditional UPDATE that moves the row with id
+// `@id` to `status`, returning the row as stored when it applies. `now` is the
+// write's clock (see writeClock).
 //
 // What each status stamps:
 //   - "dispatched" → dispatched_at
@@ -397,7 +420,7 @@ func (r *AlertRepository) transition(
 //
 // An applied write increments `version` and sets `updated_at` in the same
 // statement. Lifecycle timestamps keep the first transition (COALESCE).
-func transitionUpdateSQL(status string, target string, now string) (string, error) {
+func transitionUpdateSQL(status string, now string) (string, error) {
 	sets := []string{"status = @status", "version = version + 1", "updated_at = " + now}
 	switch status {
 	case AlertStatusDispatched:
@@ -417,7 +440,7 @@ func transitionUpdateSQL(status string, target string, now string) (string, erro
 		where = "(" + where + " OR status IN (" + sqlStringList(replaced) + "))"
 	}
 	return "UPDATE alerts SET " + strings.Join(sets, ", ") +
-		" WHERE id = " + target + " AND " + where + " RETURNING *", nil
+		" WHERE id = @id AND " + where + " RETURNING *", nil
 }
 
 // sqlStringList renders constant strings as a SQL list of literals. Only for

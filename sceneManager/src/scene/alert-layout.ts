@@ -41,6 +41,12 @@ export interface AlertLayout {
 /** One alert as delivered to a scene, and as stored on its scene event. */
 export interface AlertDelivery {
   alertId: string;
+  /**
+   * The engine's alert log row for this play, which lifecycle reports name.
+   * Absent when the engine recorded no row, and from deliveries recorded
+   * before deliveries carried it.
+   */
+  rowId?: string;
   layout: AlertLayout;
   /** The CloudEvent that triggered the workflow; null when nothing did (a manual or scheduled run). */
   event: { type: string; data: unknown } | null;

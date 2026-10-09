@@ -353,7 +353,7 @@ const (
 
 | Subject | Direction | Payload | Pattern |
 |---------|-----------|---------|---------|
-| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event }` | publish/subscribe |
+| `ui.notify.alert` | workflow → sceneManager | `AlertEnvelope` JSON: `{ id, parameters, event, rowId }` (`rowId` absent when the alert log row could not be recorded) | publish/subscribe |
 | `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
 | `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
 | `widget.queue.skip` | api → sceneManager | `{}`; reply `{ ok, skipped, reason? }` | NATS request/reply |

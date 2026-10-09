@@ -1,8 +1,7 @@
 import type { Logger } from "@woofx3/common/runtime";
-import type { AlertLifecycleWriter } from "../events/alert-dispatch";
+import { type AlertLifecycleWriter, alertReportTargets, updateAlertLifecycle } from "../events/alert-dispatch";
 import { handleStatusReport } from "../events/handlers";
 import type { HttpDeps } from "../http";
-import { ALERT_EVENT_TYPE } from "../scene/alert-layout";
 import { readSessionCookie } from "../scene/session-cookie";
 
 /**
@@ -165,15 +164,15 @@ export async function handleEventStartedRoute(
 export async function reportAlertsPlaying(
   db: AlertLifecycleWriter,
   logger: Logger,
-  started: Array<{ type: string; key: string }>
+  started: Array<{ type: string; key: string; value: unknown }>
 ): Promise<void> {
-  const alertIds = new Set(started.filter((delivery) => delivery.type === ALERT_EVENT_TYPE).map((d) => d.key));
-  for (const alertId of alertIds) {
+  for (const target of alertReportTargets(started)) {
     try {
-      await db.updateAlertLifecycle({ envelopeId: alertId, status: "playing", error: "" });
+      await updateAlertLifecycle(db, target, "playing", "");
     } catch (err) {
       logger.debug("alert start not recorded", {
-        alertId,
+        alertId: target.envelopeId,
+        rowId: target.rowId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -211,15 +210,15 @@ export async function handleEventCompletedRoute(
 export async function reportAlertsCompleted(
   db: AlertLifecycleWriter,
   logger: Logger,
-  closed: Array<{ type: string; key: string }>
+  closed: Array<{ type: string; key: string; value: unknown }>
 ): Promise<void> {
-  const alertIds = new Set(closed.filter((delivery) => delivery.type === ALERT_EVENT_TYPE).map((d) => d.key));
-  for (const alertId of alertIds) {
+  for (const target of alertReportTargets(closed)) {
     try {
-      await db.updateAlertLifecycle({ envelopeId: alertId, status: "completed", error: "" });
+      await updateAlertLifecycle(db, target, "completed", "");
     } catch (err) {
       logger.debug("alert completion not recorded", {
-        alertId,
+        alertId: target.envelopeId,
+        rowId: target.rowId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

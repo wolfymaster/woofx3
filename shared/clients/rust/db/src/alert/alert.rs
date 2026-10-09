@@ -84,13 +84,17 @@ pub struct GetAlertByEnvelopeIdRequest {
     #[prost(string, tag="2")]
     pub envelope_id: ::prost::alloc::string::String,
 }
-/// Atomic transition of the lifecycle columns keyed on envelope id.
-/// The status string is the target state (`playing` / `completed` /
-/// `failed`); the db service decides which timestamp column to stamp:
-///    - playing   → played_at = NOW()
-///    - completed → completed_at = NOW()
-///    - failed    → completed_at = NOW(), error = <provided message>
-/// `error` is ignored unless status is `failed`.
+/// Atomic, forward-only transition of one alert row's lifecycle. The status
+/// string is the target state; the db service decides which timestamp column
+/// to stamp (see AlertRepository.transitionUpdateSQL). `error` is ignored
+/// unless status is `failed` or `timed_out`.
+///
+/// `id` names the row the report concerns: the row CreateAlert returned for
+/// the play being reported. One envelope can have several rows (a workflow
+/// that pins `parameters.id` plays the same envelope id more than once), so
+/// only the row id says which play a report belongs to. The row must carry
+/// `envelope_id`. A report without `id` moves the envelope's newest row, the
+/// best guess for a delivery that never learned its row id.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateAlertLifecycleRequest {
     #[prost(string, tag="2")]
@@ -99,6 +103,8 @@ pub struct UpdateAlertLifecycleRequest {
     pub status: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub error: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AlertResponse {
