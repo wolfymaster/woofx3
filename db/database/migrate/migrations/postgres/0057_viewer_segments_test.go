@@ -87,3 +87,40 @@ func TestViewerSegmentMembershipStatementsOnPostgres(t *testing.T) {
 		t.Fatalf("members left = %d, want 0", n)
 	}
 }
+
+// A fact revision refilling the segments that read its fact holds them for
+// update, which must exclude an apply of another fact those segments read:
+// the apply's share lock on them waits, here until its lock timeout.
+func TestARefillExcludesAppliesOnTheSegmentsItRefills(t *testing.T) {
+	db := openEmptyPostgres(t)
+	if err := gormigrate.New(db, gormigrate.DefaultOptions, All()).Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	for _, id := range []string{"user:fact:f", "user:fact:g"} {
+		mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
+			VALUES (?, ?, '{}', 'count', 'number', 'lifetime')`, id, id)
+	}
+	mustExec(t, db, `INSERT INTO segment_definitions (id, name, condition, window_kind) VALUES ('user:segment:both', 'Both', '{}', 'lifetime')`)
+	mustExec(t, db, `INSERT INTO segment_facts (segment_id, fact_id) VALUES ('user:segment:both', 'user:fact:f'), ('user:segment:both', 'user:fact:g')`)
+
+	lockedBy := func(refill func(*repository.ViewerSegmentRepository, []string) ([]*models.SegmentDefinition, error)) error {
+		refillTx := db.Begin()
+		defer refillTx.Rollback()
+		if _, err := refill(repository.NewViewerSegmentRepository(refillTx), []string{"user:fact:f"}); err != nil {
+			t.Fatalf("refill lock: %v", err)
+		}
+		applyTx := db.Begin()
+		defer applyTx.Rollback()
+		mustExec(t, applyTx, `SET LOCAL lock_timeout = '100ms'`)
+		_, err := repository.NewViewerSegmentRepository(applyTx).DependentSegments([]string{"user:fact:g"})
+		return err
+	}
+
+	err := lockedBy((*repository.ViewerSegmentRepository).DependentSegmentsForUpdate)
+	if err == nil || !strings.Contains(err.Error(), "55P03") {
+		t.Fatalf("apply under a refill's update lock: %v, want lock_not_available (55P03)", err)
+	}
+	if err := lockedBy((*repository.ViewerSegmentRepository).DependentSegments); err != nil {
+		t.Fatalf("apply beside another share lock: %v, want no wait", err)
+	}
+}

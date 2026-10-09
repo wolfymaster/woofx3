@@ -24,6 +24,7 @@ func AddViewerSegments() *gormigrate.Migration {
 					condition       TEXT                                NOT NULL,
 					window_kind     TEXT                                NOT NULL CHECK (window_kind IN ('lifetime', 'session')),
 					time_relative   BOOLEAN  DEFAULT 0                  NOT NULL,
+					stale           BOOLEAN  DEFAULT 0                  NOT NULL,
 					revision        INTEGER  DEFAULT 1                  NOT NULL CHECK (revision >= 1),
 					created_by_type TEXT     DEFAULT 'USER'             NOT NULL,
 					created_by_ref  TEXT     DEFAULT ''                 NOT NULL,

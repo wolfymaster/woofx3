@@ -33,6 +33,11 @@ import (
 //   - revision increments when the condition changes, which refills the
 //     membership in the same transaction.
 //
+//   - stale is true while the membership is not what the condition says of
+//     the stored values: a refill was due while the segment was frozen (a fact
+//     it reads was not active), so it was skipped. Such a segment is refilled
+//     once everything it reads is active again.
+//
 // worker_events.extensions carries the CloudEvent extensions an engine event
 // is published with, such as a segment edge's platform, which consumers read
 // from the envelope rather than the data.
@@ -49,6 +54,7 @@ func AddViewerSegments() *gormigrate.Migration {
 					condition       JSONB                          NOT NULL,
 					window_kind     VARCHAR(20)                    NOT NULL CHECK (window_kind IN ('lifetime', 'session')),
 					time_relative   BOOLEAN     DEFAULT FALSE      NOT NULL,
+					stale           BOOLEAN     DEFAULT FALSE      NOT NULL,
 					revision        BIGINT      DEFAULT 1          NOT NULL CHECK (revision >= 1),
 					created_by_type TEXT        DEFAULT 'USER'     NOT NULL,
 					created_by_ref  TEXT        DEFAULT ''         NOT NULL,

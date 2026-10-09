@@ -36,4 +36,8 @@ func TestViewerSegmentTablesKeepOneMembershipPerViewer(t *testing.T) {
 	}
 	mustExec(t, db, `DELETE FROM fact_definitions WHERE id = 'user:fact:messages'`)
 	mustExec(t, db, `SELECT extensions FROM worker_events LIMIT 0`)
+	mustExec(t, db, `INSERT INTO segment_definitions (id, name, condition, window_kind) VALUES ('user:segment:fresh', 'Fresh', '{}', 'lifetime')`)
+	if n := count(t, db, `SELECT COUNT(*) FROM segment_definitions WHERE id = 'user:segment:fresh' AND stale = 0`); n != 1 {
+		t.Error("a new segment was not fresh")
+	}
 }

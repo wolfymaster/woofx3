@@ -22,7 +22,10 @@ type SegmentDefinition struct {
 	WindowKind string `gorm:"column:window_kind;type:varchar(20);not null"`
 	// TimeRelative is true when the condition has a within or older_than
 	// atom, so whether a viewer satisfies it can change with time alone.
-	TimeRelative  bool      `gorm:"column:time_relative;not null;default:false"`
+	TimeRelative bool `gorm:"column:time_relative;not null;default:false"`
+	// Stale is true while the membership is behind the condition: a refill
+	// was due while a fact the segment reads was not active, and was skipped.
+	Stale         bool      `gorm:"column:stale;not null;default:false"`
 	Revision      int64     `gorm:"column:revision;not null;default:1"`
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
 	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
