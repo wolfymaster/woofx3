@@ -265,6 +265,16 @@ Triggers, actions, workflows, and modules all support an open, multi-valued `tax
 
 The vocabulary is intentionally open — there is no fixed enum and the engine does not validate taxonomy terms against a known list. Module authors are free to introduce new terms as new platforms or functional groupings come along; the UI is responsible for interpreting and displaying whatever terms appear.
 
+#### How the action picker reads an action's taxonomy
+
+An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `system.counter` under **Built-in › Counters**.
+
+An action with no `taxonomy` is listed under the module that provides it, as one section named after the module. Because of that fallback, a taxonomy is optional for an action that should simply sit with the rest of its module; declare one when the action belongs with similar actions from other modules (every `platform.obs` action reads as one OBS group regardless of which module ships it).
+
+The bundled `woofx3` module files its actions under the `system` family: `system.workflow` (Function, Print), `system.alerts`, `system.scenes`, `system.chat`, `system.counter`, `system.timer` and `system.queue`. The picker lists `system` first, labelled **Built-in**.
+
+On install, every action `taxonomy` entry must be a dotted path of names, each of `[A-Za-z0-9_-]` (`platform.obs`, not `platform.`, `platform..obs` or `platform obs`), and no entry may appear twice on one action. The vocabulary itself is not checked.
+
 `taxonomy` replaces the older single-value `category` field, which is still accepted on manifests for backward compatibility: when a manifest sets `category` but not `taxonomy`, the engine folds it into a single-element `taxonomy` array at parse time. Everything downstream of the manifest (the DB row, the outbox events, the API) carries only `taxonomy` — `category` is not persisted.
 
 ### Field declarations
@@ -581,7 +591,7 @@ Common fields:
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
 | `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
-| `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification. The first entry places the action in the workflow builder's action picker; with none, the action is listed under its module. See [How the action picker reads an action's taxonomy](#how-the-action-picker-reads-an-action-s-taxonomy). |
 
 Type-specific fields:
 
