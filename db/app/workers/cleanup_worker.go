@@ -10,6 +10,7 @@ import (
 
 type CleanupWorker struct {
 	repo            *repository.DbEventRepository
+	facts           *repository.ViewerFactRepository
 	logger          *slog.Logger
 	cleanupInterval time.Duration
 	retentionPeriod time.Duration
@@ -19,6 +20,7 @@ type CleanupWorker struct {
 
 func NewCleanupWorker(
 	repo *repository.DbEventRepository,
+	facts *repository.ViewerFactRepository,
 	logger *slog.Logger,
 	cleanupInterval time.Duration,
 	retentionPeriod time.Duration,
@@ -27,6 +29,7 @@ func NewCleanupWorker(
 
 	return &CleanupWorker{
 		repo:            repo,
+		facts:           facts,
 		logger:          logger,
 		cleanupInterval: cleanupInterval,
 		retentionPeriod: retentionPeriod,
@@ -74,6 +77,14 @@ func (w *CleanupWorker) cleanup() error {
 	if err != nil {
 		return err
 	}
+
+	// A fact event is redelivered within seconds of its first delivery, so
+	// the outbox retention outlasts any redelivery by far.
+	pruned, err := w.facts.PruneAppliedEvents(time.Now().Add(-w.retentionPeriod))
+	if err != nil {
+		return err
+	}
+	w.logger.Debug("pruned applied fact events", "deleted", pruned)
 
 	w.logger.Debug("cleanup complete")
 	return nil

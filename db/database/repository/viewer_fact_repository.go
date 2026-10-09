@@ -2,9 +2,11 @@ package repository
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"time"
 
@@ -703,4 +705,206 @@ func equalState(a, b *FactValueState) bool {
 		return a == nil && b == nil
 	}
 	return equalFloat(a.Num, b.Num) && equalStr(a.Str, b.Str)
+}
+
+// ErrFactDefinitionOwned is returned when a definition is saved under an id
+// a different creator already holds.
+var ErrFactDefinitionOwned = errors.New("fact definition is owned by another creator")
+
+// FactDefinitionWrite says what UpsertDefinition did.
+type FactDefinitionWrite int
+
+const (
+	// FactDefinitionUnchanged: the stored definition was identical.
+	FactDefinitionUnchanged FactDefinitionWrite = iota
+	// FactDefinitionCreated: there was no definition with the id.
+	FactDefinitionCreated
+	// FactDefinitionRenamed: only the name or description changed, so the
+	// revision and values were kept.
+	FactDefinitionRenamed
+	// FactDefinitionRevised: what the fact computes changed, so the revision
+	// was incremented and every value deleted.
+	FactDefinitionRevised
+)
+
+// RecordFactDefinitionChange records a definition a write changed, as it
+// stands after the write, in the write's transaction. The service uses it to
+// write the outbox entry, so the change and its announcement commit or roll
+// back together. Returning an error rolls the write back.
+type RecordFactDefinitionChange func(tx *gorm.DB, definition *models.FactDefinition) error
+
+func (r *ViewerFactRepository) GetDefinition(id string) (*models.FactDefinition, error) {
+	var definition models.FactDefinition
+	if err := r.db.Where("id = ?", id).First(&definition).Error; err != nil {
+		return nil, err
+	}
+	return &definition, nil
+}
+
+// ListDefinitions returns every definition ordered by id.
+func (r *ViewerFactRepository) ListDefinitions() ([]*models.FactDefinition, error) {
+	definitions := []*models.FactDefinition{}
+	err := r.db.Order("id ASC").Find(&definitions).Error
+	return definitions, err
+}
+
+// UpsertDefinition stores `in` under its id and returns the stored row.
+//
+// A change to Definition, WindowKind or ValueKind is a new revision: the
+// revision increments, counting restarts, and every value of the fact is
+// deleted in the same transaction, since a value folded under the old
+// definition means something else under the new one.
+//
+// Definitions are compared as JSON values rather than as text, since
+// Postgres stores JSONB in its own key order and spacing.
+//
+// Fails with ErrFactDefinitionOwned when the id is held by a different
+// (created_by_type, created_by_ref). record runs for every write and never
+// for FactDefinitionUnchanged.
+func (r *ViewerFactRepository) UpsertDefinition(in *models.FactDefinition, record RecordFactDefinitionChange) (*models.FactDefinition, FactDefinitionWrite, error) {
+	var stored models.FactDefinition
+	write := FactDefinitionUnchanged
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
+		var existing []models.FactDefinition
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", in.ID).Limit(1).Find(&existing).Error; err != nil {
+			return err
+		}
+
+		if len(existing) == 0 {
+			stored = *in
+			stored.Revision = 1
+			stored.CountingSince = now
+			stored.BackfilledThrough = nil
+			stored.CreatedAt = now
+			stored.UpdatedAt = now
+			if err := tx.Create(&stored).Error; err != nil {
+				return err
+			}
+			write = FactDefinitionCreated
+			return record(tx, &stored)
+		}
+
+		stored = existing[0]
+		if stored.CreatedByType != in.CreatedByType || stored.CreatedByRef != in.CreatedByRef {
+			return fmt.Errorf("%w: %s is held by %s %q", ErrFactDefinitionOwned, in.ID, stored.CreatedByType, stored.CreatedByRef)
+		}
+		sameBody, err := sameJSON(stored.Definition, in.Definition)
+		if err != nil {
+			return fmt.Errorf("fact definition %s: %w", in.ID, err)
+		}
+		revised := !sameBody ||
+			stored.AggregateFn != in.AggregateFn ||
+			stored.WindowKind != in.WindowKind ||
+			stored.ValueKind != in.ValueKind
+		renamed := stored.Name != in.Name || stored.Description != in.Description
+		if !revised && !renamed {
+			return nil
+		}
+
+		stored.Name = in.Name
+		stored.Description = in.Description
+		stored.UpdatedAt = now
+		write = FactDefinitionRenamed
+		if revised {
+			stored.Definition = in.Definition
+			stored.AggregateFn = in.AggregateFn
+			stored.WindowKind = in.WindowKind
+			stored.ValueKind = in.ValueKind
+			stored.Revision++
+			stored.CountingSince = now
+			stored.BackfilledThrough = nil
+			write = FactDefinitionRevised
+			if err := tx.Where("fact_id = ?", stored.ID).Delete(&models.FactValue{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&models.FactDefinition{}).Where("id = ?", stored.ID).Updates(map[string]interface{}{
+			"name":               stored.Name,
+			"description":        stored.Description,
+			"definition":         stored.Definition,
+			"aggregate_fn":       stored.AggregateFn,
+			"window_kind":        stored.WindowKind,
+			"value_kind":         stored.ValueKind,
+			"revision":           stored.Revision,
+			"counting_since":     stored.CountingSince,
+			"backfilled_through": stored.BackfilledThrough,
+			"updated_at":         stored.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return record(tx, &stored)
+	})
+	if err != nil {
+		return nil, FactDefinitionUnchanged, err
+	}
+	return &stored, write, nil
+}
+
+// DeleteDefinition deletes a definition; its values go with it by cascade.
+// Returns gorm.ErrRecordNotFound when there is no such definition.
+func (r *ViewerFactRepository) DeleteDefinition(id string, record RecordFactDefinitionChange) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var existing models.FactDefinition
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", id).First(&existing).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", id).Delete(&models.FactDefinition{}).Error; err != nil {
+			return err
+		}
+		return record(tx, &existing)
+	})
+}
+
+// ViewerFactValue is one of a viewer's values with the kinds of its fact.
+type ViewerFactValue struct {
+	FactID      string
+	WindowKind  string
+	ValueKind   string
+	NumValue    *float64
+	StrValue    *string
+	SubjectName *string
+	UpdatedAt   time.Time
+}
+
+// ViewerValues returns a viewer's lifetime values and their values in
+// sessionKey, ordered by fact id. An empty sessionKey returns lifetime
+// values only.
+func (r *ViewerFactRepository) ViewerValues(platform, subjectID, sessionKey string) ([]ViewerFactValue, error) {
+	windows := r.db.Where("fact_definitions.window_kind = ? AND fact_values.window_key = ''", models.FactWindowLifetime)
+	if sessionKey != "" {
+		windows = windows.Or("fact_definitions.window_kind = ? AND fact_values.window_key = ?", models.FactWindowSession, sessionKey)
+	}
+	values := []ViewerFactValue{}
+	err := r.db.Table("fact_values").
+		Select(`fact_values.fact_id, fact_definitions.window_kind, fact_definitions.value_kind,
+			fact_values.num_value, fact_values.str_value, fact_values.subject_name, fact_values.updated_at`).
+		Joins("JOIN fact_definitions ON fact_definitions.id = fact_values.fact_id").
+		Where("fact_values.platform = ? AND fact_values.subject_id = ?", platform, subjectID).
+		Where(windows).
+		Order("fact_values.fact_id ASC").
+		Scan(&values).Error
+	return values, err
+}
+
+func sameJSON(a, b string) (bool, error) {
+	var left, right any
+	if err := json.Unmarshal([]byte(a), &left); err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal([]byte(b), &right); err != nil {
+		return false, err
+	}
+	return reflect.DeepEqual(left, right), nil
+}
+
+// PruneAppliedEvents deletes the dedupe rows of events applied before
+// `before` and returns how many it deleted. An event redelivered after its
+// row is pruned would be applied again, so `before` must be older than any
+// redelivery.
+func (r *ViewerFactRepository) PruneAppliedEvents(before time.Time) (int64, error) {
+	result := r.db.Where("applied_at < ?", before.UTC()).Delete(&models.FactAppliedEvent{})
+	return result.RowsAffected, result.Error
 }

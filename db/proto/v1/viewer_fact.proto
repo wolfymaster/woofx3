@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package viewer_fact;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Per-viewer facts: running aggregates of one field across the trigger events
+// that name a viewer, defined as data rather than as columns. A definition
+// says which triggers feed the fact, which emitted field names the viewer, and
+// how matching events fold into one value. The workflow service evaluates the
+// definitions against each event and sends the resulting deltas here; this
+// service is the only writer of the values.
+service ViewerFactService {
+  // Creates or replaces a definition, after resolving each source's trigger
+  // and checking every path against what that trigger emits.
+  //
+  // A change to the definition body or window increments `revision` and
+  // deletes every stored value of the fact in the same transaction, so a value
+  // is only ever folded under one definition. A change to the name or
+  // description alone keeps both. Saving an identical definition writes
+  // nothing.
+  //
+  // Fails with `invalid_argument` when the definition is invalid, and with
+  // `failed_precondition` when a source names a trigger that is not
+  // registered and the definition is not module-declared (a module may
+  // declare a fact over a trigger of a module installed later), or when the
+  // id is owned by a different creator.
+  rpc UpsertFactDefinition(UpsertFactDefinitionRequest) returns (FactDefinitionResponse);
+  // Deletes a definition and every value of it. Fails with `not_found` when
+  // there is no such definition.
+  rpc DeleteFactDefinition(DeleteFactDefinitionRequest) returns (common.ResponseStatus);
+  // Every definition, each re-resolved against the triggers registered now.
+  // A definition is applied only while its status is `active`.
+  rpc ListFactDefinitions(ListFactDefinitionsRequest) returns (ListFactDefinitionsResponse);
+  // Folds the deltas one event produced into the stored values in one
+  // transaction, and returns every value that changed.
+  //
+  // Idempotent on (source, event_id): applying an event again writes nothing
+  // and returns `applied` false. A delta computed against a revision that is
+  // no longer current, or against a deleted definition, is dropped.
+  rpc ApplyFactDeltas(ApplyFactDeltasRequest) returns (ApplyFactDeltasResponse);
+  // One viewer's lifetime values and their values in the current stream
+  // session.
+  rpc GetViewerFacts(GetViewerFactsRequest) returns (GetViewerFactsResponse);
+}
+
+message FactDefinition {
+  // Canonical fact id, e.g. `woofx3:fact:messages` or `user:fact:<slug>`.
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The definition body as JSON:
+  // `{"sources": [{"trigger", "subject", "where", "value"}], "aggregate": {"fn"}}`.
+  string definition = 4;
+  // `number`, `string` or `timestamp`. Derived from the aggregate and, for
+  // `last`, the type of the value field. A timestamp is epoch milliseconds.
+  string value_kind = 5;
+  // `lifetime` or `session`.
+  string window_kind = 6;
+  int64 revision = 7;
+  string created_by_type = 8;
+  string created_by_ref = 9;
+  // When the current revision started counting live events.
+  google.protobuf.Timestamp counting_since = 10;
+  // How far a backfill from the event log has reached. Absent when none ran.
+  optional google.protobuf.Timestamp backfilled_through = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  // `active`, `unresolved` (a source's trigger is not registered) or
+  // `invalid` (a source no longer fits what its trigger emits). Resolved when
+  // the definition is read, against the triggers registered then.
+  string status = 14;
+  // Why the status is not `active`. Empty when it is.
+  string reason = 15;
+  // One per source, in definition order. A source whose trigger did not
+  // resolve has an empty `event`.
+  repeated ResolvedFactSource sources = 16;
+}
+
+// A source with its trigger resolved: what the workflow service needs to
+// match events and extract the viewer without reading the trigger itself.
+message ResolvedFactSource {
+  // Canonical trigger id, `{moduleId}:trigger:{manifestId}`.
+  string trigger = 1;
+  // The trigger's event pattern, the subject its events arrive on.
+  string event = 2;
+  // Emits path of the identity field naming the viewer.
+  string subject_path = 3;
+  // True when the subject is an array: each id in it is a subject.
+  bool subject_is_array = 4;
+  // Emits path of the boolean that is true when the identity is withheld, or
+  // empty. Events where it is true are attributed to nobody.
+  string anonymous_when = 5;
+  // Emits path of the viewer's display name, or empty.
+  string display_name = 6;
+  // Emits path of the value the aggregate reads, or empty.
+  string value_path = 7;
+  // The condition tree an event must satisfy, as JSON, or empty for every
+  // event.
+  string where = 8;
+}
+
+message UpsertFactDefinitionRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The definition body as JSON; see FactDefinition.definition.
+  string definition = 4;
+  // `lifetime` or `session`.
+  string window_kind = 5;
+  // Who declares the definition: `USER` for one saved from the UI, `MODULE`
+  // for one a module manifest declares. Defaults to `USER`.
+  string created_by_type = 6;
+  string created_by_ref = 7;
+}
+
+message FactDefinitionResponse {
+  common.ResponseStatus status = 1;
+  FactDefinition definition = 2;
+}
+
+message DeleteFactDefinitionRequest {
+  string id = 1;
+}
+
+message ListFactDefinitionsRequest {}
+
+message ListFactDefinitionsResponse {
+  common.ResponseStatus status = 1;
+  repeated FactDefinition definitions = 2;
+}
+
+// A stored value. Numbers and timestamps are in `num`, strings in `str`. The
+// session aggregates keep their count in `num` and the last session counted
+// in `str`.
+message FactValue {
+  optional double num = 1;
+  optional string str = 2;
+}
+
+message FactDelta {
+  string fact_id = 1;
+  // The definition revision the delta was computed against.
+  int64 revision = 2;
+  string platform = 3;
+  string subject_id = 4;
+  optional string subject_name = 5;
+  // The definition's aggregate function; a mismatch fails the whole apply.
+  string op = 6;
+  // The value the aggregate reads: `num` for sum, min and max, either for
+  // last, neither for the rest.
+  optional double num = 7;
+  optional string str = 8;
+}
+
+message ApplyFactDeltasRequest {
+  // The CloudEvent's identity. Required unless `silent`.
+  string source = 1;
+  string event_id = 2;
+  // When the event happened. Timestamps and the stream session a session
+  // window resolves to are taken from it.
+  google.protobuf.Timestamp occurred_at = 3;
+  // The stream session the event was stamped with. Used only when no session
+  // had started by `occurred_at`.
+  string session_stamp = 4;
+  // A backfill: the deltas are applied without recording the event as
+  // applied, since the live path may apply the same event too. Every delta
+  // must be for one fact.
+  bool silent = 5;
+  repeated FactDelta deltas = 6;
+}
+
+message FactValueChange {
+  string fact_id = 1;
+  string platform = 2;
+  string subject_id = 3;
+  // Empty for a lifetime value, the stream session id for a session value.
+  string window_key = 4;
+  optional string subject_name = 5;
+  // Absent when the value did not exist before.
+  FactValue before = 6;
+  FactValue after = 7;
+}
+
+message ApplyFactDeltasResponse {
+  common.ResponseStatus status = 1;
+  // False when the event had been applied before; nothing was written.
+  bool applied = 2;
+  // Deltas dropped for a stale revision or a deleted definition.
+  int32 dropped = 3;
+  repeated FactValueChange changes = 4;
+}
+
+message GetViewerFactsRequest {
+  string platform = 1;
+  string subject_id = 2;
+}
+
+message ViewerFactValue {
+  string fact_id = 1;
+  // `lifetime` or `session`.
+  string window_kind = 2;
+  string value_kind = 3;
+  FactValue value = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message GetViewerFactsResponse {
+  common.ResponseStatus status = 1;
+  // The stream session the session values belong to, or empty when no
+  // session has started.
+  string session_id = 2;
+  // The viewer's most recently seen display name, or absent.
+  optional string subject_name = 3;
+  // Lifetime values and current-session values. A fact the viewer has no
+  // value for is absent.
+  repeated ViewerFactValue values = 4;
+}
