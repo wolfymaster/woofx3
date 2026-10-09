@@ -176,6 +176,54 @@ describe("SceneDocuments — editors", () => {
     });
   });
 
+  it("sets, edits and removes a placement's transitions, refusing one that does not parse", async () => {
+    const { documents } = setup(scene([instance("a")]));
+    const fade = { type: "fade", durationMs: 400 };
+    expect(await documents.submit("s1", "draft", 0, [{ p: ["widgets", "a", "transitionIn"], oi: fade }])).toEqual({
+      ok: true,
+      seq: 1,
+    });
+    expect(
+      await documents.submit("s1", "draft", 1, [
+        { p: ["widgets", "a", "transitionIn", "durationMs"], od: 400, oi: 900 },
+      ])
+    ).toEqual({ ok: true, seq: 2 });
+    expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a!.transitionIn).toEqual({
+      type: "fade",
+      durationMs: 900,
+    });
+
+    for (const op of [
+      { p: ["widgets", "a", "transitionOut"], oi: { type: "fade", durationMs: 1 } },
+      { p: ["widgets", "a", "transitionIn", "durationMs"], od: 900, oi: -5 },
+      { p: ["widgets", "a", "transitionIn", "delayMs"], oi: 5 },
+    ]) {
+      expect(await documents.submit("s1", "draft", 2, [op])).toMatchObject({ error: "invalid" });
+    }
+
+    expect(
+      await documents.submit("s1", "draft", 2, [
+        { p: ["widgets", "a", "transitionIn"], od: { type: "fade", durationMs: 900 } },
+      ])
+    ).toEqual({ ok: true, seq: 3 });
+    expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a).not.toHaveProperty("transitionIn");
+  });
+
+  it("accepts a placement inserted with transitions, and refuses one with a malformed transition", async () => {
+    const { documents } = setup(scene([instance("a")]));
+    const draft = await documents.snapshot("s1", "draft");
+    const base = { ...draft!.doc.widgets.a!, z: "a0001" };
+    const withTransition = { ...base, transitionOut: { type: "slide", durationMs: 300, direction: "left" } };
+    expect(await documents.submit("s1", "draft", 0, [{ p: ["widgets", "b"], oi: withTransition }])).toEqual({
+      ok: true,
+      seq: 1,
+    });
+    const broken = { ...base, transitionOut: { type: "slide", durationMs: 300, direction: "sideways" } };
+    expect(await documents.submit("s1", "draft", 1, [{ p: ["widgets", "c"], oi: broken }])).toMatchObject({
+      error: "invalid",
+    });
+  });
+
   it("frames a placement added by an editor, or whose widget changed", async () => {
     const { documents, framePlacements, drafts } = setup(scene([instance("a")]));
     const draft = await documents.snapshot("s1", "draft");
@@ -291,6 +339,20 @@ describe("documentOf + storedSceneOf", () => {
       ["b", 0],
       ["a", 1],
     ]);
+  });
+
+  it("keeps a placement's transitions through a write back, and writes none it does not have", () => {
+    const transitions = {
+      transitionIn: { type: "typewriter", durationMs: 1200 },
+      transitionOut: { type: "fade", durationMs: 300, easing: "linear" as const },
+    };
+    const doc = documentOf(scene([instance("a", transitions), instance("b")]));
+    expect(doc.widgets.a).toMatchObject(transitions);
+    expect(doc.widgets.a!.extra).toEqual({});
+    const [a, b] = JSON.parse(storedSceneOf(doc).widgetsJson);
+    expect(a).toMatchObject(transitions);
+    expect(b).not.toHaveProperty("transitionIn");
+    expect(b).not.toHaveProperty("transitionOut");
   });
 
   it("gives a placement stored before the editor tracked these fields their defaults", () => {

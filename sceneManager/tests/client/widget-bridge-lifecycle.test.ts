@@ -110,6 +110,19 @@ describe("WidgetBridge settings", () => {
     expect(posted.at(-1)).toMatchObject({ type: "settings.changed", nonce: NONCE, settings: { text: "hi" } });
   });
 
+  it("sends a transition asked for before the handshake once the widget says hello, and later ones at once", () => {
+    const { bridge, posted, fromWidget } = setup();
+    const typewriter = { phase: "out" as const, type: "typewriter", durationMs: 400, easing: "ease-in" as const };
+    bridge.sendTransition(typewriter);
+    expect(posted.some((m) => m.type === "transition")).toBe(false);
+    fromWidget("hello");
+    expect(posted.filter((m) => m.type === "transition")).toEqual([
+      expect.objectContaining({ nonce: NONCE, transition: typewriter }),
+    ]);
+    bridge.sendTransition(null);
+    expect(posted.at(-1)).toMatchObject({ type: "transition", transition: null });
+  });
+
   it("forgets the reads when the frame navigates", () => {
     const { bridge, fromWidget } = setup();
     fromWidget("hello");

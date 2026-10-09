@@ -4,13 +4,22 @@
 // and removes them once the alert is over (see alert-timeline.ts). The
 // event queue holds the next alert until this one finishes, so an alert
 // widget plays one alert at a time.
+//
+// Each layout widget enters with its `transitionIn` as it first paints. A
+// widget with a length of its own leaves with its `transitionOut` once it
+// completes; the rest leave together when the alert is over, and the alert
+// is reported finished only once they are gone.
 
-import type { WidgetEvent } from "@woofx3/module-sdk";
+import { type PlacementTransition, type WidgetEvent, isGenericTransitionType } from "@woofx3/module-sdk";
 import { AlertTimeline } from "./alert-timeline";
 import type { QueuedEvent } from "./event-queue";
+import { TransitionAnimator, type TransitionTarget } from "./transitions";
 import { createFrameLoadHandler, WidgetBridge, type WidgetStatusReportPayload } from "./widget-bridge";
 
 const TICK_MS = 250;
+
+/** A generic entrance waits for the frame's first paint, but not longer than this. */
+const ENTRANCE_WAIT_MS = 2000;
 
 interface Position {
   x: number;
@@ -21,7 +30,16 @@ interface Position {
 
 /** The slice of the server's `AlertDelivery` the page needs. */
 interface AlertDelivery {
-  layout: { width: number; height: number; widgets: Array<{ id: string; position: Position }> };
+  layout: {
+    width: number;
+    height: number;
+    widgets: Array<{
+      id: string;
+      position: Position;
+      transitionIn?: PlacementTransition;
+      transitionOut?: PlacementTransition;
+    }>;
+  };
   event: { type: string; data: unknown } | null;
 }
 
@@ -40,6 +58,7 @@ export interface AlertWidgetOptions {
 export class AlertWidget {
   /** Tear-down for each alert on screen, by event id. */
   private readonly playing = new Map<string, () => void>();
+  private readonly animator = new TransitionAnimator();
 
   constructor(private readonly opts: AlertWidgetOptions) {}
 
@@ -105,6 +124,16 @@ export class AlertWidget {
     };
 
     const children: WidgetBridge[] = [];
+    // Each widget still on screen, with how it leaves.
+    const shown = new Map<string, { target: TransitionTarget; transitionOut?: PlacementTransition }>();
+    const leave = (widgetId: string): Promise<void> => {
+      const child = shown.get(widgetId);
+      if (!child) {
+        return Promise.resolve();
+      }
+      shown.delete(widgetId);
+      return this.animator.leave(child.target, child.transitionOut);
+    };
     for (const widget of layout.widgets) {
       const instanceId = `${eventId}.${widget.id}`;
       const nonce = this.opts.generateNonce();
@@ -116,19 +145,50 @@ export class AlertWidget {
       iframe.style.height = `${widget.position.height}px`;
       iframe.setAttribute("sandbox", "allow-scripts");
 
+      // One of the widget's own entrances is in its boot payload; a generic
+      // one is played here once the frame has painted.
+      const entrance =
+        widget.transitionIn && isGenericTransitionType(widget.transitionIn.type) ? widget.transitionIn : undefined;
+      let entering = entrance !== undefined;
+      const enter = (): void => {
+        if (!entering) {
+          return;
+        }
+        entering = false;
+        clearTimeout(entranceTimer);
+        if (shown.has(widget.id)) {
+          this.animator.enter({ element: iframe, frame: bridge }, entrance);
+        }
+      };
+      const entranceTimer = entrance ? setTimeout(enter, ENTRANCE_WAIT_MS) : undefined;
+      if (entrance) {
+        this.animator.set(iframe, false);
+      }
+      let timed = false;
+
       const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
         onStorageGet: () => null,
         onStorageSubscribe: () => {},
         onStorageUnsubscribe: () => {},
         onStatusReport: (report) => this.opts.postStatus(instanceId, report),
         onEventsSubscribe: (subId, queue) => {
-          timeline.subscribed(widget.id, queue?.autoComplete === false);
+          timed = queue?.autoComplete === false;
+          timeline.subscribed(widget.id, timed);
           bridge.sendEvent(subId, alertEvent);
         },
         onEventsUnsubscribe: () => {},
-        onEventComplete: () => timeline.completed(widget.id),
+        onEventComplete: () => {
+          timeline.completed(widget.id);
+          // A widget with a length of its own is done: it leaves now. One
+          // that completes at once stays up for the rest of the alert.
+          if (timed) {
+            void leave(widget.id);
+          }
+        },
         onDispose: () => {},
+        onRendered: enter,
       });
+      shown.set(widget.id, { target: { element: iframe, frame: bridge }, transitionOut: widget.transitionOut });
       iframe.addEventListener("load", createFrameLoadHandler(bridge));
       iframe.src =
         `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widget.id)}` +
@@ -154,8 +214,15 @@ export class AlertWidget {
       if (!timeline.isOver(Date.now())) {
         return;
       }
-      tearDown();
-      this.opts.onFinished(eventId);
+      clearInterval(timer);
+      // Finished only once every widget has left, so the next alert never
+      // starts under this one's exits.
+      void Promise.all([...shown.keys()].map(leave)).then(() => {
+        if (this.playing.get(eventId) === tearDown) {
+          tearDown();
+          this.opts.onFinished(eventId);
+        }
+      });
     }, TICK_MS);
     this.playing.set(eventId, tearDown);
   }

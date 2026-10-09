@@ -1,5 +1,11 @@
 import type { Logger } from "@woofx3/common/runtime";
-import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
+import {
+  type WidgetBootPayload,
+  type WidgetSurface,
+  type WidgetTransitionState,
+  isGenericTransitionType,
+  widgetTransitionState,
+} from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
 import type { OverlayHost } from "./scene-host";
@@ -137,6 +143,8 @@ interface FrameTarget {
   widgetCanonicalId: string;
   settings: Record<string, unknown>;
   surface: WidgetSurface;
+  /** The widget's own transition to play as the frame first paints. */
+  transition?: WidgetTransitionState;
 }
 
 /**
@@ -295,6 +303,11 @@ export class FrameAssembler {
         widgetCanonicalId: widget.widgetCanonicalId,
         settings: widget.settings,
         surface: "alert",
+        // Every alert frame is made for one alert, so it enters as it loads.
+        // A generic entrance is the page's to play on the frame's box.
+        ...(widget.transitionIn && !isGenericTransitionType(widget.transitionIn.type)
+          ? { transition: widgetTransitionState(widget.transitionIn, "in") }
+          : {}),
       },
       nonceParam
     );
@@ -362,6 +375,7 @@ export class FrameAssembler {
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
       linkedResources,
+      ...(target.transition ? { transition: target.transition } : {}),
     };
     return this.render(frameInfo, boot, "no-store");
   }

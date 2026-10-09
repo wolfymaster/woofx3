@@ -51,6 +51,8 @@ export const scenesRoutes = routeModule({
       surfaces: string[];
       hostsSurface: string;
       taxonomy: string[];
+      /** Transition types the widget plays on its own content. */
+      transitions: Array<{ id: string; label: string }>;
       createdByType: string;
       createdByRef: string;
     }>;
@@ -68,6 +70,7 @@ export const scenesRoutes = routeModule({
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
         taxonomy: w.taxonomy ?? [],
+        transitions: (w.transitions ?? []).map((t) => ({ id: t.id, label: t.label })),
         createdByType: w.createdByType ?? "",
         createdByRef: w.createdByRef ?? "",
       })),

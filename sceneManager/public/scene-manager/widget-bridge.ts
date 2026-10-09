@@ -20,6 +20,7 @@ import {
   isWidgetProtocolEnvelope,
   type EventQueueConfig,
   type WidgetEvent,
+  type WidgetTransitionState,
 } from "@woofx3/module-sdk";
 
 export interface WidgetStatusReportPayload {
@@ -62,6 +63,8 @@ export class WidgetBridge {
   // to one of these needs a fresh frame; any other is patched in.
   private readonly readKeys = new Set<string>();
   private readAll = false;
+  // A transition asked for before the shim said hello, sent once it has.
+  private pendingTransition: { state: WidgetTransitionState | null } | null = null;
 
   constructor(
     private readonly instanceId: string,
@@ -112,6 +115,10 @@ export class WidgetBridge {
       this.moduleId = incomingModuleId;
       this.initialized = true;
       this.sendInit({});
+      if (this.pendingTransition) {
+        this.post({ type: "transition", transition: this.pendingTransition.state });
+        this.pendingTransition = null;
+      }
       return;
     }
     if (!isWidgetProtocolEnvelope(data)) {
@@ -303,6 +310,15 @@ export class WidgetBridge {
     if (this.initialized) {
       this.post({ type: "settings.changed", settings });
     }
+  }
+
+  /** Play one of the widget's own transitions in the frame, or clear it. */
+  sendTransition(state: WidgetTransitionState | null): void {
+    if (this.initialized) {
+      this.post({ type: "transition", transition: state });
+      return;
+    }
+    this.pendingTransition = { state };
   }
 
   dispose(): void {

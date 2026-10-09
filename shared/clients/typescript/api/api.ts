@@ -1618,6 +1618,8 @@ export interface Woofx3EngineApi {
       surfaces: string[];
       hostsSurface: string;
       taxonomy: string[];
+      /** Transition types the widget plays on its own content. */
+      transitions: Array<{ id: string; label: string }>;
       createdByType: string;
       createdByRef: string;
     }>;

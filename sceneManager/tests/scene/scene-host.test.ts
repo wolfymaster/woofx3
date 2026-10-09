@@ -147,3 +147,63 @@ describe("OverlayHost.loadSceneById — drafts", () => {
     });
   });
 });
+
+describe("OverlayHost — transitions", () => {
+  function hostWith(placements: unknown[], logger = fakeLogger()) {
+    const db = {
+      getScene: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        scene: { id: "scene-1", name: "Main", widgetsJson: JSON.stringify(placements), layoutJson: "{}" },
+      })),
+      listWidgets: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        widgets: [
+          {
+            moduleId: "woofx3",
+            manifestId: "text",
+            entry: "",
+            transitions: [{ id: "typewriter", label: "Typewriter" }],
+          },
+          { moduleId: "woofx3", manifestId: "image", entry: "" },
+        ],
+      })),
+    };
+    const resolver = new OverlayTokenResolver({ resolveOverlayToken: async () => ({}) } as any, fakeLogger());
+    return new OverlayHost(resolver, db as any, logger);
+  }
+  const typewriter = { type: "typewriter", durationMs: 900 };
+  const fade = { type: "fade", durationMs: 300 };
+
+  it("reads a placement's transitions and what its widget declares", async () => {
+    const host = hostWith([
+      { id: "t", widgetCanonicalId: "woofx3:widget:text", transitionIn: typewriter, transitionOut: fade },
+    ]);
+    const [text] = (await host.loadSceneById("scene-1"))!.instances;
+    expect(text).toMatchObject({ transitionIn: typewriter, transitionOut: fade, widgetTransitions: ["typewriter"] });
+  });
+
+  it("plays none for a stored transition that does not parse, and says so", async () => {
+    const logger = fakeLogger();
+    const host = hostWith(
+      [{ id: "t", widgetCanonicalId: "woofx3:widget:text", transitionIn: { type: "fade", durationMs: -1 } }],
+      logger
+    );
+    const [text] = (await host.loadSceneById("scene-1"))!.instances;
+    expect(text!.transitionIn).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("hands the page only the transitions each widget can play", async () => {
+    const host = hostWith([
+      { id: "t", widgetCanonicalId: "woofx3:widget:text", transitionIn: typewriter },
+      { id: "i", widgetCanonicalId: "woofx3:widget:image", transitionIn: typewriter, transitionOut: fade },
+    ]);
+    const config = (await host.buildConfigById("scene-1")) as {
+      scene: { widgets: Array<Record<string, unknown>> };
+    };
+    const [text, image] = config.scene.widgets;
+    expect(text!.transitionIn).toEqual(typewriter);
+    expect(image!.transitionIn).toBeUndefined();
+    expect(image!.transitionOut).toEqual(fade);
+  });
+});

@@ -33,7 +33,9 @@ path, and `z` is a stacking key that sorts as text, bottom first. `name`,
 `rotation`, `opacity` and `locked` are the editor's, and `extra` keeps any
 other field a placement was stored with, so writing the document back loses
 nothing. `opacity` is a fraction from 0 (transparent) to 1 (opaque), as in
-CSS, both in the document and in the stored placement. What a
+CSS, both in the document and in the stored placement. A placement may also
+carry `transitionIn` and `transitionOut`, how it enters and leaves (see
+[Widget transitions](./widget-transitions.md)); absent means none. What a
 placement needs on the page that depends on what is installed rather than on
 the scene (its frame URL, linked resources, whether it is an alert area) is
 kept beside the document as each placement's meta.
@@ -83,7 +85,8 @@ json0 ops and the sequence number they were made against; ops applied since
 are transformed in first, so editors working at once converge (two people
 typing in one text field both keep their typing). Ops are refused when they
 leave the document's shape: a path outside the layout or a placement, a
-placement inserted incomplete, a field of the wrong type, or too much at
+placement inserted incomplete, a field of the wrong type (a transition is
+judged as it is left, so an op inside one is checked too), or too much at
 once. Every change is pushed to every editor, its own tagged with its op id,
 and each submit is answered with `ack` or `reject`; a `resync` reject comes
 with a fresh snapshot.

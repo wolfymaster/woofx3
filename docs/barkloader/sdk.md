@@ -272,6 +272,8 @@ layout. There it boots with `host.surface === "alert"` and receives one `alert` 
 per alert. If the widget has a length of its own, subscribe with
 `{ autoComplete: false }` and call `event.complete()` when it is done; the alert waits
 for it. Otherwise subscribe normally, and it stays up until the alert ends.
+Don't hide yourself when you are done: completing is what takes a widget off
+screen, after its out-transition.
 
 ```js
 host.onEvent((event) => {
@@ -288,6 +290,16 @@ parallel definition.
 
 For the runtime / wire details (event channels, persistence,
 upstream NATS subjects), see [Widget event channel](../services/widget-events.md).
+
+### Transitions
+
+How a placed widget enters and leaves is the placement's, and the page plays
+the generic ones (fade, slide, zoom...) on the widget's box without the widget
+knowing. A widget can also declare types that animate its own content in its
+manifest's `transitions`, and animate them in CSS from the marks the shim puts
+on `:root`: `data-transition`, `data-transition-phase` (`in` or `out`),
+`--transition-duration` and `--transition-easing`. See
+[Widget transitions](../services/widget-transitions.md).
 
 ## Local widget preview
 

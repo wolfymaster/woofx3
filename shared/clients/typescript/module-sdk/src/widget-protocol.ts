@@ -14,6 +14,7 @@
 // ignored by both sides (forward compatibility).
 
 import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
+import { isWidgetTransitionState, type WidgetTransitionState } from "./widget-transitions";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
 export type WidgetProtocolName = typeof WIDGET_PROTOCOL;
@@ -62,6 +63,10 @@ export interface WidgetBootPayload {
    *  `resource_ref` settings, setting id to canonical id. Absent from an
    *  older host. Becomes `WidgetHost.linkedResources`. */
   linkedResources?: Record<string, string>;
+  /** One of the widget's own transitions to play as the frame first paints:
+   *  the placement's entrance, when it is a type the widget declares. Absent
+   *  otherwise. See `WidgetTransitionMessage`. */
+  transition?: WidgetTransitionState;
 }
 
 /**
@@ -70,7 +75,10 @@ export interface WidgetBootPayload {
  * frame document itself is the same for every placement of a widget version
  * and can be cached; the shim merges it over the inlined payload.
  */
-export type WidgetPlacementBoot = Pick<WidgetBootPayload, "nonce" | "instanceId" | "settings" | "linkedResources">;
+export type WidgetPlacementBoot = Pick<
+  WidgetBootPayload,
+  "nonce" | "instanceId" | "settings" | "linkedResources" | "transition"
+>;
 
 /** The fragment parameter carrying a `WidgetPlacementBoot`. */
 export const WIDGET_BOOT_FRAGMENT_PARAM = "boot";
@@ -318,6 +326,18 @@ export interface WidgetSettingsChangedMessage extends WidgetProtocolEnvelope {
   settings: Record<string, unknown>;
 }
 
+/**
+ * Play one of the widget's own transitions, or, with `null`, clear the last
+ * one so the widget shows as it is. Sent when the placement enters or leaves
+ * with a type the widget declares; the generic types are played by the host
+ * on the frame's box and never reach the widget. The shim marks the frame's
+ * root element (see `WidgetTransitionState`) and the widget's CSS animates.
+ */
+export interface WidgetTransitionMessage extends WidgetProtocolEnvelope {
+  type: "transition";
+  transition: WidgetTransitionState | null;
+}
+
 /** Teardown order. The shim drops every subscription, resolves pending
  *  reads with `null`, and goes inert. */
 export interface WidgetDisposeMessage extends WidgetProtocolEnvelope {
@@ -368,6 +388,7 @@ export type HostToWidgetMessage =
   | WidgetStorageChangedMessage
   | WidgetEventDeliverMessage
   | WidgetSettingsChangedMessage
+  | WidgetTransitionMessage
   | WidgetDisposeMessage
   | WidgetPingMessage
   | WidgetPongMessage;
@@ -421,7 +442,8 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     typeof boot.resourceBaseUrl === "string" &&
     boot.resourceBaseUrl.length > 0 &&
     (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme)) &&
-    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false))
+    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false)) &&
+    (boot.transition === undefined || isWidgetTransitionState(boot.transition))
   );
 }
 

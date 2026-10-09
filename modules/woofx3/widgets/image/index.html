@@ -34,16 +34,14 @@
       if (!host) {
         return;
       }
-      const image = document.getElementById("image");
-      playForDuration(host, num(host.settings.duration, 0), () => {
-        image.style.visibility = "hidden";
-      });
+      playForDuration(host, num(host.settings.duration, 0));
     })();
 
     // In an alert, a duration gives this widget a length of its own: it
-    // completes when the time is up, and the alert waits for it. Without one
-    // it completes at once and stays up for as long as the alert does.
-    function playForDuration(host, seconds, hide) {
+    // completes when the time is up, the alert waits for it, and the page
+    // takes it off screen with its out-transition. Without one it completes
+    // at once and stays up for as long as the alert does.
+    function playForDuration(host, seconds) {
       if (host.surface !== "alert") {
         return;
       }
@@ -52,10 +50,7 @@
         return;
       }
       host.onEvent((event) => {
-        setTimeout(() => {
-          hide();
-          event.complete();
-        }, seconds * 1000);
+        setTimeout(() => event.complete(), seconds * 1000);
       }, { autoComplete: false });
     }
 
