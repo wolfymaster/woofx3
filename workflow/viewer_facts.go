@@ -282,22 +282,43 @@ func sortedKeys(set map[string]struct{}) []string {
 	return keys
 }
 
-// factReloader keeps the projector's definitions and subscriptions current.
-// It lists on start, retrying with backoff until the db proxy answers, again
-// on every lifecycle event that can change a definition, and on an interval
-// as the safety net against a lifecycle event that never arrived. All loads
-// run on its one goroutine, so they never overlap.
-type factReloader struct {
-	projector     *facts.Projector
-	subscriptions *factSubscriptions
-	logger        tasks.Logger
-	interval      time.Duration
+// reloadLoop keeps something loaded from the db proxy current. It loads on
+// start, retrying with backoff until a load succeeds, again on every Request,
+// and on an interval as the safety net against a lifecycle event that never
+// arrived. All loads run on its one goroutine, so they never overlap.
+type reloadLoop struct {
+	// load reports false only for a failure worth retrying soon.
+	load     func(ctx context.Context) bool
+	interval time.Duration
 	// settle is how long a lifecycle event waits for the rest of its burst:
 	// installing a module registers each of its triggers separately.
 	settle     time.Duration
 	minBackoff time.Duration
 	maxBackoff time.Duration
 	requests   chan struct{}
+}
+
+func newReloadLoop(load func(ctx context.Context) bool) *reloadLoop {
+	if load == nil {
+		panic("viewer facts: newReloadLoop needs a load function")
+	}
+	return &reloadLoop{
+		load:       load,
+		interval:   5 * time.Minute,
+		settle:     250 * time.Millisecond,
+		minBackoff: time.Second,
+		maxBackoff: 30 * time.Second,
+		requests:   make(chan struct{}, 1),
+	}
+}
+
+// factReloader keeps the projector's definitions and subscriptions current,
+// reloading on every lifecycle event that can change a definition.
+type factReloader struct {
+	*reloadLoop
+	projector     *facts.Projector
+	subscriptions *factSubscriptions
+	logger        tasks.Logger
 	// The failures last logged, so that a retry or a periodic re-list that
 	// fails the same way is silent: the list failure, the compile failure,
 	// and the failure per event pattern the bus would not subscribe.
@@ -310,22 +331,19 @@ func newFactReloader(projector *facts.Projector, subscriptions *factSubscription
 	if projector == nil || subscriptions == nil || logger == nil {
 		panic("viewer facts: newFactReloader needs a projector, subscriptions and a logger")
 	}
-	return &factReloader{
+	r := &factReloader{
 		projector:     projector,
 		subscriptions: subscriptions,
 		logger:        logger,
-		interval:      5 * time.Minute,
-		settle:        250 * time.Millisecond,
-		minBackoff:    time.Second,
-		maxBackoff:    30 * time.Second,
-		requests:      make(chan struct{}, 1),
 		lastSubErrs:   make(map[string]string),
 	}
+	r.reloadLoop = newReloadLoop(r.reload)
+	return r
 }
 
 // Request asks for a reload without waiting for it. Requests made while one
 // is pending are folded into it.
-func (r *factReloader) Request() {
+func (r *reloadLoop) Request() {
 	select {
 	case r.requests <- struct{}{}:
 	default:
@@ -333,11 +351,11 @@ func (r *factReloader) Request() {
 }
 
 // Run blocks until ctx is cancelled.
-func (r *factReloader) Run(ctx context.Context) {
+func (r *reloadLoop) Run(ctx context.Context) {
 	backoff := r.minBackoff
 	for {
 		wait := r.interval
-		if r.reload(ctx) {
+		if r.load(ctx) {
 			backoff = r.minBackoff
 		} else {
 			wait = backoff
@@ -360,7 +378,7 @@ func (r *factReloader) Run(ctx context.Context) {
 
 // awaitBurst lets the rest of a burst of lifecycle events arrive, so that it
 // costs one reload. It reports false when ctx ends first.
-func (r *factReloader) awaitBurst(ctx context.Context) bool {
+func (r *reloadLoop) awaitBurst(ctx context.Context) bool {
 	timer := time.NewTimer(r.settle)
 	defer timer.Stop()
 	select {
@@ -432,18 +450,20 @@ func (r *factReloader) reportSubscriptionErrs(failed map[string]error) {
 // factWriteBreaker considers the db proxy unreachable.
 var errFactWritesPaused = errors.New("fact writes paused: db proxy unreachable")
 
-// factWriteBreaker stops sending fact writes to a db proxy that keeps timing
-// out or refusing connections. Every event a definition matches waits on its
-// write before the event's workflows dispatch, so a stalled proxy would add
-// the full write timeout to each of them. After threshold consecutive such
-// failures it fails writes at once for cooldown, then lets them try again.
-// An error the proxy answered with is not counted: it says the proxy is up.
-type factWriteBreaker struct {
-	client    facts.Client
-	logger    tasks.Logger
-	threshold int
-	cooldown  time.Duration
-	now       func() time.Time
+// proxyBreaker stops calls to a db proxy that keeps timing out or refusing
+// connections. The fact calls sit in front of workflow dispatch or inside a
+// run, so a stalled proxy would add the full call timeout to each of them.
+// After threshold consecutive such failures it refuses calls for cooldown,
+// then lets them try again. An error the proxy answered with is not counted:
+// it says the proxy is up.
+type proxyBreaker struct {
+	logger tasks.Logger
+	// pausedMsg and resumedMsg are logged when calls stop and start again.
+	pausedMsg  string
+	resumedMsg string
+	threshold  int
+	cooldown   time.Duration
+	now        func() time.Time
 
 	mu        sync.Mutex
 	failures  int
@@ -451,16 +471,42 @@ type factWriteBreaker struct {
 	openUntil time.Time
 }
 
+func newProxyBreaker(logger tasks.Logger, pausedMsg, resumedMsg string) *proxyBreaker {
+	if logger == nil || pausedMsg == "" || resumedMsg == "" {
+		panic("viewer facts: newProxyBreaker needs a logger and both messages")
+	}
+	return &proxyBreaker{
+		logger:     logger,
+		pausedMsg:  pausedMsg,
+		resumedMsg: resumedMsg,
+		threshold:  5,
+		cooldown:   30 * time.Second,
+		now:        time.Now,
+	}
+}
+
+// observe counts the outcome of a call made with ctx.
+func (b *proxyBreaker) observe(ctx context.Context, err error) {
+	// A call cut short by shutdown says nothing about the proxy.
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
+	b.record(isUnreachable(err))
+}
+
+// factWriteBreaker refuses fact writes while its breaker is open.
+type factWriteBreaker struct {
+	*proxyBreaker
+	client facts.Client
+}
+
 func newFactWriteBreaker(client facts.Client, logger tasks.Logger) *factWriteBreaker {
 	if client == nil || logger == nil {
 		panic("viewer facts: newFactWriteBreaker needs a client and a logger")
 	}
 	return &factWriteBreaker{
-		client:    client,
-		logger:    logger,
-		threshold: 5,
-		cooldown:  30 * time.Second,
-		now:       time.Now,
+		proxyBreaker: newProxyBreaker(logger, "Fact writes paused; db proxy unreachable", "Fact writes resumed"),
+		client:       client,
 	}
 }
 
@@ -473,47 +519,43 @@ func (b *factWriteBreaker) ApplyFactDeltas(ctx context.Context, req *facts.Apply
 		return errFactWritesPaused
 	}
 	err := b.client.ApplyFactDeltas(ctx, req)
-	// A write cut short by shutdown says nothing about the proxy.
-	if errors.Is(ctx.Err(), context.Canceled) {
-		return err
-	}
-	b.record(isUnreachable(err))
+	b.observe(ctx, err)
 	return err
 }
 
-func (b *factWriteBreaker) allow() bool {
+func (b *proxyBreaker) allow() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return !b.open || !b.now().Before(b.openUntil)
 }
 
-func (b *factWriteBreaker) record(unreachable bool) {
+func (b *proxyBreaker) record(unreachable bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !unreachable {
 		b.failures = 0
 		if b.open {
 			b.open = false
-			b.logger.Info("Fact writes resumed")
+			b.logger.Info(b.resumedMsg)
 		}
 		return
 	}
 	b.failures++
 	if b.open {
-		// The trial write after a cooldown failed as well.
+		// The trial call after a cooldown failed as well.
 		b.openUntil = b.now().Add(b.cooldown)
 		return
 	}
 	if b.failures >= b.threshold {
 		b.open = true
 		b.openUntil = b.now().Add(b.cooldown)
-		b.logger.Error("Fact writes paused; db proxy unreachable",
+		b.logger.Error(b.pausedMsg,
 			"consecutive_failures", b.failures,
 			"retry_in", b.cooldown)
 	}
 }
 
-// isUnreachable reports whether a write failed without the proxy answering:
+// isUnreachable reports whether a call failed without the proxy answering:
 // a timeout, or a request the transport could not complete. The db client
 // wraps both, but keeps them reachable through errors.Is and errors.As.
 func isUnreachable(err error) bool {
