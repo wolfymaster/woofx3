@@ -261,6 +261,20 @@ everywhere sceneManager hands settings to an overlay:
 - `POST /scene/{id}/draft-config` (below);
 - an alert widget's frame, whose boot payload carries its settings.
 
+All of these derive the settings with one function,
+`MediaProxy.overlaySettings` (`sceneManager/src/scene/media-proxy.ts`),
+which rewrites with the same helper the page uses for a draft answer's
+`mediaUrls` (`replaceMediaUrls` in `public/scene-manager/media-url.ts`).
+
+Media that does not arrive as a picker-shaped setting is not rewritten, and
+a themeable widget's frame cannot load it from another host: a URL in a
+bare string setting, or one in event data (a clip thumbnail, an image from
+another emote service). The one exception is images from Twitch's CDN,
+which the frame's policy allows. A widget with a theme contract shows
+external media only through a `media` / `asset` setting the picker filled,
+or from Twitch's CDN; a widget that must show other external media should
+not declare a theme contract.
+
 ### Drafts: only what an editor chose is signed
 
 `POST /scene/{id}/draft-config` is authorized by an overlay session, which
@@ -287,14 +301,17 @@ sceneManager signs, barkloader verifies; the label keeps these signatures
 apart from upload grants made with the same secret. URLs over 2048 bytes
 are not signed and stay as entered.
 
-A token is good for at least seven days, its expiry rounded up to the next
-whole day, so every proxy URL minted for one file on one day is the same
-URL and browsers keep their cached copy. An overlay can stay open for
-days, so the scene page reads the expiries of the proxy URLs it holds and,
-a day before the soonest, fetches its scene again (`/config`, or its draft
-while previewing one), which brings fresh URLs; a widget sees new URLs for
-the same files. A token grants only what the proxy does for that one URL
-until it expires, and rotating the secret revokes every token.
+A token is good for at least a day and at most two: its expiry is a day
+from minting, rounded up to the next whole day, so every proxy URL minted
+for one file on one day is the same URL and browsers keep their cached
+copy. An overlay can stay open for days, so the scene page reads the
+expiries of the proxy URLs it holds (only URLs under the placement's own
+`mediaProxyBase` whose last segment is a whole token) and, six hours before
+the soonest, fetches its scene again (`/config`, or its draft while
+previewing one), which brings fresh URLs; a widget sees new URLs for the
+same files about once a day. A token grants only what the proxy does for
+that one URL, under the relay budget below, until it expires, and rotating
+the secret revokes every token.
 
 ### What the proxy fetches and relays
 
@@ -326,15 +343,29 @@ until it expires, and rotating the secret revokes every token.
   it streams.
 - Timeouts: 5 s to connect, 15 s to the response headers, 30 s between
   reads of the body. A long video streams for as long as it keeps arriving.
+- **Relay budget**: each upstream URL may relay 2 GiB per 15 minutes,
+  counted from its first request (`barkloader/app/src/services/media_budget.rs`).
+  It is shared by every token for that URL, so a leaked token cannot pull a
+  file on a loop. Bytes relayed are counted, not requests, so the many small
+  `Range` requests a video makes as it seeks and loops cost what they carry;
+  each request is also charged 256 KiB, so requests that relay nothing run
+  out too. A request is admitted while budget is left, so the last one may
+  overrun it by up to one file. Past it, the proxy answers 429 with a
+  `Retry-After` until the window ends. At most 4096 URLs are tracked at
+  once; past that an unseen URL gets 429 until a window ends.
 
 The response carries the upstream's `Content-Type`, `Content-Length`,
 `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified`, plus
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
 `Cache-Control: public, max-age=3600` (the upstream's file may change), and
 `Content-Security-Policy: default-src 'none'; …; sandbox`, so a relayed SVG
-opened directly cannot run as a page on the engine's origin. There is no
-server-side cache; browsers cache by the URL, which stays the same for a
-day. sceneManager adds no CORS headers: frames load the file through
+opened directly cannot run as a page on the engine's origin. A 416, a 429
+and every failure are `Cache-Control: no-store`. There is no server-side
+cache: barkloader's only cache is the in-memory one of resolved widget
+frames, cleared when installed modules change, and a disk cache for upstream
+files that may change under the same URL would be a new facility of its
+own, so the relay budget is what bounds the fetching instead.
+Browsers cache by the URL, which stays the same for a day. sceneManager adds no CORS headers: frames load the file through
 `img`, `video` and `audio` elements, which need none, and no other origin
 has a reason to read the bytes.
 
