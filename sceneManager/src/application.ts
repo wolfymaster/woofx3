@@ -93,7 +93,6 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       barkloader,
       linkedResources: (moduleId) => linkedResources(db, moduleId),
       mediaProxy,
-      editedMediaUrls: (sceneId) => sceneDocuments.editedMediaUrls(sceneId),
     });
     // Hydrate from the DB before accepting any traffic — a restart
     // must never silently drop in-flight events.

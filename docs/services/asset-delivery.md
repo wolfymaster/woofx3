@@ -260,7 +260,7 @@ everywhere sceneManager hands settings to an overlay:
   widget already pointed at the proxy without reloading its frame;
 - `POST /scene/{id}/draft-config` (below);
 - an alert widget's frame, whose boot payload carries its settings (see
-  below: only URLs an editor put in the scene are signed there).
+  [Alerts](#alerts-every-media-setting-is-signed) below).
 
 All of these derive the settings with one function,
 `MediaProxy.overlaySettings` (`sceneManager/src/scene/media-proxy.ts`),
@@ -269,8 +269,10 @@ which rewrites with the same helper the page uses for a draft answer's
 
 Media that does not arrive as a picker-shaped setting is not rewritten, and
 a themeable widget's frame cannot load it from another host: a URL in a
-bare string setting, or one in event data (a clip thumbnail, an image from
-another emote service). The one exception is images from Twitch's CDN,
+bare string setting, or one in the raw event a widget receives through
+`onEvent` (a clip thumbnail, an image from another emote service). A
+picker-shaped setting of an alert widget is rewritten even when the alert
+step filled it from event data (see below). The one exception is images from Twitch's CDN,
 which the frame's policy allows. A widget with a theme contract shows
 external media only through a `media` / `asset` setting the picker filled,
 or from Twitch's CDN; a widget that must show other external media should
@@ -293,14 +295,21 @@ typed, and the page points them at the proxy with that map. Each answer
 replaces the last, so the page holds only what the newest draft names, and
 a URL it has signed no longer asks for another draft.
 
-### Alerts: only what an editor chose is signed
+### Alerts: every media setting is signed
 
 An alert widget's settings come from the workflow's alert step, with its
-expressions resolved, so a setting may be filled from event data that a
-viewer chose (a chat message, a username's avatar link). An alert frame
-signs a URL only when it is in the scene's published or draft document, the
-same set a draft preview signs from; any other external URL is left as it
-is, and a themeable widget's policy blocks it.
+expressions resolved, so a media setting may hold a URL the streamer typed
+into the step or one filled from event data at runtime. An alert frame of a
+themeable widget points every picker-shaped external media value in the
+delivered settings at the proxy, wherever the URL came from; a widget
+without a theme contract gets the URLs as entered.
+
+What bounds the engine's fetches here is the proxy itself, not which URLs
+get signed: it connects only to public addresses (redirects included),
+relays only image, audio and video content within its size limits, and
+caps its relay budget, concurrent relays and time per request. An alert
+frame is reached only through the delivered alert, so its settings are
+those the scene manager validated and delivered to the scene.
 
 ### On the page: refreshing before expiry
 

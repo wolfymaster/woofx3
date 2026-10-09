@@ -870,10 +870,12 @@ Every frame of a widget with a contract, themed or not, is served with a Content
 
 A placement's media setting may still name a file hosted elsewhere (`{ "source": "url", "url": "https://…" }`). For a widget with a contract, the scene manager hands overlays such a value with its `url` pointed at the engine's media proxy, `{public URL}/assets/media/{token}`, which is on the engine's origin; see [External media](../services/asset-delivery.md#external-media). A widget without a contract has no such policy and gets the URL as entered.
 
-Only picker-shaped settings are proxied. A themeable widget cannot show
+Only picker-shaped settings are proxied. That includes the media settings
+of a widget playing in an alert, whether the workflow's alert step names
+the URL or fills it from event data. A themeable widget cannot show
 external media that arrives any other way: a URL typed into a plain string
-setting, or one in event data (a clip thumbnail, an emote from a service
-other than Twitch). Those are blocked by the frame's policy, apart from
+setting, or one in the raw event it receives through `onEvent` (a clip
+thumbnail, an emote from a service other than Twitch). Those are blocked by the frame's policy, apart from
 images on Twitch's CDN. A widget that has to show such media should not
 declare a theme contract.
 

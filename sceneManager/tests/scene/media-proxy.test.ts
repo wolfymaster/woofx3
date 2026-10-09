@@ -524,8 +524,9 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
 
 describe("FrameAssembler — alert widgets", () => {
   const FROM_EVENT = "https://viewer.example/chosen.png";
+  const PLAIN_STRING = "https://viewer.example/not-a-picker-value.png";
 
-  async function bootSettings(theme: FrameTheme | null, edited: string[] = [EXTERNAL]): Promise<unknown> {
+  async function bootSettings(theme: FrameTheme | null): Promise<unknown> {
     const delivery = {
       alertId: "alert-1",
       layout: {
@@ -538,7 +539,7 @@ describe("FrameAssembler — alert widgets", () => {
             moduleId: "woofx3",
             manifestId: "timer",
             position: { x: 0, y: 0, width: 10, height: 10 },
-            settings: { image: external(), avatar: external(FROM_EVENT), logo: library },
+            settings: { image: external(), avatar: external(FROM_EVENT), logo: library, caption: PLAIN_STRING },
           },
         ],
       },
@@ -554,30 +555,28 @@ describe("FrameAssembler — alert widgets", () => {
         }),
       },
       mediaProxy: proxy,
-      editedMediaUrls: async (sceneId) => {
-        expect(sceneId).toBe("s1");
-        return new Set(edited);
-      },
     });
     const html = await (await assembler.assembleAlertWidget("s1", "evt-1", "t1", null)).text();
     const boot: WidgetBootPayload = JSON.parse(/window\.__WOOFX3_WIDGET_BOOT__ = (.*?);<\/script>/.exec(html)![1]!);
     return boot.settings;
   }
 
-  it("proxies the external media an editor put in the scene, and not a URL the event supplied", async () => {
+  it("signs every picker-shaped URL in alert settings for themeable frames, whether stored in the scene or not", async () => {
     expect(await bootSettings(THEME)).toEqual({
       image: { ...external(), url: EXTERNAL_PROXIED },
-      avatar: external(FROM_EVENT),
+      avatar: { ...external(FROM_EVENT), url: proxy.urlFor(FROM_EVENT, BASE) },
       logo: library,
+      caption: PLAIN_STRING,
     });
   });
 
-  it("proxies none of an alert's external media that the scene does not hold", async () => {
-    expect(await bootSettings(THEME, [])).toEqual({ image: external(), avatar: external(FROM_EVENT), logo: library });
-  });
-
-  it("leaves a widget without a theme contract loading external media directly", async () => {
-    expect(await bootSettings(null)).toEqual({ image: external(), avatar: external(FROM_EVENT), logo: library });
+  it("does not rewrite non-themeable alert frames", async () => {
+    expect(await bootSettings(null)).toEqual({
+      image: external(),
+      avatar: external(FROM_EVENT),
+      logo: library,
+      caption: PLAIN_STRING,
+    });
   });
 });
 

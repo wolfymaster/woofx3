@@ -85,11 +85,12 @@ export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
  *
  * External media in the placements is pointed at the media proxy, for the
  * placements whose frames need it, only when the URL is already in the
- * scene's document (`SceneDocuments.editedMediaUrls`): an overlay session is
- * held by anything showing the overlay, so the placements it sends are not
- * trusted to choose what the engine fetches. The editor puts a value it picks
- * into the document through its own authenticated socket, and the page asks
- * again when that op arrives. `mediaUrls` maps, per placement id, each URL
+ * scene's document (`SceneDocuments.editedMediaUrls`). This endpoint answers
+ * anyone holding an overlay token, which every browser source showing the
+ * overlay has, so signing whatever URL the body names would make it a general
+ * signing service for the media proxy. The editor puts a value it picks into
+ * the document through its own authenticated socket, and the page asks again
+ * when that op arrives. `mediaUrls` maps, per placement id, each URL
  * signed to its proxy URL; the editor also posts settings to the page as they
  * are typed, with external media as entered, and the page points them at the
  * proxy with it.
