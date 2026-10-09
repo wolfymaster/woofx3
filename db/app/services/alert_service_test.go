@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
@@ -187,11 +188,20 @@ func TestAlertLifecycleRefusesBackwardAndRepeatedTransitionsWithoutPublishing(t 
 	})
 }
 
+// replacesVerdict reports whether verdict `second` replaces verdict `first`
+// under the lifecycle rule in AlertRepository.transitionUpdateSQL.
+func replacesVerdict(first, second string) bool {
+	if second == "completed" {
+		return first != "completed"
+	}
+	return first == "timed_out" && (second == "failed" || second == "skipped")
+}
+
 func TestAlertLifecycleKeepsTheFirstVerdict(t *testing.T) {
 	verdicts := []string{"completed", "failed", "skipped", "timed_out"}
 	for _, first := range verdicts {
 		for _, second := range verdicts {
-			if first == "timed_out" && second != "timed_out" {
+			if replacesVerdict(first, second) {
 				continue
 			}
 			t.Run(first+" then "+second, func(t *testing.T) {
@@ -241,8 +251,8 @@ func TestAlertLifecycleLetsARealVerdictReplaceATimeout(t *testing.T) {
 				if replaced.CompletedAt == nil || !replaced.CompletedAt.Equal(*timedOut.CompletedAt) {
 					t.Fatalf("completed_at = %v, want the timeout's %v", replaced.CompletedAt, timedOut.CompletedAt)
 				}
-				// The real verdict is final: nothing replaces it.
-				moveAlert(t, svc, "env-1", "completed")
+				// Neither the same verdict again nor another timeout replaces it.
+				moveAlertWithError(t, svc, "env-1", tc.verdict, tc.errorMsg)
 				moveAlertWithError(t, svc, "env-1", "timed_out", "no ack")
 				assertPublished(t, db, []publishedStep{{"sent", 1}, {"timed_out", 2}, {tc.verdict, 3}})
 			})
@@ -250,10 +260,57 @@ func TestAlertLifecycleLetsARealVerdictReplaceATimeout(t *testing.T) {
 	}
 }
 
+func TestAlertLifecycleLetsCompletedReplaceAnyOtherVerdict(t *testing.T) {
+	for _, first := range []string{"failed", "skipped", "timed_out"} {
+		t.Run(first, func(t *testing.T) {
+			forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+				created := createAlert(t, svc, "env-1")
+				moveAlert(t, svc, "env-1", "playing")
+				moveAlertWithError(t, svc, "env-1", first, "first")
+				before := storedAlert(t, db, created.Id)
+
+				got := moveAlert(t, svc, "env-1", "completed")
+
+				if got.Status != "completed" || got.Error != "" {
+					t.Fatalf("returned %s %q, want completed with no error", got.Status, got.Error)
+				}
+				assertPublished(t, db, []publishedStep{{"sent", 1}, {"playing", 2}, {first, 3}, {"completed", 4}})
+				stored := storedAlert(t, db, created.Id)
+				if stored.CompletedAt == nil || !stored.CompletedAt.Equal(*before.CompletedAt) {
+					t.Fatalf("completed_at = %v, want the first verdict's %v", stored.CompletedAt, before.CompletedAt)
+				}
+			})
+		})
+	}
+}
+
+// An alert fans out to two widgets. The operator clears the queue while the
+// second is still playing, which skips the alert; the second widget then
+// finishes it. Viewers saw it, so the row ends completed, and the skip is not
+// reported again by a later clear.
+func TestAlertLifecycleKeepsCompletedOverAQueueClearDuringFanOut(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		created := createAlert(t, svc, "env-1")
+		moveAlert(t, svc, "env-1", "playing")
+		moveAlert(t, svc, "env-1", "playing")
+		moveAlert(t, svc, "env-1", "skipped")
+		moveAlert(t, svc, "env-1", "completed")
+		moveAlert(t, svc, "env-1", "skipped")
+		moveAlertWithError(t, svc, "env-1", "failed", "second widget errored")
+
+		assertPublished(t, db, []publishedStep{{"sent", 1}, {"playing", 2}, {"skipped", 3}, {"completed", 4}})
+		stored := storedAlert(t, db, created.Id)
+		if stored.Status != "completed" || stored.Error != "" {
+			t.Fatalf("stored = %s %q, want completed with no error", stored.Status, stored.Error)
+		}
+	})
+}
+
 func TestAlertLifecycleAppliesOneOfConcurrentVerdicts(t *testing.T) {
 	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
 		createAlert(t, svc, "env-1")
-		verdicts := []string{"completed", "failed", "skipped", "completed", "failed", "skipped"}
+		// None of these replaces another.
+		verdicts := []string{"failed", "skipped", "failed", "skipped", "failed", "skipped"}
 		var wg sync.WaitGroup
 		errs := make(chan error, len(verdicts))
 		for _, verdict := range verdicts {
@@ -279,6 +336,142 @@ func TestAlertLifecycleAppliesOneOfConcurrentVerdicts(t *testing.T) {
 		if len(snapshots) != 2 || snapshots[1]["version"].(float64) != 2 {
 			t.Fatalf("published %d snapshots, want the created row and exactly one verdict at v2", len(snapshots))
 		}
+	})
+}
+
+func TestAlertLifecycleEndsCompletedUnderConcurrentVerdicts(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		created := createAlert(t, svc, "env-1")
+		verdicts := []string{"completed", "failed", "skipped", "completed", "failed", "skipped"}
+		var wg sync.WaitGroup
+		for _, verdict := range verdicts {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+					EnvelopeId: "env-1",
+					Status:     verdict,
+				})
+				if err != nil {
+					t.Errorf("UpdateAlertLifecycle: %v", err)
+				}
+			}()
+		}
+		wg.Wait()
+
+		if stored := storedAlert(t, db, created.Id); stored.Status != "completed" {
+			t.Fatalf("stored status = %s, want completed", stored.Status)
+		}
+		snapshots := publishedAlerts(t, db)
+		if len(snapshots) < 2 || len(snapshots) > 3 {
+			t.Fatalf("published %d snapshots, want the created row, at most one other verdict, and completed",
+				len(snapshots))
+		}
+		for i, snapshot := range snapshots {
+			if snapshot["version"].(float64) != float64(i+1) {
+				t.Fatalf("snapshot %d has version %v, want %d", i, snapshot["version"], i+1)
+			}
+		}
+	})
+}
+
+func TestAlertLifecycleMovesEveryRowOfAnEnvelope(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		older := createAlert(t, svc, "env-1")
+		newer := createAlert(t, svc, "env-1")
+
+		got := moveAlert(t, svc, "env-1", "playing")
+		moveAlert(t, svc, "env-1", "completed")
+
+		if got.Id != newer.Id {
+			t.Fatalf("returned row %s, want the newest row %s", got.Id, newer.Id)
+		}
+		for _, id := range []string{older.Id, newer.Id} {
+			if stored := storedAlert(t, db, id); stored.Status != "completed" || stored.Version != 3 {
+				t.Fatalf("row %s = %s v%d, want completed v3", id, stored.Status, stored.Version)
+			}
+		}
+		published := map[string]int{}
+		for _, snapshot := range publishedAlerts(t, db) {
+			published[snapshot["id"].(string)]++
+		}
+		if published[older.Id] != 3 || published[newer.Id] != 3 {
+			t.Fatalf("published %v, want three snapshots of each row", published)
+		}
+	})
+}
+
+func TestAlertWriteIsRolledBackWhenItsOutboxEventCannotBeWritten(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		created := createAlert(t, svc, "env-1")
+		before := storedAlert(t, db, created.Id)
+		if err := db.Migrator().RenameTable("worker_events", "worker_events_unavailable"); err != nil {
+			t.Fatalf("rename outbox: %v", err)
+		}
+
+		_, transitionErr := svc.UpdateAlertLifecycle(context.Background(), &client.UpdateAlertLifecycleRequest{
+			EnvelopeId: "env-1",
+			Status:     "playing",
+		})
+		_, createErr := svc.CreateAlert(context.Background(), &client.CreateAlertRequest{
+			Payload:    `{"id":"env-2"}`,
+			EnvelopeId: "env-2",
+		})
+
+		if err := db.Migrator().RenameTable("worker_events_unavailable", "worker_events"); err != nil {
+			t.Fatalf("restore outbox: %v", err)
+		}
+		if twerr, ok := transitionErr.(twirp.Error); !ok || twerr.Code() != twirp.Internal {
+			t.Fatalf("transition err = %v, want internal", transitionErr)
+		}
+		if twerr, ok := createErr.(twirp.Error); !ok || twerr.Code() != twirp.Internal {
+			t.Fatalf("create err = %v, want internal", createErr)
+		}
+		assertUnchanged(t, before, storedAlert(t, db, created.Id))
+		var rows int64
+		if err := db.Model(&models.Alert{}).Count(&rows).Error; err != nil {
+			t.Fatalf("count alerts: %v", err)
+		}
+		if rows != 1 {
+			t.Fatalf("%d alert rows, want the failed create rolled back", rows)
+		}
+		// The transition was not recorded as applied, so it applies now.
+		moveAlert(t, svc, "env-1", "playing")
+		assertPublished(t, db, []publishedStep{{"sent", 1}, {"playing", 2}})
+	})
+}
+
+func TestAlertResponsesCarryTheVersion(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		created := createAlert(t, svc, "env-1")
+		moved := moveAlert(t, svc, "env-1", "playing")
+		got, err := svc.GetAlert(context.Background(), &client.GetAlertRequest{Id: created.Id})
+		if err != nil {
+			t.Fatalf("GetAlert: %v", err)
+		}
+		listed, err := svc.ListAlerts(context.Background(), &client.ListAlertsRequest{})
+		if err != nil {
+			t.Fatalf("ListAlerts: %v", err)
+		}
+
+		if created.Version != 1 || moved.Version != 2 || got.Alert.Version != 2 || listed.Alerts[0].Version != 2 {
+			t.Fatalf("versions: created %d, moved %d, get %d, list %d; want 1, 2, 2, 2",
+				created.Version, moved.Version, got.Alert.Version, listed.Alerts[0].Version)
+		}
+	})
+}
+
+func TestAlertDeletePublishesTheRowItRemoved(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		created := createAlert(t, svc, "env-1")
+		if _, err := svc.DeleteAlert(context.Background(), &client.DeleteAlertRequest{Id: created.Id}); err != nil {
+			t.Fatalf("DeleteAlert: %v", err)
+		}
+		_, err := svc.DeleteAlert(context.Background(), &client.DeleteAlertRequest{Id: created.Id})
+		if twerr, ok := err.(twirp.Error); !ok || twerr.Code() != twirp.NotFound {
+			t.Fatalf("second delete err = %v, want not_found", err)
+		}
+		assertPublished(t, db, []publishedStep{{"sent", 1}, {"sent", 1}})
 	})
 }
 
@@ -317,7 +510,10 @@ func TestAlertReplayAppliesAfterAVerdictButOnlyOnce(t *testing.T) {
 func TestAlertStatusRejectsAStatusOutsideTheLifecycle(t *testing.T) {
 	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
 		created := createAlert(t, svc, "env-1")
-		for _, status := range []string{"sent", "pending", "anything"} {
+		statuses := []string{
+			"sent", "pending", "anything", "dispatched", "playing", "completed", "failed", "timed_out", "skipped",
+		}
+		for _, status := range statuses {
 			_, err := svc.UpdateAlertStatus(context.Background(), &client.UpdateAlertStatusRequest{
 				Id:     created.Id,
 				Status: status,
@@ -410,6 +606,36 @@ func TestAlertWriteStampsEveryColumnWithOneTimestamp(t *testing.T) {
 			t.Fatalf("played_at = %v, updated_at = %v, want one value", row.PlayedAt, row.UpdatedAt)
 		}
 	})
+}
+
+func TestAlertWriteStampsSQLiteTimestampsAtMicroseconds(t *testing.T) {
+	db := openEmptySQLite(t)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	svc := newAlertSvc(t, db)
+
+	// A write lands on a whole millisecond about once in a thousand, so
+	// several writes all landing on one means the microseconds were lost.
+	finerThanMilliseconds := false
+	for i := 0; i < 5; i++ {
+		created := createAlert(t, svc, uuid.NewString())
+		row := storedAlert(t, db, created.Id)
+		if row.CreatedAt.Nanosecond()%int(time.Microsecond) != 0 {
+			t.Fatalf("created_at = %v, want whole microseconds", row.CreatedAt)
+		}
+		if row.CreatedAt.Nanosecond()%int(time.Millisecond) != 0 {
+			finerThanMilliseconds = true
+		}
+	}
+	if !finerThanMilliseconds {
+		t.Fatalf("every created_at fell on a whole millisecond; want microsecond precision")
+	}
 }
 
 func TestBuildAlertChangeDataFormatsEveryTimestampInUTCAtFullPrecision(t *testing.T) {

@@ -60,7 +60,10 @@ type Alert struct {
 	CompletedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
 	// Failure reason captured from a `failed` ack. Empty when
 	// status is not `failed`.
-	Error         string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
+	// Incremented by every write that publishes the row. Receivers order
+	// snapshots of one row by it: two writes never share a version.
+	Version       int64 `protobuf:"varint,14,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -177,6 +180,13 @@ func (x *Alert) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *Alert) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type CreateAlertRequest struct {
@@ -692,7 +702,7 @@ var File_alert_proto protoreflect.FileDescriptor
 
 const file_alert_proto_rawDesc = "" +
 	"\n" +
-	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
+	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa8\x04\n" +
 	"\x05Alert\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x1f\n" +
@@ -710,7 +720,8 @@ const file_alert_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\fdispatchedAt\x127\n" +
 	"\tplayed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bplayedAt\x12=\n" +
 	"\fcompleted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
-	"\x05error\x18\r \x01(\tR\x05errorJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xae\x01\n" +
+	"\x05error\x18\r \x01(\tR\x05error\x12\x18\n" +
+	"\aversion\x18\x0e \x01(\x03R\aversionJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xae\x01\n" +
 	"\x12CreateAlertRequest\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12\x1f\n" +
 	"\vworkflow_id\x18\x03 \x01(\tR\n" +

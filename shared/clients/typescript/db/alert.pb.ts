@@ -68,6 +68,11 @@ export interface Alert {
    * status is not `failed`.
    */
   error: string;
+  /**
+   * Incremented by every write that publishes the row. Receivers order
+   * snapshots of one row by it: two writes never share a version.
+   */
+  version: bigint;
 }
 
 export interface CreateAlertRequest {
@@ -475,6 +480,7 @@ export const Alert = {
       playedAt: protoscript.Timestamp.initialize(),
       completedAt: protoscript.Timestamp.initialize(),
       error: "",
+      version: 0n,
       ...msg,
     };
   },
@@ -542,6 +548,9 @@ export const Alert = {
     if (msg.error) {
       writer.writeString(13, msg.error);
     }
+    if (msg.version) {
+      writer.writeInt64String(14, msg.version.toString() as any);
+    }
     return writer;
   },
 
@@ -604,6 +613,10 @@ export const Alert = {
         }
         case 13: {
           msg.error = reader.readString();
+          break;
+        }
+        case 14: {
+          msg.version = BigInt(reader.readInt64String());
           break;
         }
         default: {
@@ -1368,6 +1381,7 @@ export const AlertJSON = {
       playedAt: protoscript.TimestampJSON.initialize(),
       completedAt: protoscript.TimestampJSON.initialize(),
       error: "",
+      version: 0n,
       ...msg,
     };
   },
@@ -1415,6 +1429,9 @@ export const AlertJSON = {
     }
     if (msg.error) {
       json["error"] = msg.error;
+    }
+    if (msg.version) {
+      json["version"] = String(msg.version);
     }
     return json;
   },
@@ -1470,6 +1487,10 @@ export const AlertJSON = {
     const _error_ = json["error"];
     if (_error_) {
       msg.error = _error_;
+    }
+    const _version_ = json["version"];
+    if (_version_) {
+      msg.version = BigInt(_version_);
     }
     return msg;
   },

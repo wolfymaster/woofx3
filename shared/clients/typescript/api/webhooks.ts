@@ -938,12 +938,14 @@ export interface AlertSnapshot {
    *   `"replayed"`  — an operator re-fired this row; the re-fire is a row of
    *                   its own
    * A row only moves forward through these, and the first verdict
-   * (`completed`, `failed`, `timed_out`, `skipped`) wins. The single
-   * exception: a real verdict (`completed`, `failed`, `skipped`) may replace
-   * `timed_out`, because a timeout is the engine giving up on hearing back and
-   * a late overlay report is the truth. `replayed` may follow any status but
-   * itself. Every other write is refused and publishes nothing: one that would
-   * move the row back, repeat its status, replace a verdict, or replay a row
+   * (`completed`, `failed`, `timed_out`, `skipped`) wins, with two
+   * exceptions. `completed` replaces any other verdict: an alert plays on
+   * every widget that answers to its target, and one widget playing it to the
+   * end means viewers saw it. `failed` and `skipped` replace `timed_out`,
+   * because a timeout is the engine giving up on hearing back and a late
+   * report is the truth. `replayed` may follow any status but itself. Every
+   * other write is refused and publishes nothing: one that would move the row
+   * back, repeat its status, replace a verdict otherwise, or replay a row
    * already replayed. `"timed_out"` has a callback (`alert.timed_out`) but no
    * engine service writes it yet.
    */
@@ -958,10 +960,10 @@ export interface AlertSnapshot {
   dispatchedAt?: string;
   /** Set when the overlay reported `playing`. */
   playedAt?: string;
-  /** Set when the overlay reported `completed` or `failed`. */
+  /** Set by the first verdict. */
   completedAt?: string;
   /** Failure reason captured with a `failed` or `timed_out` verdict. Absent
-   *  otherwise: a success that replaces a timeout clears it. */
+   *  otherwise: `completed` or `skipped` replacing such a verdict clears it. */
   error?: string;
   /**
    * Counts the writes applied to the row, starting at 1 when it is recorded.

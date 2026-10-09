@@ -22,10 +22,11 @@ import (
 // columns, the heavy `payload` blob passes through as an opaque
 // string the engine never inspects.
 //
-// Outbox publishing is opt-in via `publisher`. When set, every
-// successful Create / Update / Delete emits a
-// `db.alert.<op>.system` event so the api gateway can
-// project new alerts to Convex via the Bearer-auth callback channel.
+// Outbox publishing is opt-in via `publisher`. When set, every applied
+// Create / Update / Delete writes a `db.alert.<op>.system` event in the same
+// transaction as the change, so the api gateway can project alerts to Convex
+// via the Bearer-auth callback channel, and a change is never committed
+// without the event that announces it.
 type alertService struct {
 	repo      *repo.AlertRepository
 	publisher *workers.EventPublisher
@@ -63,12 +64,10 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
 		EnvelopeID:    req.EnvelopeId,
-	})
+	}, s.recordChange("created"))
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
 	}
-
-	s.publishChange(alert, "created")
 
 	return &client.AlertResponse{
 		Status: &client.ResponseStatus{
@@ -165,7 +164,7 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 		return nil, twirp.InvalidArgumentError("status",
 			"must be one of: dispatched, playing, completed, failed, timed_out, skipped")
 	}
-	alert, applied, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error)
+	alert, applied, err := s.repo.UpdateLifecycle(req.EnvelopeId, req.Status, req.Error, s.recordChange("updated"))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("alert not found for envelope")
@@ -175,24 +174,24 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 	return s.transitionResponse(alert, applied), nil
 }
 
-// UpdateAlertStatus moves a row, by id, through the same forward-only
-// transition as UpdateAlertLifecycle. Replay uses it to mark the row it
-// replayed.
+// UpdateAlertStatus marks a row, by id, `replayed`, through the same
+// forward-only transition as UpdateAlertLifecycle; a second replay of one row
+// is refused. Replay is its only use: verdicts carry an error and are reported
+// against the envelope, through UpdateAlertLifecycle.
 func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.UpdateAlertStatusRequest) (*client.AlertResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
 	switch req.Status {
-	case "dispatched", "playing", "completed", "failed", "timed_out", "skipped", "replayed":
+	case "replayed":
 		// allowed
 	case "":
 		return nil, twirp.RequiredArgumentError("status")
 	default:
-		return nil, twirp.InvalidArgumentError("status",
-			"must be one of: dispatched, playing, completed, failed, timed_out, skipped, replayed")
+		return nil, twirp.InvalidArgumentError("status", "must be replayed")
 	}
-	alert, applied, err := s.repo.UpdateStatus(id, req.Status)
+	alert, applied, err := s.repo.MarkReplayed(id, s.recordChange("updated"))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("alert not found")
@@ -202,17 +201,14 @@ func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.Update
 	return s.transitionResponse(alert, applied), nil
 }
 
-// transitionResponse publishes an applied transition and answers with the row
-// as it stands.
+// transitionResponse answers with the row as it stands.
 //
-// A refused transition changed nothing, so there is nothing to publish: a
-// callback for it would tell receivers the row moved when it did not. It is
-// not an error either; reporters (several widgets playing one alert, a second
-// replay of one row) routinely send transitions the row has already passed.
+// A refused transition is not an error; reporters (several widgets playing
+// one alert, a second replay of one row) routinely send transitions the row
+// has already passed. It published nothing (see AlertRepository.transition).
 func (s *alertService) transitionResponse(alert *models.Alert, applied bool) *client.AlertResponse {
 	message := "Alert transition refused; the row is already at or past it"
 	if applied {
-		s.publishChange(alert, "updated")
 		message = "Alert updated successfully"
 	}
 	return &client.AlertResponse{
@@ -229,14 +225,12 @@ func (s *alertService) DeleteAlert(ctx context.Context, req *client.DeleteAlertR
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
-	alert, err := s.repo.GetByID(id)
-	if err != nil {
-		return nil, twirp.NotFoundError("alert not found")
-	}
-	if err := s.repo.Delete(id); err != nil {
+	if err := s.repo.Delete(id, s.recordChange("deleted")); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError("alert not found")
+		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete alert: %w", err))
 	}
-	s.publishChange(alert, "deleted")
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
 		Message: "Alert deleted successfully",
@@ -256,6 +250,7 @@ func (s *alertService) alertToProto(m *models.Alert) *client.Alert {
 		Status:        m.Status,
 		EnvelopeId:    m.EnvelopeID,
 		Error:         m.Error,
+		Version:       m.Version,
 		CreatedAt:     timestamppb.New(m.CreatedAt),
 		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 	}
@@ -271,17 +266,22 @@ func (s *alertService) alertToProto(m *models.Alert) *client.Alert {
 	return out
 }
 
-func (s *alertService) publishChange(alert *models.Alert, op string) {
-	if s.publisher == nil {
-		return
+// recordChange writes the `op` outbox event for a row inside the write's
+// transaction (see repo.RecordAlertChange). Without a publisher it records
+// nothing.
+func (s *alertService) recordChange(op string) repo.RecordAlertChange {
+	return func(tx *gorm.DB, alert *models.Alert) error {
+		if s.publisher == nil {
+			return nil
+		}
+		return s.publisher.PublishIn(tx, workers.PublishOptions{
+			EntityType:      "alert",
+			EntityID:        alert.ID.String(),
+			Operation:       op,
+			Data:            buildAlertChangeData(alert),
+			AutoAcknowledge: true,
+		})
 	}
-	s.publisher.Publish(workers.PublishOptions{
-		EntityType:      "alert",
-		EntityID:        alert.ID.String(),
-		Operation:       op,
-		Data:            buildAlertChangeData(alert),
-		AutoAcknowledge: true,
-	})
 }
 
 // alertTimestampLayout formats every timestamp in an alert snapshot: RFC

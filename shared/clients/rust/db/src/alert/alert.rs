@@ -49,6 +49,10 @@ pub struct Alert {
     /// status is not `failed`.
     #[prost(string, tag="13")]
     pub error: ::prost::alloc::string::String,
+    /// Incremented by every write that publishes the row. Receivers order
+    /// snapshots of one row by it: two writes never share a version.
+    #[prost(int64, tag="14")]
+    pub version: i64,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateAlertRequest {

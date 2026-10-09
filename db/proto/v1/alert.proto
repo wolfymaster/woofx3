@@ -68,6 +68,9 @@ message Alert {
   // Failure reason captured from a `failed` ack. Empty when
   // status is not `failed`.
   string error = 13;
+  // Incremented by every write that publishes the row. Receivers order
+  // snapshots of one row by it: two writes never share a version.
+  int64 version = 14;
 }
 
 message CreateAlertRequest {
