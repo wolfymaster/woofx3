@@ -367,10 +367,20 @@ the secret revokes every token.
   file on a loop. Bytes relayed are counted, not requests, so the many small
   `Range` requests a video makes as it seeks and loops cost what they carry;
   each request is also charged 256 KiB, so requests that relay nothing run
-  out too. A request is admitted while budget is left, so the last one may
-  overrun it by up to one file. Past it, the proxy answers 429 with a
-  `Retry-After` until the window ends, which sceneManager relays. At most 4096 URLs are tracked at
-  once; past that an unseen URL gets 429 until a window ends.
+  out too. At most 4 relays of one URL, and 64 in all, run at once; a
+  request past either gets 429 with `Retry-After: 1` before the upstream is
+  asked. Once the upstream's headers arrive, the response's declared length
+  (8 MiB when it declares none) is reserved against the budget, so relays
+  running side by side count against each other before any bytes arrive; a
+  request whose reservation finds the budget used up gets 429. Bytes past a
+  relay's reservation are charged as they stream, and the relay is ended once
+  they run the budget out; what a relay reserved and did not send (the
+  viewer went away) is given back when it ends. A URL therefore overruns its
+  budget by at most the reservations of the relays running when it runs
+  out. Past it, the proxy answers 429 with a `Retry-After` until the window
+  ends, which sceneManager relays. At most 4096 URLs are tracked at once; a
+  URL is let go only once its window has ended and no relay of it is
+  running, and while none can be, an unseen URL gets 429.
 
 The response carries the upstream's `Content-Type`, `Content-Length`,
 `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified`, plus

@@ -4,8 +4,7 @@
 //! a widget frame's Content-Security-Policy allows media from.
 
 use std::io;
-use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use actix_web::body::{BodyStream, SizedStream};
 use actix_web::http::StatusCode;
@@ -15,7 +14,7 @@ use actix_web::{HttpRequest, HttpResponse, get};
 use futures_util::StreamExt;
 use tracing::warn;
 
-use crate::services::media_budget::MediaBudget;
+use crate::services::media_budget::{MediaBudget, RelayStream};
 use crate::services::media_proxy::{
     self, MAX_MEDIA_BYTES, MediaFetcher, MediaResponse, ProxyError, RangeRequest,
 };
@@ -38,7 +37,7 @@ const MEDIA_CSP: &str =
 pub struct MediaProxyService {
     secret: String,
     fetcher: MediaFetcher,
-    budget: Arc<MediaBudget>,
+    budget: MediaBudget,
 }
 
 impl MediaProxyService {
@@ -54,7 +53,7 @@ impl MediaProxyService {
         Self {
             secret,
             fetcher,
-            budget: Arc::new(budget),
+            budget,
         }
     }
 }
@@ -62,7 +61,8 @@ impl MediaProxyService {
 /// A token that does not verify, or has expired, gets a bare 404, like a
 /// missing asset, so the route tells a prober nothing about what it sent. A
 /// file that has used its relay budget (`services::media_budget`) gets a 429
-/// until its window ends.
+/// until its window ends, and one with too many relays running a 429 for a
+/// second.
 #[get("/assets/media/{token}")]
 #[tracing::instrument(name = "GET /assets/media/{token}", skip_all)]
 async fn media_handler(
@@ -77,25 +77,31 @@ async fn media_handler(
         |name: header::HeaderName| request.headers().get(name).and_then(|v| v.to_str().ok());
     let range =
         RangeRequest::from_headers(header_text(header::RANGE), header_text(header::IF_RANGE));
-    let budget_key = url.as_str().to_string();
-    let now = Instant::now();
-    if !service.budget.admit(&budget_key, now) {
-        warn!(
-            "media proxy: relay budget used up for host={}",
-            url.host_str().unwrap_or("")
-        );
-        let retry_after = service
-            .budget
-            .retry_after(&budget_key, now)
-            .as_secs()
-            .max(1);
-        return HttpResponse::TooManyRequests()
-            .insert_header((header::CACHE_CONTROL, NO_STORE))
-            .insert_header((header::RETRY_AFTER, retry_after.to_string()))
-            .finish();
-    }
+    let budget_key = url.as_str();
+    let mut stream = match service.budget.admit(budget_key, Instant::now()) {
+        Ok(stream) => stream,
+        Err(refusal) => {
+            warn!(
+                "media proxy: not admitting a relay from host={} refusal={:?}",
+                url.host_str().unwrap_or(""),
+                refusal
+            );
+            return too_many_requests(refusal.retry_after());
+        }
+    };
     match service.fetcher.fetch(url.clone(), &range).await {
-        Ok(media) => relay(media, service.budget.clone(), budget_key),
+        Ok(media) => {
+            if media.status != StatusCode::RANGE_NOT_SATISFIABLE.as_u16()
+                && !stream.reserve(media.content_length)
+            {
+                warn!(
+                    "media proxy: relay budget used up for host={}",
+                    url.host_str().unwrap_or("")
+                );
+                return too_many_requests(service.budget.retry_after(budget_key, Instant::now()));
+            }
+            relay(media, stream)
+        }
         Err(error) => {
             warn!(
                 "media proxy: not relaying from host={} reason={}",
@@ -113,6 +119,16 @@ async fn media_handler(
     }
 }
 
+fn too_many_requests(retry_after: Duration) -> HttpResponse {
+    HttpResponse::TooManyRequests()
+        .insert_header((header::CACHE_CONTROL, NO_STORE))
+        .insert_header((
+            header::RETRY_AFTER,
+            retry_after.as_secs().max(1).to_string(),
+        ))
+        .finish()
+}
+
 fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -120,8 +136,10 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// The upstream's response, its body counted against `budget` as it streams.
-fn relay(media: MediaResponse, budget: Arc<MediaBudget>, budget_key: String) -> HttpResponse {
+/// The upstream's response, its body counted against the relay budget through
+/// `stream` as it streams. The relay counts as running until the body is
+/// dropped, finished or not.
+fn relay(media: MediaResponse, mut stream: RelayStream) -> HttpResponse {
     let status =
         StatusCode::from_u16(media.status).expect("the fetcher relays only 200, 206 and 416");
     let mut response = HttpResponse::build(status);
@@ -141,14 +159,17 @@ fn relay(media: MediaResponse, budget: Arc<MediaBudget>, budget_key: String) -> 
     }
     response.insert_header((header::CACHE_CONTROL, MEDIA_CACHE_CONTROL));
     // Counted as it streams too: a declared length was checked already, but
-    // an upstream that declared none, or declared too little, is cut off here.
+    // an upstream that declared none, or declared too little, is cut off here,
+    // as is one that runs the URL's budget out past what it reserved.
     let mut relayed: u64 = 0;
     let body = media.response.bytes_stream().map(move |chunk| {
         let chunk = chunk.map_err(io::Error::other)?;
         relayed += chunk.len() as u64;
-        budget.charge(&budget_key, chunk.len() as u64, Instant::now());
         if relayed > MAX_MEDIA_BYTES {
             return Err(io::Error::other("media larger than the proxy relays"));
+        }
+        if !stream.relayed(chunk.len() as u64) {
+            return Err(io::Error::other("the relay budget ran out mid-stream"));
         }
         Ok::<_, io::Error>(chunk)
     });
@@ -167,6 +188,7 @@ pub fn configure(cfg: &mut ServiceConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::media_budget::BudgetLimits;
     use crate::services::media_proxy::sign;
     use crate::services::media_proxy::testing::{local_fetcher, raw, upstream};
     use actix_web::{App, test as actix_test};
@@ -325,11 +347,11 @@ mod tests {
         )]);
         let token = valid_token(&format!("http://media.test:{}/big.mp4", server.port));
         // Room for one relay of the file, and not a second.
-        let service = service_with(MediaBudget::new(
-            std::time::Duration::from_secs(600),
-            1024 * 1024,
-            8,
-        ));
+        let service = service_with(MediaBudget::new(BudgetLimits {
+            window: Duration::from_secs(600),
+            bytes_per_window: 1024 * 1024,
+            ..BudgetLimits::default()
+        }));
         let first = call_with(service.clone(), &token, None).await;
         assert_eq!(first.status(), StatusCode::OK);
         assert_eq!(actix_test::read_body(first).await.len(), 1024 * 1024);
@@ -349,5 +371,52 @@ mod tests {
             .unwrap();
         assert!((1..=600).contains(&retry_after));
         assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+
+    #[actix_web::test]
+    async fn refuses_a_relay_past_the_ones_running_for_the_url_without_fetching() {
+        let server = upstream(vec![(
+            "/v.mp4",
+            raw(
+                "200 OK",
+                &[("Content-Type", "video/mp4"), ("Content-Length", "2")],
+                b"ok",
+            ),
+        )]);
+        let url = format!("http://media.test:{}/v.mp4", server.port);
+        let service = service_with(MediaBudget::new(BudgetLimits {
+            max_streams_per_url: 1,
+            ..BudgetLimits::default()
+        }));
+        let running = service.budget.admit(&url, Instant::now()).unwrap();
+        let refused = call_with(service.clone(), &valid_token(&url), None).await;
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(refused.headers().get(header::RETRY_AFTER).unwrap(), "1");
+        assert!(server.requests.lock().unwrap().is_empty());
+        drop(running);
+        let admitted = call_with(service.clone(), &valid_token(&url), None).await;
+        assert_eq!(admitted.status(), StatusCode::OK);
+        assert_eq!(actix_test::read_body(admitted).await.as_ref(), b"ok");
+        assert_eq!(service.budget.active_streams(), 0);
+    }
+
+    #[actix_web::test]
+    async fn ends_a_relay_of_undeclared_length_once_the_budget_runs_out() {
+        let body = vec![b'x'; 4 * 1024 * 1024];
+        let server = upstream(vec![(
+            "/live.webm",
+            raw("200 OK", &[("Content-Type", "video/webm")], &body),
+        )]);
+        let url = format!("http://media.test:{}/live.webm", server.port);
+        let service = service_with(MediaBudget::new(BudgetLimits {
+            bytes_per_window: 1024 * 1024,
+            unknown_length_reservation: 64 * 1024,
+            ..BudgetLimits::default()
+        }));
+        let response = call_with(service.clone(), &valid_token(&url), None).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let read = actix_test::try_read_body(response).await;
+        assert!(read.is_err() || read.unwrap().len() < body.len());
+        assert_eq!(service.budget.active_streams(), 0);
     }
 }
