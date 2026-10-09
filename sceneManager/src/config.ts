@@ -45,6 +45,8 @@ export interface SceneManagerRuntimeConfig {
   tokenSecret: string;
   rootDir: string;
   publicDir: string;
+  /** Where Google Fonts families are kept once fetched (see google-font-cache.ts). */
+  fontCacheDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
   /**
@@ -157,6 +159,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     tokenSecret,
     rootDir,
     publicDir: resolvePublicDir(import.meta.dir),
+    fontCacheDir: join(rootDir, "cache", "fonts"),
     databaseProxyUrl,
     barkloaderUrl,
     obs: {

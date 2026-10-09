@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1659,7 +1659,7 @@
         {
           "id": "fontFamily",
           "label": "Font",
-          "type": "text",
+          "type": "font",
           "defaultValue": "Roboto, system-ui, sans-serif"
         },
         {
@@ -1955,7 +1955,7 @@
         {
           "id": "fontFamily",
           "label": "Font",
-          "type": "text",
+          "type": "font",
           "defaultValue": "Roboto, system-ui, sans-serif"
         },
         {
@@ -2032,7 +2032,7 @@
         {
           "id": "fontFamily",
           "label": "Font",
-          "type": "text",
+          "type": "font",
           "defaultValue": "Roboto, system-ui, sans-serif"
         },
         {

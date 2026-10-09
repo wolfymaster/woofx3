@@ -2,6 +2,7 @@ import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
+import type { GoogleFontCache } from "./fonts/google-font-cache";
 import type { FrameAssembler } from "./scene/frame-assembler";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
 import type { SceneDocuments } from "./scene/scene-documents";
@@ -12,6 +13,7 @@ import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleFontRoute, isFontPath } from "./routes/fonts";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
   handleStorageAssetRoute,
@@ -42,6 +44,8 @@ export interface HttpDeps {
   settingsDb: LinkedResourcesDb;
   /** Each open scene as a sequenced document (see scene-documents.ts). */
   sceneDocuments: SceneDocuments;
+  /** Google families for widgets' `font` settings. */
+  fonts: GoogleFontCache;
   /** Identity of this sceneManager process, minted once at startup and
    *  announced on every SSE stream. Lets a reconnecting overlay tell a
    *  resumed stream from one that came back against a restarted server
@@ -134,6 +138,10 @@ export function createHttpServer(deps: HttpDeps) {
 
           if (isStorageAssetPath(url.pathname)) {
             return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
+          }
+
+          if (isFontPath(url.pathname)) {
+            return withCors(await handleFontRoute(req, url, deps.fonts));
           }
 
           if (url.pathname.startsWith("/assets/")) {
