@@ -494,7 +494,7 @@ Both fields are **optional**. A module that declares neither behaves exactly as 
 
 Deliberately a flat list of path strings rather than full JSON Schema: it matches `${trigger.data.X}` access exactly and renders straight into a picker. It carries no `required`, no nesting and no constraints — those would all be promises the engine does not keep.
 
-**Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`), and these rules are checked after, each reporting the offending resource by id:
+**Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`; a key the shape or a field does not define is rejected, so a misspelling cannot be dropped silently), and these rules are checked after, each reporting the offending resource by id:
 
 | Rule | Why |
 |---|---|
@@ -552,20 +552,22 @@ A field in `emits` can say **who** the event is about. Per-viewer facts take the
 | Key | Meaning |
 |---|---|
 | `identity` | What the field identifies. `"viewer"` is the only accepted token. |
-| `anonymousWhen` | Optional. Path of a `boolean` field in the same shape that is true when the platform withheld the identity (an anonymous cheer or gift). Such events are not attributed to anyone, rather than to the placeholder id the platform sends. |
-| `displayName` | Optional. Path of a `string` field in the same shape carrying the viewer's human-readable name. |
+| `anonymousWhen` | Optional. Path of a `boolean` field in the same shape that is true when the platform withheld the identity (an anonymous cheer or gift). Such events are not attributed to anyone, rather than to the placeholder id the platform sends. On an `array` identity it applies to the whole event. |
+| `displayName` | Optional, and only on a `string` identity. Path of a different `string` field in the same shape carrying the viewer's human-readable name. |
 
-An `array` identity field names several viewers at once (for example a list of chatter ids), and each one is a subject of the event.
+An `array` identity field is an array of string ids naming several viewers at once (for example a list of chatter ids), and each one is a subject of the event.
 
 The annotations are kept verbatim in the `emits` registered for the trigger; a field without them is registered without the keys. They are validated at install with the rest of the shape:
 
 | Rule | Why |
 |---|---|
 | `identity` must be `"viewer"` | The engine keys state by it, so a token it does not know would identify nothing. |
-| `identity` only on a `string` or `array` field | An id is a string; an array is a list of them. |
+| `identity` only on a `string` or `array` field | An id is a string; an `array` is a list of string ids. |
 | `identity` only in a trigger's `emits` | A function result never attributes anything; on `returns` it is rejected. |
 | `anonymousWhen` and `displayName` only alongside `identity` | Without an identity there is nothing for them to qualify, and silently dropping `anonymousWhen` would attribute anonymous events. |
 | `anonymousWhen` names a declared `boolean` path; `displayName` a declared `string` path | Both are read from the same payload as the identity, by exact path. |
+| `displayName` only on a `string` identity | One name cannot name each viewer of an array. |
+| `displayName` names a field other than the identity | An id is not a name; pointing at itself would show ids where names were promised. |
 
 #### Trigger sentences
 

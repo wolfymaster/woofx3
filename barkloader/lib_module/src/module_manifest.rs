@@ -329,14 +329,19 @@ pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
 /// payload or a function result against it, so it carries no `required`, no
 /// nesting and no constraints — those would all be promises the engine does
 /// not keep.
+///
+/// Unknown keys are rejected at parse, here and on each field: a misspelt
+/// annotation such as `anonymouswhen` would otherwise be dropped and the
+/// install would succeed without the behaviour the author asked for.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManifestDataShape {
     #[serde(default)]
     pub fields: Vec<ManifestDataShapeField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManifestDataShapeField {
     /// Dot path into the value, e.g. `"bits"` or `"channel.title"`.
     pub path: String,
@@ -351,16 +356,19 @@ pub struct ManifestDataShapeField {
     pub example: Option<serde_json::Value>,
     /// Marks this field as naming who the value is about, from
     /// `DATA_SHAPE_IDENTITIES`. Per-viewer facts take their subject from a
-    /// field carrying `"viewer"`; an `array` field names several viewers.
+    /// field carrying `"viewer"`; an `array` field is a list of string ids
+    /// naming several viewers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
     /// Path of a `boolean` field in the same shape that is true when the
     /// identity is withheld (an anonymous cheer or gift), so nothing is
-    /// attributed to whatever placeholder id the platform sends instead.
+    /// attributed to whatever placeholder id the platform sends instead. On an
+    /// `array` identity it applies to the whole event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anonymous_when: Option<String>,
     /// Path of a `string` field in the same shape carrying the identity's
-    /// human-readable name.
+    /// human-readable name. Only on a `string` identity: one name cannot name
+    /// each viewer of an `array`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
 }
@@ -370,8 +378,8 @@ pub struct ManifestDataShapeField {
 /// before a manifest can usefully name it.
 pub const DATA_SHAPE_IDENTITIES: [&str; 1] = ["viewer"];
 
-/// The `type` tokens a field may carry alongside `identity`: one id, or a list
-/// of ids naming several subjects of the same event.
+/// The `type` tokens a field may carry alongside `identity`: one string id, or
+/// an array of string ids naming several subjects of the same event.
 pub const DATA_SHAPE_IDENTITY_FIELD_TYPES: [&str; 2] = ["string", "array"];
 
 /// The accepted `type` tokens for a data-shape field. Closed on purpose: this

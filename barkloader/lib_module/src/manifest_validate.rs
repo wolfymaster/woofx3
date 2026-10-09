@@ -2197,7 +2197,9 @@ fn validate_data_shape(
 /// the manifest, and dropping it would leave anonymous events attributed to
 /// whatever placeholder id the platform sends. A reference must name a field
 /// declared in the same shape with the type it is read as, because consumers
-/// read it from the very payload the identity came from.
+/// read it from the very payload the identity came from. `displayName` must
+/// name a different field than the identity: an id is not a name, and a
+/// self-reference would show ids where names were promised.
 fn validate_identity_annotation(
     field: &ManifestDataShapeField,
     types_by_path: &HashMap<&str, &str>,
@@ -2245,6 +2247,18 @@ fn validate_identity_annotation(
         )?;
     }
     if let Some(reference) = field.display_name.as_deref() {
+        if field.field_type != "string" {
+            return Err(anyhow!(
+                "{context}: `displayName` is only allowed on a `string` identity; one name \
+                 cannot name each viewer of an `{}`",
+                field.field_type
+            ));
+        }
+        if reference == field.path.trim() {
+            return Err(anyhow!(
+                "{context}: `displayName` {reference:?} names the identity field itself"
+            ));
+        }
         validate_sibling_reference(reference, "displayName", "string", types_by_path, context)?;
     }
     Ok(())
@@ -3926,7 +3940,72 @@ mod tests {
         );
         let msg = bad_err(&m);
         assert!(msg.contains("action #0 (a1)"), "{msg}");
-        assert!(msg.contains("`identity`"), "{msg}");
+        assert!(
+            msg.contains("`identity` is only allowed on a trigger's `emits`"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn accepts_annotations_on_dotted_paths() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "user.id", "type": "string", "identity": "viewer",
+              "anonymousWhen": "user.isAnonymous", "displayName": "user.name" },
+            { "path": "user.isAnonymous", "type": "boolean" },
+            { "path": "user.name", "type": "string" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_anonymous_when_on_an_array_identity() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "recipientIds", "type": "array", "identity": "viewer",
+              "anonymousWhen": "isAnonymous" },
+            { "path": "isAnonymous", "type": "boolean" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_a_display_name_on_an_array_identity() {
+        let msg = emits_rejection(
+            r#"
+            { "path": "chatterIds", "type": "array", "identity": "viewer",
+              "displayName": "chatterName" },
+            { "path": "chatterName", "type": "string" }"#,
+        );
+        assert!(
+            msg.contains("`displayName` is only allowed on a `string` identity"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_display_name_naming_the_identity_itself() {
+        let msg = emits_rejection(
+            r#"{ "path": "userId", "type": "string", "identity": "viewer",
+                 "displayName": "userId" }"#,
+        );
+        assert!(msg.contains("names the identity field itself"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_unknown_key_on_a_data_shape_field() {
+        let raw = r#"{ "fields": [{ "path": "userId", "type": "string",
+            "identity": "viewer", "anonymouswhen": "isAnonymous" }] }"#;
+        let err = serde_json::from_str::<ManifestDataShape>(raw)
+            .expect_err("a misspelt annotation must not be dropped silently")
+            .to_string();
+        assert!(err.contains("anonymouswhen"), "{err}");
+
+        let raw = r#"{ "fields": [], "required": ["userId"] }"#;
+        let err = serde_json::from_str::<ManifestDataShape>(raw)
+            .expect_err("an unknown shape key must not be dropped silently")
+            .to_string();
+        assert!(err.contains("required"), "{err}");
     }
 
     // Structure is serde's job; this pins that a malformed shape fails at
