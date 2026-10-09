@@ -131,11 +131,13 @@ through autosave.
 
 ## What overlays see
 
-Overlays get the document with every external media value in placement
-settings pointed at the engine's media proxy (see
-[External media](./asset-delivery.md#external-media)); editors get it as
-entered. The snapshot in the page and `/config` is that view, and a
-`scene-ops` event whose ops touch settings carries the ops between the views
-before and after the change rather than the ops as made, since a splice into
-a media value's `url` only applies to the value as entered. Ops that do not
-touch settings are sent as made.
+Overlays get the document with the external media values of themeable
+placements (those whose meta has a `mediaProxyBase`) pointed at the
+engine's media proxy (see [External media](./asset-delivery.md#external-media));
+editors get it as entered. The snapshot in the page and `/config` is that
+view. In a `scene-ops` event, a placement whose view is rewritten, before or
+after the change, is sent whole as overlays see it, in place of the ops
+made to it: a splice into a media value's `url` only applies to the value as
+entered. A placement whose meta changed is checked the same way. Ops for
+every other placement, and for the layout, are sent as made, so the work is
+limited to the placements a change touches.
