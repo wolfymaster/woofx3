@@ -12,6 +12,9 @@ type Condition struct {
 	Value    any
 }
 
+// Evaluate resolves a condition's field and value and applies its operator.
+// A field that resolves to nil satisfies only an operator about presence or
+// difference; see EvaluateAtomValue.
 func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 	fieldValue, err := resolver.ResolveString(condition.Field)
 	if err != nil {
@@ -27,7 +30,7 @@ func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 		expectedValue = resolved
 	}
 
-	return EvaluateOperator(condition.Operator, fieldValue, expectedValue)
+	return EvaluateAtomValue(condition.Operator, fieldValue, expectedValue)
 }
 
 // EvaluateMultiple evaluates multiple conditions with the specified logic ("and" or "or")
