@@ -149,3 +149,11 @@ func TestEvaluateOperatorKeepsAliasesEquivalent(t *testing.T) {
 		t.Fatal("expected an unknown operator to fail")
 	}
 }
+
+func TestEveryOperatorSpellingEvaluates(t *testing.T) {
+	for spelling := range conditionOperators {
+		if _, err := EvaluateOperator(spelling, "a", []any{"a", "b"}); err != nil {
+			t.Errorf("%s: %v", spelling, err)
+		}
+	}
+}
