@@ -890,6 +890,12 @@ pub struct ManifestSetting {
     /// `resourceKind`, and reused when it already exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub create: Option<SettingResourceCreate>,
+    /// Required for `type: "list"`, and only allowed there: the fields of one
+    /// row, as on any other `list` field. The value is stored as a JSON array
+    /// of objects keyed by these fields' ids, and read by functions as that
+    /// array.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_fields: Option<Vec<ManifestConfigField>>,
 }
 
 /// The instance a `resource_ref` setting links at install when it is empty.
@@ -914,6 +920,7 @@ impl ManifestSetting {
         match self.setting_type.as_str() {
             "number" => "0".to_string(),
             "toggle" => "false".to_string(),
+            "list" => "[]".to_string(),
             _ => String::new(),
         }
     }

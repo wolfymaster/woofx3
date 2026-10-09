@@ -729,6 +729,33 @@ fn build_module_namespace<'js>(
     .map_err(map)?;
     module.set("setSetting", set_setting_fn).map_err(map)?;
 
+    // `ctx.module.compareAndSetSetting(key, expected, value)` — write only
+    // while the setting still holds `expected`; answers `{ swapped, current }`.
+    let host_for_cas = invocation.host.clone();
+    let module_id_for_cas = invocation.module_id.clone();
+    let url_settings_for_cas = invocation.url_settings.clone();
+    let compare_and_set_setting_fn = JsFunction::new(
+        ctx.clone(),
+        move |ctx, key: String, expected: JsValue, value: JsValue| {
+            let json_expected = js_to_json(&expected).map_err(|e| host_err(e.to_string()))?;
+            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            let outcome = super::host_bindings::compare_and_set_module_setting(
+                &host_for_cas,
+                &module_id_for_cas,
+                &url_settings_for_cas,
+                &key,
+                &json_expected,
+                &json_val,
+            )
+            .map_err(host_err)?;
+            json_to_js(&ctx, &outcome).map_err(|e| host_err(e.to_string()))
+        },
+    )
+    .map_err(map)?;
+    module
+        .set("compareAndSetSetting", compare_and_set_setting_fn)
+        .map_err(map)?;
+
     ctx_obj.set("module", module).map_err(map)?;
     Ok(())
 }
@@ -1126,5 +1153,94 @@ mod tests {
         assert_eq!(result["a"], "secret");
         assert_eq!(result["b"], "secret");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// One list setting, `items`, compared and set the way the real client
+    /// does: by meaning, not bytes.
+    struct ListSettings {
+        items: std::sync::Mutex<serde_json::Value>,
+    }
+
+    impl crate::host::SettingsClient for ListSettings {
+        fn list_by_module(
+            &self,
+            _module_id: &str,
+        ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+            let items = self.items.lock().unwrap().clone();
+            Ok(std::collections::HashMap::from([("items".to_string(), items)]))
+        }
+        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn compare_and_set(
+            &self,
+            _module_id: &str,
+            key: &str,
+            expected: &serde_json::Value,
+            value: &serde_json::Value,
+        ) -> Result<crate::host::CompareAndSetOutcome, String> {
+            if key != "items" {
+                return Ok(crate::host::CompareAndSetOutcome { swapped: false, current: None });
+            }
+            let mut items = self.items.lock().unwrap();
+            let swapped = crate::host::setting_values_equal(&items, expected);
+            if swapped {
+                *items = value.clone();
+            }
+            Ok(crate::host::CompareAndSetOutcome { swapped, current: Some(items.clone()) })
+        }
+    }
+
+    fn list_settings_invocation(
+        items: serde_json::Value,
+        url_settings: std::collections::HashSet<String>,
+    ) -> (InvocationContext, Arc<ListSettings>) {
+        let settings = Arc::new(ListSettings { items: std::sync::Mutex::new(items) });
+        let mut host = noop_host_context();
+        host.settings = settings.clone();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings,
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        (invocation, settings)
+    }
+
+    #[test]
+    fn quickjs_ctx_module_compare_and_set_setting_writes_from_what_was_read() {
+        let (invocation, settings) =
+            list_settings_invocation(serde_json::json!([{ "label": "Pizza" }]), Default::default());
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = "function run(ctx) { \
+            const items = ctx.module.settings.items; \
+            const next = items.concat([{ label: 'Tacos' }]); \
+            const won = ctx.module.compareAndSetSetting('items', items, next); \
+            const lost = ctx.module.compareAndSetSetting('items', items, []); \
+            return { won, lost }; \
+        }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["won"]["swapped"], true);
+        assert_eq!(result["lost"]["swapped"], false);
+        let both = serde_json::json!([{ "label": "Pizza" }, { "label": "Tacos" }]);
+        assert_eq!(result["lost"]["current"], both);
+        assert_eq!(*settings.items.lock().unwrap(), both);
+    }
+
+    #[test]
+    fn quickjs_ctx_module_compare_and_set_setting_refuses_a_url_setting() {
+        let (invocation, _) = list_settings_invocation(
+            serde_json::json!([]),
+            std::collections::HashSet::from(["items".to_string()]),
+        );
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = "function run(ctx) { return ctx.module.compareAndSetSetting('items', [], []); }";
+        let err = adapter.execute(code, "run", &invocation).unwrap_err();
+        assert!(err.to_string().contains("url setting"), "{err}");
     }
 }

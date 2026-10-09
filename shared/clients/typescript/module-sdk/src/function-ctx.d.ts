@@ -307,7 +307,12 @@ export interface CtxModule {
   name: string;
   /** Semver string from the manifest. */
   version: string;
-  settings: Record<string, string | number | boolean>;
+  /**
+   * The module's settings, coerced from each setting's declared type: a
+   * `list` setting reads as its rows, an array of objects keyed by the
+   * setting's `itemFields` ids (`[]` when it has none).
+   */
+  settings: Record<string, string | number | boolean | Record<string, unknown>[]>;
   /**
    * Write one of this module's settings. Takes effect immediately.
    *
@@ -319,6 +324,28 @@ export interface CtxModule {
    * The key does not have to be declared in the manifest.
    */
   setSetting(key: string, value: string): void;
+  /**
+   * Write one of this module's settings only while it still holds `expected`,
+   * as this module reads it: the safe way to change a setting that another
+   * run, or the streamer, may be changing at the same moment, such as adding
+   * a row to a `list` setting.
+   *
+   * `expected` is compared by meaning, not by text, so the array read from
+   * `settings` matches the stored list however it was saved. `value` is
+   * stored as is when it is a string and as JSON otherwise; a `list` setting
+   * takes only an array.
+   *
+   * Answers `{ swapped, current }`: `current` is the setting as it reads now
+   * (the value written, or the one that stopped the write, to retry from),
+   * `null` when the module has no such setting. Like `setSetting`, it does
+   * not refresh `settings`. Refused for a `url` or `secret` setting.
+   */
+  compareAndSetSetting(key: string, expected: unknown, value: unknown): CtxCompareAndSetSettingResult;
+}
+
+export interface CtxCompareAndSetSettingResult {
+  swapped: boolean;
+  current: unknown;
 }
 
 // ── Extensions ──────────────────────────────────────────────────────

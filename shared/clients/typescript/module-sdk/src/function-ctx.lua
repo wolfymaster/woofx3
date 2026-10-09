@@ -164,17 +164,21 @@
 ---Identity and configured settings of the module the invoking function
 ---belongs to. `settings` has one key per `module_settings` row
 ---registered for this module, coerced to string/number/boolean based
----on each setting's declared type.
+---on each setting's declared type; a `list` setting reads as its rows.
 ---
 ---`setSetting` writes one immediately. Values go in as strings, and
 ---`settings` is a snapshot taken once per invocation, so a value written
 ---mid-invocation is not reflected back into it.
+---
+---`compareAndSetSetting` writes only while the setting still holds
+---`expected`, compared by meaning, and answers `{ swapped, current }`.
 ---@class CtxModule
 ---@field id string             manifest-local module id
 ---@field name string           display name from the manifest
 ---@field version string        semver string from the manifest
----@field settings table<string, string|number|boolean>
+---@field settings table<string, string|number|boolean|table[]>
 ---@field setSetting fun(key: string, value: string): nil
+---@field compareAndSetSetting fun(key: string, expected: any, value: any): { swapped: boolean, current: any }
 
 ---Raised by an extension function the host refused or failed:
 ---`tostring(err)` is the message. `code` is set when there is a reason to
