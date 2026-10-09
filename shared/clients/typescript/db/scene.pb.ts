@@ -49,6 +49,11 @@ export interface Scene {
   draftWidgetsJson: string;
   draftLayoutJson: string;
   hasDraft: boolean;
+  /**
+   * The scene editor's sync state as a JSON object, owned by the scene
+   * editor and opaque here. Empty when no editor has synced the scene.
+   */
+  editorStateJson: string;
 }
 
 export interface CreateSceneRequest {
@@ -100,6 +105,13 @@ export interface UpdateSceneRequest {
    * set in the same request.
    */
   clearDraft: boolean;
+  /**
+   * Store the scene editor's sync state. Written in the same row update
+   * as the documents and draft in this request, so the state never
+   * describes documents other than the stored ones. Empty leaves it
+   * unchanged.
+   */
+  editorStateJson: string;
 }
 
 export interface DeleteSceneRequest {
@@ -376,6 +388,7 @@ export const Scene = {
       draftWidgetsJson: "",
       draftLayoutJson: "",
       hasDraft: false,
+      editorStateJson: "",
       ...msg,
     };
   },
@@ -430,6 +443,9 @@ export const Scene = {
     }
     if (msg.hasDraft) {
       writer.writeBool(13, msg.hasDraft);
+    }
+    if (msg.editorStateJson) {
+      writer.writeString(14, msg.editorStateJson);
     }
     return writer;
   },
@@ -487,6 +503,10 @@ export const Scene = {
         }
         case 13: {
           msg.hasDraft = reader.readBool();
+          break;
+        }
+        case 14: {
+          msg.editorStateJson = reader.readString();
           break;
         }
         default: {
@@ -785,6 +805,7 @@ export const UpdateSceneRequest = {
       draftWidgetsJson: "",
       draftLayoutJson: "",
       clearDraft: false,
+      editorStateJson: "",
       ...msg,
     };
   },
@@ -819,6 +840,9 @@ export const UpdateSceneRequest = {
     }
     if (msg.clearDraft) {
       writer.writeBool(8, msg.clearDraft);
+    }
+    if (msg.editorStateJson) {
+      writer.writeString(9, msg.editorStateJson);
     }
     return writer;
   },
@@ -863,6 +887,10 @@ export const UpdateSceneRequest = {
         }
         case 8: {
           msg.clearDraft = reader.readBool();
+          break;
+        }
+        case 9: {
+          msg.editorStateJson = reader.readString();
           break;
         }
         default: {
@@ -1173,6 +1201,7 @@ export const SceneJSON = {
       draftWidgetsJson: "",
       draftLayoutJson: "",
       hasDraft: false,
+      editorStateJson: "",
       ...msg,
     };
   },
@@ -1217,6 +1246,9 @@ export const SceneJSON = {
     }
     if (msg.hasDraft) {
       json["hasDraft"] = msg.hasDraft;
+    }
+    if (msg.editorStateJson) {
+      json["editorStateJson"] = msg.editorStateJson;
     }
     return json;
   },
@@ -1274,6 +1306,11 @@ export const SceneJSON = {
     const _hasDraft_ = json["hasDraft"] ?? json["has_draft"];
     if (_hasDraft_) {
       msg.hasDraft = _hasDraft_;
+    }
+    const _editorStateJson_ =
+      json["editorStateJson"] ?? json["editor_state_json"];
+    if (_editorStateJson_) {
+      msg.editorStateJson = _editorStateJson_;
     }
     return msg;
   },
@@ -1526,6 +1563,7 @@ export const UpdateSceneRequestJSON = {
       draftWidgetsJson: "",
       draftLayoutJson: "",
       clearDraft: false,
+      editorStateJson: "",
       ...msg,
     };
   },
@@ -1560,6 +1598,9 @@ export const UpdateSceneRequestJSON = {
     }
     if (msg.clearDraft) {
       json["clearDraft"] = msg.clearDraft;
+    }
+    if (msg.editorStateJson) {
+      json["editorStateJson"] = msg.editorStateJson;
     }
     return json;
   },
@@ -1604,6 +1645,11 @@ export const UpdateSceneRequestJSON = {
     const _clearDraft_ = json["clearDraft"] ?? json["clear_draft"];
     if (_clearDraft_) {
       msg.clearDraft = _clearDraft_;
+    }
+    const _editorStateJson_ =
+      json["editorStateJson"] ?? json["editor_state_json"];
+    if (_editorStateJson_) {
+      msg.editorStateJson = _editorStateJson_;
     }
     return msg;
   },

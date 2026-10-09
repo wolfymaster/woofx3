@@ -138,6 +138,18 @@ describe("OverlayHost.loadSceneById — drafts", () => {
     expect((await host.loadSceneById("scene-1", "draft"))!.instances.map((i) => i.id)).toEqual(["published"]);
   });
 
+  it("carries the stored editor state with either version", async () => {
+    const editorStateJson = '{"v":4,"headId":"e.4","clients":{}}';
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson });
+    expect((await host.loadSceneById("scene-1"))?.editorStateJson).toBe(editorStateJson);
+    expect((await host.loadSceneById("scene-1", "draft"))?.editorStateJson).toBe(editorStateJson);
+  });
+
+  it("leaves editor state absent when none is stored", async () => {
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson: "" });
+    expect((await host.loadSceneById("scene-1"))?.editorStateJson).toBeUndefined();
+  });
+
   it("keeps each placement as stored", async () => {
     const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}" });
     expect((await host.loadSceneById("scene-1"))!.instances[0]!.stored).toEqual({

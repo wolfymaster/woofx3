@@ -222,3 +222,64 @@ func TestSceneService_Update_KeepsADraftBesideThePublishedScene(t *testing.T) {
 		t.Fatalf("published widgets = %q", scene.WidgetsJson)
 	}
 }
+
+func TestSceneService_Update_StoresEditorStateWithTheDocuments(t *testing.T) {
+	sceneSvc, _, _, db := newSceneSvc(t)
+	sceneID := seedScene(t, db, "main")
+	ctx := context.Background()
+	get := func() *client.Scene {
+		t.Helper()
+		resp, err := sceneSvc.GetScene(ctx, &client.GetSceneRequest{Id: sceneID.String()})
+		if err != nil {
+			t.Fatalf("get scene: %v", err)
+		}
+		return resp.Scene
+	}
+
+	if state := get().EditorStateJson; state != "" {
+		t.Fatalf("a new scene has editor state %q", state)
+	}
+
+	const first = `{"v":1,"headId":"e.1","clients":{}}`
+	resp, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{
+		Id:               sceneID.String(),
+		WidgetsJson:      `[{"id":"w1"}]`,
+		DraftWidgetsJson: `[{"id":"w2"}]`,
+		DraftLayoutJson:  `{}`,
+		EditorStateJson:  first,
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if resp.Scene.EditorStateJson != first {
+		t.Fatalf("update replied with editor state %q", resp.Scene.EditorStateJson)
+	}
+	scene := get()
+	if scene.EditorStateJson != first || scene.WidgetsJson != `[{"id":"w1"}]` || scene.DraftWidgetsJson != `[{"id":"w2"}]` {
+		t.Fatalf("documents and editor state not stored together: %+v", scene)
+	}
+
+	// An update that names no editor state leaves it alone.
+	if _, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: sceneID.String(), Name: "renamed"}); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if state := get().EditorStateJson; state != first {
+		t.Fatalf("a rename changed the editor state to %q", state)
+	}
+
+	// Clearing the draft and storing editor state in one request does both.
+	const second = `{"v":2,"headId":"e.2","clients":{}}`
+	_, err = sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{
+		Id:              sceneID.String(),
+		WidgetsJson:     `[{"id":"w2"}]`,
+		ClearDraft:      true,
+		EditorStateJson: second,
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	scene = get()
+	if scene.HasDraft || scene.WidgetsJson != `[{"id":"w2"}]` || scene.EditorStateJson != second {
+		t.Fatalf("publish with editor state: %+v", scene)
+	}
+}

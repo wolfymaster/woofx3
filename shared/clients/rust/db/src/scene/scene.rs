@@ -38,6 +38,10 @@ pub struct Scene {
     pub draft_layout_json: ::prost::alloc::string::String,
     #[prost(bool, tag="13")]
     pub has_draft: bool,
+    /// The scene editor's sync state as a JSON object, owned by the scene
+    /// editor and opaque here. Empty when no editor has synced the scene.
+    #[prost(string, tag="14")]
+    pub editor_state_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateSceneRequest {
@@ -96,6 +100,12 @@ pub struct UpdateSceneRequest {
     /// set in the same request.
     #[prost(bool, tag="8")]
     pub clear_draft: bool,
+    /// Store the scene editor's sync state. Written in the same row update
+    /// as the documents and draft in this request, so the state never
+    /// describes documents other than the stored ones. Empty leaves it
+    /// unchanged.
+    #[prost(string, tag="9")]
+    pub editor_state_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteSceneRequest {

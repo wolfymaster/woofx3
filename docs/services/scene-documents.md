@@ -128,3 +128,10 @@ Sequence numbers and the op window live in memory: they start again at 0
 when sceneManager restarts, which reloads every overlay and reconnects every
 editor anyway (see the stream's boot id). Only the documents are persisted,
 through autosave.
+
+The scene row also has a nullable `editor_state_json` column for the scene
+editor's sync state, opaque to the db proxy. `UpdateScene` stores it in the
+same row update as the documents and draft named in the request, and a
+request without it leaves it unchanged. A loaded scene carries it as
+`editorStateJson` (absent when the column is NULL), and a `SceneWrite` can
+include it. The documents described on this page neither read nor write it.

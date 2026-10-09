@@ -165,7 +165,13 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	if req.ClearDraft {
 		scene.DraftWidgetsJSON, scene.DraftLayoutJSON = nil, nil
 	}
+	if req.EditorStateJson != "" {
+		editorState := req.EditorStateJson
+		scene.EditorStateJSON = &editorState
+	}
 
+	// One statement writes every column, so documents, draft and editor
+	// state are stored together or not at all.
 	if err := s.repo.Update(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
 	}
@@ -312,6 +318,9 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 		scene.DraftWidgetsJson = *m.DraftWidgetsJSON
 		scene.DraftLayoutJson = *m.DraftLayoutJSON
 		scene.HasDraft = true
+	}
+	if m.EditorStateJSON != nil {
+		scene.EditorStateJson = *m.EditorStateJSON
 	}
 	return scene
 }

@@ -74,6 +74,8 @@ export interface OverlaySceneState {
   instances: OverlayWidgetInstance[];
   /** Whether the scene has an unpublished draft (see `loadSceneById`). */
   hasDraft?: boolean;
+  /** The scene editor's stored sync state, a JSON object; absent until an editor has synced the scene. */
+  editorStateJson?: string;
 }
 
 /** Which of a scene's versions to load: what overlays show, or the editor's draft. */
@@ -304,6 +306,7 @@ export class OverlayHost {
       layout: parseLayout(layoutJson),
       instances: await this.resolveInstances(this.parseInstances(widgetsJson, s.id), s.id),
       hasDraft: s.hasDraft,
+      ...(s.editorStateJson ? { editorStateJson: s.editorStateJson } : {}),
     };
   }
 
