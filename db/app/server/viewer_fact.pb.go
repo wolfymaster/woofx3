@@ -1242,6 +1242,625 @@ func (x *GetViewerFactsResponse) GetValues() []*ViewerFactValue {
 	return nil
 }
 
+type SegmentDefinition struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Canonical segment id, e.g. `user:segment:<slug>`.
+	Id          string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	// The condition as JSON: `{"all": [...]}`, `{"any": [...]}`, `{"not": {...}}`
+	// or an atom `{"fact": "<fact id>", "op": "...", "value": ...}`. Ops: eq,
+	// ne, gt, gte, lt, lte, exists, not_exists, and within and older_than,
+	// whose value is a duration such as "720h" and which read timestamp facts.
+	When string `protobuf:"bytes,4,opt,name=when,proto3" json:"when,omitempty"`
+	// The facts the condition reads, in id order.
+	Facts []string `protobuf:"bytes,5,rep,name=facts,proto3" json:"facts,omitempty"`
+	// `session` when the condition reads any session-window fact: membership is
+	// then kept per stream session and a new session starts it empty.
+	// `lifetime` otherwise.
+	WindowKind string `protobuf:"bytes,6,opt,name=window_kind,json=windowKind,proto3" json:"window_kind,omitempty"`
+	// True when the condition has a within or older_than atom. Membership can
+	// then change with time alone; it is re-evaluated, and edges announced,
+	// only when one of the viewer's facts changes, so the stored membership is
+	// as of the viewer's last change.
+	TimeRelative  bool                   `protobuf:"varint,7,opt,name=time_relative,json=timeRelative,proto3" json:"time_relative,omitempty"`
+	Revision      int64                  `protobuf:"varint,8,opt,name=revision,proto3" json:"revision,omitempty"`
+	CreatedByType string                 `protobuf:"bytes,9,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string                 `protobuf:"bytes,10,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// `active`, or `invalid` when the condition no longer fits the facts it
+	// reads (a fact's value kind changed). Resolved when the definition is
+	// read.
+	Status string `protobuf:"bytes,13,opt,name=status,proto3" json:"status,omitempty"`
+	// Why the status is not `active`. Empty when it is.
+	Reason        string `protobuf:"bytes,14,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SegmentDefinition) Reset() {
+	*x = SegmentDefinition{}
+	mi := &file_viewer_fact_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SegmentDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SegmentDefinition) ProtoMessage() {}
+
+func (x *SegmentDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SegmentDefinition.ProtoReflect.Descriptor instead.
+func (*SegmentDefinition) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SegmentDefinition) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetWhen() string {
+	if x != nil {
+		return x.When
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetFacts() []string {
+	if x != nil {
+		return x.Facts
+	}
+	return nil
+}
+
+func (x *SegmentDefinition) GetWindowKind() string {
+	if x != nil {
+		return x.WindowKind
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetTimeRelative() bool {
+	if x != nil {
+		return x.TimeRelative
+	}
+	return false
+}
+
+func (x *SegmentDefinition) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *SegmentDefinition) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *SegmentDefinition) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *SegmentDefinition) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SegmentDefinition) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type UpsertSegmentDefinitionRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	// The condition as JSON; see SegmentDefinition.when.
+	When string `protobuf:"bytes,4,opt,name=when,proto3" json:"when,omitempty"`
+	// Who declares the segment: `USER` for one saved from the UI, `MODULE` for
+	// one a module manifest declares. Defaults to `USER`.
+	CreatedByType string `protobuf:"bytes,5,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string `protobuf:"bytes,6,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpsertSegmentDefinitionRequest) Reset() {
+	*x = UpsertSegmentDefinitionRequest{}
+	mi := &file_viewer_fact_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpsertSegmentDefinitionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpsertSegmentDefinitionRequest) ProtoMessage() {}
+
+func (x *UpsertSegmentDefinitionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpsertSegmentDefinitionRequest.ProtoReflect.Descriptor instead.
+func (*UpsertSegmentDefinitionRequest) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *UpsertSegmentDefinitionRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpsertSegmentDefinitionRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UpsertSegmentDefinitionRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *UpsertSegmentDefinitionRequest) GetWhen() string {
+	if x != nil {
+		return x.When
+	}
+	return ""
+}
+
+func (x *UpsertSegmentDefinitionRequest) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *UpsertSegmentDefinitionRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
+}
+
+type SegmentDefinitionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Definition    *SegmentDefinition     `protobuf:"bytes,2,opt,name=definition,proto3" json:"definition,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SegmentDefinitionResponse) Reset() {
+	*x = SegmentDefinitionResponse{}
+	mi := &file_viewer_fact_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SegmentDefinitionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SegmentDefinitionResponse) ProtoMessage() {}
+
+func (x *SegmentDefinitionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SegmentDefinitionResponse.ProtoReflect.Descriptor instead.
+func (*SegmentDefinitionResponse) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SegmentDefinitionResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *SegmentDefinitionResponse) GetDefinition() *SegmentDefinition {
+	if x != nil {
+		return x.Definition
+	}
+	return nil
+}
+
+type DeleteSegmentDefinitionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSegmentDefinitionRequest) Reset() {
+	*x = DeleteSegmentDefinitionRequest{}
+	mi := &file_viewer_fact_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSegmentDefinitionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSegmentDefinitionRequest) ProtoMessage() {}
+
+func (x *DeleteSegmentDefinitionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSegmentDefinitionRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSegmentDefinitionRequest) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DeleteSegmentDefinitionRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type ListSegmentDefinitionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSegmentDefinitionsRequest) Reset() {
+	*x = ListSegmentDefinitionsRequest{}
+	mi := &file_viewer_fact_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSegmentDefinitionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSegmentDefinitionsRequest) ProtoMessage() {}
+
+func (x *ListSegmentDefinitionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSegmentDefinitionsRequest.ProtoReflect.Descriptor instead.
+func (*ListSegmentDefinitionsRequest) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{19}
+}
+
+type ListSegmentDefinitionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Definitions   []*SegmentDefinition   `protobuf:"bytes,2,rep,name=definitions,proto3" json:"definitions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSegmentDefinitionsResponse) Reset() {
+	*x = ListSegmentDefinitionsResponse{}
+	mi := &file_viewer_fact_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSegmentDefinitionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSegmentDefinitionsResponse) ProtoMessage() {}
+
+func (x *ListSegmentDefinitionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSegmentDefinitionsResponse.ProtoReflect.Descriptor instead.
+func (*ListSegmentDefinitionsResponse) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ListSegmentDefinitionsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *ListSegmentDefinitionsResponse) GetDefinitions() []*SegmentDefinition {
+	if x != nil {
+		return x.Definitions
+	}
+	return nil
+}
+
+type GetViewerSegmentsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Platform      string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	SubjectId     string                 `protobuf:"bytes,2,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetViewerSegmentsRequest) Reset() {
+	*x = GetViewerSegmentsRequest{}
+	mi := &file_viewer_fact_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetViewerSegmentsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetViewerSegmentsRequest) ProtoMessage() {}
+
+func (x *GetViewerSegmentsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetViewerSegmentsRequest.ProtoReflect.Descriptor instead.
+func (*GetViewerSegmentsRequest) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetViewerSegmentsRequest) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *GetViewerSegmentsRequest) GetSubjectId() string {
+	if x != nil {
+		return x.SubjectId
+	}
+	return ""
+}
+
+type ViewerSegment struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SegmentId string                 `protobuf:"bytes,1,opt,name=segment_id,json=segmentId,proto3" json:"segment_id,omitempty"`
+	// Empty for a lifetime segment, the stream session id for a session one.
+	WindowKey string                 `protobuf:"bytes,2,opt,name=window_key,json=windowKey,proto3" json:"window_key,omitempty"`
+	EnteredAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=entered_at,json=enteredAt,proto3" json:"entered_at,omitempty"`
+	// See SegmentDefinition.time_relative.
+	TimeRelative  bool `protobuf:"varint,4,opt,name=time_relative,json=timeRelative,proto3" json:"time_relative,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ViewerSegment) Reset() {
+	*x = ViewerSegment{}
+	mi := &file_viewer_fact_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewerSegment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewerSegment) ProtoMessage() {}
+
+func (x *ViewerSegment) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewerSegment.ProtoReflect.Descriptor instead.
+func (*ViewerSegment) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ViewerSegment) GetSegmentId() string {
+	if x != nil {
+		return x.SegmentId
+	}
+	return ""
+}
+
+func (x *ViewerSegment) GetWindowKey() string {
+	if x != nil {
+		return x.WindowKey
+	}
+	return ""
+}
+
+func (x *ViewerSegment) GetEnteredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EnteredAt
+	}
+	return nil
+}
+
+func (x *ViewerSegment) GetTimeRelative() bool {
+	if x != nil {
+		return x.TimeRelative
+	}
+	return false
+}
+
+type GetViewerSegmentsResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// The current stream session, or empty when none has started.
+	SessionId     string           `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Segments      []*ViewerSegment `protobuf:"bytes,3,rep,name=segments,proto3" json:"segments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetViewerSegmentsResponse) Reset() {
+	*x = GetViewerSegmentsResponse{}
+	mi := &file_viewer_fact_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetViewerSegmentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetViewerSegmentsResponse) ProtoMessage() {}
+
+func (x *GetViewerSegmentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_viewer_fact_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetViewerSegmentsResponse.ProtoReflect.Descriptor instead.
+func (*GetViewerSegmentsResponse) Descriptor() ([]byte, []int) {
+	return file_viewer_fact_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetViewerSegmentsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *GetViewerSegmentsResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *GetViewerSegmentsResponse) GetSegments() []*ViewerSegment {
+	if x != nil {
+		return x.Segments
+	}
+	return nil
+}
+
 var File_viewer_fact_proto protoreflect.FileDescriptor
 
 const file_viewer_fact_proto_rawDesc = "" +
@@ -1368,13 +1987,71 @@ const file_viewer_fact_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12&\n" +
 	"\fsubject_name\x18\x03 \x01(\tH\x00R\vsubjectName\x88\x01\x01\x124\n" +
 	"\x06values\x18\x04 \x03(\v2\x1c.viewer_fact.ViewerFactValueR\x06valuesB\x0f\n" +
-	"\r_subject_name2\xf7\x03\n" +
+	"\r_subject_name\"\xd9\x03\n" +
+	"\x11SegmentDefinition\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x12\n" +
+	"\x04when\x18\x04 \x01(\tR\x04when\x12\x14\n" +
+	"\x05facts\x18\x05 \x03(\tR\x05facts\x12\x1f\n" +
+	"\vwindow_kind\x18\x06 \x01(\tR\n" +
+	"windowKind\x12#\n" +
+	"\rtime_relative\x18\a \x01(\bR\ftimeRelative\x12\x1a\n" +
+	"\brevision\x18\b \x01(\x03R\brevision\x12&\n" +
+	"\x0fcreated_by_type\x18\t \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\n" +
+	" \x01(\tR\fcreatedByRef\x129\n" +
+	"\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
+	"\x06status\x18\r \x01(\tR\x06status\x12\x16\n" +
+	"\x06reason\x18\x0e \x01(\tR\x06reason\"\xc8\x01\n" +
+	"\x1eUpsertSegmentDefinitionRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x12\n" +
+	"\x04when\x18\x04 \x01(\tR\x04when\x12&\n" +
+	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\"\x8b\x01\n" +
+	"\x19SegmentDefinitionResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12>\n" +
+	"\n" +
+	"definition\x18\x02 \x01(\v2\x1e.viewer_fact.SegmentDefinitionR\n" +
+	"definition\"0\n" +
+	"\x1eDeleteSegmentDefinitionRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x1f\n" +
+	"\x1dListSegmentDefinitionsRequest\"\x92\x01\n" +
+	"\x1eListSegmentDefinitionsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12@\n" +
+	"\vdefinitions\x18\x02 \x03(\v2\x1e.viewer_fact.SegmentDefinitionR\vdefinitions\"U\n" +
+	"\x18GetViewerSegmentsRequest\x12\x1a\n" +
+	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1d\n" +
+	"\n" +
+	"subject_id\x18\x02 \x01(\tR\tsubjectId\"\xad\x01\n" +
+	"\rViewerSegment\x12\x1d\n" +
+	"\n" +
+	"segment_id\x18\x01 \x01(\tR\tsegmentId\x12\x1d\n" +
+	"\n" +
+	"window_key\x18\x02 \x01(\tR\twindowKey\x129\n" +
+	"\n" +
+	"entered_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tenteredAt\x12#\n" +
+	"\rtime_relative\x18\x04 \x01(\bR\ftimeRelative\"\xa2\x01\n" +
+	"\x19GetViewerSegmentsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x126\n" +
+	"\bsegments\x18\x03 \x03(\v2\x1a.viewer_fact.ViewerSegmentR\bsegments2\x9e\a\n" +
 	"\x11ViewerFactService\x12e\n" +
 	"\x14UpsertFactDefinition\x12(.viewer_fact.UpsertFactDefinitionRequest\x1a#.viewer_fact.FactDefinitionResponse\x12X\n" +
 	"\x14DeleteFactDefinition\x12(.viewer_fact.DeleteFactDefinitionRequest\x1a\x16.common.ResponseStatus\x12h\n" +
 	"\x13ListFactDefinitions\x12'.viewer_fact.ListFactDefinitionsRequest\x1a(.viewer_fact.ListFactDefinitionsResponse\x12\\\n" +
 	"\x0fApplyFactDeltas\x12#.viewer_fact.ApplyFactDeltasRequest\x1a$.viewer_fact.ApplyFactDeltasResponse\x12Y\n" +
-	"\x0eGetViewerFacts\x12\".viewer_fact.GetViewerFactsRequest\x1a#.viewer_fact.GetViewerFactsResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x0eGetViewerFacts\x12\".viewer_fact.GetViewerFactsRequest\x1a#.viewer_fact.GetViewerFactsResponse\x12n\n" +
+	"\x17UpsertSegmentDefinition\x12+.viewer_fact.UpsertSegmentDefinitionRequest\x1a&.viewer_fact.SegmentDefinitionResponse\x12^\n" +
+	"\x17DeleteSegmentDefinition\x12+.viewer_fact.DeleteSegmentDefinitionRequest\x1a\x16.common.ResponseStatus\x12q\n" +
+	"\x16ListSegmentDefinitions\x12*.viewer_fact.ListSegmentDefinitionsRequest\x1a+.viewer_fact.ListSegmentDefinitionsResponse\x12b\n" +
+	"\x11GetViewerSegments\x12%.viewer_fact.GetViewerSegmentsRequest\x1a&.viewer_fact.GetViewerSegmentsResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_viewer_fact_proto_rawDescOnce sync.Once
@@ -1388,61 +2065,87 @@ func file_viewer_fact_proto_rawDescGZIP() []byte {
 	return file_viewer_fact_proto_rawDescData
 }
 
-var file_viewer_fact_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_viewer_fact_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_viewer_fact_proto_goTypes = []any{
-	(*FactDefinition)(nil),              // 0: viewer_fact.FactDefinition
-	(*ResolvedFactSource)(nil),          // 1: viewer_fact.ResolvedFactSource
-	(*UpsertFactDefinitionRequest)(nil), // 2: viewer_fact.UpsertFactDefinitionRequest
-	(*FactDefinitionResponse)(nil),      // 3: viewer_fact.FactDefinitionResponse
-	(*DeleteFactDefinitionRequest)(nil), // 4: viewer_fact.DeleteFactDefinitionRequest
-	(*ListFactDefinitionsRequest)(nil),  // 5: viewer_fact.ListFactDefinitionsRequest
-	(*ListFactDefinitionsResponse)(nil), // 6: viewer_fact.ListFactDefinitionsResponse
-	(*FactValue)(nil),                   // 7: viewer_fact.FactValue
-	(*FactDelta)(nil),                   // 8: viewer_fact.FactDelta
-	(*ApplyFactDeltasRequest)(nil),      // 9: viewer_fact.ApplyFactDeltasRequest
-	(*FactValueChange)(nil),             // 10: viewer_fact.FactValueChange
-	(*ApplyFactDeltasResponse)(nil),     // 11: viewer_fact.ApplyFactDeltasResponse
-	(*GetViewerFactsRequest)(nil),       // 12: viewer_fact.GetViewerFactsRequest
-	(*ViewerFactValue)(nil),             // 13: viewer_fact.ViewerFactValue
-	(*GetViewerFactsResponse)(nil),      // 14: viewer_fact.GetViewerFactsResponse
-	(*timestamppb.Timestamp)(nil),       // 15: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),              // 16: common.ResponseStatus
+	(*FactDefinition)(nil),                 // 0: viewer_fact.FactDefinition
+	(*ResolvedFactSource)(nil),             // 1: viewer_fact.ResolvedFactSource
+	(*UpsertFactDefinitionRequest)(nil),    // 2: viewer_fact.UpsertFactDefinitionRequest
+	(*FactDefinitionResponse)(nil),         // 3: viewer_fact.FactDefinitionResponse
+	(*DeleteFactDefinitionRequest)(nil),    // 4: viewer_fact.DeleteFactDefinitionRequest
+	(*ListFactDefinitionsRequest)(nil),     // 5: viewer_fact.ListFactDefinitionsRequest
+	(*ListFactDefinitionsResponse)(nil),    // 6: viewer_fact.ListFactDefinitionsResponse
+	(*FactValue)(nil),                      // 7: viewer_fact.FactValue
+	(*FactDelta)(nil),                      // 8: viewer_fact.FactDelta
+	(*ApplyFactDeltasRequest)(nil),         // 9: viewer_fact.ApplyFactDeltasRequest
+	(*FactValueChange)(nil),                // 10: viewer_fact.FactValueChange
+	(*ApplyFactDeltasResponse)(nil),        // 11: viewer_fact.ApplyFactDeltasResponse
+	(*GetViewerFactsRequest)(nil),          // 12: viewer_fact.GetViewerFactsRequest
+	(*ViewerFactValue)(nil),                // 13: viewer_fact.ViewerFactValue
+	(*GetViewerFactsResponse)(nil),         // 14: viewer_fact.GetViewerFactsResponse
+	(*SegmentDefinition)(nil),              // 15: viewer_fact.SegmentDefinition
+	(*UpsertSegmentDefinitionRequest)(nil), // 16: viewer_fact.UpsertSegmentDefinitionRequest
+	(*SegmentDefinitionResponse)(nil),      // 17: viewer_fact.SegmentDefinitionResponse
+	(*DeleteSegmentDefinitionRequest)(nil), // 18: viewer_fact.DeleteSegmentDefinitionRequest
+	(*ListSegmentDefinitionsRequest)(nil),  // 19: viewer_fact.ListSegmentDefinitionsRequest
+	(*ListSegmentDefinitionsResponse)(nil), // 20: viewer_fact.ListSegmentDefinitionsResponse
+	(*GetViewerSegmentsRequest)(nil),       // 21: viewer_fact.GetViewerSegmentsRequest
+	(*ViewerSegment)(nil),                  // 22: viewer_fact.ViewerSegment
+	(*GetViewerSegmentsResponse)(nil),      // 23: viewer_fact.GetViewerSegmentsResponse
+	(*timestamppb.Timestamp)(nil),          // 24: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                 // 25: common.ResponseStatus
 }
 var file_viewer_fact_proto_depIdxs = []int32{
-	15, // 0: viewer_fact.FactDefinition.counting_since:type_name -> google.protobuf.Timestamp
-	15, // 1: viewer_fact.FactDefinition.backfilled_through:type_name -> google.protobuf.Timestamp
-	15, // 2: viewer_fact.FactDefinition.created_at:type_name -> google.protobuf.Timestamp
-	15, // 3: viewer_fact.FactDefinition.updated_at:type_name -> google.protobuf.Timestamp
+	24, // 0: viewer_fact.FactDefinition.counting_since:type_name -> google.protobuf.Timestamp
+	24, // 1: viewer_fact.FactDefinition.backfilled_through:type_name -> google.protobuf.Timestamp
+	24, // 2: viewer_fact.FactDefinition.created_at:type_name -> google.protobuf.Timestamp
+	24, // 3: viewer_fact.FactDefinition.updated_at:type_name -> google.protobuf.Timestamp
 	1,  // 4: viewer_fact.FactDefinition.sources:type_name -> viewer_fact.ResolvedFactSource
-	16, // 5: viewer_fact.FactDefinitionResponse.status:type_name -> common.ResponseStatus
+	25, // 5: viewer_fact.FactDefinitionResponse.status:type_name -> common.ResponseStatus
 	0,  // 6: viewer_fact.FactDefinitionResponse.definition:type_name -> viewer_fact.FactDefinition
-	16, // 7: viewer_fact.ListFactDefinitionsResponse.status:type_name -> common.ResponseStatus
+	25, // 7: viewer_fact.ListFactDefinitionsResponse.status:type_name -> common.ResponseStatus
 	0,  // 8: viewer_fact.ListFactDefinitionsResponse.definitions:type_name -> viewer_fact.FactDefinition
-	15, // 9: viewer_fact.ApplyFactDeltasRequest.occurred_at:type_name -> google.protobuf.Timestamp
+	24, // 9: viewer_fact.ApplyFactDeltasRequest.occurred_at:type_name -> google.protobuf.Timestamp
 	8,  // 10: viewer_fact.ApplyFactDeltasRequest.deltas:type_name -> viewer_fact.FactDelta
 	7,  // 11: viewer_fact.FactValueChange.before:type_name -> viewer_fact.FactValue
 	7,  // 12: viewer_fact.FactValueChange.after:type_name -> viewer_fact.FactValue
-	16, // 13: viewer_fact.ApplyFactDeltasResponse.status:type_name -> common.ResponseStatus
+	25, // 13: viewer_fact.ApplyFactDeltasResponse.status:type_name -> common.ResponseStatus
 	10, // 14: viewer_fact.ApplyFactDeltasResponse.changes:type_name -> viewer_fact.FactValueChange
 	7,  // 15: viewer_fact.ViewerFactValue.value:type_name -> viewer_fact.FactValue
-	15, // 16: viewer_fact.ViewerFactValue.updated_at:type_name -> google.protobuf.Timestamp
-	16, // 17: viewer_fact.GetViewerFactsResponse.status:type_name -> common.ResponseStatus
+	24, // 16: viewer_fact.ViewerFactValue.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 17: viewer_fact.GetViewerFactsResponse.status:type_name -> common.ResponseStatus
 	13, // 18: viewer_fact.GetViewerFactsResponse.values:type_name -> viewer_fact.ViewerFactValue
-	2,  // 19: viewer_fact.ViewerFactService.UpsertFactDefinition:input_type -> viewer_fact.UpsertFactDefinitionRequest
-	4,  // 20: viewer_fact.ViewerFactService.DeleteFactDefinition:input_type -> viewer_fact.DeleteFactDefinitionRequest
-	5,  // 21: viewer_fact.ViewerFactService.ListFactDefinitions:input_type -> viewer_fact.ListFactDefinitionsRequest
-	9,  // 22: viewer_fact.ViewerFactService.ApplyFactDeltas:input_type -> viewer_fact.ApplyFactDeltasRequest
-	12, // 23: viewer_fact.ViewerFactService.GetViewerFacts:input_type -> viewer_fact.GetViewerFactsRequest
-	3,  // 24: viewer_fact.ViewerFactService.UpsertFactDefinition:output_type -> viewer_fact.FactDefinitionResponse
-	16, // 25: viewer_fact.ViewerFactService.DeleteFactDefinition:output_type -> common.ResponseStatus
-	6,  // 26: viewer_fact.ViewerFactService.ListFactDefinitions:output_type -> viewer_fact.ListFactDefinitionsResponse
-	11, // 27: viewer_fact.ViewerFactService.ApplyFactDeltas:output_type -> viewer_fact.ApplyFactDeltasResponse
-	14, // 28: viewer_fact.ViewerFactService.GetViewerFacts:output_type -> viewer_fact.GetViewerFactsResponse
-	24, // [24:29] is the sub-list for method output_type
-	19, // [19:24] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	24, // 19: viewer_fact.SegmentDefinition.created_at:type_name -> google.protobuf.Timestamp
+	24, // 20: viewer_fact.SegmentDefinition.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 21: viewer_fact.SegmentDefinitionResponse.status:type_name -> common.ResponseStatus
+	15, // 22: viewer_fact.SegmentDefinitionResponse.definition:type_name -> viewer_fact.SegmentDefinition
+	25, // 23: viewer_fact.ListSegmentDefinitionsResponse.status:type_name -> common.ResponseStatus
+	15, // 24: viewer_fact.ListSegmentDefinitionsResponse.definitions:type_name -> viewer_fact.SegmentDefinition
+	24, // 25: viewer_fact.ViewerSegment.entered_at:type_name -> google.protobuf.Timestamp
+	25, // 26: viewer_fact.GetViewerSegmentsResponse.status:type_name -> common.ResponseStatus
+	22, // 27: viewer_fact.GetViewerSegmentsResponse.segments:type_name -> viewer_fact.ViewerSegment
+	2,  // 28: viewer_fact.ViewerFactService.UpsertFactDefinition:input_type -> viewer_fact.UpsertFactDefinitionRequest
+	4,  // 29: viewer_fact.ViewerFactService.DeleteFactDefinition:input_type -> viewer_fact.DeleteFactDefinitionRequest
+	5,  // 30: viewer_fact.ViewerFactService.ListFactDefinitions:input_type -> viewer_fact.ListFactDefinitionsRequest
+	9,  // 31: viewer_fact.ViewerFactService.ApplyFactDeltas:input_type -> viewer_fact.ApplyFactDeltasRequest
+	12, // 32: viewer_fact.ViewerFactService.GetViewerFacts:input_type -> viewer_fact.GetViewerFactsRequest
+	16, // 33: viewer_fact.ViewerFactService.UpsertSegmentDefinition:input_type -> viewer_fact.UpsertSegmentDefinitionRequest
+	18, // 34: viewer_fact.ViewerFactService.DeleteSegmentDefinition:input_type -> viewer_fact.DeleteSegmentDefinitionRequest
+	19, // 35: viewer_fact.ViewerFactService.ListSegmentDefinitions:input_type -> viewer_fact.ListSegmentDefinitionsRequest
+	21, // 36: viewer_fact.ViewerFactService.GetViewerSegments:input_type -> viewer_fact.GetViewerSegmentsRequest
+	3,  // 37: viewer_fact.ViewerFactService.UpsertFactDefinition:output_type -> viewer_fact.FactDefinitionResponse
+	25, // 38: viewer_fact.ViewerFactService.DeleteFactDefinition:output_type -> common.ResponseStatus
+	6,  // 39: viewer_fact.ViewerFactService.ListFactDefinitions:output_type -> viewer_fact.ListFactDefinitionsResponse
+	11, // 40: viewer_fact.ViewerFactService.ApplyFactDeltas:output_type -> viewer_fact.ApplyFactDeltasResponse
+	14, // 41: viewer_fact.ViewerFactService.GetViewerFacts:output_type -> viewer_fact.GetViewerFactsResponse
+	17, // 42: viewer_fact.ViewerFactService.UpsertSegmentDefinition:output_type -> viewer_fact.SegmentDefinitionResponse
+	25, // 43: viewer_fact.ViewerFactService.DeleteSegmentDefinition:output_type -> common.ResponseStatus
+	20, // 44: viewer_fact.ViewerFactService.ListSegmentDefinitions:output_type -> viewer_fact.ListSegmentDefinitionsResponse
+	23, // 45: viewer_fact.ViewerFactService.GetViewerSegments:output_type -> viewer_fact.GetViewerSegmentsResponse
+	37, // [37:46] is the sub-list for method output_type
+	28, // [28:37] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_viewer_fact_proto_init() }
@@ -1462,7 +2165,7 @@ func file_viewer_fact_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_viewer_fact_proto_rawDesc), len(file_viewer_fact_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

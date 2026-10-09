@@ -164,6 +164,9 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 	if !event.AutoAcknowledge && event.AckSubject != nil {
 		ce.SetExtension("acksubject", *event.AckSubject)
 	}
+	if err := setEventExtensions(&ce, event); err != nil {
+		return err
+	}
 
 	var payloadData interface{}
 	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
@@ -326,6 +329,9 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 	if event.AckSubject != nil {
 		ce.SetExtension("acksubject", *event.AckSubject)
 	}
+	if err := setEventExtensions(&ce, event); err != nil {
+		return err
+	}
 
 	var payloadData interface{}
 	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
@@ -357,5 +363,21 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 		"attempts", cached.Attempts+1,
 	)
 
+	return nil
+}
+
+// setEventExtensions sets the extensions an event was written with (see
+// EventPublisher.PublishEventIn).
+func setEventExtensions(ce *cloudevents.Event, event *models.WorkerEvent) error {
+	if event.Extensions == nil {
+		return nil
+	}
+	var extensions map[string]string
+	if err := json.Unmarshal([]byte(*event.Extensions), &extensions); err != nil {
+		return fmt.Errorf("event %s: decode extensions: %w", event.ID, err)
+	}
+	for name, value := range extensions {
+		ce.SetExtension(name, value)
+	}
 	return nil
 }

@@ -281,6 +281,113 @@ export interface GetViewerFactsResponse {
   values: ViewerFactValue[];
 }
 
+export interface SegmentDefinition {
+  /**
+   * Canonical segment id, e.g. `user:segment:<slug>`.
+   */
+  id: string;
+  name: string;
+  description: string;
+  /**
+   * The condition as JSON: `{"all": [...]}`, `{"any": [...]}`, `{"not": {...}}`
+   * or an atom `{"fact": "<fact id>", "op": "...", "value": ...}`. Ops: eq,
+   * ne, gt, gte, lt, lte, exists, not_exists, and within and older_than,
+   * whose value is a duration such as "720h" and which read timestamp facts.
+   */
+  when: string;
+  /**
+   * The facts the condition reads, in id order.
+   */
+  facts: string[];
+  /**
+   * `session` when the condition reads any session-window fact: membership is
+   * then kept per stream session and a new session starts it empty.
+   * `lifetime` otherwise.
+   */
+  windowKind: string;
+  /**
+   * True when the condition has a within or older_than atom. Membership can
+   * then change with time alone; it is re-evaluated, and edges announced,
+   * only when one of the viewer's facts changes, so the stored membership is
+   * as of the viewer's last change.
+   */
+  timeRelative: boolean;
+  revision: bigint;
+  createdByType: string;
+  createdByRef: string;
+  createdAt: protoscript.Timestamp;
+  updatedAt: protoscript.Timestamp;
+  /**
+   * `active`, or `invalid` when the condition no longer fits the facts it
+   * reads (a fact's value kind changed). Resolved when the definition is
+   * read.
+   */
+  status: string;
+  /**
+   * Why the status is not `active`. Empty when it is.
+   */
+  reason: string;
+}
+
+export interface UpsertSegmentDefinitionRequest {
+  id: string;
+  name: string;
+  description: string;
+  /**
+   * The condition as JSON; see SegmentDefinition.when.
+   */
+  when: string;
+  /**
+   * Who declares the segment: `USER` for one saved from the UI, `MODULE` for
+   * one a module manifest declares. Defaults to `USER`.
+   */
+  createdByType: string;
+  createdByRef: string;
+}
+
+export interface SegmentDefinitionResponse {
+  status: common.ResponseStatus;
+  definition: SegmentDefinition;
+}
+
+export interface DeleteSegmentDefinitionRequest {
+  id: string;
+}
+
+export interface ListSegmentDefinitionsRequest {}
+
+export interface ListSegmentDefinitionsResponse {
+  status: common.ResponseStatus;
+  definitions: SegmentDefinition[];
+}
+
+export interface GetViewerSegmentsRequest {
+  platform: string;
+  subjectId: string;
+}
+
+export interface ViewerSegment {
+  segmentId: string;
+  /**
+   * Empty for a lifetime segment, the stream session id for a session one.
+   */
+  windowKey: string;
+  enteredAt: protoscript.Timestamp;
+  /**
+   * See SegmentDefinition.time_relative.
+   */
+  timeRelative: boolean;
+}
+
+export interface GetViewerSegmentsResponse {
+  status: common.ResponseStatus;
+  /**
+   * The current stream session, or empty when none has started.
+   */
+  sessionId: string;
+  segments: ViewerSegment[];
+}
+
 //========================================//
 //   ViewerFactService Protobuf Client    //
 //========================================//
@@ -315,7 +422,8 @@ export async function UpsertFactDefinition(
 
 /**
  * Deletes a definition and every value of it. Fails with `not_found` when
- * there is no such definition.
+ * there is no such definition, and with `failed_precondition`, naming them,
+ * when a segment reads it.
  */
 export async function DeleteFactDefinition(
   deleteFactDefinitionRequest: DeleteFactDefinitionRequest,
@@ -355,6 +463,12 @@ export async function ListFactDefinitions(
  * does not fit its definition is counted invalid. Neither fails the rest of
  * the event. `last` and the session aggregates ignore an event older than
  * the stored value, so a replay of old events cannot move them back.
+ *
+ * In the same transaction, every segment reading a changed value is
+ * evaluated for that viewer, its membership updated, and each viewer that
+ * entered or left it announced as `viewer.segment.entered` or
+ * `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
+ * apply updates membership and announces nothing.
  */
 export async function ApplyFactDeltas(
   applyFactDeltasRequest: ApplyFactDeltasRequest,
@@ -370,7 +484,8 @@ export async function ApplyFactDeltas(
 
 /**
  * One viewer's lifetime values and their values in the current stream
- * session.
+ * session, of active facts only: a fact that is not active has stopped
+ * counting, and segments read it as missing too.
  */
 export async function GetViewerFacts(
   getViewerFactsRequest: GetViewerFactsRequest,
@@ -382,6 +497,78 @@ export async function GetViewerFacts(
     config,
   );
   return GetViewerFactsResponse.decode(response);
+}
+
+/**
+ * Creates or replaces a segment: a condition over one viewer's facts. A
+ * change to the condition increments `revision`. Creating a segment or
+ * changing its condition fills its membership from the stored values in
+ * the same transaction, announcing nothing, so a save never floods
+ * workflows with edges. A change to the name or description alone keeps
+ * both.
+ *
+ * Fails with `invalid_argument` when the condition is malformed, reads a
+ * fact that does not exist, or applies an operator the fact's value kind
+ * does not support, and with `failed_precondition` when the id is owned by
+ * a different creator.
+ */
+export async function UpsertSegmentDefinition(
+  upsertSegmentDefinitionRequest: UpsertSegmentDefinitionRequest,
+  config?: ClientConfiguration,
+): Promise<SegmentDefinitionResponse> {
+  const response = await PBrequest(
+    "/viewer_fact.ViewerFactService/UpsertSegmentDefinition",
+    UpsertSegmentDefinitionRequest.encode(upsertSegmentDefinitionRequest),
+    config,
+  );
+  return SegmentDefinitionResponse.decode(response);
+}
+
+/**
+ * Deletes a segment and its membership, announcing no edges. Fails with
+ * `not_found` when there is no such segment.
+ */
+export async function DeleteSegmentDefinition(
+  deleteSegmentDefinitionRequest: DeleteSegmentDefinitionRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/viewer_fact.ViewerFactService/DeleteSegmentDefinition",
+    DeleteSegmentDefinitionRequest.encode(deleteSegmentDefinitionRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+/**
+ * Every segment, each re-checked against the facts it reads now.
+ */
+export async function ListSegmentDefinitions(
+  listSegmentDefinitionsRequest: ListSegmentDefinitionsRequest,
+  config?: ClientConfiguration,
+): Promise<ListSegmentDefinitionsResponse> {
+  const response = await PBrequest(
+    "/viewer_fact.ViewerFactService/ListSegmentDefinitions",
+    ListSegmentDefinitionsRequest.encode(listSegmentDefinitionsRequest),
+    config,
+  );
+  return ListSegmentDefinitionsResponse.decode(response);
+}
+
+/**
+ * The segments one viewer is in now: lifetime segments, and session
+ * segments entered in the current stream session.
+ */
+export async function GetViewerSegments(
+  getViewerSegmentsRequest: GetViewerSegmentsRequest,
+  config?: ClientConfiguration,
+): Promise<GetViewerSegmentsResponse> {
+  const response = await PBrequest(
+    "/viewer_fact.ViewerFactService/GetViewerSegments",
+    GetViewerSegmentsRequest.encode(getViewerSegmentsRequest),
+    config,
+  );
+  return GetViewerSegmentsResponse.decode(response);
 }
 
 //========================================//
@@ -418,7 +605,8 @@ export async function UpsertFactDefinitionJSON(
 
 /**
  * Deletes a definition and every value of it. Fails with `not_found` when
- * there is no such definition.
+ * there is no such definition, and with `failed_precondition`, naming them,
+ * when a segment reads it.
  */
 export async function DeleteFactDefinitionJSON(
   deleteFactDefinitionRequest: DeleteFactDefinitionRequest,
@@ -458,6 +646,12 @@ export async function ListFactDefinitionsJSON(
  * does not fit its definition is counted invalid. Neither fails the rest of
  * the event. `last` and the session aggregates ignore an event older than
  * the stored value, so a replay of old events cannot move them back.
+ *
+ * In the same transaction, every segment reading a changed value is
+ * evaluated for that viewer, its membership updated, and each viewer that
+ * entered or left it announced as `viewer.segment.entered` or
+ * `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
+ * apply updates membership and announces nothing.
  */
 export async function ApplyFactDeltasJSON(
   applyFactDeltasRequest: ApplyFactDeltasRequest,
@@ -473,7 +667,8 @@ export async function ApplyFactDeltasJSON(
 
 /**
  * One viewer's lifetime values and their values in the current stream
- * session.
+ * session, of active facts only: a fact that is not active has stopped
+ * counting, and segments read it as missing too.
  */
 export async function GetViewerFactsJSON(
   getViewerFactsRequest: GetViewerFactsRequest,
@@ -485,6 +680,78 @@ export async function GetViewerFactsJSON(
     config,
   );
   return GetViewerFactsResponseJSON.decode(response);
+}
+
+/**
+ * Creates or replaces a segment: a condition over one viewer's facts. A
+ * change to the condition increments `revision`. Creating a segment or
+ * changing its condition fills its membership from the stored values in
+ * the same transaction, announcing nothing, so a save never floods
+ * workflows with edges. A change to the name or description alone keeps
+ * both.
+ *
+ * Fails with `invalid_argument` when the condition is malformed, reads a
+ * fact that does not exist, or applies an operator the fact's value kind
+ * does not support, and with `failed_precondition` when the id is owned by
+ * a different creator.
+ */
+export async function UpsertSegmentDefinitionJSON(
+  upsertSegmentDefinitionRequest: UpsertSegmentDefinitionRequest,
+  config?: ClientConfiguration,
+): Promise<SegmentDefinitionResponse> {
+  const response = await JSONrequest(
+    "/viewer_fact.ViewerFactService/UpsertSegmentDefinition",
+    UpsertSegmentDefinitionRequestJSON.encode(upsertSegmentDefinitionRequest),
+    config,
+  );
+  return SegmentDefinitionResponseJSON.decode(response);
+}
+
+/**
+ * Deletes a segment and its membership, announcing no edges. Fails with
+ * `not_found` when there is no such segment.
+ */
+export async function DeleteSegmentDefinitionJSON(
+  deleteSegmentDefinitionRequest: DeleteSegmentDefinitionRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/viewer_fact.ViewerFactService/DeleteSegmentDefinition",
+    DeleteSegmentDefinitionRequestJSON.encode(deleteSegmentDefinitionRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+/**
+ * Every segment, each re-checked against the facts it reads now.
+ */
+export async function ListSegmentDefinitionsJSON(
+  listSegmentDefinitionsRequest: ListSegmentDefinitionsRequest,
+  config?: ClientConfiguration,
+): Promise<ListSegmentDefinitionsResponse> {
+  const response = await JSONrequest(
+    "/viewer_fact.ViewerFactService/ListSegmentDefinitions",
+    ListSegmentDefinitionsRequestJSON.encode(listSegmentDefinitionsRequest),
+    config,
+  );
+  return ListSegmentDefinitionsResponseJSON.decode(response);
+}
+
+/**
+ * The segments one viewer is in now: lifetime segments, and session
+ * segments entered in the current stream session.
+ */
+export async function GetViewerSegmentsJSON(
+  getViewerSegmentsRequest: GetViewerSegmentsRequest,
+  config?: ClientConfiguration,
+): Promise<GetViewerSegmentsResponse> {
+  const response = await JSONrequest(
+    "/viewer_fact.ViewerFactService/GetViewerSegments",
+    GetViewerSegmentsRequestJSON.encode(getViewerSegmentsRequest),
+    config,
+  );
+  return GetViewerSegmentsResponseJSON.decode(response);
 }
 
 //========================================//
@@ -522,7 +789,8 @@ export interface ViewerFactService<Context = unknown> {
   ) => Promise<FactDefinitionResponse> | FactDefinitionResponse;
   /**
    * Deletes a definition and every value of it. Fails with `not_found` when
-   * there is no such definition.
+   * there is no such definition, and with `failed_precondition`, naming them,
+   * when a segment reads it.
    */
   DeleteFactDefinition: (
     deleteFactDefinitionRequest: DeleteFactDefinitionRequest,
@@ -546,6 +814,12 @@ export interface ViewerFactService<Context = unknown> {
    * does not fit its definition is counted invalid. Neither fails the rest of
    * the event. `last` and the session aggregates ignore an event older than
    * the stored value, so a replay of old events cannot move them back.
+   *
+   * In the same transaction, every segment reading a changed value is
+   * evaluated for that viewer, its membership updated, and each viewer that
+   * entered or left it announced as `viewer.segment.entered` or
+   * `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
+   * apply updates membership and announces nothing.
    */
   ApplyFactDeltas: (
     applyFactDeltasRequest: ApplyFactDeltasRequest,
@@ -553,12 +827,53 @@ export interface ViewerFactService<Context = unknown> {
   ) => Promise<ApplyFactDeltasResponse> | ApplyFactDeltasResponse;
   /**
    * One viewer's lifetime values and their values in the current stream
-   * session.
+   * session, of active facts only: a fact that is not active has stopped
+   * counting, and segments read it as missing too.
    */
   GetViewerFacts: (
     getViewerFactsRequest: GetViewerFactsRequest,
     context: Context,
   ) => Promise<GetViewerFactsResponse> | GetViewerFactsResponse;
+  /**
+   * Creates or replaces a segment: a condition over one viewer's facts. A
+   * change to the condition increments `revision`. Creating a segment or
+   * changing its condition fills its membership from the stored values in
+   * the same transaction, announcing nothing, so a save never floods
+   * workflows with edges. A change to the name or description alone keeps
+   * both.
+   *
+   * Fails with `invalid_argument` when the condition is malformed, reads a
+   * fact that does not exist, or applies an operator the fact's value kind
+   * does not support, and with `failed_precondition` when the id is owned by
+   * a different creator.
+   */
+  UpsertSegmentDefinition: (
+    upsertSegmentDefinitionRequest: UpsertSegmentDefinitionRequest,
+    context: Context,
+  ) => Promise<SegmentDefinitionResponse> | SegmentDefinitionResponse;
+  /**
+   * Deletes a segment and its membership, announcing no edges. Fails with
+   * `not_found` when there is no such segment.
+   */
+  DeleteSegmentDefinition: (
+    deleteSegmentDefinitionRequest: DeleteSegmentDefinitionRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  /**
+   * Every segment, each re-checked against the facts it reads now.
+   */
+  ListSegmentDefinitions: (
+    listSegmentDefinitionsRequest: ListSegmentDefinitionsRequest,
+    context: Context,
+  ) => Promise<ListSegmentDefinitionsResponse> | ListSegmentDefinitionsResponse;
+  /**
+   * The segments one viewer is in now: lifetime segments, and session
+   * segments entered in the current stream session.
+   */
+  GetViewerSegments: (
+    getViewerSegmentsRequest: GetViewerSegmentsRequest,
+    context: Context,
+  ) => Promise<GetViewerSegmentsResponse> | GetViewerSegmentsResponse;
 }
 
 export function createViewerFactService<Context>(
@@ -625,6 +940,54 @@ export function createViewerFactService<Context>(
         output: {
           protobuf: GetViewerFactsResponse,
           json: GetViewerFactsResponseJSON,
+        },
+      },
+      UpsertSegmentDefinition: {
+        name: "UpsertSegmentDefinition",
+        handler: service.UpsertSegmentDefinition,
+        input: {
+          protobuf: UpsertSegmentDefinitionRequest,
+          json: UpsertSegmentDefinitionRequestJSON,
+        },
+        output: {
+          protobuf: SegmentDefinitionResponse,
+          json: SegmentDefinitionResponseJSON,
+        },
+      },
+      DeleteSegmentDefinition: {
+        name: "DeleteSegmentDefinition",
+        handler: service.DeleteSegmentDefinition,
+        input: {
+          protobuf: DeleteSegmentDefinitionRequest,
+          json: DeleteSegmentDefinitionRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      ListSegmentDefinitions: {
+        name: "ListSegmentDefinitions",
+        handler: service.ListSegmentDefinitions,
+        input: {
+          protobuf: ListSegmentDefinitionsRequest,
+          json: ListSegmentDefinitionsRequestJSON,
+        },
+        output: {
+          protobuf: ListSegmentDefinitionsResponse,
+          json: ListSegmentDefinitionsResponseJSON,
+        },
+      },
+      GetViewerSegments: {
+        name: "GetViewerSegments",
+        handler: service.GetViewerSegments,
+        input: {
+          protobuf: GetViewerSegmentsRequest,
+          json: GetViewerSegmentsRequestJSON,
+        },
+        output: {
+          protobuf: GetViewerSegmentsResponse,
+          json: GetViewerSegmentsResponseJSON,
         },
       },
     },
@@ -2220,6 +2583,849 @@ export const GetViewerFactsResponse = {
   },
 };
 
+export const SegmentDefinition = {
+  /**
+   * Serializes SegmentDefinition to protobuf.
+   */
+  encode: function (msg: PartialDeep<SegmentDefinition>): Uint8Array {
+    return SegmentDefinition._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SegmentDefinition from protobuf.
+   */
+  decode: function (bytes: ByteSource): SegmentDefinition {
+    return SegmentDefinition._readMessage(
+      SegmentDefinition.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SegmentDefinition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<SegmentDefinition>): SegmentDefinition {
+    return {
+      id: "",
+      name: "",
+      description: "",
+      when: "",
+      facts: [],
+      windowKind: "",
+      timeRelative: false,
+      revision: 0n,
+      createdByType: "",
+      createdByRef: "",
+      createdAt: protoscript.Timestamp.initialize(),
+      updatedAt: protoscript.Timestamp.initialize(),
+      status: "",
+      reason: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SegmentDefinition>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.name) {
+      writer.writeString(2, msg.name);
+    }
+    if (msg.description) {
+      writer.writeString(3, msg.description);
+    }
+    if (msg.when) {
+      writer.writeString(4, msg.when);
+    }
+    if (msg.facts?.length) {
+      writer.writeRepeatedString(5, msg.facts);
+    }
+    if (msg.windowKind) {
+      writer.writeString(6, msg.windowKind);
+    }
+    if (msg.timeRelative) {
+      writer.writeBool(7, msg.timeRelative);
+    }
+    if (msg.revision) {
+      writer.writeInt64String(8, msg.revision.toString() as any);
+    }
+    if (msg.createdByType) {
+      writer.writeString(9, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(10, msg.createdByRef);
+    }
+    if (msg.createdAt) {
+      writer.writeMessage(
+        11,
+        msg.createdAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.updatedAt) {
+      writer.writeMessage(
+        12,
+        msg.updatedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.status) {
+      writer.writeString(13, msg.status);
+    }
+    if (msg.reason) {
+      writer.writeString(14, msg.reason);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SegmentDefinition,
+    reader: protoscript.BinaryReader,
+  ): SegmentDefinition {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.name = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.description = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.when = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.facts.push(reader.readString());
+          break;
+        }
+        case 6: {
+          msg.windowKind = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.timeRelative = reader.readBool();
+          break;
+        }
+        case 8: {
+          msg.revision = BigInt(reader.readInt64String());
+          break;
+        }
+        case 9: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.createdByRef = reader.readString();
+          break;
+        }
+        case 11: {
+          reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 12: {
+          reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 13: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 14: {
+          msg.reason = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UpsertSegmentDefinitionRequest = {
+  /**
+   * Serializes UpsertSegmentDefinitionRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<UpsertSegmentDefinitionRequest>,
+  ): Uint8Array {
+    return UpsertSegmentDefinitionRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UpsertSegmentDefinitionRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): UpsertSegmentDefinitionRequest {
+    return UpsertSegmentDefinitionRequest._readMessage(
+      UpsertSegmentDefinitionRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UpsertSegmentDefinitionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpsertSegmentDefinitionRequest>,
+  ): UpsertSegmentDefinitionRequest {
+    return {
+      id: "",
+      name: "",
+      description: "",
+      when: "",
+      createdByType: "",
+      createdByRef: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpsertSegmentDefinitionRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.name) {
+      writer.writeString(2, msg.name);
+    }
+    if (msg.description) {
+      writer.writeString(3, msg.description);
+    }
+    if (msg.when) {
+      writer.writeString(4, msg.when);
+    }
+    if (msg.createdByType) {
+      writer.writeString(5, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(6, msg.createdByRef);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpsertSegmentDefinitionRequest,
+    reader: protoscript.BinaryReader,
+  ): UpsertSegmentDefinitionRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.name = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.description = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.when = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.createdByRef = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const SegmentDefinitionResponse = {
+  /**
+   * Serializes SegmentDefinitionResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<SegmentDefinitionResponse>): Uint8Array {
+    return SegmentDefinitionResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SegmentDefinitionResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): SegmentDefinitionResponse {
+    return SegmentDefinitionResponse._readMessage(
+      SegmentDefinitionResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SegmentDefinitionResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SegmentDefinitionResponse>,
+  ): SegmentDefinitionResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      definition: SegmentDefinition.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SegmentDefinitionResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.definition) {
+      writer.writeMessage(2, msg.definition, SegmentDefinition._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SegmentDefinitionResponse,
+    reader: protoscript.BinaryReader,
+  ): SegmentDefinitionResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.definition, SegmentDefinition._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const DeleteSegmentDefinitionRequest = {
+  /**
+   * Serializes DeleteSegmentDefinitionRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<DeleteSegmentDefinitionRequest>,
+  ): Uint8Array {
+    return DeleteSegmentDefinitionRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes DeleteSegmentDefinitionRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): DeleteSegmentDefinitionRequest {
+    return DeleteSegmentDefinitionRequest._readMessage(
+      DeleteSegmentDefinitionRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes DeleteSegmentDefinitionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<DeleteSegmentDefinitionRequest>,
+  ): DeleteSegmentDefinitionRequest {
+    return {
+      id: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<DeleteSegmentDefinitionRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: DeleteSegmentDefinitionRequest,
+    reader: protoscript.BinaryReader,
+  ): DeleteSegmentDefinitionRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListSegmentDefinitionsRequest = {
+  /**
+   * Serializes ListSegmentDefinitionsRequest to protobuf.
+   */
+  encode: function (
+    _msg?: PartialDeep<ListSegmentDefinitionsRequest>,
+  ): Uint8Array {
+    return new Uint8Array();
+  },
+
+  /**
+   * Deserializes ListSegmentDefinitionsRequest from protobuf.
+   */
+  decode: function (_bytes?: ByteSource): ListSegmentDefinitionsRequest {
+    return {};
+  },
+
+  /**
+   * Initializes ListSegmentDefinitionsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSegmentDefinitionsRequest>,
+  ): ListSegmentDefinitionsRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<ListSegmentDefinitionsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    _msg: ListSegmentDefinitionsRequest,
+    _reader: protoscript.BinaryReader,
+  ): ListSegmentDefinitionsRequest {
+    return _msg;
+  },
+};
+
+export const ListSegmentDefinitionsResponse = {
+  /**
+   * Serializes ListSegmentDefinitionsResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ListSegmentDefinitionsResponse>,
+  ): Uint8Array {
+    return ListSegmentDefinitionsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListSegmentDefinitionsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListSegmentDefinitionsResponse {
+    return ListSegmentDefinitionsResponse._readMessage(
+      ListSegmentDefinitionsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListSegmentDefinitionsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSegmentDefinitionsResponse>,
+  ): ListSegmentDefinitionsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      definitions: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListSegmentDefinitionsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.definitions?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.definitions as any,
+        SegmentDefinition._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSegmentDefinitionsResponse,
+    reader: protoscript.BinaryReader,
+  ): ListSegmentDefinitionsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = SegmentDefinition.initialize();
+          reader.readMessage(m, SegmentDefinition._readMessage);
+          msg.definitions.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetViewerSegmentsRequest = {
+  /**
+   * Serializes GetViewerSegmentsRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetViewerSegmentsRequest>): Uint8Array {
+    return GetViewerSegmentsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetViewerSegmentsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetViewerSegmentsRequest {
+    return GetViewerSegmentsRequest._readMessage(
+      GetViewerSegmentsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetViewerSegmentsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerSegmentsRequest>,
+  ): GetViewerSegmentsRequest {
+    return {
+      platform: "",
+      subjectId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerSegmentsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.platform) {
+      writer.writeString(1, msg.platform);
+    }
+    if (msg.subjectId) {
+      writer.writeString(2, msg.subjectId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerSegmentsRequest,
+    reader: protoscript.BinaryReader,
+  ): GetViewerSegmentsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.platform = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.subjectId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ViewerSegment = {
+  /**
+   * Serializes ViewerSegment to protobuf.
+   */
+  encode: function (msg: PartialDeep<ViewerSegment>): Uint8Array {
+    return ViewerSegment._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ViewerSegment from protobuf.
+   */
+  decode: function (bytes: ByteSource): ViewerSegment {
+    return ViewerSegment._readMessage(
+      ViewerSegment.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ViewerSegment with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ViewerSegment>): ViewerSegment {
+    return {
+      segmentId: "",
+      windowKey: "",
+      enteredAt: protoscript.Timestamp.initialize(),
+      timeRelative: false,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ViewerSegment>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.segmentId) {
+      writer.writeString(1, msg.segmentId);
+    }
+    if (msg.windowKey) {
+      writer.writeString(2, msg.windowKey);
+    }
+    if (msg.enteredAt) {
+      writer.writeMessage(
+        3,
+        msg.enteredAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.timeRelative) {
+      writer.writeBool(4, msg.timeRelative);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ViewerSegment,
+    reader: protoscript.BinaryReader,
+  ): ViewerSegment {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.segmentId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.windowKey = reader.readString();
+          break;
+        }
+        case 3: {
+          reader.readMessage(msg.enteredAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 4: {
+          msg.timeRelative = reader.readBool();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetViewerSegmentsResponse = {
+  /**
+   * Serializes GetViewerSegmentsResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetViewerSegmentsResponse>): Uint8Array {
+    return GetViewerSegmentsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetViewerSegmentsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetViewerSegmentsResponse {
+    return GetViewerSegmentsResponse._readMessage(
+      GetViewerSegmentsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetViewerSegmentsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerSegmentsResponse>,
+  ): GetViewerSegmentsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      sessionId: "",
+      segments: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerSegmentsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.sessionId) {
+      writer.writeString(2, msg.sessionId);
+    }
+    if (msg.segments?.length) {
+      writer.writeRepeatedMessage(
+        3,
+        msg.segments as any,
+        ViewerSegment._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerSegmentsResponse,
+    reader: protoscript.BinaryReader,
+  ): GetViewerSegmentsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          msg.sessionId = reader.readString();
+          break;
+        }
+        case 3: {
+          const m = ViewerSegment.initialize();
+          reader.readMessage(m, ViewerSegment._readMessage);
+          msg.segments.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -3605,6 +4811,745 @@ export const GetViewerFactsResponseJSON = {
         const m = ViewerFactValueJSON.initialize();
         ViewerFactValueJSON._readMessage(m, item);
         msg.values.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const SegmentDefinitionJSON = {
+  /**
+   * Serializes SegmentDefinition to JSON.
+   */
+  encode: function (msg: PartialDeep<SegmentDefinition>): string {
+    return JSON.stringify(SegmentDefinitionJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes SegmentDefinition from JSON.
+   */
+  decode: function (json: string): SegmentDefinition {
+    return SegmentDefinitionJSON._readMessage(
+      SegmentDefinitionJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SegmentDefinition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<SegmentDefinition>): SegmentDefinition {
+    return {
+      id: "",
+      name: "",
+      description: "",
+      when: "",
+      facts: [],
+      windowKind: "",
+      timeRelative: false,
+      revision: 0n,
+      createdByType: "",
+      createdByRef: "",
+      createdAt: protoscript.TimestampJSON.initialize(),
+      updatedAt: protoscript.TimestampJSON.initialize(),
+      status: "",
+      reason: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SegmentDefinition>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.name) {
+      json["name"] = msg.name;
+    }
+    if (msg.description) {
+      json["description"] = msg.description;
+    }
+    if (msg.when) {
+      json["when"] = msg.when;
+    }
+    if (msg.facts?.length) {
+      json["facts"] = msg.facts;
+    }
+    if (msg.windowKind) {
+      json["windowKind"] = msg.windowKind;
+    }
+    if (msg.timeRelative) {
+      json["timeRelative"] = msg.timeRelative;
+    }
+    if (msg.revision) {
+      json["revision"] = String(msg.revision);
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
+      json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
+      json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.reason) {
+      json["reason"] = msg.reason;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SegmentDefinition,
+    json: any,
+  ): SegmentDefinition {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _name_ = json["name"];
+    if (_name_) {
+      msg.name = _name_;
+    }
+    const _description_ = json["description"];
+    if (_description_) {
+      msg.description = _description_;
+    }
+    const _when_ = json["when"];
+    if (_when_) {
+      msg.when = _when_;
+    }
+    const _facts_ = json["facts"];
+    if (_facts_) {
+      msg.facts = _facts_;
+    }
+    const _windowKind_ = json["windowKind"] ?? json["window_kind"];
+    if (_windowKind_) {
+      msg.windowKind = _windowKind_;
+    }
+    const _timeRelative_ = json["timeRelative"] ?? json["time_relative"];
+    if (_timeRelative_) {
+      msg.timeRelative = _timeRelative_;
+    }
+    const _revision_ = json["revision"];
+    if (_revision_) {
+      msg.revision = BigInt(_revision_);
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
+    }
+    const _createdAt_ = json["createdAt"] ?? json["created_at"];
+    if (_createdAt_) {
+      msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
+    if (_updatedAt_) {
+      msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _reason_ = json["reason"];
+    if (_reason_) {
+      msg.reason = _reason_;
+    }
+    return msg;
+  },
+};
+
+export const UpsertSegmentDefinitionRequestJSON = {
+  /**
+   * Serializes UpsertSegmentDefinitionRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<UpsertSegmentDefinitionRequest>): string {
+    return JSON.stringify(
+      UpsertSegmentDefinitionRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes UpsertSegmentDefinitionRequest from JSON.
+   */
+  decode: function (json: string): UpsertSegmentDefinitionRequest {
+    return UpsertSegmentDefinitionRequestJSON._readMessage(
+      UpsertSegmentDefinitionRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UpsertSegmentDefinitionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpsertSegmentDefinitionRequest>,
+  ): UpsertSegmentDefinitionRequest {
+    return {
+      id: "",
+      name: "",
+      description: "",
+      when: "",
+      createdByType: "",
+      createdByRef: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpsertSegmentDefinitionRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.name) {
+      json["name"] = msg.name;
+    }
+    if (msg.description) {
+      json["description"] = msg.description;
+    }
+    if (msg.when) {
+      json["when"] = msg.when;
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpsertSegmentDefinitionRequest,
+    json: any,
+  ): UpsertSegmentDefinitionRequest {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _name_ = json["name"];
+    if (_name_) {
+      msg.name = _name_;
+    }
+    const _description_ = json["description"];
+    if (_description_) {
+      msg.description = _description_;
+    }
+    const _when_ = json["when"];
+    if (_when_) {
+      msg.when = _when_;
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
+    }
+    return msg;
+  },
+};
+
+export const SegmentDefinitionResponseJSON = {
+  /**
+   * Serializes SegmentDefinitionResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<SegmentDefinitionResponse>): string {
+    return JSON.stringify(SegmentDefinitionResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes SegmentDefinitionResponse from JSON.
+   */
+  decode: function (json: string): SegmentDefinitionResponse {
+    return SegmentDefinitionResponseJSON._readMessage(
+      SegmentDefinitionResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SegmentDefinitionResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SegmentDefinitionResponse>,
+  ): SegmentDefinitionResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      definition: SegmentDefinitionJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SegmentDefinitionResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.definition) {
+      const _definition_ = SegmentDefinitionJSON._writeMessage(msg.definition);
+      if (Object.keys(_definition_).length > 0) {
+        json["definition"] = _definition_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SegmentDefinitionResponse,
+    json: any,
+  ): SegmentDefinitionResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _definition_ = json["definition"];
+    if (_definition_) {
+      SegmentDefinitionJSON._readMessage(msg.definition, _definition_);
+    }
+    return msg;
+  },
+};
+
+export const DeleteSegmentDefinitionRequestJSON = {
+  /**
+   * Serializes DeleteSegmentDefinitionRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<DeleteSegmentDefinitionRequest>): string {
+    return JSON.stringify(
+      DeleteSegmentDefinitionRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes DeleteSegmentDefinitionRequest from JSON.
+   */
+  decode: function (json: string): DeleteSegmentDefinitionRequest {
+    return DeleteSegmentDefinitionRequestJSON._readMessage(
+      DeleteSegmentDefinitionRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes DeleteSegmentDefinitionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<DeleteSegmentDefinitionRequest>,
+  ): DeleteSegmentDefinitionRequest {
+    return {
+      id: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<DeleteSegmentDefinitionRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: DeleteSegmentDefinitionRequest,
+    json: any,
+  ): DeleteSegmentDefinitionRequest {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    return msg;
+  },
+};
+
+export const ListSegmentDefinitionsRequestJSON = {
+  /**
+   * Serializes ListSegmentDefinitionsRequest to JSON.
+   */
+  encode: function (_msg?: PartialDeep<ListSegmentDefinitionsRequest>): string {
+    return "{}";
+  },
+
+  /**
+   * Deserializes ListSegmentDefinitionsRequest from JSON.
+   */
+  decode: function (_json?: string): ListSegmentDefinitionsRequest {
+    return {};
+  },
+
+  /**
+   * Initializes ListSegmentDefinitionsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSegmentDefinitionsRequest>,
+  ): ListSegmentDefinitionsRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<ListSegmentDefinitionsRequest>,
+  ): Record<string, unknown> {
+    return {};
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSegmentDefinitionsRequest,
+    _json: any,
+  ): ListSegmentDefinitionsRequest {
+    return msg;
+  },
+};
+
+export const ListSegmentDefinitionsResponseJSON = {
+  /**
+   * Serializes ListSegmentDefinitionsResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ListSegmentDefinitionsResponse>): string {
+    return JSON.stringify(
+      ListSegmentDefinitionsResponseJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes ListSegmentDefinitionsResponse from JSON.
+   */
+  decode: function (json: string): ListSegmentDefinitionsResponse {
+    return ListSegmentDefinitionsResponseJSON._readMessage(
+      ListSegmentDefinitionsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListSegmentDefinitionsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSegmentDefinitionsResponse>,
+  ): ListSegmentDefinitionsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      definitions: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListSegmentDefinitionsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.definitions?.length) {
+      json["definitions"] = msg.definitions.map(
+        SegmentDefinitionJSON._writeMessage,
+      );
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSegmentDefinitionsResponse,
+    json: any,
+  ): ListSegmentDefinitionsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _definitions_ = json["definitions"];
+    if (_definitions_) {
+      for (const item of _definitions_) {
+        const m = SegmentDefinitionJSON.initialize();
+        SegmentDefinitionJSON._readMessage(m, item);
+        msg.definitions.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetViewerSegmentsRequestJSON = {
+  /**
+   * Serializes GetViewerSegmentsRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetViewerSegmentsRequest>): string {
+    return JSON.stringify(GetViewerSegmentsRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetViewerSegmentsRequest from JSON.
+   */
+  decode: function (json: string): GetViewerSegmentsRequest {
+    return GetViewerSegmentsRequestJSON._readMessage(
+      GetViewerSegmentsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetViewerSegmentsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerSegmentsRequest>,
+  ): GetViewerSegmentsRequest {
+    return {
+      platform: "",
+      subjectId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerSegmentsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.platform) {
+      json["platform"] = msg.platform;
+    }
+    if (msg.subjectId) {
+      json["subjectId"] = msg.subjectId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerSegmentsRequest,
+    json: any,
+  ): GetViewerSegmentsRequest {
+    const _platform_ = json["platform"];
+    if (_platform_) {
+      msg.platform = _platform_;
+    }
+    const _subjectId_ = json["subjectId"] ?? json["subject_id"];
+    if (_subjectId_) {
+      msg.subjectId = _subjectId_;
+    }
+    return msg;
+  },
+};
+
+export const ViewerSegmentJSON = {
+  /**
+   * Serializes ViewerSegment to JSON.
+   */
+  encode: function (msg: PartialDeep<ViewerSegment>): string {
+    return JSON.stringify(ViewerSegmentJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ViewerSegment from JSON.
+   */
+  decode: function (json: string): ViewerSegment {
+    return ViewerSegmentJSON._readMessage(
+      ViewerSegmentJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ViewerSegment with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ViewerSegment>): ViewerSegment {
+    return {
+      segmentId: "",
+      windowKey: "",
+      enteredAt: protoscript.TimestampJSON.initialize(),
+      timeRelative: false,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ViewerSegment>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.segmentId) {
+      json["segmentId"] = msg.segmentId;
+    }
+    if (msg.windowKey) {
+      json["windowKey"] = msg.windowKey;
+    }
+    if (msg.enteredAt && (msg.enteredAt.seconds || msg.enteredAt.nanos)) {
+      json["enteredAt"] = protoscript.serializeTimestamp(msg.enteredAt);
+    }
+    if (msg.timeRelative) {
+      json["timeRelative"] = msg.timeRelative;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: ViewerSegment, json: any): ViewerSegment {
+    const _segmentId_ = json["segmentId"] ?? json["segment_id"];
+    if (_segmentId_) {
+      msg.segmentId = _segmentId_;
+    }
+    const _windowKey_ = json["windowKey"] ?? json["window_key"];
+    if (_windowKey_) {
+      msg.windowKey = _windowKey_;
+    }
+    const _enteredAt_ = json["enteredAt"] ?? json["entered_at"];
+    if (_enteredAt_) {
+      msg.enteredAt = protoscript.parseTimestamp(_enteredAt_);
+    }
+    const _timeRelative_ = json["timeRelative"] ?? json["time_relative"];
+    if (_timeRelative_) {
+      msg.timeRelative = _timeRelative_;
+    }
+    return msg;
+  },
+};
+
+export const GetViewerSegmentsResponseJSON = {
+  /**
+   * Serializes GetViewerSegmentsResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<GetViewerSegmentsResponse>): string {
+    return JSON.stringify(GetViewerSegmentsResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetViewerSegmentsResponse from JSON.
+   */
+  decode: function (json: string): GetViewerSegmentsResponse {
+    return GetViewerSegmentsResponseJSON._readMessage(
+      GetViewerSegmentsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetViewerSegmentsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerSegmentsResponse>,
+  ): GetViewerSegmentsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      sessionId: "",
+      segments: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerSegmentsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.sessionId) {
+      json["sessionId"] = msg.sessionId;
+    }
+    if (msg.segments?.length) {
+      json["segments"] = msg.segments.map(ViewerSegmentJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerSegmentsResponse,
+    json: any,
+  ): GetViewerSegmentsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _sessionId_ = json["sessionId"] ?? json["session_id"];
+    if (_sessionId_) {
+      msg.sessionId = _sessionId_;
+    }
+    const _segments_ = json["segments"];
+    if (_segments_) {
+      for (const item of _segments_) {
+        const m = ViewerSegmentJSON.initialize();
+        ViewerSegmentJSON._readMessage(m, item);
+        msg.segments.push(m);
       }
     }
     return msg;

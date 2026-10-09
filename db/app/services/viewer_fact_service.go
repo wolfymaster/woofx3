@@ -25,10 +25,13 @@ import (
 // change what a trigger emits after a definition was saved against it.
 //
 // Outbox publishing is opt-in via `publisher`. When set, every definition
-// write records a `db.viewer.fact.<op>.system` event in the write's
-// transaction, which is how the workflow service learns to recompile.
+// write records a `db.viewer.fact.<op>.system` or
+// `db.viewer.segment.<op>.system` event in the write's transaction, which is
+// how the workflow service learns to recompile, and every segment edge a
+// `viewer.segment.entered` or `viewer.segment.left` event in the apply's.
 type viewerFactService struct {
 	facts     *repo.ViewerFactRepository
+	segments  *repo.ViewerSegmentRepository
 	triggers  *repo.ModuleRepository
 	publisher *workers.EventPublisher
 	now       func() time.Time
@@ -36,11 +39,13 @@ type viewerFactService struct {
 
 func NewViewerFactService(
 	facts *repo.ViewerFactRepository,
+	segments *repo.ViewerSegmentRepository,
 	triggers *repo.ModuleRepository,
 	publisher *workers.EventPublisher,
 ) client.ViewerFactService {
 	return &viewerFactService{
 		facts:     facts,
+		segments:  segments,
 		triggers:  triggers,
 		publisher: publisher,
 		now:       func() time.Time { return time.Now().UTC() },
@@ -57,6 +62,21 @@ const (
 	factCreatedByModule = "MODULE"
 	factCreatedBySystem = "SYSTEM"
 )
+
+// parseCreatedByType normalizes who declares a fact or segment definition,
+// defaulting to USER.
+func parseCreatedByType(raw string) (string, error) {
+	createdByType := strings.ToUpper(strings.TrimSpace(raw))
+	if createdByType == "" {
+		return factCreatedByUser, nil
+	}
+	switch createdByType {
+	case factCreatedByUser, factCreatedByModule, factCreatedBySystem:
+		return createdByType, nil
+	default:
+		return "", fmt.Errorf("must be %s, %s or %s, got %q", factCreatedByUser, factCreatedByModule, factCreatedBySystem, raw)
+	}
+}
 
 // Definition statuses, resolved on every read.
 const (
@@ -92,15 +112,9 @@ func (s *viewerFactService) UpsertFactDefinition(ctx context.Context, req *clien
 	if name == "" {
 		return nil, twirp.RequiredArgumentError("name")
 	}
-	createdByType := strings.ToUpper(strings.TrimSpace(req.CreatedByType))
-	if createdByType == "" {
-		createdByType = factCreatedByUser
-	}
-	switch createdByType {
-	case factCreatedByUser, factCreatedByModule, factCreatedBySystem:
-	default:
-		return nil, twirp.InvalidArgumentError("created_by_type", fmt.Sprintf("must be %s, %s or %s, got %q",
-			factCreatedByUser, factCreatedByModule, factCreatedBySystem, req.CreatedByType))
+	createdByType, err := parseCreatedByType(req.CreatedByType)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("created_by_type", err.Error())
 	}
 
 	body, canonical, err := parseFactBody(req.Definition)
@@ -110,9 +124,12 @@ func (s *viewerFactService) UpsertFactDefinition(ctx context.Context, req *clien
 	if err := validateFactShape(body, req.WindowKind); err != nil {
 		return nil, twirp.InvalidArgumentError("definition", err.Error())
 	}
-	resolved, err := s.resolve(body)
+	resolved, err := resolveFact(s.triggers, body)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(err)
+	}
+	if resolved.status == factStatusInvalid && resolved.readsSegmentEdges {
+		return nil, twirp.NewError(twirp.FailedPrecondition, resolved.reason)
 	}
 	if resolved.status == factStatusInvalid {
 		return nil, twirp.InvalidArgumentError("definition", resolved.reason)
@@ -166,6 +183,10 @@ func (s *viewerFactService) DeleteFactDefinition(ctx context.Context, req *clien
 	err := s.facts.DeleteDefinition(req.Id, s.recordDefinitionChange("deleted"))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, twirp.NotFoundError(fmt.Sprintf("no fact definition %q", req.Id))
+	}
+	var referenced *repo.FactDefinitionReferencedError
+	if errors.As(err, &referenced) {
+		return nil, twirp.NewError(twirp.FailedPrecondition, referenced.Error())
 	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("delete fact definition %s: %w", req.Id, err))
@@ -234,13 +255,16 @@ func (s *viewerFactService) ApplyFactDeltas(ctx context.Context, req *client.App
 		}
 	}
 
-	result, err := s.facts.Apply(repo.FactBatch{
+	batch := repo.FactBatch{
 		Source:       req.Source,
 		EventID:      req.EventId,
 		OccurredAt:   req.OccurredAt.AsTime().UTC(),
 		SessionStamp: req.SessionStamp,
 		SkipDedupe:   req.Silent,
 		Deltas:       deltas,
+	}
+	result, err := s.facts.ApplyThen(batch, func(tx *gorm.DB, result *repo.FactApplyResult) error {
+		return s.diffSegments(tx, batch, result.Changes, !req.Silent)
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("apply fact deltas: %w", err))
@@ -283,6 +307,10 @@ func (s *viewerFactService) GetViewerFacts(ctx context.Context, req *client.GetV
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("read viewer facts: %w", err))
 	}
+	values, err = s.activeValues(values)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(err)
+	}
 
 	out := make([]*client.ViewerFactValue, len(values))
 	var name *string
@@ -308,10 +336,38 @@ func (s *viewerFactService) GetViewerFacts(ctx context.Context, req *client.GetV
 	}, nil
 }
 
+// activeValues leaves out the values of facts that are not active. Such a
+// fact has stopped counting, so its stored value is stale; segments read it
+// as missing too, and a workflow reading ${viewer.*} must agree with them.
+func (s *viewerFactService) activeValues(values []repo.ViewerFactValue) ([]repo.ViewerFactValue, error) {
+	ids := make([]string, 0, len(values))
+	for _, value := range values {
+		ids = append(ids, value.FactID)
+	}
+	facts, err := loadSegmentFacts(s.segments, s.triggers, ids)
+	if err != nil {
+		return nil, err
+	}
+	active := make([]repo.ViewerFactValue, 0, len(values))
+	for _, value := range values {
+		if facts[value.FactID].active {
+			active = append(active, value)
+		}
+	}
+	return active, nil
+}
+
 // recordDefinitionChange writes the `op` outbox event for a definition inside
-// the write's transaction. Without a publisher it records nothing.
+// the write's transaction, after silently refilling the segments that read a
+// revised fact, whose values the revision just deleted. Without a publisher
+// it records no event.
 func (s *viewerFactService) recordDefinitionChange(op string) repo.RecordFactDefinitionChange {
-	return func(tx *gorm.DB, definition *models.FactDefinition) error {
+	return func(tx *gorm.DB, definition *models.FactDefinition, write repo.FactDefinitionWrite) error {
+		if write == repo.FactDefinitionRevised {
+			if err := s.refillSegmentsReading(tx, definition.ID); err != nil {
+				return err
+			}
+		}
 		if s.publisher == nil {
 			return nil
 		}
@@ -349,28 +405,37 @@ func (s *viewerFactService) definitionToProto(definition *models.FactDefinition)
 		out.BackfilledThrough = timestamppb.New(*definition.BackfilledThrough)
 	}
 
-	body, _, err := parseFactBody(definition.Definition)
-	if err == nil {
-		err = validateFactShape(body, definition.WindowKind)
-	}
-	if err != nil {
-		out.Status = factStatusInvalid
-		out.Reason = err.Error()
-		return out, nil
-	}
-	resolved, err := s.resolve(body)
+	resolved, err := resolveStoredFact(s.triggers, definition.Definition, definition.WindowKind, definition.ValueKind)
 	if err != nil {
 		return nil, err
 	}
 	out.Sources = resolved.sources
 	out.Status = resolved.status
 	out.Reason = resolved.reason
-	if resolved.status == factStatusActive && resolved.valueKind != definition.ValueKind {
-		out.Status = factStatusInvalid
-		out.Reason = fmt.Sprintf("the value field is now a %s, and the fact stores a %s; save the definition again to reset it",
-			resolved.valueKind, definition.ValueKind)
-	}
 	return out, nil
+}
+
+// resolveStoredFact re-resolves a stored definition against the triggers
+// registered now. A body that no longer validates, or a `last` value field
+// whose kind changed from what the fact stores, makes it invalid.
+func resolveStoredFact(triggers *repo.ModuleRepository, definition, windowKind, valueKind string) (resolvedFact, error) {
+	body, _, err := parseFactBody(definition)
+	if err == nil {
+		err = validateFactShape(body, windowKind)
+	}
+	if err != nil {
+		return resolvedFact{sources: []*client.ResolvedFactSource{}, status: factStatusInvalid, reason: err.Error()}, nil
+	}
+	resolved, err := resolveFact(triggers, body)
+	if err != nil {
+		return resolved, err
+	}
+	if resolved.status == factStatusActive && resolved.valueKind != valueKind {
+		resolved.status = factStatusInvalid
+		resolved.reason = fmt.Sprintf("the value field is now a %s, and the fact stores a %s; save the definition again to reset it",
+			resolved.valueKind, valueKind)
+	}
+	return resolved, nil
 }
 
 func factValueToProto(state *repo.FactValueState) *client.FactValue {
@@ -642,13 +707,22 @@ type resolvedFact struct {
 	// valueKind is what the fact stores, or "" when it depends on a value
 	// field none of whose triggers resolved.
 	valueKind string
+	// readsSegmentEdges is true when a source's trigger fires on the engine's
+	// own viewer.* events, which makes the definition invalid.
+	readsSegmentEdges bool
 }
 
-// resolve looks each source's trigger up and checks the source against what
+// viewerEventPrefix is the namespace of the engine's segment edge events.
+// A fact counting them would feed the segments that publish them: an apply
+// announces an edge, the edge is counted as a fact, and the count moves
+// segments again, looping through the outbox.
+const viewerEventPrefix = "viewer."
+
+// resolveFact looks each source's trigger up and checks the source against what
 // that trigger emits. A source that does not fit makes the definition
 // invalid; a trigger that is not registered makes it unresolved, unless
 // another source is invalid. The error is a failure to read the triggers.
-func (s *viewerFactService) resolve(body *models.FactDefinitionBody) (resolvedFact, error) {
+func resolveFact(triggers *repo.ModuleRepository, body *models.FactDefinitionBody) (resolvedFact, error) {
 	out := resolvedFact{sources: make([]*client.ResolvedFactSource, len(body.Sources)), status: factStatusActive}
 	fn := body.Aggregate.Fn
 	switch aggregateReads(fn) {
@@ -675,7 +749,7 @@ func (s *viewerFactService) resolve(body *models.FactDefinitionBody) (resolvedFa
 		if err != nil {
 			return invalidFact(out, fmt.Errorf("sources[%d].trigger: %w", i, err)), nil
 		}
-		trigger, err := s.triggers.GetActiveTriggerByModuleAndManifestID(id.moduleID, id.manifestID)
+		trigger, err := triggers.GetActiveTriggerByModuleAndManifestID(id.moduleID, id.manifestID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			unresolved = append(unresolved, source.Trigger)
 			continue
@@ -684,6 +758,11 @@ func (s *viewerFactService) resolve(body *models.FactDefinitionBody) (resolvedFa
 			return out, fmt.Errorf("look up trigger %s: %w", source.Trigger, err)
 		}
 		resolved.Event = trigger.Event
+		if strings.HasPrefix(trigger.Event, viewerEventPrefix) {
+			out.readsSegmentEdges = true
+			return invalidFact(out, fmt.Errorf("sources[%d]: trigger %s fires on the engine's %s* segment events, which a fact cannot count without feeding the segments that publish them",
+				i, source.Trigger, viewerEventPrefix)), nil
+		}
 
 		var emits emitsShape
 		if err := json.Unmarshal([]byte(trigger.Emits), &emits); err != nil {

@@ -50,7 +50,8 @@ type ViewerFactService interface {
 	UpsertFactDefinition(context.Context, *UpsertFactDefinitionRequest) (*FactDefinitionResponse, error)
 
 	// Deletes a definition and every value of it. Fails with `not_found` when
-	// there is no such definition.
+	// there is no such definition, and with `failed_precondition`, naming them,
+	// when a segment reads it.
 	DeleteFactDefinition(context.Context, *DeleteFactDefinitionRequest) (*ResponseStatus, error)
 
 	// Every definition, each re-resolved against the triggers registered now.
@@ -66,11 +67,42 @@ type ViewerFactService interface {
 	// does not fit its definition is counted invalid. Neither fails the rest of
 	// the event. `last` and the session aggregates ignore an event older than
 	// the stored value, so a replay of old events cannot move them back.
+	//
+	// In the same transaction, every segment reading a changed value is
+	// evaluated for that viewer, its membership updated, and each viewer that
+	// entered or left it announced as `viewer.segment.entered` or
+	// `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
+	// apply updates membership and announces nothing.
 	ApplyFactDeltas(context.Context, *ApplyFactDeltasRequest) (*ApplyFactDeltasResponse, error)
 
 	// One viewer's lifetime values and their values in the current stream
-	// session.
+	// session, of active facts only: a fact that is not active has stopped
+	// counting, and segments read it as missing too.
 	GetViewerFacts(context.Context, *GetViewerFactsRequest) (*GetViewerFactsResponse, error)
+
+	// Creates or replaces a segment: a condition over one viewer's facts. A
+	// change to the condition increments `revision`. Creating a segment or
+	// changing its condition fills its membership from the stored values in
+	// the same transaction, announcing nothing, so a save never floods
+	// workflows with edges. A change to the name or description alone keeps
+	// both.
+	//
+	// Fails with `invalid_argument` when the condition is malformed, reads a
+	// fact that does not exist, or applies an operator the fact's value kind
+	// does not support, and with `failed_precondition` when the id is owned by
+	// a different creator.
+	UpsertSegmentDefinition(context.Context, *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error)
+
+	// Deletes a segment and its membership, announcing no edges. Fails with
+	// `not_found` when there is no such segment.
+	DeleteSegmentDefinition(context.Context, *DeleteSegmentDefinitionRequest) (*ResponseStatus, error)
+
+	// Every segment, each re-checked against the facts it reads now.
+	ListSegmentDefinitions(context.Context, *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error)
+
+	// The segments one viewer is in now: lifetime segments, and session
+	// segments entered in the current stream session.
+	GetViewerSegments(context.Context, *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error)
 }
 
 // =================================
@@ -79,7 +111,7 @@ type ViewerFactService interface {
 
 type viewerFactServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [5]string
+	urls        [9]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -107,12 +139,16 @@ func NewViewerFactServiceProtobufClient(baseURL string, client HTTPClient, opts 
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "viewer_fact", "ViewerFactService")
-	urls := [5]string{
+	urls := [9]string{
 		serviceURL + "UpsertFactDefinition",
 		serviceURL + "DeleteFactDefinition",
 		serviceURL + "ListFactDefinitions",
 		serviceURL + "ApplyFactDeltas",
 		serviceURL + "GetViewerFacts",
+		serviceURL + "UpsertSegmentDefinition",
+		serviceURL + "DeleteSegmentDefinition",
+		serviceURL + "ListSegmentDefinitions",
+		serviceURL + "GetViewerSegments",
 	}
 
 	return &viewerFactServiceProtobufClient{
@@ -353,13 +389,197 @@ func (c *viewerFactServiceProtobufClient) callGetViewerFacts(ctx context.Context
 	return out, nil
 }
 
+func (c *viewerFactServiceProtobufClient) UpsertSegmentDefinition(ctx context.Context, in *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "UpsertSegmentDefinition")
+	caller := c.callUpsertSegmentDefinition
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*UpsertSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*UpsertSegmentDefinitionRequest) when calling interceptor")
+					}
+					return c.callUpsertSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SegmentDefinitionResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SegmentDefinitionResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceProtobufClient) callUpsertSegmentDefinition(ctx context.Context, in *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+	out := new(SegmentDefinitionResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *viewerFactServiceProtobufClient) DeleteSegmentDefinition(ctx context.Context, in *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteSegmentDefinition")
+	caller := c.callDeleteSegmentDefinition
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteSegmentDefinitionRequest) when calling interceptor")
+					}
+					return c.callDeleteSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceProtobufClient) callDeleteSegmentDefinition(ctx context.Context, in *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *viewerFactServiceProtobufClient) ListSegmentDefinitions(ctx context.Context, in *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListSegmentDefinitions")
+	caller := c.callListSegmentDefinitions
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListSegmentDefinitionsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListSegmentDefinitionsRequest) when calling interceptor")
+					}
+					return c.callListSegmentDefinitions(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListSegmentDefinitionsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListSegmentDefinitionsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceProtobufClient) callListSegmentDefinitions(ctx context.Context, in *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+	out := new(ListSegmentDefinitionsResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *viewerFactServiceProtobufClient) GetViewerSegments(ctx context.Context, in *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetViewerSegments")
+	caller := c.callGetViewerSegments
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetViewerSegmentsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetViewerSegmentsRequest) when calling interceptor")
+					}
+					return c.callGetViewerSegments(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetViewerSegmentsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetViewerSegmentsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceProtobufClient) callGetViewerSegments(ctx context.Context, in *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+	out := new(GetViewerSegmentsResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 // =============================
 // ViewerFactService JSON Client
 // =============================
 
 type viewerFactServiceJSONClient struct {
 	client      HTTPClient
-	urls        [5]string
+	urls        [9]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -387,12 +607,16 @@ func NewViewerFactServiceJSONClient(baseURL string, client HTTPClient, opts ...t
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "viewer_fact", "ViewerFactService")
-	urls := [5]string{
+	urls := [9]string{
 		serviceURL + "UpsertFactDefinition",
 		serviceURL + "DeleteFactDefinition",
 		serviceURL + "ListFactDefinitions",
 		serviceURL + "ApplyFactDeltas",
 		serviceURL + "GetViewerFacts",
+		serviceURL + "UpsertSegmentDefinition",
+		serviceURL + "DeleteSegmentDefinition",
+		serviceURL + "ListSegmentDefinitions",
+		serviceURL + "GetViewerSegments",
 	}
 
 	return &viewerFactServiceJSONClient{
@@ -633,6 +857,190 @@ func (c *viewerFactServiceJSONClient) callGetViewerFacts(ctx context.Context, in
 	return out, nil
 }
 
+func (c *viewerFactServiceJSONClient) UpsertSegmentDefinition(ctx context.Context, in *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "UpsertSegmentDefinition")
+	caller := c.callUpsertSegmentDefinition
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*UpsertSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*UpsertSegmentDefinitionRequest) when calling interceptor")
+					}
+					return c.callUpsertSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SegmentDefinitionResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SegmentDefinitionResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceJSONClient) callUpsertSegmentDefinition(ctx context.Context, in *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+	out := new(SegmentDefinitionResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *viewerFactServiceJSONClient) DeleteSegmentDefinition(ctx context.Context, in *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteSegmentDefinition")
+	caller := c.callDeleteSegmentDefinition
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteSegmentDefinitionRequest) when calling interceptor")
+					}
+					return c.callDeleteSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceJSONClient) callDeleteSegmentDefinition(ctx context.Context, in *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *viewerFactServiceJSONClient) ListSegmentDefinitions(ctx context.Context, in *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListSegmentDefinitions")
+	caller := c.callListSegmentDefinitions
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListSegmentDefinitionsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListSegmentDefinitionsRequest) when calling interceptor")
+					}
+					return c.callListSegmentDefinitions(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListSegmentDefinitionsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListSegmentDefinitionsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceJSONClient) callListSegmentDefinitions(ctx context.Context, in *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+	out := new(ListSegmentDefinitionsResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *viewerFactServiceJSONClient) GetViewerSegments(ctx context.Context, in *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "viewer_fact")
+	ctx = ctxsetters.WithServiceName(ctx, "ViewerFactService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetViewerSegments")
+	caller := c.callGetViewerSegments
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetViewerSegmentsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetViewerSegmentsRequest) when calling interceptor")
+					}
+					return c.callGetViewerSegments(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetViewerSegmentsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetViewerSegmentsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *viewerFactServiceJSONClient) callGetViewerSegments(ctx context.Context, in *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+	out := new(GetViewerSegmentsResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 // ================================
 // ViewerFactService Server Handler
 // ================================
@@ -744,6 +1152,18 @@ func (s *viewerFactServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.
 		return
 	case "GetViewerFacts":
 		s.serveGetViewerFacts(ctx, resp, req)
+		return
+	case "UpsertSegmentDefinition":
+		s.serveUpsertSegmentDefinition(ctx, resp, req)
+		return
+	case "DeleteSegmentDefinition":
+		s.serveDeleteSegmentDefinition(ctx, resp, req)
+		return
+	case "ListSegmentDefinitions":
+		s.serveListSegmentDefinitions(ctx, resp, req)
+		return
+	case "GetViewerSegments":
+		s.serveGetViewerSegments(ctx, resp, req)
 		return
 	default:
 		msg := fmt.Sprintf("no handler for path %q", req.URL.Path)
@@ -1652,6 +2072,726 @@ func (s *viewerFactServiceServer) serveGetViewerFactsProtobuf(ctx context.Contex
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *viewerFactServiceServer) serveUpsertSegmentDefinition(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveUpsertSegmentDefinitionJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveUpsertSegmentDefinitionProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *viewerFactServiceServer) serveUpsertSegmentDefinitionJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "UpsertSegmentDefinition")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(UpsertSegmentDefinitionRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ViewerFactService.UpsertSegmentDefinition
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*UpsertSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*UpsertSegmentDefinitionRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.UpsertSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SegmentDefinitionResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SegmentDefinitionResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *SegmentDefinitionResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *SegmentDefinitionResponse and nil error while calling UpsertSegmentDefinition. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveUpsertSegmentDefinitionProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "UpsertSegmentDefinition")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(UpsertSegmentDefinitionRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ViewerFactService.UpsertSegmentDefinition
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *UpsertSegmentDefinitionRequest) (*SegmentDefinitionResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*UpsertSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*UpsertSegmentDefinitionRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.UpsertSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SegmentDefinitionResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SegmentDefinitionResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *SegmentDefinitionResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *SegmentDefinitionResponse and nil error while calling UpsertSegmentDefinition. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveDeleteSegmentDefinition(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveDeleteSegmentDefinitionJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveDeleteSegmentDefinitionProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *viewerFactServiceServer) serveDeleteSegmentDefinitionJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteSegmentDefinition")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(DeleteSegmentDefinitionRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ViewerFactService.DeleteSegmentDefinition
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteSegmentDefinitionRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.DeleteSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteSegmentDefinition. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveDeleteSegmentDefinitionProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteSegmentDefinition")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(DeleteSegmentDefinitionRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ViewerFactService.DeleteSegmentDefinition
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteSegmentDefinitionRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteSegmentDefinitionRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteSegmentDefinitionRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.DeleteSegmentDefinition(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteSegmentDefinition. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveListSegmentDefinitions(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveListSegmentDefinitionsJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveListSegmentDefinitionsProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *viewerFactServiceServer) serveListSegmentDefinitionsJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListSegmentDefinitions")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ListSegmentDefinitionsRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ViewerFactService.ListSegmentDefinitions
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListSegmentDefinitionsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListSegmentDefinitionsRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.ListSegmentDefinitions(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListSegmentDefinitionsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListSegmentDefinitionsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListSegmentDefinitionsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListSegmentDefinitionsResponse and nil error while calling ListSegmentDefinitions. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveListSegmentDefinitionsProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListSegmentDefinitions")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ListSegmentDefinitionsRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ViewerFactService.ListSegmentDefinitions
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListSegmentDefinitionsRequest) (*ListSegmentDefinitionsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListSegmentDefinitionsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListSegmentDefinitionsRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.ListSegmentDefinitions(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListSegmentDefinitionsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListSegmentDefinitionsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListSegmentDefinitionsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListSegmentDefinitionsResponse and nil error while calling ListSegmentDefinitions. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveGetViewerSegments(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveGetViewerSegmentsJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveGetViewerSegmentsProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *viewerFactServiceServer) serveGetViewerSegmentsJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetViewerSegments")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(GetViewerSegmentsRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ViewerFactService.GetViewerSegments
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetViewerSegmentsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetViewerSegmentsRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.GetViewerSegments(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetViewerSegmentsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetViewerSegmentsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *GetViewerSegmentsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *GetViewerSegmentsResponse and nil error while calling GetViewerSegments. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *viewerFactServiceServer) serveGetViewerSegmentsProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetViewerSegments")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(GetViewerSegmentsRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ViewerFactService.GetViewerSegments
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetViewerSegmentsRequest) (*GetViewerSegmentsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetViewerSegmentsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetViewerSegmentsRequest) when calling interceptor")
+					}
+					return s.ViewerFactService.GetViewerSegments(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetViewerSegmentsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetViewerSegmentsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *GetViewerSegmentsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *GetViewerSegmentsResponse and nil error while calling GetViewerSegments. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
 func (s *viewerFactServiceServer) ServiceDescriptor() ([]byte, int) {
 	return twirpFileDescriptor19, 0
 }
@@ -1668,89 +2808,109 @@ func (s *viewerFactServiceServer) PathPrefix() string {
 }
 
 var twirpFileDescriptor19 = []byte{
-	// 1330 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x56, 0xcf, 0x8f, 0xdb, 0xc4,
-	0x17, 0xaf, 0x9d, 0x4d, 0xb2, 0x79, 0xd9, 0xcd, 0x76, 0xa7, 0xbb, 0x5b, 0x7f, 0xb3, 0xed, 0xb7,
-	0x8b, 0x5b, 0x68, 0x90, 0x4a, 0x22, 0x5a, 0x84, 0x54, 0x55, 0x1c, 0x76, 0xa9, 0x60, 0x57, 0xa0,
-	0x0a, 0x79, 0x4b, 0xf9, 0x21, 0x24, 0xcb, 0xb1, 0x5f, 0x12, 0x53, 0xc7, 0x36, 0x33, 0xe3, 0x84,
-	0x5c, 0x91, 0x90, 0x7a, 0xe0, 0xc0, 0x9d, 0xbf, 0x88, 0x33, 0x12, 0xff, 0x03, 0x57, 0x24, 0xc4,
-	0x15, 0xcd, 0x0f, 0xbb, 0x89, 0x93, 0xcd, 0x96, 0x1e, 0x38, 0x25, 0xef, 0xcd, 0x67, 0xde, 0xf8,
-	0xbd, 0xf7, 0xf9, 0xbc, 0x19, 0xd8, 0x9d, 0x84, 0x38, 0x45, 0xea, 0x0e, 0x3c, 0x9f, 0x77, 0x53,
-	0x9a, 0xf0, 0x84, 0x34, 0xe7, 0x5c, 0xed, 0x2d, 0x3f, 0x19, 0x8f, 0x93, 0x58, 0x2d, 0xb5, 0x6f,
-	0x0d, 0x93, 0x64, 0x18, 0x61, 0x4f, 0x5a, 0xfd, 0x6c, 0xd0, 0xe3, 0xe1, 0x18, 0x19, 0xf7, 0xc6,
-	0xa9, 0x02, 0xd8, 0xbf, 0x56, 0xa1, 0xf5, 0x91, 0xe7, 0xf3, 0xc7, 0x38, 0x08, 0xe3, 0x90, 0x87,
-	0x49, 0x4c, 0x5a, 0x60, 0x86, 0x81, 0x65, 0x1c, 0x19, 0x9d, 0x86, 0x63, 0x86, 0x01, 0x21, 0xb0,
-	0x11, 0x7b, 0x63, 0xb4, 0x4c, 0xe9, 0x91, 0xff, 0xc9, 0x11, 0x34, 0x03, 0x64, 0x3e, 0x0d, 0x53,
-	0xb1, 0xc5, 0xaa, 0xc8, 0xa5, 0x79, 0x17, 0xf9, 0x3f, 0x40, 0x50, 0xc4, 0xb4, 0x36, 0x24, 0x60,
-	0xce, 0x43, 0x6e, 0x02, 0x4c, 0xbc, 0x28, 0x43, 0xf7, 0x79, 0x18, 0x07, 0x56, 0x55, 0xae, 0x37,
-	0xa4, 0xe7, 0x93, 0x30, 0x0e, 0xc8, 0x2d, 0x68, 0x4e, 0xc3, 0x38, 0x48, 0xa6, 0x6a, 0xbd, 0xa6,
-	0xf6, 0x2b, 0x97, 0x04, 0xb4, 0x61, 0x93, 0xe2, 0x24, 0x64, 0x22, 0x7a, 0xfd, 0xc8, 0xe8, 0x54,
-	0x9c, 0xc2, 0x26, 0x6f, 0xc1, 0x8e, 0x4f, 0xd1, 0xe3, 0x18, 0xb8, 0xfd, 0x99, 0xcb, 0x67, 0x29,
-	0x5a, 0x9b, 0x32, 0xc0, 0xb6, 0x76, 0x9f, 0xcc, 0x9e, 0xce, 0x52, 0x24, 0x77, 0xa0, 0x35, 0x87,
-	0xa3, 0x38, 0xb0, 0x1a, 0x12, 0xb6, 0x55, 0xc0, 0x1c, 0x1c, 0x90, 0x63, 0x68, 0xf9, 0x49, 0x16,
-	0xf3, 0x30, 0x1e, 0xba, 0x2c, 0x8c, 0x7d, 0xb4, 0xe0, 0xc8, 0xe8, 0x34, 0xef, 0xb7, 0xbb, 0xaa,
-	0xb8, 0xdd, 0xbc, 0xb8, 0xdd, 0xa7, 0x79, 0x71, 0x9d, 0xed, 0x7c, 0xc7, 0xb9, 0xd8, 0x40, 0x9e,
-	0x00, 0xe9, 0x7b, 0xfe, 0xf3, 0x41, 0x18, 0x45, 0x18, 0xb8, 0x7c, 0x44, 0x93, 0x6c, 0x38, 0xb2,
-	0x9a, 0x97, 0x85, 0x39, 0xbd, 0xe2, 0xec, 0xbe, 0xdc, 0xf7, 0x54, 0x6d, 0x7b, 0x61, 0x18, 0xe4,
-	0x21, 0x40, 0xfe, 0xe1, 0x1e, 0xb7, 0xb6, 0x2e, 0xfd, 0x9c, 0x86, 0x46, 0x1f, 0x73, 0xb1, 0x35,
-	0x4b, 0x83, 0x7c, 0xeb, 0xf6, 0xe5, 0x5b, 0x35, 0xfa, 0x98, 0x93, 0x03, 0xa8, 0x31, 0xee, 0xf1,
-	0x8c, 0x59, 0x2d, 0x59, 0x26, 0x6d, 0x09, 0x3f, 0x45, 0x8f, 0x25, 0xb1, 0xb5, 0xa3, 0xfc, 0xca,
-	0x22, 0x0f, 0xa1, 0xce, 0x92, 0x8c, 0xfa, 0xc8, 0xac, 0xab, 0x47, 0x95, 0x4e, 0xf3, 0xfe, 0xad,
-	0xee, 0x3c, 0x79, 0x1d, 0x64, 0x49, 0x34, 0xc1, 0x40, 0xd0, 0xef, 0x5c, 0xe2, 0x9c, 0x1c, 0x4f,
-	0x6e, 0x40, 0xc3, 0x1b, 0x0e, 0x29, 0x0e, 0x3d, 0x8e, 0xd6, 0xae, 0x22, 0x47, 0xe1, 0x38, 0xd9,
-	0x87, 0x6b, 0xee, 0x72, 0x3d, 0xed, 0x9f, 0x4d, 0x20, 0xcb, 0x41, 0x89, 0x05, 0x75, 0x4e, 0xc3,
-	0xe1, 0x10, 0xa9, 0x26, 0x75, 0x6e, 0x92, 0x3d, 0xa8, 0xe2, 0x04, 0x63, 0xae, 0xa9, 0xad, 0x0c,
-	0xf2, 0x06, 0x6c, 0xb1, 0xac, 0xff, 0x2d, 0xfa, 0xdc, 0x4d, 0x3d, 0x3e, 0xca, 0xc9, 0xad, 0x7d,
-	0x9f, 0x79, 0x7c, 0x44, 0x3a, 0x70, 0x35, 0x87, 0x84, 0xcc, 0xf5, 0x28, 0xf5, 0x66, 0x92, 0xe2,
-	0x9b, 0x4e, 0x4b, 0xfb, 0xcf, 0xd8, 0xb1, 0xf0, 0x92, 0x37, 0xa1, 0xe5, 0xc5, 0x49, 0x3c, 0x1b,
-	0x27, 0x19, 0x73, 0xa7, 0x23, 0x8c, 0x35, 0xd5, 0xb7, 0x0b, 0xef, 0x17, 0x23, 0x8c, 0xc5, 0x99,
-	0x41, 0xc8, 0xd2, 0xc8, 0x9b, 0xb9, 0x52, 0x6b, 0x35, 0x2d, 0x28, 0xe5, 0x7b, 0x22, 0x24, 0x57,
-	0x08, 0x46, 0x7e, 0x54, 0x7d, 0x4e, 0x30, 0xf2, 0x93, 0xf6, 0xa0, 0x3a, 0x1d, 0x21, 0xcd, 0x99,
-	0xae, 0x0c, 0xfb, 0x4f, 0x03, 0x0e, 0x3f, 0x4f, 0x19, 0x52, 0xbe, 0x28, 0x72, 0x07, 0xbf, 0xcb,
-	0x90, 0xf1, 0xff, 0x48, 0xeb, 0x25, 0x31, 0x57, 0x97, 0xc4, 0xbc, 0x42, 0xb0, 0xb5, 0x57, 0x13,
-	0x6c, 0x7d, 0x59, 0xb0, 0xf6, 0x8f, 0x06, 0x1c, 0x94, 0xd3, 0x65, 0x69, 0x12, 0x33, 0x24, 0xdd,
-	0x82, 0xc2, 0x86, 0x64, 0xfe, 0x41, 0x57, 0x8f, 0xcb, 0x1c, 0x71, 0x2e, 0x57, 0x0b, 0x6a, 0x3f,
-	0x5a, 0xc8, 0xcc, 0x94, 0x7b, 0x0e, 0x17, 0x58, 0x5c, 0x3a, 0x68, 0x0e, 0x6e, 0xbf, 0x03, 0x87,
-	0x8f, 0x31, 0x42, 0x8e, 0xaf, 0x54, 0x7b, 0xfb, 0x06, 0xb4, 0x3f, 0x0d, 0x59, 0xa9, 0x51, 0x4c,
-	0xa3, 0xed, 0x9f, 0x0c, 0x38, 0x5c, 0xb9, 0xfc, 0x9a, 0x99, 0x7d, 0x20, 0xba, 0x5a, 0x84, 0xb1,
-	0x4c, 0x29, 0xd0, 0xb5, 0xa9, 0xcd, 0xe3, 0xed, 0x33, 0x68, 0x88, 0xe5, 0x67, 0x82, 0x7f, 0x64,
-	0x1f, 0x2a, 0x71, 0x36, 0x96, 0x07, 0x1b, 0xa7, 0x57, 0x1c, 0x61, 0x88, 0x29, 0xb5, 0x0f, 0x15,
-	0xc6, 0xa9, 0xe2, 0xd2, 0xa9, 0xe1, 0x08, 0xe3, 0x85, 0x61, 0x9c, 0xd4, 0x60, 0xc3, 0x8d, 0xb3,
-	0xb1, 0xfc, 0x65, 0x9c, 0xda, 0x3f, 0x98, 0x2a, 0xd6, 0x63, 0x8c, 0xb8, 0x47, 0xae, 0x43, 0x5d,
-	0x1c, 0xee, 0x16, 0xa5, 0xa9, 0x09, 0xf3, 0x6c, 0x71, 0xe0, 0x9b, 0xa5, 0x81, 0xdf, 0x86, 0xcd,
-	0x34, 0xf2, 0xf8, 0x20, 0xa1, 0x63, 0xcd, 0xcf, 0xc2, 0x16, 0xba, 0x29, 0xb4, 0x1a, 0x68, 0x72,
-	0x36, 0x72, 0x95, 0x0a, 0xea, 0x15, 0x6a, 0x97, 0xcc, 0x97, 0xe4, 0x3c, 0xbd, 0x52, 0xe8, 0x5d,
-	0x68, 0x4f, 0x24, 0xd3, 0x02, 0x33, 0x49, 0x35, 0x2b, 0xcd, 0x24, 0xcd, 0x73, 0xae, 0xcb, 0x9c,
-	0x8d, 0x72, 0xce, 0x52, 0x84, 0xa7, 0x66, 0x91, 0xf3, 0x0e, 0x6c, 0xbb, 0xf3, 0xc7, 0x2c, 0x15,
-	0xe1, 0x2f, 0x03, 0x0e, 0x8e, 0xd3, 0x34, 0x9a, 0x15, 0x95, 0xc8, 0x3b, 0x2f, 0xc7, 0xae, 0x9c,
-	0x64, 0x79, 0x41, 0x94, 0x45, 0xfe, 0x07, 0x9b, 0x72, 0x60, 0x89, 0xb4, 0x94, 0x5e, 0xeb, 0xd2,
-	0x3e, 0x0b, 0xc8, 0x23, 0x68, 0x26, 0xbe, 0x9f, 0x51, 0xaa, 0xa6, 0x7c, 0xe5, 0xd2, 0x29, 0x0f,
-	0x39, 0xfc, 0x98, 0x93, 0xdb, 0xb0, 0xcd, 0x90, 0x89, 0xba, 0xba, 0x72, 0x51, 0xd7, 0x6c, 0x4b,
-	0x3b, 0xcf, 0x85, 0x4f, 0x7e, 0x54, 0x18, 0x89, 0xd9, 0x59, 0x95, 0x73, 0x4f, 0x5b, 0x82, 0x86,
-	0x81, 0xfc, 0x7a, 0xab, 0x26, 0x19, 0x75, 0xb0, 0x82, 0x51, 0x11, 0xf7, 0x1c, 0x8d, 0xb2, 0x7f,
-	0x31, 0x61, 0xa7, 0x20, 0xd2, 0x87, 0x23, 0x2f, 0x1e, 0xe2, 0x5a, 0x0a, 0x14, 0x6d, 0x36, 0xd7,
-	0xb6, 0xb9, 0x52, 0x6e, 0xf3, 0x4d, 0x80, 0x7c, 0x04, 0xe1, 0x2c, 0x67, 0x81, 0x9e, 0x40, 0x38,
-	0x7b, 0x65, 0x16, 0x74, 0xa1, 0xd6, 0xc7, 0x41, 0x42, 0xd5, 0x7c, 0x5a, 0x95, 0x9e, 0x4c, 0xc4,
-	0xd1, 0x28, 0x72, 0x0f, 0xaa, 0xde, 0x80, 0x23, 0x95, 0x3c, 0xb9, 0x18, 0xae, 0x40, 0x4b, 0x2c,
-	0xb1, 0xff, 0x30, 0xe0, 0xfa, 0x12, 0x2b, 0x5e, 0x53, 0xf0, 0x16, 0xd4, 0xbd, 0x34, 0x8d, 0x42,
-	0x54, 0x6c, 0xd9, 0x74, 0x72, 0x53, 0xac, 0x04, 0x34, 0x49, 0x53, 0x54, 0x75, 0xab, 0x3a, 0xb9,
-	0x49, 0xde, 0x87, 0xba, 0x2f, 0x7b, 0xc2, 0xac, 0x0d, 0xd9, 0xce, 0x1b, 0xab, 0x13, 0x50, 0x8d,
-	0x73, 0x72, 0xb0, 0x88, 0x18, 0xc6, 0x13, 0x2f, 0x0a, 0xd5, 0xb0, 0xaf, 0x3a, 0xb9, 0x29, 0x56,
-	0xd8, 0xf3, 0x50, 0x9e, 0x55, 0x53, 0x2b, 0xda, 0xb4, 0x1d, 0xd8, 0xff, 0x18, 0xf9, 0x33, 0x19,
-	0x5e, 0x04, 0x2e, 0xf8, 0x3f, 0xdf, 0x75, 0x63, 0x6d, 0xd7, 0xcd, 0x52, 0xd7, 0xed, 0xdf, 0x0c,
-	0xd8, 0x79, 0x19, 0x51, 0x0d, 0xab, 0x0b, 0xd9, 0x55, 0xba, 0xa5, 0xcc, 0xa5, 0x5b, 0x6a, 0xf1,
-	0xc9, 0x5a, 0x29, 0x3f, 0x59, 0xef, 0x41, 0x55, 0x1a, 0x92, 0x5d, 0x6b, 0x7a, 0x2d, 0x41, 0xa5,
-	0x77, 0x58, 0xf5, 0x5f, 0xbc, 0xc3, 0xec, 0xdf, 0x0d, 0x38, 0x28, 0x97, 0xea, 0x35, 0x49, 0x21,
-	0xea, 0xa7, 0xb5, 0x3e, 0x57, 0x3f, 0xe5, 0x59, 0x31, 0x1c, 0x2b, 0x17, 0xc8, 0xe2, 0x3d, 0xa8,
-	0xc9, 0xac, 0x56, 0xd3, 0xa4, 0xd4, 0x01, 0x47, 0x63, 0x97, 0xe8, 0x7e, 0xff, 0xef, 0x0a, 0xec,
-	0xbe, 0x04, 0x9f, 0x23, 0x9d, 0x84, 0x3e, 0x12, 0x84, 0xbd, 0x55, 0x4f, 0x18, 0xd2, 0x59, 0x38,
-	0x64, 0xcd, 0x2b, 0xa7, 0x7d, 0x7b, 0xdd, 0xb5, 0x96, 0x97, 0xee, 0x4b, 0xd8, 0x5b, 0x75, 0x5b,
-	0x97, 0x8e, 0x59, 0x73, 0xa1, 0xb7, 0x2f, 0x28, 0x36, 0x19, 0xc1, 0xb5, 0x15, 0x37, 0x37, 0xb9,
-	0xbb, 0x10, 0xf8, 0xe2, 0xab, 0xbf, 0xdd, 0xb9, 0x1c, 0xa8, 0x73, 0xf8, 0x06, 0x76, 0x4a, 0xe3,
-	0x82, 0x2c, 0xe6, 0xbe, 0xfa, 0x8a, 0x69, 0xdf, 0x59, 0x0f, 0xd2, 0xd1, 0xbf, 0x82, 0xd6, 0x22,
-	0xed, 0x88, 0xbd, 0xb0, 0x6f, 0xa5, 0x7c, 0x4b, 0xc5, 0x5f, 0xcd, 0xdb, 0x93, 0xb7, 0xbf, 0xbe,
-	0x3b, 0x0c, 0xf9, 0x28, 0xeb, 0x8b, 0x12, 0xf6, 0xa6, 0x49, 0x34, 0x98, 0x8d, 0x3d, 0xc6, 0x91,
-	0xf6, 0xa6, 0x49, 0x32, 0xf8, 0xfe, 0x41, 0x2f, 0xe8, 0xf7, 0x86, 0x18, 0xf7, 0x26, 0xef, 0xf6,
-	0x6b, 0x52, 0x1c, 0x0f, 0xfe, 0x09, 0x00, 0x00, 0xff, 0xff, 0xf1, 0xb1, 0x4c, 0xdd, 0x09, 0x0f,
-	0x00, 0x00,
+	// 1656 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x57, 0x4b, 0x6f, 0xdb, 0xd6,
+	0x12, 0x0e, 0x29, 0xeb, 0x35, 0xb2, 0xe4, 0xf8, 0xc4, 0x0f, 0x46, 0x4e, 0x6c, 0x5f, 0xe6, 0xe5,
+	0x7b, 0x93, 0x2b, 0xdf, 0x9b, 0x5c, 0x04, 0x08, 0x82, 0x5b, 0xd4, 0x6e, 0xd0, 0xda, 0x68, 0x11,
+	0x14, 0x74, 0x92, 0x3e, 0x50, 0x94, 0xa0, 0xc4, 0x23, 0x89, 0x0d, 0x45, 0x32, 0x3c, 0x47, 0x72,
+	0xb5, 0x2d, 0x50, 0x20, 0x40, 0xbb, 0x28, 0xba, 0x2d, 0xd0, 0x45, 0xf7, 0xfd, 0x1f, 0xed, 0xba,
+	0x40, 0x81, 0xfe, 0x84, 0x6e, 0x0b, 0x74, 0x5f, 0x9c, 0x07, 0x69, 0xf1, 0xa1, 0x47, 0x8d, 0xb4,
+	0x2b, 0x69, 0xe6, 0xcc, 0x79, 0xcc, 0xcc, 0x37, 0x1f, 0x67, 0x60, 0x75, 0xe4, 0xe0, 0x53, 0x1c,
+	0x9a, 0x5d, 0xab, 0x43, 0x5b, 0x41, 0xe8, 0x53, 0x1f, 0xd5, 0x26, 0x54, 0xcd, 0xe5, 0x8e, 0x3f,
+	0x18, 0xf8, 0x9e, 0x58, 0x6a, 0xee, 0xf4, 0x7c, 0xbf, 0xe7, 0xe2, 0x7d, 0x2e, 0xb5, 0x87, 0xdd,
+	0x7d, 0xea, 0x0c, 0x30, 0xa1, 0xd6, 0x20, 0x10, 0x06, 0xfa, 0x8f, 0x45, 0x68, 0xbc, 0x69, 0x75,
+	0xe8, 0x23, 0xdc, 0x75, 0x3c, 0x87, 0x3a, 0xbe, 0x87, 0x1a, 0xa0, 0x3a, 0xb6, 0xa6, 0xec, 0x2a,
+	0x7b, 0x55, 0x43, 0x75, 0x6c, 0x84, 0x60, 0xc9, 0xb3, 0x06, 0x58, 0x53, 0xb9, 0x86, 0xff, 0x47,
+	0xbb, 0x50, 0xb3, 0x31, 0xe9, 0x84, 0x4e, 0xc0, 0xb6, 0x68, 0x05, 0xbe, 0x34, 0xa9, 0x42, 0xdb,
+	0x00, 0x76, 0x7c, 0xa6, 0xb6, 0xc4, 0x0d, 0x26, 0x34, 0xe8, 0x2a, 0xc0, 0xc8, 0x72, 0x87, 0xd8,
+	0x7c, 0xee, 0x78, 0xb6, 0x56, 0xe4, 0xeb, 0x55, 0xae, 0x79, 0xdb, 0xf1, 0x6c, 0xb4, 0x03, 0xb5,
+	0x53, 0xc7, 0xb3, 0xfd, 0x53, 0xb1, 0x5e, 0x12, 0xfb, 0x85, 0x8a, 0x1b, 0x34, 0xa1, 0x12, 0xe2,
+	0x91, 0x43, 0xd8, 0xe9, 0xe5, 0x5d, 0x65, 0xaf, 0x60, 0xc4, 0x32, 0xba, 0x09, 0x2b, 0x9d, 0x10,
+	0x5b, 0x14, 0xdb, 0x66, 0x7b, 0x6c, 0xd2, 0x71, 0x80, 0xb5, 0x0a, 0x3f, 0xa0, 0x2e, 0xd5, 0x87,
+	0xe3, 0x27, 0xe3, 0x00, 0xa3, 0xeb, 0xd0, 0x98, 0xb0, 0x0b, 0x71, 0x57, 0xab, 0x72, 0xb3, 0xe5,
+	0xd8, 0xcc, 0xc0, 0x5d, 0x74, 0x00, 0x8d, 0x8e, 0x3f, 0xf4, 0xa8, 0xe3, 0xf5, 0x4c, 0xe2, 0x78,
+	0x1d, 0xac, 0xc1, 0xae, 0xb2, 0x57, 0xbb, 0xdb, 0x6c, 0x89, 0xe0, 0xb6, 0xa2, 0xe0, 0xb6, 0x9e,
+	0x44, 0xc1, 0x35, 0xea, 0xd1, 0x8e, 0x13, 0xb6, 0x01, 0x3d, 0x06, 0xd4, 0xb6, 0x3a, 0xcf, 0xbb,
+	0x8e, 0xeb, 0x62, 0xdb, 0xa4, 0xfd, 0xd0, 0x1f, 0xf6, 0xfa, 0x5a, 0x6d, 0xde, 0x31, 0x47, 0x17,
+	0x8c, 0xd5, 0xb3, 0x7d, 0x4f, 0xc4, 0xb6, 0x97, 0x8a, 0x82, 0x1e, 0x00, 0x44, 0x0f, 0xb7, 0xa8,
+	0xb6, 0x3c, 0xf7, 0x39, 0x55, 0x69, 0x7d, 0x40, 0xd9, 0xd6, 0x61, 0x60, 0x47, 0x5b, 0xeb, 0xf3,
+	0xb7, 0x4a, 0xeb, 0x03, 0x8a, 0x36, 0xa0, 0x44, 0xa8, 0x45, 0x87, 0x44, 0x6b, 0xf0, 0x30, 0x49,
+	0x89, 0xe9, 0x43, 0x6c, 0x11, 0xdf, 0xd3, 0x56, 0x84, 0x5e, 0x48, 0xe8, 0x01, 0x94, 0x89, 0x3f,
+	0x0c, 0x3b, 0x98, 0x68, 0x17, 0x77, 0x0b, 0x7b, 0xb5, 0xbb, 0x3b, 0xad, 0x49, 0xf0, 0x1a, 0x98,
+	0xf8, 0xee, 0x08, 0xdb, 0x0c, 0x7e, 0x27, 0xdc, 0xce, 0x88, 0xec, 0xd1, 0x15, 0xa8, 0x5a, 0xbd,
+	0x5e, 0x88, 0x7b, 0x16, 0xc5, 0xda, 0xaa, 0x00, 0x47, 0xac, 0x38, 0x5c, 0x87, 0x4b, 0x66, 0x36,
+	0x9e, 0xfa, 0x57, 0x2a, 0xa0, 0xec, 0xa1, 0x48, 0x83, 0x32, 0x0d, 0x9d, 0x5e, 0x0f, 0x87, 0x12,
+	0xd4, 0x91, 0x88, 0xd6, 0xa0, 0x88, 0x47, 0xd8, 0xa3, 0x12, 0xda, 0x42, 0x40, 0xff, 0x80, 0x65,
+	0x32, 0x6c, 0x7f, 0x82, 0x3b, 0xd4, 0x0c, 0x2c, 0xda, 0x8f, 0xc0, 0x2d, 0x75, 0xef, 0x5a, 0xb4,
+	0x8f, 0xf6, 0xe0, 0x62, 0x64, 0xe2, 0x10, 0xd3, 0x0a, 0x43, 0x6b, 0xcc, 0x21, 0x5e, 0x31, 0x1a,
+	0x52, 0x7f, 0x4c, 0x0e, 0x98, 0x16, 0xdd, 0x80, 0x86, 0xe5, 0xf9, 0xde, 0x78, 0xe0, 0x0f, 0x89,
+	0x79, 0xda, 0xc7, 0x9e, 0x84, 0x7a, 0x3d, 0xd6, 0xbe, 0xd7, 0xc7, 0x1e, 0xbb, 0xd3, 0x76, 0x48,
+	0xe0, 0x5a, 0x63, 0x93, 0xd7, 0x5a, 0x49, 0x16, 0x94, 0xd0, 0x3d, 0x66, 0x25, 0x17, 0x17, 0x0c,
+	0x7f, 0x54, 0x79, 0xa2, 0x60, 0xf8, 0x93, 0xd6, 0xa0, 0x78, 0xda, 0xc7, 0x61, 0x84, 0x74, 0x21,
+	0xe8, 0xbf, 0x29, 0xb0, 0xf5, 0x34, 0x20, 0x38, 0xa4, 0xc9, 0x22, 0x37, 0xf0, 0x8b, 0x21, 0x26,
+	0xf4, 0x6f, 0xaa, 0xf5, 0x54, 0x31, 0x17, 0x33, 0xc5, 0x9c, 0x53, 0xb0, 0xa5, 0xc5, 0x0a, 0xb6,
+	0x9c, 0x2d, 0x58, 0xfd, 0x73, 0x05, 0x36, 0xd2, 0xee, 0x92, 0xc0, 0xf7, 0x08, 0x46, 0xad, 0x18,
+	0xc2, 0x0a, 0x47, 0xfe, 0x46, 0x4b, 0xd2, 0x65, 0x64, 0x71, 0xc2, 0x57, 0x63, 0x68, 0x3f, 0x4c,
+	0x78, 0xa6, 0xf2, 0x3d, 0x5b, 0x09, 0x14, 0xa7, 0x2e, 0x9a, 0x30, 0xd7, 0xff, 0x0d, 0x5b, 0x8f,
+	0xb0, 0x8b, 0x29, 0x5e, 0x28, 0xf6, 0xfa, 0x15, 0x68, 0xbe, 0xe3, 0x90, 0x54, 0xa2, 0x88, 0xb4,
+	0xd6, 0xbf, 0x54, 0x60, 0x2b, 0x77, 0xf9, 0x9c, 0x9e, 0xfd, 0x9f, 0x65, 0x35, 0x3e, 0x46, 0x53,
+	0x79, 0x81, 0xce, 0x74, 0x6d, 0xd2, 0x5e, 0x3f, 0x86, 0x2a, 0x5b, 0x7e, 0xc6, 0xf0, 0x87, 0xd6,
+	0xa1, 0xe0, 0x0d, 0x07, 0xfc, 0x62, 0xe5, 0xe8, 0x82, 0xc1, 0x04, 0xc6, 0x52, 0xeb, 0x50, 0x20,
+	0x34, 0x14, 0x58, 0x3a, 0x52, 0x0c, 0x26, 0xbc, 0x54, 0x94, 0xc3, 0x12, 0x2c, 0x99, 0xde, 0x70,
+	0xc0, 0x7f, 0x09, 0x0d, 0xf5, 0xcf, 0x54, 0x71, 0xd6, 0x23, 0xec, 0x52, 0x0b, 0x6d, 0x42, 0x99,
+	0x5d, 0x6e, 0xc6, 0xa1, 0x29, 0x31, 0xf1, 0x38, 0x49, 0xf8, 0x6a, 0x8a, 0xf0, 0x9b, 0x50, 0x09,
+	0x5c, 0x8b, 0x76, 0xfd, 0x70, 0x20, 0xf1, 0x19, 0xcb, 0xac, 0x6e, 0xe2, 0x5a, 0xb5, 0x25, 0x38,
+	0xab, 0x51, 0x95, 0x32, 0xe8, 0xc5, 0xd5, 0xce, 0x91, 0xcf, 0xc1, 0x79, 0x74, 0x21, 0xae, 0x77,
+	0x56, 0x7b, 0xcc, 0x99, 0x06, 0xa8, 0x7e, 0x20, 0x51, 0xa9, 0xfa, 0x41, 0xe4, 0x73, 0x99, 0xfb,
+	0xac, 0xa4, 0x7d, 0xe6, 0x45, 0x78, 0xa4, 0xc6, 0x3e, 0xaf, 0x40, 0xdd, 0x9c, 0xbc, 0x26, 0x13,
+	0x84, 0xdf, 0x15, 0xd8, 0x38, 0x08, 0x02, 0x77, 0x1c, 0x47, 0x22, 0xca, 0x3c, 0xa7, 0x5d, 0xce,
+	0x64, 0x51, 0x40, 0x84, 0x84, 0x2e, 0x43, 0x85, 0x13, 0x16, 0x73, 0x4b, 0xd4, 0x6b, 0x99, 0xcb,
+	0xc7, 0x36, 0x7a, 0x08, 0x35, 0xbf, 0xd3, 0x19, 0x86, 0xa1, 0x60, 0xf9, 0xc2, 0x5c, 0x96, 0x87,
+	0xc8, 0xfc, 0x80, 0xa2, 0x6b, 0x50, 0x27, 0x98, 0xb0, 0xb8, 0x9a, 0x7c, 0x51, 0xc6, 0x6c, 0x59,
+	0x2a, 0x4f, 0x98, 0x8e, 0x3f, 0xca, 0x71, 0x19, 0x77, 0x16, 0x39, 0xef, 0x49, 0x89, 0xc1, 0xd0,
+	0xe6, 0xaf, 0xd7, 0x4a, 0x1c, 0x51, 0x1b, 0x39, 0x88, 0x72, 0xa9, 0x65, 0x48, 0x2b, 0xfd, 0x1b,
+	0x15, 0x56, 0x62, 0x20, 0xbd, 0xd1, 0xb7, 0xbc, 0x1e, 0x9e, 0x09, 0x81, 0x38, 0xcd, 0xea, 0xcc,
+	0x34, 0x17, 0xd2, 0x69, 0xbe, 0x0a, 0x10, 0x51, 0x10, 0x1e, 0x47, 0x28, 0x90, 0x0c, 0x84, 0xc7,
+	0x0b, 0xa3, 0xa0, 0x05, 0xa5, 0x36, 0xee, 0xfa, 0xa1, 0xe0, 0xa7, 0x3c, 0xf7, 0xb8, 0x23, 0x86,
+	0xb4, 0x42, 0x77, 0xa0, 0x68, 0x75, 0x29, 0x0e, 0x39, 0x4e, 0xa6, 0x9b, 0x0b, 0xa3, 0x0c, 0x4a,
+	0xf4, 0x5f, 0x15, 0xd8, 0xcc, 0xa0, 0xe2, 0x9c, 0x05, 0xaf, 0x41, 0xd9, 0x0a, 0x02, 0xd7, 0xc1,
+	0x02, 0x2d, 0x15, 0x23, 0x12, 0xd9, 0x8a, 0x1d, 0xfa, 0x41, 0x80, 0x45, 0xdc, 0x8a, 0x46, 0x24,
+	0xa2, 0xfb, 0x50, 0xee, 0xf0, 0x9c, 0x10, 0x6d, 0x89, 0xa7, 0xf3, 0x4a, 0xbe, 0x03, 0x22, 0x71,
+	0x46, 0x64, 0xcc, 0x4e, 0x74, 0xbc, 0x91, 0xe5, 0x3a, 0x82, 0xec, 0x8b, 0x46, 0x24, 0xb2, 0x15,
+	0xf2, 0xdc, 0xe1, 0x77, 0x95, 0xc4, 0x8a, 0x14, 0x75, 0x03, 0xd6, 0xdf, 0xc2, 0xf4, 0x19, 0x3f,
+	0x9e, 0x1d, 0x1c, 0xe3, 0x7f, 0x32, 0xeb, 0xca, 0xcc, 0xac, 0xab, 0xa9, 0xac, 0xeb, 0x3f, 0x29,
+	0xb0, 0x72, 0x76, 0xa2, 0x20, 0xab, 0xa9, 0xe8, 0x4a, 0x7d, 0xa5, 0xd4, 0xcc, 0x57, 0x2a, 0xd9,
+	0xb2, 0x16, 0xd2, 0x2d, 0xeb, 0x1d, 0x28, 0x72, 0x81, 0xa3, 0x6b, 0x46, 0xae, 0xb9, 0x51, 0xaa,
+	0x0f, 0x2b, 0xfe, 0x89, 0x3e, 0x4c, 0xff, 0x59, 0x81, 0x8d, 0x74, 0xa8, 0xce, 0x09, 0x0a, 0x16,
+	0x3f, 0x59, 0xeb, 0x13, 0xf1, 0x13, 0x9a, 0x1c, 0x72, 0x2c, 0x4c, 0x29, 0x8b, 0xff, 0x41, 0x89,
+	0x7b, 0x95, 0x0f, 0x93, 0x54, 0x06, 0x0c, 0x69, 0x9b, 0x85, 0xfb, 0x2f, 0x05, 0x58, 0x3d, 0xc1,
+	0xbd, 0x01, 0xf6, 0x5e, 0xfd, 0x3c, 0x82, 0x60, 0x89, 0xb7, 0x5f, 0xa2, 0xf4, 0xf9, 0x7f, 0xd6,
+	0x33, 0xb1, 0x07, 0x12, 0xad, 0xb8, 0x5b, 0x60, 0x3d, 0x13, 0x17, 0xe6, 0x8f, 0x1e, 0xd7, 0xa0,
+	0xce, 0xc6, 0x28, 0x33, 0xc4, 0xae, 0x45, 0x9d, 0x11, 0xe6, 0xc5, 0x5d, 0x31, 0x96, 0x99, 0xd2,
+	0x90, 0xba, 0xc4, 0xe7, 0xaa, 0x32, 0x7f, 0x3e, 0xa9, 0x2e, 0xd6, 0xee, 0x40, 0xce, 0x7c, 0x92,
+	0x1c, 0x06, 0x6a, 0xe7, 0x1f, 0x06, 0x96, 0xcf, 0x37, 0x0c, 0xd4, 0xa7, 0x0c, 0x03, 0x8d, 0xc9,
+	0x61, 0x40, 0xff, 0x41, 0x81, 0x6d, 0xd1, 0x89, 0x66, 0x32, 0xfc, 0x6a, 0x9b, 0xd1, 0xbc, 0x44,
+	0xe7, 0x04, 0xbc, 0xb8, 0x58, 0xc0, 0x4b, 0x39, 0xfd, 0xe5, 0x17, 0x0a, 0x5c, 0xce, 0x71, 0xe2,
+	0x9c, 0x25, 0xf8, 0x5a, 0x4e, 0x8b, 0xb9, 0x9d, 0xa8, 0x9f, 0xec, 0x5d, 0x93, 0x5d, 0xe6, 0x7f,
+	0x60, 0x5b, 0x74, 0x99, 0x8b, 0xc6, 0x55, 0xdf, 0x81, 0xab, 0xac, 0x93, 0xcc, 0xd8, 0xc7, 0xbd,
+	0xe6, 0xd7, 0x0a, 0x6c, 0x4f, 0xb3, 0x38, 0xa7, 0x97, 0xaf, 0xe7, 0xb5, 0x9b, 0xf3, 0xdc, 0x4c,
+	0x74, 0x9c, 0x4f, 0x41, 0x8b, 0x49, 0x4f, 0x9a, 0xbe, 0x8a, 0x4f, 0xc4, 0xf7, 0x0a, 0xd4, 0x13,
+	0x87, 0x0a, 0x4e, 0xe4, 0x7f, 0xcf, 0xbe, 0x11, 0x55, 0xa9, 0xc9, 0x74, 0x12, 0x6a, 0xba, 0x93,
+	0x78, 0x00, 0x80, 0x3d, 0x8a, 0x17, 0xee, 0xbc, 0xaa, 0xd2, 0x5a, 0x34, 0x5e, 0x49, 0x5e, 0x59,
+	0xca, 0xf2, 0x8a, 0xfe, 0x9d, 0x02, 0x97, 0x73, 0xe2, 0xf0, 0xd7, 0xf0, 0xff, 0x7d, 0xa8, 0x48,
+	0xc7, 0x89, 0x56, 0xe0, 0x29, 0x6b, 0xe6, 0x30, 0xbb, 0x7c, 0x85, 0x11, 0xdb, 0xde, 0xfd, 0xb6,
+	0x0c, 0xab, 0x67, 0xac, 0x7f, 0x82, 0xc3, 0x91, 0xd3, 0xc1, 0x08, 0xc3, 0x5a, 0xde, 0x2c, 0x8a,
+	0xf6, 0x12, 0x67, 0xce, 0x18, 0x57, 0x9b, 0xd7, 0x66, 0xcd, 0x27, 0x51, 0x0c, 0xde, 0x87, 0xb5,
+	0xbc, 0xb1, 0x2b, 0x75, 0xcd, 0x8c, 0xc9, 0xac, 0x39, 0x25, 0x6a, 0xa8, 0x0f, 0x97, 0x72, 0x46,
+	0x30, 0x74, 0x2b, 0x71, 0xf0, 0xf4, 0x19, 0xae, 0xb9, 0x37, 0xdf, 0x50, 0xfa, 0xf0, 0x11, 0xac,
+	0xa4, 0xfa, 0x3e, 0x94, 0xf4, 0x3d, 0x7f, 0x56, 0x68, 0x5e, 0x9f, 0x6d, 0x24, 0x4f, 0xff, 0x00,
+	0x1a, 0xc9, 0xfe, 0x01, 0xe9, 0x89, 0x7d, 0xb9, 0x7d, 0x58, 0x2a, 0xf8, 0x53, 0x1a, 0x10, 0x0f,
+	0x36, 0xa7, 0xb0, 0x3c, 0xba, 0x9d, 0x93, 0xe6, 0x69, 0x9c, 0xd5, 0xbc, 0x39, 0x87, 0x1a, 0xa2,
+	0xfb, 0x3e, 0x86, 0xcd, 0x29, 0xec, 0x97, 0xba, 0x6f, 0x36, 0x47, 0x4e, 0x4d, 0xf9, 0x0b, 0xd8,
+	0xc8, 0x67, 0x42, 0xf4, 0xaf, 0x4c, 0x32, 0xa7, 0x12, 0x6a, 0xf3, 0xf6, 0x42, 0xb6, 0xd2, 0xa5,
+	0x36, 0xac, 0x66, 0x0a, 0x1c, 0xdd, 0xc8, 0x0f, 0x7e, 0x8a, 0x08, 0x53, 0x61, 0x9b, 0xca, 0x13,
+	0x87, 0xff, 0xfc, 0xf0, 0x56, 0xcf, 0xa1, 0xfd, 0x61, 0x9b, 0xb9, 0xbd, 0x7f, 0xea, 0xbb, 0xdd,
+	0xf1, 0xc0, 0x22, 0x14, 0x87, 0xfb, 0xa7, 0xbe, 0xdf, 0xfd, 0xf4, 0xde, 0xbe, 0xdd, 0xde, 0xef,
+	0x61, 0x6f, 0x7f, 0xf4, 0xdf, 0x76, 0x89, 0x93, 0xd6, 0xbd, 0x3f, 0x02, 0x00, 0x00, 0xff, 0xff,
+	0x58, 0xb8, 0xc2, 0x2e, 0x79, 0x16, 0x00, 0x00,
 }

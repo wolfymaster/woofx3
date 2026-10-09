@@ -263,6 +263,124 @@ pub struct GetViewerFactsResponse {
     #[prost(message, repeated, tag="4")]
     pub values: ::prost::alloc::vec::Vec<ViewerFactValue>,
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SegmentDefinition {
+    /// Canonical segment id, e.g. `user:segment:<slug>`.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+    /// The condition as JSON: `{"all": \[...\]}`, `{"any": \[...\]}`, `{"not": {...}}`
+    /// or an atom `{"fact": "<fact id>", "op": "...", "value": ...}`. Ops: eq,
+    /// ne, gt, gte, lt, lte, exists, not_exists, and within and older_than,
+    /// whose value is a duration such as "720h" and which read timestamp facts.
+    #[prost(string, tag="4")]
+    pub when: ::prost::alloc::string::String,
+    /// The facts the condition reads, in id order.
+    #[prost(string, repeated, tag="5")]
+    pub facts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// `session` when the condition reads any session-window fact: membership is
+    /// then kept per stream session and a new session starts it empty.
+    /// `lifetime` otherwise.
+    #[prost(string, tag="6")]
+    pub window_kind: ::prost::alloc::string::String,
+    /// True when the condition has a within or older_than atom. Membership can
+    /// then change with time alone; it is re-evaluated, and edges announced,
+    /// only when one of the viewer's facts changes, so the stored membership is
+    /// as of the viewer's last change.
+    #[prost(bool, tag="7")]
+    pub time_relative: bool,
+    #[prost(int64, tag="8")]
+    pub revision: i64,
+    #[prost(string, tag="9")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="10")]
+    pub created_by_ref: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="11")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag="12")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// `active`, or `invalid` when the condition no longer fits the facts it
+    /// reads (a fact's value kind changed). Resolved when the definition is
+    /// read.
+    #[prost(string, tag="13")]
+    pub status: ::prost::alloc::string::String,
+    /// Why the status is not `active`. Empty when it is.
+    #[prost(string, tag="14")]
+    pub reason: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpsertSegmentDefinitionRequest {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+    /// The condition as JSON; see SegmentDefinition.when.
+    #[prost(string, tag="4")]
+    pub when: ::prost::alloc::string::String,
+    /// Who declares the segment: `USER` for one saved from the UI, `MODULE` for
+    /// one a module manifest declares. Defaults to `USER`.
+    #[prost(string, tag="5")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SegmentDefinitionResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub definition: ::core::option::Option<SegmentDefinition>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteSegmentDefinitionRequest {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListSegmentDefinitionsRequest {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListSegmentDefinitionsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub definitions: ::prost::alloc::vec::Vec<SegmentDefinition>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetViewerSegmentsRequest {
+    #[prost(string, tag="1")]
+    pub platform: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub subject_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ViewerSegment {
+    #[prost(string, tag="1")]
+    pub segment_id: ::prost::alloc::string::String,
+    /// Empty for a lifetime segment, the stream session id for a session one.
+    #[prost(string, tag="2")]
+    pub window_key: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="3")]
+    pub entered_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// See SegmentDefinition.time_relative.
+    #[prost(bool, tag="4")]
+    pub time_relative: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetViewerSegmentsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// The current stream session, or empty when none has started.
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="3")]
+    pub segments: ::prost::alloc::vec::Vec<ViewerSegment>,
+}
 include!("viewer_fact.serde.rs");
 include!("viewer_fact.tonic.rs");
 // @@protoc_insertion_point(module)
