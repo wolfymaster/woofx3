@@ -40,6 +40,11 @@ import (
 //     (source, event_id) is the first write of the applying transaction, and a
 //     conflict means the event was applied before. Rows are pruned by
 //     applied_at once redelivery can no longer happen.
+//
+//   - worker_events.entity_id is widened from 36 characters to 255: a
+//     definition change is published through the outbox with the fact id as
+//     its entity, and fact ids run to 255 characters. SQLite does not enforce
+//     VARCHAR widths, so only Postgres needs it.
 func AddViewerFacts() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "0056_viewer_facts",
@@ -86,6 +91,7 @@ func AddViewerFacts() *gormigrate.Migration {
 				)`,
 				`CREATE INDEX IF NOT EXISTS idx_fact_applied_events_applied_at
 					ON public.fact_applied_events (applied_at)`,
+				`ALTER TABLE public.worker_events ALTER COLUMN entity_id TYPE VARCHAR(255)`,
 			}
 			for _, stmt := range statements {
 				if err := tx.Exec(stmt).Error; err != nil {
@@ -95,6 +101,7 @@ func AddViewerFacts() *gormigrate.Migration {
 			log.Println("viewer fact tables migration complete")
 			return nil
 		},
+		// entity_id stays widened: narrowing it fails once a longer id is stored.
 		Rollback: func(tx *gorm.DB) error {
 			for _, stmt := range []string{
 				`DROP TABLE IF EXISTS public.fact_applied_events`,

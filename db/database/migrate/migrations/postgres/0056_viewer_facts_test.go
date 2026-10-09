@@ -41,3 +41,14 @@ func TestViewerFactsApplyPerSessionOnPostgres(t *testing.T) {
 		t.Fatalf("PreviousSessionID(stamp) = %q, %v; want %s", got, err, first)
 	}
 }
+
+// Fact ids run to 255 characters and are published as the outbox entity.
+func TestOutboxHoldsAFactIDLongerThanAUUID(t *testing.T) {
+	db := openEmptyPostgres(t)
+	if err := gormigrate.New(db, gormigrate.DefaultOptions, All()).Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO worker_events (event_type, entity_type, entity_id, operation, payload, nats_subject)
+		VALUES ('viewer.fact.upserted', 'viewer.fact', ?, 'upserted', '{}', 'db.viewer.fact.upserted.system')`,
+		"twitch_platform:fact:subscription_months")
+}
