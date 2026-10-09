@@ -15,19 +15,30 @@ import { asString, pickFirst, readRow } from "./outbox";
 import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
+/**
+ * The callback for each status an alert row can move to. A status with no
+ * entry has no update callback: `sent` is the status a row is created with,
+ * and `dispatched` is published on `db.alert.updated.*` but no receiver needs
+ * it apart from the verdict that follows.
+ */
+interface AlertUpdatedEventByStatus {
+  playing: AlertPlayingEvent;
+  replayed: AlertReplayedEvent;
+  completed: AlertCompletedEvent;
+  failed: AlertFailedEvent;
+  timed_out: AlertTimedOutEvent;
+  skipped: AlertSkippedEvent;
+}
+
+type AlertUpdatedStatus = keyof AlertUpdatedEventByStatus;
+
 /** Union of every webhook event projected from `db.alert.updated.*`. */
-export type AlertUpdatedEvent =
-  | AlertPlayingEvent
-  | AlertReplayedEvent
-  | AlertCompletedEvent
-  | AlertFailedEvent
-  | AlertTimedOutEvent
-  | AlertSkippedEvent;
+export type AlertUpdatedEvent = AlertUpdatedEventByStatus[AlertUpdatedStatus];
 
 // The db proxy publishes alert lifecycle events on
 // `db.alert.{created,updated,deleted}`. Only `created` and `updated` are
 // projected: `created` becomes `alert.recorded`, and each `updated` becomes
-// the callback named for the row's new status (see UPDATED_EVENT_TYPES).
+// the callback named for the row's new status (see AlertUpdatedEventByStatus).
 //
 // The CloudEvent's `data` is the snake-cased map produced by
 // `buildAlertChangeData` in `db/app/services/alert_service.go`. As
@@ -145,30 +156,30 @@ export function parseAlertCreated(ce: Record<string, unknown>): ParsedAlertChang
 }
 
 /**
- * The callback for each status an alert row can move to. A status with no
- * entry (`sent`, the status a row is created with) has no update callback.
+ * Builds the callback for each status in AlertUpdatedEventByStatus. Typed per
+ * status, so the compiler checks that each status gets its own event type.
  *
  * `playing` is the in-progress signal: it tells a receiver the alert is on
  * screen, so one that is playing for a while is not mistaken for one the
  * engine lost. The db proxy publishes only lifecycle writes it applied, and
  * a row only moves forward, so a receiver hears `playing` once per alert.
  */
-const UPDATED_EVENT_TYPES = {
-  playing: EngineEventType.ALERT_PLAYING,
-  replayed: EngineEventType.ALERT_REPLAYED,
-  completed: EngineEventType.ALERT_COMPLETED,
-  failed: EngineEventType.ALERT_FAILED,
-  timed_out: EngineEventType.ALERT_TIMED_OUT,
-  skipped: EngineEventType.ALERT_SKIPPED,
-} as const satisfies Record<string, AlertUpdatedEvent["type"]>;
+const UPDATED_EVENTS: { [S in AlertUpdatedStatus]: (alert: AlertSnapshot) => AlertUpdatedEventByStatus[S] } = {
+  playing: (alert) => ({ type: EngineEventType.ALERT_PLAYING, alert }),
+  replayed: (alert) => ({ type: EngineEventType.ALERT_REPLAYED, alert }),
+  completed: (alert) => ({ type: EngineEventType.ALERT_COMPLETED, alert }),
+  failed: (alert) => ({ type: EngineEventType.ALERT_FAILED, alert }),
+  timed_out: (alert) => ({ type: EngineEventType.ALERT_TIMED_OUT, alert }),
+  skipped: (alert) => ({ type: EngineEventType.ALERT_SKIPPED, alert }),
+};
 
-function isUpdatedStatus(status: string): status is keyof typeof UPDATED_EVENT_TYPES {
-  return Object.hasOwn(UPDATED_EVENT_TYPES, status);
+function isUpdatedStatus(status: string): status is AlertUpdatedStatus {
+  return Object.hasOwn(UPDATED_EVENTS, status);
 }
 
 /**
  * Project a `db.alert.updated.*` outbox event to the webhook event named for
- * the row's new status (see UPDATED_EVENT_TYPES). Any other status parses to
+ * the row's new status (see AlertUpdatedEventByStatus). Any other status parses to
  * null.
  */
 export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChange<AlertUpdatedEvent> {
@@ -177,8 +188,7 @@ export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChang
   if (!snapshot || !isUpdatedStatus(snapshot.status)) {
     return { clientId, event: null };
   }
-  const event = { type: UPDATED_EVENT_TYPES[snapshot.status], alert: snapshot } as AlertUpdatedEvent;
-  return { clientId, event };
+  return { clientId, event: UPDATED_EVENTS[snapshot.status](snapshot) };
 }
 
 /**
@@ -205,7 +215,7 @@ export async function initAlertLogHandlers(
       subject: "db.alert.updated.*",
       name: "db.alert.updated",
       // A status with no callback parses to null on purpose -- see
-      // UPDATED_EVENT_TYPES.
+      // AlertUpdatedEventByStatus.
       quietDrop: true,
       parse: (ce) => {
         const { clientId, event } = parseAlertUpdated(ce);

@@ -376,7 +376,7 @@ Alert-related outbox subjects:
 | Subject (wildcard) | Fired when | Webhook event |
 |---------------------|------------|----------------|
 | `db.alert.created.*` | streamware records a fresh alert envelope (`db.createAlert`) | `ALERT_RECORDED` |
-| `db.alert.updated.*` | an alert row's lifecycle moves forward (`playing` / `completed` / `failed` / `timed_out` / `skipped` / `replayed`); a refused transition publishes nothing | `ALERT_PLAYING` / `ALERT_COMPLETED` / `ALERT_FAILED` / `ALERT_TIMED_OUT` / `ALERT_SKIPPED` / `ALERT_REPLAYED` (chosen by `alert.status`) |
+| `db.alert.updated.*` | an alert row's lifecycle moves forward (`dispatched` / `playing` / `completed` / `failed` / `timed_out` / `skipped` / `replayed`); a refused transition publishes nothing | `ALERT_PLAYING` / `ALERT_COMPLETED` / `ALERT_FAILED` / `ALERT_TIMED_OUT` / `ALERT_SKIPPED` / `ALERT_REPLAYED` (chosen by `alert.status`); `dispatched` has no webhook |
 | `db.widget_status.updated.*` | streamware upserts a non-alert widget event (`db.upsertWidgetStatus`) | `WIDGET_STATUS_CHANGED` |
 
 The full set of webhook event types is defined in `shared/clients/typescript/api/webhooks.ts`.
