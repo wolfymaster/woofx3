@@ -37,7 +37,7 @@ them.
   "definition": {
     "sources": [
       {
-        "trigger": "twitch_platform:trigger:user_message",
+        "trigger": "woofx3_twitch:trigger:user_message",
         "subject": "chatterId",
         "where": { "path": "message", "op": "regex", "value": "(?i)\\bapple\\b" }
       }
@@ -160,7 +160,7 @@ definition was saved against it. Each definition carries a status:
 |---|---|---|
 | `active` | Every source's trigger is registered and the source fits its `emits`. | Yes |
 | `unresolved` | A source names a trigger that is not registered: its module is not installed yet, or its trigger was archived. | No |
-| `invalid` | A source no longer fits its trigger's `emits` (a path was removed, a type changed, the subject lost its identity annotation), the value type of a `last` fact changed, or the trigger receives [segment edge events](#segment-edge-events). | No |
+| `invalid` | A source no longer fits its trigger's `emits` (a path was removed, a type changed, the subject lost its identity annotation), the value type of a `last` fact changed, the trigger's event pattern has a `>` that is not its last token, or the trigger receives [segment edge events](#segment-edge-events). | No |
 
 At save, an invalid definition is refused. An unresolved one is accepted only
 from a module (`created_by_type` `MODULE`), since a module may declare a fact
@@ -316,7 +316,8 @@ one of the viewer's facts instead of a path of the event:
 ```
 
 Unknown keys are refused, each node is exactly one kind, `all` and `any` must
-not be empty, and every fact an atom names must exist (in any status).
+not be empty, and every fact an atom names must exist, in any status; a save
+naming a fact that does not exist fails with `not_found`.
 
 | `op` | `value` | Fact kinds | True when the viewer's value |
 |---|---|---|---|
@@ -382,9 +383,14 @@ a member. For example, "never chatted, or last chatted more than 30 days ago":
 This announces `left` for every first-time chatter as well as every returning
 one.
 
-A session segment moves only for an event of the current stream session. A
-late event, or one replayed by a backfill, that belongs to an earlier session
-neither changes membership nor announces anything. A session segment is also
+A session segment moves only for an event of the current stream session: the
+session that owns the later of now and the event's time, so an event stamped
+slightly ahead of the db proxy's clock at a session start still counts. A late
+event, or one replayed by a backfill, that belongs to an earlier session
+neither changes membership nor announces anything. That protection needs
+[stream sessions](/services/stream-sessions). With only the `sessionId` stamped
+on events, every event counts as current, so a late event moves membership
+like any other and can announce a second `entered`. A session segment is
 skipped for an event no session resolves for.
 
 ### Silent changes
@@ -413,16 +419,23 @@ inactive fact hides, so a module upgrade that drops a trigger for a moment
 would announce a storm of `left` events, and another of `entered` when the
 trigger returns.
 
+A frozen segment misses the applies that happen while it is frozen, so it is
+marked stale when a fill or refill skips it. Saving a segment while a fact it
+reads is not active succeeds, but reports that its members were not filled.
+After every trigger registration, removal or archive, the db proxy reconciles
+segments: it marks every frozen segment stale, and refills each stale segment
+whose facts are all active again silently, in its own transaction, then
+unmarks it. A thawed segment therefore announces nothing for what changed
+while it was frozen.
+
 `ListSegmentDefinitions` re-checks every segment, with the facts it reads,
 its window, `time_relative` and its revision. Its status is:
 
 | Status | When |
 |---|---|
-| `active` | The condition fits the facts it reads. |
+| `active` | The condition fits the facts it reads, and its membership is kept. |
+| `frozen` | It is marked stale: a fact it reads is not `active`, so its membership is not kept. It is refilled once every fact it reads is active again. |
 | `invalid` | The condition no longer fits a fact's value kind: a fact it reads was saved again with another kind, such as a `last` fact over a field that changed type. `reason` says which. |
-
-A segment reading a fact that is `unresolved` or `invalid` lists as `active`
-but is frozen; the fact's status says why.
 
 ### Reading membership
 
@@ -454,7 +467,9 @@ These are distinct from the segment lifecycle events,
   "viewerName": "alice",
   "sessionId": "2b5c7f0e-0d8f-4f8e-9c1a-6a3d2f1e4b7c",
   "facts": {
-    "user:fact:gifted_subs": { "before": 95, "after": 100 }
+    "user": {
+      "gifted_subs": { "before": 95, "after": 100 }
+    }
   },
   "cause": { "source": "twitch", "eventId": "8f14e45f-ceea-467f-a0e6-4f2b6d1c2a90" }
 }
@@ -466,12 +481,11 @@ These are distinct from the segment lifecycle events,
 | `platform`, `viewerId` | The viewer. |
 | `viewerName` | The display name the moving event carried, or empty. |
 | `sessionId` | The stream session of the moving event, for lifetime segments too, or empty when none resolves. |
-| `facts` | Every fact the segment reads, by id, as `{ before, after }` around the event. A fact the event did not change has `before` equal to `after`. Timestamps are epoch milliseconds, and a missing value is `null`. |
+| `facts` | Every fact the segment reads, as `{ before, after }` around the event, nested by owner and slug: `{owner}:fact:{slug}` is at `facts.{owner}.{slug}`, the same path `${viewer.*}` uses. A fact the event did not change has `before` equal to `after`. Timestamps are epoch milliseconds, and a missing value is `null`. A fact id not of the canonical shape is left out. |
 | `cause` | The CloudEvent `source` and `eventId` of the event that moved the viewer. |
 
-Fact ids contain `:`, which an expression reads as an operator, so a workflow
-cannot name an entry of `facts` in `${...}`. It reads the viewer's current
-values through [`${viewer.*}`](#facts-in-workflows-viewer) instead.
+An expression cannot name a key containing `:`, which is why `facts` is
+nested: a workflow reads `${trigger.data.facts.user.gifted_subs.before}`.
 
 ### Only the engine publishes them
 
@@ -521,7 +535,7 @@ the viewer the triggering event is about:
 | `${viewer.id}` | The viewer's id on their platform. |
 | `${viewer.platform}` | The viewer's platform. |
 | `${viewer.name}` | The display name the db proxy last saw for the viewer, or else the event's own display name field. |
-| `${viewer.<owner>.<slug>}` | The value of the fact `<owner>:fact:<slug>`: `${viewer.user.apple_mentions}` reads `user:fact:apple_mentions`, `${viewer.twitch_platform.messages}` reads `twitch_platform:fact:messages`. |
+| `${viewer.<owner>.<slug>}` | The value of the fact `<owner>:fact:<slug>`: `${viewer.user.apple_mentions}` reads `user:fact:apple_mentions`, `${viewer.woofx3_twitch.messages}` reads `woofx3_twitch:fact:messages`. |
 
 A session fact reads its value in the current stream session. A timestamp is
 epoch milliseconds. A fact the viewer has no value for, or one that is not
@@ -583,6 +597,18 @@ The read has a 1 second timeout and its own circuit breaker.
 
 ## Examples
 
+The examples read the triggers of the Twitch module, `woofx3_twitch`, which
+marks the viewer each trigger is about from version 0.13.0:
+
+| Triggers | Viewer field |
+|---|---|
+| `channel_follow`, `channel_subscribe`, `channel_shared_subscribe`, `channel_cheer`, `channelpoints_redeem` | `userId` |
+| `user_message`, and the chat notices (`channel_resub`, `channel_gift_paid_upgrade`, `channel_watch_streak` and the rest) | `chatterId` |
+| `channel_subscription_gift`, `channel_shared_subscription_gift` | `gifterId` |
+| `channel_raid`, `channel_shared_raid` | `fromBroadcasterUserId` |
+
+Cheers, gifts and the chat notices name nobody when the viewer is anonymous.
+
 ### Counting a word
 
 Every chat message containing the word "apple", as a word in any case, per
@@ -592,7 +618,7 @@ viewer and over their lifetime:
 {
   "sources": [
     {
-      "trigger": "twitch_platform:trigger:user_message",
+      "trigger": "woofx3_twitch:trigger:user_message",
       "subject": "chatterId",
       "where": {
         "all": [
@@ -619,7 +645,7 @@ Every bit a viewer has cheered, ignoring anonymous cheers:
 {
   "sources": [
     {
-      "trigger": "twitch_platform:trigger:channel_cheer",
+      "trigger": "woofx3_twitch:trigger:channel_cheer",
       "subject": "userId",
       "value": "amount"
     }
@@ -628,24 +654,21 @@ Every bit a viewer has cheered, ignoring anonymous cheers:
 }
 ```
 
-This needs the trigger's `userId` field to be annotated
-`"identity": "viewer"` with `"anonymousWhen": "isAnonymous"`, as in the
-[Identity fields](/barkloader/modules#identity-fields) example. `amount` is a
-`number` field, which `sum` requires. Adding the chat message's `amount` as a
+The cheer trigger annotates `userId` as the viewer, with `anonymousWhen`
+`isAnonymous`, so anonymous cheers count for nobody. `amount` is a `number`
+field, which `sum` requires. Adding the chat message's `amount` as a
 second source would count each cheer twice, since a cheer also arrives as a
 chat message.
 
 ### Welcoming a first-time chatter
 
-This and the examples after it assume, like total bits, that each trigger's
-viewer field is annotated `"identity": "viewer"`.
 
 A lifetime `count` of chat messages, `user:fact:messages`:
 
 ```json
 {
   "sources": [
-    { "trigger": "twitch_platform:trigger:user_message", "subject": "chatterId" }
+    { "trigger": "woofx3_twitch:trigger:user_message", "subject": "chatterId" }
   ],
   "aggregate": { "fn": "count" }
 }
@@ -656,7 +679,7 @@ and a workflow on chat messages that runs when the count is 1:
 ```json
 {
   "trigger": {
-    "$ref": "twitch_platform:trigger:user_message",
+    "$ref": "woofx3_twitch:trigger:user_message",
     "type": "event",
     "event": "user.message",
     "conditions": [
@@ -727,7 +750,7 @@ A lifetime `sum` of gifted subs, `user:fact:gifted_subs`:
 {
   "sources": [
     {
-      "trigger": "twitch_platform:trigger:channel_subscription_gift",
+      "trigger": "woofx3_twitch:trigger:channel_subscription_gift",
       "subject": "gifterId",
       "value": "amount"
     }
@@ -745,8 +768,47 @@ read by `user:segment:gifted_100`:
 A workflow on "a viewer enters `user:segment:gifted_100`" runs once per
 viewer, on the gift that takes them to 100 or past it; later gifts keep them in
 without announcing anything. Viewers already past 100 when the segment is
-created are filled in silently. Annotate `gifterId` with
-`"anonymousWhen": "isAnonymous"` so anonymous gifts count for nobody.
+created are filled in silently. Anonymous gifts count for nobody, since the
+gift trigger's `anonymousWhen` is `isAnonymous`.
+
+With several milestones, one gift bomb can cross more than one. With segments
+`user:segment:gifted_10`, `user:segment:gifted_50` and
+`user:segment:gifted_100` over the same fact, a viewer at 5 who gifts 100
+enters all three on one event, and each edge carries the same
+`facts.user.gifted_subs` of `{ "before": 5, "after": 105 }`. One workflow on
+"a viewer enters any segment" celebrates only the highest milestone crossed,
+by running only for the edge whose segment the `after` value picks:
+
+```json
+{
+  "trigger": {
+    "$ref": "woofx3:trigger:viewer_segment_entered",
+    "type": "event",
+    "event": "viewer.segment.entered",
+    "conditions": [
+      {
+        "field": "${trigger.data.facts.user.gifted_subs.after >= 100 ? 'user:segment:gifted_100' : trigger.data.facts.user.gifted_subs.after >= 50 ? 'user:segment:gifted_50' : 'user:segment:gifted_10'}",
+        "operator": "eq",
+        "value": "${trigger.data.segmentId}"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "celebrate",
+      "type": "action",
+      "action": "chat.reply",
+      "parameters": {
+        "message": "${trigger.data.viewerName} has gifted ${trigger.data.facts.user.gifted_subs.after} subs!"
+      }
+    }
+  ]
+}
+```
+
+Only segments that were crossed announce an edge, so the highest milestone at
+or below `after` is the highest one crossed. An edge of any other segment
+never matches, since its id is none of the three.
 
 ### Limiting a reward per stream
 
@@ -757,7 +819,7 @@ A **session** `count` of one channel point reward's redemptions,
 {
   "sources": [
     {
-      "trigger": "twitch_platform:trigger:channelpoints_redeem",
+      "trigger": "woofx3_twitch:trigger:channelpoints_redeem",
       "subject": "userId",
       "where": { "path": "rewardId", "op": "eq", "value": "<reward id>" }
     }
@@ -772,7 +834,7 @@ each stream:
 ```json
 {
   "trigger": {
-    "$ref": "twitch_platform:trigger:channelpoints_redeem",
+    "$ref": "woofx3_twitch:trigger:channelpoints_redeem",
     "type": "event",
     "event": "channelpoints.redeem",
     "conditions": [
