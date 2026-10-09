@@ -15,5 +15,8 @@
     "strict": true,
     "target": "es2022",
     "types": ["bun-types"]
-  }
+  },
+  // The scene editor's shared sync core is not reachable from api's own
+  // program, so it is named here to be checked with the package it lives in.
+  "include": ["**/*", "../shared/clients/typescript/api/scene-editor/**/*"]
 }
