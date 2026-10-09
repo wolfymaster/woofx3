@@ -14,6 +14,7 @@ import (
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
+	"github.com/wolfymaster/woofx3/workflow/internal/facts"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -63,8 +64,13 @@ type WorkflowApp struct {
 	moduleDbClient   dbv1.ModuleService
 	alertDbClient    dbv1.AlertService
 	workflowDbClient dbv1.WorkflowService
+	factDbClient     dbv1.ViewerFactService
 	scheduleReg      *triggers.ScheduleTriggerRegistrar
 	deliveries       *recentDeliveries
+	// facts is nil when there is no fact service to write to; events then
+	// go straight to the engine.
+	facts      *facts.Projector
+	factErrors *factErrorLog
 }
 
 func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
@@ -74,6 +80,7 @@ func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
 		engine:          engine,
 		logger:          logger,
 		deliveries:      newRecentDeliveries(recentDeliveryCapacity),
+		factErrors:      newFactErrorLog(),
 	}
 
 	// Create manager without a db client; SetServices wires it after config is loaded.
@@ -92,6 +99,7 @@ func (a *WorkflowApp) SetServices(
 	barkloaderSvc *service.BarkloaderService,
 	dbClient *dbv1.DbProxyClient,
 	alertClient dbv1.AlertService,
+	factClient dbv1.ViewerFactService,
 	sceneManagerURL string,
 ) {
 	a.natsSvc = natsSvc
@@ -99,6 +107,7 @@ func (a *WorkflowApp) SetServices(
 	a.moduleDbClient = dbClient.Module
 	a.alertDbClient = alertClient
 	a.workflowDbClient = dbClient.Workflow
+	a.factDbClient = factClient
 	a.manager.SetDbClient(dbClient.Workflow)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
@@ -166,6 +175,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	composite.Set("schedule", a.scheduleReg)
 	a.engine.Registry().SetRegistrar(composite)
 	a.engine.Registry().SetLogger(a.logger)
+
+	// Before any workflow subscribes, so that every delivery sees the
+	// projector the handler will use.
+	a.startViewerFacts(ctx, natsClient, eventReg)
 
 	// Load workflows from DB now that the registrar is attached. Loading
 	// earlier (in Init) would register them against the default
@@ -256,6 +269,28 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	}, tasks.ActionSpec{SideEffect: false})
 
 	return a.engine.Start(ctx)
+}
+
+// startViewerFacts wires the fact projector in front of the engine. The
+// initial load runs in the background: the db proxy may not be up yet, and
+// workflows must not wait on facts to start.
+func (a *WorkflowApp) startViewerFacts(ctx context.Context, natsClient *natsclient.Client, eventReg *triggers.EventTriggerRegistrar) {
+	if a.factDbClient == nil {
+		a.logger.Warn("No viewer fact db client; viewer facts will not count")
+		return
+	}
+	a.facts = facts.NewProjector(newViewerFactClient(a.factDbClient, a.logger))
+	reloader := newFactReloader(a.facts, newFactSubscriptions(eventReg), a.logger)
+	for _, subject := range []string{subjectDbViewerFactPattern, subjectDbModuleTriggerPattern} {
+		// Non-fatal: the reloader's periodic re-list still converges.
+		if _, err := natsClient.Subscribe(subject, func(natsclient.Msg) {
+			reloader.Request()
+		}); err != nil {
+			a.logger.Error("Failed to subscribe to fact definition changes", "subject", subject, "error", err)
+		}
+	}
+	go reloader.Run(ctx)
+	a.logger.Info("Viewer fact projector started", "interval", reloader.interval)
 }
 
 func (a *WorkflowApp) Terminate(ctx context.Context) error {
@@ -639,8 +674,12 @@ func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 		"id", event.ID,
 		"subject", subject)
 
+	// An event the projector listens for is often one no workflow does, so
+	// matching none is then expected rather than worth an Info line.
+	factsListen := a.projectFacts(event)
+
 	// Route to engine for workflow matching and execution
-	if err := a.engine.HandleEvent(event); err != nil {
+	if err := a.engine.HandleEventWith(event, engine.HandleOptions{NoMatchExpected: factsListen}); err != nil {
 		a.logger.Error("Failed to handle trigger event",
 			"error", err,
 			"type", event.Type,

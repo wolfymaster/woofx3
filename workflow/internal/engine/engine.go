@@ -422,7 +422,21 @@ func (e *Engine[TServices]) registerPublishAction() {
 	})
 }
 
+// HandleOptions tunes how HandleEventWith reports an event.
+type HandleOptions struct {
+	// NoMatchExpected says another consumer in this service listens for the
+	// event, so matching no workflow is routine and is logged at Debug
+	// rather than Info.
+	NoMatchExpected bool
+}
+
 func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
+	return e.HandleEventWith(event, HandleOptions{})
+}
+
+// HandleEventWith resumes the runs waiting on the event and starts every
+// workflow it triggers.
+func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptions) error {
 	// A stopping engine starts nothing: a run begun now would be abandoned
 	// within seconds.
 	if e.ctx.Err() != nil {
@@ -438,9 +452,15 @@ func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
 	// per-workflow trigger evaluation, and dispatch decision are all
 	// independently informative.
 	if len(workflows) == 0 {
-		e.logger.Info("Event matched no workflows",
-			"event_type", event.Type,
-			"event_id", event.ID)
+		if opts.NoMatchExpected {
+			e.logger.Debug("Event matched no workflows",
+				"event_type", event.Type,
+				"event_id", event.ID)
+		} else {
+			e.logger.Info("Event matched no workflows",
+				"event_type", event.Type,
+				"event_id", event.ID)
+		}
 		return nil
 	}
 	e.logger.Info("Event matched workflows",

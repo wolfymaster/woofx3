@@ -75,6 +75,12 @@ func (p *Projector) Patterns() []string {
 	return append([]string(nil), p.index.Load().patterns...)
 }
 
+// ListensFor reports whether any active definition reads events of this
+// type.
+func (p *Projector) ListensFor(eventType string) bool {
+	return len(p.index.Load().sourcesFor(eventType)) > 0
+}
+
 // Project sends the db every delta the event causes, in one call, and makes
 // no call when it causes none. An error from a single source (a value of the
 // wrong type) is a *SourceError, returned alongside the deltas of every other
@@ -120,7 +126,7 @@ func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error)
 	var errs []error
 	for _, cs := range sources {
 		if err := pe.project(cs); err != nil {
-			errs = append(errs, &SourceError{FactID: cs.factID, Trigger: cs.source.Trigger, Err: err})
+			errs = append(errs, &SourceError{FactID: cs.factID, Revision: cs.revision, Trigger: cs.source.Trigger, Err: err})
 		}
 	}
 	err := errors.Join(errs...)
@@ -139,11 +145,13 @@ func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error)
 // SourceError is a source of a definition that could not read an event: a
 // value of the wrong type at one of its paths. It is a property of the
 // definition and the trigger's payload rather than of one event, so the same
-// error recurs on every matching event.
+// error recurs on every matching event until the definition's Revision
+// changes.
 type SourceError struct {
-	FactID  string
-	Trigger string
-	Err     error
+	FactID   string
+	Revision int64
+	Trigger  string
+	Err      error
 }
 
 func (e *SourceError) Error() string {
