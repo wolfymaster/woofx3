@@ -192,6 +192,7 @@ export const RPC_METHODS = [
   "getViewerTotals",
   "getLeaderboard",
   "getStreamSessionGauges",
+  "getStreamSessionEvents",
   "triggerEvent",
   "handleInboundWebhook",
   "triggerWorkflowByName",

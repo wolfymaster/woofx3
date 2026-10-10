@@ -43,6 +43,13 @@ service UserEventService {
   // The latest events that occurred at or after `since`, newest first, and how
   // many occurred in that span. Reads the log by time alone, not by session.
   rpc ListRecentUserEvents(ListRecentUserEventsRequest) returns (ListRecentUserEventsResponse);
+
+  // The events a session's totals count, oldest first, for placing them on
+  // the session's timeline: cheers, follows, raids, gifts, resubs and the subs
+  // viewers took out themselves. A gifted sub's recipient row is left out, as
+  // the totals leave it out, so each gift appears once. `not_found` for an
+  // unknown session.
+  rpc ListStreamSessionUserEvents(ListStreamSessionUserEventsRequest) returns (ListStreamSessionUserEventsResponse);
 }
 
 message UserEvent {
@@ -197,5 +204,19 @@ message ListRecentUserEventsResponse {
   // Newest first by occurred_at, at most `limit` of them.
   repeated UserEvent events = 2;
   // Every event in the span, not only those returned.
+  int64 total = 3;
+}
+
+message ListStreamSessionUserEventsRequest {
+  string stream_session_id = 1;
+  // 1-1000. Defaults to 500.
+  optional int32 limit = 2;
+}
+
+message ListStreamSessionUserEventsResponse {
+  common.ResponseStatus status = 1;
+  // Oldest first by occurred_at, at most `limit` of them.
+  repeated UserEvent events = 2;
+  // Every counted event in the session, not only those returned.
   int64 total = 3;
 }

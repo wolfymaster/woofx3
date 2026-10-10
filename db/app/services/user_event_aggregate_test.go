@@ -429,6 +429,95 @@ func TestRecentEventsRejectBadRequests(t *testing.T) {
 	})
 }
 
+func TestSessionEventsAreTheCountedOnesInTimeOrder(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		f.seedTwoSessions(t)
+		ctx := context.Background()
+
+		resp, err := f.svc.ListStreamSessionUserEvents(ctx, &client.ListStreamSessionUserEventsRequest{StreamSessionId: f.first})
+		if err != nil {
+			t.Fatalf("ListStreamSessionUserEvents: %v", err)
+		}
+		// The first session's facts less the three gifted subs' recipient rows
+		// and the redemption, plus the cheer a millisecond before the split.
+		if resp.Total != 10 || len(resp.Events) != 10 {
+			t.Fatalf("total = %d with %d events, want 10 with 10", resp.Total, len(resp.Events))
+		}
+		counts := map[string]int{}
+		for i, event := range resp.Events {
+			counts[event.EventType]++
+			if i > 0 && event.OccurredAt.AsTime().Before(resp.Events[i-1].OccurredAt.AsTime()) {
+				t.Fatalf("event %d occurred before event %d", i, i-1)
+			}
+		}
+		wantCounts := map[string]int{
+			models.UserEventTypeCheer:            4,
+			models.UserEventTypeSubscriptionGift: 2,
+			models.UserEventTypeSubscribe:        1,
+			models.UserEventTypeResub:            1,
+			models.UserEventTypeFollow:           1,
+			models.UserEventTypeRaid:             1,
+		}
+		if fmt.Sprint(counts) != fmt.Sprint(wantCounts) {
+			t.Fatalf("counts = %v, want %v", counts, wantCounts)
+		}
+		last := resp.Events[len(resp.Events)-1]
+		if last.EventType != models.UserEventTypeCheer || last.Amount == nil || *last.Amount != 7 {
+			t.Fatalf("last event = %s %v, want the cheer of 7 just before the split", last.EventType, last.Amount)
+		}
+
+		limit := int32(2)
+		resp, err = f.svc.ListStreamSessionUserEvents(ctx, &client.ListStreamSessionUserEventsRequest{
+			StreamSessionId: f.second,
+			Limit:           &limit,
+		})
+		if err != nil {
+			t.Fatalf("ListStreamSessionUserEvents: %v", err)
+		}
+		if resp.Total != 2 || len(resp.Events) != 2 || resp.Events[0].EventType != models.UserEventTypeCheer {
+			t.Fatalf("second session = %d of %d, want the cheer at the split first", len(resp.Events), resp.Total)
+		}
+
+		limit = 1
+		resp, err = f.svc.ListStreamSessionUserEvents(ctx, &client.ListStreamSessionUserEventsRequest{
+			StreamSessionId: f.first,
+			Limit:           &limit,
+		})
+		if err != nil {
+			t.Fatalf("ListStreamSessionUserEvents: %v", err)
+		}
+		if resp.Total != 10 || len(resp.Events) != 1 {
+			t.Fatalf("total = %d with %d events, want 10 with 1", resp.Total, len(resp.Events))
+		}
+	})
+}
+
+func TestSessionEventsRejectBadRequests(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		ctx := context.Background()
+		zero := int32(0)
+		tooMany := int32(sessionEventsMaxLimit + 1)
+		_, err := f.svc.ListStreamSessionUserEvents(ctx, &client.ListStreamSessionUserEventsRequest{
+			StreamSessionId: "7f0c5a1e-0000-4000-8000-00000000dead",
+		})
+		wantTwirpCode(t, err, twirp.NotFound)
+		requests := map[string]*client.ListStreamSessionUserEventsRequest{
+			"no session":     {},
+			"bad session":    {StreamSessionId: "nope"},
+			"zero limit":     {StreamSessionId: f.first, Limit: &zero},
+			"limit too high": {StreamSessionId: f.first, Limit: &tooMany},
+		}
+		for name, req := range requests {
+			t.Run(name, func(t *testing.T) {
+				_, err := f.svc.ListStreamSessionUserEvents(ctx, req)
+				wantTwirpCode(t, err, twirp.InvalidArgument)
+			})
+		}
+	})
+}
+
 // assertBoard compares entries as "id:name:total:events".
 func assertBoard(t *testing.T, entries []*client.LeaderboardEntry, want []string) {
 	t.Helper()
