@@ -13,7 +13,7 @@ import (
 // Timestamps are DATETIME so the driver returns them as a time.Time.
 func AddViewerFacts() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0056_viewer_facts",
+		ID: "0057_viewer_facts",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Creating viewer fact tables...")
 			if err := execStatements(tx, []string{

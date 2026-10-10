@@ -3,7 +3,7 @@ package sqlite
 import "testing"
 
 func TestViewerFactTablesHoldOneValuePerViewerWindow(t *testing.T) {
-	db := openMigratedTo(t, "0056_viewer_facts")
+	db := openMigratedTo(t, "0057_viewer_facts")
 	mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
 		VALUES ('user:fact:messages', 'Messages', '{}', 'count', 'number', 'lifetime')`)
 

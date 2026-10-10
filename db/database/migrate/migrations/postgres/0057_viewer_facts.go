@@ -47,7 +47,7 @@ import (
 //     VARCHAR widths, so only Postgres needs it.
 func AddViewerFacts() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0056_viewer_facts",
+		ID: "0057_viewer_facts",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Creating viewer fact tables...")
 			statements := []string{
