@@ -2,6 +2,7 @@ pub mod archives;
 pub mod assets;
 pub mod echo;
 pub mod functions;
+pub mod media;
 pub mod oauth;
 pub mod resources;
 pub mod storage;
