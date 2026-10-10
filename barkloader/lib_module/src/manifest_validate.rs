@@ -384,6 +384,7 @@ pub fn validate_with_provenance(
     validate_widget_surfaces(&manifest.widgets, provenance)?;
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
+    validate_action_taxonomies(&manifest.actions)?;
     validate_field_lists(manifest)?;
     validate_trigger_sentences(&manifest.triggers)?;
     validate_themes(manifest, &module_id)?;
@@ -2135,6 +2136,41 @@ fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]
     Ok(())
 }
 
+/// An action's `taxonomy` files it in the action picker: the first entry's
+/// first segment is the rail section and its second the heading inside it.
+/// The vocabulary stays open, so only the shape is checked: a path with an
+/// empty or odd segment would otherwise land the action under a blank
+/// heading, with nothing telling the author why.
+fn validate_action_taxonomies(actions: &[ManifestAction]) -> Result<()> {
+    for (i, a) in actions.iter().enumerate() {
+        let context = format!("action #{i} ({}): `taxonomy`", a.id);
+        validate_taxonomy(&a.taxonomy, &context)?;
+    }
+    Ok(())
+}
+
+/// Each entry a dotted path of `[A-Za-z0-9_-]` segments, no entry twice.
+fn validate_taxonomy(entries: &[String], context: &str) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(entries.len());
+    for entry in entries {
+        let well_formed = entry.split('.').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        });
+        if !well_formed {
+            return Err(anyhow!(
+                "{context}: {entry:?} must be names joined by `.`, each of [A-Za-z0-9_-] (e.g. \"platform.obs\")"
+            ));
+        }
+        if !seen.insert(entry.as_str()) {
+            return Err(anyhow!("{context}: {entry:?} is listed twice"));
+        }
+    }
+    Ok(())
+}
+
 fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(shape.fields.len());
     for (i, field) in shape.fields.iter().enumerate() {
@@ -3706,6 +3742,55 @@ mod tests {
             "names the offending action: {msg}"
         );
         assert!(msg.contains("`returns`"), "{msg}");
+    }
+
+    #[test]
+    fn accepts_a_dotted_taxonomy_on_an_action() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "taxonomy": ["platform.obs", "function.scene-control", "alert"] }]"#,
+        );
+        validate(&m).expect("a dotted taxonomy is valid");
+    }
+
+    #[test]
+    fn rejects_a_malformed_taxonomy_entry_on_an_action() {
+        for entry in [
+            "",
+            "platform.",
+            ".obs",
+            "platform..obs",
+            "platform obs",
+            "platform:obs",
+        ] {
+            let m = minimal(&format!(
+                r#",
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }}],
+                "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                    "taxonomy": ["{entry}"] }}]"#
+            ));
+            let msg = validate(&m)
+                .expect_err("a malformed entry must fail")
+                .to_string();
+            assert!(
+                msg.contains("action #0 (a1): `taxonomy`"),
+                "{entry:?}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_repeated_taxonomy_entry_on_an_action() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "taxonomy": ["platform.obs", "platform.obs"] }]"#,
+        );
+        let msg = validate(&m).expect_err("a repeat must fail").to_string();
+        assert!(msg.contains("listed twice"), "{msg}");
     }
 
     // Structure is serde's job; this pins that a malformed shape fails at
