@@ -84,6 +84,17 @@ export interface OverlaySceneState {
   hasDraft?: boolean;
 }
 
+/**
+ * Both versions of a scene from one read of its row, framed, with the scene
+ * editor's stored sync state: what the scene documents load a scene from.
+ */
+export interface EditableScene {
+  published: OverlaySceneState;
+  draft: OverlaySceneState;
+  /** The stored editor state, a JSON object; null until an editor has synced the scene, or after it was cleared. */
+  editorStateJson: string | null;
+}
+
 /** Which of a scene's versions to load: what overlays show, or the editor's draft. */
 export type SceneVersion = "published" | "draft";
 
@@ -301,7 +312,36 @@ export class OverlayHost {
     if (response.status?.code !== "OK" || !response.scene) {
       return null;
     }
+    return this.stateOf(response.scene, version);
+  }
+
+  /**
+   * Both versions of a scene and its stored editor state, from one read of
+   * the row, so they describe the same save. Null when the scene does not
+   * exist; throws when it cannot be read, so the caller can tell a missing
+   * scene from a failed read. Authorization is the caller's, as for
+   * `loadSceneById`.
+   */
+  async loadEditableScene(sceneId: string): Promise<EditableScene | null> {
+    if (!this.db) {
+      throw new Error("db proxy unavailable");
+    }
+    const response = await this.db.getScene({ id: sceneId });
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
     const s = response.scene;
+    const [published, draft] = await Promise.all([this.stateOf(s, "published"), this.stateOf(s, "draft")]);
+    const framed = async (state: OverlaySceneState): Promise<OverlaySceneState> =>
+      this.framing ? { ...state, instances: await this.framing.frame(state.instances) } : state;
+    return {
+      published: await framed(published),
+      draft: await framed(draft),
+      editorStateJson: s.editorStateJson === "" ? null : s.editorStateJson,
+    };
+  }
+
+  private async stateOf(s: scene.Scene, version: SceneVersion): Promise<OverlaySceneState> {
     // A scene with no draft reads as its own draft.
     const draft = version === "draft" && s.hasDraft;
     const widgetsJson = draft ? s.draftWidgetsJson : s.widgetsJson;

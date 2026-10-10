@@ -141,6 +141,22 @@ when sceneManager restarts, which reloads every overlay and reconnects every
 editor anyway (see the stream's boot id). Only the documents are persisted,
 through autosave.
 
+The scene row also has a nullable `editor_state_json` column for the scene
+editor's sync state: a JSON object the engine owns, stored as text so it reads
+back exactly as written. `UpdateScene` stores it in the same row update as the
+documents and draft named in the request, and refuses (writing nothing) a value
+that is not a JSON object. A request without it leaves it unchanged, unless the
+request writes a document (widgets, layout, draft or `clearDraft`): the stored
+state then describes documents that were replaced, so the db proxy clears it in
+the same write. `clearEditorState` clears it on purpose; it cannot be combined
+with a new value. `UpdateScene` writes only the columns a request names, so
+concurrent writers of different columns (an editor's autosave, a rename) do not
+overwrite each other.
+
+Overlay scene state never carries it: `OverlayHost.loadEditableScene` reads
+both versions and the editor state from one read of the row, for the scene
+documents alone. A `SceneWrite` can include it.
+
 ## What overlays see
 
 Overlays get the document with the external media values of themeable

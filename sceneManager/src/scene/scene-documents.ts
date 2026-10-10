@@ -36,6 +36,8 @@ export interface SceneWrite {
   draftWidgetsJson?: string;
   draftLayoutJson?: string;
   clearDraft?: boolean;
+  /** The scene editor's sync state, stored in the same row update as the documents. */
+  editorStateJson?: string;
 }
 
 /** The slice of the db client the documents write scenes through. */
