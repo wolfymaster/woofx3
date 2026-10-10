@@ -180,12 +180,17 @@ func (t *ConditionTree) EvaluateAtoms(evaluate AtomEvaluator) (bool, error) {
 // nil when the path is absent or null. An absent value only satisfies an
 // operator that is about presence or difference (not_exists, ne, not_in, or
 // eq/in against null); it is never above, below, inside or matching anything,
-// so `contains "nil"` cannot match the text of a missing value.
+// so `contains "nil"` cannot match the text of a missing value. A malformed
+// expected value is an error whatever the field holds, so a broken condition
+// does not pass unnoticed while its field happens to be absent.
 func EvaluateAtomValue(op string, actual, expected any) (bool, error) {
 	if actual == nil {
 		canonical, ok := CanonicalOperator(op)
 		if !ok {
 			return false, fmt.Errorf("unknown operator: %s", op)
+		}
+		if err := checkExpected(canonical, expected); err != nil {
+			return false, err
 		}
 		switch canonical {
 		case "eq", "ne", "in", "not_in", "exists", "not_exists":
