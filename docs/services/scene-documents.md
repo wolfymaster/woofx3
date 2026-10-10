@@ -38,6 +38,19 @@ placement needs on the page that depends on what is installed rather than on
 the scene (its frame URL, linked resources, whether it is an alert area) is
 kept beside the document as each placement's meta.
 
+Meta is worked out by asking barkloader for the widget's frame. When it
+fails, times out or gives no frame, the placement gets an unversioned frame
+URL and no `mediaProxyBase`, while the frame itself may later be served
+under the theme policy, which would block its external media. Such a
+placement is framed again a while later (10 s, doubling up to 5 minutes,
+while anyone has the scene open), and the meta barkloader's answer brings
+is committed as an `external` entry that carries only meta: overlays get
+it as a `scene-ops` event with no ops, so the page swaps in the versioned
+frame and gets the placement's media pointed at the proxy. An
+edit to such a placement does not ask barkloader again, so edits never wait
+on it while it is down; it is left to that retry. Barkloader has 5 s to
+answer a frame request, after which it counts as failed.
+
 The document and its ops are shared with the dashboard's scene editor in the
 api package (`@woofx3/api/scene-editor/document`);
 `public/scene-manager/scene-document.ts` re-exports them for the page and the
@@ -232,6 +245,19 @@ not overwrite each other. Overlay scene state never carries it:
 `OverlayHost.loadEditableScene` reads both versions and the editor state from
 one read of the row, for the scene documents alone.
 
+## What overlays see
+
+Overlays get the document with the external media values of themeable
+placements (those whose meta has a `mediaProxyBase`) pointed at the
+engine's media proxy (see [External media](./asset-delivery.md#external-media));
+editors get it as entered. The snapshot in the page and `/config` is that
+view. In a `scene-ops` event, a placement whose view is rewritten, before or
+after the change, is sent whole as overlays see it, in place of the ops
+made to it: a splice into a media value's `url` only applies to the value as
+entered. A placement whose meta changed is checked the same way. Ops for
+every other placement, and for the layout, are sent as made, so the work is
+limited to the placements a change touches.
+
 ## Tests
 
 - `shared/clients/typescript/api/tests/scene-editor/*.test.ts` cover the shared
@@ -249,3 +275,6 @@ one read of the row, for the scene documents alone.
   (`close()` retrying a write that fails at shutdown), and restarts.
 - `sceneManager/tests/routes/editor.test.ts` covers the editor socket:
   upgrade, session errors and presence.
+- `sceneManager/tests/scene/media-proxy.test.ts` covers what overlays see
+  of a document (proxied media, placements resent whole) and placements
+  framed again after barkloader gave no frame.

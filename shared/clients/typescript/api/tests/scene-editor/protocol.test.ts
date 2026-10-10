@@ -11,6 +11,13 @@ import {
 import { placement, sceneDoc } from "./test-support";
 
 const doc = sceneDoc({ w: placement() });
+const proxiedMeta = {
+  moduleId: "m",
+  hostsSurface: "",
+  frameUrl: "/frames/w?v=2",
+  linkedResources: {},
+  mediaProxyBase: "http://localhost/media/",
+};
 
 const validClient: ClientMessage[] = [
   { type: "hello", protocol: 2, clientId: "c1", have: null, name: "Pat" },
@@ -50,6 +57,16 @@ const validServer: ServerMessage[] = [
     changes: { draft: [{ p: ["layout", "a"], oi: 1 }] },
     meta: { draft: { w: null } },
     hasDraft: true,
+  },
+  {
+    type: "entry",
+    v: 2,
+    id: "e.2",
+    src: null,
+    kind: "external",
+    changes: {},
+    meta: { published: { w: proxiedMeta } },
+    hasDraft: false,
   },
   { type: "ack", seq: 1, v: 0 },
   { type: "nack", seq: 1, code: "unavailable", retryable: true, detail: "" },
@@ -102,6 +119,16 @@ describe("protocol parsers", () => {
       },
       { type: "entry", v: 0, id: "e.0", src: null, kind: "edit", changes: {}, meta: {}, hasDraft: false },
       { type: "entry", v: 1, id: "e.1", src: null, kind: "edit", changes: { staging: [] }, meta: {}, hasDraft: false },
+      {
+        type: "entry",
+        v: 1,
+        id: "e.1",
+        src: null,
+        kind: "external",
+        changes: {},
+        meta: { published: { w: { ...proxiedMeta, mediaProxyBase: 5 } } },
+        hasDraft: false,
+      },
       { type: "nack", seq: 1, code: "invalid", retryable: true, detail: "" },
       { type: "nack", seq: 1, code: "bogus", retryable: false, detail: "" },
       { type: "error", code: "teapot", detail: "" },

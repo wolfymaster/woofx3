@@ -1900,6 +1900,7 @@ function configOfSnapshot(snapshot) {
       hostsSurface: meta.hostsSurface,
       frameUrl: meta.frameUrl,
       linkedResources: meta.linkedResources,
+      ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
       visible: placement.visible
     });
   }
@@ -2387,6 +2388,125 @@ function applyPreviewLayout(elements, layout) {
   }
 }
 
+// public/scene-manager/media-url.ts
+var MAX_DEPTH = 32;
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isAbsoluteHttpUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (url.protocol === "https:" || url.protocol === "http:") && url.hostname !== "";
+}
+function externalMediaUrl(value) {
+  if (!isPlainObject2(value) || value.source !== "url" || typeof value.url !== "string" || !isAbsoluteHttpUrl(value.url)) {
+    return null;
+  }
+  return value.url;
+}
+function rewriteExternalMedia(value, replace) {
+  return rewrite(value, replace, 0);
+}
+function rewrite(value, replace, depth) {
+  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next2 = value.map((item) => {
+      const rewritten = rewrite(item, replace, depth + 1);
+      changed ||= rewritten !== item;
+      return rewritten;
+    });
+    return changed ? next2 : value;
+  }
+  const record = value;
+  const external = externalMediaUrl(record);
+  if (external !== null) {
+    const replaced = replace(external);
+    return replaced === undefined || replaced === external ? record : { ...record, url: replaced };
+  }
+  let next = null;
+  for (const [key, item] of Object.entries(record)) {
+    const rewritten = rewrite(item, replace, depth + 1);
+    if (rewritten !== item) {
+      next ??= { ...record };
+      next[key] = rewritten;
+    }
+  }
+  return next ?? record;
+}
+function externalMediaUrls(value) {
+  const urls = new Set;
+  rewriteExternalMedia(value, (url) => {
+    urls.add(url);
+    return;
+  });
+  return [...urls];
+}
+var MEDIA_PROXY_TOKEN = /^[A-Za-z0-9_-]+\.(\d+)\.[0-9a-f]{64}$/;
+function mediaProxyExpiry(url, base) {
+  if (!url.startsWith(base)) {
+    return null;
+  }
+  const match = MEDIA_PROXY_TOKEN.exec(url.slice(base.length));
+  return match ? Number(match[1]) : null;
+}
+function earliestMediaProxyExpiry(value, base) {
+  if (base === undefined) {
+    return null;
+  }
+  let earliest = null;
+  for (const url of externalMediaUrls(value)) {
+    const expiry = mediaProxyExpiry(url, base);
+    if (expiry !== null && (earliest === null || expiry < earliest)) {
+      earliest = expiry;
+    }
+  }
+  return earliest;
+}
+var MEDIA_REFRESH_MARGIN_MS = 6 * 60 * 60 * 1000;
+var MIN_MEDIA_REFRESH_DELAY_MS = 60000;
+var MAX_MEDIA_REFRESH_RETRY_MS = 30 * 60000;
+var MAX_TIMER_DELAY_MS = 2147483647;
+function mediaRefreshDelay(earliest, now, failures) {
+  const untilExpiry = earliest * 1000 - now;
+  if (failures === 0) {
+    return Math.min(Math.max(untilExpiry - MEDIA_REFRESH_MARGIN_MS, MIN_MEDIA_REFRESH_DELAY_MS), MAX_TIMER_DELAY_MS);
+  }
+  const backoff = Math.min(MIN_MEDIA_REFRESH_DELAY_MS * 2 ** Math.min(failures - 1, 30), MAX_MEDIA_REFRESH_RETRY_MS);
+  return Math.max(Math.min(backoff, untilExpiry), MIN_MEDIA_REFRESH_DELAY_MS);
+}
+function replaceMediaUrls(value, urls) {
+  if (urls.size === 0) {
+    return value;
+  }
+  return rewriteExternalMedia(value, (url) => urls.get(url));
+}
+function parseMediaUrls(value) {
+  const placements = new Map;
+  if (!isPlainObject2(value)) {
+    return placements;
+  }
+  for (const [id, urls] of Object.entries(value)) {
+    if (!isPlainObject2(urls)) {
+      continue;
+    }
+    const signed = new Map;
+    for (const [upstream, proxied] of Object.entries(urls)) {
+      if (typeof proxied === "string") {
+        signed.set(upstream, proxied);
+      }
+    }
+    placements.set(id, signed);
+  }
+  return placements;
+}
+
 // public/scene-manager/scene-background.ts
 function sceneBackground(layout) {
   const value = layout.backgroundColor;
@@ -2666,10 +2786,46 @@ function main() {
     mount(instance);
   }
   stack(sceneData.widgets.map((instance) => instance.id));
+  let mediaRefreshTimer = null;
+  let mediaRefreshFailures = 0;
+  function scheduleMediaRefresh() {
+    if (mediaRefreshTimer !== null) {
+      clearTimeout(mediaRefreshTimer);
+      mediaRefreshTimer = null;
+    }
+    let earliest = null;
+    for (const entry of mounted.values()) {
+      const expiry = earliestMediaProxyExpiry(entry.config.settings, entry.config.mediaProxyBase);
+      if (expiry !== null && (earliest === null || expiry < earliest)) {
+        earliest = expiry;
+      }
+    }
+    if (earliest === null) {
+      return;
+    }
+    const delay = mediaRefreshDelay(earliest, Date.now(), mediaRefreshFailures);
+    mediaRefreshTimer = setTimeout(() => {
+      mediaRefreshTimer = null;
+      updateScene();
+    }, delay);
+  }
+  scheduleMediaRefresh();
   let previewLayout = null;
   let draftPlacements = null;
   let draftKey = "";
   let draftTimer = null;
+  let proxiedMedia = new Map;
+  const signedMediaOf = (placement) => typeof placement.id === "string" ? proxiedMedia.get(placement.id) : undefined;
+  const draftSettingsOf = (placement) => {
+    const signed = signedMediaOf(placement);
+    const settings = settingsOf(placement);
+    return signed ? replaceMediaUrls(settings, signed) : settings;
+  };
+  const draftKeyOf = (placements) => draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") + JSON.stringify(placements.flatMap((raw) => {
+    const placement = asRecord(raw);
+    const signed = signedMediaOf(placement);
+    return externalMediaUrls(settingsOf(placement)).filter((url) => !signed?.has(url));
+  }));
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
       bridge.handleMessage(event);
@@ -2691,12 +2847,12 @@ function main() {
         for (const raw of placements) {
           const placement = asRecord(raw);
           const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
-          const settings = settingsOf(placement);
+          const settings = draftSettingsOf(placement);
           if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
             updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert");
+        const key = draftKeyOf(placements);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -2712,7 +2868,7 @@ function main() {
   }
   function applySceneConfig(next, fromDraft) {
     if (fromDraft && draftPlacements) {
-      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, settingsOf(asRecord(raw))]));
+      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, draftSettingsOf(asRecord(raw))]));
       for (const instance of next.widgets) {
         const settings = latest.get(instance.id);
         if (settings && instance.hostsSurface === "" && themeOf(settings) === themeOf(instance.settings)) {
@@ -2741,6 +2897,7 @@ function main() {
       mount(instance);
     }
     stack(plan.order);
+    scheduleMediaRefresh();
     applySceneBackground(document.body, next.layout);
     if (previewLayout) {
       applyPreviewLayout(widgetElements, previewLayout);
@@ -2794,6 +2951,12 @@ function main() {
     }
     const body = resp.ok ? await resp.json().catch(() => null) : null;
     const config = parseSceneConfig(body);
+    if (draft && config) {
+      proxiedMedia = parseMediaUrls(asRecord(body).mediaUrls);
+      if (draftPlacements) {
+        draftKey = draftKeyOf(draftPlacements);
+      }
+    }
     if (config && config.id === sceneId) {
       const snapshot = draft ? null : parseSnapshot(asRecord(body).document);
       if (snapshot) {
@@ -2824,7 +2987,11 @@ function main() {
           return;
         }
         if (target.kind === "apply") {
+          mediaRefreshFailures = 0;
           applySceneConfig(target.config, target.fromDraft);
+        } else {
+          mediaRefreshFailures += 1;
+          scheduleMediaRefresh();
         }
       }
     } finally {

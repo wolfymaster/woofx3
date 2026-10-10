@@ -61,6 +61,13 @@ export interface PlacementMeta {
   hostsSurface: string;
   frameUrl: string;
   linkedResources: Record<string, string>;
+  /**
+   * The engine's media proxy URL prefix, for a widget whose frame runs under
+   * the theme policy: overlays get external media in its settings pointed
+   * there. Absent for every other placement, whose frames load external
+   * media directly.
+   */
+  mediaProxyBase?: string;
 }
 
 /** Placements whose meta changed: the new meta, or null for one removed. */

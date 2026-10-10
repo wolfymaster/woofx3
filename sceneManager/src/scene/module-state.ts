@@ -8,14 +8,15 @@ import type { Logger } from "@woofx3/common/runtime";
  * some page of a scene has asked for are pushed to that scene, so opening a
  * scene does not stream every module's storage to it.
  *
- * A resource instance keeps its value at `state:<canonicalId>`, but what it
- * stores is not all a widget showing it needs. A counter nothing has written
- * yet, or whose session-scoped value was cleared, stores nothing and still
- * reads as its starting value; and its goals live in its settings, not in
- * storage. A timer nothing has started stores nothing either, and how long it
- * runs is also a setting. A widget sees only its own settings, never the
- * instance's, so a `state:` key of a kind this knows is answered with the
- * instance's reading (see `resourceReading`) rather than with what is stored.
+ * A resource instance keeps its value at `state:<canonicalId>` in its owning
+ * module's storage, and that key reads as exactly what is stored, for every
+ * kind. What a value means can also depend on the instance's settings (a
+ * counter's starting value and goals, how long a timer runs), and a widget
+ * sees only its own settings, never the instance's. So the instance as a
+ * whole reads at `resource:<canonicalId>`, as a `ResourceReading`: what it
+ * stores, its settings, and when it was read. Making sense of that is the
+ * widget's own business, as it is the module's functions': the engine never
+ * learns what a kind means.
  *
  * A module's `list` settings are its own widgets' to read too, at
  * `setting:<settingId>`: the rows a streamer keeps in the module's settings,
@@ -29,7 +30,7 @@ import type { Logger } from "@woofx3/common/runtime";
 /** The slice of DbClient this depends on (injectable for tests). */
 export interface ModuleStateDb {
   getModuleStorageValue(namespace: string, key: string): Promise<unknown>;
-  getResourceInstance(canonicalId: string): Promise<{ kind: string; settingsJson: string } | null>;
+  getResourceInstance(canonicalId: string): Promise<{ settingsJson: string } | null>;
   listModuleSettings(moduleId: string): Promise<{ key: string; value: string; valueType: string }[]>;
 }
 
@@ -49,6 +50,7 @@ export interface ModuleStateFrame {
 }
 
 const RESOURCE_STATE_PREFIX = "state:";
+const RESOURCE_PREFIX = "resource:";
 const MODULE_SETTING_PREFIX = "setting:";
 /** The only setting type served to widgets (see the note at the top). */
 const LIST_SETTING = "list";
@@ -80,129 +82,16 @@ export function listSettingRows(
   );
 }
 
-export interface CounterGoal {
-  value: number;
-  /** "" when the goal has no name. */
-  name: string;
-}
-
-/** A woofx3 counter as a widget reads it. */
-export interface CounterReading {
-  value: number;
-  /** Goal number -> when the counter first reached it, in epoch ms. */
-  reached: Record<string, number>;
-  /** Smallest first, one per number. */
-  goals: CounterGoal[];
-}
-
 /**
- * A woofx3 timer as a widget reads it: a point to sync to, sent only when the
- * timer changes. A running one's time left is measured as it is sent, so the
- * widget counts down from when it arrives on its own clock and never needs to
- * agree with this one.
+ * A resource instance as a widget reads it at `resource:<canonicalId>`.
+ * `readAt` is this host's clock at the moment of reading, so a widget can
+ * measure a stored time (a timer's end) against it and count on from its own
+ * clock, without the two clocks having to agree.
  */
-export interface TimerReading {
-  running: boolean;
-  /** Time left as of this reading. */
-  remainingMs: number;
-  /** What it counts down from, and what Reset goes back to. */
-  durationMs: number;
-}
-
-/**
- * What a resource instance reads as, from what it stores and its settings, or
- * the stored value unchanged for a kind this does not know.
- *
- * Owned by the module that declares the kind, not by the engine, which never
- * learns what a kind means. Repeated here because a widget cannot read the
- * instance's settings, and the rules must match the module's own: `readState`
- * and `parseGoals` in modules/woofx3/functions/counter.js, and `readTimer` and
- * `timerFromInstance` in modules/woofx3/functions/timer.js.
- */
-export function resourceReading(
-  moduleId: string,
-  kind: string,
-  settings: Record<string, unknown>,
-  stored: unknown,
-  now: number = Date.now()
-): unknown {
-  if (moduleId === "woofx3" && kind === "counter") {
-    return counterReading(settings, stored);
-  }
-  if (moduleId === "woofx3" && kind === "timer") {
-    return timerReading(settings, stored, now);
-  }
-  return stored ?? null;
-}
-
-function counterReading(settings: Record<string, unknown>, stored: unknown): CounterReading {
-  const initial = numberOr(settings.initialValue, 0);
-  const goals = parseGoals(settings.goals);
-  if (stored === null || stored === undefined) {
-    return { value: initial, reached: {}, goals };
-  }
-  if (typeof stored === "object" && !Array.isArray(stored)) {
-    const state = stored as { value?: unknown; reached?: unknown };
-    const reached =
-      state.reached !== null && typeof state.reached === "object" && !Array.isArray(state.reached)
-        ? (state.reached as Record<string, number>)
-        : {};
-    return { value: numberOr(state.value, initial), reached, goals };
-  }
-  // Written before counters carried goals.
-  return { value: numberOr(stored, initial), reached: {}, goals };
-}
-
-// The latest moment a Date can hold: a timer has no limit of its own, this
-// only keeps a corrupt value from reading as an impossible time.
-const MAX_DATE_MS = 8.64e15;
-
-function timerReading(settings: Record<string, unknown>, stored: unknown, now: number): TimerReading {
-  const durationMs = clampTimerMs(numberOr(settings.duration, 300) * 1000);
-  if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
-    return { running: false, remainingMs: durationMs, durationMs };
-  }
-  const state = stored as { running?: unknown; endsAt?: unknown; remainingMs?: unknown };
-  if (state.running === true) {
-    return { running: true, remainingMs: clampTimerMs(numberOr(state.endsAt, 0) - now), durationMs };
-  }
-  return { running: false, remainingMs: clampTimerMs(numberOr(state.remainingMs, 0)), durationMs };
-}
-
-function clampTimerMs(ms: number): number {
-  return Math.min(MAX_DATE_MS, Math.max(0, Math.round(ms)));
-}
-
-function parseGoals(raw: unknown): CounterGoal[] {
-  const rows: unknown = typeof raw === "string" ? raw.split(",").map((part) => ({ value: part })) : raw;
-  if (!Array.isArray(rows)) {
-    return [];
-  }
-  const goals: CounterGoal[] = [];
-  for (const row of rows) {
-    if (row === null || typeof row !== "object") {
-      continue;
-    }
-    const { value: rawValue, name: rawName } = row as { value?: unknown; name?: unknown };
-    const text = typeof rawValue === "string" ? rawValue.trim() : rawValue;
-    const value = Number(text);
-    if (text === "" || text === null || text === undefined || !Number.isFinite(value)) {
-      continue;
-    }
-    const name = typeof rawName === "string" ? rawName.trim() : "";
-    const existing = goals.find((goal) => goal.value === value);
-    if (!existing) {
-      goals.push({ value, name });
-    } else if (existing.name === "") {
-      existing.name = name;
-    }
-  }
-  return goals.sort((a, b) => a.value - b.value);
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  const number = Number(value);
-  return value === null || value === undefined || value === "" || !Number.isFinite(number) ? fallback : number;
+export interface ResourceReading {
+  value: unknown;
+  settings: Record<string, unknown>;
+  readAt: number;
 }
 
 function parseSettings(settingsJson: string): Record<string, unknown> {
@@ -212,6 +101,16 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/** The canonical id a resource key names, or null for a key that names none. */
+export function resourceKeyInstance(key: string): string | null {
+  for (const prefix of [RESOURCE_STATE_PREFIX, RESOURCE_PREFIX]) {
+    if (key.startsWith(prefix)) {
+      return key.slice(prefix.length);
+    }
+  }
+  return null;
 }
 
 /** The slice of DbClient `storageModuleFor` needs (injectable for tests). */
@@ -241,18 +140,18 @@ export async function linkedResources(db: LinkedResourcesDb, moduleId: string): 
 
 /**
  * Whose storage a widget of `moduleId` reads `key` from: its own module's,
- * unless the key is the value of a resource instance the module's settings
- * link, which lives in the instance owner's storage.
+ * unless the key is a resource instance the module's settings link (its
+ * `state:` or `resource:` key), which lives in the instance owner's storage.
  *
  * Checked against the settings at every read, so a widget can never name its
  * way into another module's storage: an instance its module does not link
  * reads from its own storage, where nothing is.
  */
 export async function storageModuleFor(db: LinkedResourcesDb, moduleId: string, key: string): Promise<string> {
-  if (!key.startsWith(RESOURCE_STATE_PREFIX)) {
+  const canonicalId = resourceKeyInstance(key);
+  if (canonicalId === null) {
     return moduleId;
   }
-  const canonicalId = key.slice(RESOURCE_STATE_PREFIX.length);
   const owner = canonicalId.split(":")[0] ?? "";
   if (owner === "" || owner === moduleId) {
     return moduleId;
@@ -274,7 +173,8 @@ export class ModuleStateWatch {
   constructor(
     private readonly db: ModuleStateDb,
     private readonly scenes: ModuleStateScenes,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly now: () => number = Date.now
   ) {}
 
   /**
@@ -309,56 +209,67 @@ export class ModuleStateWatch {
     if (key.startsWith(MODULE_SETTING_PREFIX)) {
       return this.settingReading(moduleId, key);
     }
-    const stored = await this.db.getModuleStorageValue(moduleId, key);
-    return this.reading(moduleId, key, stored);
+    if (key.startsWith(RESOURCE_PREFIX)) {
+      return this.resourceReading(moduleId, key.slice(RESOURCE_PREFIX.length));
+    }
+    return (await this.db.getModuleStorageValue(moduleId, key)) ?? null;
   }
 
-  /** A change announced on the bus, pushed to every connected scene watching it. */
+  /**
+   * A change announced on the bus, pushed to every connected scene watching
+   * the key, and, for an instance's value, to every one watching the instance.
+   */
   async publish(moduleId: string, key: string, value: unknown): Promise<void> {
-    // A `setting:` key is the module's settings, not its storage: a storage
-    // write that happens to use the prefix changes nothing a widget reads.
-    if (key.startsWith(MODULE_SETTING_PREFIX)) {
+    // `setting:` and `resource:` keys are not storage: a storage write that
+    // happens to use either prefix changes nothing a widget reads.
+    if (key.startsWith(MODULE_SETTING_PREFIX) || key.startsWith(RESOURCE_PREFIX)) {
       return;
     }
+    this.push(moduleId, key, this.watchingScenes(moduleId, key), value ?? null);
+    if (!key.startsWith(RESOURCE_STATE_PREFIX)) {
+      return;
+    }
+    const canonicalId = key.slice(RESOURCE_STATE_PREFIX.length);
+    const instanceKey = `${RESOURCE_PREFIX}${canonicalId}`;
+    const watching = this.watchingScenes(moduleId, instanceKey);
+    if (watching.length === 0) {
+      return;
+    }
+    let reading: ResourceReading | null;
+    try {
+      reading = await this.resourceReading(moduleId, canonicalId, value ?? null);
+    } catch (err) {
+      this.logger.warn("module state: instance lookup for a changed value failed", {
+        canonicalId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    this.push(moduleId, instanceKey, watching, reading);
+  }
+
+  /**
+   * A resource instance's settings changed. Its value is unchanged, so only
+   * scenes watching the instance as a whole are sent it again.
+   */
+  async resourceUpdated(canonicalId: string): Promise<void> {
+    const moduleId = canonicalId.split(":")[0] ?? "";
+    const key = `${RESOURCE_PREFIX}${canonicalId}`;
     const watching = this.watchingScenes(moduleId, key);
     if (watching.length === 0) {
       return;
     }
-    const reading = await this.reading(moduleId, key, value);
-    for (const { sceneId, readAs } of watching) {
-      for (const as of readAs) {
-        const frame: ModuleStateFrame = { moduleId: as, key, value: reading };
-        this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
-      }
+    let reading: ResourceReading | null;
+    try {
+      reading = await this.resourceReading(moduleId, canonicalId);
+    } catch (err) {
+      this.logger.warn("module state: re-read after a settings change failed", {
+        canonicalId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
     }
-  }
-
-  /**
-   * A resource instance's settings changed, which can change what its value
-   * reads as (a counter's goals, its starting value) without its storage
-   * changing. Read it again for each connected scene watching it and push it.
-   */
-  async resourceUpdated(canonicalId: string): Promise<void> {
-    const moduleId = canonicalId.split(":")[0] ?? "";
-    const key = `${RESOURCE_STATE_PREFIX}${canonicalId}`;
-    for (const { sceneId, readAs } of this.watchingScenes(moduleId, key)) {
-      let stored: unknown;
-      try {
-        stored = await this.db.getModuleStorageValue(moduleId, key);
-      } catch (err) {
-        this.logger.warn("module state: re-read after a settings change failed", {
-          sceneId,
-          canonicalId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        continue;
-      }
-      const reading = await this.reading(moduleId, key, stored);
-      for (const as of readAs) {
-        const frame: ModuleStateFrame = { moduleId: as, key, value: reading };
-        this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
-      }
-    }
+    this.push(moduleId, key, watching, reading);
   }
 
   /**
@@ -405,30 +316,43 @@ export class ModuleStateWatch {
     return watching;
   }
 
-  private async reading(moduleId: string, key: string, stored: unknown): Promise<unknown> {
-    const raw = stored ?? null;
-    if (!key.startsWith(RESOURCE_STATE_PREFIX)) {
-      return raw;
+  private push(
+    moduleId: string,
+    key: string,
+    watching: { sceneId: string; readAs: Set<string> }[],
+    value: unknown
+  ): void {
+    for (const { sceneId, readAs } of watching) {
+      for (const as of readAs) {
+        const frame: ModuleStateFrame = { moduleId: as, key, value };
+        this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+      }
     }
-    const canonicalId = key.slice(RESOURCE_STATE_PREFIX.length);
+  }
+
+  /**
+   * An instance as a whole, read from `moduleId`'s storage, or null when that
+   * module does not own it or it does not exist. `stored` is its value when
+   * the caller already has it, as a change announced on the bus carries it.
+   */
+  private async resourceReading(
+    moduleId: string,
+    canonicalId: string,
+    stored?: unknown
+  ): Promise<ResourceReading | null> {
     // A module's storage holds only its own instances' values; the owning
     // module is the canonical id's first segment.
     if (canonicalId.split(":")[0] !== moduleId) {
-      return raw;
+      return null;
     }
-    let instance: Awaited<ReturnType<ModuleStateDb["getResourceInstance"]>>;
-    try {
-      instance = await this.db.getResourceInstance(canonicalId);
-    } catch (err) {
-      this.logger.warn("module state: resource instance lookup failed; serving the stored value as is", {
-        canonicalId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return raw;
-    }
+    const instance = await this.db.getResourceInstance(canonicalId);
     if (!instance) {
-      return raw;
+      return null;
     }
-    return resourceReading(moduleId, instance.kind, parseSettings(instance.settingsJson), raw);
+    const value =
+      stored === undefined
+        ? await this.db.getModuleStorageValue(moduleId, `${RESOURCE_STATE_PREFIX}${canonicalId}`)
+        : stored;
+    return { value: value ?? null, settings: parseSettings(instance.settingsJson), readAt: this.now() };
   }
 }

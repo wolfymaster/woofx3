@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.24.0](https://github.com/wolfymaster/woofx3/compare/v0.23.0...v0.24.0) (2026-10-10)
+
+### Features
+
+* **api:** scene editor sync core: protocol, sequencer and client ([9704286](https://github.com/wolfymaster/woofx3/commit/9704286d35726e49cde1da7ea2e729707a8b673f))
+
+### Bug Fixes
+
+* **api:** commit an engine change that only changes placement meta ([f674005](https://github.com/wolfymaster/woofx3/commit/f67400564f48f731a403568e09c5c3c6264fb5e3))
+* **api:** harden the scene editor sync core ([f541891](https://github.com/wolfymaster/woofx3/commit/f5418914f0b82a536466286261b7306463706e01))
+* **api:** move pending edits onto a snapshot as whole-field replacements ([5395d6f](https://github.com/wolfymaster/woofx3/commit/5395d6fc4f7452b86e420d543fdad94d6a6fdf7c))
+
+## [0.23.0](https://github.com/wolfymaster/woofx3/compare/v0.22.0...v0.23.0) (2026-10-10)
+
+### Features
+
+* **barkloader:** media proxy for external media in widget settings ([58e2c23](https://github.com/wolfymaster/woofx3/commit/58e2c23d588200384876687cff043acd9a538a9f))
+
+### Bug Fixes
+
+* **barkloader:** bound media proxy relays per upstream URL and never cache non-file answers ([d4d8c68](https://github.com/wolfymaster/woofx3/commit/d4d8c682f8d18ee905908d2255d2810d7429ebf5))
+* **barkloader:** expire media proxy tokens, fetch http upstreams, and refuse more special-use IPv6 ([77ab12d](https://github.com/wolfymaster/woofx3/commit/77ab12db11cf566d047e5025d8191905c5c14392))
+* **barkloader:** release a relay's unused bytes without the deprecated fetch_update ([7622351](https://github.com/wolfymaster/woofx3/commit/7622351fad8bc4ce10e6c786ac338c3ac376e03d))
+* **barkloader:** reserve media relay budget up front and cap concurrent relays ([8e53357](https://github.com/wolfymaster/woofx3/commit/8e53357c3345bdc3b68883185cc51734a712e432))
+* **sceneManager:** bound frame lookups, sign only editor-chosen alert media, retry media refresh ([b11a7e2](https://github.com/wolfymaster/woofx3/commit/b11a7e29b9175e105c934762efd464d6035e6edb))
+* **sceneManager:** derive overlay media in one place, reframe unavailable placements, shorten proxy tokens ([1a5d36c](https://github.com/wolfymaster/woofx3/commit/1a5d36c77ff8d3f34c3a3bd31f2d4bd060364c46))
+* **sceneManager:** proxy every user-entered alert media URL for themeable widgets ([5d0039f](https://github.com/wolfymaster/woofx3/commit/5d0039f3365f16bc2117f0ef1338169d2fe76327))
+* **sceneManager:** proxy external media only for themeable widgets, sign drafts only for editors ([a0a1c5a](https://github.com/wolfymaster/woofx3/commit/a0a1c5a7951a7a69c7c60084e194d417e9f51bbf))
+* **sceneManager:** serve external placement media through the engine media proxy ([ce870dc](https://github.com/wolfymaster/woofx3/commit/ce870dc679fa8fe7d65816242155e751630a3ec6))
+
+## [0.22.0](https://github.com/wolfymaster/woofx3/compare/v0.21.1...v0.22.0) (2026-10-09)
+
+### Features
+
+* **barkloader:** let a resource kind say where its value's summary is ([1b65fd9](https://github.com/wolfymaster/woofx3/commit/1b65fd97786f6ec97ef0565afcd8b5f276758f4d))
+* **sceneManager:** serve a resource instance whole and stop reading kinds ([ecf20ed](https://github.com/wolfymaster/woofx3/commit/ecf20ed49caf1dd00c151de81e8a4366ad1766ed))
+
+## [0.21.1](https://github.com/wolfymaster/woofx3/compare/v0.21.0...v0.21.1) (2026-10-09)
+
+### Bug Fixes
+
+* **alerts:** completed replaces any verdict, transactional outbox, every row of an envelope ([fc06474](https://github.com/wolfymaster/woofx3/commit/fc064746d8e6d93aa89584a561a7df133f1deaa0))
+* **alerts:** first verdict wins, one clock per write, unversioned snapshots still sent ([af0bcbe](https://github.com/wolfymaster/woofx3/commit/af0bcbe67099a0ff627a016d2fea99e38f2c013c))
+* **alerts:** forward-only lifecycle with a per-alert version ([52c6efa](https://github.com/wolfymaster/woofx3/commit/52c6efa2ad086ae6872dcb2295afedf71e279cba))
+* **alerts:** move only an envelope's newest row, in one conditional UPDATE ([02824b6](https://github.com/wolfymaster/woofx3/commit/02824b691b59e3bbaaea0419aca2584e5fc1d189))
+* **alerts:** report each play's lifecycle against its own row ([63c401e](https://github.com/wolfymaster/woofx3/commit/63c401efe7c4d6733366aa7d978fb317b574fea9))
+* **alerts:** send dispatched and playing callbacks, and updated_at at full precision ([cc0cc26](https://github.com/wolfymaster/woofx3/commit/cc0cc2622e0fc0e493c065d81065b455ff3503aa))
+* **api:** read an alert version written as its decimal string ([83b0ada](https://github.com/wolfymaster/woofx3/commit/83b0adab77491630060f6d037340d5ca47e8e6ba))
+* **api:** type-check the alert updated callback per status; document dispatched ([e40b1f3](https://github.com/wolfymaster/woofx3/commit/e40b1f3a4ce814f76caacc792034d36cfcb0e459))
+* **db:** let the alert timestamp migration skip values it cannot parse ([1cc67e3](https://github.com/wolfymaster/woofx3/commit/1cc67e381598604813723f36e78c82f573eb87a4))
+
 ## [0.21.0](https://github.com/wolfymaster/woofx3/compare/v0.20.0...v0.21.0) (2026-10-09)
 
 ### Features

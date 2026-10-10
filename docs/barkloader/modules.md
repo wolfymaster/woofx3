@@ -843,7 +843,7 @@ A widget with a contract gets a `theme` field appended to its settings (see [Fie
 | `contractVersion` | Must equal the target contract's. |
 | `variables` | Contract variable id to value. Unset variables keep their default. |
 | `assets` | Contract slot id to a file in this zip. |
-| `stylesheet` | A `.css` file linked after the widget's own styles. Refer to files through `var(--theme-asset-*)`; a `url()` to anything else will not load (see [Rendering](#rendering-and-fallback)). |
+| `stylesheet` | A `.css` file linked after the widget's own styles. Refer to files through `var(--theme-asset-*)`; a `url()` or `@import` naming another host will not load, since the frame's policy limits styles, fonts, images and media to the engine's origins (see [Rendering](#rendering-and-fallback)). Install does not inspect the stylesheet: that policy is what keeps it from reaching other hosts. |
 | `preview` | An image the settings picker shows. |
 
 A theme entry carries nothing else: any other property fails the install, so there is nowhere for code to go. Any module may declare `themes` — a widget's own module can ship free themes for it — and a package whose manifest has only `themes` (plus metadata and `requires`) is a **theme pack**. `examples/theme-packs/timer-neon` is a sample pack for the bundled Timer widget.
@@ -866,7 +866,18 @@ The install fails, naming the offending field, when:
 
 When the scene manager assembles a themeable widget's frame it passes the placement's `theme` setting to barkloader (`GET /widgets/{moduleId}/{widgetId}/frame?theme=...`), which resolves it against the installed modules. The frame then gets, before any widget code runs: a `:root` block setting every `--theme-*` property (theme values over defaults), the theme stylesheet, and `widgetHost.theme` (see [the SDK](./sdk.md#themes)). Theme files are stored under `modules/{moduleId}/{hash}/themes/{themeId}/…` and served by barkloader itself.
 
-Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles and fonts to the engine's own origins, so a stylesheet's `@import` or font `url()` cannot reach another host. Images and media may load from any http(s) host, since a placement's media settings can point at a file hosted elsewhere. Scripts and connections are not restricted by it.
+Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles, fonts, images and media to the engine's own origins, so a stylesheet's `url()` or `@import` cannot reach another host, and cannot carry what its selectors match on the page out to one. The one exception is images from Twitch's CDN, `https://static-cdn.jtvnw.net`, where emotes, badges and profile pictures in event data are hosted: a fixed platform host no theme author controls, so a request a theme makes to it cannot hand anything to someone who could read it. Scripts and connections are not restricted by it.
+
+A placement's media setting may still name a file hosted elsewhere (`{ "source": "url", "url": "https://…" }`). For a widget with a contract, the scene manager hands overlays such a value with its `url` pointed at the engine's media proxy, `{public URL}/assets/media/{token}`, which is on the engine's origin; see [External media](../services/asset-delivery.md#external-media). A widget without a contract has no such policy and gets the URL as entered.
+
+Only picker-shaped settings are proxied. That includes the media settings
+of a widget playing in an alert, whether the workflow's alert step names
+the URL or fills it from event data. A themeable widget cannot show
+external media that arrives any other way: a URL typed into a plain string
+setting, or one in the raw event it receives through `onEvent` (a clip
+thumbnail, an emote from a service other than Twitch). Those are blocked by the frame's policy, apart from
+images on Twitch's CDN. A widget that has to show such media should not
+declare a theme contract.
 
 A widget always renders. When the selected theme is uninstalled, is for another contract version, or no longer fits the contract, the frame uses the contract defaults and `widgetHost.theme.fallback` says why (`missing` or `incompatible`); a theme asset file missing from storage falls back to that slot's default.
 
@@ -889,6 +900,7 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 | `description` | string | no | Short description. |
 | `icon` | string | no | Optional asset canonical id for picker affordances. |
 | `schema` | array | no | `ConfigField[]` — the fields a user fills in to create an instance of this kind; see [Field declarations](#field-declarations). The engine never renders the form and never validates an instance's value against it. |
+| `display.summary` | string | no | Where in an instance's value to look for the reading the dashboard shows beside its name: object keys and list indexes joined by `.` (`items`, `spin.item`, `entries.0`), each of `[A-Za-z0-9_-]`. A list reads as how many entries it holds, a number or text as itself. Left out, the whole value is read the same way, which suits a kind whose value is a number, text or a list; set it when the value is an object. |
 
 
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
@@ -1021,11 +1033,12 @@ that provides the kind, and the streamer may have put it to other uses.
 
 The module's widgets can show a linked instance. `widgetHost.linkedResources` maps
 each linked `resource_ref` setting to its canonical id, and a widget subscribes to
-`"state:" + canonicalId` as it would to one of its own module's instances. The scene
-manager serves that key from the owning module's storage only after checking, at
+`"state:" + canonicalId` for its value, or `"resource:" + canonicalId` for its value
+with its settings, as it would to one of its own module's instances (see
+[Widget storage](../services/widget-storage.md#resource-readings)). The scene
+manager serves either key from the owning module's storage only after checking, at
 every read, that one of the widget module's `resource_ref` settings holds that id; any
-other instance reads from the widget's own storage, where nothing is. A bundled kind
-reads as it does everywhere else (a timer as `{ running, remainingMs, durationMs }`).
+other instance reads as nothing.
 `linkedResources` is fixed when the frame loads, so choosing another instance in the
 settings takes effect when the scene next loads.
 
