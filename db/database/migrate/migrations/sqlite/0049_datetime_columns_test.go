@@ -17,6 +17,7 @@ import (
 var modelsWithTables = []any{
 	&models.Action{}, &models.Alert{}, &models.Asset{}, &models.BackgroundTask{},
 	&models.Client{}, &models.Command{}, &models.CommandGroup{}, &models.CommandUser{},
+	&models.FactAppliedEvent{}, &models.FactDefinition{}, &models.FactValue{},
 	&models.Group{}, &models.Module{}, &models.ModuleFunction{}, &models.ModuleResource{},
 	&models.ModuleResourceInstance{}, &models.ModuleSetting{}, &models.OverlayToken{},
 	&models.Permission{}, &models.Resource{}, &models.ResourceReference{}, &models.Scene{},
