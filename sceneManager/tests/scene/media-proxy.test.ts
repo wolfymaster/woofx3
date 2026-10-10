@@ -385,7 +385,14 @@ describe("SceneDocuments — what overlays see", () => {
 describe("FrameCatalog — media proxy base", () => {
   const frame = (theme: FrameTheme | null) =>
     new FrameCatalog(
-      { fetchWidgetFrame: async () => ({ entryHtml: "<html></html>", resourceBaseUrl: RESOURCE_BASE, theme }) },
+      {
+        fetchWidgetFrame: async () => ({
+          entryHtml: "<html></html>",
+          resourceBaseUrl: RESOURCE_BASE,
+          theme,
+          fontSettings: [],
+        }),
+      },
       logger()
     ).frame([instance("a", {}, false)]);
 
@@ -551,6 +558,7 @@ describe("FrameAssembler — alert widgets", () => {
         fetchWidgetFrame: async () => ({
           entryHtml: "<!doctype html><html><head></head><body></body></html>",
           resourceBaseUrl: RESOURCE_BASE,
+          fontSettings: [],
           theme,
         }),
       },

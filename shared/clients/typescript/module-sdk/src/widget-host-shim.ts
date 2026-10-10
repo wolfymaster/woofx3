@@ -24,6 +24,7 @@ import type {
   WidgetTheme,
 } from "./widget-host";
 import { type BindingDocument, applySettingBindings } from "./widget-bindings";
+import { type FontDocument, type FontLoader, createFontLoader } from "./widget-fonts";
 import {
   PROTOCOL_VERSION,
   WIDGET_BOOT_GLOBAL,
@@ -69,8 +70,9 @@ export interface ShimWindow {
   widgetHost?: WidgetHost;
   parent?: unknown;
   /** The frame URL's fragment carries the placement's half of the boot
-   *  payload (see `WidgetPlacementBoot`). */
-  location?: { hash: string };
+   *  payload (see `WidgetPlacementBoot`); font stylesheets resolve against
+   *  its `href`. */
+  location?: { hash: string; href?: string };
   requestAnimationFrame?: (cb: () => void) => unknown;
 }
 
@@ -82,6 +84,9 @@ export interface InstallWidgetHostShimOptions {
   /** Where setting bindings are applied. Defaults to the global `document`;
    *  none, and settings are only readable through `host.settings`. */
   documentRef?: BindingDocument & { readyState?: string };
+  /** Where font stylesheets are linked. Defaults to the global `document`;
+   *  none, and font settings are applied by name only. */
+  fontDocumentRef?: FontDocument & { fonts?: { ready: Promise<unknown> } };
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +227,21 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
 
   let settingsForScript = settingsView(currentSettings);
 
+  const fontDocumentRef =
+    options.fontDocumentRef ??
+    (globalThis as { document?: FontDocument & { fonts?: { ready: Promise<unknown> } } }).document;
+  const frameUrl = windowRef.location?.href;
+  const fontLoader: FontLoader | null =
+    boot.fonts && boot.fonts.settings.length > 0 && fontDocumentRef && frameUrl
+      ? createFontLoader(fontDocumentRef, boot.fonts, frameUrl)
+      : null;
+
   function bind(previous: Readonly<Record<string, unknown>>): void {
+    try {
+      fontLoader?.apply(currentSettings);
+    } catch (err) {
+      console.error("[widget-host-shim] linking font stylesheets failed", err);
+    }
     if (!documentRef) {
       return;
     }
@@ -508,13 +527,23 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }
 
   // Two frames after load, the first paint is on screen: a frame replacing
-  // another is shown then, so a reload never flashes an empty widget.
+  // another is shown then, so a reload never flashes an empty widget. A
+  // widget with font settings also waits for its fonts, so a reload never
+  // shows the fallback font before the chosen one.
   function onLoad(): void {
     const nextFrame =
       typeof windowRef.requestAnimationFrame === "function"
         ? (cb: () => void) => windowRef.requestAnimationFrame!(cb)
         : (cb: () => void) => setTimeout(cb, 16);
-    nextFrame(() => nextFrame(() => send(envelope({ type: "rendered" as const }))));
+    const painted = (): void => {
+      nextFrame(() => nextFrame(() => send(envelope({ type: "rendered" as const }))));
+    };
+    const fontsReady = fontLoader === null ? undefined : fontDocumentRef?.fonts?.ready;
+    if (fontsReady === undefined) {
+      painted();
+      return;
+    }
+    fontsReady.then(painted, painted);
   }
 
   // Install synchronously, then open the channel. Widgets that run
