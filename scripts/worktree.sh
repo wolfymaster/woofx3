@@ -28,7 +28,9 @@
 #   +0 api   +1 db proxy   +2 barkloader   +3 NATS   +4 NATS WebSocket
 #   +5 sceneManager   +10 UI dev server
 #
-# Branches are never deleted: `rm` removes the worktrees and keeps the work.
+# Branches are never deleted: `rm` removes the worktrees and keeps the work. It
+# refuses while a worktree has uncommitted changes or running processes; --force
+# discards the changes and stops the processes.
 
 set -euo pipefail
 
@@ -61,6 +63,41 @@ usage() {
 fail() {
   echo "worktree: $*" >&2
   exit 1
+}
+
+# Processes whose working directory is inside $1, one "pid name cwd" per line.
+# A service left running in a removed worktree keeps its slot's ports, and a db
+# proxy holding a deleted SQLite file rolls back and deletes the journal of any
+# new database created at the same path, which fails that database's writes
+# with SQLITE_IOERR_DELETE_NOENT.
+procs_in() {
+  local dir="$1" proc cwd
+  for proc in /proc/[0-9]*; do
+    cwd="$(readlink "$proc/cwd" 2>/dev/null)" || continue
+    cwd="${cwd% (deleted)}"
+    case "$cwd" in
+      "$dir" | "$dir"/*)
+        echo "${proc#/proc/} $(cat "$proc/comm" 2>/dev/null) $cwd"
+        ;;
+    esac
+  done
+}
+
+stop_procs_in() {
+  local dir="$1" pids n=0
+  pids="$(procs_in "$dir" | cut -d' ' -f1)"
+  [ -n "$pids" ] || return 0
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null
+  while [ -n "$(procs_in "$dir")" ]; do
+    n=$((n + 1))
+    if [ "$n" -gt 50 ]; then
+      # shellcheck disable=SC2086
+      kill -9 $pids 2>/dev/null
+      break
+    fi
+    sleep 0.1
+  done
 }
 
 task_dir() {
@@ -163,21 +200,9 @@ migrate_engine_db() {
   mkdir -p "$engine_dir/db/data"
   local log="$engine_dir/logs/migrate.log"
   mkdir -p "$engine_dir/logs"
-  # Migrating a fresh SQLite database intermittently fails partway with "disk
-  # I/O error (5898)" (SQLITE_IOERR_DELETE_NOENT). Running it again on the same
-  # file resumes from the last recorded migration and gets through within a
-  # couple of attempts. The cause is in the engine, not this script.
-  local attempt
-  for attempt in 1 2 3 4 5; do
-    if (cd "$engine_dir/db" && go run ./database/migrate -cmd up) >"$log" 2>&1; then
-      echo "  migrated $engine_dir/db/data/woofx3.db"
-      if [ "$attempt" -gt 1 ]; then
-        echo "  (needed $attempt attempts: fresh SQLite migration is flaky)"
-      fi
-      return
-    fi
-  done
-  fail "migrations failed 5 times in $engine_dir; see $log"
+  (cd "$engine_dir/db" && go run ./database/migrate -cmd up) >"$log" 2>&1 ||
+    fail "migrations failed in $engine_dir; see $log"
+  echo "  migrated $engine_dir/db/data/woofx3.db"
 }
 
 install_ui_deps() {
@@ -325,6 +350,16 @@ cmd_rm() {
   local dir
   dir="$(task_dir "$branch")"
   [ -d "$dir" ] || fail "no task at $dir"
+
+  local running
+  running="$(procs_in "$dir")"
+  if [ -n "$running" ]; then
+    if [ -z "$force" ]; then
+      echo "$running" | sed 's/^/  /' >&2
+      fail "processes are running in $dir; stop them or pass --force"
+    fi
+    stop_procs_in "$dir"
+  fi
 
   local repo
   for repo in woofx3 woofx3-ui; do

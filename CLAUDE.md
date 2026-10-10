@@ -40,7 +40,7 @@ Work happens in paired worktrees created by `scripts/worktree.sh`:
 ```bash
 scripts/worktree.sh new <branch>   # ~/code/wt/<branch>/{woofx3,woofx3-ui}
 scripts/worktree.sh ls
-scripts/worktree.sh rm <branch>    # keeps the branch
+scripts/worktree.sh rm <branch>    # keeps the branch; refuses while services still run in it
 ```
 
 Each task gets its own slot: a block of ports, a `.woofx3.json` that uses them, installed Bun packages, and a migrated SQLite database. Its ports are listed in `../ports.env`. Never start services with the default ports from a worktree; they belong to the main clone.
