@@ -30,7 +30,7 @@ var __toESM = (mod, isNodeMode, target) => {
 };
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 
-// node_modules/ot-json0/lib/bootstrapTransform.js
+// ../shared/clients/typescript/api/node_modules/ot-json0/lib/bootstrapTransform.js
 var require_bootstrapTransform = __commonJS((exports, module) => {
   module.exports = bootstrapTransform;
   function bootstrapTransform(type, transformComponent, checkValidOp, append) {
@@ -92,7 +92,7 @@ var require_bootstrapTransform = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ot-json0/lib/text0.js
+// ../shared/clients/typescript/api/node_modules/ot-json0/lib/text0.js
 var require_text0 = __commonJS((exports, module) => {
   var text = module.exports = {
     name: "text0",
@@ -250,7 +250,7 @@ var require_text0 = __commonJS((exports, module) => {
   require_bootstrapTransform()(text, transformComponent, checkValidOp, append);
 });
 
-// node_modules/ot-json0/lib/json0.js
+// ../shared/clients/typescript/api/node_modules/ot-json0/lib/json0.js
 var require_json0 = __commonJS((exports, module) => {
   var isArray = function(obj) {
     return Object.prototype.toString.call(obj) == "[object Array]";
@@ -725,7 +725,7 @@ var require_json0 = __commonJS((exports, module) => {
   module.exports = json;
 });
 
-// node_modules/ot-json0/lib/index.js
+// ../shared/clients/typescript/api/node_modules/ot-json0/lib/index.js
 var require_lib = __commonJS((exports, module) => {
   module.exports = {
     type: require_json0()
@@ -1815,91 +1815,15 @@ function createReconnectCoordinator() {
   }
 }
 
-// public/scene-manager/scene-document.ts
+// ../shared/clients/typescript/api/scene-editor/document.ts
 var import_ot_json0 = __toESM(require_lib(), 1);
-
-// public/scene-manager/scene-update.ts
-function planSceneUpdate(current, next) {
-  const currentById = new Map(current.map((placement) => [placement.id, placement]));
-  const nextIds = new Set(next.map((placement) => placement.id));
-  const plan = {
-    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
-    mount: [],
-    replace: [],
-    place: [],
-    order: next.map((placement) => placement.id)
-  };
-  for (const placement of next) {
-    const existing = currentById.get(placement.id);
-    if (!existing) {
-      plan.mount.push(placement);
-    } else if (sameFrame(existing, placement)) {
-      plan.place.push(placement);
-    } else {
-      plan.replace.push(placement);
-    }
-  }
-  return plan;
-}
-function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
-}
-function settingsUpdate(current, next, reads) {
-  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
-  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
-  if (changed.length === 0) {
-    return "none";
-  }
-  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
-    return "reload";
-  }
-  return "patch";
-}
-var THEME_SETTING_ID = "theme";
-function themeOf(settings) {
-  const value = settings[THEME_SETTING_ID];
-  return typeof value === "string" ? value.trim() : "";
-}
-function sameValue(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
-  }
-  const aRecord = a;
-  const bRecord = b;
-  const aKeys = Object.keys(aRecord);
-  if (aKeys.length !== Object.keys(bRecord).length) {
-    return false;
-  }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
-}
-function parseSceneConfig(body) {
-  if (typeof body !== "object" || body === null) {
-    return null;
-  }
-  const scene = body.scene;
-  if (typeof scene !== "object" || scene === null) {
-    return null;
-  }
-  const s = scene;
-  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
-    return null;
-  }
-  return {
-    id: s.id,
-    name: typeof s.name === "string" ? s.name : "",
-    layout: s.layout,
-    widgets: s.widgets
-  };
-}
-
-// public/scene-manager/scene-document.ts
 var json0 = import_ot_json0.default.type;
+function isVersion(value) {
+  return value === "draft" || value === "published";
+}
+var MAX_OPS_BYTES = 64 * 1024;
+var MAX_DOCUMENT_BYTES = 1024 * 1024;
+var MAX_ITEM_BYTES = 3 * MAX_DOCUMENT_BYTES;
 function applyOps(doc, ops) {
   return json0.apply(structuredClone(doc), structuredClone([...ops]));
 }
@@ -1910,9 +1834,55 @@ function stackOrder(doc) {
   return Object.keys(doc.widgets).sort((a, b) => {
     const za = doc.widgets[a].z;
     const zb = doc.widgets[b].z;
-    return za < zb ? -1 : za > zb ? 1 : a < b ? -1 : a > b ? 1 : 0;
+    if (za !== zb) {
+      return za < zb ? -1 : 1;
+    }
+    if (a !== b) {
+      return a < b ? -1 : 1;
+    }
+    return 0;
   });
 }
+function mergeMeta(meta, changes) {
+  const next = { ...meta };
+  for (const [id, value] of Object.entries(changes)) {
+    if (value === null) {
+      delete next[id];
+    } else {
+      next[id] = value;
+    }
+  }
+  return next;
+}
+function parseSnapshot(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  if (typeof value.sceneId !== "string" || typeof value.seq !== "number" || !isSceneDocument(value.doc) || !isPlainObject(value.meta)) {
+    return null;
+  }
+  return value;
+}
+function parseSceneOpsEvent(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  if (typeof value.seq !== "number" || !Array.isArray(value.ops) || !isPlainObject(value.meta)) {
+    return null;
+  }
+  if (value.version !== undefined && !isVersion(value.version)) {
+    return null;
+  }
+  return value;
+}
+function isSceneDocument(value) {
+  return isPlainObject(value) && isPlainObject(value.layout) && isPlainObject(value.widgets);
+}
+var TEXT_FIELDS = new Set(["name"]);
+var FREEFORM_FIELDS = new Set(["settings", "extra"]);
+var COMPONENT_KEYS = new Set(["p", "oi", "od", "si", "sd"]);
+
+// public/scene-manager/scene-document.ts
 function configOfSnapshot(snapshot) {
   const widgets = [];
   for (const id of stackOrder(snapshot.doc)) {
@@ -1935,37 +1905,6 @@ function configOfSnapshot(snapshot) {
     });
   }
   return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
-}
-function mergeMeta(meta, changes) {
-  const next = { ...meta };
-  for (const [id, value] of Object.entries(changes)) {
-    if (value === null) {
-      delete next[id];
-    } else {
-      next[id] = value;
-    }
-  }
-  return next;
-}
-function parseSnapshot(value) {
-  if (!isPlainObject(value)) {
-    return null;
-  }
-  const s = value;
-  if (typeof s.sceneId !== "string" || typeof s.seq !== "number" || !isPlainObject(s.doc) || !isPlainObject(s.doc.widgets) || !isPlainObject(s.meta)) {
-    return null;
-  }
-  return value;
-}
-function parseSceneOpsEvent(value) {
-  if (!isPlainObject(value)) {
-    return null;
-  }
-  const e = value;
-  if (typeof e.seq !== "number" || !Array.isArray(e.ops) || !isPlainObject(e.meta)) {
-    return null;
-  }
-  return value;
 }
 
 // public/scene-manager/event-source.ts
@@ -2295,6 +2234,86 @@ class ConnectionStatus {
   get connected() {
     return this.unhealthy.size === 0;
   }
+}
+
+// public/scene-manager/scene-update.ts
+function planSceneUpdate(current, next) {
+  const currentById = new Map(current.map((placement) => [placement.id, placement]));
+  const nextIds = new Set(next.map((placement) => placement.id));
+  const plan = {
+    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
+    mount: [],
+    replace: [],
+    place: [],
+    order: next.map((placement) => placement.id)
+  };
+  for (const placement of next) {
+    const existing = currentById.get(placement.id);
+    if (!existing) {
+      plan.mount.push(placement);
+    } else if (sameFrame(existing, placement)) {
+      plan.place.push(placement);
+    } else {
+      plan.replace.push(placement);
+    }
+  }
+  return plan;
+}
+function sameFrame(a, b) {
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
+}
+function settingsUpdate(current, next, reads) {
+  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
+  if (changed.length === 0) {
+    return "none";
+  }
+  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
+    return "reload";
+  }
+  return "patch";
+}
+var THEME_SETTING_ID = "theme";
+function themeOf(settings) {
+  const value = settings[THEME_SETTING_ID];
+  return typeof value === "string" ? value.trim() : "";
+}
+function sameValue(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+  }
+  const aRecord = a;
+  const bRecord = b;
+  const aKeys = Object.keys(aRecord);
+  if (aKeys.length !== Object.keys(bRecord).length) {
+    return false;
+  }
+  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
+}
+function parseSceneConfig(body) {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const scene = body.scene;
+  if (typeof scene !== "object" || scene === null) {
+    return null;
+  }
+  const s = scene;
+  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: typeof s.name === "string" ? s.name : "",
+    layout: s.layout,
+    widgets: s.widgets
+  };
 }
 
 // public/scene-manager/preview-layout.ts

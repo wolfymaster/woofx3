@@ -251,7 +251,8 @@ function isPlacementMeta(value: unknown): value is PlacementMeta {
     typeof value.moduleId === "string" &&
     typeof value.hostsSurface === "string" &&
     typeof value.frameUrl === "string" &&
-    isPlainObject(value.linkedResources)
+    isPlainObject(value.linkedResources) &&
+    (value.mediaProxyBase === undefined || typeof value.mediaProxyBase === "string")
   );
 }
 
