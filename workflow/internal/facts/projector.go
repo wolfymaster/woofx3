@@ -76,35 +76,42 @@ func (p *Projector) Patterns() []string {
 }
 
 // Project sends the db every delta the event causes, in one call, and makes
-// no call when it causes none. An error from a single source (a value of the
-// wrong type) is a *SourceError, returned alongside the deltas of every other
-// source rather than in place of them.
-func (p *Projector) Project(ctx context.Context, event *types.Event) error {
-	req, projectErr := p.Request(event)
+// no call when it causes none. listened reports whether the event is one a
+// definition counts from at all, whether or not it passed the definition's
+// filters. An error from a single source (a value of the wrong type) is a
+// *SourceError, returned alongside the deltas of every other source rather
+// than in place of them.
+func (p *Projector) Project(ctx context.Context, event *types.Event) (listened bool, err error) {
+	req, listened, projectErr := p.request(event)
 	if req == nil {
-		return projectErr
+		return listened, projectErr
 	}
 	if err := p.client.ApplyFactDeltas(ctx, req); err != nil {
-		return errors.Join(fmt.Errorf("apply fact deltas for event %s: %w", event.ID, err), projectErr)
+		return listened, errors.Join(fmt.Errorf("apply fact deltas for event %s: %w", event.ID, err), projectErr)
 	}
-	return projectErr
+	return listened, projectErr
 }
 
 // Request builds the batch for one event, or nil when the event causes no
 // delta.
 func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error) {
+	req, _, err := p.request(event)
+	return req, err
+}
+
+func (p *Projector) request(event *types.Event) (*ApplyFactDeltasRequest, bool, error) {
 	if event == nil {
 		panic("facts: Request needs an event")
 	}
 	// A dry run must not change anything, and an event without a platform
 	// cannot name the viewer a fact belongs to.
 	if event.Source == apiSource || event.DryRun || event.Platform == "" {
-		return nil, nil
+		return nil, false, nil
 	}
 	idx := p.index.Load()
 	sources := idx.sourcesFor(event.Type)
 	if len(sources) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	occurredAt := event.Time
@@ -120,12 +127,12 @@ func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error)
 	var errs []error
 	for _, cs := range sources {
 		if err := pe.project(cs); err != nil {
-			errs = append(errs, &SourceError{FactID: cs.factID, Trigger: cs.source.Trigger, Err: err})
+			errs = append(errs, &SourceError{FactID: cs.factID, Revision: cs.revision, Trigger: cs.source.Trigger, Err: err})
 		}
 	}
 	err := errors.Join(errs...)
 	if len(pe.deltas) == 0 {
-		return nil, err
+		return nil, true, err
 	}
 	return &ApplyFactDeltasRequest{
 		Source:       event.Source,
@@ -133,17 +140,19 @@ func (p *Projector) Request(event *types.Event) (*ApplyFactDeltasRequest, error)
 		OccurredAt:   occurredAt,
 		SessionStamp: event.SessionID,
 		Deltas:       pe.deltas,
-	}, err
+	}, true, err
 }
 
 // SourceError is a source of a definition that could not read an event: a
 // value of the wrong type at one of its paths. It is a property of the
 // definition and the trigger's payload rather than of one event, so the same
-// error recurs on every matching event.
+// error recurs on every matching event until the definition's Revision
+// changes.
 type SourceError struct {
-	FactID  string
-	Trigger string
-	Err     error
+	FactID   string
+	Revision int64
+	Trigger  string
+	Err      error
 }
 
 func (e *SourceError) Error() string {
