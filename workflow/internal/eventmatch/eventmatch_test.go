@@ -1,6 +1,9 @@
 package eventmatch
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMatches(t *testing.T) {
 	cases := []struct {
@@ -41,6 +44,10 @@ func TestMatches(t *testing.T) {
 		got := Matches(tc.pattern, tc.subject)
 		if got != tc.want {
 			t.Errorf("Matches(%q, %q) = %v, want %v", tc.pattern, tc.subject, got, tc.want)
+		}
+		split := MatchesTokens(strings.Split(tc.pattern, "."), strings.Split(tc.subject, "."))
+		if split != tc.want {
+			t.Errorf("MatchesTokens(%q, %q) = %v, want %v", tc.pattern, tc.subject, split, tc.want)
 		}
 	}
 }
