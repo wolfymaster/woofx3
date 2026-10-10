@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { HttpDeps } from "../../src/http";
 import { handleSceneDraftConfigRoute } from "../../src/routes/scene";
+import { MediaProxy } from "../../src/scene/media-proxy";
 
 const SCENE = { scene: { id: "scene-1", name: "Main", layout: {}, widgets: [] } };
 
@@ -11,6 +12,8 @@ function deps() {
   const d = {
     sessionTokens: { verify: async (token: string) => (token === "good" ? { sceneId: "scene-1" } : null) },
     host: { buildDraftConfig },
+    sceneDocuments: { editedMediaUrls: async () => new Set<string>() },
+    mediaProxy: new MediaProxy("test-secret"),
   };
   return { deps: d as unknown as HttpDeps, buildDraftConfig };
 }
@@ -29,7 +32,7 @@ describe("handleSceneDraftConfigRoute", () => {
     const widgets = [{ id: "a", widgetCanonicalId: "woofx3:widget:text" }];
     const resp = await handleSceneDraftConfigRoute(request(JSON.stringify({ widgets })), "scene-1", d);
     expect(resp.status).toBe(200);
-    expect(await resp.json()).toEqual(SCENE);
+    expect(await resp.json()).toEqual({ ...SCENE, mediaUrls: {} });
     expect(buildDraftConfig).toHaveBeenCalledWith("scene-1", widgets);
   });
 
