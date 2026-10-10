@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/wolfymaster/woofx3/compare/v0.23.0...v0.24.0) (2026-10-10)
+
+### Features
+
+* **api:** scene editor sync core: protocol, sequencer and client ([9704286](https://github.com/wolfymaster/woofx3/commit/9704286d35726e49cde1da7ea2e729707a8b673f))
+
+### Bug Fixes
+
+* **api:** commit an engine change that only changes placement meta ([f674005](https://github.com/wolfymaster/woofx3/commit/f67400564f48f731a403568e09c5c3c6264fb5e3))
+* **api:** harden the scene editor sync core ([f541891](https://github.com/wolfymaster/woofx3/commit/f5418914f0b82a536466286261b7306463706e01))
+* **api:** move pending edits onto a snapshot as whole-field replacements ([5395d6f](https://github.com/wolfymaster/woofx3/commit/5395d6fc4f7452b86e420d543fdad94d6a6fdf7c))
+
 ## [0.23.0](https://github.com/wolfymaster/woofx3/compare/v0.22.0...v0.23.0) (2026-10-10)
 
 ### Features
