@@ -303,12 +303,22 @@ impl Drop for RelayStream {
     fn drop(&mut self) {
         let unused = self.reserved.saturating_sub(self.relayed);
         if unused > 0 && self.counters.window.load(Ordering::Acquire) == self.window {
-            let _ =
-                self.counters
-                    .bytes
-                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |bytes| {
-                        Some(bytes.saturating_sub(unused))
-                    });
+            let mut bytes = self.counters.bytes.load(Ordering::Acquire);
+            loop {
+                match self.counters.bytes.compare_exchange_weak(
+                    bytes,
+                    bytes.saturating_sub(unused),
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(current) => {
+                        bytes = current;
+                    }
+                }
+            }
         }
         self.counters.active.fetch_sub(1, Ordering::AcqRel);
         self.total_active.fetch_sub(1, Ordering::AcqRel);
