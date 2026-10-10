@@ -18,5 +18,9 @@
   },
   // The scene editor's shared sync core and its tests are not reachable from
   // api's own program, so they are named here to be checked with it.
-  "include": ["**/*", "../shared/clients/typescript/api/scene-editor/**/*", "../shared/clients/typescript/api/tests/**/*"]
+  "include": [
+    "**/*",
+    "../shared/clients/typescript/api/scene-editor/**/*",
+    "../shared/clients/typescript/api/tests/**/*"
+  ]
 }

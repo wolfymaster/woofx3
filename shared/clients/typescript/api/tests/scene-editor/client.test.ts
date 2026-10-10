@@ -13,7 +13,14 @@ import {
   type SyncSocketHandlers,
   UNAVAILABLE_RETRY_MS,
 } from "../../scene-editor/client";
-import { type Entry, MAX_OPS_BYTES, type Ops, opsSize, type SceneDocument, type Version } from "../../scene-editor/document";
+import {
+  type Entry,
+  MAX_OPS_BYTES,
+  type Ops,
+  opsSize,
+  type SceneDocument,
+  type Version,
+} from "../../scene-editor/document";
 import {
   CLOSE_CODES,
   type ClientMessage,
