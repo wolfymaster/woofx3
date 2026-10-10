@@ -269,7 +269,7 @@ export interface CtxResources {
     canonicalId: string,
     key: string,
     expected: unknown,
-    value: unknown,
+    value: unknown
   ): CtxCompareAndSetSettingResult;
 }
 
