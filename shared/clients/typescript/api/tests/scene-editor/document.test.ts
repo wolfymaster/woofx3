@@ -10,7 +10,7 @@ import {
   type SceneDocument,
   sameValue,
   transformOps,
-} from "./document";
+} from "../../scene-editor/document";
 import { placement, sceneDoc } from "./test-support";
 
 describe("json0 tie convention", () => {

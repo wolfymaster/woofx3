@@ -7,7 +7,7 @@ import {
   parseClientMessage,
   parseServerMessage,
   type ServerMessage,
-} from "./protocol";
+} from "../../scene-editor/protocol";
 import { placement, sceneDoc } from "./test-support";
 
 const doc = sceneDoc({ w: placement() });

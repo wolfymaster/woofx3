@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { applyOps, type Ops, type SceneDocument, transformOps } from "./document";
-import type { ItemBody } from "./protocol";
-import { rebaseFieldwise } from "./rebase";
+import { applyOps, type Ops, type SceneDocument, transformOps } from "../../scene-editor/document";
+import type { ItemBody } from "../../scene-editor/protocol";
+import { rebaseFieldwise } from "../../scene-editor/rebase";
 import { bothDocs, placement, sceneDoc } from "./test-support";
 
 function edit(version: "draft" | "published", ops: Ops): ItemBody {

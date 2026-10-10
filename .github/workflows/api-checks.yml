@@ -66,8 +66,8 @@ jobs:
         working-directory: api
         run: bun test
 
-      # The package's own tests (the scene editor sync core) live beside its
-      # source, outside api/, so api's test run does not find them.
+      # The package's own tests (the scene editor sync core) live in its tests/
+      # directory, outside api/, so api's test run does not find them.
       - name: Test the api package
         working-directory: shared/clients/typescript/api
         run: bun test

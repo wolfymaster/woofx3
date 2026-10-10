@@ -8,8 +8,8 @@ import {
   type Ops,
   type SceneDocument,
   sameValue,
-} from "./document";
-import type { ItemBody } from "./protocol";
+} from "../../scene-editor/document";
+import type { ItemBody } from "../../scene-editor/protocol";
 import {
   CLIENT_RETENTION_COUNT,
   CLIENT_RETENTION_MS,
@@ -29,7 +29,7 @@ import {
   recordRefusal,
   type SequencerState,
   watermarkOf,
-} from "./sequencer";
+} from "../../scene-editor/sequencer";
 import { bothDocs, placement, sceneDoc } from "./test-support";
 
 const A: EntrySource = { clientId: "client-a", seq: 1 };

@@ -1,8 +1,8 @@
 // Fixtures and a manual clock for the scene editor tests. Not exported from
 // the package index: only tests import it.
 
-import type { SyncClock } from "./client";
-import type { PlacementDocument, SceneDocument, Version } from "./document";
+import type { SyncClock } from "../../scene-editor/client";
+import type { PlacementDocument, SceneDocument, Version } from "../../scene-editor/document";
 
 export function placement(overrides: Partial<PlacementDocument> = {}): PlacementDocument {
   return {

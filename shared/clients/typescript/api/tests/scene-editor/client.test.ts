@@ -12,8 +12,8 @@ import {
   type SyncSocket,
   type SyncSocketHandlers,
   UNAVAILABLE_RETRY_MS,
-} from "./client";
-import { type Entry, MAX_OPS_BYTES, type Ops, opsSize, type SceneDocument, type Version } from "./document";
+} from "../../scene-editor/client";
+import { type Entry, MAX_OPS_BYTES, type Ops, opsSize, type SceneDocument, type Version } from "../../scene-editor/document";
 import {
   CLOSE_CODES,
   type ClientMessage,
@@ -21,7 +21,7 @@ import {
   type ItemMessage,
   type ServerMessage,
   type Watermark,
-} from "./protocol";
+} from "../../scene-editor/protocol";
 import { bothDocs, flush, ManualClock, placement, sceneDoc } from "./test-support";
 
 class FakeSocket implements SyncSocket {

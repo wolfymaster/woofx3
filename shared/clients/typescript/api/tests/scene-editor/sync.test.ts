@@ -12,9 +12,9 @@ import {
   type SyncReport,
   type SyncSocket,
   type SyncSocketHandlers,
-} from "./client";
-import { type SceneDocument, sameValue } from "./document";
-import { CLOSE_CODES, decodeClientMessage, type ItemBody, nackOf, type ServerMessage } from "./protocol";
+} from "../../scene-editor/client";
+import { type SceneDocument, sameValue } from "../../scene-editor/document";
+import { CLOSE_CODES, decodeClientMessage, type ItemBody, nackOf, type ServerMessage } from "../../scene-editor/protocol";
 import {
   commit,
   createSequencerState,
@@ -24,7 +24,7 @@ import {
   recordRefusal,
   type SequencerState,
   watermarkOf,
-} from "./sequencer";
+} from "../../scene-editor/sequencer";
 import { bothDocs, flush, ManualClock, placement, sceneDoc } from "./test-support";
 
 interface Link {
