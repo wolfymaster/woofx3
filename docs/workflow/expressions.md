@@ -1,21 +1,13 @@
 # Expression Resolution
 
 Workflow strings can carry `${…}` expressions, which the workflow engine
-resolves against runtime data before a step runs. Alert text adds one
-piece of markup, `{primary}…{primary}`, which the Text widget renders as
-highlighted text. It is markup, not an expression.
-
-## The two layers, in order
-
-1. **Workflow engine** — resolves every `${…}` in a step's parameters
-   against the trigger, earlier tasks and the environment. An alert's
-   layout, widget settings included, leaves the engine with final values.
-2. **Text widget** — renders `{primary}…{primary}` spans in its highlight
-   color. Nothing else in the text is interpreted.
+resolves against runtime data before a step runs. An alert's layout,
+widget settings included, leaves the engine with final values, and a
+widget shows them as written.
 
 The resolver is **safe**: no `eval`, no globals, no arithmetic, no calls.
 
-## Layer 1 — workflow engine (Go)
+## Workflow engine (Go)
 
 Code: `workflow/internal/expression/resolver.go`. Runs once per task
 execution, before the task is dispatched.
@@ -144,38 +136,29 @@ cover cross-module asset references or the `asset`-typed
 user-authored workflows (see [Module manifest reference](../barkloader/modules.md)
 for that field's separate, still-unresolved authoring story).
 
-## Layer 2 — Text widget highlight markup
+## In a Text widget
 
-Code: `modules/woofx3/widgets/text/index.html`. The Text widget splits its
-`text` setting on `{primary}` and shows every other segment in its
-highlight color: the first marker opens a highlight, the second closes
-it, and so on. The text goes in as text, never as HTML, so a viewer's
-name cannot inject markup. No other `{…}` is interpreted.
-
-## Mixing both layers in one string
-
-The bundled `wolfy_profile` workflows do. The layers never overlap, so
-the order is:
-
-1. The workflow engine resolves every `${…}` against `trigger.*`,
-   earlier tasks and the environment.
-2. The Text widget highlights the `{primary}…{primary}` spans.
+Code: `modules/woofx3/widgets/text/index.html`. The Text widget shows its
+`text` setting as text, never as HTML, so a viewer's name cannot inject
+markup. No `{…}` is interpreted, except that a `{primary}` marker is
+dropped: saved text may carry it from a highlight markup the widget does
+not draw. To show some words in another color, place a second Text
+widget with its own color.
 
 A "gifted subs" Text widget setting:
 
 ```json
 {
-  "text": "$$ {primary}${trigger.data.gifterName}{primary} gifted {primary}${trigger.data.amount}{primary} ${trigger.data.amount > 1 ? 'subs' : 'sub'} $$"
+  "text": "$$ ${trigger.data.gifterName} gifted ${trigger.data.amount} ${trigger.data.amount > 1 ? 'subs' : 'sub'} $$"
 }
 ```
 
-After the engine (gifter "alice", amount 5), the widget receives:
+After the engine (gifter "alice", amount 5), the widget receives and
+shows:
 
 ```
-$$ {primary}alice{primary} gifted {primary}5{primary} subs $$
+$$ alice gifted 5 subs $$
 ```
-
-and shows "alice" and "5" in its highlight color.
 
 ## Common authoring mistakes
 

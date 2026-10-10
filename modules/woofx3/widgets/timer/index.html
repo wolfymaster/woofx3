@@ -61,7 +61,6 @@
         return;
       }
       const template = str(settings.text, "{time}");
-      const highlight = str(settings.highlightColor, "#ec6758");
 
       // The reading last synced to, and when it arrived on this page's
       // monotonic clock. The time left is counted down from those alone.
@@ -84,7 +83,7 @@
         render(el, fill(template, {
           time: formatDuration(left),
           duration: formatDuration(reading.durationMs),
-        }), highlight);
+        }));
         if (reading.running && left > 0) {
           tick = setTimeout(draw, (left % 1000 || 1000) + 5);
         }
@@ -150,25 +149,16 @@
     }
 
     // Replaces each {token} it has a value for, and leaves anything else as
-    // written, so {primary} survives for `render`.
+    // written.
     function fill(template, values) {
       return template.replace(/\{(time|duration)\}/g, (_, token) => values[token]);
     }
 
-    // Every other segment between {primary} markers is highlighted, the same
-    // markup the Text widget takes.
-    function render(el, text, highlight) {
-      el.replaceChildren();
-      text.split("{primary}").forEach((segment, i) => {
-        if (i % 2 === 1) {
-          const span = document.createElement("span");
-          span.style.color = highlight;
-          span.textContent = segment;
-          el.appendChild(span);
-        } else {
-          el.appendChild(document.createTextNode(segment));
-        }
-      });
+    // Saved text may carry {primary} markers, from a highlight markup this
+    // widget does not draw. Dropping them shows the words between them in the
+    // text's color rather than the markers themselves.
+    function render(el, text) {
+      el.textContent = text.split("{primary}").join("");
     }
 
     function str(value, fallback) {

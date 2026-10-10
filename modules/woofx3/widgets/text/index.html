@@ -55,20 +55,7 @@
       const settings = host.settings;
       const el = document.getElementById("text");
 
-      // Every other segment between {primary} markers is highlighted. The
-      // text goes in as text nodes, never markup: it usually carries a
-      // viewer's name.
-      const highlight = str(settings.highlightColor, "#ec6758");
-      str(settings.text, "").split("{primary}").forEach((segment, i) => {
-        if (i % 2 === 1) {
-          const span = document.createElement("span");
-          span.style.color = highlight;
-          span.textContent = segment;
-          el.appendChild(span);
-        } else {
-          el.appendChild(document.createTextNode(segment));
-        }
-      });
+      el.textContent = withoutMarkup(str(settings.text, ""));
 
       playForDuration(host, num(settings.duration, 0), () => {
         el.style.visibility = "hidden";
@@ -92,6 +79,13 @@
           event.complete();
         }, seconds * 1000);
       }, { autoComplete: false });
+    }
+
+    // Saved text may carry {primary} markers, from a highlight markup this
+    // widget does not draw. Dropping them shows the words between them in the
+    // text's color rather than the markers themselves.
+    function withoutMarkup(text) {
+      return text.split("{primary}").join("");
     }
 
     function str(value, fallback) {

@@ -130,7 +130,7 @@ Plays an on-stream alert. The step publishes an envelope onto NATS `ui.notify.al
           "widgetCanonicalId": "woofx3:widget:text",
           "position": { "x": 360, "y": 780 },
           "size": { "width": 1200, "height": 160 },
-          "settings": { "text": "{primary}${trigger.data.userName}{primary} just followed!", "duration": 6 }
+          "settings": { "text": "${trigger.data.userName} just followed!", "duration": 6 }
         },
         {
           "id": "sound",
