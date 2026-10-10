@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.23.0](https://github.com/wolfymaster/woofx3/compare/v0.22.0...v0.23.0) (2026-10-10)
+
+### Features
+
+* **barkloader:** media proxy for external media in widget settings ([58e2c23](https://github.com/wolfymaster/woofx3/commit/58e2c23d588200384876687cff043acd9a538a9f))
+
+### Bug Fixes
+
+* **barkloader:** bound media proxy relays per upstream URL and never cache non-file answers ([d4d8c68](https://github.com/wolfymaster/woofx3/commit/d4d8c682f8d18ee905908d2255d2810d7429ebf5))
+* **barkloader:** expire media proxy tokens, fetch http upstreams, and refuse more special-use IPv6 ([77ab12d](https://github.com/wolfymaster/woofx3/commit/77ab12db11cf566d047e5025d8191905c5c14392))
+* **barkloader:** release a relay's unused bytes without the deprecated fetch_update ([7622351](https://github.com/wolfymaster/woofx3/commit/7622351fad8bc4ce10e6c786ac338c3ac376e03d))
+* **barkloader:** reserve media relay budget up front and cap concurrent relays ([8e53357](https://github.com/wolfymaster/woofx3/commit/8e53357c3345bdc3b68883185cc51734a712e432))
+* **sceneManager:** bound frame lookups, sign only editor-chosen alert media, retry media refresh ([b11a7e2](https://github.com/wolfymaster/woofx3/commit/b11a7e29b9175e105c934762efd464d6035e6edb))
+* **sceneManager:** derive overlay media in one place, reframe unavailable placements, shorten proxy tokens ([1a5d36c](https://github.com/wolfymaster/woofx3/commit/1a5d36c77ff8d3f34c3a3bd31f2d4bd060364c46))
+* **sceneManager:** proxy every user-entered alert media URL for themeable widgets ([5d0039f](https://github.com/wolfymaster/woofx3/commit/5d0039f3365f16bc2117f0ef1338169d2fe76327))
+* **sceneManager:** proxy external media only for themeable widgets, sign drafts only for editors ([a0a1c5a](https://github.com/wolfymaster/woofx3/commit/a0a1c5a7951a7a69c7c60084e194d417e9f51bbf))
+* **sceneManager:** serve external placement media through the engine media proxy ([ce870dc](https://github.com/wolfymaster/woofx3/commit/ce870dc679fa8fe7d65816242155e751630a3ec6))
+
 ## [0.22.0](https://github.com/wolfymaster/woofx3/compare/v0.21.1...v0.22.0) (2026-10-09)
 
 ### Features
