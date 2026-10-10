@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ENGINE_CAPABILITIES, type EngineCapabilities, supportedEngineCapabilities } from "@woofx3/api";
+import {
+  ENGINE_CAPABILITIES,
+  type EngineCapabilities,
+  supportedEngineCapabilities,
+  UNADVERTISED_ENGINE_CAPABILITIES,
+} from "@woofx3/api";
 import { RPC_METHODS } from "../src/api-session";
 import { engineRoutes } from "../src/routes/engine";
 
@@ -14,10 +19,17 @@ function getEngineCapabilities(): Promise<EngineCapabilities> {
 }
 
 describe("getEngineCapabilities", () => {
-  test("returns schema 1 and every declared capability", async () => {
+  test("returns schema 1 and every declared capability it advertises", async () => {
     const result = await getEngineCapabilities();
     expect(result.schema).toBe(1);
-    expect([...result.capabilities].sort()).toEqual([...Object.values(ENGINE_CAPABILITIES)].sort());
+    const advertised = Object.values(ENGINE_CAPABILITIES).filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id));
+    expect([...result.capabilities].sort()).toEqual(advertised.sort());
+  });
+
+  test("does not advertise scene editor protocol 2 while sceneManager serves protocol 1", async () => {
+    const { capabilities } = await getEngineCapabilities();
+    expect(capabilities).toContain(ENGINE_CAPABILITIES.scenesEditorSessions);
+    expect(capabilities).not.toContain(ENGINE_CAPABILITIES.scenesEditorSync);
   });
 
   test("returns the list sorted and without duplicates", async () => {
@@ -34,7 +46,7 @@ describe("ENGINE_CAPABILITIES", () => {
   test("declares each id once", () => {
     const ids = Object.values(ENGINE_CAPABILITIES);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(supportedEngineCapabilities()).toHaveLength(ids.length);
+    expect(supportedEngineCapabilities()).toHaveLength(ids.length - UNADVERTISED_ENGINE_CAPABILITIES.size);
   });
 
   test("uses <area>.<feature> ids", () => {

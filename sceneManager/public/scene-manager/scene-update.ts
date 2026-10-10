@@ -21,6 +21,9 @@ export interface WidgetPlacementConfig {
   frameUrl: string;
   /** The resource instances the widget's module links, handed to the frame. */
   linkedResources?: Record<string, string>;
+  /** The engine's media proxy URL prefix, for a widget whose frame runs
+   *  under the theme policy (see `PlacementMeta.mediaProxyBase`). */
+  mediaProxyBase?: string;
   /** False for a placement hidden in the editor; absent means shown. */
   visible?: boolean;
   /** How the placement enters and leaves; absent means it simply appears

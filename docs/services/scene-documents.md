@@ -40,6 +40,18 @@ placement needs on the page that depends on what is installed rather than on
 the scene (its frame URL, linked resources, whether it is an alert area) is
 kept beside the document as each placement's meta.
 
+Meta is worked out by asking barkloader for the widget's frame. When it
+fails, times out or gives no frame, the placement gets an unversioned frame
+URL and no `mediaProxyBase`, while the frame itself may later be served
+under the theme policy, which would block its external media. Such a
+placement is framed again a while later (10 s, doubling up to 5 minutes,
+while anyone has the scene open), and the meta barkloader's answer brings
+is pushed as a `scene-ops` event with no ops: the page swaps in the
+versioned frame and gets the placement's media pointed at the proxy. An
+edit to such a placement does not ask barkloader again, so edits never wait
+on it while it is down; it is left to that retry. Barkloader has 5 s to
+answer a frame request, after which it counts as failed.
+
 The document lives in `public/scene-manager/scene-document.ts`, the page's
 wire format; the server imports it from there.
 
@@ -131,3 +143,32 @@ Sequence numbers and the op window live in memory: they start again at 0
 when sceneManager restarts, which reloads every overlay and reconnects every
 editor anyway (see the stream's boot id). Only the documents are persisted,
 through autosave.
+
+The scene row also has a nullable `editor_state_json` column for the scene
+editor's sync state: a JSON object the engine owns, stored as text so it reads
+back exactly as written. `UpdateScene` stores it in the same row update as the
+documents and draft named in the request, and refuses (writing nothing) a value
+that is not a JSON object. A request without it leaves it unchanged, unless the
+request writes a document (widgets, layout, draft or `clearDraft`): the stored
+state then describes documents that were replaced, so the db proxy clears it in
+the same write. `clearEditorState` clears it on purpose; it cannot be combined
+with a new value. `UpdateScene` writes only the columns a request names, so
+concurrent writers of different columns (an editor's autosave, a rename) do not
+overwrite each other.
+
+Overlay scene state never carries it: `OverlayHost.loadEditableScene` reads
+both versions and the editor state from one read of the row, for the scene
+documents alone. A `SceneWrite` can include it.
+
+## What overlays see
+
+Overlays get the document with the external media values of themeable
+placements (those whose meta has a `mediaProxyBase`) pointed at the
+engine's media proxy (see [External media](./asset-delivery.md#external-media));
+editors get it as entered. The snapshot in the page and `/config` is that
+view. In a `scene-ops` event, a placement whose view is rewritten, before or
+after the change, is sent whole as overlays see it, in place of the ops
+made to it: a splice into a media value's `url` only applies to the value as
+entered. A placement whose meta changed is checked the same way. Ops for
+every other placement, and for the layout, are sent as made, so the work is
+limited to the placements a change touches.

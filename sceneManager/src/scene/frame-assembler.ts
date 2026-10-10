@@ -8,6 +8,7 @@ import {
 } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
+import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
@@ -63,13 +64,21 @@ export interface BarkloaderFrameClient {
   fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null>;
 }
 
+/**
+ * How long barkloader has to answer a frame request, body included. A hung
+ * barkloader then costs each frame lookup this long, and the lookup counts as
+ * failed (the callers' catch), rather than holding up whatever waits on it.
+ */
+export const FRAME_FETCH_TIMEOUT_MS = 5000;
+
 /** Real implementation — calls barkloader's `GET
  *  /widgets/{moduleKey}/{manifestId}/frame` endpoint. */
 export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
   constructor(
     private readonly barkloaderUrl: string,
     private readonly logger: Logger,
-    private readonly fetchFn: typeof fetch = fetch
+    private readonly fetchFn: typeof fetch = fetch,
+    private readonly timeoutMs: number = FRAME_FETCH_TIMEOUT_MS
   ) {}
 
   async fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null> {
@@ -77,7 +86,7 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     const url =
       `${this.barkloaderUrl.replace(/\/+$/, "")}/widgets/` +
       `${encodeURIComponent(moduleKey)}/${encodeURIComponent(manifestId)}/frame${query}`;
-    const response = await this.fetchFn(url);
+    const response = await this.fetchFn(url, { signal: AbortSignal.timeout(this.timeoutMs) });
     if (!response.ok) {
       // A non-OK response is not a transport error (loadFrameInfo's
       // catch never sees it) — log here or this is completely silent.
@@ -116,6 +125,9 @@ export interface FrameAssemblerOptions {
   /** The instances a module links through its `resource_ref` settings (see
    *  module-state.ts `linkedResources`). None when absent. */
   linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
+  /** Points external media in a themeable widget's boot settings at the
+   *  engine's media proxy. Settings pass through as they are when absent. */
+  mediaProxy?: MediaProxy;
 }
 
 /**
@@ -280,7 +292,10 @@ export class FrameAssembler {
   /**
    * One widget of the alert delivered to `sceneId` as scene event `eventId`.
    * The alert is read back from that event, so a frame can only ever show
-   * what the scene manager validated and delivered to this scene.
+   * what the scene manager validated and delivered to this scene. Its
+   * external media is proxied like a placement's, whether a workflow step
+   * entered it or event data filled it: the proxy's own checks (public
+   * addresses only, media types, size and relay limits) bound what it fetches.
    */
   async assembleAlertWidget(
     sceneId: string,
@@ -370,7 +385,7 @@ export class FrameAssembler {
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
-      settings: target.settings,
+      settings: this.bootSettings(target.settings, frameInfo),
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
@@ -378,6 +393,19 @@ export class FrameAssembler {
       ...(target.transition ? { transition: target.transition } : {}),
     };
     return this.render(frameInfo, boot, "no-store");
+  }
+
+  /**
+   * The settings a frame boots with. A widget with a theme contract runs
+   * under the theme policy (see `render`), which refuses external media, so
+   * its external media is pointed at the media proxy; any other widget loads
+   * it directly.
+   */
+  private bootSettings(settings: Record<string, unknown>, frameInfo: BarkloaderFrameInfo): Record<string, unknown> {
+    if (!this.opts.mediaProxy) {
+      return settings;
+    }
+    return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
   }
 
   /** The entry document with the scaffold, theme stylesheet and policy. */

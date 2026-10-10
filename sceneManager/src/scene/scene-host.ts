@@ -43,6 +43,14 @@ export interface OverlayWidgetInstance {
   /** The resource instances the widget's module links (see `linkedResources`
    *  in module-state.ts), handed to the frame with the placement. */
   linkedResources?: Record<string, string>;
+  /** Set by framing for a widget whose frame runs under the theme policy
+   *  (see `PlacementMeta.mediaProxyBase`). */
+  mediaProxyBase?: string;
+  /** Set by framing when barkloader gave no frame for the widget (it failed,
+   *  timed out, or does not know the widget yet). The frame URL is then
+   *  unversioned and `mediaProxyBase` unknown, so the placement is framed
+   *  again later (see `SceneDocuments`). Never sent to pages. */
+  frameUnavailable?: true;
   /** False for a placement hidden in the editor. */
   visible: boolean;
   /** How the placement enters and leaves, as stored; absent means none. */
@@ -82,6 +90,17 @@ export interface OverlaySceneState {
   instances: OverlayWidgetInstance[];
   /** Whether the scene has an unpublished draft (see `loadSceneById`). */
   hasDraft?: boolean;
+}
+
+/**
+ * Both versions of a scene from one read of its row, framed, with the scene
+ * editor's stored sync state: what the scene documents load a scene from.
+ */
+export interface EditableScene {
+  published: OverlaySceneState;
+  draft: OverlaySceneState;
+  /** The stored editor state, a JSON object; null until an editor has synced the scene, or after it was cleared. */
+  editorStateJson: string | null;
 }
 
 /** Which of a scene's versions to load: what overlays show, or the editor's draft. */
@@ -304,7 +323,36 @@ export class OverlayHost {
     if (response.status?.code !== "OK" || !response.scene) {
       return null;
     }
+    return this.stateOf(response.scene, version);
+  }
+
+  /**
+   * Both versions of a scene and its stored editor state, from one read of
+   * the row, so they describe the same save. Null when the scene does not
+   * exist; throws when it cannot be read, so the caller can tell a missing
+   * scene from a failed read. Authorization is the caller's, as for
+   * `loadSceneById`.
+   */
+  async loadEditableScene(sceneId: string): Promise<EditableScene | null> {
+    if (!this.db) {
+      throw new Error("db proxy unavailable");
+    }
+    const response = await this.db.getScene({ id: sceneId });
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
     const s = response.scene;
+    const [published, draft] = await Promise.all([this.stateOf(s, "published"), this.stateOf(s, "draft")]);
+    const framed = async (state: OverlaySceneState): Promise<OverlaySceneState> =>
+      this.framing ? { ...state, instances: await this.framing.frame(state.instances) } : state;
+    return {
+      published: await framed(published),
+      draft: await framed(draft),
+      editorStateJson: s.editorStateJson === "" ? null : s.editorStateJson,
+    };
+  }
+
+  private async stateOf(s: scene.Scene, version: SceneVersion): Promise<OverlaySceneState> {
     // A scene with no draft reads as its own draft.
     const draft = version === "draft" && s.hasDraft;
     const widgetsJson = draft ? s.draftWidgetsJson : s.widgetsJson;
@@ -605,6 +653,7 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         hostsSurface: w.hostsSurface,
         frameUrl: w.frameUrl,
         linkedResources: w.linkedResources ?? {},
+        ...(w.mediaProxyBase === undefined ? {} : { mediaProxyBase: w.mediaProxyBase }),
         visible: w.visible,
         ...transitionsOf(w, w.widgetTransitions),
         resolved: w.resolved,

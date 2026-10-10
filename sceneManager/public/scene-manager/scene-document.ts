@@ -58,6 +58,13 @@ export interface PlacementMeta {
   /** The transition types the widget declares for itself; absent while
    *  that is not known, when every transition is passed on. */
   widgetTransitions?: string[];
+  /**
+   * The engine's media proxy URL prefix, for a widget whose frame runs under
+   * the theme policy: overlays get external media in its settings pointed
+   * there (see src/scene/media-proxy.ts). Absent for every other placement,
+   * whose frames load external media directly.
+   */
+  mediaProxyBase?: string;
 }
 
 /** A scene as an overlay starts from it, or resyncs to. */
@@ -196,6 +203,7 @@ export function configOfSnapshot(snapshot: SceneSnapshot): SceneConfig {
       hostsSurface: meta.hostsSurface,
       frameUrl: meta.frameUrl,
       linkedResources: meta.linkedResources,
+      ...(meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase }),
       visible: placement.visible,
       ...transitionsOf(placement, meta.widgetTransitions),
     });
