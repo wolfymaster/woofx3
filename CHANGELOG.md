@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/wolfymaster/woofx3/compare/v0.21.1...v0.22.0) (2026-10-09)
+
+### Features
+
+* **barkloader:** let a resource kind say where its value's summary is ([1b65fd9](https://github.com/wolfymaster/woofx3/commit/1b65fd97786f6ec97ef0565afcd8b5f276758f4d))
+* **sceneManager:** serve a resource instance whole and stop reading kinds ([ecf20ed](https://github.com/wolfymaster/woofx3/commit/ecf20ed49caf1dd00c151de81e8a4366ad1766ed))
+
 ## [0.21.1](https://github.com/wolfymaster/woofx3/compare/v0.21.0...v0.21.1) (2026-10-09)
 
 ### Bug Fixes

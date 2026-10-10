@@ -900,6 +900,7 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 | `description` | string | no | Short description. |
 | `icon` | string | no | Optional asset canonical id for picker affordances. |
 | `schema` | array | no | `ConfigField[]` — the fields a user fills in to create an instance of this kind; see [Field declarations](#field-declarations). The engine never renders the form and never validates an instance's value against it. |
+| `display.summary` | string | no | Where in an instance's value to look for the reading the dashboard shows beside its name: object keys and list indexes joined by `.` (`items`, `spin.item`, `entries.0`), each of `[A-Za-z0-9_-]`. A list reads as how many entries it holds, a number or text as itself. Left out, the whole value is read the same way, which suits a kind whose value is a number, text or a list; set it when the value is an object. |
 
 
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
@@ -1032,11 +1033,12 @@ that provides the kind, and the streamer may have put it to other uses.
 
 The module's widgets can show a linked instance. `widgetHost.linkedResources` maps
 each linked `resource_ref` setting to its canonical id, and a widget subscribes to
-`"state:" + canonicalId` as it would to one of its own module's instances. The scene
-manager serves that key from the owning module's storage only after checking, at
+`"state:" + canonicalId` for its value, or `"resource:" + canonicalId` for its value
+with its settings, as it would to one of its own module's instances (see
+[Widget storage](../services/widget-storage.md#resource-readings)). The scene
+manager serves either key from the owning module's storage only after checking, at
 every read, that one of the widget module's `resource_ref` settings holds that id; any
-other instance reads from the widget's own storage, where nothing is. A bundled kind
-reads as it does everywhere else (a timer as `{ running, remainingMs, durationMs }`).
+other instance reads as nothing.
 `linkedResources` is fixed when the frame loads, so choosing another instance in the
 settings takes effect when the scene next loads.
 

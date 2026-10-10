@@ -592,6 +592,21 @@ pub struct ManifestResourceKind {
     /// `ManifestConfigField`.
     #[serde(default)]
     pub schema: Vec<ManifestConfigField>,
+    /// How the dashboard shows an instance's value at a glance.
+    #[serde(default)]
+    pub display: Option<ResourceKindDisplay>,
+}
+
+/// Hints for showing an instance of a kind. The engine never reads an
+/// instance's value; these only tell the dashboard where to look in it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResourceKindDisplay {
+    /// The part of the value shown beside an instance's name: a dot-separated
+    /// path of object keys and list indexes (`items`, `spin.item`). A list is
+    /// shown as how many entries it holds. Absent means the whole value.
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

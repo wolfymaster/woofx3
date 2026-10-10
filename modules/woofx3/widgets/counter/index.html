@@ -60,16 +60,17 @@
       const template = str(settings.text, "{value}");
       const highlight = str(settings.highlightColor, "#ec6758");
 
-      // The counter keeps its number at `state:<canonicalId>` in this
-      // module's storage. The host answers a counter nothing has written yet
-      // with its starting value, so nothing shows until the first answer
-      // arrives rather than a number that may be wrong.
-      host.storage.subscribe("state:" + counter, (stored) => {
-        const value = counterValue(stored);
-        if (value === null) {
+      // The host sends the counter as a whole, `{ value, settings }`: what
+      // it stores, and its own settings, which hold its starting value and
+      // goals. Nothing shows until the first one arrives rather than a
+      // number that may be wrong.
+      host.storage.subscribe("resource:" + counter, (instance) => {
+        if (instance === null || typeof instance !== "object") {
           return;
         }
-        const goal = currentGoal(stored, value);
+        const instanceSettings = instance.settings || {};
+        const value = counterValue(instance.value, numberOr(instanceSettings.initialValue, 0));
+        const goal = parseGoals(instanceSettings.goals).find((g) => g.value > value) || null;
         render(el, fill(template, {
           value: String(value),
           goal: goal ? String(goal.value) : "",
@@ -78,19 +79,46 @@
       });
     })();
 
-    // The host serves a counter as `{ value, reached, goals }`. A bare number
-    // is what a counter last written before counters carried goals holds.
-    function counterValue(stored) {
+    // The counter's number from what it stores, or its starting value when
+    // it stores nothing yet. Stored as `{ value, reached }`, or as a bare
+    // number by a counter last written before counters carried goals. Must
+    // read as `readState` in functions/counter.js does.
+    function counterValue(stored, initial) {
       const raw = stored !== null && typeof stored === "object" ? stored.value : stored;
-      const value = Number(raw);
-      return raw === null || raw === undefined || raw === "" || !Number.isFinite(value) ? null : value;
+      return numberOr(raw, initial);
     }
 
-    // The goal the counter is working toward: the smallest one above its
-    // value. None once every goal is reached, or when it has none.
-    function currentGoal(stored, value) {
-      const goals = stored !== null && typeof stored === "object" && Array.isArray(stored.goals) ? stored.goals : [];
-      return goals.find((goal) => typeof goal.value === "number" && goal.value > value) || null;
+    // The counter's goals as `{ value, name }`, smallest first and one per
+    // number. Must read as `parseGoals` in functions/counter.js does.
+    function parseGoals(raw) {
+      const rows = typeof raw === "string" ? raw.split(",").map((part) => ({ value: part })) : raw;
+      if (!Array.isArray(rows)) {
+        return [];
+      }
+      const goals = [];
+      for (const row of rows) {
+        if (row === null || typeof row !== "object") {
+          continue;
+        }
+        const text = typeof row.value === "string" ? row.value.trim() : row.value;
+        const value = Number(text);
+        if (text === "" || text === null || text === undefined || !Number.isFinite(value)) {
+          continue;
+        }
+        const name = typeof row.name === "string" ? row.name.trim() : "";
+        const existing = goals.find((goal) => goal.value === value);
+        if (!existing) {
+          goals.push({ value, name });
+        } else if (existing.name === "") {
+          existing.name = name;
+        }
+      }
+      return goals.sort((a, b) => a.value - b.value);
+    }
+
+    function numberOr(value, fallback) {
+      const number = Number(value);
+      return value === null || value === undefined || value === "" || !Number.isFinite(number) ? fallback : number;
     }
 
     // Replaces each {token} it has a value for, and leaves anything else as

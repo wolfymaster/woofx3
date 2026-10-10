@@ -90,16 +90,17 @@
         }
       }
 
-      // The timer is kept at `state:<canonicalId>` in this module's storage.
-      // The host sends it as `{ running, remainingMs, durationMs }` whenever
-      // it changes, and never in between, with a running timer's time left
-      // measured as it is sent. Nothing shows until the first reading
-      // arrives rather than a time that may be wrong.
-      host.storage.subscribe("state:" + timer, (stored) => {
-        if (!isReading(stored)) {
+      // The host sends the timer as a whole, `{ value, settings, readAt }`,
+      // whenever it changes, and never in between. A running timer stores
+      // when it ends; measured against `readAt`, the host's clock when it
+      // was sent, that is its time left as it arrives here, so this page's
+      // clock never has to agree with the host's. Nothing shows until the
+      // first one arrives rather than a time that may be wrong.
+      host.storage.subscribe("resource:" + timer, (instance) => {
+        if (instance === null || typeof instance !== "object" || typeof instance.readAt !== "number") {
           return;
         }
-        reading = stored;
+        reading = timerReading(instance.value, instance.settings || {}, instance.readAt);
         syncedAt = performance.now();
         if (tick !== null) {
           clearTimeout(tick);
@@ -108,12 +109,31 @@
       });
     })();
 
-    function isReading(stored) {
-      return stored !== null
-        && typeof stored === "object"
-        && typeof stored.running === "boolean"
-        && typeof stored.remainingMs === "number"
-        && typeof stored.durationMs === "number";
+    // `{ running, remainingMs, durationMs }` at `now`, from what the timer
+    // stores, `{ running: true, endsAt }` or `{ running: false, remainingMs }`,
+    // or from nothing, which is stopped at its full duration. Must read as
+    // `readTimer` in functions/timer.js does.
+    function timerReading(stored, instanceSettings, now) {
+      const durationMs = clampMs(numberOr(instanceSettings.duration, 300) * 1000);
+      if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
+        return { running: false, remainingMs: durationMs, durationMs };
+      }
+      if (stored.running === true) {
+        return { running: true, remainingMs: clampMs(numberOr(stored.endsAt, 0) - now), durationMs };
+      }
+      return { running: false, remainingMs: clampMs(numberOr(stored.remainingMs, 0)), durationMs };
+    }
+
+    // Capped at the latest moment a Date can hold: a timer has no limit of
+    // its own, this only keeps a corrupt value from reading as an impossible
+    // time.
+    function clampMs(ms) {
+      return Math.min(8.64e15, Math.max(0, Math.round(ms)));
+    }
+
+    function numberOr(value, fallback) {
+      const number = Number(value);
+      return value === null || value === undefined || value === "" || !Number.isFinite(number) ? fallback : number;
     }
 
     // M:SS, or H:MM:SS from an hour up. Seconds round up, as the module's own
