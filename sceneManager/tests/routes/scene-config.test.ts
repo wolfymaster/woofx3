@@ -44,7 +44,7 @@ function deps() {
         return null;
       },
     },
-    sceneDocuments: { snapshot },
+    sceneDocuments: { overlaySnapshot: snapshot },
   };
   return { deps: d as unknown as HttpDeps, snapshot };
 }
