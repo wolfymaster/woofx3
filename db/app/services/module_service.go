@@ -1312,6 +1312,14 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 		if err != nil {
 			return nil, fmt.Errorf("marshal taxonomy for widget %q: %w", in.Name, err)
 		}
+		transitions := make([]widgetTransition, 0, len(in.Transitions))
+		for _, t := range in.Transitions {
+			transitions = append(transitions, widgetTransition{ID: t.Id, Label: t.Label})
+		}
+		transitionsJSON, err := json.Marshal(transitions)
+		if err != nil {
+			return nil, fmt.Errorf("marshal transitions for widget %q: %w", in.Name, err)
+		}
 		w := &models.Widget{
 			ID:             uuid.New(),
 			Name:           in.Name,
@@ -1323,6 +1331,7 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			Surfaces:       string(surfacesJSON),
 			HostsSurface:   in.HostsSurface,
 			Taxonomy:       string(taxonomyJSON),
+			Transitions:    string(transitionsJSON),
 			CreatedByType:  createdByType,
 			CreatedByRef:   createdByRef,
 			ManifestID:     in.ManifestId,
@@ -1536,6 +1545,7 @@ func widgetToProto(w *models.Widget) *client.Widget {
 		Surfaces:       widgetSurfaces(w),
 		HostsSurface:   w.HostsSurface,
 		Taxonomy:       widgetTaxonomy(w),
+		Transitions:    widgetTransitionsProto(w),
 		CreatedByType:  w.CreatedByType,
 		CreatedByRef:   w.CreatedByRef,
 	}
@@ -1563,6 +1573,34 @@ func widgetTaxonomy(w *models.Widget) []string {
 		taxonomy = []string{}
 	}
 	return taxonomy
+}
+
+// widgetTransition is one transition type a widget declares, as the
+// widgets.transitions column and the widget outbox payloads carry it.
+type widgetTransition struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// widgetTransitions decodes a widget row's declared transition types.
+func widgetTransitions(w *models.Widget) []widgetTransition {
+	var transitions []widgetTransition
+	if w.Transitions != "" {
+		json.Unmarshal([]byte(w.Transitions), &transitions)
+	}
+	if transitions == nil {
+		transitions = []widgetTransition{}
+	}
+	return transitions
+}
+
+func widgetTransitionsProto(w *models.Widget) []*client.WidgetTransition {
+	declared := widgetTransitions(w)
+	transitions := make([]*client.WidgetTransition, 0, len(declared))
+	for _, t := range declared {
+		transitions = append(transitions, &client.WidgetTransition{Id: t.ID, Label: t.Label})
+	}
+	return transitions
 }
 
 // ---------------------------------------------------------------------

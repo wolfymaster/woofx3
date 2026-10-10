@@ -388,6 +388,7 @@ describe("parseModuleWidgetRegistered", () => {
             // The raw widget declares none, so the parser reports an empty axis
             // rather than inventing one.
             taxonomy: [],
+            transitions: [],
             createdByType: "MODULE",
             createdByRef: "scene_widgets",
           },
@@ -427,6 +428,28 @@ describe("parseModuleWidgetRegistered", () => {
       label: "Label",
       defaultValue: "hi",
     });
+  });
+
+  test("carries the transitions a widget declares, dropping entries without an id", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        widgets: [
+          {
+            id: "uuid-w1",
+            manifest_id: "text",
+            name: "Text",
+            directory: "widgets/text",
+            transitions: [{ id: "typewriter", label: "Typewriter" }, { id: "wave" }, { label: "No id" }, "fade"],
+          },
+        ],
+      },
+    };
+    const result = parseModuleWidgetRegistered(ce);
+    expect(result.event.widgets[0]?.transitions).toEqual([
+      { id: "typewriter", label: "Typewriter" },
+      { id: "wave", label: "wave" },
+    ]);
   });
 
   test("defaults missing fields to empty values", () => {

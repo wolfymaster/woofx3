@@ -32,11 +32,11 @@ use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
     COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
-    LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand,
-    ManifestConfigField, ManifestDataShape, ManifestFunction, ManifestResourceKind,
-    ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
-    WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    GENERIC_TRANSITION_TYPES, LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl,
+    ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestFunction,
+    ManifestResourceKind, ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWorkflow,
+    ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE,
+    WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES, WIDGET_TRANSITION_LABEL_MAX,
 };
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
@@ -382,6 +382,7 @@ pub fn validate_with_provenance(
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_widget_surfaces(&manifest.widgets, provenance)?;
+    validate_widget_transitions(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
     validate_field_lists(manifest)?;
@@ -1699,6 +1700,61 @@ fn validate_widget_surfaces(widgets: &[ModuleWidget], provenance: InstallProvena
         }
     }
     Ok(())
+}
+
+/// Check the transition types each widget declares for itself. An id ends up
+/// in a CSS attribute selector in the widget's stylesheet and in a
+/// placement's `transitionIn` / `transitionOut`, so it is held to the token
+/// the scene manager accepts there, and it may not shadow a generic type,
+/// which the host would play instead.
+fn validate_widget_transitions(widgets: &[ModuleWidget]) -> Result<()> {
+    for (i, w) in widgets.iter().enumerate() {
+        if w.transitions.is_empty() {
+            continue;
+        }
+        let label = format!("widget #{i} ({})", w.id);
+        if w.hosts_surface.is_some() {
+            return Err(anyhow!(
+                "{label}: a widget that hosts a surface has no content of its own to animate, so it declares no `transitions`"
+            ));
+        }
+        let mut seen: HashSet<&str> = HashSet::with_capacity(w.transitions.len());
+        for transition in &w.transitions {
+            let id = transition.id.as_str();
+            if !is_widget_transition_id(id) {
+                return Err(anyhow!(
+                    "{label}: transition id {id:?} must be a lowercase letter followed by up to 31 lowercase letters, digits or '-'"
+                ));
+            }
+            if GENERIC_TRANSITION_TYPES.contains(&id) || id == "none" {
+                return Err(anyhow!(
+                    "{label}: transition id {id:?} is reserved for the host's own transitions"
+                ));
+            }
+            if !seen.insert(id) {
+                return Err(anyhow!("{label}: `transitions` lists {id:?} twice"));
+            }
+            let text = transition.label.trim();
+            if text.is_empty() || text.chars().count() > WIDGET_TRANSITION_LABEL_MAX {
+                return Err(anyhow!(
+                    "{label}: transition {id:?} needs a label of 1 to {WIDGET_TRANSITION_LABEL_MAX} characters"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `^[a-z][a-z0-9-]{0,31}$`. Must match `WIDGET_TRANSITION_ID` in the module
+/// SDK's widget-transitions.ts.
+fn is_widget_transition_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && id.len() <= 32
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 fn validate_surface(surface: &str, context: &str) -> Result<()> {
@@ -3075,6 +3131,38 @@ mod tests {
                 r#"{{ "id": "w1", "name": "W1", "surfaces": {surfaces} }}"#
             ));
             assert!(err.contains("`surfaces`"), "{surfaces}: {err}");
+        }
+    }
+
+    #[test]
+    fn accepts_a_widget_declaring_its_own_transitions() {
+        let m = minimal(
+            r#", "widgets": [{ "id": "w1", "name": "W1", "transitions": [{ "id": "typewriter", "label": "Typewriter" }, { "id": "wave-2", "label": "Wave" }] }]"#,
+        );
+        validate(&m).expect("validate ok");
+        let input = m.widgets[0].to_input();
+        assert_eq!(input.transitions.len(), 2);
+        assert_eq!(input.transitions[0].id, "typewriter");
+        assert_eq!(input.transitions[0].label, "Typewriter");
+    }
+
+    #[test]
+    fn rejects_malformed_reserved_repeated_or_unlabelled_transitions() {
+        for (transitions, expected) in [
+            (r#"[{ "id": "Typewriter", "label": "T" }]"#, "lowercase"),
+            (r#"[{ "id": "type writer", "label": "T" }]"#, "lowercase"),
+            (r#"[{ "id": "fade", "label": "Fade" }]"#, "reserved"),
+            (r#"[{ "id": "none", "label": "None" }]"#, "reserved"),
+            (
+                r#"[{ "id": "wave", "label": "Wave" }, { "id": "wave", "label": "Wave again" }]"#,
+                "twice",
+            ),
+            (r#"[{ "id": "wave", "label": "  " }]"#, "label"),
+        ] {
+            let err = widget_rejection(&format!(
+                r#"{{ "id": "w1", "name": "W1", "transitions": {transitions} }}"#
+            ));
+            assert!(err.contains(expected), "{transitions}: {err}");
         }
     }
 

@@ -57,8 +57,9 @@
             return;
           }
           finished = true;
+          // Held on its last frame: the page takes it off screen, with its
+          // out-transition, once it completes.
           video.pause();
-          video.style.visibility = "hidden";
           event.complete();
         };
         if (seconds > 0) {

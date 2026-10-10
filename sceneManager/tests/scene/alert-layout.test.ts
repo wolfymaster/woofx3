@@ -9,11 +9,11 @@ import {
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function definition(manifestId: string, surfaces: string[]): OverlayWidgetDefinition {
-  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "" };
+  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "", transitions: [] };
 }
 
 const catalog = [
-  definition("text", ["scene", "alert"]),
+  { ...definition("text", ["scene", "alert"]), transitions: ["typewriter"] },
   definition("audio", ["alert"]),
   definition("clock", ["scene"]),
 ];
@@ -64,6 +64,51 @@ describe("parseAlertLayout", () => {
         position: { x: 10, y: 20, width: 300, height: 100 },
         settings: { text: "hi" },
       },
+    ]);
+  });
+
+  it("keeps a widget's transitions, generic or its own", () => {
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          width: 100,
+          height: 100,
+          widgets: [
+            {
+              ...layoutWidget("t1", "text"),
+              transitionIn: { type: "typewriter", durationMs: 1200 },
+              transitionOut: { type: "slide", durationMs: 400, direction: "down" },
+            },
+          ],
+        },
+        catalog
+      )
+    );
+    expect(parsed.rejected).toEqual([]);
+    expect(parsed.layout.widgets[0]).toMatchObject({
+      transitionIn: { type: "typewriter", durationMs: 1200 },
+      transitionOut: { type: "slide", durationMs: 400, direction: "down" },
+    });
+  });
+
+  it("drops a widget whose transition is malformed or one the widget does not have", () => {
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          width: 100,
+          height: 100,
+          widgets: [
+            { ...layoutWidget("a1", "audio"), transitionIn: { type: "typewriter", durationMs: 1200 } },
+            { ...layoutWidget("t1", "text"), transitionOut: { type: "fade", durationMs: 1 } },
+          ],
+        },
+        catalog
+      )
+    );
+    expect(parsed.layout.widgets).toEqual([]);
+    expect(parsed.rejected.map((r) => r.reason)).toEqual([
+      '`transitionIn`: the widget has no transition "typewriter"',
+      expect.stringContaining("`transitionOut`: a transition's durationMs"),
     ]);
   });
 

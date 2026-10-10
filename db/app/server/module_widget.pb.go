@@ -73,7 +73,11 @@ type Widget struct {
 	// same axis triggers and actions carry. A catalog groups on it instead of
 	// on the module that shipped the widget. Empty when the author declared
 	// none.
-	Taxonomy      []string `protobuf:"bytes,16,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Taxonomy []string `protobuf:"bytes,16,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// Transition types the widget plays on its own content, beyond the
+	// generic ones the scene host plays on every widget's box (see
+	// docs/services/widget-transitions.md). Empty when it declares none.
+	Transitions   []*WidgetTransition `protobuf:"bytes,17,rep,name=transitions,proto3" json:"transitions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -206,6 +210,67 @@ func (x *Widget) GetTaxonomy() []string {
 	return nil
 }
 
+func (x *Widget) GetTransitions() []*WidgetTransition {
+	if x != nil {
+		return x.Transitions
+	}
+	return nil
+}
+
+// A transition type a widget declares: `id` is what a placement's
+// transitionIn/transitionOut names, `label` what an editor shows.
+type WidgetTransition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WidgetTransition) Reset() {
+	*x = WidgetTransition{}
+	mi := &file_module_widget_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WidgetTransition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WidgetTransition) ProtoMessage() {}
+
+func (x *WidgetTransition) ProtoReflect() protoreflect.Message {
+	mi := &file_module_widget_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WidgetTransition.ProtoReflect.Descriptor instead.
+func (*WidgetTransition) Descriptor() ([]byte, []int) {
+	return file_module_widget_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *WidgetTransition) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WidgetTransition) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
 type WidgetInput struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ManifestId     string                 `protobuf:"bytes,1,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
@@ -220,14 +285,16 @@ type WidgetInput struct {
 	Surfaces     []string `protobuf:"bytes,10,rep,name=surfaces,proto3" json:"surfaces,omitempty"`
 	HostsSurface string   `protobuf:"bytes,11,opt,name=hosts_surface,json=hostsSurface,proto3" json:"hosts_surface,omitempty"`
 	// See Widget.taxonomy.
-	Taxonomy      []string `protobuf:"bytes,12,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Taxonomy []string `protobuf:"bytes,12,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// See Widget.transitions.
+	Transitions   []*WidgetTransition `protobuf:"bytes,13,rep,name=transitions,proto3" json:"transitions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WidgetInput) Reset() {
 	*x = WidgetInput{}
-	mi := &file_module_widget_proto_msgTypes[1]
+	mi := &file_module_widget_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -239,7 +306,7 @@ func (x *WidgetInput) String() string {
 func (*WidgetInput) ProtoMessage() {}
 
 func (x *WidgetInput) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[1]
+	mi := &file_module_widget_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -252,7 +319,7 @@ func (x *WidgetInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetInput.ProtoReflect.Descriptor instead.
 func (*WidgetInput) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{1}
+	return file_module_widget_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *WidgetInput) GetManifestId() string {
@@ -325,6 +392,13 @@ func (x *WidgetInput) GetTaxonomy() []string {
 	return nil
 }
 
+func (x *WidgetInput) GetTransitions() []*WidgetTransition {
+	if x != nil {
+		return x.Transitions
+	}
+	return nil
+}
+
 type RegisterWidgetsRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ModuleKey  string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`    // composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
@@ -347,7 +421,7 @@ type RegisterWidgetsRequest struct {
 
 func (x *RegisterWidgetsRequest) Reset() {
 	*x = RegisterWidgetsRequest{}
-	mi := &file_module_widget_proto_msgTypes[2]
+	mi := &file_module_widget_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -359,7 +433,7 @@ func (x *RegisterWidgetsRequest) String() string {
 func (*RegisterWidgetsRequest) ProtoMessage() {}
 
 func (x *RegisterWidgetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[2]
+	mi := &file_module_widget_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -372,7 +446,7 @@ func (x *RegisterWidgetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterWidgetsRequest.ProtoReflect.Descriptor instead.
 func (*RegisterWidgetsRequest) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{2}
+	return file_module_widget_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RegisterWidgetsRequest) GetModuleKey() string {
@@ -434,7 +508,7 @@ type ListWidgetsRequest struct {
 
 func (x *ListWidgetsRequest) Reset() {
 	*x = ListWidgetsRequest{}
-	mi := &file_module_widget_proto_msgTypes[3]
+	mi := &file_module_widget_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -446,7 +520,7 @@ func (x *ListWidgetsRequest) String() string {
 func (*ListWidgetsRequest) ProtoMessage() {}
 
 func (x *ListWidgetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[3]
+	mi := &file_module_widget_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +533,7 @@ func (x *ListWidgetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWidgetsRequest.ProtoReflect.Descriptor instead.
 func (*ListWidgetsRequest) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{3}
+	return file_module_widget_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListWidgetsRequest) GetCreatedByType() string {
@@ -486,7 +560,7 @@ type ListWidgetsResponse struct {
 
 func (x *ListWidgetsResponse) Reset() {
 	*x = ListWidgetsResponse{}
-	mi := &file_module_widget_proto_msgTypes[4]
+	mi := &file_module_widget_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +572,7 @@ func (x *ListWidgetsResponse) String() string {
 func (*ListWidgetsResponse) ProtoMessage() {}
 
 func (x *ListWidgetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[4]
+	mi := &file_module_widget_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +585,7 @@ func (x *ListWidgetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWidgetsResponse.ProtoReflect.Descriptor instead.
 func (*ListWidgetsResponse) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{4}
+	return file_module_widget_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListWidgetsResponse) GetStatus() *ResponseStatus {
@@ -538,7 +612,7 @@ type WidgetResponse struct {
 
 func (x *WidgetResponse) Reset() {
 	*x = WidgetResponse{}
-	mi := &file_module_widget_proto_msgTypes[5]
+	mi := &file_module_widget_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -550,7 +624,7 @@ func (x *WidgetResponse) String() string {
 func (*WidgetResponse) ProtoMessage() {}
 
 func (x *WidgetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[5]
+	mi := &file_module_widget_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -563,7 +637,7 @@ func (x *WidgetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetResponse.ProtoReflect.Descriptor instead.
 func (*WidgetResponse) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{5}
+	return file_module_widget_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *WidgetResponse) GetStatus() *ResponseStatus {
@@ -584,7 +658,7 @@ var File_module_widget_proto protoreflect.FileDescriptor
 
 const file_module_widget_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\xdb\x03\n" +
+	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\x97\x04\n" +
 	"\x06Widget\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -602,7 +676,11 @@ const file_module_widget_proto_rawDesc = "" +
 	"\x05entry\x18\f \x01(\tR\x05entry\x12\x1a\n" +
 	"\bsurfaces\x18\x0e \x03(\tR\bsurfaces\x12#\n" +
 	"\rhosts_surface\x18\x0f \x01(\tR\fhostsSurface\x12\x1a\n" +
-	"\btaxonomy\x18\x10 \x03(\tR\btaxonomyJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\asurfaceR\x0faccepted_events\"\xe5\x02\n" +
+	"\btaxonomy\x18\x10 \x03(\tR\btaxonomy\x12:\n" +
+	"\vtransitions\x18\x11 \x03(\v2\x18.module.WidgetTransitionR\vtransitionsJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\asurfaceR\x0faccepted_events\"8\n" +
+	"\x10WidgetTransition\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\"\xa1\x03\n" +
 	"\vWidgetInput\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
@@ -616,7 +694,8 @@ const file_module_widget_proto_rawDesc = "" +
 	"\bsurfaces\x18\n" +
 	" \x03(\tR\bsurfaces\x12#\n" +
 	"\rhosts_surface\x18\v \x01(\tR\fhostsSurface\x12\x1a\n" +
-	"\btaxonomy\x18\f \x03(\tR\btaxonomyJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
+	"\btaxonomy\x18\f \x03(\tR\btaxonomy\x12:\n" +
+	"\vtransitions\x18\r \x03(\v2\x18.module.WidgetTransitionR\vtransitionsJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
 	"R\asurfaceR\x0faccepted_events\"\xa2\x02\n" +
 	"\x16RegisterWidgetsRequest\x12\x1d\n" +
 	"\n" +
@@ -650,27 +729,30 @@ func file_module_widget_proto_rawDescGZIP() []byte {
 	return file_module_widget_proto_rawDescData
 }
 
-var file_module_widget_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_module_widget_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_module_widget_proto_goTypes = []any{
 	(*Widget)(nil),                 // 0: module.Widget
-	(*WidgetInput)(nil),            // 1: module.WidgetInput
-	(*RegisterWidgetsRequest)(nil), // 2: module.RegisterWidgetsRequest
-	(*ListWidgetsRequest)(nil),     // 3: module.ListWidgetsRequest
-	(*ListWidgetsResponse)(nil),    // 4: module.ListWidgetsResponse
-	(*WidgetResponse)(nil),         // 5: module.WidgetResponse
-	(*ResponseStatus)(nil),         // 6: common.ResponseStatus
+	(*WidgetTransition)(nil),       // 1: module.WidgetTransition
+	(*WidgetInput)(nil),            // 2: module.WidgetInput
+	(*RegisterWidgetsRequest)(nil), // 3: module.RegisterWidgetsRequest
+	(*ListWidgetsRequest)(nil),     // 4: module.ListWidgetsRequest
+	(*ListWidgetsResponse)(nil),    // 5: module.ListWidgetsResponse
+	(*WidgetResponse)(nil),         // 6: module.WidgetResponse
+	(*ResponseStatus)(nil),         // 7: common.ResponseStatus
 }
 var file_module_widget_proto_depIdxs = []int32{
-	1, // 0: module.RegisterWidgetsRequest.widgets:type_name -> module.WidgetInput
-	6, // 1: module.ListWidgetsResponse.status:type_name -> common.ResponseStatus
-	0, // 2: module.ListWidgetsResponse.widgets:type_name -> module.Widget
-	6, // 3: module.WidgetResponse.status:type_name -> common.ResponseStatus
-	0, // 4: module.WidgetResponse.widget:type_name -> module.Widget
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	1, // 0: module.Widget.transitions:type_name -> module.WidgetTransition
+	1, // 1: module.WidgetInput.transitions:type_name -> module.WidgetTransition
+	2, // 2: module.RegisterWidgetsRequest.widgets:type_name -> module.WidgetInput
+	7, // 3: module.ListWidgetsResponse.status:type_name -> common.ResponseStatus
+	0, // 4: module.ListWidgetsResponse.widgets:type_name -> module.Widget
+	7, // 5: module.WidgetResponse.status:type_name -> common.ResponseStatus
+	0, // 6: module.WidgetResponse.widget:type_name -> module.Widget
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_module_widget_proto_init() }
@@ -685,7 +767,7 @@ func file_module_widget_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_widget_proto_rawDesc), len(file_module_widget_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
