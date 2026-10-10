@@ -750,6 +750,7 @@ than calling `ctx.chat.sendMessage(...)` directly — see
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values reach the widget as `widgetHost.settings` and through its setting bindings, and edits reach it while it runs (see [Live settings](./sdk.md#live-settings)). |
 | `surfaces` | string[] | no | Where the widget may be placed: `"scene"`, `"alert"` (inside an alert layout), or both. Defaults to `["scene"]`. |
 | `hostsSurface` | string | no | Bundled system module only. Marks a widget whose placements host a surface: the `"alert"` widget is the area of a scene where alert layouts play. The scene manager draws it, so it declares no `entry`, and it cannot be placed on the surface it hosts. |
+| `transitions` | array | no | Transition types the widget plays on its own content, `[{ "id", "label" }]`, offered beside the generic ones when a placement picks how it enters and leaves. An `id` is a lowercase token that is not a generic type. See [Widget transitions](../services/widget-transitions.md). |
 | `theme` | object | no | Opts the widget into themes by declaring a theme contract. Absent means the widget cannot be themed and nothing about it changes. See [Themes](#themes). |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.

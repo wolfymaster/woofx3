@@ -732,6 +732,50 @@ var require_lib = __commonJS((exports, module) => {
   };
 });
 
+// ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
+var URL_ATTRIBUTES = ["src", "href", "poster"];
+var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
+// ../shared/clients/typescript/module-sdk/dist/widget-transitions.js
+var GENERIC_TRANSITION_TYPES = ["fade", "slide", "zoom", "bounce", "spin", "pop", "blur"];
+function isGenericTransitionType(type) {
+  return GENERIC_TRANSITION_TYPES.includes(type);
+}
+var TRANSITION_KEYS = new Set(["type", "durationMs", "easing", "direction"]);
+function isTransitionAvailable(type, declared) {
+  return isGenericTransitionType(type) || declared.includes(type);
+}
+function transitionEasing(transition, phase) {
+  return transition.easing ?? (phase === "in" ? "ease-out" : "ease-in");
+}
+function widgetTransitionState(transition, phase) {
+  return {
+    phase,
+    type: transition.type,
+    durationMs: transition.durationMs,
+    easing: transitionEasing(transition, phase)
+  };
+}
+
+// ../shared/clients/typescript/module-sdk/dist/widget-protocol.js
+var WIDGET_PROTOCOL = "woofx3.widget";
+var PROTOCOL_VERSION = 1;
+var WIDGET_BOOT_FRAGMENT_PARAM = "boot";
+function encodePlacementBoot(boot) {
+  const bytes = new TextEncoder().encode(JSON.stringify(boot));
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${WIDGET_BOOT_FRAGMENT_PARAM}=${base64}`;
+}
+function isWidgetProtocolEnvelope(value) {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const msg = value;
+  return msg.proto === WIDGET_PROTOCOL && msg.v === PROTOCOL_VERSION && typeof msg.type === "string" && msg.type.length > 0 && typeof msg.nonce === "string" && msg.nonce.length > 0;
+}
 // public/scene-manager/alert-timeline.ts
 var UNTIMED_ALERT_MS = 5000;
 var SUBSCRIBE_TIMEOUT_MS = 1e4;
@@ -778,29 +822,129 @@ class AlertTimeline {
   }
 }
 
-// ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
-var URL_ATTRIBUTES = ["src", "href", "poster"];
-var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
-// ../shared/clients/typescript/module-sdk/dist/widget-protocol.js
-var WIDGET_PROTOCOL = "woofx3.widget";
-var PROTOCOL_VERSION = 1;
-var WIDGET_BOOT_FRAGMENT_PARAM = "boot";
-function encodePlacementBoot(boot) {
-  const bytes = new TextEncoder().encode(JSON.stringify(boot));
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+// public/scene-manager/transitions.ts
+var SLIDE_OFFSET = {
+  up: { enter: "translate(0, 100%)", leave: "translate(0, -100%)" },
+  down: { enter: "translate(0, -100%)", leave: "translate(0, 100%)" },
+  left: { enter: "translate(100%, 0)", leave: "translate(-100%, 0)" },
+  right: { enter: "translate(-100%, 0)", leave: "translate(100%, 0)" }
+};
+var SHOWN = { opacity: 1, transform: "none", filter: "none" };
+function genericKeyframes(transition, phase) {
+  const entrance = entranceKeyframes(transition, phase).map((frame) => ({ ...SHOWN, ...frame }));
+  if (phase === "in") {
+    return entrance;
   }
-  const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return `${WIDGET_BOOT_FRAGMENT_PARAM}=${base64}`;
+  return entrance.slice().reverse().map((frame) => frame.offset === undefined || frame.offset === null ? frame : { ...frame, offset: 1 - frame.offset });
 }
-function isWidgetProtocolEnvelope(value) {
-  if (typeof value !== "object" || value === null) {
-    return false;
+function entranceKeyframes(transition, phase) {
+  switch (transition.type) {
+    case "fade":
+      return [{ opacity: 0 }, { opacity: 1 }];
+    case "slide": {
+      const offset = SLIDE_OFFSET[transition.direction ?? "up"];
+      const from = phase === "in" ? offset.enter : offset.leave;
+      return [{ opacity: 0, transform: from }, SHOWN];
+    }
+    case "zoom":
+      return [{ opacity: 0, transform: "scale(0.5)" }, SHOWN];
+    case "bounce":
+      return [
+        { opacity: 0, transform: "scale(0.3)" },
+        { opacity: 1, transform: "scale(1.08)", offset: 0.5 },
+        { transform: "scale(0.94)", offset: 0.75 },
+        SHOWN
+      ];
+    case "spin":
+      return [{ opacity: 0, transform: "rotate(-360deg) scale(0)" }, SHOWN];
+    case "pop":
+      return [{ opacity: 0, transform: "scale(0)" }, { opacity: 1, transform: "scale(1.15)", offset: 0.7 }, SHOWN];
+    case "blur":
+      return [{ opacity: 0, filter: "blur(16px)" }, SHOWN];
+    default:
+      return [{ opacity: 1 }, { opacity: 1 }];
   }
-  const msg = value;
-  return msg.proto === WIDGET_PROTOCOL && msg.v === PROTOCOL_VERSION && typeof msg.type === "string" && msg.type.length > 0 && typeof msg.nonce === "string" && msg.nonce.length > 0;
 }
+
+class TransitionAnimator {
+  playing = new WeakMap;
+  nextGeneration = 0;
+  enter(target, transition) {
+    this.settle(target.element);
+    target.element.style.visibility = "";
+    if (!transition) {
+      target.frame?.sendTransition(null);
+      return;
+    }
+    if (!isGenericTransitionType(transition.type)) {
+      target.frame?.sendTransition(widgetTransitionState(transition, "in"));
+      return;
+    }
+    target.frame?.sendTransition(null);
+    const animation = target.element.animate(genericKeyframes(transition, "in"), {
+      duration: transition.durationMs,
+      easing: transitionEasing(transition, "in"),
+      fill: "both"
+    });
+    const generation = this.track(target.element, animation);
+    animation.finished.then(() => {
+      if (this.isCurrent(target.element, generation)) {
+        animation.cancel();
+        this.playing.delete(target.element);
+      }
+    }, () => {});
+  }
+  leave(target, transition) {
+    this.settle(target.element);
+    if (!transition) {
+      target.element.style.visibility = "hidden";
+      return Promise.resolve();
+    }
+    if (!isGenericTransitionType(transition.type)) {
+      target.frame?.sendTransition(widgetTransitionState(transition, "out"));
+      const generation2 = this.track(target.element, null);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          if (this.isCurrent(target.element, generation2)) {
+            target.element.style.visibility = "hidden";
+            this.playing.delete(target.element);
+          }
+          resolve();
+        }, transition.durationMs);
+      });
+    }
+    const animation = target.element.animate(genericKeyframes(transition, "out"), {
+      duration: transition.durationMs,
+      easing: transitionEasing(transition, "out"),
+      fill: "both"
+    });
+    const generation = this.track(target.element, animation);
+    return animation.finished.then(() => {
+      if (this.isCurrent(target.element, generation)) {
+        target.element.style.visibility = "hidden";
+        animation.cancel();
+        this.playing.delete(target.element);
+      }
+    }, () => {});
+  }
+  set(element, visible) {
+    this.settle(element);
+    element.style.visibility = visible ? "" : "hidden";
+  }
+  track(element, animation) {
+    this.nextGeneration += 1;
+    this.playing.set(element, { generation: this.nextGeneration, animation });
+    return this.nextGeneration;
+  }
+  isCurrent(element, generation) {
+    return this.playing.get(element)?.generation === generation;
+  }
+  settle(element) {
+    this.playing.get(element)?.animation?.cancel();
+    this.playing.delete(element);
+  }
+}
+
 // public/scene-manager/widget-bridge.ts
 class WidgetBridge {
   instanceId;
@@ -814,6 +958,7 @@ class WidgetBridge {
   shimEventSubs = new Set;
   readKeys = new Set;
   readAll = false;
+  pendingTransition = null;
   constructor(instanceId, nonce, callbacks) {
     this.instanceId = instanceId;
     this.nonce = nonce;
@@ -860,6 +1005,10 @@ class WidgetBridge {
       this.moduleId = incomingModuleId;
       this.initialized = true;
       this.sendInit({});
+      if (this.pendingTransition) {
+        this.post({ type: "transition", transition: this.pendingTransition.state });
+        this.pendingTransition = null;
+      }
       return;
     }
     if (!isWidgetProtocolEnvelope(data)) {
@@ -1035,6 +1184,13 @@ class WidgetBridge {
       this.post({ type: "settings.changed", settings });
     }
   }
+  sendTransition(state) {
+    if (this.initialized) {
+      this.post({ type: "transition", transition: state });
+      return;
+    }
+    this.pendingTransition = { state };
+  }
   dispose() {
     this.post({ type: "dispose", reason: "scene-manager-dispose" });
     this.callbacks.onDispose();
@@ -1077,10 +1233,12 @@ function createFrameLoadHandler(bridge) {
 
 // public/scene-manager/alert-widget.ts
 var TICK_MS = 250;
+var ENTRANCE_WAIT_MS = 2000;
 
 class AlertWidget {
   opts;
   playing = new Map;
+  animator = new TransitionAnimator;
   constructor(opts) {
     this.opts = opts;
   }
@@ -1124,6 +1282,15 @@ class AlertWidget {
       eventId
     };
     const children = [];
+    const shown = new Map;
+    const leave = (widgetId) => {
+      const child = shown.get(widgetId);
+      if (!child) {
+        return Promise.resolve();
+      }
+      shown.delete(widgetId);
+      return this.animator.leave(child.target, child.transitionOut);
+    };
     for (const widget of layout.widgets) {
       const instanceId = `${eventId}.${widget.id}`;
       const nonce = this.opts.generateNonce();
@@ -1134,19 +1301,44 @@ class AlertWidget {
       iframe.style.width = `${widget.position.width}px`;
       iframe.style.height = `${widget.position.height}px`;
       iframe.setAttribute("sandbox", "allow-scripts");
+      const entrance = widget.transitionIn && isGenericTransitionType(widget.transitionIn.type) ? widget.transitionIn : undefined;
+      let entering = entrance !== undefined;
+      const enter = () => {
+        if (!entering) {
+          return;
+        }
+        entering = false;
+        clearTimeout(entranceTimer);
+        if (shown.has(widget.id)) {
+          this.animator.enter({ element: iframe, frame: bridge }, entrance);
+        }
+      };
+      const entranceTimer = entrance ? setTimeout(enter, ENTRANCE_WAIT_MS) : undefined;
+      if (entrance) {
+        this.animator.set(iframe, false);
+      }
+      let timed = false;
       const bridge = new WidgetBridge(instanceId, nonce, {
         onStorageGet: () => null,
         onStorageSubscribe: () => {},
         onStorageUnsubscribe: () => {},
         onStatusReport: (report) => this.opts.postStatus(instanceId, report),
         onEventsSubscribe: (subId, queue) => {
-          timeline.subscribed(widget.id, queue?.autoComplete === false);
+          timed = queue?.autoComplete === false;
+          timeline.subscribed(widget.id, timed);
           bridge.sendEvent(subId, alertEvent);
         },
         onEventsUnsubscribe: () => {},
-        onEventComplete: () => timeline.completed(widget.id),
-        onDispose: () => {}
+        onEventComplete: () => {
+          timeline.completed(widget.id);
+          if (timed) {
+            leave(widget.id);
+          }
+        },
+        onDispose: () => {},
+        onRendered: enter
       });
+      shown.set(widget.id, { target: { element: iframe, frame: bridge }, transitionOut: widget.transitionOut });
       iframe.addEventListener("load", createFrameLoadHandler(bridge));
       iframe.src = `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widget.id)}` + `?nonce=${encodeURIComponent(nonce)}`;
       bridges.add(bridge);
@@ -1168,8 +1360,13 @@ class AlertWidget {
       if (!timeline.isOver(Date.now())) {
         return;
       }
-      tearDown();
-      this.opts.onFinished(eventId);
+      clearInterval(timer);
+      Promise.all([...shown.keys()].map(leave)).then(() => {
+        if (this.playing.get(eventId) === tearDown) {
+          tearDown();
+          this.opts.onFinished(eventId);
+        }
+      });
     }, TICK_MS);
     this.playing.set(eventId, tearDown);
   }
@@ -1931,10 +2128,22 @@ function configOfSnapshot(snapshot) {
       frameUrl: meta.frameUrl,
       linkedResources: meta.linkedResources,
       ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
-      visible: placement.visible
+      visible: placement.visible,
+      ...transitionsOf(placement, meta.widgetTransitions)
     });
   }
   return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
+}
+function transitionsOf(placement, widgetTransitions) {
+  const playable = (transition) => transition !== undefined && (widgetTransitions === undefined || isTransitionAvailable(transition.type, widgetTransitions));
+  const transitions = {};
+  if (playable(placement.transitionIn)) {
+    transitions.transitionIn = placement.transitionIn;
+  }
+  if (playable(placement.transitionOut)) {
+    transitions.transitionOut = placement.transitionOut;
+  }
+  return transitions;
 }
 function mergeMeta(meta, changes) {
   const next = { ...meta };
@@ -2510,19 +2719,15 @@ function generateNonce() {
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function frameSrc(instance, nonce) {
+function frameSrc(instance, nonce, entrance) {
   const boot = encodePlacementBoot({
     nonce,
     instanceId: instance.id,
     settings: instance.settings,
-    linkedResources: instance.linkedResources ?? {}
+    linkedResources: instance.linkedResources ?? {},
+    ...entrance ? { transition: entrance } : {}
   });
   return `${instance.frameUrl}#${boot}`;
-}
-function showIf(element, visible) {
-  if (element) {
-    element.style.visibility = visible === false ? "hidden" : "";
-  }
 }
 function asRecord(value) {
   return typeof value === "object" && value !== null ? value : {};
@@ -2588,6 +2793,7 @@ function main() {
     }).catch(() => {});
   }
   const mounted = new Map;
+  const animator = new TransitionAnimator;
   const mountAlertWidget = (instance) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -2613,11 +2819,13 @@ function main() {
     return () => {
       alertWidget.dispose();
       queueManager.unregister(subId);
-      widgetElements.delete(instance.id);
+      if (widgetElements.get(instance.id) === element) {
+        widgetElements.delete(instance.id);
+      }
       element.remove();
     };
   };
-  const mountFramedWidget = (instance, hidden = false, onRendered) => {
+  const mountFramedWidget = (instance, { hidden = false, onRendered, entrance } = {}) => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
@@ -2660,7 +2868,7 @@ function main() {
       sendStorageValue: (key, value) => bridge.sendStorageValue(key, value)
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = frameSrc(instance, nonce);
+    iframe.src = frameSrc(instance, nonce, entrance);
     bridges.add(bridge);
     container.appendChild(iframe);
     if (!hidden) {
@@ -2680,19 +2888,68 @@ function main() {
     return { element: iframe, bridge, unmount };
   };
   function mount(instance) {
+    const visible = instance.visible !== false;
+    const entrance = visible ? instance.transitionIn : undefined;
     if (instance.hostsSurface === "alert") {
       mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
-    } else {
-      const frame = mountFramedWidget(instance);
-      mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+      const element = widgetElements.get(instance.id);
+      if (element && visible) {
+        animator.enter({ element, frame: null }, entrance);
+      } else if (element) {
+        animator.set(element, false);
+      }
+      return;
     }
-    showIf(widgetElements.get(instance.id), instance.visible);
+    if (!entrance || !isGenericTransitionType(entrance.type)) {
+      const frame2 = mountFramedWidget(instance, {
+        entrance: entrance ? widgetTransitionState(entrance, "in") : undefined
+      });
+      mounted.set(instance.id, { config: instance, unmount: frame2.unmount, bridge: frame2.bridge, swap: null });
+      animator.set(frame2.element, visible);
+      return;
+    }
+    let waiting = true;
+    const enter = () => {
+      if (!waiting) {
+        return;
+      }
+      waiting = false;
+      clearTimeout(timer);
+      const entry = mounted.get(instance.id);
+      if (entry?.bridge === frame.bridge && entry.config.visible !== false) {
+        animator.enter({ element: frame.element, frame: frame.bridge }, entrance);
+      }
+    };
+    const frame = mountFramedWidget(instance, { onRendered: enter });
+    const timer = setTimeout(enter, SWAP_TIMEOUT_MS);
+    mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+    animator.set(frame.element, false);
   }
   function unmountPlacement(id) {
     const entry = mounted.get(id);
     entry?.swap?.cancel();
     entry?.unmount();
     mounted.delete(id);
+  }
+  function removePlacement(id) {
+    const entry = mounted.get(id);
+    const element = widgetElements.get(id);
+    const transition = entry?.config.transitionOut;
+    if (!entry || !element || !transition || element.style.visibility === "hidden") {
+      unmountPlacement(id);
+      return;
+    }
+    entry.swap?.cancel();
+    mounted.delete(id);
+    animator.leave({ element, frame: entry.bridge }, transition).then(() => entry.unmount());
+  }
+  function changeVisibility(entry, element, visible) {
+    const target = { element, frame: entry.bridge };
+    if (visible) {
+      animator.enter(target, entry.config.transitionIn);
+    } else {
+      animator.leave(target, entry.config.transitionOut);
+    }
   }
   function swapFrame(next) {
     const entry = mounted.get(next.id);
@@ -2716,7 +2973,7 @@ function main() {
       fresh.element.style.zIndex = old?.style.zIndex ?? "";
       fresh.element.style.display = old?.style.display ?? "";
       fresh.element.style.opacity = "";
-      showIf(fresh.element, next.visible);
+      animator.set(fresh.element, next.visible !== false);
       entry.unmount();
       widgetElements.set(next.id, fresh.element);
       mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
@@ -2724,7 +2981,7 @@ function main() {
         applyPreviewLayout(widgetElements, previewLayout);
       }
     };
-    const fresh = mountFramedWidget(next, true, finish);
+    const fresh = mountFramedWidget(next, { hidden: true, onRendered: finish });
     timer = setTimeout(finish, SWAP_TIMEOUT_MS);
     entry.swap = {
       cancel: () => {
@@ -2859,15 +3116,18 @@ function main() {
     }
     const plan = planSceneUpdate([...mounted.values()].map((entry) => entry.config), next.widgets);
     for (const id of plan.remove) {
-      unmountPlacement(id);
+      removePlacement(id);
     }
     for (const instance of plan.place) {
       const entry = mounted.get(instance.id);
       const element = widgetElements.get(instance.id);
       if (entry && element) {
+        const wasVisible = entry.config.visible !== false;
         entry.config = { ...instance, settings: entry.config.settings };
         placeAt(element, instance.position);
-        showIf(element, instance.visible);
+        if (wasVisible !== (instance.visible !== false)) {
+          changeVisibility(entry, element, instance.visible !== false);
+        }
         updateSettings(instance.id, instance.settings);
       }
     }

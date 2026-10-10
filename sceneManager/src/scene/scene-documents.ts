@@ -1,4 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { parsePlacementTransition } from "@woofx3/module-sdk";
 // The document is the page's wire format, so it lives with the page.
 import {
   type Json0Component,
@@ -11,6 +12,7 @@ import {
   diffDocuments,
   stackOrder,
   transformOps,
+  transitionsOf,
   zKey,
 } from "../../public/scene-manager/scene-document";
 import { externalMediaUrls } from "../../public/scene-manager/media-url";
@@ -65,6 +67,8 @@ const MODELED_FIELDS = new Set([
   "locked",
   "visible",
   "settings",
+  "transitionIn",
+  "transitionOut",
 ]);
 
 function numberOr(value: unknown, fallback: number): number {
@@ -97,6 +101,7 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
       opacity: numberOr(stored.opacity, 1),
       locked: stored.locked === true,
       extra,
+      ...transitionsOf(instance),
     };
   });
   return { layout: { ...state.layout }, widgets };
@@ -127,6 +132,7 @@ export function storedPlacementOf(id: string, p: PlacementDocument, zIndex: numb
     locked: p.locked,
     visible: p.visible,
     settings: p.settings,
+    ...transitionsOf(p),
   };
 }
 
@@ -137,6 +143,7 @@ function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
     frameUrl: instance.frameUrl,
     linkedResources: instance.linkedResources ?? {},
     ...(instance.mediaProxyBase === undefined ? {} : { mediaProxyBase: instance.mediaProxyBase }),
+    ...(instance.widgetTransitions ? { widgetTransitions: instance.widgetTransitions } : {}),
   };
 }
 
@@ -176,7 +183,10 @@ export const OP_LOG_LIMIT = 500;
 export const MAX_OPS_BYTES = 64 * 1024;
 export const MAX_DOCUMENT_BYTES = 1024 * 1024;
 
-const PLACEMENT_FIELDS: Record<keyof PlacementDocument, (value: unknown) => boolean> = {
+type RequiredPlacementField = Exclude<keyof PlacementDocument, OptionalPlacementField>;
+type OptionalPlacementField = "transitionIn" | "transitionOut";
+
+const PLACEMENT_FIELDS: Record<RequiredPlacementField, (value: unknown) => boolean> = {
   widget: (v) => typeof v === "string" && v.length > 0 && v.length <= 256,
   x: isFiniteNumber,
   y: isFiniteNumber,
@@ -192,6 +202,22 @@ const PLACEMENT_FIELDS: Record<keyof PlacementDocument, (value: unknown) => bool
   extra: isPlainObject,
 };
 
+/** Fields a placement may leave out; absent means none. */
+const OPTIONAL_PLACEMENT_FIELDS: Record<OptionalPlacementField, (value: unknown) => boolean> = {
+  transitionIn: (v) => parsePlacementTransition(v).ok,
+  transitionOut: (v) => parsePlacementTransition(v).ok,
+};
+
+function placementFieldCheck(field: string): ((value: unknown) => boolean) | null {
+  if (Object.hasOwn(PLACEMENT_FIELDS, field)) {
+    return PLACEMENT_FIELDS[field as RequiredPlacementField];
+  }
+  if (Object.hasOwn(OPTIONAL_PLACEMENT_FIELDS, field)) {
+    return OPTIONAL_PLACEMENT_FIELDS[field as OptionalPlacementField];
+  }
+  return null;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -201,10 +227,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isPlacement(value: unknown): value is PlacementDocument {
+  if (!isPlainObject(value)) {
+    return false;
+  }
   return (
-    isPlainObject(value) &&
-    Object.keys(value).length === Object.keys(PLACEMENT_FIELDS).length &&
-    Object.entries(PLACEMENT_FIELDS).every(([field, valid]) => valid(value[field]))
+    Object.entries(PLACEMENT_FIELDS).every(([field, valid]) => valid(value[field])) &&
+    Object.entries(value).every(([field, fieldValue]) => placementFieldCheck(field)?.(fieldValue) === true)
   );
 }
 
@@ -242,10 +270,34 @@ export function invalidOps(ops: unknown): string | null {
       continue;
     }
     const field = p[2];
-    if (typeof field !== "string" || !Object.hasOwn(PLACEMENT_FIELDS, field)) {
+    const check = typeof field === "string" ? placementFieldCheck(field) : null;
+    if (check === null) {
       return `a placement has no field ${String(field)}`;
     }
-    if (p.length === 3 && "oi" in component && !PLACEMENT_FIELDS[field as keyof PlacementDocument](component.oi)) {
+    if (p.length === 3 && "oi" in component && !check(component.oi)) {
+      return `invalid ${field}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Why `doc`, the result of applying `ops`, may not be kept, or null when it
+ * may. `invalidOps` checks a value set whole; an op inside a transition (a
+ * new duration) can only be judged by the transition it leaves behind.
+ */
+export function invalidResult(doc: SceneDocument, ops: readonly Json0Component[]): string | null {
+  for (const component of ops) {
+    const [root, id, field] = component.p;
+    if (root !== "widgets" || typeof id !== "string" || typeof field !== "string" || component.p.length <= 3) {
+      continue;
+    }
+    if (!Object.hasOwn(OPTIONAL_PLACEMENT_FIELDS, field)) {
+      continue;
+    }
+    const placement = doc.widgets[id] as unknown as Record<string, unknown> | undefined;
+    const value = placement?.[field];
+    if (value !== undefined && !OPTIONAL_PLACEMENT_FIELDS[field as OptionalPlacementField](value)) {
       return `invalid ${field}`;
     }
   }
@@ -497,6 +549,10 @@ export class SceneDocuments {
       doc = applyOps(held[version].snapshot.doc, ops);
     } catch (err) {
       return `ops do not apply: ${String(err)}`;
+    }
+    const invalid = invalidResult(doc, ops);
+    if (invalid) {
+      return invalid;
     }
     if (JSON.stringify(doc).length > MAX_DOCUMENT_BYTES) {
       return "the scene would be too large";

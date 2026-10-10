@@ -24,6 +24,7 @@ import type {
   TriggerDefinition,
   WebhookClient,
   WidgetDefinition,
+  WidgetTransitionDefinition,
 } from "./webhook-client";
 import { asString } from "./outbox";
 import { subscribeProjections } from "./projection";
@@ -90,6 +91,7 @@ interface RawWidget {
   surfaces?: unknown;
   hosts_surface?: unknown;
   taxonomy?: unknown;
+  transitions?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -231,6 +233,26 @@ function mapFunction(raw: RawFunction): FunctionDefinition {
   return def;
 }
 
+/** The declared transitions in a widget payload; entries without an id are dropped. */
+function asWidgetTransitions(raw: unknown): WidgetTransitionDefinition[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const transitions: WidgetTransitionDefinition[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const id = asString((entry as Record<string, unknown>).id);
+    if (id === "") {
+      continue;
+    }
+    const label = asString((entry as Record<string, unknown>).label);
+    transitions.push({ id, label: label === "" ? id : label });
+  }
+  return transitions;
+}
+
 function mapWidget(raw: RawWidget): WidgetDefinition {
   const alertTypesRaw = (Array.isArray(raw.alert_types) ? raw.alert_types : raw.alertTypes) ?? [];
   const alertTypes = Array.isArray(alertTypesRaw) ? alertTypesRaw.map((a) => asString(a)) : [];
@@ -246,6 +268,7 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
     settings: parseFieldList(asString(raw.settings_schema)),
     surfaces: asStringArray(raw.surfaces).filter(isWidgetSurface),
     taxonomy: asStringArray(raw.taxonomy),
+    transitions: asWidgetTransitions(raw.transitions),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };

@@ -328,3 +328,27 @@ func TestProjectionKeyVersionPinningIsFunctionsOnly(t *testing.T) {
 		t.Errorf("function canonical_id = %v, want %q (never version-pinned)", got, want)
 	}
 }
+
+func TestWidgetPayloadsCarryDeclaredTransitions(t *testing.T) {
+	widget := &models.Widget{
+		ID:          uuid.New(),
+		Name:        "Text",
+		ManifestID:  "text",
+		Transitions: `[{"id":"typewriter","label":"Typewriter"}]`,
+	}
+	want := []widgetTransition{{ID: "typewriter", Label: "Typewriter"}}
+	for name, data := range map[string]map[string]any{
+		"registered":   buildWidgetRegisteredData("woofx3", "woofx3:1.0.0:abc1234", "Woofx3", "1.0.0", []*models.Widget{widget}),
+		"deregistered": buildWidgetDeregisteredData("woofx3", "woofx3:1.0.0:abc1234", []*models.Widget{widget}),
+	} {
+		row := data["widgets"].([]map[string]any)[0]
+		if got := row["transitions"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: transitions = %v, want %v", name, got, want)
+		}
+	}
+
+	bare := &models.Widget{ID: uuid.New(), Name: "Image", ManifestID: "image"}
+	if got := widgetTransitions(bare); len(got) != 0 || got == nil {
+		t.Errorf("a widget declaring none should carry an empty list, got %#v", got)
+	}
+}

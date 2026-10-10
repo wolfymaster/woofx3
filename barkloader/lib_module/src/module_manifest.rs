@@ -329,6 +329,15 @@ pub const LIST_ITEM_FIELD_TYPES: [&str; 5] = ["number", "text", "select", "toggl
 /// module SDK.
 pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
 
+/// The transition types the scene host plays on any widget's box. A widget
+/// may not declare one of these as its own. Mirrors
+/// `GENERIC_TRANSITION_TYPES` in the module SDK's widget-transitions.ts.
+pub const GENERIC_TRANSITION_TYPES: [&str; 7] =
+    ["fade", "slide", "zoom", "bounce", "spin", "pop", "blur"];
+
+/// The longest label a widget's declared transition may carry.
+pub const WIDGET_TRANSITION_LABEL_MAX: usize = 64;
+
 /// A flat list of the paths a runtime value carries, with their types.
 ///
 /// Deliberately not JSON Schema: it matches `${trigger.data.X}` /
@@ -664,10 +673,27 @@ pub struct ModuleWidget {
     /// (see `resolve_taxonomy`).
     #[serde(default)]
     pub category: Option<String>,
+    /// Transition types the widget plays on its own content (a text widget
+    /// revealing letter by letter), offered beside the generic ones when a
+    /// placement picks how it enters and leaves. The widget's CSS animates
+    /// them from the frame's `data-transition` attributes.
+    #[serde(default)]
+    pub transitions: Vec<ManifestWidgetTransition>,
     /// Opts the widget into themes. Absent means the widget cannot be themed
     /// and nothing about it changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<WidgetThemeContract>,
+}
+
+/// A transition type a widget declares for its own content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestWidgetTransition {
+    /// What a placement's `transitionIn` / `transitionOut` names, and what
+    /// the frame's `data-transition` attribute is set to: a lowercase token.
+    pub id: String,
+    /// What an editor shows for it.
+    pub label: String,
 }
 
 /// What a theme may change about a widget: named CSS variables and named
@@ -1444,6 +1470,14 @@ impl ModuleWidget {
             surfaces: self.surfaces.clone(),
             hosts_surface: self.hosts_surface.clone().unwrap_or_default(),
             taxonomy: self.resolve_taxonomy(),
+            transitions: self
+                .transitions
+                .iter()
+                .map(|t| super::db_proxy::WidgetTransitionJson {
+                    id: t.id.clone(),
+                    label: t.label.trim().to_string(),
+                })
+                .collect(),
             entry,
         }
     }

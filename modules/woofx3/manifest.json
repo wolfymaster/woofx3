@@ -1695,6 +1695,20 @@
       ],
       "taxonomy": [
         "text"
+      ],
+      "transitions": [
+        {
+          "id": "typewriter",
+          "label": "Typewriter"
+        },
+        {
+          "id": "letters",
+          "label": "Letter by letter"
+        },
+        {
+          "id": "wave",
+          "label": "Wave"
+        }
       ]
     },
     {

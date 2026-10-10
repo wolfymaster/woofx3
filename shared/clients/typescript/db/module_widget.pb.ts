@@ -72,6 +72,21 @@ export interface Widget {
    * none.
    */
   taxonomy: string[];
+  /**
+   * Transition types the widget plays on its own content, beyond the
+   * generic ones the scene host plays on every widget's box (see
+   * docs/services/widget-transitions.md). Empty when it declares none.
+   */
+  transitions: WidgetTransition[];
+}
+
+/**
+ * A transition type a widget declares: `id` is what a placement's
+ * transitionIn/transitionOut names, `label` what an editor shows.
+ */
+export interface WidgetTransition {
+  id: string;
+  label: string;
 }
 
 export interface WidgetInput {
@@ -92,6 +107,10 @@ export interface WidgetInput {
    * See Widget.taxonomy.
    */
   taxonomy: string[];
+  /**
+   * See Widget.transitions.
+   */
+  transitions: WidgetTransition[];
 }
 
 export interface RegisterWidgetsRequest {
@@ -174,6 +193,7 @@ export const Widget = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      transitions: [],
       ...msg,
     };
   },
@@ -226,6 +246,13 @@ export const Widget = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(16, msg.taxonomy);
+    }
+    if (msg.transitions?.length) {
+      writer.writeRepeatedMessage(
+        17,
+        msg.transitions as any,
+        WidgetTransition._writeMessage,
+      );
     }
     return writer;
   },
@@ -296,6 +323,88 @@ export const Widget = {
           msg.taxonomy.push(reader.readString());
           break;
         }
+        case 17: {
+          const m = WidgetTransition.initialize();
+          reader.readMessage(m, WidgetTransition._readMessage);
+          msg.transitions.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const WidgetTransition = {
+  /**
+   * Serializes WidgetTransition to protobuf.
+   */
+  encode: function (msg: PartialDeep<WidgetTransition>): Uint8Array {
+    return WidgetTransition._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes WidgetTransition from protobuf.
+   */
+  decode: function (bytes: ByteSource): WidgetTransition {
+    return WidgetTransition._readMessage(
+      WidgetTransition.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes WidgetTransition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<WidgetTransition>): WidgetTransition {
+    return {
+      id: "",
+      label: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<WidgetTransition>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.label) {
+      writer.writeString(2, msg.label);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: WidgetTransition,
+    reader: protoscript.BinaryReader,
+  ): WidgetTransition {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.label = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -342,6 +451,7 @@ export const WidgetInput = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      transitions: [],
       ...msg,
     };
   },
@@ -382,6 +492,13 @@ export const WidgetInput = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(12, msg.taxonomy);
+    }
+    if (msg.transitions?.length) {
+      writer.writeRepeatedMessage(
+        13,
+        msg.transitions as any,
+        WidgetTransition._writeMessage,
+      );
     }
     return writer;
   },
@@ -434,6 +551,12 @@ export const WidgetInput = {
         }
         case 12: {
           msg.taxonomy.push(reader.readString());
+          break;
+        }
+        case 13: {
+          const m = WidgetTransition.initialize();
+          reader.readMessage(m, WidgetTransition._readMessage);
+          msg.transitions.push(m);
           break;
         }
         default: {
@@ -840,6 +963,7 @@ export const WidgetJSON = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      transitions: [],
       ...msg,
     };
   },
@@ -890,6 +1014,11 @@ export const WidgetJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.transitions?.length) {
+      json["transitions"] = msg.transitions.map(
+        WidgetTransitionJSON._writeMessage,
+      );
     }
     return json;
   },
@@ -954,6 +1083,75 @@ export const WidgetJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
+    const _transitions_ = json["transitions"];
+    if (_transitions_) {
+      for (const item of _transitions_) {
+        const m = WidgetTransitionJSON.initialize();
+        WidgetTransitionJSON._readMessage(m, item);
+        msg.transitions.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const WidgetTransitionJSON = {
+  /**
+   * Serializes WidgetTransition to JSON.
+   */
+  encode: function (msg: PartialDeep<WidgetTransition>): string {
+    return JSON.stringify(WidgetTransitionJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes WidgetTransition from JSON.
+   */
+  decode: function (json: string): WidgetTransition {
+    return WidgetTransitionJSON._readMessage(
+      WidgetTransitionJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes WidgetTransition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<WidgetTransition>): WidgetTransition {
+    return {
+      id: "",
+      label: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<WidgetTransition>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.label) {
+      json["label"] = msg.label;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: WidgetTransition, json: any): WidgetTransition {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _label_ = json["label"];
+    if (_label_) {
+      msg.label = _label_;
+    }
     return msg;
   },
 };
@@ -991,6 +1189,7 @@ export const WidgetInputJSON = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      transitions: [],
       ...msg,
     };
   },
@@ -1031,6 +1230,11 @@ export const WidgetInputJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.transitions?.length) {
+      json["transitions"] = msg.transitions.map(
+        WidgetTransitionJSON._writeMessage,
+      );
     }
     return json;
   },
@@ -1078,6 +1282,14 @@ export const WidgetInputJSON = {
     const _taxonomy_ = json["taxonomy"];
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
+    }
+    const _transitions_ = json["transitions"];
+    if (_transitions_) {
+      for (const item of _transitions_) {
+        const m = WidgetTransitionJSON.initialize();
+        WidgetTransitionJSON._readMessage(m, item);
+        msg.transitions.push(m);
+      }
     }
     return msg;
   },

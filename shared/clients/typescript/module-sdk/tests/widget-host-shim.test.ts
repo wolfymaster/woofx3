@@ -436,6 +436,39 @@ describe("installWidgetHostShim — settings", () => {
   });
 });
 
+describe("installWidgetHostShim — transitions", () => {
+  const typewriter = { phase: "in", type: "typewriter", durationMs: 800, easing: "ease-out" } as const;
+
+  it("marks the frame with the entrance in the boot payload before the widget runs", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot({ transition: typewriter }));
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    expect(doc.attributes.get("data-transition")).toBe("typewriter");
+    expect(doc.attributes.get("data-transition-phase")).toBe("in");
+    expect(doc.vars.get("--transition-duration")).toBe("800ms");
+  });
+
+  it("plays a transition the host sends, and clears it on null", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "transition", transition: { ...typewriter, phase: "out" } }));
+    expect(doc.attributes.get("data-transition-phase")).toBe("out");
+    h.deliver(fromParent({ type: "transition", transition: null }));
+    expect(doc.attributes.has("data-transition")).toBe(false);
+  });
+
+  it("ignores a malformed transition", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "transition", transition: { ...typewriter, type: "x y" } }));
+    expect(doc.attributes.has("data-transition")).toBe(false);
+  });
+});
+
 describe("installWidgetHostShim — rendered", () => {
   it("reports rendered two frames after load", async () => {
     const h = makeHarness(makeBoot());
@@ -465,7 +498,7 @@ function fakeDocument() {
     removeAttribute: (name: string) => void attributes.delete(name),
     textContent: null as string | null,
   };
-  return { vars, documentElement, querySelectorAll: () => [] };
+  return { vars, attributes, documentElement, querySelectorAll: () => [] };
 }
 
 describe("installWidgetHostShim — events", () => {

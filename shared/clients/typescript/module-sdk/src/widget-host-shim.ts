@@ -25,6 +25,7 @@ import type {
 } from "./widget-host";
 import { type BindingDocument, applySettingBindings } from "./widget-bindings";
 import { type FontDocument, type FontLoader, createFontLoader } from "./widget-fonts";
+import { applyWidgetTransition, isWidgetTransitionState, type WidgetTransitionState } from "./widget-transitions";
 import {
   PROTOCOL_VERSION,
   WIDGET_BOOT_GLOBAL,
@@ -252,6 +253,17 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     }
   }
 
+  function markTransition(state: WidgetTransitionState | null): void {
+    if (!documentRef) {
+      return;
+    }
+    try {
+      applyWidgetTransition(documentRef, state);
+    } catch (err) {
+      console.error("[widget-host-shim] applying a transition failed", err);
+    }
+  }
+
   function allocId(prefix: string): string {
     nextLocalId += 1;
     return prefix + "-" + nextLocalId;
@@ -422,6 +434,12 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         bind(previous);
         return;
       }
+      case "transition": {
+        if (m.transition === null || isWidgetTransitionState(m.transition)) {
+          markTransition(m.transition);
+        }
+        return;
+      }
       case "dispose": {
         teardown();
         return;
@@ -550,6 +568,9 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   // right after this script see a fully usable `window.widgetHost`.
   windowRef.widgetHost = host;
   bind({});
+  if (boot.transition) {
+    markTransition(boot.transition);
+  }
   if (documentRef?.readyState === "loading") {
     windowRef.addEventListener("DOMContentLoaded", onDocumentReady);
   }

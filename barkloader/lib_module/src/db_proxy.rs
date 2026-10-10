@@ -201,10 +201,19 @@ pub struct WidgetInputJson {
     pub hosts_surface: String,
     /// Open, multi-valued classification; see `ModuleWidget::taxonomy`.
     pub taxonomy: Vec<String>,
+    /// The widget's own transition types; see `ModuleWidget::transitions`.
+    pub transitions: Vec<WidgetTransitionJson>,
     /// Entry path relative to the widget asset root (assets-relative,
     /// matching the prefix-stripped repository keys). Empty means the
     /// consumer falls back to `index.html`.
     pub entry: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetTransitionJson {
+    pub id: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

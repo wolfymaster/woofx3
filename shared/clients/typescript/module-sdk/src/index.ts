@@ -62,6 +62,7 @@ export type {
   WidgetSettingsChangedMessage,
   WidgetSettingsReadsMessage,
   WidgetToHostMessage,
+  WidgetTransitionMessage,
 } from "./widget-protocol";
 export {
   PROTOCOL_VERSION,
@@ -74,6 +75,32 @@ export {
   isWidgetProtocolEnvelope,
   isWidgetTheme,
 } from "./widget-protocol";
+
+export type {
+  GenericTransitionType,
+  PlacementTransition,
+  PlacementTransitionParse,
+  TransitionDirection,
+  TransitionEasing,
+  TransitionPhase,
+  WidgetTransitionDefinition,
+  WidgetTransitionState,
+} from "./widget-transitions";
+export {
+  GENERIC_TRANSITION_TYPES,
+  MAX_TRANSITION_MS,
+  MIN_TRANSITION_MS,
+  TRANSITION_DIRECTIONS,
+  TRANSITION_EASINGS,
+  WIDGET_TRANSITION_ID,
+  applyWidgetTransition,
+  isGenericTransitionType,
+  isTransitionAvailable,
+  isWidgetTransitionState,
+  parsePlacementTransition,
+  transitionEasing,
+  widgetTransitionState,
+} from "./widget-transitions";
 
 export type { BindingDocument } from "./widget-bindings";
 export { applySettingBindings } from "./widget-bindings";

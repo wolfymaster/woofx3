@@ -10,6 +10,7 @@
 // This module is the wire format, so the page and the server both use it
 // (the server imports it from here).
 
+import { type PlacementTransition, isTransitionAvailable } from "@woofx3/module-sdk";
 import json0Module from "ot-json0";
 import type { SceneConfig, WidgetPlacementConfig } from "./scene-update";
 import { sameValue } from "./scene-update";
@@ -36,6 +37,10 @@ export interface PlacementDocument {
   locked: boolean;
   /** Any other field a placement was stored with, kept as it was. */
   extra: Record<string, unknown>;
+  /** How the placement enters and leaves; absent means it simply appears
+   *  and disappears (see docs/services/widget-transitions.md). */
+  transitionIn?: PlacementTransition;
+  transitionOut?: PlacementTransition;
 }
 
 export interface SceneDocument {
@@ -50,6 +55,9 @@ export interface PlacementMeta {
   hostsSurface: string;
   frameUrl: string;
   linkedResources: Record<string, string>;
+  /** The transition types the widget declares for itself; absent while
+   *  that is not known, when every transition is passed on. */
+  widgetTransitions?: string[];
   /**
    * The engine's media proxy URL prefix, for a widget whose frame runs under
    * the theme policy: overlays get external media in its settings pointed
@@ -197,9 +205,39 @@ export function configOfSnapshot(snapshot: SceneSnapshot): SceneConfig {
       linkedResources: meta.linkedResources,
       ...(meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase }),
       visible: placement.visible,
+      ...transitionsOf(placement, meta.widgetTransitions),
     });
   }
   return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
+}
+
+export interface PlacementTransitions {
+  transitionIn?: PlacementTransition;
+  transitionOut?: PlacementTransition;
+}
+
+/**
+ * A placement's transitions, holding only those it has. Given what the
+ * widget declares, only those it can play: the generic ones and the widget's
+ * own. A type the widget no longer declares (its module was updated) stays on
+ * the stored placement, so a version that declares it again plays it again,
+ * but the page is not asked to play it.
+ */
+export function transitionsOf(
+  placement: PlacementTransitions,
+  widgetTransitions?: readonly string[]
+): PlacementTransitions {
+  const playable = (transition: PlacementTransition | undefined): transition is PlacementTransition =>
+    transition !== undefined &&
+    (widgetTransitions === undefined || isTransitionAvailable(transition.type, widgetTransitions));
+  const transitions: PlacementTransitions = {};
+  if (playable(placement.transitionIn)) {
+    transitions.transitionIn = placement.transitionIn;
+  }
+  if (playable(placement.transitionOut)) {
+    transitions.transitionOut = placement.transitionOut;
+  }
+  return transitions;
 }
 
 /** `meta` with an event's changes merged in. */

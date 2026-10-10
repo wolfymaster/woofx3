@@ -1,4 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { type PlacementTransition, parsePlacementTransition } from "@woofx3/module-sdk";
+import { transitionsOf } from "../../public/scene-manager/scene-document";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
@@ -51,6 +53,12 @@ export interface OverlayWidgetInstance {
   frameUnavailable?: true;
   /** False for a placement hidden in the editor. */
   visible: boolean;
+  /** How the placement enters and leaves, as stored; absent means none. */
+  transitionIn?: PlacementTransition;
+  transitionOut?: PlacementTransition;
+  /** The transition types the widget declares for itself, from the catalog;
+   *  absent while that is not known (see `availableTransitions`). */
+  widgetTransitions?: string[];
   /** The placement exactly as stored, for writing the scene back without
    *  losing the fields only the editor reads (see scene-documents.ts). */
   stored?: Record<string, unknown>;
@@ -106,6 +114,8 @@ export interface OverlayWidgetDefinition {
   entry: string;
   surfaces: string[];
   hostsSurface: string;
+  /** Ids of the transition types the widget declares for itself. */
+  transitions: string[];
 }
 
 /** The slice of DbClient the scene host depends on (injectable for tests). */
@@ -268,6 +278,7 @@ export class OverlayHost {
       return {
         ...instance,
         hostsSurface: definition?.hostsSurface ?? "",
+        widgetTransitions: definition?.transitions,
         resolved: definition !== undefined,
       };
     });
@@ -496,6 +507,7 @@ export class OverlayHost {
         entry: w.entry ?? "",
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
+        transitions: (w.transitions ?? []).map((t) => t.id),
       }));
       this.widgetCache = { rows, expiresAt: this.now() + this.widgetCacheTtlMs };
       return rows;
@@ -526,6 +538,34 @@ export class OverlayHost {
       }
     }
     return instances;
+  }
+
+  /**
+   * A stored placement's transitions. One that does not parse is left out
+   * with a warning rather than failing the placement: a widget that appears
+   * without its animation is better than one that does not appear.
+   */
+  private storedTransitions(
+    w: Record<string, unknown>,
+    placementId: string
+  ): { transitionIn?: PlacementTransition; transitionOut?: PlacementTransition } {
+    const transitions: { transitionIn?: PlacementTransition; transitionOut?: PlacementTransition } = {};
+    for (const field of ["transitionIn", "transitionOut"] as const) {
+      if (w[field] === undefined || w[field] === null) {
+        continue;
+      }
+      const parsed = parsePlacementTransition(w[field]);
+      if (parsed.ok) {
+        transitions[field] = parsed.transition;
+      } else {
+        this.logger.warn("scene placement has an invalid transition; it plays none", {
+          placementId,
+          field,
+          reason: parsed.reason,
+        });
+      }
+    }
+    return transitions;
   }
 
   private normalizeInstance(raw: unknown, sceneId: string): OverlayWidgetInstance | null {
@@ -580,6 +620,7 @@ export class OverlayHost {
       position: normalizePosition(w),
       settings,
       visible: w.visible !== false,
+      ...this.storedTransitions(w, id),
       stored: w,
       // Placements carry none; `resolveInstances` takes it from the widget
       // definition.
@@ -614,6 +655,7 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         linkedResources: w.linkedResources ?? {},
         ...(w.mediaProxyBase === undefined ? {} : { mediaProxyBase: w.mediaProxyBase }),
         visible: w.visible,
+        ...transitionsOf(w, w.widgetTransitions),
         resolved: w.resolved,
       })),
     },

@@ -364,8 +364,20 @@ export interface WidgetDefinition {
    * the module that shipped the widget. Empty when none was declared.
    */
   taxonomy: string[];
+  /**
+   * Transition types the widget plays on its own content, offered beside the
+   * generic ones when a placement picks how it enters and leaves. Empty when
+   * it declares none.
+   */
+  transitions: WidgetTransitionDefinition[];
   createdByType: string;
   createdByRef: string;
+}
+
+/** A transition type a widget declares: `id` is what a placement names. */
+export interface WidgetTransitionDefinition {
+  id: string;
+  label: string;
 }
 
 export interface ModuleWidgetRegisteredEvent {
