@@ -22,6 +22,10 @@ pub struct FrameResponse {
     /// What the widget renders with when it declares a theme contract, or
     /// `null` for a widget that cannot be themed.
     theme: Option<ResolvedTheme>,
+    /// The ids of the widget's `font` settings, whose families the scene
+    /// manager serves to the frame.
+    #[serde(rename = "fontSettings")]
+    font_settings: Vec<String>,
 }
 
 /// Frames are resolved once per installed version and served from here; see
@@ -203,10 +207,20 @@ async fn resolve_frame(
     )
     .await;
 
+    let font_settings = record
+        .manifest_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str::<ModuleManifest>(json).ok())
+        .and_then(|manifest| {
+            theme::find_target_widget(&manifest, manifest_id).map(|w| w.font_setting_ids())
+        })
+        .unwrap_or_default();
+
     Ok(FrameResponse {
         entry_html,
         resource_base_url,
         theme,
+        font_settings,
     })
 }
 

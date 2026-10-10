@@ -9,7 +9,7 @@ import { selectedThemeId } from "./widget-theme";
  * Bumped whenever the frame assembler changes what it writes into a frame
  * document, so cached documents built the old way are not reused.
  */
-export const FRAME_DOCUMENT_REVISION = 1;
+export const FRAME_DOCUMENT_REVISION = 2;
 
 /**
  * The version of the frame document barkloader's answer produces. It changes

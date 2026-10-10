@@ -316,7 +316,7 @@ The info icon next to a field's label appears if and only if `hint` or `exampleP
 
 #### Field types
 
-`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`, `list`, `theme`.
+`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `font`, `asset`, `resource_ref`, `button`, `layout`, `list`, `theme`.
 
 `theme` is never declared by a manifest; declaring one fails the install. The engine adds it, as the field `theme`, to the settings of a widget that declares a [theme contract](#themes). Its value is a theme canonical id (`{moduleId}:theme:{id}`), or absent for the widget's own look. The list is mirrored in `shared/clients/typescript/api/ui-schema.ts`, and a barkloader test fails when the two differ.
 
@@ -361,11 +361,12 @@ UI resolve those on top-level fields only.
 
 #### Picker field types
 
-These three `type` values render dedicated pickers in the UI rather than freeform inputs. The engine treats their values opaquely (canonical id strings) and forwards them to the function at runtime.
+These `type` values render dedicated pickers in the UI rather than freeform inputs. The engine treats their values opaquely (canonical id strings) and forwards them to the function at runtime.
 
 | `type` | Extra fields | Stored value | Picker source |
 |--------|-------------|---------------|----------------|
 | `color` | — | CSS color string (`"#7ad7ff"`). | Native browser color picker. |
+| `font` | — | CSS font-family list (`"\"Lobster\", cursive"`). Plain lists such as `"Roboto, system-ui, sans-serif"` are valid too. | Searchable list of every Google Fonts family; any other family name can be typed in. See [widget fonts](./sdk.md#fonts). |
 | `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
 | `resource_ref` | `kind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 

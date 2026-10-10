@@ -387,6 +387,40 @@ describe("installWidgetHostShim — settings", () => {
     expect(doc.vars.has("--setting-accent")).toBe(false);
   });
 
+  it("links the stylesheet for a font setting and follows its changes", () => {
+    const links: Array<{ href: string; removed: boolean }> = [];
+    const fontDocumentRef = {
+      head: { appendChild: () => undefined },
+      createElement: () => {
+        const link = { href: "", removed: false };
+        links.push(link);
+        return {
+          setAttribute: (name: string, value: string) => {
+            if (name === "href") {
+              link.href = value;
+            }
+          },
+          remove: () => {
+            link.removed = true;
+          },
+        };
+      },
+    };
+    const h = makeHarness(
+      makeBoot({
+        settings: { fontFamily: "Roboto, sans-serif" },
+        fonts: { settings: ["fontFamily"], stylesheetUrl: "/fonts/css" },
+      })
+    );
+    h.windowRef.location = { hash: "", href: "http://scenes.test/frames/mod-1/w1" };
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, fontDocumentRef });
+    expect(links.map((l) => l.href)).toEqual(["http://scenes.test/fonts/css?family=Roboto"]);
+
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "settings.changed", settings: { fontFamily: '"Lobster", cursive' } }));
+    expect(links.filter((l) => !l.removed).map((l) => l.href)).toEqual(["http://scenes.test/fonts/css?family=Lobster"]);
+  });
+
   it("ignores a settings.changed without a settings object", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;

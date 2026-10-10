@@ -41,6 +41,7 @@ export type {
   WidgetEventDeliverMessage,
   WidgetEventsSubscribeMessage,
   WidgetEventsUnsubscribeMessage,
+  WidgetFonts,
   WidgetHelloMessage,
   WidgetInitMessage,
   WidgetInitRejectMessage,
@@ -76,6 +77,9 @@ export {
 
 export type { BindingDocument } from "./widget-bindings";
 export { applySettingBindings } from "./widget-bindings";
+
+export type { FontDocument, FontLinkElement, FontLoader } from "./widget-fonts";
+export { createFontLoader, primaryFontFamily, requestableFontFamily } from "./widget-fonts";
 
 export type {
   InstallWidgetHostShimOptions,
