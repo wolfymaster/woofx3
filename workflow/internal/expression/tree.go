@@ -3,7 +3,8 @@ package expression
 import (
 	"errors"
 	"fmt"
-	"regexp"
+
+	"github.com/wolfymaster/woofx3/common/conditions"
 )
 
 // ConditionTree is a condition over one data map, held as data rather than
@@ -104,24 +105,8 @@ func (t *ConditionTree) validateAtom() error {
 	if !ok {
 		return fmt.Errorf("%s: unknown operator %q", t.Path, t.Op)
 	}
-	switch canonical {
-	case "regex":
-		pattern, ok := t.Value.(string)
-		if !ok {
-			return fmt.Errorf("%s: regex needs a string pattern, got %T", t.Path, t.Value)
-		}
-		if _, err := regexp.Compile(pattern); err != nil {
-			return fmt.Errorf("%s: invalid regex pattern: %w", t.Path, err)
-		}
-	case "in", "not_in":
-		if _, ok := t.Value.([]any); !ok {
-			return fmt.Errorf("%s: %s needs a list value, got %T", t.Path, canonical, t.Value)
-		}
-	case "between":
-		bounds, ok := t.Value.([]any)
-		if !ok || len(bounds) != 2 {
-			return fmt.Errorf("%s: between needs a [min, max] value", t.Path)
-		}
+	if err := conditions.ValidateExpected(canonical, t.Value); err != nil {
+		return fmt.Errorf("%s: %w", t.Path, err)
 	}
 	return nil
 }
