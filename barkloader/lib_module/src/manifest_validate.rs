@@ -1574,6 +1574,33 @@ fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<()> {
                 "resource #{i}: duplicate kind {kind:?} (already declared at resource #{prior})"
             ));
         }
+        if let Some(summary) = r.display.as_ref().and_then(|d| d.summary.as_deref()) {
+            validate_value_path(summary)
+                .map_err(|e| anyhow!("resource #{i} ({kind}): `display.summary` {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// A path into an instance's value: object keys and list indexes joined by
+/// `.`. Each step is a plain name, so a path can only point into the value
+/// and never reads as anything else.
+fn validate_value_path(path: &str) -> Result<()> {
+    if path.is_empty() {
+        return Err(anyhow!(
+            "must not be empty; leave it out to show the whole value"
+        ));
+    }
+    for step in path.split('.') {
+        let plain = !step.is_empty()
+            && step
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !plain {
+            return Err(anyhow!(
+                "{path:?} must be keys or indexes joined by `.`, each of [A-Za-z0-9_-]"
+            ));
+        }
     }
     Ok(())
 }
@@ -3496,6 +3523,48 @@ mod tests {
             "names the surface: {err}"
         );
         assert!(err.contains("`schema`"), "{err}");
+    }
+
+    #[test]
+    fn accepts_a_path_into_the_value_as_a_kind_summary() {
+        for path in ["items", "spin.item", "entries.0"] {
+            let m = minimal(&format!(
+                r#",
+            "resources": [{{ "kind": "wheel", "name": "Wheel", "display": {{ "summary": "{path}" }} }}]"#
+            ));
+            validate(&m).unwrap_or_else(|e| panic!("{path}: {e}"));
+        }
+    }
+
+    #[test]
+    fn rejects_a_kind_summary_that_is_not_a_plain_path() {
+        for path in [
+            "",
+            "items.",
+            ".items",
+            "items..count",
+            "items[0]",
+            "spin item",
+        ] {
+            let m = minimal(&format!(
+                r#",
+            "resources": [{{ "kind": "wheel", "name": "Wheel", "display": {{ "summary": "{path}" }} }}]"#
+            ));
+            let err = bad_err(&m);
+            assert!(
+                err.contains("resource #0 (wheel): `display.summary`"),
+                "{path}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_an_unknown_kind_display_hint() {
+        let raw = r#"{ "kind": "wheel", "name": "Wheel", "display": { "sumary": "items" } }"#;
+        let err = serde_json::from_str::<ManifestResourceKind>(raw)
+            .expect_err("a misspelt hint must not be dropped silently")
+            .to_string();
+        assert!(err.contains("sumary"), "{err}");
     }
 
     fn bad_err(m: &ModuleManifest) -> String {
