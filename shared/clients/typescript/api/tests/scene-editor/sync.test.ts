@@ -14,7 +14,13 @@ import {
   type SyncSocketHandlers,
 } from "../../scene-editor/client";
 import { type SceneDocument, sameValue } from "../../scene-editor/document";
-import { CLOSE_CODES, decodeClientMessage, type ItemBody, nackOf, type ServerMessage } from "../../scene-editor/protocol";
+import {
+  CLOSE_CODES,
+  decodeClientMessage,
+  type ItemBody,
+  nackOf,
+  type ServerMessage,
+} from "../../scene-editor/protocol";
 import {
   commit,
   createSequencerState,
