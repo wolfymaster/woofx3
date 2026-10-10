@@ -124,7 +124,7 @@
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Devbox** | latest | Nix-based dev environment |
+| **mise** | latest | Pinned toolchains (`mise.toml`) |
 | **Docker** | latest | Containerization |
 | **Caddy** | latest | Reverse proxy |
 | **SQLite** | latest | Local database |
