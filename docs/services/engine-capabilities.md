@@ -16,7 +16,7 @@ getEngineCapabilities(): Promise<{ schema: 1; capabilities: string[] }>
 - `schema` versions the response shape, not the engine. It changes only if the response stops being a flat list of ids.
 - An id's presence means the engine supports that feature. There is no negative form: a missing id means unsupported.
 
-The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/typescript/api/capabilities.ts` (exported from `@woofx3/api`). The engine route returns exactly those values, so the list cannot drift from the build that serves it.
+The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/typescript/api/capabilities.ts` (exported from `@woofx3/api`). The engine route returns exactly those values, less the ids in `UNADVERTISED_ENGINE_CAPABILITIES`, so the list cannot drift from the build that serves it. An id is declared but not advertised when clients need to name it while this build does not support it: a shared contract that lands before the engine implements it, or an older protocol the engine no longer serves.
 
 ## Rules
 
@@ -41,7 +41,8 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `obs.control` | The `ctx.obs` host extension and the `obs.control` manifest permission, which a module that changes OBS or lists its names needs to install and run |
 | `obs.status` | The OBS connection's state and last failure: `getObsStatus` |
 | `twitch.dashboardTokens` | A Twitch token that carries the app's `clientId` is renewed by asking the dashboard that sent it (`twitch.token.requested`), not with a refresh token, so the dashboard need not send one. See [Twitch channel → Who renews the token](./twitch-channel.md#who-renews-the-token) |
-| `scenes.editorSessions` | Editing a scene live with sceneManager: `getSceneEditorSession`, the editor socket it opens, and autosave in place of `updateScene`. See [Scene documents](./scene-documents.md) |
+| `scenes.editorSessions` | Editing a scene live with sceneManager: `getSceneEditorSession`, the editor socket it opens (protocol 1), and autosave in place of `updateScene`. See [Scene documents](./scene-documents.md) |
+| `scenes.editorSync` | Editing a scene live with sceneManager over editor socket protocol 2 (`@woofx3/api/scene-editor`): one ordered queue of items per editor across the draft and the published scene, publish and discard as items, exactly one answer per item, and reconnects that catch up from the server's log or rebase onto a snapshot. Declared but not yet advertised: this build's sceneManager serves protocol 1 |
 | `widgets.themes` | Theme presets a widget declares, for the theme settings picker: `listWidgetThemes` |
 | `workflow.widgetVisibility` | The `scene.widget.visibility` workflow action, which saves a placement's `visible` on the published scene, and the `scenes` / `scenePlacements` field sources its form uses. See [Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility) |
 
