@@ -15,11 +15,9 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 
-type HmacSha256 = Hmac<Sha256>;
+use super::signing::{constant_time_eq, hmac_sha256_hex};
 
 /// What a verified token authorizes. Every field is signed, so none of
 /// it can be re-pointed by the client after issuance.
@@ -112,25 +110,7 @@ pub fn verify(secret: &str, token: &str, now: i64) -> Result<UploadGrant, TokenE
 }
 
 fn sign(secret: &str, message: &[u8]) -> String {
-    let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts keys of any length");
-    mac.update(message);
-    let bytes = mac.finalize().into_bytes();
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-/// Length-independent comparison. `Mac::verify_slice` would do this too,
-/// but it needs the raw signature bytes; comparing the hex form keeps
-/// the token format the only thing this module has to agree on.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for i in 0..a.len() {
-        diff |= a[i] ^ b[i];
-    }
-    diff == 0
+    hmac_sha256_hex(secret.as_bytes(), message)
 }
 
 #[cfg(test)]

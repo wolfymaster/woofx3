@@ -51,6 +51,14 @@ export const ENGINE_CAPABILITIES = {
    * scene, publish, discard) and autosave in place of `updateScene`.
    */
   scenesEditorSessions: "scenes.editorSessions",
+  /**
+   * Editing a scene live with sceneManager over editor socket protocol 2
+   * (`@woofx3/api/scene-editor`): one ordered queue of items per editor across
+   * the draft and the published scene, publish and discard as items, every
+   * item answered exactly once, and reconnects that catch up from the
+   * server's log or rebase onto a snapshot.
+   */
+  scenesEditorSync: "scenes.editorSync",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**
@@ -79,7 +87,19 @@ export interface EngineCapabilities {
   capabilities: string[];
 }
 
+/**
+ * Ids declared here that this build does not advertise, so clients can name
+ * them before or after the engine supports them. sceneManager serves editor
+ * socket protocol 1 (`scenes.editorSessions`) until it moves to protocol 2
+ * (`scenes.editorSync`).
+ */
+export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
+  ENGINE_CAPABILITIES.scenesEditorSync,
+]);
+
 /** The capability ids this build supports, sorted and unique. */
 export function supportedEngineCapabilities(): EngineCapability[] {
-  return [...new Set(Object.values(ENGINE_CAPABILITIES))].sort();
+  return [...new Set(Object.values(ENGINE_CAPABILITIES))]
+    .filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id))
+    .sort();
 }
