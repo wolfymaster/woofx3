@@ -294,6 +294,24 @@ func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID 
 	return &trigger, nil
 }
 
+// GetActiveTriggerByModuleAndManifestID resolves a canonical id
+// (`{moduleID}:trigger:{manifestID}`) to its active row only, unlike
+// GetTriggerByModuleAndManifestID: an archived trigger is no longer
+// registered by any installed module, so nothing will fire it.
+//
+// Returns gorm.ErrRecordNotFound if no active row matches.
+func (r *ModuleRepository) GetActiveTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error) {
+	var trigger models.Trigger
+	err := r.db.Where(
+		"manifest_id = ? AND created_by_ref = ? AND archived_at IS NULL",
+		manifestID, moduleID,
+	).First(&trigger).Error
+	if err != nil {
+		return nil, err
+	}
+	return &trigger, nil
+}
+
 func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 	// See UpsertTrigger: scan RETURNING id into a struct so GORM delegates
 	// to uuid.UUID's sql.Scanner instead of treating the array as columns.

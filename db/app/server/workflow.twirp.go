@@ -3590,7 +3590,7 @@ func (s *workflowServiceServer) serveRecordWorkflowRunStepProtobuf(ctx context.C
 }
 
 func (s *workflowServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor20, 0
+	return twirpFileDescriptor21, 0
 }
 
 func (s *workflowServiceServer) ProtocGenTwirpVersion() string {
@@ -3604,7 +3604,7 @@ func (s *workflowServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "workflow", "WorkflowService")
 }
 
-var twirpFileDescriptor20 = []byte{
+var twirpFileDescriptor21 = []byte{
 	// 1914 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x58, 0xdd, 0x6e, 0xe3, 0xc6,
 	0x15, 0x2e, 0x25, 0x51, 0xa2, 0x0e, 0x65, 0x59, 0x3b, 0xb5, 0xd7, 0xac, 0x36, 0xbb, 0xf6, 0xaa,

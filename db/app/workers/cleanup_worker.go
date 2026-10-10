@@ -10,26 +10,35 @@ import (
 
 type CleanupWorker struct {
 	repo            *repository.DbEventRepository
+	facts           *repository.ViewerFactRepository
 	logger          *slog.Logger
 	cleanupInterval time.Duration
 	retentionPeriod time.Duration
+	factRetention   time.Duration
+	factPruneBatch  int
 	ctx             context.Context
 	cancel          context.CancelFunc
 }
 
 func NewCleanupWorker(
 	repo *repository.DbEventRepository,
+	facts *repository.ViewerFactRepository,
 	logger *slog.Logger,
 	cleanupInterval time.Duration,
 	retentionPeriod time.Duration,
+	factRetention time.Duration,
+	factPruneBatch int,
 ) *CleanupWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &CleanupWorker{
 		repo:            repo,
+		facts:           facts,
 		logger:          logger,
 		cleanupInterval: cleanupInterval,
 		retentionPeriod: retentionPeriod,
+		factRetention:   factRetention,
+		factPruneBatch:  factPruneBatch,
 		ctx:             ctx,
 		cancel:          cancel,
 	}
@@ -39,6 +48,7 @@ func (w *CleanupWorker) Start() {
 	w.logger.Info("cleanup worker starting",
 		"cleanup_interval", w.cleanupInterval,
 		"retention_period", w.retentionPeriod,
+		"fact_dedupe_retention", w.factRetention,
 	)
 
 	go w.run()
@@ -74,6 +84,12 @@ func (w *CleanupWorker) cleanup() error {
 	if err != nil {
 		return err
 	}
+
+	pruned, err := w.facts.PruneAppliedEvents(time.Now().Add(-w.factRetention), w.factPruneBatch)
+	if err != nil {
+		return err
+	}
+	w.logger.Debug("pruned applied fact events", "deleted", pruned)
 
 	w.logger.Debug("cleanup complete")
 	return nil
