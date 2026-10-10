@@ -115,29 +115,45 @@ export function injectThemeStylesheet(html: string, stylesheetUrl: string): stri
 }
 
 /**
- * The Content-Security-Policy for a themeable widget's frame: styles and fonts
- * from the engine only. A theme stylesheet is author data, and its `url(...)`
- * or `@import` could otherwise pull in more CSS or fonts from any host; nothing
- * a theme ships is a script, so scripts and connections are left as they were.
+ * Twitch's CDN for emotes, badges and profile pictures, which arrive in
+ * event data (chat messages, alerts) rather than in settings, so they never
+ * pass the media proxy. It is safe to allow in a themeable frame because it
+ * is a fixed platform host that no theme author controls: a theme stylesheet
+ * can make the frame request an image from it, but whatever the request
+ * carries in its URL lands with Twitch, never with someone who could read it.
+ * Exact host and https only, so no other Twitch host is opened with it.
+ */
+export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
+
+/**
+ * The Content-Security-Policy for a themeable widget's frame: styles, fonts,
+ * images and media from the engine only, plus images from Twitch's CDN
+ * (`TWITCH_IMAGE_CDN`). A theme stylesheet is author data, and its `url(...)`
+ * or `@import` could otherwise reach any host, carrying whatever its
+ * selectors can read off the page; nothing a theme ships is a script, so
+ * scripts and connections are left as they were. External media a
+ * placement's settings name reaches the frame through the engine's media
+ * proxy (see media-proxy.ts), so it needs no outside host here either.
  *
- * Images and media may come from any http(s) host, because a placement's media
- * settings can name a file hosted outside the engine and the widget loads it
- * from there. The policy is fixed when the frame loads while settings change
- * live, so it cannot list just the hosts the settings name. A theme can
- * therefore reference an outside image too; that only fetches an image.
+ * Only picker-shaped settings (`{ source: "url", url }`, see media-url.ts) are
+ * proxied, so a themeable widget cannot load external media that arrives any
+ * other way: a URL in a bare string setting, or one in event data other than
+ * a Twitch CDN image. That is a deliberate limit, not an oversight: listing
+ * more hosts here would let a theme stylesheet reach them too. A widget that
+ * needs such media should not declare a theme contract.
  *
- * `'self'` alone is not enough for styles and fonts: the frame is sandboxed
- * and its resources come from barkloader's public origin, not the scene
- * manager's, so each engine origin is listed. `'unsafe-inline'` is for the
- * widget's own inline styles and the variables block this module injects.
+ * `'self'` alone is not enough: the frame is sandboxed and its resources
+ * come from barkloader's public origin, not the scene manager's, so each
+ * engine origin is listed. `'unsafe-inline'` is for the widget's own inline
+ * styles and the variables block this module injects.
  */
 export function themeContentSecurityPolicy(engineOrigins: string[]): string {
   const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))].join(" ");
   return [
     `style-src ${origins} 'unsafe-inline'`,
     `font-src ${origins} data:`,
-    `img-src ${origins} https: http: data: blob:`,
-    `media-src ${origins} https: http: data: blob:`,
+    `img-src ${origins} ${TWITCH_IMAGE_CDN} data: blob:`,
+    `media-src ${origins} data: blob:`,
   ].join("; ");
 }
 
