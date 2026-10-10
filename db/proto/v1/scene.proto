@@ -56,6 +56,9 @@ message Scene {
     string draft_widgets_json = 11;
     string draft_layout_json = 12;
     bool has_draft = 13;
+    // The scene editor's sync state as a JSON object, owned by the scene
+    // editor and opaque here. Empty when no editor has synced the scene.
+    string editor_state_json = 14;
 }
 
 message CreateSceneRequest {
@@ -99,6 +102,17 @@ message UpdateSceneRequest {
     // Drop the draft (it was published or discarded). Wins over a draft
     // set in the same request.
     bool clear_draft = 8;
+    // Store the scene editor's sync state, a JSON object. Written in the
+    // same row update as the documents and draft in this request, so the
+    // state never describes documents other than the stored ones. Empty
+    // leaves it unchanged, unless the request writes a document (widgets,
+    // layout, draft or clear_draft): the stored state is then cleared,
+    // since it described the documents being replaced. Anything that is
+    // not a JSON object is refused and nothing in the request is written.
+    string editor_state_json = 9;
+    // Drop the stored editor state in the same row update. Refused
+    // together with `editor_state_json`.
+    bool clear_editor_state = 10;
 }
 
 message DeleteSceneRequest {
