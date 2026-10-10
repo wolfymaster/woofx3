@@ -667,6 +667,23 @@ export class DbClient {
     return response.entries ?? [];
   }
 
+  /**
+   * The events a session's totals count, oldest first, and how many there are
+   * in all, or null for an unknown session.
+   */
+  async findStreamSessionUserEvents(
+    req: user_event.ListStreamSessionUserEventsRequest
+  ): Promise<{ events: user_event.UserEvent[]; total: bigint } | null> {
+    const response = await nullWhenSessionMissing("findStreamSessionUserEvents", () =>
+      user_event.ListStreamSessionUserEvents(req, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("findStreamSessionUserEvents", response);
+    return { events: response.events ?? [], total: response.total };
+  }
+
   /** The latest events at or after `since`, newest first, and how many fell in that span. */
   async listRecentUserEvents(
     req: user_event.ListRecentUserEventsRequest

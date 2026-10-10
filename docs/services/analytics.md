@@ -264,10 +264,11 @@ in that minute's row, with a warning; the others are recorded.
 
 ## Reading the log
 
-Four engine RPCs read the log and the samples
+Five engine RPCs read the log and the samples
 (`api/src/routes/analytics.ts`), backed by `UserEventService`'s
-`GetStreamSessionEventTotals`, `GetViewerEventTotals` and
-`ListViewerLeaderboard` and by `StreamGaugeService.ListStreamGaugeSamples`:
+`GetStreamSessionEventTotals`, `GetViewerEventTotals`,
+`ListViewerLeaderboard` and `ListStreamSessionUserEvents` and by
+`StreamGaugeService.ListStreamGaugeSamples`:
 
 | RPC | Answers |
 |---|---|
@@ -275,6 +276,7 @@ Four engine RPCs read the log and the samples
 | `getViewerTotals({ platform, platformUserId, sessionId? })` | Bits, cheers, subs gifted and gifts for one viewer, in a session or over their lifetime. |
 | `getLeaderboard({ metric, sessionId?, minTotal?, limit? })` | Top cheerers (`bits`) or gifters (`giftedSubs`), keeping viewers at or above `minTotal`. |
 | `getStreamSessionGauges(sessionId)` | Every sampled minute of a session, oldest first. |
+| `getStreamSessionEvents({ sessionId, limit? })` | The events the session totals count, oldest first, as `cheer`, `follow`, `sub`, `giftedSubs` or `raid` with the viewer's name and amount, for placing them on a timeline. At most `limit` (1-1000, default 500), with `total` saying how many there are in all. |
 
 Each returns `null` for a session that does not exist.
 
@@ -309,6 +311,9 @@ ever taken inside one and carry its id.
 - *Peak* and *average viewers* use the minutes that have a viewer count; an
   unsampled minute or a failed read is left out, not counted as zero. Both are
   `null` when no minute was sampled.
+- *Session events* are the rows the totals count and nothing else: a gift is
+  its gifter's `SubscriptionGift` alone, never its recipients' gifted subs,
+  so the list and the totals agree on what happened.
 - *Lifetime* is every event recorded, regardless of session, so merges and
   splits cannot change it.
 
