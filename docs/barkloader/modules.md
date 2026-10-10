@@ -1089,6 +1089,34 @@ function add(ctx, label) {
 }
 ```
 
+A resource kind's `schema` may declare a `list` field the same way, for rows that
+belong to each instance rather than to the module: the entries of one wheel, say,
+typed by the streamer when they create or edit it. Functions of the module that
+declares the kind read them from `ctx.resources.get(id).settings.<field>` and change
+them with `ctx.resources.compareAndSetSetting(id, field, expected, value)`, which works
+like `ctx.module.compareAndSetSetting` for that one instance. Until the streamer saves
+the field the instance does not hold it, so it reads as `undefined`; pass back what was
+read, not a defaulted `[]`, as the first `expected`:
+
+```js
+function add(ctx, wheel, label) {
+  var current = ctx.resources.get(wheel).settings.items;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    var next = (current || []).concat([{ label: label }]);
+    var outcome = ctx.resources.compareAndSetSetting(wheel, "items", current, next);
+    if (outcome.swapped) {
+      return next;
+    }
+    current = outcome.current;
+  }
+  throw new Error("the list kept changing; try again");
+}
+```
+
+Only the module that declares the kind may write an instance's settings. Lua has
+one empty table for `[]` and `{}`, so an empty table replacing a list is written as
+an empty list.
+
 #### Reading settings at runtime — `ctx.module`
 
 Both the QuickJS and Lua sandbox runtimes expose the invoking function's module
@@ -1476,6 +1504,7 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns every instance of that name across every installed module; `module:kind` returns only that module's. |
 | `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
+| `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)` | `{ swapped, current }` | Writes `settings[key] = value` on an instance this module owns, only while `settings[key]` still holds `expected`, compared by meaning (key order, `1` vs `1.0`, `[]` vs `{}`). `null`/`undefined` (`nil` in Lua) matches a key the instance does not hold, which is how a schema field the streamer never saved reads. `current` is the setting as it reads now, `null` when absent. A swap is announced as an instance update (`db.module.resource.instance.updated`), the same as a streamer's edit, so the dashboard and `resource:<canonicalId>` readers refresh. Throws for an instance another module owns, one that does not exist, or a value JSON cannot hold. See [List settings](#list-settings). |
 
 `ctx.resources.run` is how a module drives a resource another module provides. The
 action runs as the providing module — its function, its storage, the events it

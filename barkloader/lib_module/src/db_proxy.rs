@@ -1761,6 +1761,64 @@ pub async fn get_resource_instance(
     Ok(parsed.instance)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CompareAndSetResourceInstanceSettingResponseJson {
+    #[serde(default)]
+    pub swapped: bool,
+    /// JSON text of the setting after the call; empty when the instance does
+    /// not hold the key.
+    #[serde(default)]
+    pub current_json: String,
+}
+
+/// Twirp JSON for `module.ModuleService/CompareAndSetResourceInstanceSetting`.
+/// `module_name` is the invoking module's manifest id; db-proxy refuses the
+/// write unless that module owns the instance. `expected_json` of `null`
+/// matches a key the instance does not hold.
+pub async fn compare_and_set_resource_instance_setting(
+    db_proxy_url: &str,
+    module_name: &str,
+    canonical_id: &str,
+    key: &str,
+    expected_json: &str,
+    value_json: &str,
+    request_context: Option<&RequestContext>,
+) -> Result<CompareAndSetResourceInstanceSettingResponseJson> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/CompareAndSetResourceInstanceSetting",
+        db_proxy_url
+    );
+    let body = serde_json::json!({
+        "canonical_id": canonical_id,
+        "module_name": module_name,
+        "key": key,
+        "expected_json": expected_json,
+        "value_json": value_json,
+        "request_context": request_context,
+    });
+    let response = HTTP_CLIENT
+        .clone()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("CompareAndSetResourceInstanceSetting request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "CompareAndSetResourceInstanceSetting failed {}: {}",
+            status,
+            text
+        ));
+    }
+    response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse CompareAndSetResourceInstanceSetting response: {}", e))
+}
+
 /// Twirp JSON for `module.ModuleService/ListResourceInstancesByKind`.
 /// Returns every instance of the kind across every installed module — the
 /// flat list the UI picker for `resource_ref(kind=...)` ConfigField

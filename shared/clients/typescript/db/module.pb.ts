@@ -745,6 +745,22 @@ export async function UpdateResourceInstance(
   return module_resource_instance.ResourceInstanceResponse.decode(response);
 }
 
+export async function CompareAndSetResourceInstanceSetting(
+  compareAndSetResourceInstanceSettingRequest: module_resource_instance.CompareAndSetResourceInstanceSettingRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.CompareAndSetResourceInstanceSettingResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/CompareAndSetResourceInstanceSetting",
+    module_resource_instance.CompareAndSetResourceInstanceSettingRequest.encode(
+      compareAndSetResourceInstanceSettingRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.CompareAndSetResourceInstanceSettingResponse.decode(
+    response,
+  );
+}
+
 export async function GetResourceInstance(
   getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
   config?: ClientConfiguration,
@@ -1305,6 +1321,22 @@ export async function UpdateResourceInstanceJSON(
   return module_resource_instance.ResourceInstanceResponseJSON.decode(response);
 }
 
+export async function CompareAndSetResourceInstanceSettingJSON(
+  compareAndSetResourceInstanceSettingRequest: module_resource_instance.CompareAndSetResourceInstanceSettingRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.CompareAndSetResourceInstanceSettingResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/CompareAndSetResourceInstanceSetting",
+    module_resource_instance.CompareAndSetResourceInstanceSettingRequestJSON.encode(
+      compareAndSetResourceInstanceSettingRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.CompareAndSetResourceInstanceSettingResponseJSON.decode(
+    response,
+  );
+}
+
 export async function GetResourceInstanceJSON(
   getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
   config?: ClientConfiguration,
@@ -1564,6 +1596,12 @@ export interface ModuleService<Context = unknown> {
   ) =>
     | Promise<module_resource_instance.ResourceInstanceResponse>
     | module_resource_instance.ResourceInstanceResponse;
+  CompareAndSetResourceInstanceSetting: (
+    compareAndSetResourceInstanceSettingRequest: module_resource_instance.CompareAndSetResourceInstanceSettingRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.CompareAndSetResourceInstanceSettingResponse>
+    | module_resource_instance.CompareAndSetResourceInstanceSettingResponse;
   GetResourceInstance: (
     getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
     context: Context,
@@ -2018,6 +2056,20 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
         output: {
           protobuf: module_resource_instance.ResourceInstanceResponse,
           json: module_resource_instance.ResourceInstanceResponseJSON,
+        },
+      },
+      CompareAndSetResourceInstanceSetting: {
+        name: "CompareAndSetResourceInstanceSetting",
+        handler: service.CompareAndSetResourceInstanceSetting,
+        input: {
+          protobuf:
+            module_resource_instance.CompareAndSetResourceInstanceSettingRequest,
+          json: module_resource_instance.CompareAndSetResourceInstanceSettingRequestJSON,
+        },
+        output: {
+          protobuf:
+            module_resource_instance.CompareAndSetResourceInstanceSettingResponse,
+          json: module_resource_instance.CompareAndSetResourceInstanceSettingResponseJSON,
         },
       },
       GetResourceInstance: {

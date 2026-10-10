@@ -55,6 +55,7 @@ service ModuleService {
   rpc CreateResourceInstance(CreateResourceInstanceRequest) returns (ResourceInstanceResponse);
   rpc DeleteResourceInstance(DeleteResourceInstanceRequest) returns (common.ResponseStatus);
   rpc UpdateResourceInstance(UpdateResourceInstanceRequest) returns (ResourceInstanceResponse);
+  rpc CompareAndSetResourceInstanceSetting(CompareAndSetResourceInstanceSettingRequest) returns (CompareAndSetResourceInstanceSettingResponse);
   rpc GetResourceInstance(GetResourceInstanceRequest) returns (ResourceInstanceResponse);
   rpc ListResourceInstancesByKind(ListResourceInstancesByKindRequest) returns (ListResourceInstancesResponse);
   rpc ListResourceInstancesByModule(ListResourceInstancesByModuleRequest) returns (ListResourceInstancesResponse);

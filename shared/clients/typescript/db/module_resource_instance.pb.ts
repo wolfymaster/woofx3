@@ -115,6 +115,46 @@ export interface UpdateResourceInstanceRequest {
   requestContext: common.RequestContext;
 }
 
+/**
+ * Writes `settings[key] = value` on one instance only while `settings[key]`
+ * still holds `expected`: the safe way for the owning module's functions to
+ * change a setting the streamer, or another run, may be changing at the same
+ * moment, such as adding an entry to a list.
+ *
+ * Values are JSON text and compare by meaning, the way a function reads them:
+ * numbers by value (1 equals 1.0), objects regardless of key order, and an
+ * empty object equals an empty array. An `expected` of null (or empty) matches
+ * a key the instance does not hold, which is what a function reads as
+ * undefined. Only the module that owns the instance may write it.
+ */
+export interface CompareAndSetResourceInstanceSettingRequest {
+  canonicalId: string;
+  /**
+   * Manifest id of the module asking. Refused unless it owns the instance.
+   */
+  moduleName: string;
+  key: string;
+  /**
+   * JSON text of what `settings[key]` must hold for the write to happen.
+   */
+  expectedJson: string;
+  /**
+   * JSON text of the value to write.
+   */
+  valueJson: string;
+  requestContext: common.RequestContext;
+}
+
+export interface CompareAndSetResourceInstanceSettingResponse {
+  swapped: boolean;
+  /**
+   * JSON text of `settings[key]` after the call: the value written when
+   * swapped, else what it holds now, which is what the caller retries from.
+   * Empty when the instance has no such key.
+   */
+  currentJson: string;
+}
+
 export interface DeleteResourceInstanceRequest {
   canonicalId: string;
   requestContext: common.RequestContext;
@@ -659,6 +699,209 @@ export const UpdateResourceInstanceRequest = {
             msg.requestContext,
             common.RequestContext._readMessage,
           );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetResourceInstanceSettingRequest = {
+  /**
+   * Serializes CompareAndSetResourceInstanceSettingRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingRequest>,
+  ): Uint8Array {
+    return CompareAndSetResourceInstanceSettingRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompareAndSetResourceInstanceSettingRequest from protobuf.
+   */
+  decode: function (
+    bytes: ByteSource,
+  ): CompareAndSetResourceInstanceSettingRequest {
+    return CompareAndSetResourceInstanceSettingRequest._readMessage(
+      CompareAndSetResourceInstanceSettingRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetResourceInstanceSettingRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetResourceInstanceSettingRequest>,
+  ): CompareAndSetResourceInstanceSettingRequest {
+    return {
+      canonicalId: "",
+      moduleName: "",
+      key: "",
+      expectedJson: "",
+      valueJson: "",
+      requestContext: common.RequestContext.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.canonicalId) {
+      writer.writeString(1, msg.canonicalId);
+    }
+    if (msg.moduleName) {
+      writer.writeString(2, msg.moduleName);
+    }
+    if (msg.key) {
+      writer.writeString(3, msg.key);
+    }
+    if (msg.expectedJson) {
+      writer.writeString(4, msg.expectedJson);
+    }
+    if (msg.valueJson) {
+      writer.writeString(5, msg.valueJson);
+    }
+    if (msg.requestContext) {
+      writer.writeMessage(
+        6,
+        msg.requestContext,
+        common.RequestContext._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetResourceInstanceSettingRequest,
+    reader: protoscript.BinaryReader,
+  ): CompareAndSetResourceInstanceSettingRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.canonicalId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.moduleName = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.key = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.expectedJson = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.valueJson = reader.readString();
+          break;
+        }
+        case 6: {
+          reader.readMessage(
+            msg.requestContext,
+            common.RequestContext._readMessage,
+          );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetResourceInstanceSettingResponse = {
+  /**
+   * Serializes CompareAndSetResourceInstanceSettingResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingResponse>,
+  ): Uint8Array {
+    return CompareAndSetResourceInstanceSettingResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompareAndSetResourceInstanceSettingResponse from protobuf.
+   */
+  decode: function (
+    bytes: ByteSource,
+  ): CompareAndSetResourceInstanceSettingResponse {
+    return CompareAndSetResourceInstanceSettingResponse._readMessage(
+      CompareAndSetResourceInstanceSettingResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetResourceInstanceSettingResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetResourceInstanceSettingResponse>,
+  ): CompareAndSetResourceInstanceSettingResponse {
+    return {
+      swapped: false,
+      currentJson: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.swapped) {
+      writer.writeBool(1, msg.swapped);
+    }
+    if (msg.currentJson) {
+      writer.writeString(2, msg.currentJson);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetResourceInstanceSettingResponse,
+    reader: protoscript.BinaryReader,
+  ): CompareAndSetResourceInstanceSettingResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.swapped = reader.readBool();
+          break;
+        }
+        case 2: {
+          msg.currentJson = reader.readString();
           break;
         }
         default: {
@@ -1994,6 +2237,188 @@ export const UpdateResourceInstanceRequestJSON = {
         msg.requestContext,
         _requestContext_,
       );
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetResourceInstanceSettingRequestJSON = {
+  /**
+   * Serializes CompareAndSetResourceInstanceSettingRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingRequest>,
+  ): string {
+    return JSON.stringify(
+      CompareAndSetResourceInstanceSettingRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes CompareAndSetResourceInstanceSettingRequest from JSON.
+   */
+  decode: function (json: string): CompareAndSetResourceInstanceSettingRequest {
+    return CompareAndSetResourceInstanceSettingRequestJSON._readMessage(
+      CompareAndSetResourceInstanceSettingRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetResourceInstanceSettingRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetResourceInstanceSettingRequest>,
+  ): CompareAndSetResourceInstanceSettingRequest {
+    return {
+      canonicalId: "",
+      moduleName: "",
+      key: "",
+      expectedJson: "",
+      valueJson: "",
+      requestContext: common.RequestContextJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.canonicalId) {
+      json["canonicalId"] = msg.canonicalId;
+    }
+    if (msg.moduleName) {
+      json["moduleName"] = msg.moduleName;
+    }
+    if (msg.key) {
+      json["key"] = msg.key;
+    }
+    if (msg.expectedJson) {
+      json["expectedJson"] = msg.expectedJson;
+    }
+    if (msg.valueJson) {
+      json["valueJson"] = msg.valueJson;
+    }
+    if (msg.requestContext) {
+      const _requestContext_ = common.RequestContextJSON._writeMessage(
+        msg.requestContext,
+      );
+      if (Object.keys(_requestContext_).length > 0) {
+        json["requestContext"] = _requestContext_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetResourceInstanceSettingRequest,
+    json: any,
+  ): CompareAndSetResourceInstanceSettingRequest {
+    const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
+    if (_canonicalId_) {
+      msg.canonicalId = _canonicalId_;
+    }
+    const _moduleName_ = json["moduleName"] ?? json["module_name"];
+    if (_moduleName_) {
+      msg.moduleName = _moduleName_;
+    }
+    const _key_ = json["key"];
+    if (_key_) {
+      msg.key = _key_;
+    }
+    const _expectedJson_ = json["expectedJson"] ?? json["expected_json"];
+    if (_expectedJson_) {
+      msg.expectedJson = _expectedJson_;
+    }
+    const _valueJson_ = json["valueJson"] ?? json["value_json"];
+    if (_valueJson_) {
+      msg.valueJson = _valueJson_;
+    }
+    const _requestContext_ = json["requestContext"] ?? json["request_context"];
+    if (_requestContext_) {
+      common.RequestContextJSON._readMessage(
+        msg.requestContext,
+        _requestContext_,
+      );
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetResourceInstanceSettingResponseJSON = {
+  /**
+   * Serializes CompareAndSetResourceInstanceSettingResponse to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingResponse>,
+  ): string {
+    return JSON.stringify(
+      CompareAndSetResourceInstanceSettingResponseJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes CompareAndSetResourceInstanceSettingResponse from JSON.
+   */
+  decode: function (
+    json: string,
+  ): CompareAndSetResourceInstanceSettingResponse {
+    return CompareAndSetResourceInstanceSettingResponseJSON._readMessage(
+      CompareAndSetResourceInstanceSettingResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetResourceInstanceSettingResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetResourceInstanceSettingResponse>,
+  ): CompareAndSetResourceInstanceSettingResponse {
+    return {
+      swapped: false,
+      currentJson: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetResourceInstanceSettingResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.swapped) {
+      json["swapped"] = msg.swapped;
+    }
+    if (msg.currentJson) {
+      json["currentJson"] = msg.currentJson;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetResourceInstanceSettingResponse,
+    json: any,
+  ): CompareAndSetResourceInstanceSettingResponse {
+    const _swapped_ = json["swapped"];
+    if (_swapped_) {
+      msg.swapped = _swapped_;
+    }
+    const _currentJson_ = json["currentJson"] ?? json["current_json"];
+    if (_currentJson_) {
+      msg.currentJson = _currentJson_;
     }
     return msg;
   },
