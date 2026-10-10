@@ -1,5 +1,4 @@
 node_modules
-.devbox
 .env*
 .flaskenv*
 !.env.project
@@ -37,6 +36,9 @@ build/dist
 
 # DB migration binary
 db/migrate
+
+# Local engine databases (scripts/worktree.sh, make migrate-up)
+db/data/
 
 # docs
 docs/.vitepress

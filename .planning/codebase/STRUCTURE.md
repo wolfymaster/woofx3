@@ -29,10 +29,8 @@ woofx3/                          # Root monorepo
 │
 ├── package.json                 # Root Workspace
 ├── process-compose.yml          # Service Orchestration
-├── docker-compose.yaml          # Docker Compose Config
-├── Dockerfile                   # Production Image
 ├── Caddyfile                    # Reverse Proxy Config
-├── devbox.json                  # Nix Devbox Config
+├── mise.toml                    # Pinned Toolchains
 ├── biome.json                   # Code Formatter Config
 └── axogen.config.ts             # Environment Generator
 ```
@@ -198,9 +196,7 @@ wooflow/
 |------|---------|
 | `package.json` | Root workspace dependencies |
 | `process-compose.yml` | Service orchestration |
-| `docker-compose.yaml` | Docker configuration |
-| `Dockerfile` | Production image |
-| `devbox.json` | Nix development environment |
+| `mise.toml` | Pinned toolchains |
 | `biome.json` | Code formatting rules |
 | `axogen.config.ts` | Environment variable generation |
 | `Caddyfile` | Reverse proxy configuration |

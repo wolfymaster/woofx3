@@ -385,10 +385,10 @@ woofx3/
 ├── irl/             IRL streaming utilities (SRT live server)
 ├── infra/           Docker, Coder, GPU and other infra configs
 ├── docs/            VitePress documentation site
-├── devbox.json           Pinned toolchains (Bun, Go, Rust, CLIs)
+├── mise.toml             Pinned toolchains (Bun, Go, Rust, CLIs)
 ├── Dockerfile.dev        Dev base image (Go + Bun + Rust toolchains)
 ├── docker-compose.dev.yml  Docker dev orchestration (replaces process-compose for dev)
-├── process-compose.yml   Alternative local orchestration (devbox shell)
+├── process-compose.yml   Alternative local orchestration (host toolchains)
 └── .woofx3.json          Shared runtime configuration (gitignored, create locally)
 ```
 
@@ -457,12 +457,14 @@ First startup downloads Go modules and compiles barkloader from scratch — subs
 
 ---
 
-### Devbox + process-compose (alternative)
+### mise + process-compose (alternative)
 
-Requires [Devbox](https://www.jetify.com/devbox) which uses Nix to pin all toolchains.
+Requires [mise](https://mise.jdx.dev), which installs the toolchains pinned in
+`mise.toml`, and a C compiler for the Rust crates (`build-essential` on Debian
+and Ubuntu).
 
 ```bash
-devbox shell          # enter the pinned environment
+mise install          # install the pinned toolchains (once per machine)
 process-compose up    # start all services defined in process-compose.yml
 ```
 
@@ -478,11 +480,11 @@ Set `messagebusUrl` to `nats://localhost:4222` in `.woofx3.json` when running th
   message bus.
 - **Storage.** Postgres or SQLite (system data) and SQLite (module
   key/value) — both behind the `db` proxy.
-- **Tooling.** [Devbox](https://www.jetify.com/devbox) pins toolchains via
-  Nix. Local development runs via Docker (`Dockerfile.dev` +
+- **Tooling.** [mise](https://mise.jdx.dev) pins toolchains in `mise.toml`.
+  Local development runs via Docker (`Dockerfile.dev` +
   `docker-compose.dev.yml`) or
-  [process-compose](https://github.com/F1bonacc1/process-compose) inside a
-  devbox shell. See [Development](#development).
+  [process-compose](https://github.com/F1bonacc1/process-compose) on the
+  host. See [Development](#development).
 
 ## Documentation
 

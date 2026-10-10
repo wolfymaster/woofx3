@@ -22,11 +22,10 @@ Must run **fully locally** — no required third-party SaaS at compile/runtime f
 
 ## Development environment
 
-Use **Devbox** ([devbox](https://www.jetify.com/devbox)) to set up a shell with all required dependencies. The project includes a `devbox.json` that pins toolchains for Bun, Go, Rust, and various CLI tools.
+Toolchains are pinned in **`mise.toml`** (matching CI) and resolve automatically in every worktree. Rust also needs a C compiler.
 
-```bash
-devbox shell  # Enter the devbox shell with all dependencies available
-```
+- Create a task's paired worktrees with `scripts/worktree.sh new <branch>` (`~/code/wt/<branch>/{woofx3,woofx3-ui}`). Each gets its own ports (see `../ports.env`), `.woofx3.json` and SQLite database.
+- Verify with `scripts/check.sh`. It runs CI's checks for the packages you changed and prints one PASS/FAIL line each. `--quick` skips tests; `--all` checks everything.
 
 Languages: **TypeScript (Bun)** on edges/integrations; **Rust** and **Go** for hot paths and core services.
 

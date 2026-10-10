@@ -31,10 +31,27 @@ Optional codegen used by that site: `bun run docs:generate` from `docs/` (see `d
 This project must run locally when compiled and cannot depend on third-party services. This requires a lot of 'from scratch' development. Libraries that can be included in the compiled binary are allowed. The major targeted platforms are windows and linux.
 
 # Development
-This project uses Devbox (https://www.jetify.com/devbox). The project includes a `devbox.json` that pins toolchains for Bun, Go, Rust, and various CLI tools. All commands must be run in a devbox shell which ensures (using nix) that all dependencies and correct versions are installed.
+Toolchains (Go, Rust, Bun, protoc, biome, sccache, buf, process-compose) are pinned in `mise.toml`, matching CI. With mise on PATH they resolve automatically in this checkout and in every worktree; `mise install` installs them once per machine. Rust also needs a C compiler (`build-essential`).
+
+### Worktrees and the feedback loop
+
+Work happens in paired worktrees created by `scripts/worktree.sh`:
 
 ```bash
-devbox shell  # Enter the devbox shell with all dependencies available
+scripts/worktree.sh new <branch>   # ~/code/wt/<branch>/{woofx3,woofx3-ui}
+scripts/worktree.sh ls
+scripts/worktree.sh rm <branch>    # keeps the branch; refuses while services still run in it
+```
+
+Each task gets its own slot: a block of ports, a `.woofx3.json` that uses them, installed Bun packages, and a migrated SQLite database. Its ports are listed in `../ports.env`. Never start services with the default ports from a worktree; they belong to the main clone.
+
+Verify changes with `scripts/check.sh`. It runs the CI checks for the packages your change touches (against `master`), plus the format check, and prints one PASS/FAIL line each with a log path:
+
+```bash
+scripts/check.sh            # what changed
+scripts/check.sh --quick    # build and type-check only
+scripts/check.sh <path>...  # specific packages
+scripts/check.sh --all      # everything CI checks
 ```
 
 This project makes heavy use of Typescript (Bun), Rust, and Golang. Core services are written in Rust or Golang for performance. Some services may be called hundreds of times per second. Typescript is used on 'edge' services and at integration points.
