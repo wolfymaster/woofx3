@@ -21,6 +21,10 @@ func chattySegment(condition string) *models.SegmentDefinition {
 	}
 }
 
+func noPrepare(*gorm.DB, *models.SegmentDefinition) error {
+	return nil
+}
+
 // recordedWrites collects what a definition write reported to its hook.
 type recordedWrites struct {
 	writes []SegmentDefinitionWrite
@@ -39,26 +43,26 @@ func TestSegmentDefinitionRevisesOnlyWhenTheConditionChanges(t *testing.T) {
 	hook := &recordedWrites{}
 
 	condition := `{"fact": "user:fact:messages", "op": "gte", "value": 10}`
-	stored, write, err := segments.UpsertDefinition(chattySegment(condition), []string{"user:fact:messages"}, hook.record)
+	stored, write, err := segments.UpsertDefinition(chattySegment(condition), []string{"user:fact:messages"}, noPrepare, hook.record)
 	if err != nil || write != SegmentDefinitionCreated || stored.Revision != 1 {
 		t.Fatalf("create = %+v, %v, %v", stored, write, err)
 	}
 
 	// The same condition spelled differently is the same condition.
-	_, write, err = segments.UpsertDefinition(chattySegment(`{"op":"gte","value":10,"fact":"user:fact:messages"}`), []string{"user:fact:messages"}, hook.record)
+	_, write, err = segments.UpsertDefinition(chattySegment(`{"op":"gte","value":10,"fact":"user:fact:messages"}`), []string{"user:fact:messages"}, noPrepare, hook.record)
 	if err != nil || write != SegmentDefinitionUnchanged {
 		t.Fatalf("identical save = %v, %v", write, err)
 	}
 
 	renamed := chattySegment(condition)
 	renamed.Name = "Very chatty"
-	stored, write, err = segments.UpsertDefinition(renamed, []string{"user:fact:messages"}, hook.record)
+	stored, write, err = segments.UpsertDefinition(renamed, []string{"user:fact:messages"}, noPrepare, hook.record)
 	if err != nil || write != SegmentDefinitionRenamed || stored.Revision != 1 {
 		t.Fatalf("rename = %+v, %v, %v", stored, write, err)
 	}
 
 	revised := chattySegment(`{"all": [{"fact": "user:fact:messages", "op": "gte", "value": 10}, {"fact": "user:fact:bits", "op": "gt", "value": 0}]}`)
-	stored, write, err = segments.UpsertDefinition(revised, []string{"user:fact:messages", "user:fact:bits", "user:fact:bits"}, hook.record)
+	stored, write, err = segments.UpsertDefinition(revised, []string{"user:fact:messages", "user:fact:bits", "user:fact:bits"}, noPrepare, hook.record)
 	if err != nil || write != SegmentDefinitionRevised || stored.Revision != 2 {
 		t.Fatalf("revise = %+v, %v, %v", stored, write, err)
 	}
@@ -76,7 +80,7 @@ func TestSegmentDefinitionRevisesOnlyWhenTheConditionChanges(t *testing.T) {
 	module := chattySegment(condition)
 	module.CreatedByType = "MODULE"
 	module.CreatedByRef = "twitch"
-	if _, _, err := segments.UpsertDefinition(module, []string{"user:fact:messages"}, hook.record); !errors.Is(err, ErrSegmentDefinitionOwned) {
+	if _, _, err := segments.UpsertDefinition(module, []string{"user:fact:messages"}, noPrepare, hook.record); !errors.Is(err, ErrSegmentDefinitionOwned) {
 		t.Fatalf("save over another creator's id: %v, want ErrSegmentDefinitionOwned", err)
 	}
 }
@@ -88,7 +92,7 @@ func TestSegmentDefinitionWriteRollsBackWithItsHook(t *testing.T) {
 	failing := func(*gorm.DB, *models.SegmentDefinition, SegmentDefinitionWrite) error {
 		return errors.New("outbox down")
 	}
-	if _, _, err := segments.UpsertDefinition(chattySegment(`{"fact": "user:fact:messages", "op": "exists"}`), []string{"user:fact:messages"}, failing); err == nil {
+	if _, _, err := segments.UpsertDefinition(chattySegment(`{"fact": "user:fact:messages", "op": "exists"}`), []string{"user:fact:messages"}, noPrepare, failing); err == nil {
 		t.Fatal("a failing hook did not fail the save")
 	}
 	if _, err := segments.GetDefinition("user:segment:chatty"); !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -110,7 +114,7 @@ func TestDependentSegmentsAreThoseReadingAChangedFact(t *testing.T) {
 	} {
 		definition := chattySegment(`{"fact": "` + facts[0] + `", "op": "exists"}`)
 		definition.ID = id
-		if _, _, err := segments.UpsertDefinition(definition, facts, hook.record); err != nil {
+		if _, _, err := segments.UpsertDefinition(definition, facts, noPrepare, hook.record); err != nil {
 			t.Fatalf("define %s: %v", id, err)
 		}
 	}
@@ -152,7 +156,7 @@ func TestSegmentMembershipMovesBetweenWindows(t *testing.T) {
 	segments := NewViewerSegmentRepository(db)
 	definition := chattySegment(`{"fact": "user:fact:messages", "op": "gte", "value": 3}`)
 	definition.WindowKind = models.FactWindowSession
-	if _, _, err := segments.UpsertDefinition(definition, []string{"user:fact:messages"}, (&recordedWrites{}).record); err != nil {
+	if _, _, err := segments.UpsertDefinition(definition, []string{"user:fact:messages"}, noPrepare, (&recordedWrites{}).record); err != nil {
 		t.Fatalf("define: %v", err)
 	}
 	viewer := ViewerKey{Platform: "twitch", SubjectID: "v1"}
@@ -254,5 +258,35 @@ func TestViewerLockKeyIsStablePerViewer(t *testing.T) {
 	if a == ViewerLockKey(ViewerKey{Platform: "twitch", SubjectID: "v2"}) ||
 		a == ViewerLockKey(ViewerKey{Platform: "youtube", SubjectID: "v1"}) {
 		t.Fatal("two viewers share a lock key")
+	}
+}
+
+func TestSegmentSaveRefusesFactsThatDoNotExistAndRunsPrepareInside(t *testing.T) {
+	db := openFactDb(t)
+	defineFact(t, db, "user:fact:messages", models.FactAggregateCount, models.FactWindowLifetime)
+	segments := NewViewerSegmentRepository(db)
+	hook := &recordedWrites{}
+
+	_, _, err := segments.UpsertDefinition(chattySegment(`{}`), []string{"user:fact:messages", "user:fact:gone", "user:fact:lost"}, noPrepare, hook.record)
+	var missing *SegmentFactsMissingError
+	if !errors.As(err, &missing) || !slices.Equal(missing.FactIDs, []string{"user:fact:gone", "user:fact:lost"}) {
+		t.Fatalf("save over missing facts: %v, want them named", err)
+	}
+
+	refused := errors.New("condition does not fit")
+	refuse := func(*gorm.DB, *models.SegmentDefinition) error { return refused }
+	if _, _, err := segments.UpsertDefinition(chattySegment(`{}`), []string{"user:fact:messages"}, refuse, hook.record); !errors.Is(err, refused) {
+		t.Fatalf("save refused by prepare: %v", err)
+	}
+	derive := func(_ *gorm.DB, in *models.SegmentDefinition) error {
+		in.WindowKind = models.FactWindowSession
+		return nil
+	}
+	stored, _, err := segments.UpsertDefinition(chattySegment(`{}`), []string{"user:fact:messages"}, derive, hook.record)
+	if err != nil || stored.WindowKind != models.FactWindowSession {
+		t.Fatalf("save with a derived window = %+v, %v", stored, err)
+	}
+	if len(hook.writes) != 1 {
+		t.Fatalf("recorded writes = %v, want only the last save", hook.writes)
 	}
 }

@@ -10,13 +10,14 @@ import (
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
-// ViewerFactRoutes registers the ViewerFactService Twirp handler. Casbin is
-// not applied: deltas are applied by the engine, never on behalf of a user,
-// and definitions are gated by the proxy's existing auth surface like stream
-// gauges.
+// ViewerFactRoutes registers the ViewerFactService Twirp handler, which serves
+// viewer facts and the segments over them. Casbin is not applied: deltas are
+// applied by the engine, never on behalf of a user, and definitions are gated
+// by the proxy's existing auth surface like stream gauges.
 func ViewerFactRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
 	viewerFactService := svc.NewViewerFactService(
 		repo.NewViewerFactRepository(app.Db),
+		repo.NewViewerSegmentRepository(app.Db),
 		repo.NewModuleRepository(app.Db),
 		app.EventPublisher,
 	)

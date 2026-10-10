@@ -29,7 +29,8 @@ service ViewerFactService {
   // id is owned by a different creator.
   rpc UpsertFactDefinition(UpsertFactDefinitionRequest) returns (FactDefinitionResponse);
   // Deletes a definition and every value of it. Fails with `not_found` when
-  // there is no such definition.
+  // there is no such definition, and with `failed_precondition`, naming them,
+  // when a segment reads it.
   rpc DeleteFactDefinition(DeleteFactDefinitionRequest) returns (common.ResponseStatus);
   // Every definition, each re-resolved against the triggers registered now.
   // A definition is applied only while its status is `active`.
@@ -43,10 +44,45 @@ service ViewerFactService {
   // does not fit its definition is counted invalid. Neither fails the rest of
   // the event. `last` and the session aggregates ignore an event older than
   // the stored value, so a replay of old events cannot move them back.
+  //
+  // In the same transaction, every segment reading a changed value is
+  // evaluated for that viewer, its membership updated, and each viewer that
+  // entered or left it announced as `viewer.segment.entered` or
+  // `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
+  // apply updates membership and announces nothing. A segment reading a fact
+  // that is not active, or whose condition no longer fits its facts, is
+  // frozen: neither its membership nor its edges move until it fits again. A
+  // session segment moves only for an event of the current stream session.
   rpc ApplyFactDeltas(ApplyFactDeltasRequest) returns (ApplyFactDeltasResponse);
   // One viewer's lifetime values and their values in the current stream
-  // session.
+  // session, of active facts only: a fact that is not active has stopped
+  // counting, so its stored value is stale.
   rpc GetViewerFacts(GetViewerFactsRequest) returns (GetViewerFactsResponse);
+
+  // Creates or replaces a segment: a condition over one viewer's facts. A
+  // change to the condition increments `revision`. Creating a segment or
+  // changing its condition fills its membership from the stored values in
+  // the same transaction, announcing nothing, so a save never floods
+  // workflows with edges. A change to the name or description alone keeps
+  // both.
+  //
+  // A segment saved while a fact it reads is not active is `frozen`: it is
+  // saved, but its membership is filled only once that fact is active again,
+  // which the response's status and message say.
+  //
+  // Fails with `invalid_argument` when the condition is malformed or applies
+  // an operator the fact's value kind does not support, with `not_found` when
+  // it reads a fact that does not exist, and with `failed_precondition` when
+  // the id is owned by a different creator.
+  rpc UpsertSegmentDefinition(UpsertSegmentDefinitionRequest) returns (SegmentDefinitionResponse);
+  // Deletes a segment and its membership, announcing no edges. Fails with
+  // `not_found` when there is no such segment.
+  rpc DeleteSegmentDefinition(DeleteSegmentDefinitionRequest) returns (common.ResponseStatus);
+  // Every segment, each re-checked against the facts it reads now.
+  rpc ListSegmentDefinitions(ListSegmentDefinitionsRequest) returns (ListSegmentDefinitionsResponse);
+  // The segments one viewer is in now: lifetime segments, and session
+  // segments entered in the current stream session.
+  rpc GetViewerSegments(GetViewerSegmentsRequest) returns (GetViewerSegmentsResponse);
 }
 
 message FactDefinition {
@@ -232,4 +268,89 @@ message GetViewerFactsResponse {
   // Lifetime values and current-session values. A fact the viewer has no
   // value for is absent.
   repeated ViewerFactValue values = 4;
+}
+
+message SegmentDefinition {
+  // Canonical segment id, e.g. `user:segment:<slug>`.
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The condition as JSON: `{"all": [...]}`, `{"any": [...]}`, `{"not": {...}}`
+  // or an atom `{"fact": "<fact id>", "op": "...", "value": ...}`. Ops: eq,
+  // ne, gt, gte, lt, lte, exists, not_exists, and within and older_than,
+  // whose value is a duration such as "720h" and which read timestamp facts.
+  string when = 4;
+  // The facts the condition reads, in id order.
+  repeated string facts = 5;
+  // `session` when the condition reads any session-window fact: membership is
+  // then kept per stream session and a new session starts it empty.
+  // `lifetime` otherwise.
+  string window_kind = 6;
+  // True when the condition has a within or older_than atom. Membership can
+  // then change with time alone; it is re-evaluated, and edges announced,
+  // only when one of the viewer's facts changes, so the stored membership is
+  // as of the viewer's last change.
+  bool time_relative = 7;
+  int64 revision = 8;
+  string created_by_type = 9;
+  string created_by_ref = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  // `active`; `invalid` when the condition no longer fits the facts it reads
+  // (a fact's value kind changed); or `frozen` when a fact it reads is not
+  // active, so its membership is not kept and was not filled. A frozen
+  // segment is refilled silently once every fact it reads is active again,
+  // which the db checks whenever triggers are registered or removed.
+  string status = 13;
+  // Why the status is not `active`. Empty when it is.
+  string reason = 14;
+}
+
+message UpsertSegmentDefinitionRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The condition as JSON; see SegmentDefinition.when.
+  string when = 4;
+  // Who declares the segment: `USER` for one saved from the UI, `MODULE` for
+  // one a module manifest declares. Defaults to `USER`.
+  string created_by_type = 5;
+  string created_by_ref = 6;
+}
+
+message SegmentDefinitionResponse {
+  common.ResponseStatus status = 1;
+  SegmentDefinition definition = 2;
+}
+
+message DeleteSegmentDefinitionRequest {
+  string id = 1;
+}
+
+message ListSegmentDefinitionsRequest {}
+
+message ListSegmentDefinitionsResponse {
+  common.ResponseStatus status = 1;
+  repeated SegmentDefinition definitions = 2;
+}
+
+message GetViewerSegmentsRequest {
+  string platform = 1;
+  string subject_id = 2;
+}
+
+message ViewerSegment {
+  string segment_id = 1;
+  // Empty for a lifetime segment, the stream session id for a session one.
+  string window_key = 2;
+  google.protobuf.Timestamp entered_at = 3;
+  // See SegmentDefinition.time_relative.
+  bool time_relative = 4;
+}
+
+message GetViewerSegmentsResponse {
+  common.ResponseStatus status = 1;
+  // The current stream session, or empty when none has started.
+  string session_id = 2;
+  repeated ViewerSegment segments = 3;
 }
