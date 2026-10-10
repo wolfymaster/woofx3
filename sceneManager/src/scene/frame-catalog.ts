@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Logger } from "@woofx3/common/runtime";
 import type { BarkloaderFrameClient, BarkloaderFrameInfo } from "./frame-assembler";
+import { frameMediaProxyBase } from "./media-proxy";
 import type { OverlayWidgetInstance } from "./scene-host";
 import { selectedThemeId } from "./widget-theme";
 
@@ -46,15 +47,25 @@ export function frameDocumentUrl(
   return `/frames/${encodeURIComponent(moduleId)}/${encodeURIComponent(manifestId)}?${query}`;
 }
 
+/** How one widget and theme is framed. */
+interface Framing {
+  frameUrl: string;
+  /** Set when the frame runs under the theme policy (see `PlacementMeta.mediaProxyBase`). */
+  mediaProxyBase?: string;
+  /** Set when barkloader gave no frame (see `OverlayWidgetInstance.frameUnavailable`). */
+  frameUnavailable?: true;
+}
+
 /** Gives each placement of a scene config its frame URL and linked resources. */
 export interface PlacementFraming {
   frame(instances: OverlayWidgetInstance[]): Promise<OverlayWidgetInstance[]>;
 }
 
 /**
- * Frame URLs and linked resources for the placements of a scene config. Each
- * distinct widget and theme asks barkloader once per config (which serves it
- * from its frame cache), and each module's settings are read once.
+ * Frame URLs, linked resources and media proxy bases for the placements of a
+ * scene config. Each distinct widget and theme asks barkloader once per
+ * config (which serves it from its frame cache), and each module's settings
+ * are read once.
  */
 export class FrameCatalog implements PlacementFraming {
   constructor(
@@ -64,7 +75,7 @@ export class FrameCatalog implements PlacementFraming {
   ) {}
 
   async frame(instances: OverlayWidgetInstance[]): Promise<OverlayWidgetInstance[]> {
-    const urls = new Map<string, Promise<string>>();
+    const framings = new Map<string, Promise<Framing>>();
     const linked = new Map<string, Promise<Record<string, string>>>();
     return Promise.all(
       instances.map(async (instance) => {
@@ -74,28 +85,32 @@ export class FrameCatalog implements PlacementFraming {
         }
         const themeId = selectedThemeId(instance.settings);
         const urlKey = `${instance.moduleId}\n${instance.manifestId}\n${themeId ?? ""}`;
-        if (!urls.has(urlKey)) {
-          urls.set(urlKey, this.frameUrl(instance.moduleId, instance.manifestId, themeId));
+        if (!framings.has(urlKey)) {
+          framings.set(urlKey, this.framing(instance.moduleId, instance.manifestId, themeId));
         }
         if (!linked.has(instance.moduleId)) {
           linked.set(instance.moduleId, this.moduleLinks(instance.moduleId));
         }
+        const framing = await framings.get(urlKey)!;
         return {
           ...instance,
-          frameUrl: await urls.get(urlKey)!,
+          ...framing,
           linkedResources: await linked.get(instance.moduleId)!,
         };
       })
     );
   }
 
-  private async frameUrl(moduleId: string, manifestId: string, themeId: string | undefined): Promise<string> {
-    let version = UNAVAILABLE_VERSION;
+  /**
+   * The frame URL, versioned by barkloader's answer, and the media proxy base
+   * the frame's policy calls for (`frameMediaProxyBase`). When barkloader
+   * cannot be asked, or does not answer with a frame, neither is known: the
+   * placement is marked `frameUnavailable` and framed again later.
+   */
+  private async framing(moduleId: string, manifestId: string, themeId: string | undefined): Promise<Framing> {
+    let info: BarkloaderFrameInfo | null = null;
     try {
-      const info = await this.barkloader.fetchWidgetFrame(moduleId, manifestId, themeId);
-      if (info) {
-        version = frameVersion(info);
-      }
+      info = await this.barkloader.fetchWidgetFrame(moduleId, manifestId, themeId);
     } catch (err) {
       this.logger.warn("barkloader frame fetch failed while versioning a frame URL", {
         moduleId,
@@ -103,7 +118,12 @@ export class FrameCatalog implements PlacementFraming {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    return frameDocumentUrl(moduleId, manifestId, themeId, version);
+    if (info === null) {
+      return { frameUrl: frameDocumentUrl(moduleId, manifestId, themeId, UNAVAILABLE_VERSION), frameUnavailable: true };
+    }
+    const frameUrl = frameDocumentUrl(moduleId, manifestId, themeId, frameVersion(info));
+    const mediaProxyBase = frameMediaProxyBase(info);
+    return mediaProxyBase === undefined ? { frameUrl } : { frameUrl, mediaProxyBase };
   }
 
   /** A widget still renders when its module's settings cannot be read; it
