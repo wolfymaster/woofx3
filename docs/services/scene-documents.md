@@ -234,7 +234,7 @@ one read of the row, for the scene documents alone.
 
 ## Tests
 
-- `shared/clients/typescript/api/scene-editor/*.test.ts` cover the shared
+- `shared/clients/typescript/api/tests/scene-editor/*.test.ts` cover the shared
   core on its own: documents and ops, the protocol decoders, the sequencer
   (including an external change that carries only placement meta), rebasing
   pending edits onto a snapshot (touched fields are replaced whole, so text
