@@ -130,6 +130,26 @@ describe("configOfSnapshot", () => {
     expect(config.widgets[1]!.visible).toBe(false);
   });
 
+  it("passes on the transitions a widget can play, every one while that is not known", () => {
+    const transitions = {
+      transitionIn: { type: "typewriter", durationMs: 900 },
+      transitionOut: { type: "fade", durationMs: 300 },
+    };
+    const withTransitions: SceneSnapshot = {
+      ...snapshot,
+      doc: doc({ a: { ...placement("a0000"), ...transitions } }),
+    };
+    expect(configOfSnapshot(withTransitions).widgets[0]).toMatchObject(transitions);
+
+    const declaresNone: SceneSnapshot = {
+      ...withTransitions,
+      meta: { a: { ...snapshot.meta.a!, widgetTransitions: [] } },
+    };
+    const config = configOfSnapshot(declaresNone).widgets[0]!;
+    expect(config.transitionIn).toBeUndefined();
+    expect(config.transitionOut).toEqual(transitions.transitionOut);
+  });
+
   it("leaves out a placement whose meta has not arrived", () => {
     const { b: _b, ...meta } = snapshot.meta;
     expect(configOfSnapshot({ ...snapshot, meta }).widgets.map((w) => w.id)).toEqual(["a"]);

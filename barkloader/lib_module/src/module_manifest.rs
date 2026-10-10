@@ -280,10 +280,14 @@ pub struct ManifestConfigFieldOption {
 /// control, not the stored value, and the latter pair only ever appeared on
 /// module settings.
 ///
+/// `font` holds a CSS font-family list. A widget frame is told which of its
+/// settings are fonts (`font_setting_ids`), so the scene manager can serve the
+/// Google family the first entry names.
+///
 /// `theme` is in the list because consumers render it, but no manifest may
 /// declare one: the engine adds it to a widget that declares a `theme`
 /// contract (see `THEME_SETTING_ID`).
-pub const CONFIG_FIELD_TYPES: [&str; 13] = [
+pub const CONFIG_FIELD_TYPES: [&str; 14] = [
     "number",
     "range",
     "text",
@@ -291,6 +295,7 @@ pub const CONFIG_FIELD_TYPES: [&str; 13] = [
     "media",
     "toggle",
     "color",
+    "font",
     "asset",
     "resource_ref",
     "button",
@@ -309,6 +314,9 @@ pub const COMPARISON_OPERATORS: [&str; 6] = ["eq", "ne", "gt", "gte", "lt", "lte
 /// to a widget that declares a `theme` contract. The stored value is a theme's
 /// canonical id, or absent for the contract's defaults.
 pub const THEME_FIELD_TYPE: &str = "theme";
+
+/// The field type of a setting holding a CSS font-family list.
+pub const FONT_FIELD_TYPE: &str = "font";
 pub const THEME_SETTING_ID: &str = "theme";
 
 /// The types a `list` field's `itemFields` may use: controls that fit in one
@@ -320,6 +328,15 @@ pub const LIST_ITEM_FIELD_TYPES: [&str; 5] = ["number", "text", "select", "toggl
 /// `shared/clients/typescript/api/ui-schema.ts` and `WidgetSurface` in the
 /// module SDK.
 pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
+
+/// The transition types the scene host plays on any widget's box. A widget
+/// may not declare one of these as its own. Mirrors
+/// `GENERIC_TRANSITION_TYPES` in the module SDK's widget-transitions.ts.
+pub const GENERIC_TRANSITION_TYPES: [&str; 7] =
+    ["fade", "slide", "zoom", "bounce", "spin", "pop", "blur"];
+
+/// The longest label a widget's declared transition may carry.
+pub const WIDGET_TRANSITION_LABEL_MAX: usize = 64;
 
 /// A flat list of the paths a runtime value carries, with their types.
 ///
@@ -656,10 +673,27 @@ pub struct ModuleWidget {
     /// (see `resolve_taxonomy`).
     #[serde(default)]
     pub category: Option<String>,
+    /// Transition types the widget plays on its own content (a text widget
+    /// revealing letter by letter), offered beside the generic ones when a
+    /// placement picks how it enters and leaves. The widget's CSS animates
+    /// them from the frame's `data-transition` attributes.
+    #[serde(default)]
+    pub transitions: Vec<ManifestWidgetTransition>,
     /// Opts the widget into themes. Absent means the widget cannot be themed
     /// and nothing about it changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<WidgetThemeContract>,
+}
+
+/// A transition type a widget declares for its own content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestWidgetTransition {
+    /// What a placement's `transitionIn` / `transitionOut` names, and what
+    /// the frame's `data-transition` attribute is set to: a lowercase token.
+    pub id: String,
+    /// What an editor shows for it.
+    pub label: String,
 }
 
 /// What a theme may change about a widget: named CSS variables and named
@@ -1334,6 +1368,17 @@ impl ModuleWidget {
         dedup_preserve_order(&self.alert_types)
     }
 
+    /// The ids of the widget's `font` settings, in declaration order: the
+    /// settings whose first family the scene manager offers to serve.
+    pub fn font_setting_ids(&self) -> Vec<String> {
+        self.settings_schema
+            .iter()
+            .flatten()
+            .filter(|field| field.field_type == FONT_FIELD_TYPE)
+            .map(|field| field.id.clone())
+            .collect()
+    }
+
     /// Normalize the manifest `entry` path relative to the widget asset
     /// root (the `assets` directory). The registered widget row and the
     /// repository both use this assets-relative form, so
@@ -1425,6 +1470,14 @@ impl ModuleWidget {
             surfaces: self.surfaces.clone(),
             hosts_surface: self.hosts_surface.clone().unwrap_or_default(),
             taxonomy: self.resolve_taxonomy(),
+            transitions: self
+                .transitions
+                .iter()
+                .map(|t| super::db_proxy::WidgetTransitionJson {
+                    id: t.id.clone(),
+                    label: t.label.trim().to_string(),
+                })
+                .collect(),
             entry,
         }
     }
@@ -2378,6 +2431,28 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].id, "minViewers");
         assert_eq!(fields[0].field_type, "number");
+    }
+
+    #[test]
+    fn font_setting_ids_lists_only_font_settings_in_order() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "settingsSchema": [
+                { "id": "headline", "label": "Headline", "type": "font" },
+                { "id": "color", "label": "Color", "type": "color" },
+                { "id": "body", "label": "Body", "type": "font" }
+            ]
+        }))
+        .expect("parse");
+        assert_eq!(w.font_setting_ids(), vec!["headline", "body"]);
+    }
+
+    #[test]
+    fn font_setting_ids_is_empty_without_a_schema() {
+        let w: ModuleWidget =
+            serde_json::from_value(serde_json::json!({ "id": "x", "name": "X" })).expect("parse");
+        assert!(w.font_setting_ids().is_empty());
     }
 
     #[test]

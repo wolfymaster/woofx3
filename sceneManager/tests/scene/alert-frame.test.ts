@@ -12,6 +12,7 @@ const barkloader: BarkloaderFrameClient = {
     entryHtml: "<!doctype html><html><head></head><body></body></html>",
     resourceBaseUrl: "https://cdn.example.com/w/",
     theme: null,
+    fontSettings: [],
   })),
 };
 
@@ -59,6 +60,28 @@ describe("FrameAssembler.assembleAlertWidget", () => {
     });
   });
 
+  it("boots a widget entering with its own transition already playing it, and leaves a generic one to the page", async () => {
+    const withTransition = (transitionIn: Record<string, unknown>) => ({
+      ...delivery,
+      layout: { ...delivery.layout, widgets: [{ ...delivery.layout.widgets[0]!, transitionIn }] },
+    });
+    const own = new FrameAssembler(
+      hostWithEvent({ type: "alert", value: withTransition({ type: "typewriter", durationMs: 900 }) }),
+      fakeLogger(),
+      { barkloader }
+    );
+    const ownBoot = bootOf(await (await own.assembleAlertWidget("scene-1", "evt-1", "t1", null)).text());
+    expect(ownBoot.transition).toEqual({ phase: "in", type: "typewriter", durationMs: 900, easing: "ease-out" });
+
+    const generic = new FrameAssembler(
+      hostWithEvent({ type: "alert", value: withTransition({ type: "fade", durationMs: 900 }) }),
+      fakeLogger(),
+      { barkloader }
+    );
+    const genericBoot = bootOf(await (await generic.assembleAlertWidget("scene-1", "evt-1", "t1", null)).text());
+    expect(genericBoot.transition).toBeUndefined();
+  });
+
   it("returns the uniform blank document for an unknown widget, a non-alert event, or another scene's event", async () => {
     const cases: Array<[{ type: string; value: unknown } | null, string]> = [
       [{ type: "alert", value: delivery }, "missing"],
@@ -79,6 +102,7 @@ describe("FrameAssembler.assembleDocument — surfaces", () => {
       entryHtml: "<!doctype html><html><head></head></html>",
       resourceBaseUrl: "https://e/",
       theme: null,
+      fontSettings: [],
     }),
   };
 

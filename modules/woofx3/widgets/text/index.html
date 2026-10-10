@@ -38,6 +38,97 @@
       overflow-wrap: anywhere;
       text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
     }
+
+    /* Each letter is its own span, numbered --i from the first and --ri from
+       the last, so the transitions this widget declares can move the letters
+       one at a time. Words stay unbroken; lines wrap between them. The host
+       sets data-transition, data-transition-phase, --transition-duration and
+       --transition-easing on :root while one of them plays. */
+    .word {
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    .letter {
+      display: inline-block;
+    }
+
+    :root[data-transition] .letter {
+      animation-fill-mode: both;
+      animation-timing-function: var(--transition-easing, ease-out);
+    }
+
+    /* A letter's own animation takes the first 40% of the duration's worth
+       of time, and the starts are spread over the rest. */
+    :root[data-transition="letters"] .letter,
+    :root[data-transition="wave"] .letter {
+      animation-duration: calc(var(--transition-duration, 1000ms) * 0.4);
+      animation-delay: calc(var(--transition-duration, 1000ms) * 0.6 * var(--i) / var(--n));
+    }
+
+    :root[data-transition="letters"][data-transition-phase="in"] .letter {
+      animation-name: letter-in;
+    }
+
+    :root[data-transition="letters"][data-transition-phase="out"] .letter {
+      animation-name: letter-out;
+    }
+
+    :root[data-transition="wave"][data-transition-phase="in"] .letter {
+      animation-name: wave-in;
+    }
+
+    :root[data-transition="wave"][data-transition-phase="out"] .letter {
+      animation-name: wave-out;
+    }
+
+    /* Typed in from the first letter, and backspaced out from the last. */
+    :root[data-transition="typewriter"] .letter {
+      animation-duration: 1ms;
+      animation-timing-function: linear;
+    }
+
+    :root[data-transition="typewriter"][data-transition-phase="in"] .letter {
+      animation-name: letter-show;
+      animation-delay: calc(var(--transition-duration, 1000ms) * var(--i) / (var(--n) + 1));
+    }
+
+    :root[data-transition="typewriter"][data-transition-phase="out"] .letter {
+      animation-name: letter-hide;
+      animation-delay: calc(var(--transition-duration, 1000ms) * var(--ri) / (var(--n) + 1));
+    }
+
+    @keyframes letter-show {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes letter-hide {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+
+    @keyframes letter-in {
+      from { opacity: 0; transform: translateY(0.4em); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @keyframes letter-out {
+      from { opacity: 1; transform: none; }
+      to { opacity: 0; transform: translateY(-0.4em); }
+    }
+
+    @keyframes wave-in {
+      0% { opacity: 0; transform: translateY(0.8em); }
+      60% { opacity: 1; transform: translateY(-0.25em); }
+      100% { opacity: 1; transform: none; }
+    }
+
+    @keyframes wave-out {
+      0% { opacity: 1; transform: none; }
+      40% { opacity: 1; transform: translateY(-0.25em); }
+      100% { opacity: 0; transform: translateY(0.8em); }
+    }
   </style>
 </head>
 
@@ -55,30 +146,24 @@
       const settings = host.settings;
       const el = document.getElementById("text");
 
-      // Every other segment between {primary} markers is highlighted. The
-      // text goes in as text nodes, never markup: it usually carries a
+      // The text goes in as text nodes, never markup: it usually carries a
       // viewer's name.
-      const highlight = str(settings.highlightColor, "#ec6758");
-      str(settings.text, "").split("{primary}").forEach((segment, i) => {
-        if (i % 2 === 1) {
-          const span = document.createElement("span");
-          span.style.color = highlight;
-          span.textContent = segment;
-          el.appendChild(span);
-        } else {
-          el.appendChild(document.createTextNode(segment));
-        }
+      const letters = [];
+      appendLetters(el, withoutMarkup(str(settings.text, "")), letters);
+      letters.forEach((letter, i) => {
+        letter.style.setProperty("--i", String(i));
+        letter.style.setProperty("--ri", String(letters.length - 1 - i));
       });
+      el.style.setProperty("--n", String(Math.max(letters.length - 1, 1)));
 
-      playForDuration(host, num(settings.duration, 0), () => {
-        el.style.visibility = "hidden";
-      });
+      playForDuration(host, num(settings.duration, 0));
     })();
 
     // In an alert, a duration gives this widget a length of its own: it
-    // completes when the time is up, and the alert waits for it. Without one
-    // it completes at once and stays up for as long as the alert does.
-    function playForDuration(host, seconds, hide) {
+    // completes when the time is up, the alert waits for it, and the page
+    // takes it off screen with its out-transition. Without one it completes
+    // at once and stays up for as long as the alert does.
+    function playForDuration(host, seconds) {
       if (host.surface !== "alert") {
         return;
       }
@@ -87,11 +172,49 @@
         return;
       }
       host.onEvent((event) => {
-        setTimeout(() => {
-          hide();
-          event.complete();
-        }, seconds * 1000);
+        setTimeout(() => event.complete(), seconds * 1000);
       }, { autoComplete: false });
+    }
+
+    // Saved text may carry {primary} markers, from a highlight markup this
+    // widget does not draw. Dropping them shows the words between them in the
+    // text's color rather than the markers themselves.
+    function withoutMarkup(text) {
+      return text.split("{primary}").join("");
+    }
+
+    // `text` as words of letter spans, collected into `letters` in reading
+    // order. It goes in as text, never markup: it usually carries a viewer's
+    // name.
+    function appendLetters(parent, text, letters) {
+      for (const token of text.split(/(\s+)/)) {
+        if (token === "") {
+          continue;
+        }
+        if (/^\s+$/.test(token)) {
+          parent.appendChild(document.createTextNode(token));
+          continue;
+        }
+        const word = document.createElement("span");
+        word.className = "word";
+        for (const character of graphemes(token)) {
+          const letter = document.createElement("span");
+          letter.className = "letter";
+          letter.textContent = character;
+          word.appendChild(letter);
+          letters.push(letter);
+        }
+        parent.appendChild(word);
+      }
+    }
+
+    // What a reader counts as one letter, so an emoji or an accented letter
+    // is never split in two.
+    function graphemes(text) {
+      if (typeof Intl === "object" && typeof Intl.Segmenter === "function") {
+        return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text), (s) => s.segment);
+      }
+      return Array.from(text);
     }
 
     function str(value, fallback) {

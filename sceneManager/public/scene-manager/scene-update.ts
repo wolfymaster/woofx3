@@ -8,6 +8,8 @@
 // for a fresh frame once that has painted. Only a different frame document
 // (another widget, version or theme) means a new frame for that reason.
 
+import type { PlacementTransition } from "@woofx3/module-sdk";
+
 export interface WidgetPlacementConfig {
   id: string;
   widgetCanonicalId: string;
@@ -24,6 +26,10 @@ export interface WidgetPlacementConfig {
   mediaProxyBase?: string;
   /** False for a placement hidden in the editor; absent means shown. */
   visible?: boolean;
+  /** How the placement enters and leaves; absent means it simply appears
+   *  and disappears. */
+  transitionIn?: PlacementTransition;
+  transitionOut?: PlacementTransition;
 }
 
 export interface SceneConfig {

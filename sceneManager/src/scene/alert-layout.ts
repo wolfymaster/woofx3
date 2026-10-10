@@ -1,3 +1,4 @@
+import { type PlacementTransition, isTransitionAvailable, parsePlacementTransition } from "@woofx3/module-sdk";
 import {
   normalizePosition,
   type OverlayWidgetDefinition,
@@ -29,6 +30,9 @@ export interface AlertLayoutWidget {
   manifestId: string;
   position: OverlayWidgetPosition;
   settings: Record<string, unknown>;
+  /** How the widget enters when the alert starts, and leaves when it is done. */
+  transitionIn?: PlacementTransition;
+  transitionOut?: PlacementTransition;
 }
 
 /** An alert's widgets, positioned on a canvas the alert widget scales to fit. */
@@ -130,6 +134,12 @@ export function parseAlertLayout(raw: unknown, catalog: OverlayWidgetDefinition[
       continue;
     }
 
+    const transitions = layoutWidgetTransitions(w, definition.transitions);
+    if (!transitions.ok) {
+      reject(transitions.reason);
+      continue;
+    }
+
     ids.add(id);
     widgets.push({
       id,
@@ -138,9 +148,41 @@ export function parseAlertLayout(raw: unknown, catalog: OverlayWidgetDefinition[
       manifestId: parsed.manifestId,
       position: normalizePosition(w),
       settings: isRecord(w.settings) ? w.settings : {},
+      ...transitions.transitions,
     });
   }
   return { ok: true, layout: { width: raw.width, height: raw.height, widgets }, rejected };
+}
+
+/**
+ * A layout widget's transitions, each a shape the page can play and a type
+ * the widget can play. A layout is checked when its alert is sent, so a
+ * mistake here drops the widget with a reason, as any other mistake does.
+ */
+function layoutWidgetTransitions(
+  w: Record<string, unknown>,
+  declared: readonly string[]
+):
+  | { ok: true; transitions: { transitionIn?: PlacementTransition; transitionOut?: PlacementTransition } }
+  | { ok: false; reason: string } {
+  const transitions: { transitionIn?: PlacementTransition; transitionOut?: PlacementTransition } = {};
+  for (const field of ["transitionIn", "transitionOut"] as const) {
+    if (w[field] === undefined || w[field] === null) {
+      continue;
+    }
+    const parsed = parsePlacementTransition(w[field]);
+    if (!parsed.ok) {
+      return { ok: false, reason: `\`${field}\`: ${parsed.reason}` };
+    }
+    if (!isTransitionAvailable(parsed.transition.type, declared)) {
+      return {
+        ok: false,
+        reason: `\`${field}\`: the widget has no transition ${JSON.stringify(parsed.transition.type)}`,
+      };
+    }
+    transitions[field] = parsed.transition;
+  }
+  return { ok: true, transitions };
 }
 
 /**

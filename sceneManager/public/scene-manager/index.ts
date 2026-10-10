@@ -42,7 +42,13 @@ import {
   type SceneConfig,
   type WidgetPlacementConfig,
 } from "./scene-update";
-import { encodePlacementBoot } from "@woofx3/module-sdk";
+import {
+  type WidgetTransitionState,
+  encodePlacementBoot,
+  isGenericTransitionType,
+  widgetTransitionState,
+} from "@woofx3/module-sdk";
+import { TransitionAnimator } from "./transitions";
 import {
   type SceneOpsEvent,
   type SceneSnapshot,
@@ -80,23 +86,18 @@ function generateNonce(): string {
 /**
  * A frame's URL with its placement in the fragment (see `WidgetPlacementBoot`):
  * the document is the widget's and cached, the placement never reaches the
- * server.
+ * server. `entrance` is one of the widget's own transitions for the frame to
+ * play as it first paints.
  */
-function frameSrc(instance: WidgetPlacementConfig, nonce: string): string {
+function frameSrc(instance: WidgetPlacementConfig, nonce: string, entrance?: WidgetTransitionState): string {
   const boot = encodePlacementBoot({
     nonce,
     instanceId: instance.id,
     settings: instance.settings,
     linkedResources: instance.linkedResources ?? {},
+    ...(entrance ? { transition: entrance } : {}),
   });
   return `${instance.frameUrl}#${boot}`;
-}
-
-/** A placement hidden in the editor keeps its frame running, out of sight. */
-function showIf(element: HTMLElement | undefined, visible: boolean | undefined): void {
-  if (element) {
-    element.style.visibility = visible === false ? "hidden" : "";
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -201,6 +202,9 @@ function main(): void {
     swap: { cancel: () => void } | null;
   }
   const mounted = new Map<string, MountedPlacement>();
+  // A hidden placement keeps its frame running, out of sight; this shows and
+  // hides placements, playing their transitions.
+  const animator = new TransitionAnimator();
 
   const mountAlertWidget = (instance: WidgetPlacementConfig): (() => void) => {
     const element = document.createElement("div");
@@ -239,7 +243,9 @@ function main(): void {
       // Finishes what is playing while the queue is still there to hear it.
       alertWidget.dispose();
       queueManager.unregister(subId);
-      widgetElements.delete(instance.id);
+      if (widgetElements.get(instance.id) === element) {
+        widgetElements.delete(instance.id);
+      }
       element.remove();
     };
   };
@@ -250,8 +256,19 @@ function main(): void {
     unmount: () => void;
   }
 
-  /** A widget's frame. A `hidden` one is loading to replace another (see `swapFrame`). */
-  const mountFramedWidget = (instance: WidgetPlacementConfig, hidden = false, onRendered?: () => void): Frame => {
+  interface FrameOptions {
+    /** Loading to replace another frame (see `swapFrame`). */
+    hidden?: boolean;
+    onRendered?: () => void;
+    /** One of the widget's own transitions, played as the frame first paints. */
+    entrance?: WidgetTransitionState;
+  }
+
+  /** A widget's frame. */
+  const mountFramedWidget = (
+    instance: WidgetPlacementConfig,
+    { hidden = false, onRendered, entrance }: FrameOptions = {}
+  ): Frame => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
     placeAt(iframe, instance.position);
@@ -312,7 +329,7 @@ function main(): void {
       sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = frameSrc(instance, nonce);
+    iframe.src = frameSrc(instance, nonce, entrance);
 
     bridges.add(bridge);
     container.appendChild(iframe);
@@ -334,14 +351,49 @@ function main(): void {
     return { element: iframe, bridge, unmount };
   };
 
+  /**
+   * Put a placement on the page, entering with its transition when it is
+   * shown. A generic entrance on a frame waits for the frame's first paint,
+   * or it would play on an empty box; one of the widget's own is in the
+   * frame's boot payload and starts as the widget does.
+   */
   function mount(instance: WidgetPlacementConfig): void {
+    const visible = instance.visible !== false;
+    const entrance = visible ? instance.transitionIn : undefined;
     if (instance.hostsSurface === "alert") {
       mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
-    } else {
-      const frame = mountFramedWidget(instance);
-      mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+      const element = widgetElements.get(instance.id);
+      if (element && visible) {
+        animator.enter({ element, frame: null }, entrance);
+      } else if (element) {
+        animator.set(element, false);
+      }
+      return;
     }
-    showIf(widgetElements.get(instance.id), instance.visible);
+    if (!entrance || !isGenericTransitionType(entrance.type)) {
+      const frame = mountFramedWidget(instance, {
+        entrance: entrance ? widgetTransitionState(entrance, "in") : undefined,
+      });
+      mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+      animator.set(frame.element, visible);
+      return;
+    }
+    let waiting = true;
+    const enter = (): void => {
+      if (!waiting) {
+        return;
+      }
+      waiting = false;
+      clearTimeout(timer);
+      const entry = mounted.get(instance.id);
+      if (entry?.bridge === frame.bridge && entry.config.visible !== false) {
+        animator.enter({ element: frame.element, frame: frame.bridge }, entrance);
+      }
+    };
+    const frame = mountFramedWidget(instance, { onRendered: enter });
+    const timer = setTimeout(enter, SWAP_TIMEOUT_MS);
+    mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+    animator.set(frame.element, false);
   }
 
   function unmountPlacement(id: string): void {
@@ -349,6 +401,30 @@ function main(): void {
     entry?.swap?.cancel();
     entry?.unmount();
     mounted.delete(id);
+  }
+
+  /** Take a placement off the page, leaving with its transition when it is shown. */
+  function removePlacement(id: string): void {
+    const entry = mounted.get(id);
+    const element = widgetElements.get(id);
+    const transition = entry?.config.transitionOut;
+    if (!entry || !element || !transition || element.style.visibility === "hidden") {
+      unmountPlacement(id);
+      return;
+    }
+    entry.swap?.cancel();
+    mounted.delete(id);
+    void animator.leave({ element, frame: entry.bridge }, transition).then(() => entry.unmount());
+  }
+
+  /** Show or hide a placement whose visibility changed, with its transition. */
+  function changeVisibility(entry: MountedPlacement, element: HTMLElement, visible: boolean): void {
+    const target = { element, frame: entry.bridge };
+    if (visible) {
+      animator.enter(target, entry.config.transitionIn);
+    } else {
+      void animator.leave(target, entry.config.transitionOut);
+    }
   }
 
   /**
@@ -379,7 +455,7 @@ function main(): void {
       fresh.element.style.zIndex = old?.style.zIndex ?? "";
       fresh.element.style.display = old?.style.display ?? "";
       fresh.element.style.opacity = "";
-      showIf(fresh.element, next.visible);
+      animator.set(fresh.element, next.visible !== false);
       entry.unmount();
       widgetElements.set(next.id, fresh.element);
       mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
@@ -387,7 +463,7 @@ function main(): void {
         applyPreviewLayout(widgetElements, previewLayout);
       }
     };
-    const fresh = mountFramedWidget(next, true, finish);
+    const fresh = mountFramedWidget(next, { hidden: true, onRendered: finish });
     timer = setTimeout(finish, SWAP_TIMEOUT_MS);
     entry.swap = {
       cancel: () => {
@@ -575,15 +651,18 @@ function main(): void {
       next.widgets
     );
     for (const id of plan.remove) {
-      unmountPlacement(id);
+      removePlacement(id);
     }
     for (const instance of plan.place) {
       const entry = mounted.get(instance.id);
       const element = widgetElements.get(instance.id);
       if (entry && element) {
+        const wasVisible = entry.config.visible !== false;
         entry.config = { ...instance, settings: entry.config.settings };
         placeAt(element, instance.position);
-        showIf(element, instance.visible);
+        if (wasVisible !== (instance.visible !== false)) {
+          changeVisibility(entry, element, instance.visible !== false);
+        }
         updateSettings(instance.id, instance.settings);
       }
     }

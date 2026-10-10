@@ -34,6 +34,9 @@ import type { ConditionOperator } from "./workflow-definition";
  * described the stored value rather than the control and only ever appeared on
  * module settings.
  *
+ * `font` holds a CSS font-family list whose first family is the one asked for;
+ * see google-fonts.ts for how a Google family in it reaches a widget.
+ *
  * `theme` is never declared by a manifest: barkloader adds it, as the field
  * `THEME_SETTING_ID`, to a widget that declares a theme contract. Its value is
  * a theme's canonical id (`{moduleId}:theme:{id}`), or absent for the widget's
@@ -48,6 +51,7 @@ export const CONFIG_FIELD_TYPES = [
   "media",
   "toggle",
   "color",
+  "font",
   "asset",
   "resource_ref",
   "button",

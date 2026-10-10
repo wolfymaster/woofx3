@@ -52,6 +52,10 @@ const (
 	leaderboardMaxLimit     = 100
 	recentDefaultLimit      = 20
 	recentMaxLimit          = 100
+	// A session's events go to a timeline in one answer; past this many the
+	// caller reports the rest as a count rather than paging.
+	sessionEventsDefaultLimit = 500
+	sessionEventsMaxLimit     = 1000
 )
 
 func (s *userEventService) RecordUserEvent(ctx context.Context, req *client.RecordUserEventRequest) (*client.RecordUserEventResponse, error) {
@@ -239,6 +243,37 @@ func (s *userEventService) ListRecentUserEvents(ctx context.Context, req *client
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Recent user events retrieved successfully",
+		},
+		Events: out,
+		Total:  total,
+	}, nil
+}
+
+func (s *userEventService) ListStreamSessionUserEvents(ctx context.Context, req *client.ListStreamSessionUserEventsRequest) (*client.ListStreamSessionUserEventsResponse, error) {
+	limit := sessionEventsDefaultLimit
+	if req.Limit != nil {
+		if *req.Limit < 1 || *req.Limit > sessionEventsMaxLimit {
+			return nil, twirp.InvalidArgumentError("limit", fmt.Sprintf("must be from 1 to %d", sessionEventsMaxLimit))
+		}
+		limit = int(*req.Limit)
+	}
+	window, err := s.sessionWindow("stream_session_id", req.StreamSessionId)
+	if err != nil {
+		return nil, err
+	}
+
+	events, total, err := s.repo.SessionEvents(*window, limit)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list session user events: %w", err))
+	}
+	out := make([]*client.UserEvent, 0, len(events))
+	for _, event := range events {
+		out = append(out, userEventToProto(event))
+	}
+	return &client.ListStreamSessionUserEventsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Stream session user events retrieved successfully",
 		},
 		Events: out,
 		Total:  total,

@@ -61,6 +61,17 @@ message Widget {
   // on the module that shipped the widget. Empty when the author declared
   // none.
   repeated string taxonomy = 16;
+  // Transition types the widget plays on its own content, beyond the
+  // generic ones the scene host plays on every widget's box (see
+  // docs/services/widget-transitions.md). Empty when it declares none.
+  repeated WidgetTransition transitions = 17;
+}
+
+// A transition type a widget declares: `id` is what a placement's
+// transitionIn/transitionOut names, `label` what an editor shows.
+message WidgetTransition {
+  string id = 1;
+  string label = 2;
 }
 
 message WidgetInput {
@@ -81,6 +92,8 @@ message WidgetInput {
   string hosts_surface = 11;
   // See Widget.taxonomy.
   repeated string taxonomy = 12;
+  // See Widget.transitions.
+  repeated WidgetTransition transitions = 13;
 }
 
 message RegisterWidgetsRequest {

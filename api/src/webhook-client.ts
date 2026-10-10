@@ -35,6 +35,7 @@ export type {
   ResourceInstanceDefinition,
   TriggerDefinition,
   WidgetDefinition,
+  WidgetTransitionDefinition,
 } from "@woofx3/api/webhooks";
 export { EngineEventType, makeCallbackEnvelope } from "@woofx3/api/webhooks";
 

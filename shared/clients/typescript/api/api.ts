@@ -1074,6 +1074,37 @@ export interface StreamGaugeSample {
 }
 
 /**
+ * What a session event was, in the terms the session totals count it:
+ * `sub` is a sub a viewer took out or renewed themselves, and `giftedSubs` is
+ * one gift from the gifter's side, however many subs it held.
+ */
+export type StreamSessionEventKind = "cheer" | "follow" | "sub" | "giftedSubs" | "raid";
+
+export interface StreamSessionEvent {
+  /** ISO 8601. */
+  occurredAt: string;
+  kind: StreamSessionEventKind;
+  /** The name on the event; null when it carried none, as for an anonymous cheer or gift. */
+  userName: string | null;
+  /** Bits for a cheer, subs for a gift, raiders for a raid; null for the kinds that carry none. */
+  amount: number | null;
+}
+
+export interface StreamSessionEventsQuery {
+  sessionId: string;
+  /** 1-1000. Defaults to 500. */
+  limit?: number;
+}
+
+export interface StreamSessionEvents {
+  sessionId: string;
+  /** Oldest first, at most `limit` of them. */
+  events: StreamSessionEvent[];
+  /** Every counted event in the session, so a caller can say how many `events` left out. */
+  total: number;
+}
+
+/**
  * Optional behaviour for `triggerWorkflowByName`.
  *
  * Supplying `triggerData` or `dryRun` makes the call wait for the engine to
@@ -1618,6 +1649,8 @@ export interface Woofx3EngineApi {
       surfaces: string[];
       hostsSurface: string;
       taxonomy: string[];
+      /** Transition types the widget plays on its own content. */
+      transitions: Array<{ id: string; label: string }>;
       createdByType: string;
       createdByRef: string;
     }>;
@@ -1679,6 +1712,8 @@ export interface Woofx3EngineApi {
   getLeaderboard(query: LeaderboardQuery): Promise<Leaderboard | null>;
   /** A session's per-minute gauge samples, oldest first, or null when no session has that id. */
   getStreamSessionGauges(sessionId: string): Promise<StreamGaugeSample[] | null>;
+  /** The events a session's totals count, oldest first, or null when no session has that id. */
+  getStreamSessionEvents(query: StreamSessionEventsQuery): Promise<StreamSessionEvents | null>;
 
   /**
    * Publish a CloudEvent on the engine's NATS bus. The `eventType` becomes

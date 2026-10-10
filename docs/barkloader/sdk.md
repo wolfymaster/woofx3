@@ -233,6 +233,36 @@ A change of theme always swaps the widget, because the theme is applied
 before it runs. In the preview harness, **Send to running widget** applies a
 settings change through the bindings the same way.
 
+### Fonts
+
+Declare a font setting with `"type": "font"` and use it through its binding,
+with a fallback list of your own:
+
+```css
+#label { font-family: var(--setting-fontFamily, Roboto, system-ui, sans-serif); }
+```
+
+The value is a CSS font-family list; the dashboard's picker writes a Google
+Fonts family followed by a generic one (`"Lobster", cursive`). The widget does
+nothing to load it. The frame is told which of its settings are fonts, and the
+host links a stylesheet for each one's first family from the scene manager,
+moving it whenever the setting changes. For a Google family, the scene manager
+fetches the family from Google the first time any overlay asks for it, and
+each font file the first time a frame draws characters from it, and keeps both
+on the engine's disk (`{WOOFX3_ROOT_PATH}/cache/fonts`), so a family once shown
+keeps working offline. Any other first family, such as one installed on the
+streaming machine, is used by name. When a family cannot be had, the rest of
+the list renders.
+
+A frame whose widget has font settings reports itself rendered only once its
+fonts have loaded, so a reload never flashes the fallback font.
+
+The family list the picker offers is generated from the Google Fonts catalog
+(`shared/clients/typescript/api/google-fonts.generated.ts`, family and
+category only); refresh it with `bun run generate:google-fonts` in
+`shared/clients/typescript/api`. The scene manager serves only families in
+that list.
+
 ### Themes
 
 A widget whose manifest declares a [theme contract](./modules.md#themes) is rendered with its theme already applied: each contract variable is set as `--theme-{id}` and each filled asset slot as `--theme-asset-{id}: url(...)` on `:root`, and the theme's stylesheet is linked after the widget's own. Styling with those properties is usually all a widget needs:
@@ -272,6 +302,8 @@ layout. There it boots with `host.surface === "alert"` and receives one `alert` 
 per alert. If the widget has a length of its own, subscribe with
 `{ autoComplete: false }` and call `event.complete()` when it is done; the alert waits
 for it. Otherwise subscribe normally, and it stays up until the alert ends.
+Don't hide yourself when you are done: completing is what takes a widget off
+screen, after its out-transition.
 
 ```js
 host.onEvent((event) => {
@@ -288,6 +320,16 @@ parallel definition.
 
 For the runtime / wire details (event channels, persistence,
 upstream NATS subjects), see [Widget event channel](../services/widget-events.md).
+
+### Transitions
+
+How a placed widget enters and leaves is the placement's, and the page plays
+the generic ones (fade, slide, zoom...) on the widget's box without the widget
+knowing. A widget can also declare types that animate its own content in its
+manifest's `transitions`, and animate them in CSS from the marks the shim puts
+on `:root`: `data-transition`, `data-transition-phase` (`in` or `out`),
+`--transition-duration` and `--transition-easing`. See
+[Widget transitions](../services/widget-transitions.md).
 
 ## Local widget preview
 

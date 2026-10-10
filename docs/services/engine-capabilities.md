@@ -33,6 +33,7 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 |---|---|
 | `analytics.aggregates` | Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard` |
 | `analytics.gauges` | Per-minute viewer, follower and subscriber series for a session: `getStreamSessionGauges` |
+| `analytics.sessionEvents` | A session's counted events in time order, for its timeline: `getStreamSessionEvents` |
 | `analytics.sessions` | Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals` |
 | `config.bundles` | Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig` |
 | `modules.localEndpoints` | A manifest's `local[]` endpoints, `setRelayConfig`, the `relay.credential.requested` callback, and sceneManager's endpoint dialer reaching OBS through the companion's bridge. See [Local endpoints](./local-endpoints.md) |

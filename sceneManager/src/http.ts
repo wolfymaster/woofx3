@@ -2,6 +2,7 @@ import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
+import type { GoogleFontCache } from "./fonts/google-font-cache";
 import type { FrameAssembler } from "./scene/frame-assembler";
 import type { MediaProxy } from "./scene/media-proxy";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
@@ -13,6 +14,7 @@ import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleFontRoute, isFontPath } from "./routes/fonts";
 import { handleMediaProxyRoute, isMediaProxyPath } from "./routes/media";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
@@ -44,6 +46,8 @@ export interface HttpDeps {
   settingsDb: LinkedResourcesDb;
   /** Each open scene as a sequenced document (see scene-documents.ts). */
   sceneDocuments: SceneDocuments;
+  /** Google families for widgets' `font` settings. */
+  fonts: GoogleFontCache;
   /** Points external media in what overlays are sent at the media proxy,
    *  for the placements whose frames need it. */
   mediaProxy: MediaProxy;
@@ -143,6 +147,10 @@ export function createHttpServer(deps: HttpDeps) {
 
           if (isStorageAssetPath(url.pathname)) {
             return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
+          }
+
+          if (isFontPath(url.pathname)) {
+            return withCors(await handleFontRoute(req, url, deps.fonts));
           }
 
           if (isMediaProxyPath(url.pathname)) {

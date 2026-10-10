@@ -387,6 +387,40 @@ describe("installWidgetHostShim — settings", () => {
     expect(doc.vars.has("--setting-accent")).toBe(false);
   });
 
+  it("links the stylesheet for a font setting and follows its changes", () => {
+    const links: Array<{ href: string; removed: boolean }> = [];
+    const fontDocumentRef = {
+      head: { appendChild: () => undefined },
+      createElement: () => {
+        const link = { href: "", removed: false };
+        links.push(link);
+        return {
+          setAttribute: (name: string, value: string) => {
+            if (name === "href") {
+              link.href = value;
+            }
+          },
+          remove: () => {
+            link.removed = true;
+          },
+        };
+      },
+    };
+    const h = makeHarness(
+      makeBoot({
+        settings: { fontFamily: "Roboto, sans-serif" },
+        fonts: { settings: ["fontFamily"], stylesheetUrl: "/fonts/css" },
+      })
+    );
+    h.windowRef.location = { hash: "", href: "http://scenes.test/frames/mod-1/w1" };
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, fontDocumentRef });
+    expect(links.map((l) => l.href)).toEqual(["http://scenes.test/fonts/css?family=Roboto"]);
+
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "settings.changed", settings: { fontFamily: '"Lobster", cursive' } }));
+    expect(links.filter((l) => !l.removed).map((l) => l.href)).toEqual(["http://scenes.test/fonts/css?family=Lobster"]);
+  });
+
   it("ignores a settings.changed without a settings object", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
@@ -399,6 +433,39 @@ describe("installWidgetHostShim — settings", () => {
   it("offers no update callback: widgets never handle updates", () => {
     const host = install(makeHarness(makeBoot()))! as unknown as Record<string, unknown>;
     expect(host.onSettings).toBeUndefined();
+  });
+});
+
+describe("installWidgetHostShim — transitions", () => {
+  const typewriter = { phase: "in", type: "typewriter", durationMs: 800, easing: "ease-out" } as const;
+
+  it("marks the frame with the entrance in the boot payload before the widget runs", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot({ transition: typewriter }));
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    expect(doc.attributes.get("data-transition")).toBe("typewriter");
+    expect(doc.attributes.get("data-transition-phase")).toBe("in");
+    expect(doc.vars.get("--transition-duration")).toBe("800ms");
+  });
+
+  it("plays a transition the host sends, and clears it on null", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "transition", transition: { ...typewriter, phase: "out" } }));
+    expect(doc.attributes.get("data-transition-phase")).toBe("out");
+    h.deliver(fromParent({ type: "transition", transition: null }));
+    expect(doc.attributes.has("data-transition")).toBe(false);
+  });
+
+  it("ignores a malformed transition", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "transition", transition: { ...typewriter, type: "x y" } }));
+    expect(doc.attributes.has("data-transition")).toBe(false);
   });
 });
 
@@ -431,7 +498,7 @@ function fakeDocument() {
     removeAttribute: (name: string) => void attributes.delete(name),
     textContent: null as string | null,
   };
-  return { vars, documentElement, querySelectorAll: () => [] };
+  return { vars, attributes, documentElement, querySelectorAll: () => [] };
 }
 
 describe("installWidgetHostShim — events", () => {

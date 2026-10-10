@@ -50,14 +50,12 @@
             if (!onDone) {
               return;
             }
-            const finish = () => {
-              animation.destroy();
-              onDone();
-            };
+            // Left on screen as it ends: the page takes it off, with its
+            // out-transition, once it completes.
             if (seconds > 0) {
-              setTimeout(finish, seconds * 1000);
+              setTimeout(onDone, seconds * 1000);
             } else {
-              animation.addEventListener("complete", finish);
+              animation.addEventListener("complete", onDone);
             }
           })
           .catch((err) => {

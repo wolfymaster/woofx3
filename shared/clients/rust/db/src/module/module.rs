@@ -669,7 +669,7 @@ pub struct ConnectionMessageResponse {
 /// `settings_schema` is a serialized JSON document describing the widget's
 /// configuration surface. Engine treats it as opaque; the UI parses it into
 /// WidgetSettingDefinition\[\] for rendering. Same opacity as triggers.config_schema.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Widget {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -712,8 +712,22 @@ pub struct Widget {
     /// none.
     #[prost(string, repeated, tag="16")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Transition types the widget plays on its own content, beyond the
+    /// generic ones the scene host plays on every widget's box (see
+    /// docs/services/widget-transitions.md). Empty when it declares none.
+    #[prost(message, repeated, tag="17")]
+    pub transitions: ::prost::alloc::vec::Vec<WidgetTransition>,
 }
+/// A transition type a widget declares: `id` is what a placement's
+/// transitionIn/transitionOut names, `label` what an editor shows.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WidgetTransition {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub label: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WidgetInput {
     #[prost(string, tag="1")]
     pub manifest_id: ::prost::alloc::string::String,
@@ -738,6 +752,9 @@ pub struct WidgetInput {
     /// See Widget.taxonomy.
     #[prost(string, repeated, tag="12")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// See Widget.transitions.
+    #[prost(message, repeated, tag="13")]
+    pub transitions: ::prost::alloc::vec::Vec<WidgetTransition>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {
@@ -780,7 +797,7 @@ pub struct ListWidgetsResponse {
     #[prost(message, repeated, tag="2")]
     pub widgets: ::prost::alloc::vec::Vec<Widget>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WidgetResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<super::common::ResponseStatus>,
