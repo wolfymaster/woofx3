@@ -57,6 +57,10 @@ type runControl struct {
 	// run unwinds the way a cancelled one does, but nobody asked for it to
 	// stop, so it settles as failed rather than cancelled.
 	stopped bool
+
+	// viewer is the run's `${viewer.*}` source, kept beside the rest of the
+	// run's lifetime state so its steps share one read until a pause.
+	viewer *runViewer
 }
 
 // claimSettle marks the run settled with `status`, or reports that it already
@@ -124,15 +128,19 @@ func isTerminalStatus(status types.ExecutionStatus) bool {
 	return false
 }
 
-// registerRun gives a new run its cancellation state. Caller holds executionsMu.
+// registerRun gives a new run its cancellation state and its `${viewer.*}`
+// loader. Caller holds executionsMu.
 //
 // Each run's context derives from Background rather than the engine's own:
 // Stop ends the engine, and it is not a request to cancel every run in flight,
 // which would record as cancelled runs nobody asked to stop. Stop gives runs
 // time to finish and abandons the rest one by one (see abandonRun).
-func (e *Engine[TServices]) registerRunLocked(executionID string) {
+func (e *Engine[TServices]) registerRunLocked(executionID string, viewer *runViewer) {
+	if viewer == nil {
+		panic(fmt.Sprintf("engine: run %s registered without a viewer loader", executionID))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e.controls[executionID] = &runControl{ctx: ctx, cancel: cancel}
+	e.controls[executionID] = &runControl{ctx: ctx, cancel: cancel, viewer: viewer}
 }
 
 func (e *Engine[TServices]) control(executionID string) *runControl {

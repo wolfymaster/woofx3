@@ -74,7 +74,9 @@ func (e *Engine[TServices]) Replay(req ReplayRequest) error {
 	}
 
 	go func() {
-		execution := e.beginExecutionAs(def, event, req.DryRun)
+		// A replay reads the viewer's facts as they are now, not as they were
+		// when the original run read them: those values were never recorded.
+		execution := e.beginExecutionAs(def, event, req.DryRun, e.newViewerLoader(viewerTrigger(def), event))
 		e.logger.Info("Replaying workflow run",
 			"workflow", def.ID,
 			"execution", execution.ID,
