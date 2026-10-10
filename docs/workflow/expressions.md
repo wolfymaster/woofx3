@@ -34,6 +34,7 @@ untouched (`workflow/internal/expression/resolver.go:41`).
 | `trigger.data.X` | Anything on the event's `data` map |
 | `<taskId>.X` | Exports from a previously-executed task in the same workflow |
 | `env.NAME` | Process environment variable (read at substitute time) |
+| `viewer.X` | The facts of the viewer the triggering event is about, e.g. `${viewer.user.apple_mentions}`, plus `viewer.id`, `viewer.platform` and `viewer.name`; see [Facts in workflows](../services/viewer-facts.md#facts-in-workflows-viewer) |
 
 **Semantics**: a plain reference is a path lookup,
 `source ('.' name | '[' index ']')*`. An expression containing an
