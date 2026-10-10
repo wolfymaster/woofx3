@@ -13,7 +13,7 @@ import (
 // Timestamps are DATETIME so the driver returns them as a time.Time.
 func AddViewerSegments() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0057_viewer_segments",
+		ID: "0058_viewer_segments",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Creating viewer segment tables...")
 			if err := execStatements(tx, []string{

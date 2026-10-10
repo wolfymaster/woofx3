@@ -3,7 +3,7 @@ package sqlite
 import "testing"
 
 func TestViewerSegmentTablesKeepOneMembershipPerViewer(t *testing.T) {
-	db := openMigratedTo(t, "0057_viewer_segments")
+	db := openMigratedTo(t, "0058_viewer_segments")
 	mustExec(t, db, `INSERT INTO fact_definitions (id, name, definition, aggregate_fn, value_kind, window_kind)
 		VALUES ('user:fact:messages', 'Messages', '{}', 'count', 'number', 'lifetime')`)
 	mustExec(t, db, `INSERT INTO segment_definitions (id, name, condition, window_kind)

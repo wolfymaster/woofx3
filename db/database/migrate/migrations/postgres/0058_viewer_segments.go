@@ -43,7 +43,7 @@ import (
 // from the envelope rather than the data.
 func AddViewerSegments() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0057_viewer_segments",
+		ID: "0058_viewer_segments",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Creating viewer segment tables...")
 			statements := []string{
