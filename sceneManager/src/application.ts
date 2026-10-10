@@ -40,6 +40,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { FrameCatalog } = await import("./scene/frame-catalog");
     const { SceneDocuments } = await import("./scene/scene-documents");
+    const { MediaProxy } = await import("./scene/media-proxy");
     const { EDITOR_TOKEN_TTL_SECONDS, SessionTokenService } = await import("./scene/session-token");
     const { sceneEditorPath } = await import("@woofx3/common/cloudevents/Scene/editor");
     const { DeliveryStore } = await import("./events/delivery-store");
@@ -67,15 +68,13 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
     const framing = new FrameCatalog(barkloader, ctx.logger, (moduleId) => linkedResources(db, moduleId));
     const host = new OverlayHost(resolver, db, ctx.logger, { framing });
-    const frameAssembler = new FrameAssembler(host, ctx.logger, {
-      barkloader,
-      linkedResources: (moduleId) => linkedResources(db, moduleId),
-    });
+    const mediaProxy = new MediaProxy(ctx.runtimeConfig.mediaProxySecret);
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, ctx.logger);
     // Edits are written back here, so the database stays each scene's record.
     const sceneDocuments = new SceneDocuments(host, deliveryStore, ctx.logger, {
+      mediaProxy,
       persister: {
         updateScene: (write) =>
           db.updateScene({
@@ -86,11 +85,18 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
             draftWidgetsJson: "",
             draftLayoutJson: "",
             clearDraft: false,
+            editorStateJson: "",
+            clearEditorState: false,
             ...write,
           }),
       },
     });
     this.sceneDocuments = sceneDocuments;
+    const frameAssembler = new FrameAssembler(host, ctx.logger, {
+      barkloader,
+      linkedResources: (moduleId) => linkedResources(db, moduleId),
+      mediaProxy,
+    });
     // Hydrate from the DB before accepting any traffic — a restart
     // must never silently drop in-flight events.
     await deliveryStore.hydrate();
@@ -204,6 +210,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       settingsDb: db,
       sceneDocuments,
       fonts: new GoogleFontCache(ctx.runtimeConfig.fontCacheDir, ctx.logger),
+      mediaProxy,
       bootId,
     });
     ctx.logger.info("sceneManager listening", {

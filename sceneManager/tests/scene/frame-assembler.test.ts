@@ -134,6 +134,20 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     expect(warn.mock.calls[0]![0]).toContain("missing entryHtml");
   });
 
+  it("gives up on a barkloader that does not answer, which the assembler serves as unavailable", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const hung = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      })) as unknown as typeof fetch;
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, hung, 10);
+
+    await expect(client.fetchWidgetFrame("mymod", "mywid")).rejects.toThrow();
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), logger, { barkloader: client });
+    const resp = await assembler.assembleDocument("mymod", "mywid", null, null);
+    expect(resp.status).toBe(502);
+  });
+
   it("returns the parsed frame info on success without logging", async () => {
     const warn = mock((_message: string, _meta?: unknown) => {});
     const logger = { debug: () => {}, info: () => {}, warn, error: () => {} } as any;
@@ -325,14 +339,33 @@ describe("FrameAssembler — widget themes", () => {
     });
   });
 
-  it("restricts styles and fonts to the engine, and lets images and media come from any http(s) host", async () => {
+  it("restricts styles, fonts, images and media to the engine for a themeable widget", async () => {
     const { resp } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
-    const csp = resp.headers.get("Content-Security-Policy");
-    expect(csp).toContain("style-src 'self' https://engine.example.com 'unsafe-inline'");
-    expect(csp).toContain("font-src 'self' https://engine.example.com data:");
-    expect(csp).toContain("img-src 'self' https://engine.example.com https: http: data: blob:");
-    expect(csp).toContain("media-src 'self' https://engine.example.com https: http: data: blob:");
-    expect(csp).not.toContain("script-src");
+    const csp = resp.headers.get("Content-Security-Policy") ?? "";
+    const directives = Object.fromEntries(
+      csp.split(";").map((directive) => {
+        const [name, ...sources] = directive.trim().split(/\s+/);
+        return [name, sources];
+      })
+    );
+    // Exact values, so the policy cannot widen without this test changing.
+    expect(directives).toEqual({
+      "style-src": ["'self'", "https://engine.example.com", "'unsafe-inline'"],
+      "font-src": ["'self'", "https://engine.example.com", "data:"],
+      "img-src": ["'self'", "https://engine.example.com", "https://static-cdn.jtvnw.net", "data:", "blob:"],
+      "media-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
+    });
+    expect(csp).toBe(
+      "style-src 'self' https://engine.example.com 'unsafe-inline'; " +
+        "font-src 'self' https://engine.example.com data:; " +
+        "img-src 'self' https://engine.example.com https://static-cdn.jtvnw.net data: blob:; " +
+        "media-src 'self' https://engine.example.com data: blob:"
+    );
+    for (const sources of Object.values(directives) as string[][]) {
+      for (const source of sources) {
+        expect(["https:", "http:", "*"]).not.toContain(source);
+      }
+    }
   });
 
   it("renders the defaults, and still loads, when the selected theme is missing", async () => {

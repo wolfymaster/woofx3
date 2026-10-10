@@ -4,6 +4,7 @@ import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
 import type { GoogleFontCache } from "./fonts/google-font-cache";
 import type { FrameAssembler } from "./scene/frame-assembler";
+import type { MediaProxy } from "./scene/media-proxy";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
 import type { SceneDocuments } from "./scene/scene-documents";
 import type { OverlayHost } from "./scene/scene-host";
@@ -14,6 +15,7 @@ import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleFontRoute, isFontPath } from "./routes/fonts";
+import { handleMediaProxyRoute, isMediaProxyPath } from "./routes/media";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
   handleStorageAssetRoute,
@@ -46,6 +48,9 @@ export interface HttpDeps {
   sceneDocuments: SceneDocuments;
   /** Google families for widgets' `font` settings. */
   fonts: GoogleFontCache;
+  /** Points external media in what overlays are sent at the media proxy,
+   *  for the placements whose frames need it. */
+  mediaProxy: MediaProxy;
   /** Identity of this sceneManager process, minted once at startup and
    *  announced on every SSE stream. Lets a reconnecting overlay tell a
    *  resumed stream from one that came back against a restarted server
@@ -70,8 +75,12 @@ const UPLOAD_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": UPLOAD_ALLOWED_METHODS,
 };
 
-/** CORS headers for a path: its preflight answer and its responses. */
+/** CORS headers for a path: its preflight answer and its responses. The
+ *  media proxy grants none (see routes/media.ts). */
 export function corsHeadersFor(pathname: string): Record<string, string> {
+  if (isMediaProxyPath(pathname)) {
+    return {};
+  }
   return isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS;
 }
 
@@ -142,6 +151,10 @@ export function createHttpServer(deps: HttpDeps) {
 
           if (isFontPath(url.pathname)) {
             return withCors(await handleFontRoute(req, url, deps.fonts));
+          }
+
+          if (isMediaProxyPath(url.pathname)) {
+            return handleMediaProxyRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger);
           }
 
           if (url.pathname.startsWith("/assets/")) {

@@ -35,6 +35,10 @@ export const SceneManagerEnvSchema = z.object({
   databaseProxyUrl: z.string().optional(),
   woofx3BarkloaderUrl: z.string().default("http://127.0.0.1:9653"),
   barkloaderUrl: z.string().optional(),
+  // The engine secret barkloader verifies media proxy URLs with (see
+  // scene/media-proxy.ts); sceneManager signs them with it.
+  woofx3BarkloaderKey: z.string().optional(),
+  barkloaderKey: z.string().optional(),
 });
 
 export type SceneManagerConfig = z.infer<typeof SceneManagerEnvSchema>;
@@ -49,6 +53,8 @@ export interface SceneManagerRuntimeConfig {
   fontCacheDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
+  /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
+  mediaProxySecret: string;
   /**
    * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
    * the module is not installed, or a setting is empty.
@@ -83,6 +89,11 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   }
   if (!config.barkloaderUrl) {
     throw new Error("sceneManager: barkloaderUrl must not be empty (WOOFX3_BARKLOADER_URL)");
+  }
+  if (!config.mediaProxySecret) {
+    throw new Error(
+      "sceneManager: barkloaderKey is required (WOOFX3_BARKLOADER_KEY) — external media in widget settings is signed with it"
+    );
   }
   try {
     new URL(config.barkloaderUrl);
@@ -152,6 +163,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
 
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? c.barkloaderUrl ?? "http://127.0.0.1:9653");
+  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? c.barkloaderKey ?? "");
 
   return {
     port,
@@ -162,6 +174,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     fontCacheDir: join(rootDir, "cache", "fonts"),
     databaseProxyUrl,
     barkloaderUrl,
+    mediaProxySecret,
     obs: {
       host: obsHost,
       port: obsPort,
