@@ -31,6 +31,7 @@ func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
 			layout_json TEXT NOT NULL DEFAULT '{}',
 			draft_widgets_json TEXT,
 			draft_layout_json TEXT,
+			editor_state_json TEXT,
 			created_by_type TEXT NOT NULL DEFAULT 'USER',
 			created_by_ref TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
