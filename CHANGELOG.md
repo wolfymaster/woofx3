@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.25.0](https://github.com/wolfymaster/woofx3/compare/v0.24.0...v0.25.0) (2026-10-10)
+
+### Features
+
+* **db:** persist scene editor sync state ([b9d9460](https://github.com/wolfymaster/woofx3/commit/b9d946042832a2a70c9b90a857425cec71d77513))
+
+### Bug Fixes
+
+* **db:** keep scene editor state consistent with its documents ([d066f90](https://github.com/wolfymaster/woofx3/commit/d066f908d90aae00e5efc3752545f2e6000b0096))
+* **db:** store scene editor state as validated text, clearable on purpose ([9305434](https://github.com/wolfymaster/woofx3/commit/9305434747dcf47987e336fcb5cb33103f5289a3))
+
 ## [0.24.0](https://github.com/wolfymaster/woofx3/compare/v0.23.0...v0.24.0) (2026-10-10)
 
 ### Features
