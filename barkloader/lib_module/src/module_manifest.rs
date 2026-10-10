@@ -329,14 +329,19 @@ pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
 /// payload or a function result against it, so it carries no `required`, no
 /// nesting and no constraints — those would all be promises the engine does
 /// not keep.
+///
+/// Unknown keys are rejected at parse, here and on each field: a misspelt
+/// annotation such as `anonymouswhen` would otherwise be dropped and the
+/// install would succeed without the behaviour the author asked for.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManifestDataShape {
     #[serde(default)]
     pub fields: Vec<ManifestDataShapeField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManifestDataShapeField {
     /// Dot path into the value, e.g. `"bits"` or `"channel.title"`.
     pub path: String,
@@ -349,7 +354,33 @@ pub struct ManifestDataShapeField {
     pub description: Option<String>,
     #[serde(default)]
     pub example: Option<serde_json::Value>,
+    /// Marks this field as naming who the value is about, from
+    /// `DATA_SHAPE_IDENTITIES`. Per-viewer facts take their subject from a
+    /// field carrying `"viewer"`; an `array` field is a list of string ids
+    /// naming several viewers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+    /// Path of a `boolean` field in the same shape that is true when the
+    /// identity is withheld (an anonymous cheer or gift), so nothing is
+    /// attributed to whatever placeholder id the platform sends instead. On an
+    /// `array` identity it applies to the whole event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anonymous_when: Option<String>,
+    /// Path of a `string` field in the same shape carrying the identity's
+    /// human-readable name. Only on a `string` identity: one name cannot name
+    /// each viewer of an `array`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
+
+/// The accepted `identity` tokens for a data-shape field. Closed: each token
+/// is something the engine keys state by, so a new one needs engine support
+/// before a manifest can usefully name it.
+pub const DATA_SHAPE_IDENTITIES: [&str; 1] = ["viewer"];
+
+/// The `type` tokens a field may carry alongside `identity`: one string id, or
+/// an array of string ids naming several subjects of the same event.
+pub const DATA_SHAPE_IDENTITY_FIELD_TYPES: [&str; 2] = ["string", "array"];
 
 /// The accepted `type` tokens for a data-shape field. Closed on purpose: this
 /// drives a picker's rendering, so an unrecognised token is an author mistake
@@ -2283,6 +2314,46 @@ mod tests {
         assert_eq!(parsed["fields"][0]["path"], "bits");
         assert_eq!(parsed["fields"][0]["type"], "number");
         assert_eq!(parsed["fields"][1]["path"], "user_name");
+    }
+
+    #[test]
+    fn trigger_to_input_keeps_identity_annotations_in_emits() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_cheer",
+            "name": "Cheer",
+            "event": "channel.cheer",
+            "emits": {
+                "fields": [
+                    {
+                        "path": "userId",
+                        "type": "string",
+                        "identity": "viewer",
+                        "anonymousWhen": "isAnonymous",
+                        "displayName": "userName"
+                    },
+                    { "path": "isAnonymous", "type": "boolean" },
+                    { "path": "userName", "type": "string" }
+                ]
+            }
+        }))
+        .expect("parse");
+        let emits = t.to_input("test_mod").emits;
+        let parsed: serde_json::Value = serde_json::from_str(&emits).expect("valid json");
+        assert_eq!(parsed["fields"][0]["identity"], "viewer");
+        assert_eq!(parsed["fields"][0]["anonymousWhen"], "isAnonymous");
+        assert_eq!(parsed["fields"][0]["displayName"], "userName");
+        let unannotated = parsed["fields"][1].as_object().expect("field is an object");
+        assert!(!unannotated.contains_key("identity"), "{emits}");
+        assert!(!unannotated.contains_key("anonymousWhen"), "{emits}");
+        assert!(!unannotated.contains_key("displayName"), "{emits}");
+
+        let reparsed: ManifestDataShape = serde_json::from_str(&emits).expect("round-trips");
+        assert_eq!(reparsed.fields[0].identity.as_deref(), Some("viewer"));
+        assert_eq!(
+            reparsed.fields[0].anonymous_when.as_deref(),
+            Some("isAnonymous")
+        );
+        assert_eq!(reparsed.fields[0].display_name.as_deref(), Some("userName"));
     }
 
     #[test]
