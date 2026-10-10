@@ -218,7 +218,7 @@ function isClientId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_CLIENT_ID_LENGTH;
 }
 
-function isNackCode(value: unknown): value is NackCode {
+export function isNackCode(value: unknown): value is NackCode {
   return value === "invalid" || value === "stale_base" || value === "unavailable";
 }
 

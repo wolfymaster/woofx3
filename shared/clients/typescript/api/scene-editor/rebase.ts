@@ -99,11 +99,11 @@ function replaceKeys<T>(
       ops.push({ p: [...path, key], od: from[key] });
     }
   }
-  for (const key of Object.keys(to)) {
+  for (const [key, toValue] of Object.entries(to)) {
     if (!Object.hasOwn(from, key)) {
-      ops.push({ p: [...path, key], oi: to[key] });
-    } else if (!sameValue(from[key], to[key])) {
-      replace([...path, key], from[key]!, to[key]!);
+      ops.push({ p: [...path, key], oi: toValue });
+    } else if (!sameValue(from[key], toValue)) {
+      replace([...path, key], from[key] as T, toValue);
     }
   }
 }
@@ -177,10 +177,7 @@ type TouchedPath =
   | { kind: "placement"; id: string }
   | { kind: "field"; id: string; field: string };
 
-/**
- * The fields `ops` touch, field paths before placement paths: a placement
- * the edit replaced or removed wins over its own field edits.
- */
+/** The fields `ops` touch, in the order `copyTouched` applies them. */
 function touchedPaths(ops: readonly Json0Component[]): TouchedPath[] {
   const fields = new Map<string, TouchedPath>();
   const placements = new Map<string, TouchedPath>();

@@ -8,7 +8,7 @@
 // result arrives as an entry like anyone else's change, and the edits queued
 // behind them are transformed against it. The socket, timers, session
 // opening and id generation are injected, so the client runs the same in a
-// browser, in tests and in a simulation.
+// browser and in tests.
 //
 // Invariants, checked by `assertSyncInvariants`:
 // - I1 At most one item is in flight, and only it has a seq. A resend keeps
@@ -428,7 +428,11 @@ export class SceneSyncClient {
       this.options.clock.clearTimeout(this.pumpTimer);
       this.pumpTimer = null;
     }
-    while (this.conn === "ready" && this.inflight === null && this.queue.length > 0) {
+    while (this.conn === "ready" && this.inflight === null) {
+      const item = this.queue[0];
+      if (item === undefined) {
+        break;
+      }
       const wait = this.lastSentAt + SEND_SPACING_MS - this.options.clock.now();
       if (wait > 0) {
         this.pumpTimer = this.options.clock.setTimeout(() => {
@@ -437,7 +441,7 @@ export class SceneSyncClient {
         }, wait);
         return;
       }
-      const item = this.queue.shift()!;
+      this.queue.shift();
       if (item.body.kind === "edit" && item.body.ops.length === 0) {
         // Transformed away by others' changes: there is nothing left to send.
         this.leave(item);
@@ -878,14 +882,13 @@ export class SceneSyncClient {
           inflightBody = { ...inflightBody, ops: transformOps(mine, remote, "left") };
           remote = transformOps(remote, mine, "right");
         }
-        for (let i = 0; i < queueBodies.length; i++) {
-          const body = queueBodies[i]!;
+        queueBodies.forEach((body, i) => {
           if (body.kind !== "edit" || body.version !== version) {
-            continue;
+            return;
           }
           queueBodies[i] = { ...body, ops: transformOps(body.ops, remote, "left") };
           remote = transformOps(remote, body.ops, "right");
-        }
+        });
       }
       // Only the versions this entry changed (and the one the confirmed item
       // edited) can differ: every other version's documents and pending ops
@@ -910,11 +913,9 @@ export class SceneSyncClient {
       }
     }
     this.server = { ...server, v: entry.v, id: entry.id, docs, meta, hasDraft: entry.hasDraft };
-    this.queue.forEach((item, index) => {
-      item.body = queueBodies[index]!;
-    });
-    if (own) {
-      this.leave(inflight!);
+    this.setQueueBodies(queueBodies);
+    if (own && inflight !== null) {
+      this.leave(inflight);
       this.inflight = null;
       this.resendSucceeded();
     } else if (inflight !== null && inflightBody !== null) {
@@ -1010,14 +1011,20 @@ export class SceneSyncClient {
       this.restartSession(`rolling back a refused change failed: ${errorText(err)}`, true);
       return false;
     }
-    this.queue.forEach((item, index) => {
-      item.body = queueBodies[index]!;
-    });
+    this.setQueueBodies(queueBodies);
     this.inflight = null;
     this.leave(inflight);
     this.local = local;
     this.report({ reason: "rejected", items: reportItems([inflight], inflight.id, false), detail });
     return true;
+  }
+
+  /** Replace the queued items' bodies, one for one, with their rewritten forms. */
+  private setQueueBodies(bodies: readonly ItemBody[]): void {
+    assert(bodies.length === this.queue.length, "a rewritten queue keeps its length");
+    this.queue.forEach((item, index) => {
+      item.body = bodies[index] as ItemBody;
+    });
   }
 
   private resendSucceeded(): void {
@@ -1331,7 +1338,7 @@ export function assertSyncInvariants(internals: SyncClientInternals): void {
       pending.map((item) => item.body)
     );
     for (const version of VERSIONS) {
-      check(sameValue(local![version], expected[version]), `I2: local ${version} is the server's plus pending edits`);
+      check(sameValue(local[version], expected[version]), `I2: local ${version} is the server's plus pending edits`);
     }
   }
   const ids = pending.map((item) => item.id);
@@ -1346,7 +1353,7 @@ export function assertSyncInvariants(internals: SyncClientInternals): void {
   check(internals.created === internals.left + ids.length, "I3: every item created has left or is pending");
 }
 
-function check(condition: boolean, invariant: string): void {
+function check(condition: boolean, invariant: string): asserts condition {
   if (!condition) {
     throw new Error(`scene sync invariant violated: ${invariant}`);
   }

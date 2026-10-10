@@ -37,6 +37,7 @@ import {
   type AckMessage,
   type EntryRef,
   type ItemBody,
+  isNackCode,
   type NackCode,
   type NackMessage,
   nackOf,
@@ -49,12 +50,12 @@ export const LOG_MAX_ENTRIES = 1000;
 /** Most bytes of ops the in-memory log keeps, measured by `opsSize`. */
 export const LOG_MAX_BYTES = 512 * 1024;
 /**
- * A client's watermark is forgotten after this long without an item... The
- * in-memory map is pruned by the same rules whenever it holds more than
- * `CLIENT_RETENTION_COUNT`, so it stays bounded between saves.
+ * A client's watermark is forgotten after this long without an item, or once
+ * it is not among the `CLIENT_RETENTION_COUNT` most recent. The in-memory
+ * map is pruned by the same rules whenever it holds more than that count, so
+ * it stays bounded between saves.
  */
 export const CLIENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-/** ...or when it is not among the most recent this many. */
 export const CLIENT_RETENTION_COUNT = 500;
 
 /** The last item decided for one client, and when. */
@@ -63,7 +64,7 @@ export interface ClientRecord extends Watermark {
   at: number;
 }
 
-/** What is persisted with the documents, in the same write (`editor_state_json`). */
+/** What the caller persists with the documents, in the same write. */
 export interface EditorState {
   v: number;
   headId: string;
@@ -292,7 +293,6 @@ function planOf(
   changes: Partial<Record<Version, Ops>>,
   result: { docs: Record<Version, SceneDocument>; docBytes: Record<Version, number>; hasDraft: boolean }
 ): Plan {
-  const bytes = (changes.draft ? opsSize(changes.draft) : 0) + (changes.published ? opsSize(changes.published) : 0);
   return {
     refused: false,
     kind,
@@ -301,7 +301,7 @@ function planOf(
     docs: result.docs,
     docBytes: result.docBytes,
     hasDraft: result.hasDraft,
-    bytes,
+    bytes: changesBytes(changes),
   };
 }
 
@@ -505,8 +505,8 @@ export function decideWelcome(state: SequencerState, have: EntryRef | null): Wel
   if (first === undefined || have.v < first.v) {
     return { kind: "snapshot", diverged: false };
   }
-  const known = state.log[have.v - first.v]!;
-  assert(known.v === have.v, "the log is contiguous");
+  const known = state.log[have.v - first.v];
+  assert(known !== undefined && known.v === have.v, "the log is contiguous");
   if (known.id !== have.id) {
     return { kind: "snapshot", diverged: true };
   }
@@ -524,8 +524,11 @@ export function decideWelcome(state: SequencerState, have: EntryRef | null): Wel
 function trimLog(state: SequencerState): void {
   let drop = 0;
   let bytes = state.logBytes;
-  while (state.log.length - drop > 1 && (state.log.length - drop > LOG_MAX_ENTRIES || bytes > LOG_MAX_BYTES)) {
-    bytes -= entryBytes(state.log[drop]!);
+  for (const entry of state.log.slice(0, -1)) {
+    if (state.log.length - drop <= LOG_MAX_ENTRIES && bytes <= LOG_MAX_BYTES) {
+      break;
+    }
+    bytes -= changesBytes(entry.changes);
     drop++;
   }
   if (drop > 0) {
@@ -534,11 +537,8 @@ function trimLog(state: SequencerState): void {
   }
 }
 
-function entryBytes(entry: Entry): number {
-  return (
-    (entry.changes.draft ? opsSize(entry.changes.draft) : 0) +
-    (entry.changes.published ? opsSize(entry.changes.published) : 0)
-  );
+function changesBytes(changes: Partial<Record<Version, Ops>>): number {
+  return (changes.draft ? opsSize(changes.draft) : 0) + (changes.published ? opsSize(changes.published) : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -580,7 +580,7 @@ export function decodeEditorState(
   json: string | null | undefined
 ): { ok: true; state: EditorState } | { ok: false; error: string } {
   if (json === null || json === undefined || json === "") {
-    return { ok: true, state: { v: 0, headId: "", clients: {} } };
+    return { ok: true, state: { ...EMPTY_EDITOR_STATE, clients: {} } };
   }
   let value: unknown;
   try {
@@ -620,10 +620,7 @@ function isClientRecord(value: unknown): value is ClientRecord {
   if (value.outcome === "applied") {
     return true;
   }
-  return (
-    value.outcome === "rejected" &&
-    (value.code === "invalid" || value.code === "stale_base" || value.code === "unavailable")
-  );
+  return value.outcome === "rejected" && isNackCode(value.code);
 }
 
 /** Set a client's watermark, pruning the map by the retention rules once it holds more than it keeps. */

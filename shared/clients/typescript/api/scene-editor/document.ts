@@ -350,17 +350,17 @@ export function zKey(index: number): string {
 
 /** The placement ids, bottom of the stack first. */
 export function stackOrder(doc: SceneDocument): string[] {
-  return Object.keys(doc.widgets).sort((a, b) => {
-    const za = doc.widgets[a]!.z;
-    const zb = doc.widgets[b]!.z;
-    if (za !== zb) {
-      return za < zb ? -1 : 1;
-    }
-    if (a !== b) {
-      return a < b ? -1 : 1;
-    }
-    return 0;
-  });
+  return Object.entries(doc.widgets)
+    .sort(([a, placementA], [b, placementB]) => {
+      if (placementA.z !== placementB.z) {
+        return placementA.z < placementB.z ? -1 : 1;
+      }
+      if (a !== b) {
+        return a < b ? -1 : 1;
+      }
+      return 0;
+    })
+    .map(([id]) => id);
 }
 
 /** `meta` with a change's meta merged in. */
