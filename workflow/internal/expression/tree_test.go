@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/wolfymaster/woofx3/common/conditions"
 )
 
 func mustTree(t *testing.T, raw string) *ConditionTree {
@@ -151,7 +153,7 @@ func TestEvaluateOperatorKeepsAliasesEquivalent(t *testing.T) {
 }
 
 func TestEveryOperatorSpellingEvaluates(t *testing.T) {
-	for spelling := range conditionOperators {
+	for _, spelling := range conditions.Spellings() {
 		if _, err := EvaluateOperator(spelling, "a", []any{"a", "b"}); err != nil {
 			t.Errorf("%s: %v", spelling, err)
 		}
