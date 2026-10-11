@@ -32,7 +32,9 @@ func (r *WorkflowRepository) Create(wf *models.WorkflowDefinition) error {
 // `enabled` is deliberately excluded from the UPDATE SET. It's a runtime
 // toggle the user controls via setWorkflowEnabled, not manifest content,
 // and must survive a module upgrade unchanged — resetting it would
-// silently turn off a live workflow on every reinstall.
+// silently turn off a live workflow on every reinstall. The stored value is
+// read back into `wf` so the caller reports and publishes the state the row
+// actually has, not the one the install asked for.
 //
 // Only call this for rows with a non-empty ManifestID (MODULE-owned
 // workflows). USER-authored workflows (ManifestID == "") should go
@@ -41,7 +43,8 @@ func (r *WorkflowRepository) Create(wf *models.WorkflowDefinition) error {
 // collide.
 func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 	var result struct {
-		ID uuid.UUID `gorm:"column:id"`
+		ID      uuid.UUID `gorm:"column:id"`
+		Enabled bool      `gorm:"column:enabled"`
 	}
 	err := r.db.Raw(`
 		INSERT INTO public.workflow_definitions (id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled)
@@ -51,12 +54,13 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 			steps = EXCLUDED.steps,
 			trigger = EXCLUDED.trigger,
 			taxonomy = EXCLUDED.taxonomy
-		RETURNING id
+		RETURNING id, enabled
 	`, wf.ID, wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled).Scan(&result).Error
 	if err != nil {
 		return err
 	}
 	wf.ID = result.ID
+	wf.Enabled = result.Enabled
 	return nil
 }
 
