@@ -62,6 +62,18 @@ export interface WidgetBootPayload {
    *  `resource_ref` settings, setting id to canonical id. Absent from an
    *  older host. Becomes `WidgetHost.linkedResources`. */
   linkedResources?: Record<string, string>;
+  /** The widget's `font` settings and where their stylesheets are served.
+   *  Absent for a widget with no font settings, and from an older host. */
+  fonts?: WidgetFonts;
+}
+
+/** See widget-fonts.ts. */
+export interface WidgetFonts {
+  /** Ids of the settings whose value is a CSS font-family list. */
+  settings: string[];
+  /** Path of the scene manager's font stylesheet route; the shim adds
+   *  `?family=` and resolves it against the frame URL. */
+  stylesheetUrl: string;
 }
 
 /**
@@ -421,7 +433,21 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     typeof boot.resourceBaseUrl === "string" &&
     boot.resourceBaseUrl.length > 0 &&
     (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme)) &&
-    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false))
+    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false)) &&
+    (boot.fonts === undefined || isWidgetFonts(boot.fonts))
+  );
+}
+
+function isWidgetFonts(value: unknown): value is WidgetFonts {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const fonts = value as Record<string, unknown>;
+  return (
+    Array.isArray(fonts.settings) &&
+    fonts.settings.every((id) => typeof id === "string") &&
+    typeof fonts.stylesheetUrl === "string" &&
+    fonts.stylesheetUrl.length > 0
   );
 }
 

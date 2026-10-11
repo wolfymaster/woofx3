@@ -56,6 +56,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     );
     const { initSubscriptions } = await import("./nats-subscriptions");
     const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
+    const { GoogleFontCache } = await import("./fonts/google-font-cache");
 
     // Identity of this process, announced on every SSE stream so a
     // reconnecting overlay can tell a resumed stream from one that came
@@ -208,6 +209,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       moduleState,
       settingsDb: db,
       sceneDocuments,
+      fonts: new GoogleFontCache(ctx.runtimeConfig.fontCacheDir, ctx.logger),
       mediaProxy,
       bootId,
     });

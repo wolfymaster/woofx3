@@ -157,8 +157,24 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
-    expect(result).toEqual({ entryHtml: "<html></html>", resourceBaseUrl: "https://cdn.example.com/w/", theme: null });
+    expect(result).toEqual({
+      entryHtml: "<html></html>",
+      resourceBaseUrl: "https://cdn.example.com/w/",
+      theme: null,
+      fontSettings: [],
+    });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("reads the widget's font settings", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const fetchFn = mock(async () =>
+      Response.json({ entryHtml: "<html></html>", resourceBaseUrl: "https://e/w/", fontSettings: ["fontFamily", 3] })
+    ) as unknown as typeof fetch;
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
+
+    const result = await client.fetchWidgetFrame("mymod", "mywid");
+    expect(result?.fontSettings).toEqual(["fontFamily"]);
   });
 });
 
@@ -178,6 +194,7 @@ describe("FrameAssembler.assembleDocument", () => {
     entryHtml: "<!doctype html><body></body>",
     resourceBaseUrl: "https://cdn.example.com/modules/mymod/abc123/widgets/mywid/",
     theme: null,
+    fontSettings: [],
   };
 
   it("frames the widget with no placement in the document", async () => {
@@ -200,6 +217,23 @@ describe("FrameAssembler.assembleDocument", () => {
     for (const placementField of ["nonce", "instanceId", "settings", "linkedResources"]) {
       expect(boot).not.toHaveProperty(placementField);
     }
+  });
+
+  it("tells the shim which settings are fonts and where their stylesheets are", async () => {
+    const withFonts = { ...info, fontSettings: ["fontFamily"] };
+    const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => withFonts) };
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+
+    const boot = bootOf(await (await assembler.assembleDocument("mymod", "mywid", null, null)).text());
+    expect(boot.fonts).toEqual({ settings: ["fontFamily"], stylesheetUrl: "/fonts/css" });
+    const plain = bootOf(
+      await (
+        await new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
+          barkloader: { fetchWidgetFrame: mock(async () => info) },
+        }).assembleDocument("mymod", "mywid", null, null)
+      ).text()
+    );
+    expect(plain).not.toHaveProperty("fonts");
   });
 
   it("is cached for good while its version is current, and not otherwise", async () => {
@@ -252,6 +286,7 @@ async function assembleThemed(settings: Record<string, unknown>, theme: FrameThe
     entryHtml: "<!doctype html><html><head><style>#t{}</style></head><body><script>1</script></body></html>",
     resourceBaseUrl: THEMED_BASE,
     theme,
+    fontSettings: [],
   }));
   const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
     barkloader: { fetchWidgetFrame },

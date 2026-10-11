@@ -12,6 +12,7 @@ const barkloader: BarkloaderFrameClient = {
     entryHtml: "<!doctype html><html><head></head><body></body></html>",
     resourceBaseUrl: "https://cdn.example.com/w/",
     theme: null,
+    fontSettings: [],
   })),
 };
 
@@ -79,6 +80,7 @@ describe("FrameAssembler.assembleDocument — surfaces", () => {
       entryHtml: "<!doctype html><html><head></head></html>",
       resourceBaseUrl: "https://e/",
       theme: null,
+      fontSettings: [],
     }),
   };
 

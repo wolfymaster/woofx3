@@ -280,10 +280,14 @@ pub struct ManifestConfigFieldOption {
 /// control, not the stored value, and the latter pair only ever appeared on
 /// module settings.
 ///
+/// `font` holds a CSS font-family list. A widget frame is told which of its
+/// settings are fonts (`font_setting_ids`), so the scene manager can serve the
+/// Google family the first entry names.
+///
 /// `theme` is in the list because consumers render it, but no manifest may
 /// declare one: the engine adds it to a widget that declares a `theme`
 /// contract (see `THEME_SETTING_ID`).
-pub const CONFIG_FIELD_TYPES: [&str; 13] = [
+pub const CONFIG_FIELD_TYPES: [&str; 14] = [
     "number",
     "range",
     "text",
@@ -291,6 +295,7 @@ pub const CONFIG_FIELD_TYPES: [&str; 13] = [
     "media",
     "toggle",
     "color",
+    "font",
     "asset",
     "resource_ref",
     "button",
@@ -309,6 +314,9 @@ pub const COMPARISON_OPERATORS: [&str; 6] = ["eq", "ne", "gt", "gte", "lt", "lte
 /// to a widget that declares a `theme` contract. The stored value is a theme's
 /// canonical id, or absent for the contract's defaults.
 pub const THEME_FIELD_TYPE: &str = "theme";
+
+/// The field type of a setting holding a CSS font-family list.
+pub const FONT_FIELD_TYPE: &str = "font";
 pub const THEME_SETTING_ID: &str = "theme";
 
 /// The types a `list` field's `itemFields` may use: controls that fit in one
@@ -1332,6 +1340,17 @@ impl ModuleWidget {
     /// removed.
     pub fn resolved_alert_types(&self) -> Vec<String> {
         dedup_preserve_order(&self.alert_types)
+    }
+
+    /// The ids of the widget's `font` settings, in declaration order: the
+    /// settings whose first family the scene manager offers to serve.
+    pub fn font_setting_ids(&self) -> Vec<String> {
+        self.settings_schema
+            .iter()
+            .flatten()
+            .filter(|field| field.field_type == FONT_FIELD_TYPE)
+            .map(|field| field.id.clone())
+            .collect()
     }
 
     /// Normalize the manifest `entry` path relative to the widget asset
@@ -2378,6 +2397,28 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].id, "minViewers");
         assert_eq!(fields[0].field_type, "number");
+    }
+
+    #[test]
+    fn font_setting_ids_lists_only_font_settings_in_order() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "settingsSchema": [
+                { "id": "headline", "label": "Headline", "type": "font" },
+                { "id": "color", "label": "Color", "type": "color" },
+                { "id": "body", "label": "Body", "type": "font" }
+            ]
+        }))
+        .expect("parse");
+        assert_eq!(w.font_setting_ids(), vec!["headline", "body"]);
+    }
+
+    #[test]
+    fn font_setting_ids_is_empty_without_a_schema() {
+        let w: ModuleWidget =
+            serde_json::from_value(serde_json::json!({ "id": "x", "name": "X" })).expect("parse");
+        assert!(w.font_setting_ids().is_empty());
     }
 
     #[test]

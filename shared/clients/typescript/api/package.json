@@ -15,6 +15,7 @@
     "./webhooks": "./webhooks.ts",
     "./client": "./client.ts",
     "./config-bundle": "./config-bundle.ts",
+    "./google-fonts": "./google-fonts.ts",
     "./ui-schema": "./ui-schema.ts",
     "./workflow-definition": "./workflow-definition.ts",
     "./scene-editor": "./scene-editor/index.ts",
@@ -23,6 +24,9 @@
     "./scene-editor/protocol": "./scene-editor/protocol.ts",
     "./scene-editor/rebase": "./scene-editor/rebase.ts",
     "./scene-editor/sequencer": "./scene-editor/sequencer.ts"
+  },
+  "scripts": {
+    "generate:google-fonts": "bun run scripts/generate-google-fonts.ts"
   },
   "dependencies": {
     "capnweb": "^0.4.0",
