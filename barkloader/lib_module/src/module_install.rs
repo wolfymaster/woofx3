@@ -1643,6 +1643,15 @@ mod tests {
         };
         assert!(idx("register_actions") < idx("register_workflow"));
         assert!(idx("register_workflow") < idx("register_command"));
+
+        // A module's bundled workflows are part of what installing it means,
+        // so they go live with the install rather than waiting to be switched on.
+        let workflows = db_proxy.registered_workflows();
+        assert!(!workflows.is_empty(), "no workflow registered");
+        assert!(
+            workflows.iter().all(|w| w.enabled),
+            "a bundled workflow was registered disabled: {workflows:?}"
+        );
     }
 
     #[tokio::test]
