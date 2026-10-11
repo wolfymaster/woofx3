@@ -4,7 +4,7 @@ import {
   executeSceneControlCommand,
   parseSceneControlCommand,
 } from "../../src/scene/scene-command";
-import { type SceneWrite, SceneDocuments } from "../../src/scene/scene-documents";
+import { SceneDocuments, type SceneWrite } from "../../src/scene/scene-documents";
 import type { OverlaySceneState } from "../../src/scene/scene-host";
 
 function fakeLogger() {
@@ -39,7 +39,14 @@ function documents(
   const sent: Array<{ event: string; data: any }> = [];
   const writes: SceneWrite[] = [];
   const docs = new SceneDocuments(
-    { loadFramedSceneById: load, framePlacements: async () => [] },
+    {
+      loadEditableScene: async (id) => {
+        const state = await load(id);
+        return state ? { published: state, draft: state, editorStateJson: null } : null;
+      },
+      loadFramedSceneById: load,
+      framePlacements: async () => [],
+    },
     { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["scene-1"] },
     fakeLogger(),
     {

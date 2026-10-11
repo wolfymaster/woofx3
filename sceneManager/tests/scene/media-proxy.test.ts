@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { ServerMessage } from "@woofx3/api/scene-editor";
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
 import {
   earliestMediaProxyExpiry,
@@ -26,7 +27,7 @@ import {
   MediaProxy,
   mediaProxyBaseOf,
 } from "../../src/scene/media-proxy";
-import { SceneDocuments } from "../../src/scene/scene-documents";
+import { type ItemReply, SceneDocuments, type SceneLoader } from "../../src/scene/scene-documents";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 import type { FrameTheme } from "../../src/scene/widget-theme";
 
@@ -267,11 +268,37 @@ function instance(id: string, settings: Record<string, unknown>, themeable: bool
   };
 }
 
+/** A loader for scene s1, the same state as both versions, never synced by an editor. */
+function loaderOf(
+  state: () => OverlaySceneState,
+  framePlacements: () => Promise<OverlayWidgetInstance[]>
+): SceneLoader {
+  return {
+    loadEditableScene: async () => ({ published: state(), draft: state(), editorStateJson: null }),
+    loadFramedSceneById: async () => state(),
+    framePlacements,
+  };
+}
+
+let itemSeq = 0;
+
+/** One editor edit to the published scene of s1; ok when it committed or was acknowledged. */
+async function submit(docs: SceneDocuments, ops: unknown[]): Promise<{ ok: boolean }> {
+  const replies: ItemReply[] = [];
+  await docs.submitItem("s1", "editor", ++itemSeq, 0, { kind: "edit", version: "published", ops: ops as never }, (r) =>
+    replies.push(r)
+  );
+  return { ok: replies.every((reply) => reply.type === "ack") };
+}
+
 function documents(instances: OverlayWidgetInstance[], framed: OverlayWidgetInstance[] = []) {
   const state: OverlaySceneState = { sceneId: "s1", name: "Main", layout: {}, instances };
   const sent: Array<{ event: string; data: any }> = [];
   const docs = new SceneDocuments(
-    { loadFramedSceneById: async () => state, framePlacements: async () => framed },
+    loaderOf(
+      () => state,
+      async () => framed
+    ),
     { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
     logger(),
     { mediaProxy: proxy }
@@ -300,7 +327,7 @@ describe("SceneDocuments — what overlays see", () => {
     const overlayBefore = await docs.overlaySnapshot("s1");
     const next = "https://media.example.com/clips/b.png";
     // An edit inside the url string, as a text field makes it.
-    const result = await docs.submit("s1", "published", 0, [
+    const result = await submit(docs, [
       { p: ["widgets", "themed", "settings", "image", "url", 32], sd: "a" },
       { p: ["widgets", "themed", "settings", "image", "url", 32], si: "b" },
     ]);
@@ -328,7 +355,7 @@ describe("SceneDocuments — what overlays see", () => {
       { p: ["widgets", "text", "settings", "text"], od: "hi", oi: "yo" },
       { p: ["layout", "background"], oi: "#000" },
     ];
-    await docs.submit("s1", "published", 0, ops);
+    await submit(docs, ops);
     expect(pushed().ops).toEqual(ops);
   });
 
@@ -339,7 +366,7 @@ describe("SceneDocuments — what overlays see", () => {
     ]);
     await docs.snapshot("s1");
     const move = { p: ["widgets", "other", "x"], od: 0, oi: 10 };
-    await docs.submit("s1", "published", 0, [{ p: ["widgets", "themed", "x"], od: 0, oi: 5 }, move]);
+    await submit(docs, [{ p: ["widgets", "themed", "x"], od: 0, oi: 5 }, move]);
     const ops = pushed().ops;
     expect(ops).toHaveLength(2);
     expect(ops[0]).toEqual(move);
@@ -366,7 +393,7 @@ describe("SceneDocuments — what overlays see", () => {
       locked: false,
       extra: {},
     };
-    await docs.submit("s1", "published", 0, [{ p: ["widgets", "added"], oi: placement }]);
+    await submit(docs, [{ p: ["widgets", "added"], oi: placement }]);
     expect(pushed().ops).toEqual([
       { p: ["widgets", "added"], oi: { ...placement, settings: { image: { ...external(), url: EXTERNAL_PROXIED } } } },
     ]);
@@ -443,10 +470,10 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     const sent: Array<{ event: string; data: any }> = [];
     let attempts = 0;
     const docs = new SceneDocuments(
-      {
-        loadFramedSceneById: async () => state,
-        framePlacements: async () => framedAgain[Math.min(attempts++, framedAgain.length - 1)]!,
-      },
+      loaderOf(
+        () => state,
+        async () => framedAgain[Math.min(attempts++, framedAgain.length - 1)]!
+      ),
       { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 1 }
@@ -472,24 +499,19 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
   it("leaves them to the timed retry when they are edited, so an edit never waits on barkloader", async () => {
     let attempts = 0;
     const docs = new SceneDocuments(
-      {
-        loadFramedSceneById: async () => ({
-          sceneId: "s1",
-          name: "Main",
-          layout: {},
-          instances: [unframed("themed", { image: external() })],
-        }),
-        framePlacements: async () => {
+      loaderOf(
+        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [unframed("themed", { image: external() })] }),
+        async () => {
           attempts++;
           return new Promise<OverlayWidgetInstance[]>(() => {});
-        },
-      },
+        }
+      ),
       { broadcast: () => {}, connectedSceneIds: () => ["s1"] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 60_000 }
     );
     await docs.snapshot("s1");
-    const result = await docs.submit("s1", "published", 0, [{ p: ["widgets", "themed", "x"], od: 0, oi: 5 }]);
+    const result = await submit(docs, [{ p: ["widgets", "themed", "x"], od: 0, oi: 5 }]);
     expect(result.ok).toBe(true);
     expect(attempts).toBe(0);
     const after = (await docs.snapshot("s1"))!;
@@ -500,18 +522,13 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
   it("stops retrying while nobody has the scene open", async () => {
     let attempts = 0;
     const docs = new SceneDocuments(
-      {
-        loadFramedSceneById: async () => ({
-          sceneId: "s1",
-          name: "Main",
-          layout: {},
-          instances: [unframed("themed", { image: external() })],
-        }),
-        framePlacements: async () => {
+      loaderOf(
+        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [unframed("themed", { image: external() })] }),
+        async () => {
           attempts++;
           return [unframed("themed", { image: external() })];
-        },
-      },
+        }
+      ),
       { broadcast: () => {}, connectedSceneIds: () => [] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 1 }
@@ -519,6 +536,77 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     await docs.snapshot("s1");
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(attempts).toBe(0);
+  });
+
+  it("tells editors the meta barkloader's answer brings, as an external entry with no ops", async () => {
+    const docs = new SceneDocuments(
+      loaderOf(
+        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [unframed("themed", { image: external() })] }),
+        async () => [{ ...instance("themed", { image: external() }, true), frameUrl: "/frames/woofx3/timer?v=abc" }]
+      ),
+      { broadcast: () => {}, connectedSceneIds: () => [] },
+      logger(),
+      { mediaProxy: proxy, reframeRetryMs: 1 }
+    );
+    const inbox: ServerMessage[] = [];
+    await docs.openEditor(
+      "s1",
+      { clientId: "c1", have: null, name: "Pat" },
+      { send: (message) => inbox.push(message), close: () => {} }
+    );
+    await until(() => inbox.some((message) => message.type === "entry"));
+    const entry = inbox.find((message) => message.type === "entry") as Extract<ServerMessage, { type: "entry" }>;
+    expect(entry.kind).toBe("external");
+    expect(entry.changes).toEqual({});
+    expect(entry.meta.published?.themed).toMatchObject({
+      mediaProxyBase: BASE,
+      frameUrl: "/frames/woofx3/timer?v=abc",
+    });
+    expect(entry.meta.draft?.themed).toMatchObject({ mediaProxyBase: BASE });
+  });
+
+  it("frames again later a placement whose framing call failed", async () => {
+    let calls = 0;
+    const sent: Array<{ event: string; data: any }> = [];
+    const docs = new SceneDocuments(
+      loaderOf(
+        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [] }),
+        async () => {
+          calls++;
+          if (calls === 1) {
+            throw new Error("barkloader is down");
+          }
+          return [instance("added", { image: external() }, true)];
+        }
+      ),
+      { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+      logger(),
+      { mediaProxy: proxy, reframeRetryMs: 1 }
+    );
+    await docs.snapshot("s1");
+    const placement = {
+      widget: "woofx3:widget:timer",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      visible: true,
+      z: "a0000",
+      settings: { image: external() },
+      name: "",
+      rotation: 0,
+      opacity: 1,
+      locked: false,
+      extra: {},
+    };
+    expect((await submit(docs, [{ p: ["widgets", "added"], oi: placement }])).ok).toBe(true);
+    const framed = () =>
+      sent.some((s) => s.event === "scene-ops" && s.data.version === "published" && s.data.meta.added?.mediaProxyBase);
+    await until(framed);
+    expect((await docs.overlaySnapshot("s1"))!.doc.widgets.added!.settings.image).toEqual({
+      ...external(),
+      url: EXTERNAL_PROXIED,
+    });
   });
 });
 

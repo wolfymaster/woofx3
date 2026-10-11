@@ -537,6 +537,44 @@ pub struct UpdateResourceInstanceRequest {
     #[prost(message, optional, tag="4")]
     pub request_context: ::core::option::Option<super::common::RequestContext>,
 }
+/// Writes `settings\[key\] = value` on one instance only while `settings\[key\]`
+/// still holds `expected`: the safe way for the owning module's functions to
+/// change a setting the streamer, or another run, may be changing at the same
+/// moment, such as adding an entry to a list.
+///
+/// Values are JSON text and compare by meaning, the way a function reads them:
+/// numbers by value (1 equals 1.0), objects regardless of key order, and an
+/// empty object equals an empty array. An `expected` of null (or empty) matches
+/// a key the instance does not hold, which is what a function reads as
+/// undefined. Only the module that owns the instance may write it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompareAndSetResourceInstanceSettingRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+    /// Manifest id of the module asking. Refused unless it owns the instance.
+    #[prost(string, tag="2")]
+    pub module_name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub key: ::prost::alloc::string::String,
+    /// JSON text of what `settings\[key\]` must hold for the write to happen.
+    #[prost(string, tag="4")]
+    pub expected_json: ::prost::alloc::string::String,
+    /// JSON text of the value to write.
+    #[prost(string, tag="5")]
+    pub value_json: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="6")]
+    pub request_context: ::core::option::Option<super::common::RequestContext>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompareAndSetResourceInstanceSettingResponse {
+    #[prost(bool, tag="1")]
+    pub swapped: bool,
+    /// JSON text of `settings\[key\]` after the call: the value written when
+    /// swapped, else what it holds now, which is what the caller retries from.
+    /// Empty when the instance has no such key.
+    #[prost(string, tag="2")]
+    pub current_json: ::prost::alloc::string::String,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteResourceInstanceRequest {
     #[prost(string, tag="1")]

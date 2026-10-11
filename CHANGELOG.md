@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/wolfymaster/woofx3/compare/v0.25.0...v0.26.0) (2026-10-10)
+
+### Features
+
+* **modules:** drop the highlight color from the Text, Counter and Timer widgets ([0f9a896](https://github.com/wolfymaster/woofx3/commit/0f9a896df753681eb1c4fbfe0fe34a4c7f8c4f64))
+* **sceneManager:** scene editor protocol 2 on the shared sequencer ([056d181](https://github.com/wolfymaster/woofx3/commit/056d181053f3f8c0d74cd0bfde7331ac2b1efcdd))
+
 ## [0.25.0](https://github.com/wolfymaster/woofx3/compare/v0.24.0...v0.25.0) (2026-10-10)
 
 ### Features
