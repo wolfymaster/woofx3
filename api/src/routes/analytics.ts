@@ -4,6 +4,10 @@ import type {
   LeaderboardMetric,
   LeaderboardQuery,
   StreamGaugeSample,
+  StreamSessionEvent,
+  StreamSessionEventKind,
+  StreamSessionEvents,
+  StreamSessionEventsQuery,
   StreamSessionTotals,
   ViewerTotals,
   ViewerTotalsQuery,
@@ -16,6 +20,21 @@ import { routeModule } from "./context";
 
 const DEFAULT_LEADERBOARD_LIMIT = 10;
 const MAX_LEADERBOARD_LIMIT = 100;
+
+const DEFAULT_SESSION_EVENTS_LIMIT = 500;
+const MAX_SESSION_EVENTS_LIMIT = 1000;
+
+// Must match the types UserEventRepository.SessionEvents selects in
+// db/database/repository/user_event_repository.go. A type outside this map
+// there is a contract break, not an event to skip.
+const SESSION_EVENT_KINDS: Readonly<Record<string, StreamSessionEventKind>> = {
+  "channel.cheer": "cheer",
+  "channel.follow": "follow",
+  "channel.subscribe": "sub",
+  "channel.resub": "sub",
+  "channel.subscriptionGift": "giftedSubs",
+  "channel.raid": "raid",
+};
 
 const LEADERBOARD_METRICS: Readonly<Record<LeaderboardMetric, user_event.LeaderboardMetric>> = {
   bits: "LEADERBOARD_METRIC_BITS",
@@ -91,6 +110,32 @@ function viewerFigures(
     peakViewers: peak,
     averageViewers: Math.round(sum / counts.length),
     viewerSampleMinutes: counts.length,
+  };
+}
+
+function readSessionEventsQuery(query: StreamSessionEventsQuery | undefined): { sessionId: string; limit: number } {
+  const sessionId = readId(query?.sessionId, "sessionId");
+  const limit = query?.limit ?? DEFAULT_SESSION_EVENTS_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SESSION_EVENTS_LIMIT) {
+    throw new Error(`limit must be an integer from 1 to ${MAX_SESSION_EVENTS_LIMIT}`);
+  }
+  return { sessionId, limit };
+}
+
+function toSessionEvent(event: user_event.UserEvent): StreamSessionEvent {
+  const kind = SESSION_EVENT_KINDS[event.eventType];
+  if (kind === undefined) {
+    throw new Error(`session event ${event.id} has type ${event.eventType}, which is not a counted kind`);
+  }
+  const ms = timestampToEpochMs(event.occurredAt);
+  if (ms === undefined) {
+    throw new Error(`session event ${event.id} has no occurredAt`);
+  }
+  return {
+    occurredAt: new Date(ms).toISOString(),
+    kind,
+    userName: event.userName ?? null,
+    amount: kind === "follow" || kind === "sub" ? null : optionalCount(event.amount, "amount"),
   };
 }
 
@@ -198,5 +243,14 @@ export const analyticsRoutes = routeModule({
   async getStreamSessionGauges(sessionId: string): Promise<StreamGaugeSample[] | null> {
     const samples = await this.db.findStreamGaugeSamples(readId(sessionId, "sessionId"));
     return samples === null ? null : samples.map(toSample);
+  },
+
+  async getStreamSessionEvents(query: StreamSessionEventsQuery): Promise<StreamSessionEvents | null> {
+    const { sessionId, limit } = readSessionEventsQuery(query);
+    const found = await this.db.findStreamSessionUserEvents({ streamSessionId: sessionId, limit });
+    if (found === null) {
+      return null;
+    }
+    return { sessionId, events: found.events.map(toSessionEvent), total: count(found.total, "total") };
   },
 });

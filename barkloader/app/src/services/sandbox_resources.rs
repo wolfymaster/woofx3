@@ -8,7 +8,7 @@
 //! synchronously.
 
 use lib_module::db_proxy::{self, RequestContext as DbRequestContext, ResourceInstanceJson};
-use lib_sandbox::host::{ResourceClient, ResourceInstance};
+use lib_sandbox::host::{CompareAndSetOutcome, ResourceClient, ResourceInstance};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -114,5 +114,42 @@ impl ResourceClient for HttpResourceClient {
             .block_on(async move { db_proxy::list_resource_instances_by_kind(&url, &kind).await })
             .map(|items| items.into_iter().map(from_json).collect())
             .map_err(|e| e.to_string())
+    }
+
+    fn compare_and_set_setting(
+        &self,
+        owning_module_name: &str,
+        canonical_id: &str,
+        key: &str,
+        expected: &Value,
+        value: &Value,
+    ) -> Result<CompareAndSetOutcome, String> {
+        let url = self.db_proxy_url.clone();
+        let expected_json = serde_json::to_string(expected).map_err(|e| e.to_string())?;
+        let value_json = serde_json::to_string(value).map_err(|e| e.to_string())?;
+        let req_ctx = self.request_context.clone();
+        let response = Handle::current()
+            .block_on(db_proxy::compare_and_set_resource_instance_setting(
+                &url,
+                owning_module_name,
+                canonical_id,
+                key,
+                &expected_json,
+                &value_json,
+                req_ctx.as_deref(),
+            ))
+            .map_err(|e| e.to_string())?;
+        let current = if response.current_json.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_str(&response.current_json)
+                    .map_err(|e| format!("read the setting db-proxy answered with: {e}"))?,
+            )
+        };
+        Ok(CompareAndSetOutcome {
+            swapped: response.swapped,
+            current,
+        })
     }
 }

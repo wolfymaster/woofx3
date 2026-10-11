@@ -265,6 +265,16 @@ Triggers, actions, workflows, and modules all support an open, multi-valued `tax
 
 The vocabulary is intentionally open — there is no fixed enum and the engine does not validate taxonomy terms against a known list. Module authors are free to introduce new terms as new platforms or functional groupings come along; the UI is responsible for interpreting and displaying whatever terms appear.
 
+#### How the action picker reads an action's taxonomy
+
+An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `system.counter` under **Built-in › Counters**.
+
+An action with no `taxonomy` is listed under the module that provides it, as one section named after the module. Because of that fallback, a taxonomy is optional for an action that should simply sit with the rest of its module; declare one when the action belongs with similar actions from other modules (every `platform.obs` action reads as one OBS group regardless of which module ships it).
+
+The bundled `woofx3` module files its actions under the `system` family: `system.workflow` (Function, Print), `system.alerts`, `system.scenes`, `system.chat`, `system.counter`, `system.timer` and `system.queue`. The picker lists `system` first, labelled **Built-in**.
+
+On install, every action `taxonomy` entry must be a dotted path of names, each of `[A-Za-z0-9_-]` (`platform.obs`, not `platform.`, `platform..obs` or `platform obs`), and no entry may appear twice on one action. The vocabulary itself is not checked.
+
 `taxonomy` replaces the older single-value `category` field, which is still accepted on manifests for backward compatibility: when a manifest sets `category` but not `taxonomy`, the engine folds it into a single-element `taxonomy` array at parse time. Everything downstream of the manifest (the DB row, the outbox events, the API) carries only `taxonomy` — `category` is not persisted.
 
 ### Field declarations
@@ -582,7 +592,7 @@ Common fields:
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
 | `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
-| `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification. The first entry places the action in the workflow builder's action picker; with none, the action is listed under its module. See [How the action picker reads an action's taxonomy](#how-the-action-picker-reads-an-action-s-taxonomy). |
 
 Type-specific fields:
 
@@ -1090,6 +1100,34 @@ function add(ctx, label) {
 }
 ```
 
+A resource kind's `schema` may declare a `list` field the same way, for rows that
+belong to each instance rather than to the module: the entries of one list, say,
+typed by the streamer when they create or edit it. Functions of the module that
+declares the kind read them from `ctx.resources.get(id).settings.<field>` and change
+them with `ctx.resources.compareAndSetSetting(id, field, expected, value)`, which works
+like `ctx.module.compareAndSetSetting` for that one instance. Until the streamer saves
+the field the instance does not hold it, so it reads as `undefined`; pass back what was
+read, not a defaulted `[]`, as the first `expected`:
+
+```js
+function add(ctx, id, label) {
+  var current = ctx.resources.get(id).settings.items;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    var next = (current || []).concat([{ label: label }]);
+    var outcome = ctx.resources.compareAndSetSetting(id, "items", current, next);
+    if (outcome.swapped) {
+      return next;
+    }
+    current = outcome.current;
+  }
+  throw new Error("the list kept changing; try again");
+}
+```
+
+Only the module that declares the kind may write an instance's settings. Lua has
+one empty table for `[]` and `{}`, so an empty table replacing a list is written as
+an empty list.
+
 #### Reading settings at runtime — `ctx.module`
 
 Both the QuickJS and Lua sandbox runtimes expose the invoking function's module
@@ -1477,6 +1515,7 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns every instance of that name across every installed module; `module:kind` returns only that module's. |
 | `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
+| `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)` | `{ swapped, current }` | Writes `settings[key] = value` on an instance this module owns, only while `settings[key]` still holds `expected`, compared by meaning (key order, `1` vs `1.0`, `[]` vs `{}`). `null`/`undefined` (`nil` in Lua) matches a key the instance does not hold, which is how a schema field the streamer never saved reads. `current` is the setting as it reads now, `null` when absent. A swap is announced as an instance update (`db.module.resource.instance.updated`), the same as a streamer's edit, so the dashboard and `resource:<canonicalId>` readers refresh. Throws for an instance another module owns, one that does not exist, or a value JSON cannot hold. See [List settings](#list-settings). |
 
 `ctx.resources.run` is how a module drives a resource another module provides. The
 action runs as the providing module — its function, its storage, the events it
