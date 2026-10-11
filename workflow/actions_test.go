@@ -155,6 +155,38 @@ func TestValidateAlertParams_AcceptsAnEmptyWidgetList(t *testing.T) {
 	}
 }
 
+func TestValidateAlertParams_AcceptsACompositionLayout(t *testing.T) {
+	params := map[string]any{
+		"layout": map[string]any{
+			"layout":    map[string]any{"width": 1920.0, "height": 1080.0},
+			"widgets":   map[string]any{"t1": map[string]any{"widget": "woofx3:widget:text"}},
+			"behaviors": map[string]any{},
+		},
+	}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+func TestValidateAlertParams_NamesTheCompositionFieldAtFault(t *testing.T) {
+	cases := []struct {
+		layout map[string]any
+		want   string
+	}{
+		{map[string]any{"layout": "x", "widgets": map[string]any{}}, `layout.layout must be an object, got the string "x"`},
+		{map[string]any{"layout": map[string]any{"height": 1.0}, "widgets": map[string]any{}}, "layout.layout.width must be a positive number, got nothing"},
+		{map[string]any{"layout": map[string]any{"width": 1.0, "height": 0.0}, "widgets": map[string]any{}}, "layout.layout.height must be a positive number, got number 0"},
+		{map[string]any{"layout": map[string]any{"width": 1.0, "height": 1.0}, "widgets": []any{}}, "layout.widgets must be an object keyed by id, got an array"},
+		{map[string]any{"layout": map[string]any{"width": 1.0, "height": 1.0}, "widgets": map[string]any{}, "behaviors": []any{}}, "layout.behaviors must be an object keyed by id, got an array"},
+	}
+	for _, tc := range cases {
+		err := validateAlertParams(map[string]any{"layout": tc.layout})
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("validateAlertParams(%v) = %v, want %q", tc.layout, err, tc.want)
+		}
+	}
+}
+
 // The message is the whole point: an author sees it on a failed run and has to
 // be able to act on it without reading engine source.
 func TestValidateAlertParams_NamesTheFieldAtFault(t *testing.T) {

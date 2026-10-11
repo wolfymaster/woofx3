@@ -515,6 +515,51 @@ describe("dispatchAlert", () => {
       },
     ]);
   });
+
+  it("delivers a composition, converting a list-shaped layout", async () => {
+    const { overlays, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+
+    await dispatchAlert(JSON.parse(envelope()), deps);
+
+    const { layout } = overlays[0]!.deliveries()[0].value as { layout: Record<string, any> };
+    expect(layout.layout).toEqual({ width: 1920, height: 1080 });
+    expect(layout.behaviors).toEqual({});
+    expect(layout.widgets.t1).toMatchObject({ widget: "woofx3:widget:text", visible: true });
+  });
+
+  it("refuses a layout whose every widget is hidden, since a hidden widget does not play", async () => {
+    const { writes, overlays, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const hidden = {
+      widget: "woofx3:widget:text",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      visible: false,
+      z: "a0",
+      settings: {},
+      name: "",
+      rotation: 0,
+      opacity: 1,
+      locked: false,
+      extra: {},
+    };
+
+    const outcome = await dispatchAlert(
+      {
+        id: "env-hidden",
+        rowId: "row-3",
+        parameters: { layout: { layout: { width: 100, height: 100 }, widgets: { t1: hidden }, behaviors: {} } },
+      },
+      deps
+    );
+
+    expect(outcome).toEqual({ ok: false, reason: "every widget in the layout is hidden" });
+    expect(overlays[0]!.deliveries()).toEqual([]);
+    expect(writes.lifecycle).toEqual([
+      { id: "row-3", envelopeId: "env-hidden", status: "failed", error: "every widget in the layout is hidden" },
+    ]);
+  });
 });
 
 describe("AlertReplays", () => {
