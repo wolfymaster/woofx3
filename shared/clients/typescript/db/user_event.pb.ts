@@ -232,6 +232,26 @@ export interface ListRecentUserEventsResponse {
   total: bigint;
 }
 
+export interface ListStreamSessionUserEventsRequest {
+  streamSessionId: string;
+  /**
+   * 1-1000. Defaults to 500.
+   */
+  limit?: number | null | undefined;
+}
+
+export interface ListStreamSessionUserEventsResponse {
+  status: common.ResponseStatus;
+  /**
+   * Oldest first by occurred_at, at most `limit` of them.
+   */
+  events: UserEvent[];
+  /**
+   * Every counted event in the session, not only those returned.
+   */
+  total: bigint;
+}
+
 //========================================//
 //    UserEventService Protobuf Client    //
 //========================================//
@@ -318,6 +338,27 @@ export async function ListRecentUserEvents(
     config,
   );
   return ListRecentUserEventsResponse.decode(response);
+}
+
+/**
+ * The events a session's totals count, oldest first, for placing them on
+ * the session's timeline: cheers, follows, raids, gifts, resubs and the subs
+ * viewers took out themselves. A gifted sub's recipient row is left out, as
+ * the totals leave it out, so each gift appears once. `not_found` for an
+ * unknown session.
+ */
+export async function ListStreamSessionUserEvents(
+  listStreamSessionUserEventsRequest: ListStreamSessionUserEventsRequest,
+  config?: ClientConfiguration,
+): Promise<ListStreamSessionUserEventsResponse> {
+  const response = await PBrequest(
+    "/user_event.UserEventService/ListStreamSessionUserEvents",
+    ListStreamSessionUserEventsRequest.encode(
+      listStreamSessionUserEventsRequest,
+    ),
+    config,
+  );
+  return ListStreamSessionUserEventsResponse.decode(response);
 }
 
 //========================================//
@@ -408,6 +449,27 @@ export async function ListRecentUserEventsJSON(
   return ListRecentUserEventsResponseJSON.decode(response);
 }
 
+/**
+ * The events a session's totals count, oldest first, for placing them on
+ * the session's timeline: cheers, follows, raids, gifts, resubs and the subs
+ * viewers took out themselves. A gifted sub's recipient row is left out, as
+ * the totals leave it out, so each gift appears once. `not_found` for an
+ * unknown session.
+ */
+export async function ListStreamSessionUserEventsJSON(
+  listStreamSessionUserEventsRequest: ListStreamSessionUserEventsRequest,
+  config?: ClientConfiguration,
+): Promise<ListStreamSessionUserEventsResponse> {
+  const response = await JSONrequest(
+    "/user_event.UserEventService/ListStreamSessionUserEvents",
+    ListStreamSessionUserEventsRequestJSON.encode(
+      listStreamSessionUserEventsRequest,
+    ),
+    config,
+  );
+  return ListStreamSessionUserEventsResponseJSON.decode(response);
+}
+
 //========================================//
 //            UserEventService            //
 //========================================//
@@ -465,6 +527,19 @@ export interface UserEventService<Context = unknown> {
     listRecentUserEventsRequest: ListRecentUserEventsRequest,
     context: Context,
   ) => Promise<ListRecentUserEventsResponse> | ListRecentUserEventsResponse;
+  /**
+   * The events a session's totals count, oldest first, for placing them on
+   * the session's timeline: cheers, follows, raids, gifts, resubs and the subs
+   * viewers took out themselves. A gifted sub's recipient row is left out, as
+   * the totals leave it out, so each gift appears once. `not_found` for an
+   * unknown session.
+   */
+  ListStreamSessionUserEvents: (
+    listStreamSessionUserEventsRequest: ListStreamSessionUserEventsRequest,
+    context: Context,
+  ) =>
+    | Promise<ListStreamSessionUserEventsResponse>
+    | ListStreamSessionUserEventsResponse;
 }
 
 export function createUserEventService<Context>(
@@ -531,6 +606,18 @@ export function createUserEventService<Context>(
         output: {
           protobuf: ListRecentUserEventsResponse,
           json: ListRecentUserEventsResponseJSON,
+        },
+      },
+      ListStreamSessionUserEvents: {
+        name: "ListStreamSessionUserEvents",
+        handler: service.ListStreamSessionUserEvents,
+        input: {
+          protobuf: ListStreamSessionUserEventsRequest,
+          json: ListStreamSessionUserEventsRequestJSON,
+        },
+        output: {
+          protobuf: ListStreamSessionUserEventsResponse,
+          json: ListStreamSessionUserEventsResponseJSON,
         },
       },
     },
@@ -2005,6 +2092,180 @@ export const ListRecentUserEventsResponse = {
   },
 };
 
+export const ListStreamSessionUserEventsRequest = {
+  /**
+   * Serializes ListStreamSessionUserEventsRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ListStreamSessionUserEventsRequest>,
+  ): Uint8Array {
+    return ListStreamSessionUserEventsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListStreamSessionUserEventsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListStreamSessionUserEventsRequest {
+    return ListStreamSessionUserEventsRequest._readMessage(
+      ListStreamSessionUserEventsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListStreamSessionUserEventsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListStreamSessionUserEventsRequest>,
+  ): ListStreamSessionUserEventsRequest {
+    return {
+      streamSessionId: "",
+      limit: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListStreamSessionUserEventsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.streamSessionId) {
+      writer.writeString(1, msg.streamSessionId);
+    }
+    if (msg.limit != undefined) {
+      writer.writeInt32(2, msg.limit);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListStreamSessionUserEventsRequest,
+    reader: protoscript.BinaryReader,
+  ): ListStreamSessionUserEventsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.streamSessionId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.limit = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListStreamSessionUserEventsResponse = {
+  /**
+   * Serializes ListStreamSessionUserEventsResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ListStreamSessionUserEventsResponse>,
+  ): Uint8Array {
+    return ListStreamSessionUserEventsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListStreamSessionUserEventsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListStreamSessionUserEventsResponse {
+    return ListStreamSessionUserEventsResponse._readMessage(
+      ListStreamSessionUserEventsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListStreamSessionUserEventsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListStreamSessionUserEventsResponse>,
+  ): ListStreamSessionUserEventsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      events: [],
+      total: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListStreamSessionUserEventsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.events?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.events as any,
+        UserEvent._writeMessage,
+      );
+    }
+    if (msg.total) {
+      writer.writeInt64String(3, msg.total.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListStreamSessionUserEventsResponse,
+    reader: protoscript.BinaryReader,
+  ): ListStreamSessionUserEventsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = UserEvent.initialize();
+          reader.readMessage(m, UserEvent._readMessage);
+          msg.events.push(m);
+          break;
+        }
+        case 3: {
+          msg.total = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -3276,6 +3537,162 @@ export const ListRecentUserEventsResponseJSON = {
     msg: ListRecentUserEventsResponse,
     json: any,
   ): ListRecentUserEventsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _events_ = json["events"];
+    if (_events_) {
+      for (const item of _events_) {
+        const m = UserEventJSON.initialize();
+        UserEventJSON._readMessage(m, item);
+        msg.events.push(m);
+      }
+    }
+    const _total_ = json["total"];
+    if (_total_) {
+      msg.total = BigInt(_total_);
+    }
+    return msg;
+  },
+};
+
+export const ListStreamSessionUserEventsRequestJSON = {
+  /**
+   * Serializes ListStreamSessionUserEventsRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<ListStreamSessionUserEventsRequest>,
+  ): string {
+    return JSON.stringify(
+      ListStreamSessionUserEventsRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes ListStreamSessionUserEventsRequest from JSON.
+   */
+  decode: function (json: string): ListStreamSessionUserEventsRequest {
+    return ListStreamSessionUserEventsRequestJSON._readMessage(
+      ListStreamSessionUserEventsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListStreamSessionUserEventsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListStreamSessionUserEventsRequest>,
+  ): ListStreamSessionUserEventsRequest {
+    return {
+      streamSessionId: "",
+      limit: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListStreamSessionUserEventsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.streamSessionId) {
+      json["streamSessionId"] = msg.streamSessionId;
+    }
+    if (msg.limit != undefined) {
+      json["limit"] = msg.limit;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListStreamSessionUserEventsRequest,
+    json: any,
+  ): ListStreamSessionUserEventsRequest {
+    const _streamSessionId_ =
+      json["streamSessionId"] ?? json["stream_session_id"];
+    if (_streamSessionId_) {
+      msg.streamSessionId = _streamSessionId_;
+    }
+    const _limit_ = json["limit"];
+    if (_limit_) {
+      msg.limit = protoscript.parseNumber(_limit_);
+    }
+    return msg;
+  },
+};
+
+export const ListStreamSessionUserEventsResponseJSON = {
+  /**
+   * Serializes ListStreamSessionUserEventsResponse to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<ListStreamSessionUserEventsResponse>,
+  ): string {
+    return JSON.stringify(
+      ListStreamSessionUserEventsResponseJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes ListStreamSessionUserEventsResponse from JSON.
+   */
+  decode: function (json: string): ListStreamSessionUserEventsResponse {
+    return ListStreamSessionUserEventsResponseJSON._readMessage(
+      ListStreamSessionUserEventsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListStreamSessionUserEventsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListStreamSessionUserEventsResponse>,
+  ): ListStreamSessionUserEventsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      events: [],
+      total: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListStreamSessionUserEventsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.events?.length) {
+      json["events"] = msg.events.map(UserEventJSON._writeMessage);
+    }
+    if (msg.total) {
+      json["total"] = String(msg.total);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListStreamSessionUserEventsResponse,
+    json: any,
+  ): ListStreamSessionUserEventsResponse {
     const _status_ = json["status"];
     if (_status_) {
       common.ResponseStatusJSON._readMessage(msg.status, _status_);

@@ -17,6 +17,8 @@ export const ENGINE_CAPABILITIES = {
   analyticsGauges: "analytics.gauges",
   /** Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard`. */
   analyticsAggregates: "analytics.aggregates",
+  /** A session's counted events in time order, for its timeline: `getStreamSessionEvents`. */
+  analyticsSessionEvents: "analytics.sessionEvents",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
