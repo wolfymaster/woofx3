@@ -785,6 +785,11 @@ export interface WorkflowDeletedEvent {
  */
 export interface SceneSnapshot {
   id: string;
+  /**
+   * `scene` or `alert` (see `CompositionKind` in api.ts). Alerts share these
+   * events, so a cache of scenes keeps only `scene` snapshots.
+   */
+  kind: "scene" | "alert";
   name: string;
   description: string;
   /** JSON-encoded array of placed widget instances. Persisted in
@@ -792,6 +797,10 @@ export interface SceneSnapshot {
   widgetsJson: string;
   /** JSON-encoded layout object (canvas dimensions, theme). */
   layoutJson: string;
+  /** JSON object of the published behaviors, keyed by behavior id. */
+  behaviorsJson: string;
+  /** JSON array of the inputs the composition takes; `[]` for a scene. */
+  inputsJson: string;
   /** Origin metadata. `USER` for UI-authored scenes; `MODULE` if a
    *  future manifest surface ships preset scenes. */
   createdByType: string;
@@ -816,6 +825,8 @@ export interface SceneDeletedEvent {
   type: typeof EngineEventType.SCENE_DELETED;
   correlationKey?: string;
   sceneId: string;
+  /** What was deleted, a `scene` or an `alert`. */
+  kind: "scene" | "alert";
 }
 
 // ---------------------------------------------------------------------------
