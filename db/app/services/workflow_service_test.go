@@ -126,6 +126,9 @@ func TestCreateWorkflow_ModuleUpgradeKeepsStreamersToggle(t *testing.T) {
 	if second.Id != first.Id {
 		t.Fatalf("upgrade duplicated the workflow: %s -> %s", first.Id, second.Id)
 	}
+	if second.Enabled {
+		t.Fatal("the upgrade reported the workflow enabled while the stored row stays disabled")
+	}
 	got, err := svc.GetWorkflow(context.Background(), &client.GetWorkflowRequest{Id: first.Id})
 	if err != nil {
 		t.Fatalf("get workflow: %v", err)
