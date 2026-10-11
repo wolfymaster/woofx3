@@ -58,7 +58,6 @@
         return;
       }
       const template = str(settings.text, "{value}");
-      const highlight = str(settings.highlightColor, "#ec6758");
 
       // The host sends the counter as a whole, `{ value, settings }`: what
       // it stores, and its own settings, which hold its starting value and
@@ -75,7 +74,7 @@
           value: String(value),
           goal: goal ? String(goal.value) : "",
           goalName: goal ? goal.name : "",
-        }), highlight);
+        }));
       });
     })();
 
@@ -122,25 +121,16 @@
     }
 
     // Replaces each {token} it has a value for, and leaves anything else as
-    // written, so {primary} survives for `render`.
+    // written.
     function fill(template, values) {
       return template.replace(/\{(value|goal|goalName)\}/g, (_, token) => values[token]);
     }
 
-    // Every other segment between {primary} markers is highlighted, the same
-    // markup the Text widget takes.
-    function render(el, text, highlight) {
-      el.replaceChildren();
-      text.split("{primary}").forEach((segment, i) => {
-        if (i % 2 === 1) {
-          const span = document.createElement("span");
-          span.style.color = highlight;
-          span.textContent = segment;
-          el.appendChild(span);
-        } else {
-          el.appendChild(document.createTextNode(segment));
-        }
-      });
+    // Saved text may carry {primary} markers, from a highlight markup this
+    // widget does not draw. Dropping them shows the words between them in the
+    // text's color rather than the markers themselves.
+    function render(el, text) {
+      el.textContent = text.split("{primary}").join("");
     }
 
     function str(value, fallback) {

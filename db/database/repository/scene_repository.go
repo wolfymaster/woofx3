@@ -25,6 +25,12 @@ func (r *SceneRepository) Update(s *models.Scene) error {
 	return r.db.Save(s).Error
 }
 
+// UpdateColumns writes only the given columns of one scene in a single
+// statement. A nil value stores NULL.
+func (r *SceneRepository) UpdateColumns(id uuid.UUID, columns map[string]any) error {
+	return r.db.Model(&models.Scene{}).Where("id = ?", id).Updates(columns).Error
+}
+
 func (r *SceneRepository) Delete(s *models.Scene) error {
 	return r.db.Delete(s).Error
 }

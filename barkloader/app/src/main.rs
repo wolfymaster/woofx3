@@ -339,17 +339,25 @@ async fn main() -> std::io::Result<()> {
     let port = get_env_or_default("BARKLOADER_PORT", "9653");
     let bind_addr = format!("{}:{}", host, port);
 
+    // One client for every request, so upstream connections are reused.
+    let media_proxy = Data::new(routes::media::MediaProxyService::new(
+        get_env_or_default_with_key("WOOFX3_BARKLOADER_KEY", Some("barkloaderKey"), ""),
+        services::media_proxy::MediaFetcher::new(),
+    ));
+
     // Start HTTP server
     info!("Starting server on {}", bind_addr);
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(ctx.clone()))
+            .app_data(media_proxy.clone())
             // The assets and archives routes depend only on the repository,
             // not the full AppContext, so they get their own Data registration. It
             // shares the same swappable handle, so a storage reload takes
             // effect here too rather than pinning a stale backend.
             .app_data(Data::new(ctx.repository.clone()))
             .wrap(Logger::default()) // Use default format
+            .configure(routes::media::configure)
             .configure(routes::assets::configure)
             .configure(routes::archives::configure)
             .configure(routes::resources::configure)

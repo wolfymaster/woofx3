@@ -46,11 +46,21 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
   /**
-   * Editing a scene live with sceneManager: `getSceneEditorSession`, the
-   * editor socket it opens (sequenced json0 ops on a draft and the published
-   * scene, publish, discard) and autosave in place of `updateScene`.
+   * Editing a scene live with sceneManager over editor socket protocol 1:
+   * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
+   * place of `updateScene`. No longer served; declared so a client can
+   * recognise an engine that only speaks it.
    */
   scenesEditorSessions: "scenes.editorSessions",
+  /**
+   * Editing a scene live with sceneManager over editor socket protocol 2
+   * (`@woofx3/api/scene-editor`): one ordered queue of items per editor across
+   * the draft and the published scene, publish and discard as items, every
+   * item answered exactly once, and reconnects that catch up from the
+   * server's log or rebase onto a snapshot. The socket is opened with the
+   * token `getSceneEditorSession` gives, and `protocol=2`.
+   */
+  scenesEditorSync: "scenes.editorSync",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**
@@ -79,7 +89,19 @@ export interface EngineCapabilities {
   capabilities: string[];
 }
 
+/**
+ * Ids declared here that this build does not advertise, so clients can name
+ * them before or after the engine supports them. sceneManager serves only
+ * editor socket protocol 2 (`scenes.editorSync`), and answers a protocol 1
+ * socket (`scenes.editorSessions`) with HTTP 426.
+ */
+export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
+  ENGINE_CAPABILITIES.scenesEditorSessions,
+]);
+
 /** The capability ids this build supports, sorted and unique. */
 export function supportedEngineCapabilities(): EngineCapability[] {
-  return [...new Set(Object.values(ENGINE_CAPABILITIES))].sort();
+  return [...new Set(Object.values(ENGINE_CAPABILITIES))]
+    .filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id))
+    .sort();
 }

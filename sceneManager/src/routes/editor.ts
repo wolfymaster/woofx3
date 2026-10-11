@@ -1,41 +1,24 @@
-import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import {
+  MAX_ITEM_BYTES,
+  PROTOCOL_VERSION,
+  parseClientMessage,
+  SESSION_ERROR_CLOSE_CODES,
+  type SessionErrorCode,
+} from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
-import type { SceneDocuments } from "../scene/scene-documents";
-import type { SceneVersion } from "../scene/scene-host";
+import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import type { EditorConnection, SceneDocuments } from "../scene/scene-documents";
 import type { SessionTokenService } from "../scene/session-token";
 
-/** Largest message an editor may send: one submit's ops and their envelope. */
-export const MAX_EDITOR_MESSAGE_BYTES = 128 * 1024;
-
-/** What one editor tells the others about itself: who, and what it has selected. */
-export interface EditorPresence {
-  name: string;
-  /** The placement id it has selected, or null. */
-  selection: string | null;
-}
+/** Largest message an editor may send: the largest item the sequencer takes, and its envelope. */
+export const MAX_EDITOR_MESSAGE_BYTES = MAX_ITEM_BYTES + 64 * 1024;
 
 export interface EditorSocketData {
   sceneId: string;
-  unsubscribe: (() => void) | null;
-  /** This connection's id among the scene's editors. */
-  editorId: string;
-  presence: EditorPresence | null;
-}
-
-const MAX_PRESENCE_NAME = 64;
-const MAX_PLACEMENT_ID = 128;
-
-/** A presence message's fields, or null when they are not valid. */
-export function parsePresence(message: Record<string, unknown>): EditorPresence | null {
-  const name = typeof message.name === "string" ? message.name.trim().slice(0, MAX_PRESENCE_NAME) : "";
-  const selection = message.selection;
-  if (
-    selection !== null &&
-    (typeof selection !== "string" || selection.length === 0 || selection.length > MAX_PLACEMENT_ID)
-  ) {
-    return null;
-  }
-  return { name, selection };
+  /** Set by the socket's hello; null until then. */
+  clientId: string | null;
+  /** How the scene documents reach this socket; made once, so it identifies the socket to them. */
+  conn: EditorConnection | null;
 }
 
 export interface EditorDeps {
@@ -44,11 +27,18 @@ export interface EditorDeps {
   logger: Logger;
 }
 
+/** The socket data for a new editor socket on `sceneId`. */
+export function editorSocketData(sceneId: string): EditorSocketData {
+  return { sceneId, clientId: null, conn: null };
+}
+
 /**
- * `GET /scene/{sceneId}/edit?token=…` — the scene editor's socket. The token
- * is an editor token for this scene (see `SessionTokenService.mintEditor`),
- * which only the api hands out, to a dashboard allowed to edit it; an
- * overlay's session never opens this.
+ * `GET /scene/{sceneId}/edit?token=…&protocol=2` — the scene editor's socket.
+ * The token is an editor token for this scene (see
+ * `SessionTokenService.mintEditor`), which only the api hands out, to a
+ * dashboard allowed to edit it; an overlay's session never opens this. A
+ * client that does not ask for protocol 2 is answered 426: this engine
+ * speaks no other.
  */
 export async function handleEditorUpgrade(
   req: Request,
@@ -56,166 +46,135 @@ export async function handleEditorUpgrade(
   sceneId: string,
   deps: EditorDeps
 ): Promise<Response | undefined> {
-  const token = new URL(req.url).searchParams.get("token") ?? "";
-  const claims = await deps.sessionTokens.verifyEditor(token);
+  const params = new URL(req.url).searchParams;
+  const claims = await deps.sessionTokens.verifyEditor(params.get("token") ?? "");
   if (!claims || claims.sceneId !== sceneId) {
     return new Response("unauthorized", { status: 401, headers: { "Cache-Control": "no-store" } });
   }
-  const data: EditorSocketData = { sceneId, unsubscribe: null, editorId: crypto.randomUUID(), presence: null };
-  if (server.upgrade(req, { data })) {
+  if (params.get("protocol") !== String(PROTOCOL_VERSION)) {
+    return new Response(`the scene editor speaks protocol ${PROTOCOL_VERSION}`, {
+      status: 426,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+  if (server.upgrade(req, { data: editorSocketData(sceneId) })) {
     return undefined;
   }
   return new Response("expected a websocket", { status: 426 });
 }
 
-function isVersion(value: unknown): value is SceneVersion {
-  return value === "published" || value === "draft";
-}
-
 /**
- * What the editor socket says, as JSON messages.
+ * The editor socket, protocol 2 (`@woofx3/api/scene-editor/protocol`).
  *
- * From the editor:
- *   { type: "submit", version, base, opId, ops }   json0 ops made against `base`
- *   { type: "publish" } | { type: "discard" }
- *   { type: "snapshot", version }                   resync one version
- *   { type: "presence", name, selection }           who this editor is and what it has selected
- *
- * To the editor:
- *   { type: "snapshot", version, snapshot, hasDraft }   on open (both), and on request
- *   { type: "ops", version, seq, ops, meta, opId, hasDraft }
- *       every change to the scene; the submitting editor's own carry its opId
- *   { type: "ack", opId, version, seq } | { type: "reject", opId, version, error, detail }
- *       the answer to each submit, after its ops; a resync reject is followed
- *       by a fresh snapshot of that version
- *   { type: "published" | "discarded", hasDraft }
- *   { type: "presence", editorId, name, selection }  another editor's, on open and as it changes
- *   { type: "presence", editorId, left: true }       another editor closed the scene
- *
- * Presence is relayed between the scene's editors as it is and kept nowhere:
- * it is who is looking at what right now, not part of the scene.
+ * The first message is `hello`; then `item` and `presence`. Every message is
+ * handed to the scene documents synchronously as it arrives, where it joins
+ * the scene's serial queue, so a socket's messages are decided in the order
+ * they were sent and every reply goes out in commit order. Presence is
+ * keyed by the client's id and relayed between the scene's editors; it is
+ * kept nowhere.
  */
 export function editorSocketHandlers(deps: EditorDeps): WebSocketHandler<EditorSocketData> {
   const docs = deps.sceneDocuments;
-  const send = (ws: ServerWebSocket<EditorSocketData>, message: unknown) => {
-    ws.send(JSON.stringify(message));
-  };
-  /** Every open editor socket, by scene. */
-  const editors = new Map<string, Set<ServerWebSocket<EditorSocketData>>>();
-  const others = (ws: ServerWebSocket<EditorSocketData>) =>
-    [...(editors.get(ws.data.sceneId) ?? [])].filter((other) => other !== ws);
-  const sendSnapshot = async (ws: ServerWebSocket<EditorSocketData>, version: SceneVersion) => {
-    const snapshot = await docs.snapshot(ws.data.sceneId, version);
-    send(ws, { type: "snapshot", version, snapshot, hasDraft: docs.hasDraft(ws.data.sceneId) });
+  const settle = (sceneId: string, what: string) => (err: unknown) => {
+    deps.logger.warn("scene editor: handling a message failed", {
+      sceneId,
+      message: what,
+      error: err instanceof Error ? err.message : String(err),
+    });
   };
 
   return {
     maxPayloadLength: MAX_EDITOR_MESSAGE_BYTES,
-    async open(ws) {
+    message(ws, raw) {
       const { sceneId } = ws.data;
-      const unsubscribe = await docs.subscribeEditor(sceneId, (event) => {
-        send(ws, { type: "ops", ...event, hasDraft: docs.hasDraft(sceneId) });
-      });
-      if (!unsubscribe) {
-        send(ws, { type: "error", reason: "not_found" });
-        ws.close(4404, "scene not found");
+      const value = parseJson(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
+      if (isOtherProtocolHello(value)) {
+        sessionError(ws, "unsupported_protocol", `this engine speaks scene editor protocol ${PROTOCOL_VERSION}`);
         return;
       }
-      ws.data.unsubscribe = unsubscribe;
-      await sendSnapshot(ws, "published");
-      await sendSnapshot(ws, "draft");
-      let sceneEditors = editors.get(sceneId);
-      if (!sceneEditors) {
-        sceneEditors = new Set();
-        editors.set(sceneId, sceneEditors);
+      const message = parseClientMessage(value);
+      if (message === null) {
+        sessionError(ws, "protocol", "not a protocol 2 message");
+        return;
       }
-      sceneEditors.add(ws);
-      for (const other of others(ws)) {
-        if (other.data.presence) {
-          send(ws, { type: "presence", editorId: other.data.editorId, ...other.data.presence });
-        }
-      }
-    },
-    async message(ws, raw) {
-      let message: Record<string, unknown>;
-      try {
-        const parsed: unknown = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
-        if (typeof parsed !== "object" || parsed === null) {
+      if (ws.data.clientId === null || ws.data.conn === null) {
+        if (message.type !== "hello") {
+          sessionError(ws, "protocol", "the first message must be hello");
           return;
         }
-        message = parsed as Record<string, unknown>;
-      } catch {
+        const conn = connectionOf(ws);
+        ws.data.clientId = message.clientId;
+        ws.data.conn = conn;
+        docs
+          .openEditor(sceneId, { clientId: message.clientId, have: message.have, name: message.name }, conn)
+          .catch(settle(sceneId, "hello"));
         return;
       }
-      const { sceneId } = ws.data;
-      try {
-        switch (message.type) {
-          case "submit": {
-            const opId = typeof message.opId === "string" ? message.opId : null;
-            const version = message.version;
-            if (!isVersion(version) || typeof message.base !== "number") {
-              send(ws, { type: "reject", opId, version, error: "invalid", detail: "submit needs a version and base" });
-              return;
-            }
-            const result = await docs.submit(sceneId, version, message.base, message.ops, opId);
-            if (result.ok) {
-              send(ws, { type: "ack", opId, version, seq: result.seq });
-            } else {
-              send(ws, { type: "reject", opId, version, error: result.error, detail: result.detail ?? null });
-              if (result.error === "resync") {
-                await sendSnapshot(ws, version);
-              }
-            }
-            return;
-          }
-          case "publish":
-            await docs.publish(sceneId);
-            send(ws, { type: "published", hasDraft: docs.hasDraft(sceneId) });
-            return;
-          case "discard":
-            await docs.discard(sceneId);
-            send(ws, { type: "discarded", hasDraft: docs.hasDraft(sceneId) });
-            return;
-          case "snapshot":
-            if (isVersion(message.version)) {
-              await sendSnapshot(ws, message.version);
-            }
-            return;
-          case "presence": {
-            const presence = parsePresence(message);
-            if (!presence) {
-              return;
-            }
-            ws.data.presence = presence;
-            for (const other of others(ws)) {
-              send(other, { type: "presence", editorId: ws.data.editorId, ...presence });
-            }
-            return;
-          }
-          default:
-            return;
+      const { clientId, conn } = ws.data;
+      switch (message.type) {
+        case "hello": {
+          sessionError(ws, "protocol", "hello was already sent");
+          return;
         }
-      } catch (err) {
-        deps.logger.warn("scene editor: a message failed", {
-          sceneId,
-          type: String(message.type),
-          error: err instanceof Error ? err.message : String(err),
-        });
-        send(ws, { type: "error", reason: "failed" });
+        case "item": {
+          docs
+            .submitItem(sceneId, clientId, message.seq, message.base, message.body, (reply) => {
+              if (reply.type === "error") {
+                sessionError(ws, reply.code, reply.detail);
+              } else {
+                conn.send(reply);
+              }
+            })
+            .catch(settle(sceneId, "item"));
+          return;
+        }
+        case "presence": {
+          const update =
+            "away" in message ? { away: true as const } : { selection: message.selection, version: message.version };
+          docs.editorPresence(sceneId, clientId, conn, update).catch(settle(sceneId, "presence"));
+          return;
+        }
       }
     },
     close(ws) {
-      ws.data.unsubscribe?.();
-      ws.data.unsubscribe = null;
-      const sceneEditors = editors.get(ws.data.sceneId);
-      if (sceneEditors?.delete(ws)) {
-        for (const other of sceneEditors) {
-          send(other, { type: "presence", editorId: ws.data.editorId, left: true });
-        }
-        if (sceneEditors.size === 0) {
-          editors.delete(ws.data.sceneId);
-        }
+      const { sceneId, clientId, conn } = ws.data;
+      if (clientId !== null && conn !== null) {
+        docs.closeEditor(sceneId, clientId, conn).catch(settle(sceneId, "close"));
       }
     },
   };
+}
+
+function connectionOf(ws: ServerWebSocket<EditorSocketData>): EditorConnection {
+  return {
+    send: (message) => {
+      ws.send(JSON.stringify(message));
+    },
+    close: (code, reason) => {
+      ws.close(code, reason);
+    },
+  };
+}
+
+function sessionError(ws: ServerWebSocket<EditorSocketData>, code: SessionErrorCode, detail: string): void {
+  ws.send(JSON.stringify({ type: "error", code, detail }));
+  ws.close(SESSION_ERROR_CLOSE_CODES[code], detail.slice(0, 100));
+}
+
+/** A hello naming a protocol other than this one, which deserves its own error rather than a parse failure. */
+function isOtherProtocolHello(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { type?: unknown }).type === "hello" &&
+    (value as { protocol?: unknown }).protocol !== PROTOCOL_VERSION
+  );
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }

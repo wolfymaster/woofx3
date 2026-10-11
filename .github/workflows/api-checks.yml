@@ -3,8 +3,9 @@ name: api checks
 # Type-checks and tests the api service.
 #
 # This is also the only check on shared/clients/typescript/api: every file in
-# that package is reachable from api/'s own program, so the SDK contract and
-# the engine that implements it are verified together. Nothing checked api/
+# that package is reachable from api/'s own program (the scene editor core
+# through api/tsconfig.json's include), so the SDK contract and the engine
+# that implements it are verified together. Nothing checked api/
 # itself for a long time, which is how it accumulated 400+ type errors --
 # including a webhook event missing a required field, a request object
 # carrying a field the proto does not have, and a dead WebSocket error
@@ -63,4 +64,10 @@ jobs:
 
       - name: Test
         working-directory: api
+        run: bun test
+
+      # The package's own tests (the scene editor sync core) live in its tests/
+      # directory, outside api/, so api's test run does not find them.
+      - name: Test the api package
+        working-directory: shared/clients/typescript/api
         run: bun test

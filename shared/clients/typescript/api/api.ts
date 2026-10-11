@@ -1792,7 +1792,7 @@ export interface Woofx3EngineApi {
    * socket for a scene: a token presented once, as `?token=`, on the socket
    * at `path` (relative to sceneManager's public URL). Null when the scene
    * does not exist or sceneManager does not answer. Requires the
-   * `scenes.editorSessions` capability.
+   * `scenes.editorSync` capability (the socket speaks protocol 2).
    */
   getSceneEditorSession(sceneId: string): Promise<SceneEditorSession | null>;
 

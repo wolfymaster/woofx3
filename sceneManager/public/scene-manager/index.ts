@@ -26,6 +26,13 @@ import {
   settingsOf,
   type PreviewWidgetLayout,
 } from "./preview-layout";
+import {
+  earliestMediaProxyExpiry,
+  externalMediaUrls,
+  mediaRefreshDelay,
+  parseMediaUrls,
+  replaceMediaUrls,
+} from "./media-url";
 import { applySceneBackground } from "./scene-background";
 import {
   parseSceneConfig,
@@ -435,6 +442,36 @@ function main(): void {
   }
   stack(sceneData.widgets.map((instance) => instance.id));
 
+  let mediaRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  // Fetches of the scene that failed in a row since one last applied; a
+  // failure brings the next refresh forward (see mediaRefreshDelay).
+  let mediaRefreshFailures = 0;
+  // Fetch the scene again before the soonest media proxy URL on the page
+  // expires. Run whenever the page's settings are replaced, and after a fetch
+  // that brought nothing, so the timer always follows what is on screen.
+  function scheduleMediaRefresh(): void {
+    if (mediaRefreshTimer !== null) {
+      clearTimeout(mediaRefreshTimer);
+      mediaRefreshTimer = null;
+    }
+    let earliest: number | null = null;
+    for (const entry of mounted.values()) {
+      const expiry = earliestMediaProxyExpiry(entry.config.settings, entry.config.mediaProxyBase);
+      if (expiry !== null && (earliest === null || expiry < earliest)) {
+        earliest = expiry;
+      }
+    }
+    if (earliest === null) {
+      return;
+    }
+    const delay = mediaRefreshDelay(earliest, Date.now(), mediaRefreshFailures);
+    mediaRefreshTimer = setTimeout(() => {
+      mediaRefreshTimer = null;
+      void updateScene();
+    }, delay);
+  }
+  scheduleMediaRefresh();
+
   // The editor's draft layout, kept so a scene update -- which places every
   // widget where it was saved -- doesn't undo a drag the editor has not saved.
   let previewLayout: PreviewWidgetLayout[] | null = null;
@@ -444,6 +481,34 @@ function main(): void {
   let draftPlacements: unknown[] | null = null;
   let draftKey = "";
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  // The editor sends settings as entered, so external media in them still
+  // names its own host, which a themeable widget's frame refuses. The server
+  // answers each draft with, per placement, the proxy URL of each external
+  // media URL it signed (`mediaUrls`), and settings from the editor are
+  // pointed at those. Each answer replaces the last, so this holds only what
+  // the newest draft named.
+  let proxiedMedia = new Map<string, Map<string, string>>();
+  const signedMediaOf = (placement: Record<string, unknown>): Map<string, string> | undefined =>
+    typeof placement.id === "string" ? proxiedMedia.get(placement.id) : undefined;
+  const draftSettingsOf = (placement: Record<string, unknown>): Record<string, unknown> => {
+    const signed = signedMediaOf(placement);
+    const settings = settingsOf(placement);
+    return signed ? replaceMediaUrls(settings, signed) : settings;
+  };
+  // What the server has to see a draft again for: a new widget or theme, and
+  // an external media URL it has not signed. A URL it will not sign (the
+  // widget loads it directly, or no editor has put it in the scene yet) stays
+  // in the key, so it asks once per change rather than once per message; the
+  // editor's op putting it in the scene brings the page back here.
+  const draftKeyOf = (placements: readonly unknown[]): string =>
+    draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") +
+    JSON.stringify(
+      placements.flatMap((raw) => {
+        const placement = asRecord(raw);
+        const signed = signedMediaOf(placement);
+        return externalMediaUrls(settingsOf(placement)).filter((url) => !signed?.has(url));
+      })
+    );
 
   window.addEventListener("message", (event) => {
     for (const bridge of bridges) {
@@ -473,12 +538,12 @@ function main(): void {
         for (const raw of placements) {
           const placement = asRecord(raw);
           const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
-          const settings = settingsOf(placement);
+          const settings = draftSettingsOf(placement);
           if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
             updateSettings(entry.config.id, settings);
           }
         }
-        const key = draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert");
+        const key = draftKeyOf(placements);
         if (key !== draftKey) {
           draftKey = key;
           if (draftTimer !== null) {
@@ -497,7 +562,7 @@ function main(): void {
     if (fromDraft && draftPlacements) {
       // The editor's newest settings, not the ones this response was built
       // from: they may have changed while it was in flight.
-      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, settingsOf(asRecord(raw))]));
+      const latest = new Map(draftPlacements.map((raw) => [asRecord(raw).id, draftSettingsOf(asRecord(raw))]));
       for (const instance of next.widgets) {
         const settings = latest.get(instance.id);
         if (settings && instance.hostsSurface === "" && themeOf(settings) === themeOf(instance.settings)) {
@@ -529,6 +594,7 @@ function main(): void {
       mount(instance);
     }
     stack(plan.order);
+    scheduleMediaRefresh();
     applySceneBackground(document.body, next.layout);
     if (previewLayout) {
       applyPreviewLayout(widgetElements, previewLayout);
@@ -600,6 +666,14 @@ function main(): void {
     }
     const body: unknown = resp.ok ? await resp.json().catch(() => null) : null;
     const config = parseSceneConfig(body);
+    if (draft && config) {
+      proxiedMedia = parseMediaUrls(asRecord(body).mediaUrls);
+      // The newest draft's key, with what was just signed left out of it, so
+      // the same draft posted again does not ask a second time.
+      if (draftPlacements) {
+        draftKey = draftKeyOf(draftPlacements);
+      }
+    }
     if (config && config.id === sceneId) {
       // The saved scene comes with its document; later ops apply to it.
       const snapshot = draft ? null : parseSnapshot(asRecord(body).document);
@@ -634,7 +708,11 @@ function main(): void {
           return;
         }
         if (target.kind === "apply") {
+          mediaRefreshFailures = 0;
           applySceneConfig(target.config, target.fromDraft);
+        } else {
+          mediaRefreshFailures += 1;
+          scheduleMediaRefresh();
         }
       }
     } finally {

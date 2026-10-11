@@ -3,6 +3,9 @@
   "version": "2.0.0",
   "description": "Shared API types + capnweb client helpers for woofx3 engine",
   "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
   "exports": {
     ".": "./index.ts",
     "./capabilities": "./capabilities.ts",
@@ -13,9 +16,16 @@
     "./client": "./client.ts",
     "./config-bundle": "./config-bundle.ts",
     "./ui-schema": "./ui-schema.ts",
-    "./workflow-definition": "./workflow-definition.ts"
+    "./workflow-definition": "./workflow-definition.ts",
+    "./scene-editor": "./scene-editor/index.ts",
+    "./scene-editor/client": "./scene-editor/client.ts",
+    "./scene-editor/document": "./scene-editor/document.ts",
+    "./scene-editor/protocol": "./scene-editor/protocol.ts",
+    "./scene-editor/rebase": "./scene-editor/rebase.ts",
+    "./scene-editor/sequencer": "./scene-editor/sequencer.ts"
   },
   "dependencies": {
-    "capnweb": "^0.4.0"
+    "capnweb": "^0.4.0",
+    "ot-json0": "1.1.0"
   }
 }

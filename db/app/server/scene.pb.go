@@ -48,8 +48,11 @@ type Scene struct {
 	DraftWidgetsJson string `protobuf:"bytes,11,opt,name=draft_widgets_json,json=draftWidgetsJson,proto3" json:"draft_widgets_json,omitempty"`
 	DraftLayoutJson  string `protobuf:"bytes,12,opt,name=draft_layout_json,json=draftLayoutJson,proto3" json:"draft_layout_json,omitempty"`
 	HasDraft         bool   `protobuf:"varint,13,opt,name=has_draft,json=hasDraft,proto3" json:"has_draft,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The scene editor's sync state as a JSON object, owned by the scene
+	// editor and opaque here. Empty when no editor has synced the scene.
+	EditorStateJson string `protobuf:"bytes,14,opt,name=editor_state_json,json=editorStateJson,proto3" json:"editor_state_json,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Scene) Reset() {
@@ -164,6 +167,13 @@ func (x *Scene) GetHasDraft() bool {
 		return x.HasDraft
 	}
 	return false
+}
+
+func (x *Scene) GetEditorStateJson() string {
+	if x != nil {
+		return x.EditorStateJson
+	}
+	return ""
 }
 
 type CreateSceneRequest struct {
@@ -367,9 +377,20 @@ type UpdateSceneRequest struct {
 	DraftLayoutJson  string `protobuf:"bytes,7,opt,name=draft_layout_json,json=draftLayoutJson,proto3" json:"draft_layout_json,omitempty"`
 	// Drop the draft (it was published or discarded). Wins over a draft
 	// set in the same request.
-	ClearDraft    bool `protobuf:"varint,8,opt,name=clear_draft,json=clearDraft,proto3" json:"clear_draft,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ClearDraft bool `protobuf:"varint,8,opt,name=clear_draft,json=clearDraft,proto3" json:"clear_draft,omitempty"`
+	// Store the scene editor's sync state, a JSON object. Written in the
+	// same row update as the documents and draft in this request, so the
+	// state never describes documents other than the stored ones. Empty
+	// leaves it unchanged, unless the request writes a document (widgets,
+	// layout, draft or clear_draft): the stored state is then cleared,
+	// since it described the documents being replaced. Anything that is
+	// not a JSON object is refused and nothing in the request is written.
+	EditorStateJson string `protobuf:"bytes,9,opt,name=editor_state_json,json=editorStateJson,proto3" json:"editor_state_json,omitempty"`
+	// Drop the stored editor state in the same row update. Refused
+	// together with `editor_state_json`.
+	ClearEditorState bool `protobuf:"varint,10,opt,name=clear_editor_state,json=clearEditorState,proto3" json:"clear_editor_state,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateSceneRequest) Reset() {
@@ -454,6 +475,20 @@ func (x *UpdateSceneRequest) GetDraftLayoutJson() string {
 func (x *UpdateSceneRequest) GetClearDraft() bool {
 	if x != nil {
 		return x.ClearDraft
+	}
+	return false
+}
+
+func (x *UpdateSceneRequest) GetEditorStateJson() string {
+	if x != nil {
+		return x.EditorStateJson
+	}
+	return ""
+}
+
+func (x *UpdateSceneRequest) GetClearEditorState() bool {
+	if x != nil {
+		return x.ClearEditorState
 	}
 	return false
 }
@@ -650,7 +685,7 @@ var File_scene_proto protoreflect.FileDescriptor
 
 const file_scene_proto_rawDesc = "" +
 	"\n" +
-	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe2\x03\n" +
+	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
 	"\x05Scene\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
@@ -667,7 +702,8 @@ const file_scene_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12,\n" +
 	"\x12draft_widgets_json\x18\v \x01(\tR\x10draftWidgetsJson\x12*\n" +
 	"\x11draft_layout_json\x18\f \x01(\tR\x0fdraftLayoutJson\x12\x1b\n" +
-	"\thas_draft\x18\r \x01(\bR\bhasDraftJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xf2\x01\n" +
+	"\thas_draft\x18\r \x01(\bR\bhasDraft\x12*\n" +
+	"\x11editor_state_json\x18\x0e \x01(\tR\x0feditorStateJsonJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xf2\x01\n" +
 	"\x12CreateSceneRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12!\n" +
@@ -680,7 +716,7 @@ const file_scene_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
 	"\rSceneResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
-	"\x05scene\x18\x02 \x01(\v2\f.scene.SceneR\x05scene\"\x99\x02\n" +
+	"\x05scene\x18\x02 \x01(\v2\f.scene.SceneR\x05scene\"\xf3\x02\n" +
 	"\x12UpdateSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -691,7 +727,10 @@ const file_scene_proto_rawDesc = "" +
 	"\x12draft_widgets_json\x18\x06 \x01(\tR\x10draftWidgetsJson\x12*\n" +
 	"\x11draft_layout_json\x18\a \x01(\tR\x0fdraftLayoutJson\x12\x1f\n" +
 	"\vclear_draft\x18\b \x01(\bR\n" +
-	"clearDraft\"$\n" +
+	"clearDraft\x12*\n" +
+	"\x11editor_state_json\x18\t \x01(\tR\x0feditorStateJson\x12,\n" +
+	"\x12clear_editor_state\x18\n" +
+	" \x01(\bR\x10clearEditorState\"$\n" +
 	"\x12DeleteSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x90\x01\n" +
 	"\x11ListScenesRequest\x12\x12\n" +
