@@ -66,10 +66,10 @@ func main() {
 			// Database
 			httpClient := &http.Client{}
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
-			// The alert service is not on DbProxyClient, which predates it.
-			// Built here rather than added to that shared aggregator, so
-			// nothing else compiling against it is disturbed for one caller.
+			// The alert and viewer fact services are not on DbProxyClient,
+			// which predates them.
 			alertClient := db.NewAlertServiceProtobufClient(cfg.DatabaseProxyURL, httpClient)
+			factClient := db.NewViewerFactServiceProtobufClient(cfg.DatabaseProxyURL, newFactHTTPClient())
 			dbProxyService := service.NewDbProxyService(dbClient, true)
 			logger.Info("Database client configured", "url", cfg.DatabaseProxyURL)
 
@@ -98,7 +98,7 @@ func main() {
 			// Wire runtime services into the application now that config is loaded
 			// and the post-config services have been constructed. natsSvc was
 			// constructed pre-config in main(); the others are local to this scope.
-			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, cfg.SceneManagerURL)
+			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, factClient, cfg.SceneManagerURL)
 
 			return nil
 		},
@@ -129,4 +129,15 @@ func main() {
 	}
 
 	logger.Info("Workflow service stopped")
+}
+
+// newFactHTTPClient is the fact service's own HTTP client. Fact writes run on
+// every bus delivery a definition matches, concurrently across subscriptions,
+// so the pool keeps more idle connections per host than the default two
+// rather than opening a new connection per write. The timeout backstops the
+// per-call contexts; it must outlast the definition list's.
+func newFactHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = 16
+	return &http.Client{Transport: transport, Timeout: reconcileListTimeout + 5*time.Second}
 }

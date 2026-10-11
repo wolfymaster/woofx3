@@ -26,6 +26,13 @@ func Matches(pattern, subject string) bool {
 	return matchTokens(pp, sp)
 }
 
+// MatchesTokens is Matches over a pattern and a subject already split on
+// dots, for a caller matching one subject against many patterns it split
+// once.
+func MatchesTokens(pattern, subject []string) bool {
+	return matchTokens(pattern, subject)
+}
+
 func matchTokens(pattern, subject []string) bool {
 	if len(pattern) == 0 {
 		return len(subject) == 0
