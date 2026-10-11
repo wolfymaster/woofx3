@@ -160,16 +160,20 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 //
 // The published envelope is `{ id, parameters, event, rowId }`:
 //   - `parameters`: the step's params with expressions resolved: `target`,
-//     the name of the alert widgets to play on, and `layout`, the widgets
-//     the alert shows.
+//     the name of the alert widgets to play on, and what the alert shows:
+//     either `layout`, the alert written into the step, or `composition`, the
+//     id of a stored alert composition, with `inputs`, the values the step
+//     fills its inputs with. The scene manager plays a composition's latest
+//     published version with those inputs bound into it.
 //   - `event`: the originating CloudEvent that triggered the workflow,
 //     attached so layout widgets can read raw event fields. `null` for
 //     non-event triggers (manual, scheduled, chat command).
 //   - `rowId`: the alert log row recorded for this play (see withAlertRowID),
 //     absent when it could not be recorded.
 //
-// The step fails rather than publishing when `layout` is structurally
-// unusable (see validateAlertParams). Everything else about `parameters` is
+// The step fails rather than publishing when it names neither or both of
+// `layout` and `composition`, or the one it names is structurally unusable
+// (see validateAlertParams). Everything else about `parameters` is
 // forwarded unchecked: the scene manager holds the widget catalog and decides
 // what it will actually frame.
 //
@@ -314,12 +318,30 @@ func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string
 // Structural only, deliberately. Whether a widget exists, or may play in an
 // alert, stays with the scene manager.
 //
+// A step shows either the alert written into it (`layout`) or a stored alert
+// composition (`composition`), never both: with both, which one plays would
+// be a rule an author has to look up.
+//
 // A layout is a composition (`{layout, widgets, behaviors}`, the canvas under
 // `layout` and widgets keyed by id) or, from steps saved before alerts were
 // compositions, a canvas with a list of widgets. Which one is told by the
 // `layout` key, as parseAlertLayout in sceneManager/src/scene/alert-layout.ts
 // tells them.
 func validateAlertParams(params map[string]any) error {
+	_, hasLayout := params["layout"]
+	_, hasComposition := params["composition"]
+	if hasLayout && hasComposition {
+		return fmt.Errorf("an alert shows a layout or a composition, not both")
+	}
+	if !hasLayout && !hasComposition {
+		return fmt.Errorf("an alert needs a layout or a composition, got neither")
+	}
+	if hasComposition {
+		return validateAlertCompositionRef(params)
+	}
+	if _, hasInputs := params["inputs"]; hasInputs {
+		return fmt.Errorf("inputs fill a composition's inputs; an alert with a layout takes none")
+	}
 	layout, ok := params["layout"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("layout must be an object, got %s", describeParam(params["layout"]))
@@ -356,6 +378,27 @@ func validateAlertComposition(layout map[string]any) error {
 	if behaviors, present := layout["behaviors"]; present {
 		if _, ok := behaviors.(map[string]any); !ok {
 			return fmt.Errorf("layout.behaviors must be an object keyed by id, got %s", describeParam(behaviors))
+		}
+	}
+	return nil
+}
+
+// validateAlertCompositionRef checks an alert that plays a stored
+// composition: its id, and the values for its inputs as an object keyed by
+// input id. Whether the composition exists and is an alert is checked when the
+// step is saved (the db proxy refuses to link it otherwise) and again by the
+// scene manager when it plays, which also binds the inputs.
+func validateAlertCompositionRef(params map[string]any) error {
+	id, ok := params["composition"].(string)
+	if !ok || id == "" {
+		return fmt.Errorf("composition must be an alert composition id, got %s", describeParam(params["composition"]))
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return fmt.Errorf("composition must be an alert composition id, got %s", describeParam(id))
+	}
+	if inputs, present := params["inputs"]; present {
+		if _, ok := inputs.(map[string]any); !ok {
+			return fmt.Errorf("inputs must be an object keyed by input id, got %s", describeParam(inputs))
 		}
 	}
 	return nil
