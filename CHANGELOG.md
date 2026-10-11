@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.27.0](https://github.com/wolfymaster/woofx3/compare/v0.26.0...v0.27.0) (2026-10-11)
+
+### Features
+
+* **api:** serve a stream session's events for its timeline ([7e98f52](https://github.com/wolfymaster/woofx3/commit/7e98f52653ba5a5ee35558b0fa03cdcfa358adc5))
+* **barkloader:** ctx.resources.compareAndSetSetting for instance settings ([8552dd1](https://github.com/wolfymaster/woofx3/commit/8552dd15de3cc821406834dc723ffed970ac7b44))
+* **barkloader:** file actions in the picker by their first taxonomy entry ([41018c6](https://github.com/wolfymaster/woofx3/commit/41018c6809b1b43d528ffbde52a71798f9b359b1))
+* **db:** list a stream session's counted user events in time order ([231d5b1](https://github.com/wolfymaster/woofx3/commit/231d5b1850304471598677118500fcc29ae919fe))
+
+### Bug Fixes
+
+* **db:** address resource instances by their module's manifest id ([0aa2902](https://github.com/wolfymaster/woofx3/commit/0aa2902f5c05dd2482a6007ceb28dc5f4120f9e5))
+
 ## [0.26.0](https://github.com/wolfymaster/woofx3/compare/v0.25.0...v0.26.0) (2026-10-10)
 
 ### Features
