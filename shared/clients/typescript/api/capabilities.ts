@@ -85,6 +85,15 @@ export const ENGINE_CAPABILITIES = {
    * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
    */
   compositionsAlerts: "compositions.alerts",
+  /**
+   * An `alert` workflow or command step may play a stored alert composition
+   * (`parameters.composition`, its id) with values for its inputs
+   * (`parameters.inputs`) in place of an inline `layout`. Saving a step that
+   * names a composition that is not a stored alert is refused; the latest
+   * published version plays, inputs bound, and a replay plays what the
+   * original showed.
+   */
+  alertsCompositions: "alerts.compositions",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

@@ -133,7 +133,11 @@ and every placement of a widget shares one cached document.
 
 A scene gets alerts through **alert widgets** (`woofx3:widget:alert`): named areas the
 page draws itself, with no frame of their own. The workflow `alert` action carries a
-target name and a layout (see [Tasks → alert](../workflow/tasks.md#alert)). The scene
+target name and a layout, or a stored alert composition and the values for its inputs
+(see [Tasks → alert](../workflow/tasks.md#alert)). A composition is bound into an inline
+layout and recorded on the alert's log row first (see
+[Alerts played from a composition](./scene-documents.md#alerts-played-from-a-composition)),
+so everything below sees an inline layout either way. The scene
 manager validates the layout against the widget catalog and records one scene event for
 each running scene that has an alert widget answering to the target; a scene nobody has
 open gets nothing.
@@ -217,7 +221,9 @@ proxy moves that envelope's newest row.
 
 Replay reads the row, gives its stored envelope a fresh id, records that as a new row,
 and dispatches it with that row's id exactly as `ui.notify.alert` would, so a layout or target that no
-longer matches anything is refused with the same reason. The original row is marked
+longer matches anything is refused with the same reason. An alert that played a stored
+composition replays the bound document recorded on its row, not the composition as it
+now stands. The original row is marked
 `replayed` only once the replay was queued on at least one scene. A repeat replay of the
 same row while one is in flight, or within 30 s of one that succeeded, gets that replay's
 answer and plays nothing, so an api retry after a timeout (15 s for replay) cannot play
