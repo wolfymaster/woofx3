@@ -31,6 +31,7 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 
 | Id | Feature |
 |---|---|
+| `alerts.queueControls` | Ending the alert playing on every open overlay and dropping every alert still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`. See [Widget events → Skip, clear and replay](./widget-events.md#skip-clear-and-replay) |
 | `analytics.aggregates` | Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard` |
 | `analytics.gauges` | Per-minute viewer, follower and subscriber series for a session: `getStreamSessionGauges` |
 | `analytics.sessionEvents` | A session's counted events in time order, for its timeline: `getStreamSessionEvents` |

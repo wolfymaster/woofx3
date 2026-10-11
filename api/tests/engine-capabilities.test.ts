@@ -32,6 +32,13 @@ describe("getEngineCapabilities", () => {
     expect(capabilities).not.toContain(ENGINE_CAPABILITIES.scenesEditorSessions);
   });
 
+  test("advertises alert queue controls, whose methods are reachable over RPC", async () => {
+    const { capabilities } = await getEngineCapabilities();
+    expect(capabilities).toContain(ENGINE_CAPABILITIES.alertsQueueControls);
+    expect(RPC_METHODS).toContain("skipCurrentAlert");
+    expect(RPC_METHODS).toContain("clearAlertQueue");
+  });
+
   test("returns the list sorted and without duplicates", async () => {
     const { capabilities } = await getEngineCapabilities();
     expect(capabilities).toEqual([...new Set(capabilities)].sort());

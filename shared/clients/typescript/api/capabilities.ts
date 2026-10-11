@@ -11,6 +11,11 @@
  * Every id must also be listed in docs/services/engine-capabilities.md.
  */
 export const ENGINE_CAPABILITIES = {
+  /**
+   * Ending the alert playing on every open overlay and dropping every alert
+   * still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`.
+   */
+  alertsQueueControls: "alerts.queueControls",
   /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
   analyticsSessions: "analytics.sessions",
   /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */
