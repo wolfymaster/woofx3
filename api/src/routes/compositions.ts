@@ -1,7 +1,14 @@
-import type { AlertComposition } from "@woofx3/api";
+import type { AlertComposition, CompositionPreviewUrl } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import {
+  COMPOSITION_PREVIEW_TOKEN_SUBJECT,
+  type CompositionPreviewTokenReply,
+} from "@woofx3/common/cloudevents/Scene/composition-preview";
 import { routeModule } from "./context";
-import { compositionKindOf, dbSceneToAlertComposition, dbSceneToSnapshot } from "./helpers";
+import { compositionKindOf, dbSceneToAlertComposition, dbSceneToSnapshot, resolveSceneManagerUrl } from "./helpers";
+
+/** Short: sceneManager answers from memory, and an editor is waiting to show the preview. */
+const COMPOSITION_PREVIEW_TOKEN_TIMEOUT_MS = 3_000;
 
 /**
  * Alert compositions: rows of the scenes table with `kind: "alert"`, kept
@@ -106,5 +113,39 @@ export const compositionsRoutes = routeModule({
       kind: "alert",
     });
     return { success: true };
+  },
+
+  /**
+   * sceneManager mints the token (it holds the key its pages are verified
+   * with); the api only hands it on, under sceneManager's public URL, to a
+   * caller holding the engine's client credentials. That is the only way the
+   * preview page opens: an overlay token, which every browser source holds,
+   * never does.
+   */
+  async getCompositionPreviewUrl(): Promise<CompositionPreviewUrl | null> {
+    if (!this.nats) {
+      return null;
+    }
+    let answer: CompositionPreviewTokenReply;
+    try {
+      const reply = await this.nats.request(COMPOSITION_PREVIEW_TOKEN_SUBJECT, new TextEncoder().encode("{}"), {
+        timeout: COMPOSITION_PREVIEW_TOKEN_TIMEOUT_MS,
+      });
+      answer = JSON.parse(new TextDecoder().decode(reply.data)) as CompositionPreviewTokenReply;
+    } catch (err) {
+      this.logger.warn("getCompositionPreviewUrl: the scene manager did not answer", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+    if (!answer.ok) {
+      this.logger.warn("getCompositionPreviewUrl: refused", { reason: answer.reason });
+      return null;
+    }
+    const sceneManagerUrl = await resolveSceneManagerUrl(this.db, this.sceneManagerUrl);
+    return {
+      url: `${sceneManagerUrl}${answer.path}?token=${encodeURIComponent(answer.token)}`,
+      expiresInSeconds: answer.expiresInSeconds,
+    };
   },
 });

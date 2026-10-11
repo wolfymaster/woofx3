@@ -86,6 +86,12 @@ export const ENGINE_CAPABILITIES = {
    * own layout.
    */
   compositionsAlerts: "compositions.alerts",
+  /**
+   * The alert editor's live preview: `getCompositionPreviewUrl`, and
+   * sceneManager's `/preview/composition` page driven by the protocol in
+   * `@woofx3/scene/runtime` (`preview-protocol.ts`).
+   */
+  compositionsPreview: "compositions.preview",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

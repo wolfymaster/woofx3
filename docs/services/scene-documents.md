@@ -378,6 +378,7 @@ Everything that serves or lists scenes reads only `scene` rows:
 | `getScenes`, `getScene`, `updateScene`, `deleteScene` (api) | Scenes only: `getScene` is null for an alert, `updateScene` and `deleteScene` refuse one. |
 | Overlay tokens | `MintOverlayToken` refuses an alert, so no browser-source URL addresses one. |
 | `/scene/{id}?token=…` (sceneManager) | `loadScene` serves no page for a token that resolves to an alert; every other overlay route needs the session that page mints. |
+| `/preview/composition?token=…` (sceneManager) | Not an overlay: opens only with a token the api mints for a dashboard (`getCompositionPreviewUrl`), and plays what the dashboard posts to it, never a stored scene or alert. See [Composition preview](./composition-preview.md). |
 | Alert fan-out (`fanOutAlert`) and the alert queue controls | Skip anything that is not a scene. |
 | `scene.*` webhooks | Carry `kind` (and the behaviors and inputs) in the snapshot, and `kind` on delete, so a dashboard cache of scenes skips alerts. |
 
