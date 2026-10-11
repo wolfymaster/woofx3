@@ -48,7 +48,7 @@ func newScenePostgresSvc(t *testing.T) (client.SceneService, *gorm.DB) {
 	if err := gormigrate.New(db, gormigrate.DefaultOptions, postgres.All()).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return NewSceneService(repository.NewSceneRepository(db), nil, nil, nil), db
+	return NewSceneService(repository.NewSceneRepository(db), nil, nil, repository.NewCompositionLinkRepository(db), nil), db
 }
 
 func TestSceneService_EditorState_SQLite(t *testing.T) {

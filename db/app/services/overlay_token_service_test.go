@@ -19,11 +19,10 @@ import (
 // common_service_test.go with the tables the overlay-token service
 // touches. Hand DDL, same reason: production gorm tags rely on
 // Postgres-only uuid_generate_v4().
-func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db := newTestDB(t)
-	stmts := []string{
-		`CREATE TABLE scenes (
+// compositionTablesDDL creates the scenes and composition links tables,
+// which every test database has.
+var compositionTablesDDL = []string{
+	`CREATE TABLE scenes (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			description TEXT NOT NULL DEFAULT '',
@@ -32,11 +31,32 @@ func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
 			draft_widgets_json TEXT,
 			draft_layout_json TEXT,
 			editor_state_json TEXT,
+			kind TEXT NOT NULL DEFAULT 'scene' CHECK (kind IN ('scene', 'alert')),
+			behaviors_json TEXT NOT NULL DEFAULT '{}',
+			draft_behaviors_json TEXT,
+			inputs_json TEXT NOT NULL DEFAULT '[]',
 			created_by_type TEXT NOT NULL DEFAULT 'USER',
 			created_by_ref TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+	`CREATE UNIQUE INDEX idx_scenes_kind_name ON scenes (kind, name)`,
+	`CREATE TABLE composition_links (
+			id TEXT PRIMARY KEY,
+			composition_id TEXT NOT NULL REFERENCES scenes(id) ON DELETE RESTRICT,
+			owner_kind TEXT NOT NULL,
+			owner_id TEXT NOT NULL,
+			step_id TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE (owner_kind, owner_id, step_id)
+		)`,
+}
+
+func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := newTestDB(t)
+	stmts := []string{
 		`CREATE TABLE overlay_tokens (
 			id TEXT PRIMARY KEY,
 			token TEXT NOT NULL UNIQUE,

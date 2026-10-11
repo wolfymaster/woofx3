@@ -64,5 +64,7 @@ func All() []*gormigrate.Migration {
 		NormaliseAlertTimestamps(),
 		AddSceneEditorState(),
 		AddWidgetBehaviors(),
+		AddSceneCompositions(),
+		AddCompositionLinks(),
 	}
 }

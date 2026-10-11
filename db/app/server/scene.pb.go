@@ -51,8 +51,19 @@ type Scene struct {
 	// The scene editor's sync state as a JSON object, owned by the scene
 	// editor and opaque here. Empty when no editor has synced the scene.
 	EditorStateJson string `protobuf:"bytes,14,opt,name=editor_state_json,json=editorStateJson,proto3" json:"editor_state_json,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// "scene" or "alert", fixed at creation. A scene is shown by overlays;
+	// an alert is a composition steps play, never an overlay page.
+	Kind string `protobuf:"bytes,15,opt,name=kind,proto3" json:"kind,omitempty"`
+	// The published document's behaviors, a JSON object keyed by behavior
+	// id; `{}` when it has none.
+	BehaviorsJson string `protobuf:"bytes,16,opt,name=behaviors_json,json=behaviorsJson,proto3" json:"behaviors_json,omitempty"`
+	// The draft's behaviors, the same shape. Set only when `has_draft`.
+	DraftBehaviorsJson string `protobuf:"bytes,17,opt,name=draft_behaviors_json,json=draftBehaviorsJson,proto3" json:"draft_behaviors_json,omitempty"`
+	// The inputs the composition takes, a JSON array of ConfigFields; `[]`
+	// when it takes none. Not drafted: both documents declare these.
+	InputsJson    string `protobuf:"bytes,18,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Scene) Reset() {
@@ -176,6 +187,34 @@ func (x *Scene) GetEditorStateJson() string {
 	return ""
 }
 
+func (x *Scene) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Scene) GetBehaviorsJson() string {
+	if x != nil {
+		return x.BehaviorsJson
+	}
+	return ""
+}
+
+func (x *Scene) GetDraftBehaviorsJson() string {
+	if x != nil {
+		return x.DraftBehaviorsJson
+	}
+	return ""
+}
+
+func (x *Scene) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
 type CreateSceneRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -188,6 +227,12 @@ type CreateSceneRequest struct {
 	LayoutJson    string `protobuf:"bytes,5,opt,name=layout_json,json=layoutJson,proto3" json:"layout_json,omitempty"`
 	CreatedByType string `protobuf:"bytes,6,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string `protobuf:"bytes,7,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	// "scene" or "alert"; empty creates a scene. Anything else is refused.
+	Kind string `protobuf:"bytes,8,opt,name=kind,proto3" json:"kind,omitempty"`
+	// JSON object of behaviors keyed by id; empty stores `{}`.
+	BehaviorsJson string `protobuf:"bytes,9,opt,name=behaviors_json,json=behaviorsJson,proto3" json:"behaviors_json,omitempty"`
+	// JSON array of input fields; empty stores `[]`.
+	InputsJson    string `protobuf:"bytes,10,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -260,6 +305,27 @@ func (x *CreateSceneRequest) GetCreatedByType() string {
 func (x *CreateSceneRequest) GetCreatedByRef() string {
 	if x != nil {
 		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *CreateSceneRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CreateSceneRequest) GetBehaviorsJson() string {
+	if x != nil {
+		return x.BehaviorsJson
+	}
+	return ""
+}
+
+func (x *CreateSceneRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
 	}
 	return ""
 }
@@ -372,11 +438,14 @@ type UpdateSceneRequest struct {
 	WidgetsJson string                 `protobuf:"bytes,4,opt,name=widgets_json,json=widgetsJson,proto3" json:"widgets_json,omitempty"`
 	LayoutJson  string                 `protobuf:"bytes,5,opt,name=layout_json,json=layoutJson,proto3" json:"layout_json,omitempty"`
 	// Store a draft, the same shapes as `widgets_json` and `layout_json`.
-	// Both are set together; empty leaves the draft unchanged.
+	// Both are set together; empty leaves the draft unchanged. The draft's
+	// behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+	// that is empty, so a stored draft never pairs with behaviors from an
+	// older one.
 	DraftWidgetsJson string `protobuf:"bytes,6,opt,name=draft_widgets_json,json=draftWidgetsJson,proto3" json:"draft_widgets_json,omitempty"`
 	DraftLayoutJson  string `protobuf:"bytes,7,opt,name=draft_layout_json,json=draftLayoutJson,proto3" json:"draft_layout_json,omitempty"`
-	// Drop the draft (it was published or discarded). Wins over a draft
-	// set in the same request.
+	// Drop the draft (it was published or discarded), behaviors included.
+	// Wins over a draft set in the same request.
 	ClearDraft bool `protobuf:"varint,8,opt,name=clear_draft,json=clearDraft,proto3" json:"clear_draft,omitempty"`
 	// Store the scene editor's sync state, a JSON object. Written in the
 	// same row update as the documents and draft in this request, so the
@@ -389,8 +458,19 @@ type UpdateSceneRequest struct {
 	// Drop the stored editor state in the same row update. Refused
 	// together with `editor_state_json`.
 	ClearEditorState bool `protobuf:"varint,10,opt,name=clear_editor_state,json=clearEditorState,proto3" json:"clear_editor_state,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The published behaviors, a JSON object; empty leaves them unchanged.
+	// A document like `widgets_json`: refused when not a JSON object.
+	BehaviorsJson string `protobuf:"bytes,11,opt,name=behaviors_json,json=behaviorsJson,proto3" json:"behaviors_json,omitempty"`
+	// The draft's behaviors, a JSON object, written only with a draft
+	// (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+	// JSON object, or set without the draft.
+	DraftBehaviorsJson string `protobuf:"bytes,12,opt,name=draft_behaviors_json,json=draftBehaviorsJson,proto3" json:"draft_behaviors_json,omitempty"`
+	// The inputs, a JSON array of input fields; empty leaves them
+	// unchanged. A document like `widgets_json`: refused when not a JSON
+	// array.
+	InputsJson    string `protobuf:"bytes,13,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateSceneRequest) Reset() {
@@ -493,6 +573,30 @@ func (x *UpdateSceneRequest) GetClearEditorState() bool {
 	return false
 }
 
+func (x *UpdateSceneRequest) GetBehaviorsJson() string {
+	if x != nil {
+		return x.BehaviorsJson
+	}
+	return ""
+}
+
+func (x *UpdateSceneRequest) GetDraftBehaviorsJson() string {
+	if x != nil {
+		return x.DraftBehaviorsJson
+	}
+	return ""
+}
+
+func (x *UpdateSceneRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
+// An alert that composition links still point at is not deleted: the
+// request fails with `failed_precondition`, its message naming the linking
+// steps.
 type DeleteSceneRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -538,11 +642,14 @@ func (x *DeleteSceneRequest) GetId() string {
 }
 
 type ListScenesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
-	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	SortBy        string                 `protobuf:"bytes,4,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"` // e.g. "name", "created_at", "updated_at"
-	SortDesc      bool                   `protobuf:"varint,5,opt,name=sort_desc,json=sortDesc,proto3" json:"sort_desc,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Page     int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	SortBy   string                 `protobuf:"bytes,4,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"` // e.g. "name", "created_at", "updated_at"
+	SortDesc bool                   `protobuf:"varint,5,opt,name=sort_desc,json=sortDesc,proto3" json:"sort_desc,omitempty"`
+	// Which kind to list, "scene" or "alert". Empty lists scenes, so a
+	// caller that predates alerts never sees one.
+	Kind          string `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -603,6 +710,13 @@ func (x *ListScenesRequest) GetSortDesc() bool {
 		return x.SortDesc
 	}
 	return false
+}
+
+func (x *ListScenesRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
 }
 
 type ListScenesResponse struct {
@@ -681,11 +795,300 @@ func (x *ListScenesResponse) GetPageSize() int32 {
 	return 0
 }
 
+// One step that plays a composition.
+type CompositionLink struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CompositionId string                 `protobuf:"bytes,2,opt,name=composition_id,json=compositionId,proto3" json:"composition_id,omitempty"`
+	// "workflow" or "command".
+	OwnerKind string `protobuf:"bytes,3,opt,name=owner_kind,json=ownerKind,proto3" json:"owner_kind,omitempty"`
+	// The workflow's or command's id.
+	OwnerId string `protobuf:"bytes,4,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	// The step within the owner's definition.
+	StepId        string                 `protobuf:"bytes,5,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompositionLink) Reset() {
+	*x = CompositionLink{}
+	mi := &file_scene_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompositionLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompositionLink) ProtoMessage() {}
+
+func (x *CompositionLink) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompositionLink.ProtoReflect.Descriptor instead.
+func (*CompositionLink) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CompositionLink) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CompositionLink) GetCompositionId() string {
+	if x != nil {
+		return x.CompositionId
+	}
+	return ""
+}
+
+func (x *CompositionLink) GetOwnerKind() string {
+	if x != nil {
+		return x.OwnerKind
+	}
+	return ""
+}
+
+func (x *CompositionLink) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *CompositionLink) GetStepId() string {
+	if x != nil {
+		return x.StepId
+	}
+	return ""
+}
+
+func (x *CompositionLink) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *CompositionLink) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type ListCompositionLinksRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CompositionId string                 `protobuf:"bytes,1,opt,name=composition_id,json=compositionId,proto3" json:"composition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCompositionLinksRequest) Reset() {
+	*x = ListCompositionLinksRequest{}
+	mi := &file_scene_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCompositionLinksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCompositionLinksRequest) ProtoMessage() {}
+
+func (x *ListCompositionLinksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCompositionLinksRequest.ProtoReflect.Descriptor instead.
+func (*ListCompositionLinksRequest) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListCompositionLinksRequest) GetCompositionId() string {
+	if x != nil {
+		return x.CompositionId
+	}
+	return ""
+}
+
+type CompositionLinksResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Ordered by owner kind, owner id, then step id.
+	Links         []*CompositionLink `protobuf:"bytes,2,rep,name=links,proto3" json:"links,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompositionLinksResponse) Reset() {
+	*x = CompositionLinksResponse{}
+	mi := &file_scene_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompositionLinksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompositionLinksResponse) ProtoMessage() {}
+
+func (x *CompositionLinksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompositionLinksResponse.ProtoReflect.Descriptor instead.
+func (*CompositionLinksResponse) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CompositionLinksResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *CompositionLinksResponse) GetLinks() []*CompositionLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+type CountCompositionLinksRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CompositionId string                 `protobuf:"bytes,1,opt,name=composition_id,json=compositionId,proto3" json:"composition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountCompositionLinksRequest) Reset() {
+	*x = CountCompositionLinksRequest{}
+	mi := &file_scene_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountCompositionLinksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountCompositionLinksRequest) ProtoMessage() {}
+
+func (x *CountCompositionLinksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountCompositionLinksRequest.ProtoReflect.Descriptor instead.
+func (*CountCompositionLinksRequest) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CountCompositionLinksRequest) GetCompositionId() string {
+	if x != nil {
+		return x.CompositionId
+	}
+	return ""
+}
+
+type CountCompositionLinksResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Count         int32                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountCompositionLinksResponse) Reset() {
+	*x = CountCompositionLinksResponse{}
+	mi := &file_scene_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountCompositionLinksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountCompositionLinksResponse) ProtoMessage() {}
+
+func (x *CountCompositionLinksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountCompositionLinksResponse.ProtoReflect.Descriptor instead.
+func (*CountCompositionLinksResponse) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CountCompositionLinksResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *CountCompositionLinksResponse) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
 var File_scene_proto protoreflect.FileDescriptor
 
 const file_scene_proto_rawDesc = "" +
 	"\n" +
-	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
+	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\x05\n" +
 	"\x05Scene\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
@@ -703,7 +1106,12 @@ const file_scene_proto_rawDesc = "" +
 	"\x12draft_widgets_json\x18\v \x01(\tR\x10draftWidgetsJson\x12*\n" +
 	"\x11draft_layout_json\x18\f \x01(\tR\x0fdraftLayoutJson\x12\x1b\n" +
 	"\thas_draft\x18\r \x01(\bR\bhasDraft\x12*\n" +
-	"\x11editor_state_json\x18\x0e \x01(\tR\x0feditorStateJsonJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xf2\x01\n" +
+	"\x11editor_state_json\x18\x0e \x01(\tR\x0feditorStateJson\x12\x12\n" +
+	"\x04kind\x18\x0f \x01(\tR\x04kind\x12%\n" +
+	"\x0ebehaviors_json\x18\x10 \x01(\tR\rbehaviorsJson\x120\n" +
+	"\x14draft_behaviors_json\x18\x11 \x01(\tR\x12draftBehaviorsJson\x12\x1f\n" +
+	"\vinputs_json\x18\x12 \x01(\tR\n" +
+	"inputsJsonJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xce\x02\n" +
 	"\x12CreateSceneRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12!\n" +
@@ -711,12 +1119,17 @@ const file_scene_proto_rawDesc = "" +
 	"\vlayout_json\x18\x05 \x01(\tR\n" +
 	"layoutJson\x12&\n" +
 	"\x0fcreated_by_type\x18\x06 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRefJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
+	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRef\x12\x12\n" +
+	"\x04kind\x18\b \x01(\tR\x04kind\x12%\n" +
+	"\x0ebehaviors_json\x18\t \x01(\tR\rbehaviorsJson\x12\x1f\n" +
+	"\vinputs_json\x18\n" +
+	" \x01(\tR\n" +
+	"inputsJsonJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
 	"\x0fGetSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
 	"\rSceneResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
-	"\x05scene\x18\x02 \x01(\v2\f.scene.SceneR\x05scene\"\xf3\x02\n" +
+	"\x05scene\x18\x02 \x01(\v2\f.scene.SceneR\x05scene\"\xed\x03\n" +
 	"\x12UpdateSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -730,28 +1143,56 @@ const file_scene_proto_rawDesc = "" +
 	"clearDraft\x12*\n" +
 	"\x11editor_state_json\x18\t \x01(\tR\x0feditorStateJson\x12,\n" +
 	"\x12clear_editor_state\x18\n" +
-	" \x01(\bR\x10clearEditorState\"$\n" +
+	" \x01(\bR\x10clearEditorState\x12%\n" +
+	"\x0ebehaviors_json\x18\v \x01(\tR\rbehaviorsJson\x120\n" +
+	"\x14draft_behaviors_json\x18\f \x01(\tR\x12draftBehaviorsJson\x12\x1f\n" +
+	"\vinputs_json\x18\r \x01(\tR\n" +
+	"inputsJson\"$\n" +
 	"\x12DeleteSceneRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x90\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xa4\x01\n" +
 	"\x11ListScenesRequest\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x17\n" +
 	"\asort_by\x18\x04 \x01(\tR\x06sortBy\x12\x1b\n" +
-	"\tsort_desc\x18\x05 \x01(\bR\bsortDescJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xbc\x01\n" +
+	"\tsort_desc\x18\x05 \x01(\bR\bsortDesc\x12\x12\n" +
+	"\x04kind\x18\x06 \x01(\tR\x04kindJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xbc\x01\n" +
 	"\x12ListScenesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06scenes\x18\x02 \x03(\v2\f.scene.SceneR\x06scenes\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize2\xcd\x02\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\x91\x02\n" +
+	"\x0fCompositionLink\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x0ecomposition_id\x18\x02 \x01(\tR\rcompositionId\x12\x1d\n" +
+	"\n" +
+	"owner_kind\x18\x03 \x01(\tR\townerKind\x12\x19\n" +
+	"\bowner_id\x18\x04 \x01(\tR\aownerId\x12\x17\n" +
+	"\astep_id\x18\x05 \x01(\tR\x06stepId\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"D\n" +
+	"\x1bListCompositionLinksRequest\x12%\n" +
+	"\x0ecomposition_id\x18\x01 \x01(\tR\rcompositionId\"x\n" +
+	"\x18CompositionLinksResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
+	"\x05links\x18\x02 \x03(\v2\x16.scene.CompositionLinkR\x05links\"E\n" +
+	"\x1cCountCompositionLinksRequest\x12%\n" +
+	"\x0ecomposition_id\x18\x01 \x01(\tR\rcompositionId\"e\n" +
+	"\x1dCountCompositionLinksResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count2\x8e\x04\n" +
 	"\fSceneService\x12>\n" +
 	"\vCreateScene\x12\x19.scene.CreateSceneRequest\x1a\x14.scene.SceneResponse\x128\n" +
 	"\bGetScene\x12\x16.scene.GetSceneRequest\x1a\x14.scene.SceneResponse\x12>\n" +
 	"\vUpdateScene\x12\x19.scene.UpdateSceneRequest\x1a\x14.scene.SceneResponse\x12@\n" +
 	"\vDeleteScene\x12\x19.scene.DeleteSceneRequest\x1a\x16.common.ResponseStatus\x12A\n" +
 	"\n" +
-	"ListScenes\x12\x18.scene.ListScenesRequest\x1a\x19.scene.ListScenesResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"ListScenes\x12\x18.scene.ListScenesRequest\x1a\x19.scene.ListScenesResponse\x12[\n" +
+	"\x14ListCompositionLinks\x12\".scene.ListCompositionLinksRequest\x1a\x1f.scene.CompositionLinksResponse\x12b\n" +
+	"\x15CountCompositionLinks\x12#.scene.CountCompositionLinksRequest\x1a$.scene.CountCompositionLinksResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_scene_proto_rawDescOnce sync.Once
@@ -765,41 +1206,55 @@ func file_scene_proto_rawDescGZIP() []byte {
 	return file_scene_proto_rawDescData
 }
 
-var file_scene_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_scene_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_scene_proto_goTypes = []any{
-	(*Scene)(nil),                 // 0: scene.Scene
-	(*CreateSceneRequest)(nil),    // 1: scene.CreateSceneRequest
-	(*GetSceneRequest)(nil),       // 2: scene.GetSceneRequest
-	(*SceneResponse)(nil),         // 3: scene.SceneResponse
-	(*UpdateSceneRequest)(nil),    // 4: scene.UpdateSceneRequest
-	(*DeleteSceneRequest)(nil),    // 5: scene.DeleteSceneRequest
-	(*ListScenesRequest)(nil),     // 6: scene.ListScenesRequest
-	(*ListScenesResponse)(nil),    // 7: scene.ListScenesResponse
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),        // 9: common.ResponseStatus
+	(*Scene)(nil),                         // 0: scene.Scene
+	(*CreateSceneRequest)(nil),            // 1: scene.CreateSceneRequest
+	(*GetSceneRequest)(nil),               // 2: scene.GetSceneRequest
+	(*SceneResponse)(nil),                 // 3: scene.SceneResponse
+	(*UpdateSceneRequest)(nil),            // 4: scene.UpdateSceneRequest
+	(*DeleteSceneRequest)(nil),            // 5: scene.DeleteSceneRequest
+	(*ListScenesRequest)(nil),             // 6: scene.ListScenesRequest
+	(*ListScenesResponse)(nil),            // 7: scene.ListScenesResponse
+	(*CompositionLink)(nil),               // 8: scene.CompositionLink
+	(*ListCompositionLinksRequest)(nil),   // 9: scene.ListCompositionLinksRequest
+	(*CompositionLinksResponse)(nil),      // 10: scene.CompositionLinksResponse
+	(*CountCompositionLinksRequest)(nil),  // 11: scene.CountCompositionLinksRequest
+	(*CountCompositionLinksResponse)(nil), // 12: scene.CountCompositionLinksResponse
+	(*timestamppb.Timestamp)(nil),         // 13: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                // 14: common.ResponseStatus
 }
 var file_scene_proto_depIdxs = []int32{
-	8,  // 0: scene.Scene.created_at:type_name -> google.protobuf.Timestamp
-	8,  // 1: scene.Scene.updated_at:type_name -> google.protobuf.Timestamp
-	9,  // 2: scene.SceneResponse.status:type_name -> common.ResponseStatus
+	13, // 0: scene.Scene.created_at:type_name -> google.protobuf.Timestamp
+	13, // 1: scene.Scene.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 2: scene.SceneResponse.status:type_name -> common.ResponseStatus
 	0,  // 3: scene.SceneResponse.scene:type_name -> scene.Scene
-	9,  // 4: scene.ListScenesResponse.status:type_name -> common.ResponseStatus
+	14, // 4: scene.ListScenesResponse.status:type_name -> common.ResponseStatus
 	0,  // 5: scene.ListScenesResponse.scenes:type_name -> scene.Scene
-	1,  // 6: scene.SceneService.CreateScene:input_type -> scene.CreateSceneRequest
-	2,  // 7: scene.SceneService.GetScene:input_type -> scene.GetSceneRequest
-	4,  // 8: scene.SceneService.UpdateScene:input_type -> scene.UpdateSceneRequest
-	5,  // 9: scene.SceneService.DeleteScene:input_type -> scene.DeleteSceneRequest
-	6,  // 10: scene.SceneService.ListScenes:input_type -> scene.ListScenesRequest
-	3,  // 11: scene.SceneService.CreateScene:output_type -> scene.SceneResponse
-	3,  // 12: scene.SceneService.GetScene:output_type -> scene.SceneResponse
-	3,  // 13: scene.SceneService.UpdateScene:output_type -> scene.SceneResponse
-	9,  // 14: scene.SceneService.DeleteScene:output_type -> common.ResponseStatus
-	7,  // 15: scene.SceneService.ListScenes:output_type -> scene.ListScenesResponse
-	11, // [11:16] is the sub-list for method output_type
-	6,  // [6:11] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	13, // 6: scene.CompositionLink.created_at:type_name -> google.protobuf.Timestamp
+	13, // 7: scene.CompositionLink.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 8: scene.CompositionLinksResponse.status:type_name -> common.ResponseStatus
+	8,  // 9: scene.CompositionLinksResponse.links:type_name -> scene.CompositionLink
+	14, // 10: scene.CountCompositionLinksResponse.status:type_name -> common.ResponseStatus
+	1,  // 11: scene.SceneService.CreateScene:input_type -> scene.CreateSceneRequest
+	2,  // 12: scene.SceneService.GetScene:input_type -> scene.GetSceneRequest
+	4,  // 13: scene.SceneService.UpdateScene:input_type -> scene.UpdateSceneRequest
+	5,  // 14: scene.SceneService.DeleteScene:input_type -> scene.DeleteSceneRequest
+	6,  // 15: scene.SceneService.ListScenes:input_type -> scene.ListScenesRequest
+	9,  // 16: scene.SceneService.ListCompositionLinks:input_type -> scene.ListCompositionLinksRequest
+	11, // 17: scene.SceneService.CountCompositionLinks:input_type -> scene.CountCompositionLinksRequest
+	3,  // 18: scene.SceneService.CreateScene:output_type -> scene.SceneResponse
+	3,  // 19: scene.SceneService.GetScene:output_type -> scene.SceneResponse
+	3,  // 20: scene.SceneService.UpdateScene:output_type -> scene.SceneResponse
+	14, // 21: scene.SceneService.DeleteScene:output_type -> common.ResponseStatus
+	7,  // 22: scene.SceneService.ListScenes:output_type -> scene.ListScenesResponse
+	10, // 23: scene.SceneService.ListCompositionLinks:output_type -> scene.CompositionLinksResponse
+	12, // 24: scene.SceneService.CountCompositionLinks:output_type -> scene.CountCompositionLinksResponse
+	18, // [18:25] is the sub-list for method output_type
+	11, // [11:18] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_scene_proto_init() }
@@ -814,7 +1269,7 @@ func file_scene_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scene_proto_rawDesc), len(file_scene_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

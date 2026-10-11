@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -35,21 +36,31 @@ type sceneService struct {
 	overlayTokenRepo *repo.OverlayTokenRepository
 	// Records the themes a scene's widgets select, which is what keeps an
 	// on-screen theme from being uninstalled. Optional, as for workflows.
-	refRepo   *repo.ResourceReferenceRepository
+	refRepo *repo.ResourceReferenceRepository
+	// Which steps play which alert: consulted before deleting an alert, and
+	// replaced by the owners that hold them.
+	linkRepo  *repo.CompositionLinkRepository
 	publisher *workers.EventPublisher
+	now       func() time.Time
 }
 
 func NewSceneService(
 	sceneRepo *repo.SceneRepository,
 	overlayTokenRepo *repo.OverlayTokenRepository,
 	refRepo *repo.ResourceReferenceRepository,
+	linkRepo *repo.CompositionLinkRepository,
 	publisher *workers.EventPublisher,
 ) client.SceneService {
+	if sceneRepo == nil || linkRepo == nil {
+		panic("scene service: scene and composition link repositories are required")
+	}
 	return &sceneService{
 		repo:             sceneRepo,
 		overlayTokenRepo: overlayTokenRepo,
 		refRepo:          refRepo,
+		linkRepo:         linkRepo,
 		publisher:        publisher,
+		now:              time.Now,
 	}
 }
 
@@ -89,8 +100,35 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 	if createdByType == "" {
 		createdByType = "USER"
 	}
+	kind := req.Kind
+	if kind == "" {
+		kind = models.SceneKindScene
+	}
+	if !isSceneKind(kind) {
+		return nil, twirp.InvalidArgumentError("kind", `must be "scene" or "alert"`)
+	}
+	behaviorsJSON := req.BehaviorsJson
+	if behaviorsJSON == "" {
+		behaviorsJSON = "{}"
+	}
+	if !isJSONObject(behaviorsJSON) {
+		return nil, twirp.InvalidArgumentError("behaviors_json", "must be a JSON object")
+	}
+	inputsJSON := req.InputsJson
+	if inputsJSON == "" {
+		inputsJSON = "[]"
+	}
+	if problem := invalidInputs(inputsJSON); problem != "" {
+		return nil, twirp.InvalidArgumentError("inputs_json", problem)
+	}
 
+	// The id is assigned here: the column default is Postgres-only
+	// (uuid_generate_v4()), and on SQLite every row would get the zero UUID.
 	scene := &models.Scene{
+		ID:            uuid.New(),
+		Kind:          kind,
+		BehaviorsJSON: behaviorsJSON,
+		InputsJSON:    inputsJSON,
 		Name:          req.Name,
 		Description:   req.Description,
 		WidgetsJSON:   widgetsJSON,
@@ -144,9 +182,42 @@ func isJSONObject(text string) bool {
 	return strings.HasPrefix(trimmed, "{")
 }
 
+func isSceneKind(kind string) bool {
+	return kind == models.SceneKindScene || kind == models.SceneKindAlert
+}
+
+// invalidInputs says why text is not a composition's inputs, or "" when it
+// is: a JSON array of input fields, each an object with a non-empty `id`
+// (unique among them) and `type` and a string `label`, the fields every
+// input renderer needs. Other fields are the field type's own and pass as
+// they are.
+func invalidInputs(text string) string {
+	var fields []map[string]any
+	if err := json.Unmarshal([]byte(text), &fields); err != nil {
+		return "must be a JSON array of objects"
+	}
+	seen := make(map[string]bool, len(fields))
+	for i, field := range fields {
+		id, _ := field["id"].(string)
+		fieldType, _ := field["type"].(string)
+		_, labelIsText := field["label"].(string)
+		if id == "" || fieldType == "" || !labelIsText {
+			return fmt.Sprintf("input %d needs a non-empty id and type and a string label", i)
+		}
+		if seen[id] {
+			return fmt.Sprintf("input id %q is declared twice", id)
+		}
+		seen[id] = true
+	}
+	return ""
+}
+
 // The columns holding a scene's documents; writing any of them without
 // editor state clears the stored editor state.
-var sceneDocumentColumns = []string{"widgets_json", "layout_json", "draft_widgets_json", "draft_layout_json"}
+var sceneDocumentColumns = []string{
+	"widgets_json", "layout_json", "behaviors_json", "inputs_json",
+	"draft_widgets_json", "draft_layout_json", "draft_behaviors_json",
+}
 
 func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneRequest) (*client.SceneResponse, error) {
 	id, err := uuid.Parse(req.Id)
@@ -158,6 +229,21 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	}
 	if req.EditorStateJson != "" && !isJSONObject(req.EditorStateJson) {
 		return nil, twirp.InvalidArgumentError("editor_state_json", "must be a JSON object")
+	}
+	if req.BehaviorsJson != "" && !isJSONObject(req.BehaviorsJson) {
+		return nil, twirp.InvalidArgumentError("behaviors_json", "must be a JSON object")
+	}
+	writesDraft := !req.ClearDraft && req.DraftWidgetsJson != "" && req.DraftLayoutJson != ""
+	if req.DraftBehaviorsJson != "" && !writesDraft {
+		return nil, twirp.InvalidArgumentError("draft_behaviors_json", "is stored only with a draft")
+	}
+	if req.DraftBehaviorsJson != "" && !isJSONObject(req.DraftBehaviorsJson) {
+		return nil, twirp.InvalidArgumentError("draft_behaviors_json", "must be a JSON object")
+	}
+	if req.InputsJson != "" {
+		if problem := invalidInputs(req.InputsJson); problem != "" {
+			return nil, twirp.InvalidArgumentError("inputs_json", problem)
+		}
 	}
 	scene, err := s.repo.GetByID(id)
 	if err != nil {
@@ -180,10 +266,21 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	if req.LayoutJson != "" {
 		columns["layout_json"] = req.LayoutJson
 	}
+	if req.BehaviorsJson != "" {
+		columns["behaviors_json"] = req.BehaviorsJson
+	}
+	if req.InputsJson != "" {
+		columns["inputs_json"] = req.InputsJson
+	}
 	if req.ClearDraft {
-		columns["draft_widgets_json"], columns["draft_layout_json"] = nil, nil
-	} else if req.DraftWidgetsJson != "" && req.DraftLayoutJson != "" {
+		columns["draft_widgets_json"], columns["draft_layout_json"], columns["draft_behaviors_json"] = nil, nil, nil
+	} else if writesDraft {
+		draftBehaviors := req.DraftBehaviorsJson
+		if draftBehaviors == "" {
+			draftBehaviors = "{}"
+		}
 		columns["draft_widgets_json"], columns["draft_layout_json"] = req.DraftWidgetsJson, req.DraftLayoutJson
+		columns["draft_behaviors_json"] = draftBehaviors
 	}
 	changesDocuments := false
 	for _, column := range sceneDocumentColumns {
@@ -233,6 +330,17 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 	scene, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, twirp.NotFoundError("scene not found")
+	}
+
+	// Steps play an alert by id, so deleting a linked one would leave them
+	// playing nothing. The foreign key refuses it too; checking here names
+	// the steps.
+	links, err := s.linkRepo.ListForComposition(scene.ID)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to read composition links: %w", err))
+	}
+	if len(links) > 0 {
+		return nil, linkedCompositionError(links)
 	}
 
 	// Revoke first. A token that outlives its scene still resolves -- the
@@ -313,7 +421,14 @@ func (s *sceneService) publishOverlayTokenChange(token *models.OverlayToken, op 
 }
 
 func (s *sceneService) ListScenes(ctx context.Context, req *client.ListScenesRequest) (*client.ListScenesResponse, error) {
-	scenes, err := s.repo.GetAll()
+	kind := req.Kind
+	if kind == "" {
+		kind = models.SceneKindScene
+	}
+	if !isSceneKind(kind) {
+		return nil, twirp.InvalidArgumentError("kind", `must be "scene" or "alert"`)
+	}
+	scenes, err := s.repo.ListByKind(kind)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list scenes: %w", err))
 	}
@@ -342,6 +457,9 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	var createdAt, updatedAt *timestamppb.Timestamp
 	scene := &client.Scene{
 		Id:            m.ID.String(),
+		Kind:          m.Kind,
+		BehaviorsJson: m.BehaviorsJSON,
+		InputsJson:    m.InputsJSON,
 		Name:          m.Name,
 		Description:   m.Description,
 		WidgetsJson:   m.WidgetsJSON,
@@ -354,6 +472,10 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	if m.DraftWidgetsJSON != nil && m.DraftLayoutJSON != nil {
 		scene.DraftWidgetsJson = *m.DraftWidgetsJSON
 		scene.DraftLayoutJson = *m.DraftLayoutJSON
+		scene.DraftBehaviorsJson = "{}"
+		if m.DraftBehaviorsJSON != nil {
+			scene.DraftBehaviorsJson = *m.DraftBehaviorsJSON
+		}
 		scene.HasDraft = true
 	}
 	if m.EditorStateJSON != nil {
@@ -378,10 +500,13 @@ func (s *sceneService) publishChange(scene *models.Scene, op string) {
 func buildSceneChangeData(scene *models.Scene) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              scene.ID.String(),
+		"kind":            scene.Kind,
 		"name":            scene.Name,
 		"description":     scene.Description,
 		"widgets_json":    scene.WidgetsJSON,
 		"layout_json":     scene.LayoutJSON,
+		"behaviors_json":  scene.BehaviorsJSON,
+		"inputs_json":     scene.InputsJSON,
 		"created_by_type": scene.CreatedByType,
 		"created_by_ref":  scene.CreatedByRef,
 	}

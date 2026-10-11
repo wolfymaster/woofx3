@@ -42,6 +42,21 @@ pub struct Scene {
     /// editor and opaque here. Empty when no editor has synced the scene.
     #[prost(string, tag="14")]
     pub editor_state_json: ::prost::alloc::string::String,
+    /// "scene" or "alert", fixed at creation. A scene is shown by overlays;
+    /// an alert is a composition steps play, never an overlay page.
+    #[prost(string, tag="15")]
+    pub kind: ::prost::alloc::string::String,
+    /// The published document's behaviors, a JSON object keyed by behavior
+    /// id; `{}` when it has none.
+    #[prost(string, tag="16")]
+    pub behaviors_json: ::prost::alloc::string::String,
+    /// The draft's behaviors, the same shape. Set only when `has_draft`.
+    #[prost(string, tag="17")]
+    pub draft_behaviors_json: ::prost::alloc::string::String,
+    /// The inputs the composition takes, a JSON array of ConfigFields; `\[\]`
+    /// when it takes none. Not drafted: both documents declare these.
+    #[prost(string, tag="18")]
+    pub inputs_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateSceneRequest {
@@ -61,6 +76,15 @@ pub struct CreateSceneRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="7")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// "scene" or "alert"; empty creates a scene. Anything else is refused.
+    #[prost(string, tag="8")]
+    pub kind: ::prost::alloc::string::String,
+    /// JSON object of behaviors keyed by id; empty stores `{}`.
+    #[prost(string, tag="9")]
+    pub behaviors_json: ::prost::alloc::string::String,
+    /// JSON array of input fields; empty stores `\[\]`.
+    #[prost(string, tag="10")]
+    pub inputs_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetSceneRequest {
@@ -91,13 +115,16 @@ pub struct UpdateSceneRequest {
     #[prost(string, tag="5")]
     pub layout_json: ::prost::alloc::string::String,
     /// Store a draft, the same shapes as `widgets_json` and `layout_json`.
-    /// Both are set together; empty leaves the draft unchanged.
+    /// Both are set together; empty leaves the draft unchanged. The draft's
+    /// behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+    /// that is empty, so a stored draft never pairs with behaviors from an
+    /// older one.
     #[prost(string, tag="6")]
     pub draft_widgets_json: ::prost::alloc::string::String,
     #[prost(string, tag="7")]
     pub draft_layout_json: ::prost::alloc::string::String,
-    /// Drop the draft (it was published or discarded). Wins over a draft
-    /// set in the same request.
+    /// Drop the draft (it was published or discarded), behaviors included.
+    /// Wins over a draft set in the same request.
     #[prost(bool, tag="8")]
     pub clear_draft: bool,
     /// Store the scene editor's sync state, a JSON object. Written in the
@@ -113,7 +140,24 @@ pub struct UpdateSceneRequest {
     /// together with `editor_state_json`.
     #[prost(bool, tag="10")]
     pub clear_editor_state: bool,
+    /// The published behaviors, a JSON object; empty leaves them unchanged.
+    /// A document like `widgets_json`: refused when not a JSON object.
+    #[prost(string, tag="11")]
+    pub behaviors_json: ::prost::alloc::string::String,
+    /// The draft's behaviors, a JSON object, written only with a draft
+    /// (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+    /// JSON object, or set without the draft.
+    #[prost(string, tag="12")]
+    pub draft_behaviors_json: ::prost::alloc::string::String,
+    /// The inputs, a JSON array of input fields; empty leaves them
+    /// unchanged. A document like `widgets_json`: refused when not a JSON
+    /// array.
+    #[prost(string, tag="13")]
+    pub inputs_json: ::prost::alloc::string::String,
 }
+/// An alert that composition links still point at is not deleted: the
+/// request fails with `failed_precondition`, its message naming the linking
+/// steps.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteSceneRequest {
     #[prost(string, tag="1")]
@@ -130,6 +174,10 @@ pub struct ListScenesRequest {
     pub sort_by: ::prost::alloc::string::String,
     #[prost(bool, tag="5")]
     pub sort_desc: bool,
+    /// Which kind to list, "scene" or "alert". Empty lists scenes, so a
+    /// caller that predates alerts never sees one.
+    #[prost(string, tag="6")]
+    pub kind: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListScenesResponse {
@@ -143,6 +191,52 @@ pub struct ListScenesResponse {
     pub page: i32,
     #[prost(int32, tag="5")]
     pub page_size: i32,
+}
+/// One step that plays a composition.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompositionLink {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub composition_id: ::prost::alloc::string::String,
+    /// "workflow" or "command".
+    #[prost(string, tag="3")]
+    pub owner_kind: ::prost::alloc::string::String,
+    /// The workflow's or command's id.
+    #[prost(string, tag="4")]
+    pub owner_id: ::prost::alloc::string::String,
+    /// The step within the owner's definition.
+    #[prost(string, tag="5")]
+    pub step_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="6")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag="7")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListCompositionLinksRequest {
+    #[prost(string, tag="1")]
+    pub composition_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CompositionLinksResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// Ordered by owner kind, owner id, then step id.
+    #[prost(message, repeated, tag="2")]
+    pub links: ::prost::alloc::vec::Vec<CompositionLink>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CountCompositionLinksRequest {
+    #[prost(string, tag="1")]
+    pub composition_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CountCompositionLinksResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(int32, tag="2")]
+    pub count: i32,
 }
 include!("scene.serde.rs");
 include!("scene.tonic.rs");

@@ -54,6 +54,25 @@ export interface Scene {
    * editor and opaque here. Empty when no editor has synced the scene.
    */
   editorStateJson: string;
+  /**
+   * "scene" or "alert", fixed at creation. A scene is shown by overlays;
+   * an alert is a composition steps play, never an overlay page.
+   */
+  kind: string;
+  /**
+   * The published document's behaviors, a JSON object keyed by behavior
+   * id; `{}` when it has none.
+   */
+  behaviorsJson: string;
+  /**
+   * The draft's behaviors, the same shape. Set only when `has_draft`.
+   */
+  draftBehaviorsJson: string;
+  /**
+   * The inputs the composition takes, a JSON array of ConfigFields; `[]`
+   * when it takes none. Not drafted: both documents declare these.
+   */
+  inputsJson: string;
 }
 
 export interface CreateSceneRequest {
@@ -71,6 +90,18 @@ export interface CreateSceneRequest {
   layoutJson: string;
   createdByType: string;
   createdByRef: string;
+  /**
+   * "scene" or "alert"; empty creates a scene. Anything else is refused.
+   */
+  kind: string;
+  /**
+   * JSON object of behaviors keyed by id; empty stores `{}`.
+   */
+  behaviorsJson: string;
+  /**
+   * JSON array of input fields; empty stores `[]`.
+   */
+  inputsJson: string;
 }
 
 export interface GetSceneRequest {
@@ -96,13 +127,16 @@ export interface UpdateSceneRequest {
   layoutJson: string;
   /**
    * Store a draft, the same shapes as `widgets_json` and `layout_json`.
-   * Both are set together; empty leaves the draft unchanged.
+   * Both are set together; empty leaves the draft unchanged. The draft's
+   * behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+   * that is empty, so a stored draft never pairs with behaviors from an
+   * older one.
    */
   draftWidgetsJson: string;
   draftLayoutJson: string;
   /**
-   * Drop the draft (it was published or discarded). Wins over a draft
-   * set in the same request.
+   * Drop the draft (it was published or discarded), behaviors included.
+   * Wins over a draft set in the same request.
    */
   clearDraft: boolean;
   /**
@@ -120,8 +154,30 @@ export interface UpdateSceneRequest {
    * together with `editor_state_json`.
    */
   clearEditorState: boolean;
+  /**
+   * The published behaviors, a JSON object; empty leaves them unchanged.
+   * A document like `widgets_json`: refused when not a JSON object.
+   */
+  behaviorsJson: string;
+  /**
+   * The draft's behaviors, a JSON object, written only with a draft
+   * (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+   * JSON object, or set without the draft.
+   */
+  draftBehaviorsJson: string;
+  /**
+   * The inputs, a JSON array of input fields; empty leaves them
+   * unchanged. A document like `widgets_json`: refused when not a JSON
+   * array.
+   */
+  inputsJson: string;
 }
 
+/**
+ * An alert that composition links still point at is not deleted: the
+ * request fails with `failed_precondition`, its message naming the linking
+ * steps.
+ */
 export interface DeleteSceneRequest {
   id: string;
 }
@@ -131,6 +187,11 @@ export interface ListScenesRequest {
   pageSize: number;
   sortBy: string;
   sortDesc: boolean;
+  /**
+   * Which kind to list, "scene" or "alert". Empty lists scenes, so a
+   * caller that predates alerts never sees one.
+   */
+  kind: string;
 }
 
 export interface ListScenesResponse {
@@ -139,6 +200,49 @@ export interface ListScenesResponse {
   totalCount: number;
   page: number;
   pageSize: number;
+}
+
+/**
+ * One step that plays a composition.
+ */
+export interface CompositionLink {
+  id: string;
+  compositionId: string;
+  /**
+   * "workflow" or "command".
+   */
+  ownerKind: string;
+  /**
+   * The workflow's or command's id.
+   */
+  ownerId: string;
+  /**
+   * The step within the owner's definition.
+   */
+  stepId: string;
+  createdAt: protoscript.Timestamp;
+  updatedAt: protoscript.Timestamp;
+}
+
+export interface ListCompositionLinksRequest {
+  compositionId: string;
+}
+
+export interface CompositionLinksResponse {
+  status: common.ResponseStatus;
+  /**
+   * Ordered by owner kind, owner id, then step id.
+   */
+  links: CompositionLink[];
+}
+
+export interface CountCompositionLinksRequest {
+  compositionId: string;
+}
+
+export interface CountCompositionLinksResponse {
+  status: common.ResponseStatus;
+  count: number;
 }
 
 //========================================//
@@ -205,6 +309,37 @@ export async function ListScenes(
   return ListScenesResponse.decode(response);
 }
 
+/**
+ * Composition links: which workflow or chat command steps play which
+ * alert. They are derived from the definitions: saving a workflow or a
+ * command replaces its links in the same transaction (see the workflow
+ * and command services), so there is no RPC to write them. Deleting an
+ * alert that still has links is refused (see `DeleteScene`).
+ */
+export async function ListCompositionLinks(
+  listCompositionLinksRequest: ListCompositionLinksRequest,
+  config?: ClientConfiguration,
+): Promise<CompositionLinksResponse> {
+  const response = await PBrequest(
+    "/scene.SceneService/ListCompositionLinks",
+    ListCompositionLinksRequest.encode(listCompositionLinksRequest),
+    config,
+  );
+  return CompositionLinksResponse.decode(response);
+}
+
+export async function CountCompositionLinks(
+  countCompositionLinksRequest: CountCompositionLinksRequest,
+  config?: ClientConfiguration,
+): Promise<CountCompositionLinksResponse> {
+  const response = await PBrequest(
+    "/scene.SceneService/CountCompositionLinks",
+    CountCompositionLinksRequest.encode(countCompositionLinksRequest),
+    config,
+  );
+  return CountCompositionLinksResponse.decode(response);
+}
+
 //========================================//
 //        SceneService JSON Client        //
 //========================================//
@@ -269,6 +404,37 @@ export async function ListScenesJSON(
   return ListScenesResponseJSON.decode(response);
 }
 
+/**
+ * Composition links: which workflow or chat command steps play which
+ * alert. They are derived from the definitions: saving a workflow or a
+ * command replaces its links in the same transaction (see the workflow
+ * and command services), so there is no RPC to write them. Deleting an
+ * alert that still has links is refused (see `DeleteScene`).
+ */
+export async function ListCompositionLinksJSON(
+  listCompositionLinksRequest: ListCompositionLinksRequest,
+  config?: ClientConfiguration,
+): Promise<CompositionLinksResponse> {
+  const response = await JSONrequest(
+    "/scene.SceneService/ListCompositionLinks",
+    ListCompositionLinksRequestJSON.encode(listCompositionLinksRequest),
+    config,
+  );
+  return CompositionLinksResponseJSON.decode(response);
+}
+
+export async function CountCompositionLinksJSON(
+  countCompositionLinksRequest: CountCompositionLinksRequest,
+  config?: ClientConfiguration,
+): Promise<CountCompositionLinksResponse> {
+  const response = await JSONrequest(
+    "/scene.SceneService/CountCompositionLinks",
+    CountCompositionLinksRequestJSON.encode(countCompositionLinksRequest),
+    config,
+  );
+  return CountCompositionLinksResponseJSON.decode(response);
+}
+
 //========================================//
 //              SceneService              //
 //========================================//
@@ -311,6 +477,21 @@ export interface SceneService<Context = unknown> {
     listScenesRequest: ListScenesRequest,
     context: Context,
   ) => Promise<ListScenesResponse> | ListScenesResponse;
+  /**
+   * Composition links: which workflow or chat command steps play which
+   * alert. They are derived from the definitions: saving a workflow or a
+   * command replaces its links in the same transaction (see the workflow
+   * and command services), so there is no RPC to write them. Deleting an
+   * alert that still has links is refused (see `DeleteScene`).
+   */
+  ListCompositionLinks: (
+    listCompositionLinksRequest: ListCompositionLinksRequest,
+    context: Context,
+  ) => Promise<CompositionLinksResponse> | CompositionLinksResponse;
+  CountCompositionLinks: (
+    countCompositionLinksRequest: CountCompositionLinksRequest,
+    context: Context,
+  ) => Promise<CountCompositionLinksResponse> | CountCompositionLinksResponse;
 }
 
 export function createSceneService<Context>(service: SceneService<Context>) {
@@ -349,6 +530,30 @@ export function createSceneService<Context>(service: SceneService<Context>) {
         handler: service.ListScenes,
         input: { protobuf: ListScenesRequest, json: ListScenesRequestJSON },
         output: { protobuf: ListScenesResponse, json: ListScenesResponseJSON },
+      },
+      ListCompositionLinks: {
+        name: "ListCompositionLinks",
+        handler: service.ListCompositionLinks,
+        input: {
+          protobuf: ListCompositionLinksRequest,
+          json: ListCompositionLinksRequestJSON,
+        },
+        output: {
+          protobuf: CompositionLinksResponse,
+          json: CompositionLinksResponseJSON,
+        },
+      },
+      CountCompositionLinks: {
+        name: "CountCompositionLinks",
+        handler: service.CountCompositionLinks,
+        input: {
+          protobuf: CountCompositionLinksRequest,
+          json: CountCompositionLinksRequestJSON,
+        },
+        output: {
+          protobuf: CountCompositionLinksResponse,
+          json: CountCompositionLinksResponseJSON,
+        },
       },
     },
   } as const;
@@ -397,6 +602,10 @@ export const Scene = {
       draftLayoutJson: "",
       hasDraft: false,
       editorStateJson: "",
+      kind: "",
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -454,6 +663,18 @@ export const Scene = {
     }
     if (msg.editorStateJson) {
       writer.writeString(14, msg.editorStateJson);
+    }
+    if (msg.kind) {
+      writer.writeString(15, msg.kind);
+    }
+    if (msg.behaviorsJson) {
+      writer.writeString(16, msg.behaviorsJson);
+    }
+    if (msg.draftBehaviorsJson) {
+      writer.writeString(17, msg.draftBehaviorsJson);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(18, msg.inputsJson);
     }
     return writer;
   },
@@ -517,6 +738,22 @@ export const Scene = {
           msg.editorStateJson = reader.readString();
           break;
         }
+        case 15: {
+          msg.kind = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.behaviorsJson = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.draftBehaviorsJson = reader.readString();
+          break;
+        }
+        case 18: {
+          msg.inputsJson = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -559,6 +796,9 @@ export const CreateSceneRequest = {
       layoutJson: "",
       createdByType: "",
       createdByRef: "",
+      kind: "",
+      behaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -587,6 +827,15 @@ export const CreateSceneRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(7, msg.createdByRef);
+    }
+    if (msg.kind) {
+      writer.writeString(8, msg.kind);
+    }
+    if (msg.behaviorsJson) {
+      writer.writeString(9, msg.behaviorsJson);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(10, msg.inputsJson);
     }
     return writer;
   },
@@ -623,6 +872,18 @@ export const CreateSceneRequest = {
         }
         case 7: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.kind = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.behaviorsJson = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.inputsJson = reader.readString();
           break;
         }
         default: {
@@ -815,6 +1076,9 @@ export const UpdateSceneRequest = {
       clearDraft: false,
       editorStateJson: "",
       clearEditorState: false,
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -855,6 +1119,15 @@ export const UpdateSceneRequest = {
     }
     if (msg.clearEditorState) {
       writer.writeBool(10, msg.clearEditorState);
+    }
+    if (msg.behaviorsJson) {
+      writer.writeString(11, msg.behaviorsJson);
+    }
+    if (msg.draftBehaviorsJson) {
+      writer.writeString(12, msg.draftBehaviorsJson);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(13, msg.inputsJson);
     }
     return writer;
   },
@@ -907,6 +1180,18 @@ export const UpdateSceneRequest = {
         }
         case 10: {
           msg.clearEditorState = reader.readBool();
+          break;
+        }
+        case 11: {
+          msg.behaviorsJson = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.draftBehaviorsJson = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.inputsJson = reader.readString();
           break;
         }
         default: {
@@ -1017,6 +1302,7 @@ export const ListScenesRequest = {
       pageSize: 0,
       sortBy: "",
       sortDesc: false,
+      kind: "",
       ...msg,
     };
   },
@@ -1039,6 +1325,9 @@ export const ListScenesRequest = {
     }
     if (msg.sortDesc) {
       writer.writeBool(5, msg.sortDesc);
+    }
+    if (msg.kind) {
+      writer.writeString(6, msg.kind);
     }
     return writer;
   },
@@ -1067,6 +1356,10 @@ export const ListScenesRequest = {
         }
         case 5: {
           msg.sortDesc = reader.readBool();
+          break;
+        }
+        case 6: {
+          msg.kind = reader.readString();
           break;
         }
         default: {
@@ -1181,6 +1474,436 @@ export const ListScenesResponse = {
   },
 };
 
+export const CompositionLink = {
+  /**
+   * Serializes CompositionLink to protobuf.
+   */
+  encode: function (msg: PartialDeep<CompositionLink>): Uint8Array {
+    return CompositionLink._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompositionLink from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompositionLink {
+    return CompositionLink._readMessage(
+      CompositionLink.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompositionLink with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<CompositionLink>): CompositionLink {
+    return {
+      id: "",
+      compositionId: "",
+      ownerKind: "",
+      ownerId: "",
+      stepId: "",
+      createdAt: protoscript.Timestamp.initialize(),
+      updatedAt: protoscript.Timestamp.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompositionLink>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.compositionId) {
+      writer.writeString(2, msg.compositionId);
+    }
+    if (msg.ownerKind) {
+      writer.writeString(3, msg.ownerKind);
+    }
+    if (msg.ownerId) {
+      writer.writeString(4, msg.ownerId);
+    }
+    if (msg.stepId) {
+      writer.writeString(5, msg.stepId);
+    }
+    if (msg.createdAt) {
+      writer.writeMessage(
+        6,
+        msg.createdAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.updatedAt) {
+      writer.writeMessage(
+        7,
+        msg.updatedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompositionLink,
+    reader: protoscript.BinaryReader,
+  ): CompositionLink {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.compositionId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.ownerKind = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.ownerId = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.stepId = reader.readString();
+          break;
+        }
+        case 6: {
+          reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 7: {
+          reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListCompositionLinksRequest = {
+  /**
+   * Serializes ListCompositionLinksRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<ListCompositionLinksRequest>): Uint8Array {
+    return ListCompositionLinksRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListCompositionLinksRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListCompositionLinksRequest {
+    return ListCompositionLinksRequest._readMessage(
+      ListCompositionLinksRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListCompositionLinksRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListCompositionLinksRequest>,
+  ): ListCompositionLinksRequest {
+    return {
+      compositionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListCompositionLinksRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.compositionId) {
+      writer.writeString(1, msg.compositionId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListCompositionLinksRequest,
+    reader: protoscript.BinaryReader,
+  ): ListCompositionLinksRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.compositionId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompositionLinksResponse = {
+  /**
+   * Serializes CompositionLinksResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<CompositionLinksResponse>): Uint8Array {
+    return CompositionLinksResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompositionLinksResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompositionLinksResponse {
+    return CompositionLinksResponse._readMessage(
+      CompositionLinksResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompositionLinksResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompositionLinksResponse>,
+  ): CompositionLinksResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      links: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompositionLinksResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.links?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.links as any,
+        CompositionLink._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompositionLinksResponse,
+    reader: protoscript.BinaryReader,
+  ): CompositionLinksResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = CompositionLink.initialize();
+          reader.readMessage(m, CompositionLink._readMessage);
+          msg.links.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CountCompositionLinksRequest = {
+  /**
+   * Serializes CountCompositionLinksRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CountCompositionLinksRequest>,
+  ): Uint8Array {
+    return CountCompositionLinksRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CountCompositionLinksRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CountCompositionLinksRequest {
+    return CountCompositionLinksRequest._readMessage(
+      CountCompositionLinksRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CountCompositionLinksRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountCompositionLinksRequest>,
+  ): CountCompositionLinksRequest {
+    return {
+      compositionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountCompositionLinksRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.compositionId) {
+      writer.writeString(1, msg.compositionId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountCompositionLinksRequest,
+    reader: protoscript.BinaryReader,
+  ): CountCompositionLinksRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.compositionId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CountCompositionLinksResponse = {
+  /**
+   * Serializes CountCompositionLinksResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CountCompositionLinksResponse>,
+  ): Uint8Array {
+    return CountCompositionLinksResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CountCompositionLinksResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CountCompositionLinksResponse {
+    return CountCompositionLinksResponse._readMessage(
+      CountCompositionLinksResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CountCompositionLinksResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountCompositionLinksResponse>,
+  ): CountCompositionLinksResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      count: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountCompositionLinksResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.count) {
+      writer.writeInt32(2, msg.count);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountCompositionLinksResponse,
+    reader: protoscript.BinaryReader,
+  ): CountCompositionLinksResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          msg.count = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -1218,6 +1941,10 @@ export const SceneJSON = {
       draftLayoutJson: "",
       hasDraft: false,
       editorStateJson: "",
+      kind: "",
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -1265,6 +1992,18 @@ export const SceneJSON = {
     }
     if (msg.editorStateJson) {
       json["editorStateJson"] = msg.editorStateJson;
+    }
+    if (msg.kind) {
+      json["kind"] = msg.kind;
+    }
+    if (msg.behaviorsJson) {
+      json["behaviorsJson"] = msg.behaviorsJson;
+    }
+    if (msg.draftBehaviorsJson) {
+      json["draftBehaviorsJson"] = msg.draftBehaviorsJson;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
     }
     return json;
   },
@@ -1328,6 +2067,23 @@ export const SceneJSON = {
     if (_editorStateJson_) {
       msg.editorStateJson = _editorStateJson_;
     }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = _kind_;
+    }
+    const _behaviorsJson_ = json["behaviorsJson"] ?? json["behaviors_json"];
+    if (_behaviorsJson_) {
+      msg.behaviorsJson = _behaviorsJson_;
+    }
+    const _draftBehaviorsJson_ =
+      json["draftBehaviorsJson"] ?? json["draft_behaviors_json"];
+    if (_draftBehaviorsJson_) {
+      msg.draftBehaviorsJson = _draftBehaviorsJson_;
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
+    }
     return msg;
   },
 };
@@ -1361,6 +2117,9 @@ export const CreateSceneRequestJSON = {
       layoutJson: "",
       createdByType: "",
       createdByRef: "",
+      kind: "",
+      behaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -1389,6 +2148,15 @@ export const CreateSceneRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.kind) {
+      json["kind"] = msg.kind;
+    }
+    if (msg.behaviorsJson) {
+      json["behaviorsJson"] = msg.behaviorsJson;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
     }
     return json;
   },
@@ -1423,6 +2191,18 @@ export const CreateSceneRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = _kind_;
+    }
+    const _behaviorsJson_ = json["behaviorsJson"] ?? json["behaviors_json"];
+    if (_behaviorsJson_) {
+      msg.behaviorsJson = _behaviorsJson_;
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
     }
     return msg;
   },
@@ -1581,6 +2361,9 @@ export const UpdateSceneRequestJSON = {
       clearDraft: false,
       editorStateJson: "",
       clearEditorState: false,
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -1621,6 +2404,15 @@ export const UpdateSceneRequestJSON = {
     }
     if (msg.clearEditorState) {
       json["clearEditorState"] = msg.clearEditorState;
+    }
+    if (msg.behaviorsJson) {
+      json["behaviorsJson"] = msg.behaviorsJson;
+    }
+    if (msg.draftBehaviorsJson) {
+      json["draftBehaviorsJson"] = msg.draftBehaviorsJson;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
     }
     return json;
   },
@@ -1675,6 +2467,19 @@ export const UpdateSceneRequestJSON = {
       json["clearEditorState"] ?? json["clear_editor_state"];
     if (_clearEditorState_) {
       msg.clearEditorState = _clearEditorState_;
+    }
+    const _behaviorsJson_ = json["behaviorsJson"] ?? json["behaviors_json"];
+    if (_behaviorsJson_) {
+      msg.behaviorsJson = _behaviorsJson_;
+    }
+    const _draftBehaviorsJson_ =
+      json["draftBehaviorsJson"] ?? json["draft_behaviors_json"];
+    if (_draftBehaviorsJson_) {
+      msg.draftBehaviorsJson = _draftBehaviorsJson_;
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
     }
     return msg;
   },
@@ -1763,6 +2568,7 @@ export const ListScenesRequestJSON = {
       pageSize: 0,
       sortBy: "",
       sortDesc: false,
+      kind: "",
       ...msg,
     };
   },
@@ -1785,6 +2591,9 @@ export const ListScenesRequestJSON = {
     }
     if (msg.sortDesc) {
       json["sortDesc"] = msg.sortDesc;
+    }
+    if (msg.kind) {
+      json["kind"] = msg.kind;
     }
     return json;
   },
@@ -1811,6 +2620,10 @@ export const ListScenesRequestJSON = {
     const _sortDesc_ = json["sortDesc"] ?? json["sort_desc"];
     if (_sortDesc_) {
       msg.sortDesc = _sortDesc_;
+    }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = _kind_;
     }
     return msg;
   },
@@ -1906,6 +2719,365 @@ export const ListScenesResponseJSON = {
     const _pageSize_ = json["pageSize"] ?? json["page_size"];
     if (_pageSize_) {
       msg.pageSize = protoscript.parseNumber(_pageSize_);
+    }
+    return msg;
+  },
+};
+
+export const CompositionLinkJSON = {
+  /**
+   * Serializes CompositionLink to JSON.
+   */
+  encode: function (msg: PartialDeep<CompositionLink>): string {
+    return JSON.stringify(CompositionLinkJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompositionLink from JSON.
+   */
+  decode: function (json: string): CompositionLink {
+    return CompositionLinkJSON._readMessage(
+      CompositionLinkJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompositionLink with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<CompositionLink>): CompositionLink {
+    return {
+      id: "",
+      compositionId: "",
+      ownerKind: "",
+      ownerId: "",
+      stepId: "",
+      createdAt: protoscript.TimestampJSON.initialize(),
+      updatedAt: protoscript.TimestampJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompositionLink>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.compositionId) {
+      json["compositionId"] = msg.compositionId;
+    }
+    if (msg.ownerKind) {
+      json["ownerKind"] = msg.ownerKind;
+    }
+    if (msg.ownerId) {
+      json["ownerId"] = msg.ownerId;
+    }
+    if (msg.stepId) {
+      json["stepId"] = msg.stepId;
+    }
+    if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
+      json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
+      json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: CompositionLink, json: any): CompositionLink {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _compositionId_ = json["compositionId"] ?? json["composition_id"];
+    if (_compositionId_) {
+      msg.compositionId = _compositionId_;
+    }
+    const _ownerKind_ = json["ownerKind"] ?? json["owner_kind"];
+    if (_ownerKind_) {
+      msg.ownerKind = _ownerKind_;
+    }
+    const _ownerId_ = json["ownerId"] ?? json["owner_id"];
+    if (_ownerId_) {
+      msg.ownerId = _ownerId_;
+    }
+    const _stepId_ = json["stepId"] ?? json["step_id"];
+    if (_stepId_) {
+      msg.stepId = _stepId_;
+    }
+    const _createdAt_ = json["createdAt"] ?? json["created_at"];
+    if (_createdAt_) {
+      msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
+    if (_updatedAt_) {
+      msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    return msg;
+  },
+};
+
+export const ListCompositionLinksRequestJSON = {
+  /**
+   * Serializes ListCompositionLinksRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<ListCompositionLinksRequest>): string {
+    return JSON.stringify(ListCompositionLinksRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListCompositionLinksRequest from JSON.
+   */
+  decode: function (json: string): ListCompositionLinksRequest {
+    return ListCompositionLinksRequestJSON._readMessage(
+      ListCompositionLinksRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListCompositionLinksRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListCompositionLinksRequest>,
+  ): ListCompositionLinksRequest {
+    return {
+      compositionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListCompositionLinksRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.compositionId) {
+      json["compositionId"] = msg.compositionId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListCompositionLinksRequest,
+    json: any,
+  ): ListCompositionLinksRequest {
+    const _compositionId_ = json["compositionId"] ?? json["composition_id"];
+    if (_compositionId_) {
+      msg.compositionId = _compositionId_;
+    }
+    return msg;
+  },
+};
+
+export const CompositionLinksResponseJSON = {
+  /**
+   * Serializes CompositionLinksResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<CompositionLinksResponse>): string {
+    return JSON.stringify(CompositionLinksResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompositionLinksResponse from JSON.
+   */
+  decode: function (json: string): CompositionLinksResponse {
+    return CompositionLinksResponseJSON._readMessage(
+      CompositionLinksResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompositionLinksResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompositionLinksResponse>,
+  ): CompositionLinksResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      links: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompositionLinksResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.links?.length) {
+      json["links"] = msg.links.map(CompositionLinkJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompositionLinksResponse,
+    json: any,
+  ): CompositionLinksResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _links_ = json["links"];
+    if (_links_) {
+      for (const item of _links_) {
+        const m = CompositionLinkJSON.initialize();
+        CompositionLinkJSON._readMessage(m, item);
+        msg.links.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const CountCompositionLinksRequestJSON = {
+  /**
+   * Serializes CountCompositionLinksRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CountCompositionLinksRequest>): string {
+    return JSON.stringify(CountCompositionLinksRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CountCompositionLinksRequest from JSON.
+   */
+  decode: function (json: string): CountCompositionLinksRequest {
+    return CountCompositionLinksRequestJSON._readMessage(
+      CountCompositionLinksRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CountCompositionLinksRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountCompositionLinksRequest>,
+  ): CountCompositionLinksRequest {
+    return {
+      compositionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountCompositionLinksRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.compositionId) {
+      json["compositionId"] = msg.compositionId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountCompositionLinksRequest,
+    json: any,
+  ): CountCompositionLinksRequest {
+    const _compositionId_ = json["compositionId"] ?? json["composition_id"];
+    if (_compositionId_) {
+      msg.compositionId = _compositionId_;
+    }
+    return msg;
+  },
+};
+
+export const CountCompositionLinksResponseJSON = {
+  /**
+   * Serializes CountCompositionLinksResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<CountCompositionLinksResponse>): string {
+    return JSON.stringify(CountCompositionLinksResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CountCompositionLinksResponse from JSON.
+   */
+  decode: function (json: string): CountCompositionLinksResponse {
+    return CountCompositionLinksResponseJSON._readMessage(
+      CountCompositionLinksResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CountCompositionLinksResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountCompositionLinksResponse>,
+  ): CountCompositionLinksResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      count: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountCompositionLinksResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.count) {
+      json["count"] = msg.count;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountCompositionLinksResponse,
+    json: any,
+  ): CountCompositionLinksResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _count_ = json["count"];
+    if (_count_) {
+      msg.count = protoscript.parseNumber(_count_);
     }
     return msg;
   },
