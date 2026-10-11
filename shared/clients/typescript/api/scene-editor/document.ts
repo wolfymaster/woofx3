@@ -19,7 +19,7 @@
 
 import json0Module from "ot-json0";
 import { isCompositionShape, isPlainObject, normalizeComposition, sameValue } from "../../scene/model/composition";
-import { ENTRY_ID_MAX_LENGTH } from "../../scene/model/entity-types";
+import { type DeclaredBehaviorKinds, ENTRY_ID_MAX_LENGTH } from "../../scene/model/entity-types";
 import { stackOrder } from "../../scene/model/keys";
 import { type CollectionName, STRICT_REGISTRY, type TypeRegistry } from "../../scene/model/registry";
 import type { BehaviorDocument, CompositionDocument, PlacementDocument } from "../../scene/model/types";
@@ -60,6 +60,13 @@ export interface PlacementMeta {
    * media directly.
    */
   mediaProxyBase?: string;
+  /**
+   * The transition and effect kinds the placement's widget declares it plays
+   * itself, from the widget catalog. The overlay hands the widget only
+   * these; any other widget kind on it is skipped. Absent when the server
+   * does not report them, which a page reads as declaring none.
+   */
+  behaviorKinds?: DeclaredBehaviorKinds;
 }
 
 /** Placements whose meta changed: the new meta, or null for one removed. */

@@ -1,10 +1,11 @@
 import type { Logger } from "@woofx3/common/runtime";
-import type * as scene from "@woofx3/db/scene.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
+import type * as scene from "@woofx3/db/scene.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
+import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
+import { frameDocumentUrl, type PlacementFraming, UNAVAILABLE_VERSION } from "./frame-catalog";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
-import { type PlacementFraming, UNAVAILABLE_VERSION, frameDocumentUrl } from "./frame-catalog";
 import { selectedThemeId } from "./widget-theme";
 
 export interface OverlayWidgetPosition {
@@ -51,6 +52,12 @@ export interface OverlayWidgetInstance {
   frameUnavailable?: true;
   /** False for a placement hidden in the editor. */
   visible: boolean;
+  /**
+   * The kinds the widget declares it plays itself, from the catalog. Absent
+   * until the placement is resolved against it, or when the catalog could
+   * not be read; a page then hands the widget none of its own kinds.
+   */
+  behaviorKinds?: DeclaredBehaviorKinds;
   /** The placement exactly as stored, for writing the scene back without
    *  losing the fields only the editor reads (see scene-documents.ts). */
   stored?: Record<string, unknown>;
@@ -106,6 +113,8 @@ export interface OverlayWidgetDefinition {
   entry: string;
   surfaces: string[];
   hostsSurface: string;
+  /** The transition and effect kinds the widget declares it plays itself. */
+  behaviorKinds: DeclaredBehaviorKinds;
 }
 
 /** The slice of DbClient the scene host depends on (injectable for tests). */
@@ -268,6 +277,7 @@ export class OverlayHost {
       return {
         ...instance,
         hostsSurface: definition?.hostsSurface ?? "",
+        ...(definition === undefined ? {} : { behaviorKinds: definition.behaviorKinds }),
         resolved: definition !== undefined,
       };
     });
@@ -496,6 +506,7 @@ export class OverlayHost {
         entry: w.entry ?? "",
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
+        behaviorKinds: declaredKindsOf(w.behaviorKinds),
       }));
       this.widgetCache = { rows, expiresAt: this.now() + this.widgetCacheTtlMs };
       return rows;
@@ -613,10 +624,19 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         frameUrl: w.frameUrl,
         linkedResources: w.linkedResources ?? {},
         ...(w.mediaProxyBase === undefined ? {} : { mediaProxyBase: w.mediaProxyBase }),
+        ...(w.behaviorKinds === undefined ? {} : { behaviorKinds: w.behaviorKinds }),
         visible: w.visible,
         resolved: w.resolved,
       })),
     },
+  };
+}
+
+/** A catalog row's declared kinds, ids only: what a page decides delegation on. */
+function declaredKindsOf(kinds: module_widget.WidgetBehaviorKinds | null | undefined): DeclaredBehaviorKinds {
+  return {
+    transitions: (kinds?.transitions ?? []).map((kind) => kind.id),
+    effects: (kinds?.effects ?? []).map((kind) => kind.id),
   };
 }
 

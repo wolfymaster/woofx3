@@ -8,8 +8,12 @@ import {
 } from "../../src/scene/alert-layout";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
-function definition(manifestId: string, surfaces: string[]): OverlayWidgetDefinition {
-  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "" };
+function definition(
+  manifestId: string,
+  surfaces: string[],
+  behaviorKinds: OverlayWidgetDefinition["behaviorKinds"] = { transitions: [], effects: [] }
+): OverlayWidgetDefinition {
+  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "", behaviorKinds };
 }
 
 const catalog = [

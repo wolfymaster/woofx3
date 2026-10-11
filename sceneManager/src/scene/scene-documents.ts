@@ -223,6 +223,7 @@ function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
     frameUrl: instance.frameUrl,
     linkedResources: instance.linkedResources ?? {},
     ...(instance.mediaProxyBase === undefined ? {} : { mediaProxyBase: instance.mediaProxyBase }),
+    ...(instance.behaviorKinds === undefined ? {} : { behaviorKinds: instance.behaviorKinds }),
   };
 }
 

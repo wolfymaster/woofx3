@@ -1,12 +1,12 @@
-import { routeModule } from "./context";
 import type { Scene, SceneEditorSession } from "@woofx3/api";
-import { EngineEventType } from "@woofx3/api/webhooks";
-import { dbSceneToSnapshot, dbSceneToWire } from "./helpers";
+import { EngineEventType, type WidgetBehaviorKinds } from "@woofx3/api/webhooks";
 import {
   SCENE_EDITOR_TOKEN_SUBJECT,
   type SceneEditorTokenReply,
   type SceneEditorTokenRequest,
 } from "@woofx3/common/cloudevents/Scene/editor";
+import { routeModule } from "./context";
+import { dbSceneToSnapshot, dbSceneToWire } from "./helpers";
 
 /** Short: sceneManager answers from memory, and an editor is waiting to open. */
 const SCENE_EDITOR_TOKEN_TIMEOUT_MS = 3_000;
@@ -51,6 +51,7 @@ export const scenesRoutes = routeModule({
       surfaces: string[];
       hostsSurface: string;
       taxonomy: string[];
+      behaviorKinds: WidgetBehaviorKinds;
       createdByType: string;
       createdByRef: string;
     }>;
@@ -68,6 +69,10 @@ export const scenesRoutes = routeModule({
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
         taxonomy: w.taxonomy ?? [],
+        behaviorKinds: {
+          transitions: (w.behaviorKinds?.transitions ?? []).map(({ id, label }) => ({ id, label })),
+          effects: (w.behaviorKinds?.effects ?? []).map(({ id, label }) => ({ id, label })),
+        },
         createdByType: w.createdByType ?? "",
         createdByRef: w.createdByRef ?? "",
       })),
