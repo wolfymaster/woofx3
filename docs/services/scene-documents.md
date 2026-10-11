@@ -24,6 +24,16 @@ documents, the published scene overlays show and the editor's draft (see
       "name": "Raid banner", "rotation": 0, "opacity": 1, "locked": false,
       "extra": {}
     }
+  },
+  "behaviors": {
+    "b_19ad": {
+      "type": "transition",
+      "kind": "slide",
+      "target": "w_8f2c",
+      "order": "a0",
+      "timing": { "anchor": "enter", "offsetMs": 0, "durationMs": 400, "easing": "ease-out" },
+      "params": { "phase": "in", "direction": "up" }
+    }
   }
 }
 ```
@@ -51,8 +61,31 @@ edit to such a placement does not ask barkloader again, so edits never wait
 on it while it is down; it is left to that retry. Barkloader has 5 s to
 answer a frame request, after which it counts as failed.
 
-The document and its ops are shared with the dashboard's scene editor in the
-api package (`@woofx3/api/scene-editor/document`);
+Behaviors are keyed by id like widgets, and act on a widget (`target` is its
+placement id) or on the whole canvas (`"canvas"`): `transition` plays as its
+target enters or exits (`params.phase` is `in` or `out`), `effect` modifies
+it for a while, and `activity` is the window in which it is active. `kind` is
+a host kind the overlay plays on the widget's box (a transition's `fade`,
+`slide`, `zoom`, `bounce`, `spin`, `pop`, `blur`; an effect's `shake`,
+`pulse`, `float`, `glow`, `flash`) or a kind the widget declares for itself,
+a lowercase token (`typewriter`), which the widget plays. `timing` is
+anchored rather than absolute: `anchor` (`start`, `end`, `enter`, `exit`,
+`complete`), `offsetMs`, `durationMs` (or `"until-exit"`), `easing`, and for
+`complete` optionally the `node` whose completion counts. A behavior whose
+target no longer exists is skipped where it is played.
+
+A document stored or sent without `behaviors` (one written before
+compositions had them) is given an empty collection wherever a document is
+parsed: `parseSnapshot`, the editor welcome's snapshot, and sceneManager's
+load. The sequencer refuses to start from a document that lacks it. A
+composition's `inputs` and `base` are part of the same type, but the scene
+editor never changes them: an edit that does is refused.
+
+The document's types come from the scene package's model
+(`@woofx3/scene/model`, `shared/clients/typescript/scene/model/types.ts`);
+`SceneDocument` is its `CompositionDocument`. The document's ops are shared
+with the dashboard's scene editor in the api package
+(`@woofx3/api/scene-editor/document`);
 `public/scene-manager/scene-document.ts` re-exports them for the page and the
 server and adds the page's own `configOfSnapshot`.
 
@@ -67,6 +100,49 @@ components: a path into the document and what changes there.
 | A setting | replace `["widgets", id, "settings", key]`, or deeper |
 | Text | a splice: `{ "p": [..., "text", 15], "si": "big " }`, and `sd` to delete |
 | Add or remove a widget | insert or delete `["widgets", id]` |
+| Add or remove a behavior | insert or delete `["behaviors", id]` |
+| Delete a widget with its behaviors | delete `["widgets", id]` and each `["behaviors", id]` targeting it, in one change (`withoutWidget` in the model) |
+| A behavior's kind, target or order | replace `["behaviors", id, "kind"]` (and `target`, `order`) |
+| A behavior's timing | replace `["behaviors", id, "timing", "offsetMs"]` (any timing field; `node` may also be inserted or removed) |
+| A behavior's param | insert, delete or replace `["behaviors", id, "params", key]`, or deeper |
+
+## Entry types and validation
+
+What a valid entry of `widgets` or `behaviors` is, and how each of its
+fields may change, is decided by the scene model's type registry
+(`shared/clients/typescript/scene/model/registry.ts`). Each collection fixes
+the fields every entry has and the grain each field changes at, which the
+diff, the validation and the field-by-field copies (live edits into the
+draft, rebasing onto a snapshot) all read:
+
+| Grain | Fields | Changes as |
+| --- | --- | --- |
+| fixed | a behavior's `type` | only with the whole entry |
+| value | a placement's position, size, `z`, `widget`, flags; a behavior's `kind`, `target`, `order` | replaced whole |
+| text | a placement's `name` | replaced whole, or text splices |
+| freeform | a placement's `settings`, `extra` | key by key at any depth, text spliced |
+| keyed | a behavior's `params` | key by key at any depth, values replaced whole |
+| struct | a behavior's `timing` | field by field, each replaced whole |
+
+Entity types add what depends on the type: a placement is a `widget`; a
+behavior's `type` picks `transition` (a duration from 50 to 10000 ms, a
+`phase`, and a `direction` for a `slide`), `effect` (some duration, and its
+host kind's params) or `activity` (never on the canvas). Types also carry
+defaults for new entries and migrations from older shapes: a placement that
+kept its transitions as `transitionIn` and `transitionOut` in `extra` has
+them lifted into transition behaviors. Whether a widget actually declares a
+widget kind depends on what is installed, so it is checked where the catalog
+is known, not by the registry.
+
+A registry is strict or tolerant. sceneManager validates every item with the
+strict one: an entry of a type it does not know, or with a field (or a host
+kind's param) it does not know, is refused, so it never stores what it
+cannot play. Editors check their own edits with the tolerant one, which
+accepts entries of unknown types and unknown fields as they are, so an
+editor older than the engine keeps what it cannot read through the edits it
+makes around it; the engine checks those edits again. `compositionJsonSchema`
+emits the registry's rules as a JSON Schema (draft 2020-12) for checking a
+composition without this code, such as one a module ships.
 
 ## Sequencing
 
@@ -205,6 +281,11 @@ for 30 days and at most 500 clients, and a digest of both documents). A
 failed write is tried again with the next window. A scene is dropped from
 memory only when nothing is open on it and nothing is waiting to be written.
 
+The scene row has no column for behaviors, so they are not written: a loaded
+scene has none, behaviors added while sceneManager holds the scene live in its
+memory until the scene is dropped, and a save made elsewhere leaves them as
+they are.
+
 On shutdown, `close()` stops taking items (later ones are answered
 `unavailable`, so editors resend them to the next process), lets the queues
 finish, and writes every scene still waiting, trying each up to three times.
@@ -260,8 +341,14 @@ limited to the placements a change touches.
 
 ## Tests
 
+- `shared/clients/typescript/scene/tests/*.test.ts` cover the model: the
+  registry in both modes (placements, each behavior type, field and timing
+  changes, defaults, migrations, `withoutWidget`) and the emitted JSON
+  Schema, checked against documents the registry accepts and refuses.
+
 - `shared/clients/typescript/api/tests/scene-editor/*.test.ts` cover the shared
-  core on its own: documents and ops, the protocol decoders, the sequencer
+  core on its own: documents and ops (behaviors included), the protocol
+  decoders, the sequencer
   (including an external change that carries only placement meta), rebasing
   pending edits onto a snapshot (touched fields are replaced whole, so text
   two editors rebased concurrently is never spliced into a value neither

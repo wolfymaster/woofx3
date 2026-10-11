@@ -8,7 +8,9 @@
 // result arrives as an entry like anyone else's change, and the edits queued
 // behind them are transformed against it. The socket, timers, session
 // opening and id generation are injected, so the client runs the same in a
-// browser and in tests.
+// browser and in tests. Edits are checked with the scene model's tolerant
+// registry: an entry of a type or with a field this build does not know is
+// kept through edits around it, and the engine checks every item strictly.
 //
 // Invariants, checked by `assertSyncInvariants`:
 // - I1 At most one item is in flight, and only it has a seq. A resend keeps
@@ -20,6 +22,7 @@
 // - I4 A reply whose seq is not the in-flight item's is ignored.
 // - I5 An edit is a function of the current local document.
 
+import { TOLERANT_REGISTRY } from "../../scene/model/registry";
 import {
   applyOps,
   composeOps,
@@ -264,13 +267,13 @@ export class SceneSyncClient {
     }
     const current = this.local[version];
     const next = update(structuredClone(current));
-    const ops = diffDocuments(current, next);
+    const ops = diffDocuments(current, next, TOLERANT_REGISTRY);
     if (ops.length === 0) {
       return { ok: true };
     }
     const chunks = splitOps(ops);
     for (const chunk of chunks) {
-      const invalid = invalidOps(chunk) ?? (opsSize(chunk) > MAX_OPS_BYTES ? "ops too large" : null);
+      const invalid = invalidOps(chunk, TOLERANT_REGISTRY) ?? (opsSize(chunk) > MAX_OPS_BYTES ? "ops too large" : null);
       if (invalid !== null) {
         return { ok: false, detail: invalid };
       }
@@ -281,7 +284,7 @@ export class SceneSyncClient {
     } catch (err) {
       return { ok: false, detail: `the change does not apply: ${errorText(err)}` };
     }
-    const invalidDoc = invalidResult(applied, ops);
+    const invalidDoc = invalidResult(applied, ops, TOLERANT_REGISTRY);
     if (invalidDoc !== null) {
       return { ok: false, detail: invalidDoc };
     }

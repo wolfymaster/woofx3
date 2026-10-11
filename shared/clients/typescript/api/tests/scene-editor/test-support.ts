@@ -2,7 +2,7 @@
 // the package index: only tests import it.
 
 import type { SyncClock } from "../../scene-editor/client";
-import type { PlacementDocument, SceneDocument, Version } from "../../scene-editor/document";
+import type { BehaviorDocument, PlacementDocument, SceneDocument, Version } from "../../scene-editor/document";
 
 export function placement(overrides: Partial<PlacementDocument> = {}): PlacementDocument {
   return {
@@ -23,8 +23,23 @@ export function placement(overrides: Partial<PlacementDocument> = {}): Placement
   };
 }
 
-export function sceneDoc(widgets: Record<string, PlacementDocument> = {}): SceneDocument {
-  return { layout: { width: 1920, height: 1080 }, widgets };
+export function behavior(overrides: Partial<BehaviorDocument> = {}): BehaviorDocument {
+  return {
+    type: "transition",
+    kind: "fade",
+    target: "a",
+    order: "a0",
+    timing: { anchor: "enter", offsetMs: 0, durationMs: 400, easing: "ease-out" },
+    params: { phase: "in" },
+    ...overrides,
+  };
+}
+
+export function sceneDoc(
+  widgets: Record<string, PlacementDocument> = {},
+  behaviors: Record<string, BehaviorDocument> = {}
+): SceneDocument {
+  return { layout: { width: 1920, height: 1080 }, widgets, behaviors };
 }
 
 export function bothDocs(doc: SceneDocument): Record<Version, SceneDocument> {

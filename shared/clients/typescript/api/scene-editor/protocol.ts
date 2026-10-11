@@ -13,9 +13,9 @@ import {
   type EntryKind,
   type EntrySource,
   isPlainObject,
-  isSceneDocument,
   isVersion,
   type MetaChanges,
+  normalizeComposition,
   type Ops,
   type PlacementMeta,
   type SceneDocument,
@@ -296,16 +296,25 @@ export function isEntry(value: unknown): value is Entry {
   );
 }
 
-function isEditorSnapshot(value: unknown): value is EditorSnapshot {
-  return (
-    isPlainObject(value) &&
-    isNonNegativeInteger(value.v) &&
-    typeof value.id === "string" &&
-    isBothVersions(value.docs, isSceneDocument) &&
-    isBothVersions(value.meta, isMetaRecord) &&
-    typeof value.hasDraft === "boolean" &&
-    typeof value.name === "string"
-  );
+/** The welcome's snapshot with both documents normalized (`normalizeComposition`), or null when it is not one. */
+function parseEditorSnapshot(value: unknown): EditorSnapshot | null {
+  if (
+    !isPlainObject(value) ||
+    !isNonNegativeInteger(value.v) ||
+    typeof value.id !== "string" ||
+    !isBothVersions(value.meta, isMetaRecord) ||
+    typeof value.hasDraft !== "boolean" ||
+    typeof value.name !== "string" ||
+    !isPlainObject(value.docs)
+  ) {
+    return null;
+  }
+  const draft = normalizeComposition(value.docs.draft);
+  const published = normalizeComposition(value.docs.published);
+  if (draft === null || published === null || !Object.keys(value.docs).every(isVersion)) {
+    return null;
+  }
+  return { ...(value as unknown as EditorSnapshot), docs: { draft, published } };
 }
 
 function parseItemBody(value: unknown): ItemBody | null {
@@ -387,11 +396,12 @@ export function parseServerMessage(value: unknown): ServerMessage | null {
         return null;
       }
       const hasCatchup = Array.isArray(value.catchup) && value.catchup.every(isEntry);
-      const hasSnapshot = isEditorSnapshot(value.snapshot) && typeof value.diverged === "boolean";
+      const snapshot = value.snapshot === undefined ? null : parseEditorSnapshot(value.snapshot);
+      const hasSnapshot = snapshot !== null && typeof value.diverged === "boolean";
       if (hasCatchup === hasSnapshot) {
         return null;
       }
-      return value as unknown as WelcomeMessage;
+      return (hasSnapshot ? { ...value, snapshot } : value) as unknown as WelcomeMessage;
     }
     case "entry": {
       return isEntry(value) ? (value as unknown as EntryMessage) : null;
