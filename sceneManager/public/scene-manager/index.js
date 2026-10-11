@@ -3003,6 +3003,17 @@ function fitCanvas(canvas, area) {
     y: (area.height - canvas.height * scale) / 2
   };
 }
+// ../shared/clients/typescript/scene/runtime/preview-protocol.ts
+var PROBLEM_KINDS = new Set([
+  "invalid-message",
+  "invalid-entry",
+  "bind",
+  "unknown-widget",
+  "unframed-widget",
+  "frames-unavailable",
+  "timeline",
+  "plan"
+]);
 // ../shared/clients/typescript/scene/runtime/scheduler.ts
 function createScheduler(options) {
   const { profile, clock, renderer } = options;

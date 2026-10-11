@@ -87,11 +87,13 @@ export interface WidgetFonts {
  * The part of the boot payload that belongs to one placement rather than to
  * the widget. It travels in the frame URL's fragment (`#boot=…`), so the
  * frame document itself is the same for every placement of a widget version
- * and can be cached; the shim merges it over the inlined payload.
+ * and can be cached; the shim merges it over the inlined payload. `surface`
+ * is the placement's too: the cached document says "scene", and a frame the
+ * host shows as part of an alert says "alert" here.
  */
 export type WidgetPlacementBoot = Pick<
   WidgetBootPayload,
-  "nonce" | "instanceId" | "settings" | "linkedResources" | "behavior"
+  "nonce" | "instanceId" | "settings" | "linkedResources" | "behavior" | "surface"
 >;
 
 /** The fragment parameter carrying a `WidgetPlacementBoot`. */
