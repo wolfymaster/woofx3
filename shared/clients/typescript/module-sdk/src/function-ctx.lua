@@ -104,6 +104,10 @@
 ---Runs the providing module's `{kind}.{verb}` action on the instance, as that
 ---module; allowed on an instance this module owns or its settings link to.
 ---@field run fun(canonical_id: string, verb: string, params?: table): any
+---Writes `settings[key]` on an instance this module owns, only while it still
+---holds `expected`, compared by meaning; `nil` matches a key never saved.
+---Raises an error for an instance another module owns.
+---@field compareAndSetSetting fun(canonical_id: string, key: string, expected: any, value: any): { swapped: boolean, current: any }
 
 ---One-shot invocations of a function this module declares under the
 ---manifest's `deadlines`. An entry is identified by (deadline id, key);

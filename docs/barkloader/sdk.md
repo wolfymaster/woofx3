@@ -65,7 +65,7 @@ v0.1.0):
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value, options?)` |
 | `ctx.http` | `request(url, method, opts?)` — only to hosts the module declares (`net:<host>` permissions) or URLs the streamer entered in `url` settings; see [Module format → Where `ctx.http` may connect](./modules.md#where-ctx-http-may-connect) |
-| `ctx.resources` | `create(kind, instanceId, displayName?, settings?)`, `get(canonicalId)`, `delete(canonicalId)`, `list(kind)`, `run(canonicalId, verb, params?)` |
+| `ctx.resources` | `create(kind, instanceId, displayName?, settings?)`, `get(canonicalId)`, `delete(canonicalId)`, `list(kind)`, `run(canonicalId, verb, params?)`, `compareAndSetSetting(canonicalId, key, expected, value)` |
 | `ctx.schedule` | `at(deadlineId, key, whenMs, params?)`, `cancel(deadlineId, key)` — one-shot invocations of a function the manifest declares under `deadlines`; see below |
 | `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)`, `compareAndSetSetting(key, expected, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
