@@ -55,3 +55,16 @@ func (r *SceneRepository) GetByKindAndName(kind, name string) (*models.Scene, er
 	err := r.db.Where("kind = ? AND name = ?", kind, name).First(&s).Error
 	return &s, err
 }
+
+// NameTaken reports whether a row of `kind` other than `excludeID` already
+// has `name`, which the unique index `idx_scenes_kind_name` would refuse.
+// A nil `excludeID` checks every row of the kind.
+func (r *SceneRepository) NameTaken(kind, name string, excludeID *uuid.UUID) (bool, error) {
+	query := r.db.Model(&models.Scene{}).Where("kind = ? AND name = ?", kind, name)
+	if excludeID != nil {
+		query = query.Where("id <> ?", *excludeID)
+	}
+	var count int64
+	err := query.Count(&count).Error
+	return count > 0, err
+}
