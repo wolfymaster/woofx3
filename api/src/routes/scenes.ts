@@ -167,8 +167,8 @@ export const scenesRoutes = routeModule({
 
   async deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }> {
     this.logger.info("Deleting scene", { id });
-    // An alert is deleted through `deleteAlertComposition`, which reports the
-    // steps that still play it.
+    // An alert is deleted through `deleteAlertComposition`: the scene routes
+    // never change the other kind's rows.
     const existing = await this.db.findComposition(id);
     if (!existing || compositionKindOf(existing.kind) !== "scene") {
       return { success: false };

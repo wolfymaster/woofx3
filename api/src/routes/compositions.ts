@@ -1,23 +1,11 @@
-import type {
-  AlertComposition,
-  CompositionLinkInfo,
-  CompositionPreviewUrl,
-  DeleteAlertCompositionResult,
-} from "@woofx3/api";
+import type { AlertComposition, CompositionPreviewUrl } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import {
   COMPOSITION_PREVIEW_TOKEN_SUBJECT,
   type CompositionPreviewTokenReply,
 } from "@woofx3/common/cloudevents/Scene/composition-preview";
-import { DbError } from "../db-client";
 import { routeModule } from "./context";
-import {
-  compositionKindOf,
-  dbCompositionLinkToWire,
-  dbSceneToAlertComposition,
-  dbSceneToSnapshot,
-  resolveSceneManagerUrl,
-} from "./helpers";
+import { compositionKindOf, dbSceneToAlertComposition, dbSceneToSnapshot, resolveSceneManagerUrl } from "./helpers";
 
 /** Short: sceneManager answers from memory, and an editor is waiting to show the preview. */
 const COMPOSITION_PREVIEW_TOKEN_TIMEOUT_MS = 3_000;
@@ -112,26 +100,12 @@ export const compositionsRoutes = routeModule({
     return { success: true };
   },
 
-  async deleteAlertComposition(id: string, correlationKey?: string): Promise<DeleteAlertCompositionResult> {
+  async deleteAlertComposition(id: string, correlationKey?: string): Promise<{ success: boolean }> {
     const existing = await this.db.findComposition(id);
     if (!existing || compositionKindOf(existing.kind) !== "alert") {
-      return { success: false, links: [] };
+      return { success: false };
     }
-    // Asked first so the answer names the steps; db-proxy refuses the
-    // delete anyway when a link lands in between.
-    const links = await this.db.listCompositionLinks({ compositionId: id });
-    if (links.length > 0) {
-      return { success: false, links: links.map((link) => dbCompositionLinkToWire(link)) };
-    }
-    try {
-      await this.db.deleteScene({ id });
-    } catch (err) {
-      if (err instanceof DbError && err.code === "failed_precondition") {
-        const raced = await this.db.listCompositionLinks({ compositionId: id });
-        return { success: false, links: raced.map((link) => dbCompositionLinkToWire(link)) };
-      }
-      throw err;
-    }
+    await this.db.deleteScene({ id });
     void this.emitSceneWebhook({
       type: EngineEventType.SCENE_DELETED,
       correlationKey,
@@ -139,11 +113,6 @@ export const compositionsRoutes = routeModule({
       kind: "alert",
     });
     return { success: true };
-  },
-
-  async listCompositionLinks(compositionId: string): Promise<CompositionLinkInfo[]> {
-    const links = await this.db.listCompositionLinks({ compositionId });
-    return links.map((link) => dbCompositionLinkToWire(link));
   },
 
   /**

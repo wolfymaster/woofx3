@@ -54,7 +54,8 @@ type Scene struct {
 }
 
 // The kinds of composition a scene row holds. A scene is shown by overlays;
-// an alert is played by the steps that link it and is never an overlay page.
+// an alert is a library entry alert steps copy their layout from, and is
+// never an overlay page.
 const (
 	SceneKindScene = "scene"
 	SceneKindAlert = "alert"

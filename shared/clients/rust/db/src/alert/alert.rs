@@ -53,18 +53,6 @@ pub struct Alert {
     /// snapshots of one row by it: two writes never share a version.
     #[prost(int64, tag="14")]
     pub version: i64,
-    /// The stored alert composition the step played, and which published
-    /// version of it played (a digest of that document). Empty for an alert
-    /// whose step carried its layout inline.
-    #[prost(string, tag="15")]
-    pub composition_id: ::prost::alloc::string::String,
-    #[prost(string, tag="16")]
-    pub composition_version: ::prost::alloc::string::String,
-    /// The composition as it played, inputs bound: the inline document a replay
-    /// plays. Empty for an inline alert, whose payload is what it showed, and
-    /// until the scene manager has recorded it.
-    #[prost(string, tag="17")]
-    pub snapshot_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateAlertRequest {
@@ -82,14 +70,6 @@ pub struct CreateAlertRequest {
     /// don't supply this still create rows, just without the index hit.
     #[prost(string, tag="5")]
     pub envelope_id: ::prost::alloc::string::String,
-    /// Set by a replay of an alert that played a composition, so the new row
-    /// records what it plays (see Alert.composition_id). All three or none.
-    #[prost(string, tag="6")]
-    pub composition_id: ::prost::alloc::string::String,
-    #[prost(string, tag="7")]
-    pub composition_version: ::prost::alloc::string::String,
-    #[prost(string, tag="8")]
-    pub snapshot_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetAlertRequest {
@@ -164,23 +144,6 @@ pub struct UpdateAlertStatusRequest {
 pub struct DeleteAlertRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-}
-/// Record which composition a play showed, and the document it showed (see
-/// Alert.snapshot_json), on the row CreateAlert returned for the play. The row
-/// must carry `envelope_id`. Recorded once: a row that already has a snapshot
-/// is answered as it stands and not changed. Every field is required.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct RecordAlertCompositionRequest {
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub envelope_id: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub composition_id: ::prost::alloc::string::String,
-    #[prost(string, tag="4")]
-    pub composition_version: ::prost::alloc::string::String,
-    #[prost(string, tag="5")]
-    pub snapshot_json: ::prost::alloc::string::String,
 }
 include!("alert.serde.rs");
 include!("alert.tonic.rs");

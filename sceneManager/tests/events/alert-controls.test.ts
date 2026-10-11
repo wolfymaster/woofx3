@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import type { CompositionDocument, PlacementDocument } from "@woofx3/scene/model";
 import {
   AlertReplays,
   clearQueuedAlerts,
@@ -17,36 +16,12 @@ function fakeLogger() {
 }
 
 /** The db proxy as the controls and the delivery store see it, recording every write. */
-interface FakeAlertRow {
-  payload: string;
-  workflowId?: string;
-  sourceEventId?: string;
-  compositionId?: string;
-  compositionVersion?: string;
-  snapshotJson?: string;
-}
-
-function fakeDb(alertRows: Record<string, FakeAlertRow> = {}) {
+function fakeDb(alertRows: Record<string, { payload: string; workflowId?: string; sourceEventId?: string }> = {}) {
   let nextEventId = 0;
   const writes = {
     completions: [] as Array<{ sceneEventId: string; instanceId: string }>,
     lifecycle: [] as Array<{ id: string; envelopeId: string; status: string; error: string }>,
-    created: [] as Array<{
-      payload: string;
-      workflowId: string;
-      sourceEventId: string;
-      envelopeId: string;
-      compositionId?: string;
-      compositionVersion?: string;
-      snapshotJson?: string;
-    }>,
-    compositions: [] as Array<{
-      id: string;
-      envelopeId: string;
-      compositionId: string;
-      compositionVersion: string;
-      snapshotJson: string;
-    }>,
+    created: [] as Array<{ payload: string; workflowId: string; sourceEventId: string; envelopeId: string }>,
     replayed: [] as Array<{ id: string }>,
   };
   const db = {
@@ -76,17 +51,10 @@ function fakeDb(alertRows: Record<string, FakeAlertRow> = {}) {
           payload: row.payload,
           workflowId: row.workflowId ?? "",
           sourceEventId: row.sourceEventId ?? "",
-          compositionId: row.compositionId ?? "",
-          compositionVersion: row.compositionVersion ?? "",
-          snapshotJson: row.snapshotJson ?? "",
         },
       };
     },
-    recordAlertComposition: async (req: (typeof writes.compositions)[number]) => {
-      writes.compositions.push(req);
-      return {};
-    },
-    createAlert: async (req: (typeof writes.created)[number]) => {
+    createAlert: async (req: { payload: string; workflowId: string; sourceEventId: string; envelopeId: string }) => {
       writes.created.push(req);
       return { alert: { id: `row-${req.envelopeId}` } };
     },
@@ -180,14 +148,6 @@ function fakeHost(scenes: Record<string, OverlayWidgetInstance[]>, alerts: Reado
   };
 }
 
-/** Published compositions by id, as `SceneDocuments.published` gives them. */
-function fakeCompositions(docs: Record<string, { kind: "scene" | "alert"; doc: CompositionDocument }> = {}) {
-  return {
-    published: async (id: string) =>
-      docs[id] ? { sceneId: id, name: `${docs[id]!.kind} ${id}`, version: `v-${id}`, ...docs[id]! } : null,
-  };
-}
-
 function envelope(target = "default") {
   return JSON.stringify({
     id: "env-original",
@@ -210,13 +170,7 @@ const sceneWidgets: Record<string, OverlayWidgetInstance[]> = {
 };
 
 function queueDeps(db: ReturnType<typeof fakeDb>["db"], store: DeliveryStore) {
-  return {
-    db,
-    host: fakeHost(sceneWidgets) as any,
-    compositions: fakeCompositions(),
-    deliveryStore: store,
-    logger: fakeLogger(),
-  };
+  return { db, host: fakeHost(sceneWidgets) as any, deliveryStore: store, logger: fakeLogger() };
 }
 
 /** What each alert widget still has open, by instance, as event ids. */
@@ -463,7 +417,6 @@ describe("replayAlert", () => {
     const deps = {
       db,
       host: fakeHost(scenes) as any,
-      compositions: fakeCompositions(),
       deliveryStore: store,
       logger: fakeLogger(),
       newEnvelopeId: () => "env-replay",
@@ -540,24 +493,14 @@ describe("replayAlert", () => {
 });
 
 describe("dispatchAlert", () => {
-  function setup(
-    scenes: Record<string, OverlayWidgetInstance[]>,
-    alerts: ReadonlySet<string> = new Set(),
-    compositions: Parameters<typeof fakeCompositions>[0] = {}
-  ) {
+  function setup(scenes: Record<string, OverlayWidgetInstance[]>, alerts: ReadonlySet<string> = new Set()) {
     const { db, writes } = fakeDb();
     const store = new DeliveryStore(db as any, fakeLogger());
     const overlays = Object.keys(scenes).map((sceneId) => fakeOverlay(store, sceneId));
     return {
       writes,
       overlays,
-      deps: {
-        db,
-        host: fakeHost(scenes, alerts) as any,
-        compositions: fakeCompositions(compositions),
-        deliveryStore: store,
-        logger: fakeLogger(),
-      },
+      deps: { db, host: fakeHost(scenes, alerts) as any, deliveryStore: store, logger: fakeLogger() },
     };
   }
 
@@ -645,205 +588,6 @@ describe("dispatchAlert", () => {
   });
 });
 
-function placement(fields: Partial<PlacementDocument>): PlacementDocument {
-  return {
-    widget: "woofx3:widget:text",
-    x: 10,
-    y: 20,
-    width: 300,
-    height: 100,
-    visible: true,
-    z: "a0",
-    settings: {},
-    name: "",
-    rotation: 0,
-    opacity: 1,
-    locked: false,
-    extra: {},
-    ...fields,
-  };
-}
-
-/** A follow alert: one text widget saying who followed, from an input with no default. */
-function followAlert(): CompositionDocument {
-  return {
-    layout: { width: 800, height: 200 },
-    widgets: {
-      title: placement({ settings: { text: "{{name}} followed!", size: { $input: "size" } } }),
-      hidden: placement({ visible: false, z: "a1" }),
-    },
-    behaviors: {},
-    inputs: [
-      { id: "name", label: "Name", type: "text" },
-      { id: "size", label: "Size", type: "number", defaultValue: 48 },
-    ],
-  };
-}
-
-function compositionEnvelope(compositionId: string, inputs: Record<string, unknown>) {
-  return {
-    id: "env-original",
-    rowId: "row-9",
-    parameters: { target: "default", composition: compositionId, inputs },
-    event: { type: "channel.follow", data: { userName: "alice" } },
-  };
-}
-
-describe("dispatchAlert with a stored composition", () => {
-  function setup(compositions: Parameters<typeof fakeCompositions>[0]) {
-    const { db, writes } = fakeDb();
-    const store = new DeliveryStore(db as any, fakeLogger());
-    const overlay = fakeOverlay(store, "scene-1");
-    const deps = {
-      db,
-      host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
-      compositions: fakeCompositions(compositions),
-      deliveryStore: store,
-      logger: fakeLogger(),
-    };
-    return { writes, overlay, deps };
-  }
-
-  it("binds the inputs into the published version, records it on the row, and plays it", async () => {
-    const { writes, overlay, deps } = setup({ "comp-1": { kind: "alert", doc: followAlert() } });
-
-    const outcome = await dispatchAlert(compositionEnvelope("comp-1", { name: "alice" }), deps);
-
-    expect(outcome).toEqual({ ok: true, scenes: 1 });
-    expect(writes.compositions).toHaveLength(1);
-    const recorded = writes.compositions[0]!;
-    expect(recorded).toMatchObject({
-      id: "row-9",
-      envelopeId: "env-original",
-      compositionId: "comp-1",
-      compositionVersion: "v-comp-1",
-    });
-    const snapshot = JSON.parse(recorded.snapshotJson);
-    expect(snapshot.widgets.title.settings).toEqual({ text: "alice followed!", size: 48 });
-    expect(snapshot.inputs).toBeUndefined();
-
-    const delivered = overlay.deliveries()[0].value;
-    // The bound composition is delivered as it is: the hidden widget stays in
-    // it and the overlay leaves it out when it plays.
-    expect(delivered.layout.layout).toMatchObject({ width: 800, height: 200 });
-    expect(Object.keys(delivered.layout.widgets).sort()).toEqual(["hidden", "title"]);
-    expect(delivered.layout.widgets.hidden.visible).toBe(false);
-    expect(delivered.layout.widgets.title).toMatchObject({
-      widget: "woofx3:widget:text",
-      x: 10,
-      y: 20,
-      width: 300,
-      height: 100,
-      settings: { text: "alice followed!", size: 48 },
-    });
-  });
-
-  const refusals: Array<[string, Parameters<typeof fakeCompositions>[0], Record<string, unknown>, string]> = [
-    ["a missing composition", {}, { name: "alice" }, "alert composition comp-1 does not exist"],
-    [
-      "a scene",
-      { "comp-1": { kind: "scene", doc: followAlert() } },
-      { name: "alice" },
-      'composition "scene comp-1" (comp-1) is a scene, not an alert',
-    ],
-    [
-      "an input with neither a value nor a default",
-      { "comp-1": { kind: "alert", doc: followAlert() } },
-      {},
-      'alert composition "alert comp-1" cannot be bound: the step gives no value for name, which have no default',
-    ],
-    [
-      "a bound value that makes a widget invalid",
-      {
-        "comp-1": {
-          kind: "alert",
-          doc: { ...followAlert(), layout: { width: { $input: "size" }, height: 200 } },
-        },
-      },
-      { name: "alice", size: "wide" },
-      'alert composition "alert comp-1" is not playable once bound: the canvas needs a positive width and height',
-    ],
-  ];
-  for (const [name, compositions, inputs, reason] of refusals) {
-    it(`fails the alert on ${name}, saying why, and records no snapshot`, async () => {
-      const { writes, overlay, deps } = setup(compositions);
-
-      const outcome = await dispatchAlert(compositionEnvelope("comp-1", inputs), deps);
-
-      expect(outcome).toEqual({ ok: false, reason });
-      expect(writes.lifecycle).toEqual([{ id: "row-9", envelopeId: "env-original", status: "failed", error: reason }]);
-      expect(writes.compositions).toEqual([]);
-      expect(overlay.deliveries()).toEqual([]);
-    });
-  }
-
-  it("refuses an envelope that names both a layout and a composition", async () => {
-    const { deps } = setup({ "comp-1": { kind: "alert", doc: followAlert() } });
-    const raw = compositionEnvelope("comp-1", { name: "alice" });
-    (raw.parameters as Record<string, unknown>).layout = JSON.parse(envelope()).parameters.layout;
-
-    expect(await dispatchAlert(raw, deps)).toEqual({
-      ok: false,
-      reason: "the alert names both a layout and a composition",
-    });
-  });
-
-  it("replays the recorded snapshot, not the composition as it stands", async () => {
-    const original = compositionEnvelope("comp-1", { name: "alice" });
-    const played = { ...followAlert(), inputs: undefined };
-    played.widgets.title!.settings = { text: "alice followed!", size: 48 };
-    const { db, writes } = fakeDb({
-      "row-1": {
-        payload: JSON.stringify({ ...original, rowId: undefined }),
-        compositionId: "comp-1",
-        compositionVersion: "v-old",
-        snapshotJson: JSON.stringify(played),
-      },
-    });
-    const store = new DeliveryStore(db as any, fakeLogger());
-    const overlay = fakeOverlay(store, "scene-1");
-    const edited = followAlert();
-    edited.widgets.title!.settings = { text: "edited since" };
-    const deps = {
-      db,
-      host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
-      compositions: fakeCompositions({ "comp-1": { kind: "alert", doc: edited } }),
-      deliveryStore: store,
-      logger: fakeLogger(),
-      newEnvelopeId: () => "env-replay",
-    };
-
-    expect(await replayAlert("row-1", deps)).toEqual({ ok: true, replayEnvelopeId: "env-replay" });
-
-    expect(overlay.deliveries()[0].value.layout.widgets.title.settings).toEqual({ text: "alice followed!", size: 48 });
-    expect(writes.created[0]).toMatchObject({
-      compositionId: "comp-1",
-      compositionVersion: "v-old",
-      snapshotJson: JSON.stringify(played),
-    });
-    expect(writes.compositions).toEqual([]);
-  });
-
-  it("refuses to replay a composition alert that recorded no snapshot", async () => {
-    const { db, writes } = fakeDb({ "row-1": { payload: JSON.stringify(compositionEnvelope("comp-1", {})) } });
-    const store = new DeliveryStore(db as any, fakeLogger());
-    fakeOverlay(store, "scene-1");
-    const deps = {
-      db,
-      host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
-      compositions: fakeCompositions({ "comp-1": { kind: "alert", doc: followAlert() } }),
-      deliveryStore: store,
-      logger: fakeLogger(),
-    };
-
-    expect(await replayAlert("row-1", deps)).toEqual({
-      ok: false,
-      reason: "alert row-1 has no recorded composition to replay; it never played one",
-    });
-    expect(writes.created).toEqual([]);
-  });
-});
-
 describe("AlertReplays", () => {
   function counting(result: { ok: boolean; replayEnvelopeId?: string; reason?: string }) {
     let calls = 0;
@@ -860,22 +604,11 @@ describe("AlertReplays", () => {
       if (!result.ok) {
         throw new Error(result.reason);
       }
-      return {
-        alert: {
-          id: req.id,
-          payload: envelope(),
-          workflowId: "",
-          sourceEventId: "",
-          compositionId: "",
-          compositionVersion: "",
-          snapshotJson: "",
-        },
-      };
+      return { alert: { id: req.id, payload: envelope(), workflowId: "", sourceEventId: "" } };
     };
     const deps = {
       db,
       host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
-      compositions: fakeCompositions(),
       deliveryStore: store,
       logger: fakeLogger(),
       newEnvelopeId: () => `env-${calls}`,

@@ -765,14 +765,15 @@ export interface ModuleOAuthConnected {
 
 /**
  * What a scenes-table row composes. A `scene` is shown by overlays; an
- * `alert` is played by the workflow and command steps that link it, and is
+ * `alert` is a library entry an alert step's layout is copied from, and is
  * never an overlay page. Fixed at creation.
  */
 export type CompositionKind = "scene" | "alert";
 
 /**
  * An alert composition: the same document as a scene (widgets, layout,
- * behaviors) plus the inputs a step that plays it fills in. The JSON fields
+ * behaviors) plus its inputs, the `{{id}}` placeholders a client fills in
+ * when it copies the alert into a step. The JSON fields
  * are passed through as stored, like a scene's `widgetsJson`; the document
  * is edited through the editor socket (`getSceneEditorSession` takes an
  * alert's id as well as a scene's).
@@ -789,28 +790,11 @@ export interface AlertComposition {
   behaviorsJson: string;
   /** The inputs, a JSON array of input fields (`{ id, label, type, ... }`, the engine's ConfigField). */
   inputsJson: string;
-  /** Whether the editor holds unpublished changes. Steps always play the published document. */
+  /** Whether the editor holds unpublished changes. A copy is taken from the published document. */
   hasDraft: boolean;
   createdByType: string;
   createdByRef: string;
 }
-
-/** One workflow or chat command step that plays a composition. */
-export interface CompositionLinkInfo {
-  ownerKind: "workflow" | "command";
-  /** The workflow's or command's id. */
-  ownerId: string;
-  /** The step within the owner's definition. */
-  stepId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** Returned by `deleteAlertComposition`. */
-export type DeleteAlertCompositionResult =
-  | { success: true }
-  /** Steps still play it (`links`, empty when the alert does not exist or the delete failed otherwise). */
-  | { success: false; links: CompositionLinkInfo[] };
 
 /**
  * Returned by `getCompositionPreviewUrl`: sceneManager's composition preview
@@ -1763,8 +1747,9 @@ export interface Woofx3EngineApi {
   //
   // Stored beside scenes (the same row, `kind: "alert"`) and edited with
   // the same editor socket, but never listed with scenes, never shown as an
-  // overlay page and never given an overlay token. Steps link an alert by id
-  // and play its latest published version. Each change emits the `scene.*`
+  // overlay page and never given an overlay token. They form a library: a
+  // client copies one into an alert step's own layout, filling its inputs,
+  // and the step never refers back to it. Each change emits the `scene.*`
   // webhooks with `kind: "alert"` in the snapshot. Requires the
   // `compositions.alerts` capability.
   listAlertCompositions(): Promise<{ compositions: AlertComposition[] }>;
@@ -1795,12 +1780,10 @@ export interface Woofx3EngineApi {
     data: { name?: string; description?: string; inputsJson?: string; correlationKey?: string }
   ): Promise<{ success: boolean }>;
   /**
-   * Delete an alert. Refused while steps still play it: `links` names them,
-   * so the dashboard can say where it is used.
+   * Delete an alert. Steps that started from it keep their own copies.
+   * `success` is false when the id is unknown or names a scene.
    */
-  deleteAlertComposition(id: string, correlationKey?: string): Promise<DeleteAlertCompositionResult>;
-  /** The workflow and command steps that play a composition, ordered by owner then step. */
-  listCompositionLinks(compositionId: string): Promise<CompositionLinkInfo[]>;
+  deleteAlertComposition(id: string, correlationKey?: string): Promise<{ success: boolean }>;
   /**
    * A URL for the alert editor's live preview: sceneManager's page that plays
    * a composition the dashboard posts to it, with real widget frames, on a

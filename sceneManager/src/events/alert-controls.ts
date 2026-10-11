@@ -2,9 +2,7 @@ import type { AlertClearResult, AlertReplayResult, AlertSkipResult } from "@woof
 import type { Logger } from "@woofx3/common/runtime";
 import { ALERT_EVENT_TYPE, ALERT_SURFACE } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
-import { type BoundComposition, parseSnapshot } from "./alert-composition";
 import {
-  type AlertCompositionRecorder,
   type AlertDispatchDeps,
   type AlertEnvelope,
   type AlertLifecycleWriter,
@@ -177,28 +175,15 @@ async function reportAlertSkipped(db: AlertLifecycleWriter, logger: Logger, targ
 }
 
 /** The slice of the db client a replay needs. The real `DbClient` satisfies it. */
-/** A recorded alert as a replay reads it. */
-export interface RecordedAlert {
-  id: string;
-  payload: string;
-  workflowId: string;
-  sourceEventId: string;
-  /** Set when the alert played a stored composition; see `RecordAlertComposition`. */
-  compositionId: string;
-  compositionVersion: string;
-  snapshotJson: string;
-}
-
-export interface AlertLogClient extends AlertLifecycleWriter, AlertCompositionRecorder {
-  getAlert(req: { id: string }): Promise<{ alert?: RecordedAlert | null }>;
+export interface AlertLogClient extends AlertLifecycleWriter {
+  getAlert(req: { id: string }): Promise<{
+    alert?: { id: string; payload: string; workflowId: string; sourceEventId: string } | null;
+  }>;
   createAlert(req: {
     payload: string;
     workflowId: string;
     sourceEventId: string;
     envelopeId: string;
-    compositionId?: string;
-    compositionVersion?: string;
-    snapshotJson?: string;
   }): Promise<{ alert?: { id: string } | null }>;
   markAlertReplayed(req: { id: string }): Promise<unknown>;
 }
@@ -272,11 +257,6 @@ export class AlertReplays {
  * dispatch for the reason the engine writes one before it publishes: a
  * refusal is recorded against that row. The original row is marked
  * `replayed` only once the replay has been queued somewhere.
- *
- * An alert that played a stored composition replays the document recorded on
- * its row, not the composition as it stands: a replay shows what the original
- * showed, even after the composition was edited or deleted. The replay's row
- * records the same composition, version and document.
  */
 export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Promise<AlertReplayResult> {
   const { db, logger } = deps;
@@ -287,7 +267,7 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
     return { ok: false, reason: NO_OVERLAY_OPEN };
   }
 
-  let row: RecordedAlert;
+  let row: { id: string; payload: string; workflowId: string; sourceEventId: string };
   try {
     const response = await db.getAlert({ id: alertRowId });
     if (!response.alert || !response.alert.id) {
@@ -311,11 +291,6 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
     return { ok: false, reason: `alert ${alertRowId} has no stored envelope to replay` };
   }
 
-  const played = playedComposition(row, original as AlertEnvelope);
-  if (!played.ok) {
-    return { ok: false, reason: played.reason };
-  }
-
   const envelopeId = (deps.newEnvelopeId ?? (() => crypto.randomUUID()))();
   const envelope: AlertEnvelope = { ...(original as AlertEnvelope), id: envelopeId };
   try {
@@ -324,13 +299,6 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
       workflowId: row.workflowId,
       sourceEventId: row.sourceEventId,
       envelopeId,
-      ...(played.composition
-        ? {
-            compositionId: played.composition.compositionId,
-            compositionVersion: played.composition.version,
-            snapshotJson: row.snapshotJson,
-          }
-        : {}),
     });
     if (created.alert?.id) {
       envelope.rowId = created.alert.id;
@@ -343,7 +311,7 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
     });
   }
 
-  const outcome = await dispatchAlert(envelope, deps, played.composition ?? undefined);
+  const outcome = await dispatchAlert(envelope, deps);
   if (!outcome.ok) {
     return { ok: false, reason: outcome.reason };
   }
@@ -358,35 +326,4 @@ export async function replayAlert(alertRowId: string, deps: AlertReplayDeps): Pr
   }
   logger.info("alert replayed", { alertId: alertRowId, envelopeId, scenes: outcome.scenes });
   return { ok: true, replayEnvelopeId: envelopeId };
-}
-
-/**
- * The bound composition a recorded alert played, null for an inline alert, or
- * why it cannot be replayed: an alert that names a composition but has no
- * recorded snapshot never played one (it was refused before binding) or ran
- * where its row could not record it, and playing the composition as it now
- * stands would not be a replay.
- */
-function playedComposition(
-  row: RecordedAlert,
-  envelope: AlertEnvelope
-): { ok: true; composition: BoundComposition | null } | { ok: false; reason: string } {
-  const parameters =
-    typeof envelope.parameters === "object" && envelope.parameters !== null
-      ? (envelope.parameters as Record<string, unknown>)
-      : {};
-  if (parameters.composition === undefined && !row.compositionId) {
-    return { ok: true, composition: null };
-  }
-  if (!row.snapshotJson) {
-    return { ok: false, reason: `alert ${row.id} has no recorded composition to replay; it never played one` };
-  }
-  const document = parseSnapshot(row.snapshotJson);
-  if (document === null) {
-    return { ok: false, reason: `alert ${row.id} has a recorded composition that cannot be read` };
-  }
-  return {
-    ok: true,
-    composition: { compositionId: row.compositionId, version: row.compositionVersion, document },
-  };
 }

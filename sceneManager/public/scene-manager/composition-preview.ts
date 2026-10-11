@@ -27,6 +27,18 @@
 // all, so the widget lands on its end state. A pause stops the host's
 // animations only.
 //
+// Updating. The editor posts a new load after every committed edit, so a
+// load for the same profile and sample event changes the run in place, as
+// the overlay changes a scene (scene-update.ts): the run on screen stays up
+// while the new document is bound and framed, then the scheduler takes the
+// new document (placements moved, added and removed, behaviors re-planned),
+// a frame whose document is unchanged gets new settings patched in or is
+// swapped invisibly (frame-swap.ts), and one whose document changed is
+// swapped the same way. Only a first load, another profile or another sample
+// event mounts everything afresh. The scheduler treats each new document as
+// the composition from its start (`documentChanges: "start"`): an edit is
+// not something that happens during the alert.
+//
 // Measuring. The timeline starts from estimates; what frames report replaces
 // them (a video's real length, a frame that is slow to paint) only while the
 // run is uninterrupted from the start, as on an overlay. After the first
@@ -74,7 +86,9 @@ import {
   type SchedulerClock,
   type TransientOverrides,
 } from "@woofx3/scene/runtime";
+import { type FrameSwap, swapFrameIn } from "./frame-swap";
 import { createPreviewClock, type PreviewClock } from "./preview-clock";
+import { planSceneUpdate, type SettingsReads, settingsUpdate, type WidgetPlacementConfig } from "./scene-update";
 import { BehaviorRelay, behaviorStateOf, entranceOf } from "./widget-behaviors";
 
 /** How often the playhead is reported while playing. */
@@ -105,6 +119,8 @@ export interface PreviewFrameSpec {
   /** The widget's own entrance, to mark the frame with from boot (see `entranceOf`). */
   entrance: WidgetBehaviorState | null;
   event: PreviewSampleEvent | null;
+  /** Mounted to replace the widget's frame: transparent until `reveal` (see frame-swap.ts). */
+  swapping: boolean;
 }
 
 /** What a frame reports, which the timeline is made of. */
@@ -118,6 +134,12 @@ export interface PreviewFrame {
   sendBehavior(state: WidgetBehaviorState | null): void;
   /** The playhead has run: hand the sample event to the widget, now or once it subscribes. */
   release(): void;
+  /** The settings the widget's script has read so far; null when not known yet. */
+  settingsReads(): SettingsReads | null;
+  /** Patch new settings in through the widget's bindings, external media pointed at `mediaUrls`. */
+  sendSettings(settings: Record<string, unknown>, mediaUrls: Record<string, string>): void;
+  /** Show a frame mounted `swapping`. */
+  reveal(): void;
   unmount(): void;
 }
 
@@ -162,6 +184,8 @@ interface Playback {
   /** Frames' reports still go into the timeline (see the header). */
   measuring: boolean;
   finished: boolean;
+  /** Play `next` in place of what this run plays (see the header). */
+  update(next: Loaded): void;
 }
 
 export function createCompositionPreview<TElement extends RenderElement<TElement>, THandle>(
@@ -220,18 +244,17 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
   async function load(command: PreviewLoadMessage, dropped: DroppedEntry[]): Promise<void> {
     generation += 1;
     const current = generation;
-    stopPlayback();
-    loaded = null;
-    transient = undefined;
-    lastTimeline = "";
 
     const problems: PreviewProblem[] = dropped.map(({ id, reason }) => ({ kind: "invalid-entry", id, detail: reason }));
     const bound = bindInputs(command.document, command.inputs ?? {});
     if (!bound.ok) {
+      clear();
       postProblems(command.loadId, [...problems, ...bindProblems(bound.report)]);
       return;
     }
 
+    // What is on screen stays, gesture overrides included, until the new
+    // document is ready to take its place.
     let resolution: FrameResolution;
     try {
       resolution = await options.resolveFrames(bound.document);
@@ -244,7 +267,7 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
     if (current !== generation || disposed) {
       return;
     }
-    loaded = {
+    const next: Loaded = {
       loadId: command.loadId,
       profile: command.profile,
       doc: bound.document,
@@ -252,16 +275,44 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
       frames: resolution.widgets,
       problems: [...problems, ...resolution.problems],
     };
+    const run = playback;
+    const previous = loaded;
+    if (run !== null && previous !== null && updatesInPlace(previous, next)) {
+      loaded = next;
+      lastTimeline = "";
+      run.update(next);
+      transient = undefined;
+      run.scheduler.setTransient(undefined);
+      reportTimeline();
+      reportPlayhead();
+      if (command.autoplay === true) {
+        play();
+      }
+      return;
+    }
+    clear();
+    loaded = next;
     startPlayback(command.autoplay === true);
   }
 
+  /** Nothing loaded, nothing playing. */
+  function clear(): void {
+    stopPlayback();
+    loaded = null;
+    transient = undefined;
+    lastTimeline = "";
+  }
+
   function startPlayback(autoplay: boolean): void {
-    const current = mustBeLoaded();
-    const { doc, profile } = current;
-    options.fitStage({ width: doc.layout.width as number, height: doc.layout.height as number });
+    let source = mustBeLoaded();
+    options.fitStage(canvasOf(source.doc));
 
     const clock = createPreviewClock(options.baseClock);
     const frames = new Map<NodeId, PreviewFrame>();
+    const slots = new Map<NodeId, TElement>();
+    // The settings each frame was mounted or patched with, which a new load's are compared with.
+    const handed = new Map<NodeId, Record<string, unknown>>();
+    const swaps = new Map<NodeId, FrameSwap>();
     const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state));
     // Assigned below; frames mounted by the scheduler's first plan only
     // report once their documents load, after it exists.
@@ -275,47 +326,62 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
       reportTimeline();
     };
 
+    /** Mount a widget's frame from the current source; `rendered` replaces the usual report when given. */
+    const mountInto = (slot: TElement, widgetId: NodeId, swapping: boolean, rendered?: () => void): PreviewFrame => {
+      const meta = source.frames[widgetId];
+      const placement = source.doc.widgets[widgetId];
+      if (meta === undefined || placement === undefined) {
+        throw new Error(`composition preview: widget ${widgetId} was planned without a frame`);
+      }
+      let subscribed = false;
+      const frame = options.mountFrame(
+        slot,
+        {
+          widgetId,
+          meta,
+          settings: placement.settings,
+          surface: PROFILES[source.profile].surface,
+          entrance: swapping
+            ? null
+            : entranceOf(source.doc, widgetId, (type, kind) => declaresKind(meta.behaviorKinds, type, kind)),
+          event: source.event,
+          swapping,
+        },
+        {
+          subscribed: (timed) => {
+            subscribed = true;
+            fact((scheduler) => scheduler.widgetSubscribed(widgetId, timed));
+          },
+          rendered: rendered ?? (() => fact((scheduler) => scheduler.widgetRendered(widgetId))),
+          completed: () => {
+            if (subscribed) {
+              fact((scheduler) => scheduler.widgetCompleted(widgetId));
+            }
+          },
+        }
+      );
+      handed.set(widgetId, placement.settings);
+      if (run?.started) {
+        frame.release();
+      }
+      return frame;
+    };
+
     const renderer = createDomRenderer({
       document: options.document,
       root: options.stage,
       atMs: 0,
       mountContent: (slot, widgetId) => {
-        const meta = current.frames[widgetId];
-        if (meta === undefined) {
-          throw new Error(`composition preview: widget ${widgetId} was planned without a frame`);
-        }
-        const subscribed = new Set<NodeId>();
-        const frame = options.mountFrame(
-          slot,
-          {
-            widgetId,
-            meta,
-            settings: doc.widgets[widgetId].settings,
-            surface: PROFILES[profile].surface,
-            entrance: entranceOf(doc, widgetId, (type, kind) => declaresKind(meta.behaviorKinds, type, kind)),
-            event: current.event,
-          },
-          {
-            subscribed: (timed) => {
-              subscribed.add(widgetId);
-              fact((scheduler) => scheduler.widgetSubscribed(widgetId, timed));
-            },
-            rendered: () => fact((scheduler) => scheduler.widgetRendered(widgetId)),
-            completed: () => {
-              if (subscribed.has(widgetId)) {
-                fact((scheduler) => scheduler.widgetCompleted(widgetId));
-              }
-            },
-          }
-        );
-        frames.set(widgetId, frame);
-        if (run?.started) {
-          frame.release();
-        }
+        slots.set(widgetId, slot);
+        frames.set(widgetId, mountInto(slot, widgetId, false));
         return () => {
+          swaps.get(widgetId)?.cancel();
+          swaps.delete(widgetId);
+          frames.get(widgetId)?.unmount();
           frames.delete(widgetId);
+          slots.delete(widgetId);
+          handed.delete(widgetId);
           relay.forget(widgetId);
-          frame.unmount();
         };
       },
       onDelegate: (widgetId, request) => relay.handle(widgetId, request),
@@ -325,15 +391,69 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
     renderer.seek(0);
 
     const scheduler = createScheduler({
-      doc,
-      profile: PROFILES[profile],
+      doc: source.doc,
+      profile: PROFILES[source.profile],
       clock,
       renderer,
-      meta: current.frames,
-      declaredKinds: (widgetId) => current.frames[widgetId]?.behaviorKinds,
-      estimate: { durationsMs: mediaLengthEstimates(doc) },
+      meta: source.frames,
+      declaredKinds: (widgetId) => source.frames[widgetId]?.behaviorKinds,
+      estimate: { durationsMs: mediaLengthEstimates(source.doc) },
       onFinished: () => finish(),
+      documentChanges: "start",
     });
+
+    /** Give a widget a fresh frame from the current source, shown once it has painted. */
+    const swapIn = (widgetId: NodeId): void => {
+      const slot = slots.get(widgetId);
+      const old = frames.get(widgetId);
+      if (slot === undefined || old === undefined) {
+        return;
+      }
+      swaps.get(widgetId)?.cancel();
+      swaps.set(
+        widgetId,
+        swapFrameIn({
+          mountFresh: (painted) => mountInto(slot, widgetId, true, painted),
+          retire: () => old.unmount(),
+          swapped: (fresh) => {
+            swaps.delete(widgetId);
+            frames.set(widgetId, fresh);
+            for (const state of relay.ongoing(widgetId)) {
+              fresh.sendBehavior(state);
+            }
+            fact((current) => current.widgetRendered(widgetId));
+          },
+          schedule: (callback, ms) => {
+            const handle = options.baseClock.setTimer(options.baseClock.now() + ms, callback);
+            return () => options.baseClock.clearTimer(handle);
+          },
+        })
+      );
+    };
+
+    /** Bring a frame that stays up to date with the current source's settings (see `settingsUpdate`). */
+    const updateSettings = (widgetId: NodeId): void => {
+      const frame = frames.get(widgetId);
+      const before = handed.get(widgetId);
+      const placement = source.doc.widgets[widgetId];
+      const meta = source.frames[widgetId];
+      if (frame === undefined || before === undefined || placement === undefined || meta === undefined) {
+        return;
+      }
+      // While a frame is being swapped in, nothing is known about it yet.
+      const reads = swaps.has(widgetId) ? null : frame.settingsReads();
+      const decision = settingsUpdate(before, placement.settings, reads);
+      if (decision === "none") {
+        return;
+      }
+      if (decision === "patch") {
+        handed.set(widgetId, placement.settings);
+        frame.sendSettings(placement.settings, meta.mediaUrls);
+        return;
+      }
+      swapIn(widgetId);
+    };
+
     run = {
       clock,
       renderer: renderer as DomRenderer<unknown>,
@@ -342,6 +462,23 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
       started: false,
       measuring: true,
       finished: false,
+      update: (next) => {
+        const plan = planSceneUpdate(placementsOf(source), placementsOf(next));
+        const before = source;
+        source = next;
+        options.fitStage(canvasOf(next.doc));
+        // Moves, mounts and unmounts; a widget whose canonical widget changed
+        // is mounted again, from the new source.
+        scheduler.setDocument(next.doc, next.frames);
+        for (const placement of plan.replace) {
+          if (before.doc.widgets[placement.id]?.widget === placement.widgetCanonicalId) {
+            swapIn(placement.id);
+          }
+        }
+        for (const placement of plan.place) {
+          updateSettings(placement.id);
+        }
+      },
     };
     playback = run;
     if (transient !== undefined) {
@@ -582,4 +719,39 @@ function bindProblems(report: {
       (path): PreviewProblem => ({ kind: "bind", detail: `malformed input reference at ${path.join(".")}` })
     ),
   ];
+}
+
+/** Whether a run playing `previous` can take `next` in place (see the header). */
+function updatesInPlace(previous: Loaded, next: Loaded): boolean {
+  return previous.profile === next.profile && JSON.stringify(previous.event) === JSON.stringify(next.event);
+}
+
+function canvasOf(doc: CompositionDocument): { width: number; height: number } {
+  return { width: doc.layout.width as number, height: doc.layout.height as number };
+}
+
+/**
+ * A loaded composition's framed widgets as the update plan reads placements.
+ * The frame URL names the widget's module, version and theme, so the module
+ * id is left out; no widget in a composition draws an alert area.
+ */
+function placementsOf(loaded: Loaded): WidgetPlacementConfig[] {
+  return Object.entries(loaded.doc.widgets).flatMap(([id, placement]) => {
+    const meta = loaded.frames[id];
+    if (meta === undefined) {
+      return [];
+    }
+    return [
+      {
+        id,
+        widgetCanonicalId: placement.widget,
+        moduleId: "",
+        position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+        settings: placement.settings,
+        hostsSurface: "",
+        frameUrl: meta.frameUrl,
+        behaviorKinds: meta.behaviorKinds,
+      },
+    ];
+  });
 }

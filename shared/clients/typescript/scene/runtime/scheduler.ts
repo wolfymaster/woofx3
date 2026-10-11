@@ -69,6 +69,16 @@ export interface SchedulerOptions<THandle = unknown> {
   estimate?: TimelineEstimates;
   /** A bounded composition (an alert) has played out: every widget has exited. */
   onFinished?(): void;
+  /**
+   * Where `setDocument` puts a change in time. `"now"`, the default: the
+   * change happens as it is made, as on an overlay, so a widget shown or
+   * added enters from then. `"start"`: the new document is the composition
+   * as it has always been, as in an editor's preview, where an edit is not
+   * an event in the composition's time. Each widget starts with the
+   * visibility the document gives it, and what was observed of a widget
+   * whose widget or settings changed is dropped, to be estimated again.
+   */
+  documentChanges?: "now" | "start";
 }
 
 export interface Scheduler {
@@ -142,6 +152,46 @@ export function createScheduler<THandle>(options: SchedulerOptions<THandle>): Sc
     }
     currentVisible.set(id, visible);
     factsOf(id).visibility.push({ atMs, visible });
+  }
+
+  /** The visibility and facts `next` starts from when a change happens now (see `documentChanges`). */
+  function replaceFromNow(next: CompositionDocument): void {
+    const now = clock.now();
+    for (const id of Object.keys(doc.widgets)) {
+      if (!Object.hasOwn(next.widgets, id)) {
+        observed.delete(id);
+        initialVisible.delete(id);
+        currentVisible.delete(id);
+      }
+    }
+    for (const [id, placement] of Object.entries(next.widgets)) {
+      if (!initialVisible.has(id)) {
+        // Starts hidden and is shown now, so it enters now rather than at
+        // the composition's start, which has long passed.
+        initialVisible.set(id, false);
+        currentVisible.set(id, false);
+      }
+      recordVisibility(id, placement.visible, now);
+    }
+  }
+
+  /** The visibility and facts `next` starts from when it is the composition from its start. */
+  function replaceFromStart(next: CompositionDocument): void {
+    for (const [id, before] of Object.entries(doc.widgets)) {
+      const after = next.widgets[id];
+      const facts = observed.get(id);
+      if (after === undefined || after.widget !== before.widget || !sameJson(after.settings, before.settings)) {
+        observed.delete(id);
+      } else if (facts !== undefined) {
+        facts.visibility = [];
+      }
+    }
+    initialVisible.clear();
+    currentVisible.clear();
+    for (const [id, placement] of Object.entries(next.widgets)) {
+      initialVisible.set(id, placement.visible);
+      currentVisible.set(id, placement.visible);
+    }
   }
 
   function resolverDocument(): CompositionDocument {
@@ -282,22 +332,10 @@ export function createScheduler<THandle>(options: SchedulerOptions<THandle>): Sc
       if (disposed) {
         throw new Error("runtime: setDocument after the scheduler was disposed");
       }
-      const now = clock.now();
-      for (const id of Object.keys(doc.widgets)) {
-        if (!Object.hasOwn(next.widgets, id)) {
-          observed.delete(id);
-          initialVisible.delete(id);
-          currentVisible.delete(id);
-        }
-      }
-      for (const [id, placement] of Object.entries(next.widgets)) {
-        if (!initialVisible.has(id)) {
-          // Starts hidden and is shown now, so it enters now rather than at
-          // the composition's start, which has long passed.
-          initialVisible.set(id, false);
-          currentVisible.set(id, false);
-        }
-        recordVisibility(id, placement.visible, now);
+      if (options.documentChanges === "start") {
+        replaceFromStart(next);
+      } else {
+        replaceFromNow(next);
       }
       doc = next;
       if (nextMeta !== undefined) {
@@ -348,4 +386,13 @@ export function createScheduler<THandle>(options: SchedulerOptions<THandle>): Sc
       }
     },
   };
+}
+
+/**
+ * Equality for values a document holds, which are JSON. Key order counts, so
+ * the same value written in another order compares unequal; that only drops
+ * facts, which are estimated again.
+ */
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }

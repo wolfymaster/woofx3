@@ -57,29 +57,14 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 		workflowID = &parsed
 	}
 
-	// A replay of a composition alert carries what the original played; all
-	// three fields, or none.
-	composed := req.CompositionId != "" || req.CompositionVersion != "" || req.SnapshotJson != ""
-	if composed && (req.CompositionId == "" || req.CompositionVersion == "" || req.SnapshotJson == "") {
-		return nil, twirp.InvalidArgumentError("snapshot_json",
-			"composition_id, composition_version and snapshot_json are set together")
-	}
-	var snapshot *string
-	if composed {
-		snapshot = &req.SnapshotJson
-	}
-
 	alert, err := s.repo.Create(repo.NewAlert{
 		// Generated here rather than by the column default: SQLite has no
 		// uuid_generate_v4().
-		ID:                 uuid.New(),
-		Payload:            req.Payload,
-		WorkflowID:         workflowID,
-		SourceEventID:      req.SourceEventId,
-		EnvelopeID:         req.EnvelopeId,
-		CompositionID:      req.CompositionId,
-		CompositionVersion: req.CompositionVersion,
-		SnapshotJSON:       snapshot,
+		ID:            uuid.New(),
+		Payload:       req.Payload,
+		WorkflowID:    workflowID,
+		SourceEventID: req.SourceEventId,
+		EnvelopeID:    req.EnvelopeId,
 	}, s.recordChange("created"))
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
@@ -203,46 +188,6 @@ func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.Upd
 	return s.transitionResponse(alert, applied), nil
 }
 
-// RecordAlertComposition records on a row which composition its play showed
-// and the bound document it showed. A row that already has one is answered
-// as it stands (see AlertRepository.RecordComposition).
-func (s *alertService) RecordAlertComposition(ctx context.Context, req *client.RecordAlertCompositionRequest) (*client.AlertResponse, error) {
-	id, err := uuid.Parse(req.Id)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
-	}
-	required := map[string]string{
-		"envelope_id":         req.EnvelopeId,
-		"composition_id":      req.CompositionId,
-		"composition_version": req.CompositionVersion,
-		"snapshot_json":       req.SnapshotJson,
-	}
-	for _, field := range []string{"envelope_id", "composition_id", "composition_version", "snapshot_json"} {
-		if required[field] == "" {
-			return nil, twirp.RequiredArgumentError(field)
-		}
-	}
-	alert, applied, err := s.repo.RecordComposition(id, req.EnvelopeId, repo.AlertComposition{
-		CompositionID:      req.CompositionId,
-		CompositionVersion: req.CompositionVersion,
-		SnapshotJSON:       req.SnapshotJson,
-	}, s.recordChange("updated"))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, twirp.NotFoundError("alert not found for envelope")
-		}
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to record alert composition: %w", err))
-	}
-	message := "Alert composition already recorded; the row keeps the first"
-	if applied {
-		message = "Alert composition recorded"
-	}
-	return &client.AlertResponse{
-		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: message},
-		Alert:  s.alertToProto(alert),
-	}, nil
-}
-
 // UpdateAlertStatus marks a row, by id, `replayed`, through the same
 // forward-only transition as UpdateAlertLifecycle; a second replay of one row
 // is refused. Replay is its only use: verdicts carry an error and are reported
@@ -324,12 +269,6 @@ func (s *alertService) alertToProto(m *models.Alert) *client.Alert {
 		Version:       m.Version,
 		CreatedAt:     timestamppb.New(m.CreatedAt),
 		UpdatedAt:     timestamppb.New(m.UpdatedAt),
-
-		CompositionId:      m.CompositionID,
-		CompositionVersion: m.CompositionVersion,
-	}
-	if m.SnapshotJSON != nil {
-		out.SnapshotJson = *m.SnapshotJSON
 	}
 	if m.DispatchedAt != nil {
 		out.DispatchedAt = timestamppb.New(*m.DispatchedAt)
@@ -385,12 +324,8 @@ func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 		"status":          alert.Status,
 		"error":           alert.Error,
 		"version":         alert.Version,
-		// The snapshot itself is left out: it can be large, and GetAlert
-		// serves it to whoever needs it.
-		"composition_id":      alert.CompositionID,
-		"composition_version": alert.CompositionVersion,
-		"created_at":          formatAlertTimestamp(alert.CreatedAt),
-		"updated_at":          formatAlertTimestamp(alert.UpdatedAt),
+		"created_at":      formatAlertTimestamp(alert.CreatedAt),
+		"updated_at":      formatAlertTimestamp(alert.UpdatedAt),
 	}
 	if alert.DispatchedAt != nil {
 		out["dispatched_at"] = formatAlertTimestamp(*alert.DispatchedAt)

@@ -297,7 +297,7 @@ func (s *overlayTokenService) validateSceneExists(sceneID uuid.UUID) error {
 		return twirp.NotFoundError("scene not found")
 	}
 	// A token is a browser-source URL, and an alert is never an overlay
-	// page: steps play it inside a scene.
+	// page: what plays is a copy in a step, inside a scene.
 	if scene.Kind != models.SceneKindScene {
 		return twirp.InvalidArgumentError("scene_id", "is an alert, which has no overlay page")
 	}

@@ -190,7 +190,6 @@ export const RPC_METHODS = [
   "createAlertComposition",
   "updateAlertComposition",
   "deleteAlertComposition",
-  "listCompositionLinks",
   "getCompositionPreviewUrl",
   "getStreamStatus",
   "listStreamSessions",

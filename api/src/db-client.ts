@@ -419,19 +419,6 @@ export class DbClient {
     }
   }
 
-  /** The steps that play a composition, ordered by owner kind, owner id and step id. */
-  async listCompositionLinks(req: scene.ListCompositionLinksRequest): Promise<scene.CompositionLink[]> {
-    const response = await scene.ListCompositionLinks(req, this.config);
-    unwrapVoid("listCompositionLinks", response);
-    return response.links ?? [];
-  }
-
-  async countCompositionLinks(req: scene.CountCompositionLinksRequest): Promise<number> {
-    const response = await scene.CountCompositionLinks(req, this.config);
-    unwrapVoid("countCompositionLinks", response);
-    return response.count ?? 0;
-  }
-
   /** Delete, reporting whether it happened. Same reasoning as tryUpdateScene. */
   async tryDeleteScene(req: scene.DeleteSceneRequest): Promise<boolean> {
     const status = await scene.DeleteScene(req, this.config);

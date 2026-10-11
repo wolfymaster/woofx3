@@ -19,12 +19,10 @@ import (
 )
 
 type workflowService struct {
-	workflowRepo *repo.WorkflowRepository
-	// Executions are read and written directly; definitions are written
-	// in a transaction on it, together with their composition links.
-	db        *gorm.DB
-	publisher *workers.EventPublisher
-	refRepo   *repo.ResourceReferenceRepository
+	workflowRepo  *repo.WorkflowRepository
+	executionRepo *gorm.DB // We'll use direct DB access for executions for now
+	publisher     *workers.EventPublisher
+	refRepo       *repo.ResourceReferenceRepository
 }
 
 func NewWorkflowService(
@@ -33,16 +31,16 @@ func NewWorkflowService(
 	publisher *workers.EventPublisher,
 	refRepo *repo.ResourceReferenceRepository,
 ) client.WorkflowService {
-	dbConn, ok := db.(*gorm.DB)
-	if !ok || dbConn == nil {
-		panic("workflow service: a database connection is required")
+	var dbConn *gorm.DB
+	if gormDB, ok := db.(*gorm.DB); ok {
+		dbConn = gormDB
 	}
 
 	return &workflowService{
-		workflowRepo: workflowRepo,
-		db:           dbConn,
-		publisher:    publisher,
-		refRepo:      refRepo,
+		workflowRepo:  workflowRepo,
+		executionRepo: dbConn,
+		publisher:     publisher,
+		refRepo:       refRepo,
 	}
 }
 
@@ -121,23 +119,13 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// updates the existing workflow in place instead of duplicating it.
 	// USER-authored workflows always insert — ManifestID is empty and
 	// isn't covered by that unique index.
-	links, err := compositionLinksOf(wf.Steps)
-	if err != nil {
-		return nil, saveError("steps_json", "create workflow", err)
+	if moduleOwned {
+		err = s.workflowRepo.Upsert(wf)
+	} else {
+		err = s.workflowRepo.Create(wf)
 	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		workflows := repo.NewWorkflowRepository(tx)
-		if moduleOwned {
-			if err := workflows.Upsert(wf); err != nil {
-				return err
-			}
-		} else if err := workflows.Create(wf); err != nil {
-			return err
-		}
-		return replaceOwnerCompositionLinks(tx, models.CompositionLinkOwnerWorkflow, wf.ID.String(), links, time.Now().UTC())
-	})
 	if err != nil {
-		return nil, saveError("steps_json", "create workflow", err)
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create workflow: %w", err))
 	}
 
 	s.syncWorkflowEdges(wf, wf.CreatedByType, wf.CreatedByRef)
@@ -212,18 +200,9 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		wf.Enabled = *req.Enabled
 	}
 
-	links, err := compositionLinksOf(wf.Steps)
+	err = s.workflowRepo.Update(wf)
 	if err != nil {
-		return nil, saveError("steps_json", "update workflow", err)
-	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := repo.NewWorkflowRepository(tx).Update(wf); err != nil {
-			return err
-		}
-		return replaceOwnerCompositionLinks(tx, models.CompositionLinkOwnerWorkflow, wf.ID.String(), links, time.Now().UTC())
-	})
-	if err != nil {
-		return nil, saveError("steps_json", "update workflow", err)
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow: %w", err))
 	}
 
 	// UpdateWorkflow does not re-carry created_by metadata in the request;
@@ -264,12 +243,7 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 
 	workflowID := wf.ID.String()
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := repo.NewWorkflowRepository(tx).Delete(wf); err != nil {
-			return err
-		}
-		return replaceOwnerCompositionLinks(tx, models.CompositionLinkOwnerWorkflow, workflowID, nil, time.Now().UTC())
-	})
+	err = s.workflowRepo.Delete(wf)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete workflow: %w", err))
 	}
@@ -375,7 +349,7 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 		Output:     "{}",
 	}
 
-	err = exec.Create(s.db)
+	err = exec.Create(s.executionRepo)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create execution: %w", err))
 	}
@@ -406,7 +380,7 @@ func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *client.
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
 
-	exec, err := models.GetWorkflowExecutionByID(s.db, id)
+	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
 	if err != nil {
 		return nil, twirp.NotFoundError("workflow execution not found")
 	}
@@ -422,7 +396,7 @@ func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *client.
 
 func (s *workflowService) ListWorkflowExecutions(ctx context.Context, req *client.ListWorkflowExecutionsRequest) (*client.ListWorkflowExecutionsResponse, error) {
 	// TODO: Implement filtering logic based on request parameters
-	executions, err := models.GetRecentWorkflowExecutions(s.db, int(req.PageSize))
+	executions, err := models.GetRecentWorkflowExecutions(s.executionRepo, int(req.PageSize))
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list executions: %w", err))
 	}
@@ -450,12 +424,12 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
 
-	exec, err := models.GetWorkflowExecutionByID(s.db, id)
+	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
 	if err != nil {
 		return nil, twirp.NotFoundError("workflow execution not found")
 	}
 
-	err = exec.MarkAsCancelled(s.db)
+	err = exec.MarkAsCancelled(s.executionRepo)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to cancel execution: %w", err))
 	}
@@ -511,7 +485,7 @@ func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.Rec
 		DryRun:       req.DryRun,
 		StartedAt:    &startedAt,
 	}
-	if err := exec.Create(s.db); err != nil {
+	if err := exec.Create(s.executionRepo); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to record workflow run: %w", err))
 	}
 
@@ -564,14 +538,14 @@ func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *clie
 	}
 	updates["updated_at"] = time.Now()
 
-	result := s.db.Model(&models.WorkflowExecution{}).
+	result := s.executionRepo.Model(&models.WorkflowExecution{}).
 		Where("id = ? AND status NOT IN ?", id, models.TerminalWorkflowStatuses()).
 		Updates(updates)
 	if result.Error != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow run: %w", result.Error))
 	}
 
-	exec, err := models.GetWorkflowExecutionByID(s.db, id)
+	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
 	if err != nil {
 		return nil, twirp.NotFoundError("workflow execution not found")
 	}
@@ -644,7 +618,7 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 		step.CompletedAt = &completedAt
 	}
 
-	if err := models.UpsertWorkflowExecutionStep(s.db, step); err != nil {
+	if err := models.UpsertWorkflowExecutionStep(s.executionRepo, step); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to record workflow run step: %w", err))
 	}
 
@@ -767,7 +741,7 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *clie
 // is what the caller asked for, and a timeline missing its detail is more
 // useful than an error page.
 func (s *workflowService) executionSteps(executionID uuid.UUID) []*client.ExecutionStep {
-	steps, err := models.GetWorkflowExecutionSteps(s.db, executionID)
+	steps, err := models.GetWorkflowExecutionSteps(s.executionRepo, executionID)
 	if err != nil {
 		log.Printf("workflow run steps unavailable for %s: %v", executionID, err)
 		return []*client.ExecutionStep{}

@@ -43,7 +43,8 @@ pub struct Scene {
     #[prost(string, tag="14")]
     pub editor_state_json: ::prost::alloc::string::String,
     /// "scene" or "alert", fixed at creation. A scene is shown by overlays;
-    /// an alert is a composition steps play, never an overlay page.
+    /// an alert is a library entry an alert step's layout is copied from,
+    /// never an overlay page.
     #[prost(string, tag="15")]
     pub kind: ::prost::alloc::string::String,
     /// The published document's behaviors, a JSON object keyed by behavior
@@ -155,9 +156,6 @@ pub struct UpdateSceneRequest {
     #[prost(string, tag="13")]
     pub inputs_json: ::prost::alloc::string::String,
 }
-/// An alert that composition links still point at is not deleted: the
-/// request fails with `failed_precondition`, its message naming the linking
-/// steps.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteSceneRequest {
     #[prost(string, tag="1")]
@@ -191,52 +189,6 @@ pub struct ListScenesResponse {
     pub page: i32,
     #[prost(int32, tag="5")]
     pub page_size: i32,
-}
-/// One step that plays a composition.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CompositionLink {
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub composition_id: ::prost::alloc::string::String,
-    /// "workflow" or "command".
-    #[prost(string, tag="3")]
-    pub owner_kind: ::prost::alloc::string::String,
-    /// The workflow's or command's id.
-    #[prost(string, tag="4")]
-    pub owner_id: ::prost::alloc::string::String,
-    /// The step within the owner's definition.
-    #[prost(string, tag="5")]
-    pub step_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="6")]
-    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
-    #[prost(message, optional, tag="7")]
-    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListCompositionLinksRequest {
-    #[prost(string, tag="1")]
-    pub composition_id: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CompositionLinksResponse {
-    #[prost(message, optional, tag="1")]
-    pub status: ::core::option::Option<super::common::ResponseStatus>,
-    /// Ordered by owner kind, owner id, then step id.
-    #[prost(message, repeated, tag="2")]
-    pub links: ::prost::alloc::vec::Vec<CompositionLink>,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CountCompositionLinksRequest {
-    #[prost(string, tag="1")]
-    pub composition_id: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CountCompositionLinksResponse {
-    #[prost(message, optional, tag="1")]
-    pub status: ::core::option::Option<super::common::ResponseStatus>,
-    #[prost(int32, tag="2")]
-    pub count: i32,
 }
 include!("scene.serde.rs");
 include!("scene.tonic.rs");

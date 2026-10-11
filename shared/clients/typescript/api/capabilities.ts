@@ -85,9 +85,10 @@ export const ENGINE_CAPABILITIES = {
   /**
    * Alert compositions stored in the engine: `listAlertCompositions`,
    * `getAlertComposition`, `createAlertComposition`,
-   * `updateAlertComposition`, `deleteAlertComposition` (refused while steps
-   * link it), `listCompositionLinks`, editing one with
+   * `updateAlertComposition`, `deleteAlertComposition`, editing one with
    * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
+   * An alert step never plays one by id: a client copies it into the step's
+   * own layout.
    */
   compositionsAlerts: "compositions.alerts",
   /**
@@ -96,15 +97,6 @@ export const ENGINE_CAPABILITIES = {
    * `@woofx3/scene/runtime` (`preview-protocol.ts`).
    */
   compositionsPreview: "compositions.preview",
-  /**
-   * An `alert` workflow or command step may play a stored alert composition
-   * (`parameters.composition`, its id) with values for its inputs
-   * (`parameters.inputs`) in place of an inline `layout`. Saving a step that
-   * names a composition that is not a stored alert is refused; the latest
-   * published version plays, inputs bound, and a replay plays what the
-   * original showed.
-   */
-  alertsCompositions: "alerts.compositions",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

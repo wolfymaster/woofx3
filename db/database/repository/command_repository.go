@@ -16,13 +16,6 @@ func NewCommandRepository(db *gorm.DB) *CommandRepository {
 	return &CommandRepository{db: db}
 }
 
-// Transaction runs fn in one transaction on the repository's database, for a
-// command write that has to commit together with rows of other tables (its
-// composition links). Build repositories on `tx` inside it.
-func (r *CommandRepository) Transaction(fn func(tx *gorm.DB) error) error {
-	return r.db.Transaction(fn)
-}
-
 // Create creates a new Command
 func (r *CommandRepository) Create(cmd *models.Command) error {
 	return r.db.Create(cmd).Error

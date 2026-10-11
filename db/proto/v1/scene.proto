@@ -27,14 +27,6 @@ service SceneService {
     rpc UpdateScene(UpdateSceneRequest) returns (SceneResponse);
     rpc DeleteScene(DeleteSceneRequest) returns (common.ResponseStatus);
     rpc ListScenes(ListScenesRequest) returns (ListScenesResponse);
-
-    // Composition links: which workflow or chat command steps play which
-    // alert. They are derived from the definitions: saving a workflow or a
-    // command replaces its links in the same transaction (see the workflow
-    // and command services), so there is no RPC to write them. Deleting an
-    // alert that still has links is refused (see `DeleteScene`).
-    rpc ListCompositionLinks(ListCompositionLinksRequest) returns (CompositionLinksResponse);
-    rpc CountCompositionLinks(CountCompositionLinksRequest) returns (CountCompositionLinksResponse);
 }
 
 message Scene {
@@ -68,7 +60,8 @@ message Scene {
     // editor and opaque here. Empty when no editor has synced the scene.
     string editor_state_json = 14;
     // "scene" or "alert", fixed at creation. A scene is shown by overlays;
-    // an alert is a composition steps play, never an overlay page.
+    // an alert is a library entry an alert step's layout is copied from,
+    // never an overlay page.
     string kind = 15;
     // The published document's behaviors, a JSON object keyed by behavior
     // id; `{}` when it has none.
@@ -154,9 +147,6 @@ message UpdateSceneRequest {
     string inputs_json = 13;
 }
 
-// An alert that composition links still point at is not deleted: the
-// request fails with `failed_precondition`, its message naming the linking
-// steps.
 message DeleteSceneRequest {
     string id = 1;
 }
@@ -179,37 +169,4 @@ message ListScenesResponse {
     int32 total_count = 3;
     int32 page = 4;
     int32 page_size = 5;
-}
-
-// One step that plays a composition.
-message CompositionLink {
-    string id = 1;
-    string composition_id = 2;
-    // "workflow" or "command".
-    string owner_kind = 3;
-    // The workflow's or command's id.
-    string owner_id = 4;
-    // The step within the owner's definition.
-    string step_id = 5;
-    google.protobuf.Timestamp created_at = 6;
-    google.protobuf.Timestamp updated_at = 7;
-}
-
-message ListCompositionLinksRequest {
-    string composition_id = 1;
-}
-
-message CompositionLinksResponse {
-    common.ResponseStatus status = 1;
-    // Ordered by owner kind, owner id, then step id.
-    repeated CompositionLink links = 2;
-}
-
-message CountCompositionLinksRequest {
-    string composition_id = 1;
-}
-
-message CountCompositionLinksResponse {
-    common.ResponseStatus status = 1;
-    int32 count = 2;
 }

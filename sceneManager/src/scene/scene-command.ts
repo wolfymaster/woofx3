@@ -60,10 +60,10 @@ export function parseSceneControlCommand(data: unknown): ParsedSceneCommand {
 /**
  * Carry out a command on a scene's published version.
  *
- * Only a scene is changed. An alert composition is not running anywhere: it
- * is played, bound afresh, each time a step plays it, so showing or hiding
- * one of its widgets would edit what every later alert shows, which is the
- * editor's job and not a workflow step's.
+ * Only a scene is changed. An alert composition is a library entry, not
+ * running anywhere: showing or hiding one of its widgets would edit what
+ * every later copy of it starts from, which is the editor's job and not a
+ * workflow step's.
  */
 export async function executeSceneControlCommand(
   deps: SceneCommandDeps,

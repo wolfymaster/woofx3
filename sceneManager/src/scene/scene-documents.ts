@@ -184,18 +184,6 @@ export interface PublishedComposition {
   name: string;
   kind: CompositionKind;
   doc: SceneDocument;
-  /** Names this exact document: equal documents have equal versions. See `documentVersion`. */
-  version: string;
-}
-
-/**
- * A version string for one document that does not depend on key order: the
- * same document always gets the same one, across restarts, and a change to
- * it gets another. An alert's log row records it, to say which published
- * version of a composition played.
- */
-export function documentVersion(doc: SceneDocument): string {
-  return Bun.hash(canonicalJson(doc)).toString(36);
 }
 
 /**
@@ -478,8 +466,7 @@ export class SceneDocuments {
   /**
    * A composition's published document and its kind, loading it when it is
    * not held; null when there is no such row. The document is the one
-   * overlays and editors have, with live edits not yet written back, so an
-   * alert played the moment it is published plays what was published.
+   * overlays and editors have, with live edits not yet written back.
    */
   async published(sceneId: string): Promise<PublishedComposition | null> {
     await this.queues.get(sceneId);
@@ -487,8 +474,7 @@ export class SceneDocuments {
     if (!held) {
       return null;
     }
-    const doc = structuredClone(held.state.docs.published);
-    return { sceneId, name: held.name, kind: held.kind, doc, version: documentVersion(doc) };
+    return { sceneId, name: held.name, kind: held.kind, doc: structuredClone(held.state.docs.published) };
   }
 
   /** The number a version's overlays should be at; 0 when the scene is not held. */

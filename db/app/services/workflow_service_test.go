@@ -17,12 +17,6 @@ import (
 // to.
 func newWorkflowTestService(t *testing.T) client.WorkflowService {
 	t.Helper()
-	svc, _ := newWorkflowTestServiceWithDB(t)
-	return svc
-}
-
-func newWorkflowTestServiceWithDB(t *testing.T) (client.WorkflowService, *gorm.DB) {
-	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -50,13 +44,12 @@ func newWorkflowTestServiceWithDB(t *testing.T) (client.WorkflowService, *gorm.D
 			ON workflow_definitions (created_by_type, created_by_ref, manifest_id)
 			WHERE manifest_id <> ''`,
 	}
-	stmts = append(stmts, compositionTablesDDL...)
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("schema: %v", err)
 		}
 	}
-	return NewWorkflowService(repo.NewWorkflowRepository(db), db, nil, nil), db
+	return NewWorkflowService(repo.NewWorkflowRepository(db), db, nil, nil)
 }
 
 func createWorkflow(t *testing.T, svc client.WorkflowService, req *client.CreateWorkflowRequest) *client.Workflow {

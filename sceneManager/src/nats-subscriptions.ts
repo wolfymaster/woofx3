@@ -9,7 +9,6 @@ import { SCENE_EDITOR_TOKEN_SUBJECT, type SceneEditorTokenReply } from "@woofx3/
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { DbClient } from "./db";
-import type { CompositionSource } from "./events/alert-composition";
 import {
   ALERT_CLEAR_SUBJECT,
   ALERT_REPLAY_SUBJECT,
@@ -65,10 +64,9 @@ interface SceneUpdatedEnvelope {
   data?: { id?: unknown };
 }
 
-/** The slice of `SceneDocuments` saves, scene commands and alert compositions are handed to. */
+/** The slice of `SceneDocuments` saves and scene commands are handed to. */
 interface SavedScenes extends SceneCommandDeps {
   refresh(sceneId: string): Promise<void>;
-  published: CompositionSource["published"];
 }
 
 /**
@@ -159,7 +157,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
       return;
     }
-    await dispatchAlert(raw, { db, host, compositions: sceneDocuments, deliveryStore, logger });
+    await dispatchAlert(raw, { db, host, deliveryStore, logger });
   });
   logger.info("Subscribed to ui.notify.alert");
 
@@ -193,7 +191,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
     });
 
-  const replays = new AlertReplays({ db, host, compositions: sceneDocuments, deliveryStore, logger });
+  const replays = new AlertReplays({ db, host, deliveryStore, logger });
   await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, host, deliveryStore, logger }));
   await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, host, deliveryStore, logger }));
   await answer(ALERT_REPLAY_SUBJECT, (body) => replays.replay(typeof body.id === "string" ? body.id : ""));

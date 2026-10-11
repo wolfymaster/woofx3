@@ -66,7 +66,6 @@ func newTestDB(t *testing.T) *gorm.DB {
 			PRIMARY KEY (command_id, username)
 		)`,
 	}
-	stmts = append(stmts, compositionTablesDDL...)
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {
 			t.Fatalf("exec ddl: %v", err)

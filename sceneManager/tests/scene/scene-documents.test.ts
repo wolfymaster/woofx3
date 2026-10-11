@@ -826,18 +826,15 @@ describe("documentOf + storedSceneOf", () => {
 });
 
 describe("SceneDocuments.published", () => {
-  it("gives the published document of an alert with its kind and a version that follows its content", async () => {
+  it("gives the published document of an alert with its kind, live edits included", async () => {
     const alert = { ...sceneRow("al1", [storedPlacement("a")], { width: 800, height: 200 }), kind: "alert" as const };
     const { documents } = setup([alert]);
 
     const first = await documents.published("al1");
     expect(first).toMatchObject({ sceneId: "al1", kind: "alert", doc: { layout: { width: 800, height: 200 } } });
-    expect((await documents.published("al1"))!.version).toBe(first!.version);
 
     await documents.applyChange("al1", "published", () => [{ p: ["widgets", "a", "x"], od: 0, oi: 5 }]);
-    const moved = await documents.published("al1");
-    expect(moved!.doc.widgets.a!.x).toBe(5);
-    expect(moved!.version).not.toBe(first!.version);
+    expect((await documents.published("al1"))!.doc.widgets.a!.x).toBe(5);
     expect(await documents.published("missing")).toBeNull();
   });
 });

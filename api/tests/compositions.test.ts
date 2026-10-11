@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AlertComposition, CompositionLinkInfo, DeleteAlertCompositionResult, Scene } from "@woofx3/api";
+import type { AlertComposition, Scene } from "@woofx3/api";
 import type * as scene from "@woofx3/db/scene.pb";
-import { DbError } from "../src/db-client";
 import { compositionsRoutes } from "../src/routes/compositions";
 import { scenesRoutes } from "../src/routes/scenes";
 
@@ -30,18 +29,8 @@ function row(id: string, kind: string, overrides: Partial<scene.Scene> = {}): sc
   } as scene.Scene;
 }
 
-function link(stepId: string): scene.CompositionLink {
-  return {
-    id: `l-${stepId}`,
-    compositionId: "alert-1",
-    ownerKind: "workflow",
-    ownerId: "wf-1",
-    stepId,
-  } as scene.CompositionLink;
-}
-
 /** The slice of DbClient the scene and composition routes use, over a map of rows. */
-function fakeDb(rows: scene.Scene[], links: scene.CompositionLink[] = []) {
+function fakeDb(rows: scene.Scene[]) {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const calls = {
     created: [] as scene.CreateSceneRequest[],
@@ -71,13 +60,7 @@ function fakeDb(rows: scene.Scene[], links: scene.CompositionLink[] = []) {
       return true;
     },
     async deleteScene(req: scene.DeleteSceneRequest) {
-      if (links.length > 0) {
-        throw new DbError("deleteScene", "failed_precondition", "linked");
-      }
       calls.deleted.push(req.id);
-    },
-    async listCompositionLinks() {
-      return links;
     },
   };
 }
@@ -125,10 +108,7 @@ describe("alert compositions", () => {
     expect(await route(compositionsRoutes, "updateAlertComposition", db)("scene-1", { name: "x" })).toEqual({
       success: false,
     });
-    expect(await route(compositionsRoutes, "deleteAlertComposition", db)("scene-1")).toEqual({
-      success: false,
-      links: [],
-    });
+    expect(await route(compositionsRoutes, "deleteAlertComposition", db)("scene-1")).toEqual({ success: false });
     expect(db.calls.updated).toEqual([]);
     expect(db.calls.deleted).toEqual([]);
   });
@@ -149,19 +129,9 @@ describe("alert compositions", () => {
     ]);
   });
 
-  test("are not deleted while steps play them, and the answer names the steps", async () => {
-    const db = fakeDb(rows, [link("s1"), link("s2")]);
-    const result = await route<DeleteAlertCompositionResult>(
-      compositionsRoutes,
-      "deleteAlertComposition",
-      db
-    )("alert-1");
-    expect(result.success).toBe(false);
-    expect(result.success === false && result.links.map((l: CompositionLinkInfo) => l.stepId)).toEqual(["s1", "s2"]);
-    expect(db.calls.deleted).toEqual([]);
-
-    const free = fakeDb(rows);
-    expect(await route(compositionsRoutes, "deleteAlertComposition", free)("alert-1")).toEqual({ success: true });
-    expect(free.calls.deleted).toEqual(["alert-1"]);
+  test("are deleted", async () => {
+    const db = fakeDb(rows);
+    expect(await route(compositionsRoutes, "deleteAlertComposition", db)("alert-1")).toEqual({ success: true });
+    expect(db.calls.deleted).toEqual(["alert-1"]);
   });
 });

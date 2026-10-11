@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -36,31 +35,21 @@ type sceneService struct {
 	overlayTokenRepo *repo.OverlayTokenRepository
 	// Records the themes a scene's widgets select, which is what keeps an
 	// on-screen theme from being uninstalled. Optional, as for workflows.
-	refRepo *repo.ResourceReferenceRepository
-	// Which steps play which alert: consulted before deleting an alert, and
-	// replaced by the owners that hold them.
-	linkRepo  *repo.CompositionLinkRepository
+	refRepo   *repo.ResourceReferenceRepository
 	publisher *workers.EventPublisher
-	now       func() time.Time
 }
 
 func NewSceneService(
 	sceneRepo *repo.SceneRepository,
 	overlayTokenRepo *repo.OverlayTokenRepository,
 	refRepo *repo.ResourceReferenceRepository,
-	linkRepo *repo.CompositionLinkRepository,
 	publisher *workers.EventPublisher,
 ) client.SceneService {
-	if sceneRepo == nil || linkRepo == nil {
-		panic("scene service: scene and composition link repositories are required")
-	}
 	return &sceneService{
 		repo:             sceneRepo,
 		overlayTokenRepo: overlayTokenRepo,
 		refRepo:          refRepo,
-		linkRepo:         linkRepo,
 		publisher:        publisher,
-		now:              time.Now,
 	}
 }
 
@@ -356,17 +345,6 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 	scene, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, twirp.NotFoundError("scene not found")
-	}
-
-	// Steps play an alert by id, so deleting a linked one would leave them
-	// playing nothing. The foreign key refuses it too; checking here names
-	// the steps.
-	links, err := s.linkRepo.ListForComposition(scene.ID)
-	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to read composition links: %w", err))
-	}
-	if len(links) > 0 {
-		return nil, linkedCompositionError(links)
 	}
 
 	// Revoke first. A token that outlives its scene still resolves -- the

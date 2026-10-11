@@ -49,10 +49,6 @@ func (s *stubAlertService) UpdateAlertLifecycle(context.Context, *dbv1.UpdateAle
 	return nil, fmt.Errorf("not exercised")
 }
 
-func (s *stubAlertService) RecordAlertComposition(context.Context, *dbv1.RecordAlertCompositionRequest) (*dbv1.AlertResponse, error) {
-	return nil, fmt.Errorf("not exercised")
-}
-
 func (s *stubAlertService) DeleteAlert(context.Context, *dbv1.DeleteAlertRequest) (*dbv1.ResponseStatus, error) {
 	return nil, fmt.Errorf("not exercised")
 }

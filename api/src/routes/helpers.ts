@@ -3,7 +3,6 @@ import type {
   AlertComposition,
   CommandSnapshot,
   CompositionKind,
-  CompositionLinkInfo,
   Scene,
   WorkflowDefinition,
 } from "@woofx3/api";
@@ -119,19 +118,6 @@ export function dbSceneToAlertComposition(s: scene.Scene): AlertComposition {
     hasDraft: s.hasDraft,
     createdByType: s.createdByType || "USER",
     createdByRef: s.createdByRef,
-  };
-}
-
-export function dbCompositionLinkToWire(link: scene.CompositionLink): CompositionLinkInfo {
-  if (link.ownerKind !== "workflow" && link.ownerKind !== "command") {
-    throw new Error(`unknown composition link owner kind ${JSON.stringify(link.ownerKind)}`);
-  }
-  return {
-    ownerKind: link.ownerKind,
-    ownerId: link.ownerId,
-    stepId: link.stepId,
-    createdAt: timestampToIso(link.createdAt),
-    updatedAt: timestampToIso(link.updatedAt),
   };
 }
 

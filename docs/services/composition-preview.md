@@ -53,7 +53,7 @@ From the editor to the page:
 
 | Type (`woofx3.composition-preview.…`) | Fields | Effect |
 | --- | --- | --- |
-| `load` | `loadId`, `profile` (`"alert"` or `"scene"`), `document`, `event?` (`{ type, data }`), `inputs?`, `autoplay?` | Bind `inputs` into the document (`bindInputs`, a missing input takes its default), frame its widgets, and mount them held at 0 ms. An alert may also be posted in the list shape a step stores inline. Entries the tolerant registry refuses are dropped and reported. A later load replaces this one, even while this one is still being framed. |
+| `load` | `loadId`, `profile` (`"alert"` or `"scene"`), `document`, `event?` (`{ type, data }`), `inputs?`, `autoplay?` | Bind `inputs` into the document (`bindInputs`, a missing input takes its default), frame its widgets, and mount them held at 0 ms, or update what is playing in place (see below). An alert may also be posted in the list shape a step stores inline. Entries the tolerant registry refuses are dropped and reported. A later load replaces this one, even while this one is still being framed. |
 | `overrides` | `overrides` (by widget id: `x`, `y`, `width`, `height`, `rotation`, `opacity`, `z`), or `null` | Lay gesture state over the document without remounting anything; kept across `restart`. |
 | `play`, `pause` | | Run or hold the playhead. `play` at the finish starts over. |
 | `seek` | `ms` | Move the playhead, playing or paused as before. |
@@ -121,23 +121,36 @@ What does not:
 What frames report (subscribed, painted, completed) replaces the estimates only
 during a run uninterrupted from the start: a video's real length, a frame slow
 to paint. After the first pause or seek the clock no longer runs in step with
-the frames' own time, so their reports are ignored until the next `load` or
-`restart`.
+the frames' own time, so their reports are ignored until `restart`, or a `load`
+that mounts everything afresh.
 
-A `load` remounts every frame. The editor posts one when the document changes
-(debounced), and uses `overrides` for gestures in progress.
+The editor posts a `load` when the document changes (debounced), and uses
+`overrides` for gestures in progress. A load for the same profile and sample
+event updates the run in place, the way an overlay takes a saved change: what
+is on screen stays, overrides included, while the new document is bound and
+framed; then the scheduler takes it (placements moved, added and removed,
+behaviors planned again), and the overlay's update plan (`planSceneUpdate` and
+`settingsUpdate` in `scene-update.ts`) decides each kept frame's fate. Settings
+the widget's script has not read are patched in; a frame whose script read a
+changed setting, or whose frame document changed, is replaced by a fresh one
+that loads invisibly and shows once it has painted, or after 2 s
+(`frame-swap.ts`, shared with the overlay). The scheduler treats the new
+document as the composition from its start (`documentChanges: "start"`), so an
+added layer plays from 0 ms like the rest. A first load, another profile or
+another sample event mounts every frame afresh.
 
 ## Tests
 
 - `shared/clients/typescript/scene/tests/preview-protocol.test.ts`: both
   parsers, total over hostile input.
-- `shared/clients/typescript/scene/tests/runtime-scheduler.test.ts`: estimates
-  and `resync`.
+- `shared/clients/typescript/scene/tests/runtime-scheduler.test.ts`: estimates,
+  `resync`, and documents changed from the start.
 - `sceneManager/tests/client/preview-clock.test.ts` and
   `composition-preview.test.ts`: the clock, and the page's logic on a fake
   clock and DOM (load, play to the finish, scrub, measuring, delegated
   behaviors after a seek, bind failures, superseded loads, overrides,
-  restart).
+  restart, and loads of an edit: moved, patched, swapped, added and removed
+  widgets, overrides kept until the edit lands).
 - `sceneManager/tests/routes/composition-preview.test.ts` and
   `tests/scene/session-token.test.ts`: the page, refresh and framing routes,
   and the tokens.

@@ -364,8 +364,9 @@ A row of the scenes table holds a composition of one of two kinds, fixed
 when it is created (`kind`, migration `0060_scene_compositions`):
 
 - `scene`: shown by overlays, in OBS and in the editor's preview.
-- `alert`: a composition workflow and chat command steps play by id, always
-  its latest published version. It is never an overlay page.
+- `alert`: a library entry. A client copies its published version into an
+  alert step's own `layout`, filling its inputs (`{{id}}` placeholders) as it
+  copies, and the step never refers back to it. It is never an overlay page.
 
 Names are unique per kind. Both are edited through the same editor socket,
 sequencer, drafts and autosave; `getSceneEditorSession` takes either id.
@@ -383,89 +384,18 @@ Everything that serves or lists scenes reads only `scene` rows:
 
 The OBS integration names OBS's own scenes and never reads this table.
 
+A `scene.widget.visibility` step refuses an alert: it is not running
+anywhere, and changing one of its widgets would change what every later copy
+starts from, which is an edit for the editor. Stored documents are brought to
+the current shape by the registry's migrations when they are loaded (a
+placement's legacy `transitionIn` / `transitionOut` become transition
+behaviors); the row changes only when the document is next written.
+
 The api serves alerts apart from scenes (capability `compositions.alerts`):
 `listAlertCompositions`, `getAlertComposition`, `createAlertComposition`,
 `updateAlertComposition` (name, description and inputs; the document is
-edited through the socket), `deleteAlertComposition` and
-`listCompositionLinks`.
-
-### Composition links
-
-`composition_links` (migration `0061_composition_links`) records which step
-plays which alert: `composition_id`, `owner_kind` (`workflow` or
-`command`), `owner_id`, `step_id`, and when the link was made and last
-changed. A step plays at most one composition.
-
-The links are derived from the definitions and kept by the db proxy where it
-stores them: `CreateWorkflow`, `UpdateWorkflow`, `CreateCommand` and
-`UpdateCommand` replace the owner's links in the same transaction as they
-write its steps (a command's `actions_json`), and `DeleteWorkflow` and
-`DeleteCommand` remove them. A link is one `alert` step whose
-`parameters.composition` names a composition; a step is named by its `id`,
-or by its position (`step[2]`) when it has none. The save is refused with
-`invalid_argument`, and nothing is written, when such a step names something
-that is not an id, a composition that does not exist, or one that is not an
-alert, or when two of them share a step id. An unchanged link keeps its row.
-There is no RPC that writes links, so no caller can let them drift from the
-steps. `SceneService` reads them:
-
-| RPC | Does |
-| --- | --- |
-| `ListCompositionLinks` | The steps that play a composition, by owner kind, owner id and step. |
-| `CountCompositionLinks` | How many. |
-
-Deleting an alert that still has links is refused (`failed_precondition`,
-naming the steps; the foreign key refuses it too), and
-`deleteAlertComposition` answers `{ success: false, links }` so the
-dashboard can say where it is used.
-
-### Alerts played from a composition
-
-An `alert` step that names a composition (see
-[Tasks → alert](../workflow/tasks.md#alert)) reaches the scene manager as
-`{ composition, inputs }` in the envelope's `parameters`, with every `${...}`
-in the inputs already resolved by the workflow engine. Before anything is
-delivered, `dispatchAlert` (`sceneManager/src/events/alert-dispatch.ts`, with
-`alert-composition.ts`):
-
-1. **Materializes** it: `SceneDocuments.published` gives the composition's
-   published document as the documents hold it (live edits included, loading
-   the row when it is not held) and its kind. A missing composition or a
-   scene fails the alert.
-2. **Binds** the inputs with `bindInputs` from `@woofx3/scene/model`: each
-   `{ "$input": "id" }` becomes the value as it is and each `{{id}}` in text
-   the value as text; an input with no value takes its default. An input with
-   neither, a reference to an undeclared input or a malformed reference fails
-   the alert, naming them. Values for undeclared inputs are logged and
-   ignored.
-3. **Validates** the bound document with `STRICT_REGISTRY`: a canvas with a
-   positive size, and every widget and behavior a valid entry of a known type.
-4. **Records** it on the alert's log row with `RecordAlertComposition`:
-   `composition_id`, `composition_version` (a digest of the published
-   document, the same for equal documents across restarts, see
-   `documentVersion`) and `snapshot_json`, the bound document with no inputs
-   left in it (migration `0062_alert_composition_snapshot`). Once per row;
-   best-effort like the row itself.
-5. **Plays** it through the same catalog validation, fan-out, delivery and
-   queueing as an inline layout, so an alert widget cannot tell the two
-   apart.
-
-A failure at any step marks the row `failed` with the reason, as an unusable
-inline layout does.
-
-**Replay** (`replayAlert` in `alert-controls.ts`) of such an alert plays
-`snapshot_json` and never loads the composition again, so it shows what the
-original showed even after the composition was edited or deleted. The
-replay's own row carries the same composition, version and snapshot
-(`CreateAlert` takes them). A row whose envelope names a composition but has
-no snapshot (the alert was refused before it was bound, or had no row to
-record on) is not replayed. Replaying a workflow run is different: it runs
-the step again, so it binds the composition's current published version
-afresh.
-
-A `scene.widget.visibility` step refuses an alert composition: it is not
-running anywhere, and changing one of its widgets would change every later
-play of it, which is an edit for the editor.
+edited through the socket) and `deleteAlertComposition`. Deleting an alert
+changes no step: each holds its own copy.
 
 ## What overlays see
 
@@ -497,16 +427,9 @@ limited to the placements a change touches.
 - `shared/clients/typescript/api/tests/scene-editor/sequencer.test.ts` also
   covers inputs: an external change replaces them, an edit never does.
 - `db/app/services/scene_composition_test.go` covers kinds, behaviors and
-  inputs in the scene service, listing by kind, composition links and the
-  refused delete, and an overlay token refused for an alert;
-  `composition_link_owners_test.go` covers workflow and command saves keeping
-  their links and refusing a step that plays no stored alert;
-  `alert_composition_test.go` covers recording what a play showed;
-  `db/database/migrate/migrations/sqlite/0060_*_test.go` and `0061_*_test.go`
-  cover the migrations.
-- `sceneManager/tests/events/alert-controls.test.ts` covers playing a stored
-  composition (bound, recorded, delivered), each refusal, and replaying the
-  recorded document.
+  inputs in the scene service, listing by kind, and an overlay token refused
+  for an alert; `db/database/migrate/migrations/sqlite/0060_*_test.go`
+  covers the migration.
 - `api/tests/compositions.test.ts` covers the alert routes and that the scene
   and alert routes never touch each other's rows.
 - `sceneManager/tests/scene/scene-documents.test.ts` drives the real
