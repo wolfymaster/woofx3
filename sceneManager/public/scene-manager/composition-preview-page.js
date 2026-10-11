@@ -2711,6 +2711,40 @@ function createScheduler(options) {
     currentVisible.set(id, visible);
     factsOf(id).visibility.push({ atMs, visible });
   }
+  function replaceFromNow(next) {
+    const now = clock.now();
+    for (const id of Object.keys(doc.widgets)) {
+      if (!Object.hasOwn(next.widgets, id)) {
+        observed.delete(id);
+        initialVisible.delete(id);
+        currentVisible.delete(id);
+      }
+    }
+    for (const [id, placement] of Object.entries(next.widgets)) {
+      if (!initialVisible.has(id)) {
+        initialVisible.set(id, false);
+        currentVisible.set(id, false);
+      }
+      recordVisibility(id, placement.visible, now);
+    }
+  }
+  function replaceFromStart(next) {
+    for (const [id, before] of Object.entries(doc.widgets)) {
+      const after = next.widgets[id];
+      const facts = observed.get(id);
+      if (after === undefined || after.widget !== before.widget || !sameJson(after.settings, before.settings)) {
+        observed.delete(id);
+      } else if (facts !== undefined) {
+        facts.visibility = [];
+      }
+    }
+    initialVisible.clear();
+    currentVisible.clear();
+    for (const [id, placement] of Object.entries(next.widgets)) {
+      initialVisible.set(id, placement.visible);
+      currentVisible.set(id, placement.visible);
+    }
+  }
   function resolverDocument() {
     const widgets = {};
     for (const [id, placement] of Object.entries(doc.widgets)) {
@@ -2824,20 +2858,10 @@ function createScheduler(options) {
       if (disposed) {
         throw new Error("runtime: setDocument after the scheduler was disposed");
       }
-      const now = clock.now();
-      for (const id of Object.keys(doc.widgets)) {
-        if (!Object.hasOwn(next.widgets, id)) {
-          observed.delete(id);
-          initialVisible.delete(id);
-          currentVisible.delete(id);
-        }
-      }
-      for (const [id, placement] of Object.entries(next.widgets)) {
-        if (!initialVisible.has(id)) {
-          initialVisible.set(id, false);
-          currentVisible.set(id, false);
-        }
-        recordVisibility(id, placement.visible, now);
+      if (options.documentChanges === "start") {
+        replaceFromStart(next);
+      } else {
+        replaceFromNow(next);
       }
       doc = next;
       if (nextMeta !== undefined) {
@@ -2883,6 +2907,42 @@ function createScheduler(options) {
     }
   };
 }
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+// public/scene-manager/frame-swap.ts
+var SWAP_TIMEOUT_MS = 2000;
+function swapFrameIn(args) {
+  let settled = false;
+  let cancelTimer = null;
+  let fresh = null;
+  const finish = () => {
+    if (settled) {
+      return;
+    }
+    if (fresh === null) {
+      throw new Error("frame swap: the fresh frame reported painting before it was mounted");
+    }
+    settled = true;
+    cancelTimer?.();
+    fresh.reveal();
+    args.retire();
+    args.swapped(fresh);
+  };
+  fresh = args.mountFresh(finish);
+  cancelTimer = args.schedule(finish, SWAP_TIMEOUT_MS);
+  return {
+    cancel: () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cancelTimer?.();
+      fresh?.unmount();
+    }
+  };
+}
+
 // public/scene-manager/preview-clock.ts
 function createPreviewClock(base) {
   const timers = new Map;
@@ -2990,6 +3050,42 @@ function createPreviewClock(base) {
 }
 
 // public/scene-manager/scene-update.ts
+function planSceneUpdate(current, next) {
+  const currentById = new Map(current.map((placement) => [placement.id, placement]));
+  const nextIds = new Set(next.map((placement) => placement.id));
+  const plan2 = {
+    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
+    mount: [],
+    replace: [],
+    place: [],
+    order: next.map((placement) => placement.id)
+  };
+  for (const placement of next) {
+    const existing = currentById.get(placement.id);
+    if (!existing) {
+      plan2.mount.push(placement);
+    } else if (sameFrame(existing, placement)) {
+      plan2.place.push(placement);
+    } else {
+      plan2.replace.push(placement);
+    }
+  }
+  return plan2;
+}
+function sameFrame(a, b) {
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue3(a.settings, b.settings));
+}
+function settingsUpdate(current, next, reads) {
+  const keys2 = new Set([...Object.keys(current), ...Object.keys(next)]);
+  const changed = [...keys2].filter((key) => !sameValue3(current[key], next[key]));
+  if (changed.length === 0) {
+    return "none";
+  }
+  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
+    return "reload";
+  }
+  return "patch";
+}
 function sameValue3(a, b) {
   if (a === b) {
     return true;
@@ -3163,13 +3259,10 @@ function createCompositionPreview(options) {
   async function load(command, dropped) {
     generation += 1;
     const current = generation;
-    stopPlayback();
-    loaded = null;
-    transient = undefined;
-    lastTimeline = "";
     const problems = dropped.map(({ id, reason }) => ({ kind: "invalid-entry", id, detail: reason }));
     const bound = bindInputs(command.document, command.inputs ?? {});
     if (!bound.ok) {
+      clear();
       postProblems(command.loadId, [...problems, ...bindProblems(bound.report)]);
       return;
     }
@@ -3185,7 +3278,7 @@ function createCompositionPreview(options) {
     if (current !== generation || disposed) {
       return;
     }
-    loaded = {
+    const next = {
       loadId: command.loadId,
       profile: command.profile,
       doc: bound.document,
@@ -3193,14 +3286,39 @@ function createCompositionPreview(options) {
       frames: resolution.widgets,
       problems: [...problems, ...resolution.problems]
     };
+    const run = playback;
+    const previous = loaded;
+    if (run !== null && previous !== null && updatesInPlace(previous, next)) {
+      loaded = next;
+      lastTimeline = "";
+      run.update(next);
+      transient = undefined;
+      run.scheduler.setTransient(undefined);
+      reportTimeline();
+      reportPlayhead();
+      if (command.autoplay === true) {
+        play();
+      }
+      return;
+    }
+    clear();
+    loaded = next;
     startPlayback(command.autoplay === true);
   }
+  function clear() {
+    stopPlayback();
+    loaded = null;
+    transient = undefined;
+    lastTimeline = "";
+  }
   function startPlayback(autoplay) {
-    const current = mustBeLoaded();
-    const { doc, profile } = current;
-    options.fitStage({ width: doc.layout.width, height: doc.layout.height });
+    let source = mustBeLoaded();
+    options.fitStage(canvasOf(source.doc));
     const clock = createPreviewClock(options.baseClock);
     const frames = new Map;
+    const slots = new Map;
+    const handed = new Map;
+    const swaps = new Map;
     const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state));
     let run = null;
     const fact = (report) => {
@@ -3210,43 +3328,54 @@ function createCompositionPreview(options) {
       report(run.scheduler);
       reportTimeline();
     };
+    const mountInto = (slot, widgetId, swapping, rendered) => {
+      const meta = source.frames[widgetId];
+      const placement = source.doc.widgets[widgetId];
+      if (meta === undefined || placement === undefined) {
+        throw new Error(`composition preview: widget ${widgetId} was planned without a frame`);
+      }
+      let subscribed = false;
+      const frame = options.mountFrame(slot, {
+        widgetId,
+        meta,
+        settings: placement.settings,
+        surface: PROFILES[source.profile].surface,
+        entrance: swapping ? null : entranceOf(source.doc, widgetId, (type, kind) => declaresKind(meta.behaviorKinds, type, kind)),
+        event: source.event,
+        swapping
+      }, {
+        subscribed: (timed) => {
+          subscribed = true;
+          fact((scheduler3) => scheduler3.widgetSubscribed(widgetId, timed));
+        },
+        rendered: rendered ?? (() => fact((scheduler3) => scheduler3.widgetRendered(widgetId))),
+        completed: () => {
+          if (subscribed) {
+            fact((scheduler3) => scheduler3.widgetCompleted(widgetId));
+          }
+        }
+      });
+      handed.set(widgetId, placement.settings);
+      if (run?.started) {
+        frame.release();
+      }
+      return frame;
+    };
     const renderer = createDomRenderer({
       document: options.document,
       root: options.stage,
       atMs: 0,
       mountContent: (slot, widgetId) => {
-        const meta = current.frames[widgetId];
-        if (meta === undefined) {
-          throw new Error(`composition preview: widget ${widgetId} was planned without a frame`);
-        }
-        const subscribed = new Set;
-        const frame = options.mountFrame(slot, {
-          widgetId,
-          meta,
-          settings: doc.widgets[widgetId].settings,
-          surface: PROFILES[profile].surface,
-          entrance: entranceOf(doc, widgetId, (type, kind) => declaresKind(meta.behaviorKinds, type, kind)),
-          event: current.event
-        }, {
-          subscribed: (timed) => {
-            subscribed.add(widgetId);
-            fact((scheduler3) => scheduler3.widgetSubscribed(widgetId, timed));
-          },
-          rendered: () => fact((scheduler3) => scheduler3.widgetRendered(widgetId)),
-          completed: () => {
-            if (subscribed.has(widgetId)) {
-              fact((scheduler3) => scheduler3.widgetCompleted(widgetId));
-            }
-          }
-        });
-        frames.set(widgetId, frame);
-        if (run?.started) {
-          frame.release();
-        }
+        slots.set(widgetId, slot);
+        frames.set(widgetId, mountInto(slot, widgetId, false));
         return () => {
+          swaps.get(widgetId)?.cancel();
+          swaps.delete(widgetId);
+          frames.get(widgetId)?.unmount();
           frames.delete(widgetId);
+          slots.delete(widgetId);
+          handed.delete(widgetId);
           relay.forget(widgetId);
-          frame.unmount();
         };
       },
       onDelegate: (widgetId, request) => relay.handle(widgetId, request)
@@ -3254,15 +3383,60 @@ function createCompositionPreview(options) {
     renderer.pause();
     renderer.seek(0);
     const scheduler2 = createScheduler({
-      doc,
-      profile: PROFILES[profile],
+      doc: source.doc,
+      profile: PROFILES[source.profile],
       clock,
       renderer,
-      meta: current.frames,
-      declaredKinds: (widgetId) => current.frames[widgetId]?.behaviorKinds,
-      estimate: { durationsMs: mediaLengthEstimates(doc) },
-      onFinished: () => finish()
+      meta: source.frames,
+      declaredKinds: (widgetId) => source.frames[widgetId]?.behaviorKinds,
+      estimate: { durationsMs: mediaLengthEstimates(source.doc) },
+      onFinished: () => finish(),
+      documentChanges: "start"
     });
+    const swapIn = (widgetId) => {
+      const slot = slots.get(widgetId);
+      const old = frames.get(widgetId);
+      if (slot === undefined || old === undefined) {
+        return;
+      }
+      swaps.get(widgetId)?.cancel();
+      swaps.set(widgetId, swapFrameIn({
+        mountFresh: (painted) => mountInto(slot, widgetId, true, painted),
+        retire: () => old.unmount(),
+        swapped: (fresh) => {
+          swaps.delete(widgetId);
+          frames.set(widgetId, fresh);
+          for (const state of relay.ongoing(widgetId)) {
+            fresh.sendBehavior(state);
+          }
+          fact((current) => current.widgetRendered(widgetId));
+        },
+        schedule: (callback, ms) => {
+          const handle2 = options.baseClock.setTimer(options.baseClock.now() + ms, callback);
+          return () => options.baseClock.clearTimer(handle2);
+        }
+      }));
+    };
+    const updateSettings = (widgetId) => {
+      const frame = frames.get(widgetId);
+      const before = handed.get(widgetId);
+      const placement = source.doc.widgets[widgetId];
+      const meta = source.frames[widgetId];
+      if (frame === undefined || before === undefined || placement === undefined || meta === undefined) {
+        return;
+      }
+      const reads = swaps.has(widgetId) ? null : frame.settingsReads();
+      const decision = settingsUpdate(before, placement.settings, reads);
+      if (decision === "none") {
+        return;
+      }
+      if (decision === "patch") {
+        handed.set(widgetId, placement.settings);
+        frame.sendSettings(placement.settings, meta.mediaUrls);
+        return;
+      }
+      swapIn(widgetId);
+    };
     run = {
       clock,
       renderer,
@@ -3270,7 +3444,22 @@ function createCompositionPreview(options) {
       frames,
       started: false,
       measuring: true,
-      finished: false
+      finished: false,
+      update: (next) => {
+        const plan2 = planSceneUpdate(placementsOf(source), placementsOf(next));
+        const before = source;
+        source = next;
+        options.fitStage(canvasOf(next.doc));
+        scheduler2.setDocument(next.doc, next.frames);
+        for (const placement of plan2.replace) {
+          if (before.doc.widgets[placement.id]?.widget === placement.widgetCanonicalId) {
+            swapIn(placement.id);
+          }
+        }
+        for (const placement of plan2.place) {
+          updateSettings(placement.id);
+        }
+      }
     };
     playback = run;
     if (transient !== undefined) {
@@ -3471,6 +3660,32 @@ function bindProblems(report) {
     ...report.unknownReferences.map(({ input }) => ({ kind: "bind", id: input, detail: "refers to an input it does not declare" })),
     ...report.malformed.map((path) => ({ kind: "bind", detail: `malformed input reference at ${path.join(".")}` }))
   ];
+}
+function updatesInPlace(previous, next) {
+  return previous.profile === next.profile && JSON.stringify(previous.event) === JSON.stringify(next.event);
+}
+function canvasOf(doc) {
+  return { width: doc.layout.width, height: doc.layout.height };
+}
+function placementsOf(loaded) {
+  return Object.entries(loaded.doc.widgets).flatMap(([id, placement]) => {
+    const meta = loaded.frames[id];
+    if (meta === undefined) {
+      return [];
+    }
+    return [
+      {
+        id,
+        widgetCanonicalId: placement.widget,
+        moduleId: "",
+        position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+        settings: placement.settings,
+        hostsSurface: "",
+        frameUrl: meta.frameUrl,
+        behaviorKinds: meta.behaviorKinds
+      }
+    ];
+  });
 }
 
 // public/scene-manager/media-url.ts
@@ -3882,6 +4097,9 @@ function mountFrame(bridges, slot, spec, facts) {
   const nonce = generateNonce();
   const iframe = document.createElement("iframe");
   iframe.className = "widget-frame";
+  if (spec.swapping) {
+    iframe.style.opacity = "0";
+  }
   iframe.setAttribute("sandbox", "allow-scripts");
   const event = {
     type: spec.surface === "alert" ? "alert" : spec.event?.type ?? "preview",
@@ -3941,6 +4159,11 @@ function mountFrame(bridges, slot, spec, facts) {
       for (const subId of waiting.splice(0)) {
         bridge.sendEvent(subId, event);
       }
+    },
+    settingsReads: () => bridge.settingsReads(),
+    sendSettings: (settings, mediaUrls) => bridge.sendSettings(replaceMediaUrls(settings, new Map(Object.entries(mediaUrls)))),
+    reveal: () => {
+      iframe.style.opacity = "";
     },
     unmount: () => {
       bridge.dispose();

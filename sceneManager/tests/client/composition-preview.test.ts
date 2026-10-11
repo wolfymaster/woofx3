@@ -21,6 +21,8 @@ import {
   type PreviewFrameSpec,
 } from "../../public/scene-manager/composition-preview";
 import { parseFrameResolution } from "../../public/scene-manager/composition-preview-page";
+import { SWAP_TIMEOUT_MS } from "../../public/scene-manager/frame-swap";
+import type { SettingsReads } from "../../public/scene-manager/scene-update";
 
 class FakeAnimation implements RenderAnimation {
   startTime: CSSNumberish | null = null;
@@ -164,6 +166,10 @@ interface MountedFrame {
   sent: Array<WidgetBehaviorState | null>;
   released: boolean;
   unmounted: boolean;
+  revealed: boolean;
+  /** What `settingsReads` answers; set by a test. */
+  reads: SettingsReads | null;
+  patched: Array<{ settings: Record<string, unknown>; mediaUrls: Record<string, string> }>;
 }
 
 function frameMeta(id: string, transitions: string[] = []) {
@@ -200,12 +206,26 @@ function setup(resolve?: (doc: CompositionDocument) => Promise<FrameResolution>)
         problems: [],
       })),
     mountFrame: (_slot, spec, facts) => {
-      const frame: MountedFrame = { spec, facts, sent: [], released: false, unmounted: false };
+      const frame: MountedFrame = {
+        spec,
+        facts,
+        sent: [],
+        released: false,
+        unmounted: false,
+        revealed: !spec.swapping,
+        reads: null,
+        patched: [],
+      };
       frames.push(frame);
       return {
         sendBehavior: (state) => frame.sent.push(state),
         release: () => {
           frame.released = true;
+        },
+        settingsReads: () => frame.reads,
+        sendSettings: (settings, mediaUrls) => frame.patched.push({ settings, mediaUrls }),
+        reveal: () => {
+          frame.revealed = true;
         },
         unmount: () => {
           frame.unmounted = true;
@@ -468,6 +488,145 @@ describe("createCompositionPreview", () => {
     expect(harness.last(PREVIEW_TIMELINE)?.durationMs).toBeNull();
     harness.base.advanceBy(60_000);
     expect(harness.of(PREVIEW_FINISHED)).toEqual([]);
+  });
+});
+
+describe("createCompositionPreview, loading an edit of what it plays", () => {
+  type Harness = ReturnType<typeof setup>;
+
+  async function reload(harness: Harness, doc: CompositionDocument, extra: Record<string, unknown> = {}) {
+    harness.preview.handle({ type: PREVIEW_LOAD, loadId: "L2", profile: "alert", document: doc, ...extra });
+    await settle();
+  }
+
+  function edited(edit: (w1: PlacementDocument) => PlacementDocument): CompositionDocument {
+    const doc = faded();
+    doc.widgets.w1 = edit(doc.widgets.w1);
+    return doc;
+  }
+
+  const transform = (harness: Harness) => harness.stage.find("data-scene-widget", "w1")?.style.transform;
+
+  it("moves a widget in place: no frame is mounted or unmounted", async () => {
+    const harness = await loaded();
+    await reload(
+      harness,
+      edited((w1) => ({ ...w1, x: 300, y: 20 }))
+    );
+    expect(harness.frames).toHaveLength(1);
+    expect(harness.live("w1").unmounted).toBe(false);
+    expect(transform(harness)).toBe("translate(300px, 20px) rotate(0deg)");
+    expect(harness.last(PREVIEW_TIMELINE)?.loadId).toBe("L2");
+    expect(harness.last(PREVIEW_PLAYHEAD)?.loadId).toBe("L2");
+  });
+
+  it("patches in settings the widget's script has not read, keeping its frame", async () => {
+    const harness = await loaded();
+    harness.live("w1").reads = { all: false, keys: new Set(["color"]) };
+    await reload(
+      harness,
+      edited((w1) => ({ ...w1, settings: { text: "Thanks!" } }))
+    );
+    expect(harness.frames).toHaveLength(1);
+    expect(harness.live("w1").patched).toEqual([{ settings: { text: "Thanks!" }, mediaUrls: {} }]);
+  });
+
+  it("swaps a frame whose script read a changed setting: the new one shows once it paints, then the old goes", async () => {
+    const harness = await loaded();
+    const old = harness.live("w1");
+    old.reads = { all: false, keys: new Set(["text"]) };
+    await reload(
+      harness,
+      edited((w1) => ({ ...w1, settings: { text: "Thanks!" } }))
+    );
+    expect(harness.frames).toHaveLength(2);
+    const fresh = harness.frames[1];
+    expect(fresh.spec).toMatchObject({ swapping: true, entrance: null, settings: { text: "Thanks!" } });
+    expect(fresh.revealed).toBe(false);
+    expect(old.unmounted).toBe(false);
+
+    fresh.facts.rendered();
+    expect(fresh.revealed).toBe(true);
+    expect(old.unmounted).toBe(true);
+    expect(harness.live("w1")).toBe(fresh);
+  });
+
+  it("swaps a frame whose document changed, showing it after the swap timeout when it never paints", async () => {
+    let version = 1;
+    const harness = setup(async (doc) => ({
+      widgets: Object.fromEntries(
+        Object.keys(doc.widgets).map((id) => [id, { ...frameMeta(id), frameUrl: `/frames/woofx3/${id}?v=${version}` }])
+      ),
+      problems: [],
+    }));
+    harness.preview.handle({ type: PREVIEW_LOAD, loadId: "L1", profile: "alert", document: faded() });
+    await settle();
+    const old = harness.live("w1");
+    version = 2;
+    await reload(harness, faded());
+    const fresh = harness.frames[1];
+    expect(fresh.spec.meta.frameUrl).toBe("/frames/woofx3/w1?v=2");
+    expect(old.unmounted).toBe(false);
+    harness.base.advanceBy(SWAP_TIMEOUT_MS);
+    expect(fresh.revealed).toBe(true);
+    expect(old.unmounted).toBe(true);
+  });
+
+  it("adds and removes widgets without touching the others", async () => {
+    const harness = await loaded();
+    const grown = faded();
+    grown.widgets.w2 = placement("a2");
+    await reload(harness, grown);
+    expect(harness.frames.map((frame) => [frame.spec.widgetId, frame.unmounted])).toEqual([
+      ["w1", false],
+      ["w2", false],
+    ]);
+    // Part of the composition from its start, as on a fresh load.
+    expect(harness.visible("w2")).toBe(true);
+
+    await reload(harness, faded());
+    expect(harness.frames.map((frame) => [frame.spec.widgetId, frame.unmounted])).toEqual([
+      ["w1", false],
+      ["w2", true],
+    ]);
+  });
+
+  it("keeps a gesture's overrides on screen until the edit it committed is loaded", async () => {
+    const answers: Array<() => void> = [];
+    const harness = setup(
+      (doc) =>
+        new Promise((resolve) => {
+          answers.push(() =>
+            resolve({
+              widgets: Object.fromEntries(Object.keys(doc.widgets).map((id) => [id, frameMeta(id)])),
+              problems: [],
+            })
+          );
+        })
+    );
+    harness.preview.handle({ type: PREVIEW_LOAD, loadId: "L1", profile: "alert", document: faded() });
+    answers.shift()?.();
+    await settle();
+    harness.preview.handle({ type: "woofx3.composition-preview.overrides", overrides: { w1: { x: 300 } } });
+    harness.preview.handle({
+      type: PREVIEW_LOAD,
+      loadId: "L2",
+      profile: "alert",
+      document: edited((w1) => ({ ...w1, x: 300 })),
+    });
+    await settle();
+    expect(transform(harness)).toBe("translate(300px, 0px) rotate(0deg)");
+    answers.shift()?.();
+    await settle();
+    expect(transform(harness)).toBe("translate(300px, 0px) rotate(0deg)");
+    expect(harness.frames).toHaveLength(1);
+  });
+
+  it("mounts everything afresh for another sample event", async () => {
+    const harness = await loaded(faded(), { event: { type: "twitch.follow", data: { user: "ana" } } });
+    await reload(harness, faded(), { event: { type: "twitch.follow", data: { user: "bo" } } });
+    expect(harness.frames.map((frame) => frame.unmounted)).toEqual([true, false]);
+    expect(harness.live("w1").spec.event).toEqual({ type: "twitch.follow", data: { user: "bo" } });
   });
 });
 

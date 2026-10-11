@@ -294,7 +294,7 @@ describe("createScheduler reporting skipped behaviors", () => {
 });
 
 describe("createScheduler with estimates, on a clock that jumps", () => {
-  function estimated(doc: CompositionDocument) {
+  function estimated(doc: CompositionDocument, documentChanges?: "now" | "start") {
     const clock = new FakeClock(0);
     const applied: PatchOp[] = [];
     const finished: number[] = [];
@@ -305,6 +305,7 @@ describe("createScheduler with estimates, on a clock that jumps", () => {
       renderer: { apply: (ops) => applied.push(...ops) },
       estimate: {},
       onFinished: () => finished.push(clock.now()),
+      ...(documentChanges === undefined ? {} : { documentChanges }),
     });
     const visible = (id: string) => scheduler.plan().widgets[id]?.visible;
     return { clock, scheduler, applied, finished, visible };
@@ -355,6 +356,45 @@ describe("createScheduler with estimates, on a clock that jumps", () => {
     scheduler.resync();
     scheduler.resync();
     expect(finished).toEqual([9_000]);
+  });
+
+  test("with documentChanges start, a widget added mid-play belongs to the whole composition", () => {
+    const { clock, scheduler, visible } = estimated(faded(["w1"]), "start");
+    clock.advanceTo(3_000);
+    scheduler.setDocument(faded(["w1", "w2"]));
+    expect(scheduler.timeline().widgets.w2).toMatchObject({ enterMs: 0, leaveMs: 5_000, exitMs: 5_500 });
+    expect(visible("w2")).toBe(true);
+    clock.jumpTo(100);
+    scheduler.resync();
+    expect(visible("w2")).toBe(true);
+  });
+
+  test("with documentChanges start, a hidden widget is hidden from the start, not from now", () => {
+    const doc = faded(["w1", "w2"]);
+    const { clock, scheduler, visible } = estimated(doc, "start");
+    clock.advanceTo(2_000);
+    scheduler.setDocument({ ...doc, widgets: { ...doc.widgets, w2: { ...doc.widgets.w2, visible: false } } });
+    clock.jumpTo(500);
+    scheduler.resync();
+    expect(visible("w1")).toBe(true);
+    expect(visible("w2")).toBeFalsy();
+  });
+
+  test("with documentChanges start, what a frame reported survives a move but not a change of settings", () => {
+    const doc = faded(["w1"]);
+    doc.widgets.w1 = { ...doc.widgets.w1, settings: { duration: 2 } };
+    const { clock, scheduler } = estimated(doc, "start");
+    scheduler.widgetSubscribed("w1", true);
+    clock.advanceTo(1_200);
+    scheduler.widgetCompleted("w1");
+    expect(scheduler.timeline().finishMs).toBe(1_700);
+
+    const moved = { ...doc, widgets: { w1: { ...doc.widgets.w1, x: 40 } } };
+    scheduler.setDocument(moved);
+    expect(scheduler.timeline().finishMs).toBe(1_700);
+
+    scheduler.setDocument({ ...moved, widgets: { w1: { ...moved.widgets.w1, settings: { duration: 3 } } } });
+    expect(scheduler.timeline().finishMs).toBe(3_500);
   });
 
   test("resync after dispose is a bug", () => {

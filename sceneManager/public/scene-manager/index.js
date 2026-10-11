@@ -3049,6 +3049,40 @@ function createScheduler(options) {
     currentVisible.set(id, visible);
     factsOf(id).visibility.push({ atMs, visible });
   }
+  function replaceFromNow(next) {
+    const now = clock.now();
+    for (const id of Object.keys(doc.widgets)) {
+      if (!Object.hasOwn(next.widgets, id)) {
+        observed.delete(id);
+        initialVisible.delete(id);
+        currentVisible.delete(id);
+      }
+    }
+    for (const [id, placement] of Object.entries(next.widgets)) {
+      if (!initialVisible.has(id)) {
+        initialVisible.set(id, false);
+        currentVisible.set(id, false);
+      }
+      recordVisibility(id, placement.visible, now);
+    }
+  }
+  function replaceFromStart(next) {
+    for (const [id, before] of Object.entries(doc.widgets)) {
+      const after = next.widgets[id];
+      const facts = observed.get(id);
+      if (after === undefined || after.widget !== before.widget || !sameJson(after.settings, before.settings)) {
+        observed.delete(id);
+      } else if (facts !== undefined) {
+        facts.visibility = [];
+      }
+    }
+    initialVisible.clear();
+    currentVisible.clear();
+    for (const [id, placement] of Object.entries(next.widgets)) {
+      initialVisible.set(id, placement.visible);
+      currentVisible.set(id, placement.visible);
+    }
+  }
   function resolverDocument() {
     const widgets = {};
     for (const [id, placement] of Object.entries(doc.widgets)) {
@@ -3162,20 +3196,10 @@ function createScheduler(options) {
       if (disposed) {
         throw new Error("runtime: setDocument after the scheduler was disposed");
       }
-      const now = clock.now();
-      for (const id of Object.keys(doc.widgets)) {
-        if (!Object.hasOwn(next.widgets, id)) {
-          observed.delete(id);
-          initialVisible.delete(id);
-          currentVisible.delete(id);
-        }
-      }
-      for (const [id, placement] of Object.entries(next.widgets)) {
-        if (!initialVisible.has(id)) {
-          initialVisible.set(id, false);
-          currentVisible.set(id, false);
-        }
-        recordVisibility(id, placement.visible, now);
+      if (options.documentChanges === "start") {
+        replaceFromStart(next);
+      } else {
+        replaceFromNow(next);
       }
       doc = next;
       if (nextMeta !== undefined) {
@@ -3220,6 +3244,9 @@ function createScheduler(options) {
       }
     }
   };
+}
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 // public/scene-manager/page-clock.ts
 var PAGE_CLOCK = {
@@ -5139,6 +5166,39 @@ function parseMediaUrls(value) {
   return placements;
 }
 
+// public/scene-manager/frame-swap.ts
+var SWAP_TIMEOUT_MS = 2000;
+function swapFrameIn(args) {
+  let settled = false;
+  let cancelTimer = null;
+  let fresh = null;
+  const finish = () => {
+    if (settled) {
+      return;
+    }
+    if (fresh === null) {
+      throw new Error("frame swap: the fresh frame reported painting before it was mounted");
+    }
+    settled = true;
+    cancelTimer?.();
+    fresh.reveal();
+    args.retire();
+    args.swapped(fresh);
+  };
+  fresh = args.mountFresh(finish);
+  cancelTimer = args.schedule(finish, SWAP_TIMEOUT_MS);
+  return {
+    cancel: () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cancelTimer?.();
+      fresh?.unmount();
+    }
+  };
+}
+
 // public/scene-manager/scene-background.ts
 function sceneBackground(layout) {
   const value = layout.backgroundColor;
@@ -5155,7 +5215,6 @@ function applySceneBackground(element, layout) {
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
-var SWAP_TIMEOUT_MS = 2000;
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -5375,37 +5434,29 @@ function main() {
       return;
     }
     entry.swap?.cancel();
-    let settled = false;
-    let timer = null;
-    const finish = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timer !== null) {
-        clearTimeout(timer);
-      }
-      fresh.element.style.opacity = "";
-      entry.unmount();
-      contents.set(next.id, { slot: entry.slot, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
-      for (const state of relay.ongoing(next.id)) {
-        fresh.bridge.sendBehavior(state);
-      }
-      playing().widgetRendered(next.id);
-    };
-    const fresh = mountFrame(next, entry.slot, true, finish);
-    timer = setTimeout(finish, SWAP_TIMEOUT_MS);
-    entry.swap = {
-      cancel: () => {
-        if (!settled) {
-          settled = true;
-          if (timer !== null) {
-            clearTimeout(timer);
+    entry.swap = swapFrameIn({
+      mountFresh: (painted) => {
+        const frame = mountFrame(next, entry.slot, true, painted);
+        return {
+          ...frame,
+          reveal: () => {
+            frame.element.style.opacity = "";
           }
-          fresh.unmount();
+        };
+      },
+      retire: () => entry.unmount(),
+      swapped: (fresh) => {
+        contents.set(next.id, { slot: entry.slot, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
+        for (const state of relay.ongoing(next.id)) {
+          fresh.bridge.sendBehavior(state);
         }
+        playing().widgetRendered(next.id);
+      },
+      schedule: (callback, ms) => {
+        const timer = setTimeout(callback, ms);
+        return () => clearTimeout(timer);
       }
-    };
+    });
   }
   function updateSettings(id, settings) {
     const config = configs.get(id);

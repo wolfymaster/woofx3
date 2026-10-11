@@ -109,6 +109,9 @@ function mountFrame(
   const nonce = generateNonce();
   const iframe = document.createElement("iframe");
   iframe.className = "widget-frame";
+  if (spec.swapping) {
+    iframe.style.opacity = "0";
+  }
   iframe.setAttribute("sandbox", "allow-scripts");
 
   const event: WidgetEvent = {
@@ -172,6 +175,12 @@ function mountFrame(
       for (const subId of waiting.splice(0)) {
         bridge.sendEvent(subId, event);
       }
+    },
+    settingsReads: () => bridge.settingsReads(),
+    sendSettings: (settings, mediaUrls) =>
+      bridge.sendSettings(replaceMediaUrls(settings, new Map(Object.entries(mediaUrls)))),
+    reveal: () => {
+      iframe.style.opacity = "";
     },
     unmount: () => {
       bridge.dispose();
