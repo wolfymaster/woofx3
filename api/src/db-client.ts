@@ -1,12 +1,12 @@
 import * as alert from "@woofx3/db/alert.pb";
 import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
-import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
 import type * as common from "@woofx3/db/common.pb";
+import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
 import * as group from "@woofx3/db/group.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
-import * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
+import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
@@ -400,6 +400,23 @@ export class DbClient {
       return null;
     }
     return response.scene;
+  }
+
+  /**
+   * A scenes row of any kind, or null when db-proxy has no such row. An id
+   * it cannot parse is the same answer: ids are opaque to callers.
+   */
+  async findComposition(id: string): Promise<scene.Scene | null> {
+    try {
+      const response = await scene.GetScene({ id }, this.config);
+      return response.status?.code === "OK" && response.scene ? response.scene : null;
+    } catch (err) {
+      const failure = toError(err, "findComposition");
+      if (failure instanceof DbError && (failure.code === "not_found" || failure.code === "invalid_argument")) {
+        return null;
+      }
+      throw failure;
+    }
   }
 
   /** Delete, reporting whether it happened. Same reasoning as tryUpdateScene. */

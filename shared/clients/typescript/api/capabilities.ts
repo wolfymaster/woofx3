@@ -69,6 +69,23 @@ export const ENGINE_CAPABILITIES = {
    * token `getSceneEditorSession` gives, and `protocol=2`.
    */
   scenesEditorSync: "scenes.editorSync",
+  /**
+   * A composition's behaviors (transitions, effects, activity windows) are
+   * stored with it, published and draft, so they survive sceneManager
+   * restarts and saves made elsewhere. Without it an engine keeps behaviors
+   * only while sceneManager holds the scene, and a client should not offer
+   * them.
+   */
+  scenesBehaviors: "scenes.behaviors",
+  /**
+   * Alert compositions stored in the engine: `listAlertCompositions`,
+   * `getAlertComposition`, `createAlertComposition`,
+   * `updateAlertComposition`, `deleteAlertComposition`, editing one with
+   * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
+   * An alert step never plays one by id: a client copies it into the step's
+   * own layout.
+   */
+  compositionsAlerts: "compositions.alerts",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**
