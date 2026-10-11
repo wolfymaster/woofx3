@@ -3,6 +3,7 @@ import {
   type SceneDocument,
   type SceneSnapshot,
   applyOps,
+  compositionOfConfig,
   configOfSnapshot,
   diffDocuments,
   mergeMeta,
@@ -107,7 +108,13 @@ describe("configOfSnapshot", () => {
       { backgroundColor: "#000" }
     ),
     meta: {
-      a: { moduleId: "woofx3", hostsSurface: "", frameUrl: "/frames/woofx3/text?v=1", linkedResources: { t: "x" } },
+      a: {
+        moduleId: "woofx3",
+        hostsSurface: "",
+        frameUrl: "/frames/woofx3/text?v=1",
+        linkedResources: { t: "x" },
+        behaviorKinds: { transitions: ["typewriter"], effects: [] },
+      },
       b: { moduleId: "woofx3", hostsSurface: "", frameUrl: "/frames/woofx3/text?v=1", linkedResources: {} },
     },
   };
@@ -125,9 +132,11 @@ describe("configOfSnapshot", () => {
       hostsSurface: "",
       frameUrl: "/frames/woofx3/text?v=1",
       linkedResources: { t: "x" },
+      behaviorKinds: { transitions: ["typewriter"], effects: [] },
       visible: true,
     });
     expect(config.widgets[1]!.visible).toBe(false);
+    expect(config.widgets[1]!.behaviorKinds).toBeUndefined();
   });
 
   it("leaves out a placement whose meta has not arrived", () => {
@@ -139,6 +148,72 @@ describe("configOfSnapshot", () => {
     expect(parseSnapshot(JSON.parse(JSON.stringify(snapshot)))).toEqual(snapshot);
     expect(parseSnapshot(null)).toBeNull();
     expect(parseSnapshot({ sceneId: "s1", seq: "2", doc: {}, meta: {} })).toBeNull();
+  });
+});
+
+describe("compositionOfConfig", () => {
+  const meta = { moduleId: "woofx3", hostsSurface: "", frameUrl: "/f", linkedResources: {} };
+
+  it("plays the saved document as the config places it, with rotation, opacity and behaviors", () => {
+    const fadeIn = {
+      type: "transition",
+      kind: "fade",
+      target: "a",
+      order: "a0",
+      timing: { anchor: "enter" as const, offsetMs: 0, durationMs: 300, easing: "ease-out" as const },
+      params: { phase: "in" },
+    };
+    const saved: SceneDocument = {
+      layout: { width: 1920, height: 1080 },
+      widgets: { a: { ...placement("a2"), rotation: 30, opacity: 0.4 }, b: placement("a1") },
+      behaviors: { fadeIn },
+    };
+    const config = configOfSnapshot({ sceneId: "s", name: "S", seq: 1, doc: saved, meta: { a: meta, b: meta } });
+    const played = compositionOfConfig(config, saved);
+    expect(stackOrder(played)).toEqual(["b", "a"]);
+    expect(played.widgets.a).toMatchObject({ rotation: 30, opacity: 0.4, x: 0, width: 100, name: "Text" });
+    expect(played.behaviors).toEqual({ fadeIn });
+    expect(played.layout).toEqual(saved.layout);
+  });
+
+  it("takes placements, order, settings and visibility from a draft config, and rotation from its placements", () => {
+    const saved = doc({ a: { ...placement("a0"), rotation: 10 } });
+    const config = {
+      id: "s",
+      name: "S",
+      layout: {},
+      widgets: [
+        {
+          id: "new",
+          widgetCanonicalId: "woofx3:widget:image",
+          moduleId: "woofx3",
+          position: { x: 1, y: 2, width: 3, height: 4 },
+          settings: { url: "x" },
+          hostsSurface: "",
+          frameUrl: "/f",
+        },
+        {
+          id: "a",
+          widgetCanonicalId: "woofx3:widget:text",
+          moduleId: "woofx3",
+          position: { x: 5, y: 6, width: 7, height: 8 },
+          settings: { text: "draft" },
+          hostsSurface: "",
+          frameUrl: "/f",
+          visible: false,
+        },
+      ],
+    };
+    const played = compositionOfConfig(config, saved, [{ id: "new", rotation: 90, opacity: 7 }]);
+    expect(stackOrder(played)).toEqual(["new", "a"]);
+    expect(played.widgets.new).toMatchObject({
+      widget: "woofx3:widget:image",
+      rotation: 90,
+      opacity: 1,
+      visible: true,
+    });
+    expect(played.widgets.a).toMatchObject({ x: 5, y: 6, width: 7, height: 8, rotation: 10, visible: false });
+    expect(played.widgets.a?.settings).toEqual({ text: "draft" });
   });
 });
 
