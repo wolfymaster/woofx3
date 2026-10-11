@@ -42,9 +42,18 @@ type Alert struct {
 	// created. The database increments it in the same statement as each
 	// write, so it orders the row's published snapshots by when the writes
 	// were applied. See AlertRepository.UpdateLifecycle.
-	Version   int64     `gorm:"column:version;not null;default:1"`
-	CreatedAt time.Time `gorm:"column:created_at;index:idx_alerts_created_at,sort:desc"`
-	UpdatedAt time.Time
+	Version int64 `gorm:"column:version;not null;default:1"`
+	// The stored alert composition the step played, the published version of
+	// it that played (a digest of that document), and that document as it
+	// played, inputs bound. Empty, and nil, for an alert whose step carried
+	// its layout inline. Recorded once, by the scene manager, when it binds
+	// the composition; a replay plays SnapshotJSON rather than the
+	// composition as it stands. See AlertRepository.RecordComposition.
+	CompositionID      string    `gorm:"column:composition_id;type:text;not null;default:''"`
+	CompositionVersion string    `gorm:"column:composition_version;type:text;not null;default:''"`
+	SnapshotJSON       *string   `gorm:"column:snapshot_json;type:jsonb"`
+	CreatedAt          time.Time `gorm:"column:created_at;index:idx_alerts_created_at,sort:desc"`
+	UpdatedAt          time.Time
 }
 
 func (Alert) TableName() string {

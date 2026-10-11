@@ -63,7 +63,16 @@ type Alert struct {
 	Error string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
 	// Incremented by every write that publishes the row. Receivers order
 	// snapshots of one row by it: two writes never share a version.
-	Version       int64 `protobuf:"varint,14,opt,name=version,proto3" json:"version,omitempty"`
+	Version int64 `protobuf:"varint,14,opt,name=version,proto3" json:"version,omitempty"`
+	// The stored alert composition the step played, and which published
+	// version of it played (a digest of that document). Empty for an alert
+	// whose step carried its layout inline.
+	CompositionId      string `protobuf:"bytes,15,opt,name=composition_id,json=compositionId,proto3" json:"composition_id,omitempty"`
+	CompositionVersion string `protobuf:"bytes,16,opt,name=composition_version,json=compositionVersion,proto3" json:"composition_version,omitempty"`
+	// The composition as it played, inputs bound: the inline document a replay
+	// plays. Empty for an inline alert, whose payload is what it showed, and
+	// until the scene manager has recorded it.
+	SnapshotJson  string `protobuf:"bytes,17,opt,name=snapshot_json,json=snapshotJson,proto3" json:"snapshot_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -189,6 +198,27 @@ func (x *Alert) GetVersion() int64 {
 	return 0
 }
 
+func (x *Alert) GetCompositionId() string {
+	if x != nil {
+		return x.CompositionId
+	}
+	return ""
+}
+
+func (x *Alert) GetCompositionVersion() string {
+	if x != nil {
+		return x.CompositionVersion
+	}
+	return ""
+}
+
+func (x *Alert) GetSnapshotJson() string {
+	if x != nil {
+		return x.SnapshotJson
+	}
+	return ""
+}
+
 type CreateAlertRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// JSON-encoded AlertPayload. Persisted verbatim into `alerts.payload`.
@@ -200,9 +230,14 @@ type CreateAlertRequest struct {
 	// denormalised `envelope_id` column for fast lookup on the overlay
 	// ack path. Optional for backwards compatibility — older callers that
 	// don't supply this still create rows, just without the index hit.
-	EnvelopeId    string `protobuf:"bytes,5,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	EnvelopeId string `protobuf:"bytes,5,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	// Set by a replay of an alert that played a composition, so the new row
+	// records what it plays (see Alert.composition_id). All three or none.
+	CompositionId      string `protobuf:"bytes,6,opt,name=composition_id,json=compositionId,proto3" json:"composition_id,omitempty"`
+	CompositionVersion string `protobuf:"bytes,7,opt,name=composition_version,json=compositionVersion,proto3" json:"composition_version,omitempty"`
+	SnapshotJson       string `protobuf:"bytes,8,opt,name=snapshot_json,json=snapshotJson,proto3" json:"snapshot_json,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CreateAlertRequest) Reset() {
@@ -259,6 +294,27 @@ func (x *CreateAlertRequest) GetSourceEventId() string {
 func (x *CreateAlertRequest) GetEnvelopeId() string {
 	if x != nil {
 		return x.EnvelopeId
+	}
+	return ""
+}
+
+func (x *CreateAlertRequest) GetCompositionId() string {
+	if x != nil {
+		return x.CompositionId
+	}
+	return ""
+}
+
+func (x *CreateAlertRequest) GetCompositionVersion() string {
+	if x != nil {
+		return x.CompositionVersion
+	}
+	return ""
+}
+
+func (x *CreateAlertRequest) GetSnapshotJson() string {
+	if x != nil {
+		return x.SnapshotJson
 	}
 	return ""
 }
@@ -709,11 +765,91 @@ func (x *DeleteAlertRequest) GetId() string {
 	return ""
 }
 
+// Record which composition a play showed, and the document it showed (see
+// Alert.snapshot_json), on the row CreateAlert returned for the play. The row
+// must carry `envelope_id`. Recorded once: a row that already has a snapshot
+// is answered as it stands and not changed. Every field is required.
+type RecordAlertCompositionRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	EnvelopeId         string                 `protobuf:"bytes,2,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	CompositionId      string                 `protobuf:"bytes,3,opt,name=composition_id,json=compositionId,proto3" json:"composition_id,omitempty"`
+	CompositionVersion string                 `protobuf:"bytes,4,opt,name=composition_version,json=compositionVersion,proto3" json:"composition_version,omitempty"`
+	SnapshotJson       string                 `protobuf:"bytes,5,opt,name=snapshot_json,json=snapshotJson,proto3" json:"snapshot_json,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *RecordAlertCompositionRequest) Reset() {
+	*x = RecordAlertCompositionRequest{}
+	mi := &file_alert_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordAlertCompositionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordAlertCompositionRequest) ProtoMessage() {}
+
+func (x *RecordAlertCompositionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_alert_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordAlertCompositionRequest.ProtoReflect.Descriptor instead.
+func (*RecordAlertCompositionRequest) Descriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RecordAlertCompositionRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RecordAlertCompositionRequest) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
+func (x *RecordAlertCompositionRequest) GetCompositionId() string {
+	if x != nil {
+		return x.CompositionId
+	}
+	return ""
+}
+
+func (x *RecordAlertCompositionRequest) GetCompositionVersion() string {
+	if x != nil {
+		return x.CompositionVersion
+	}
+	return ""
+}
+
+func (x *RecordAlertCompositionRequest) GetSnapshotJson() string {
+	if x != nil {
+		return x.SnapshotJson
+	}
+	return ""
+}
+
 var File_alert_proto protoreflect.FileDescriptor
 
 const file_alert_proto_rawDesc = "" +
 	"\n" +
-	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa8\x04\n" +
+	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa5\x05\n" +
 	"\x05Alert\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x1f\n" +
@@ -732,14 +868,20 @@ const file_alert_proto_rawDesc = "" +
 	"\tplayed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bplayedAt\x12=\n" +
 	"\fcompleted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
 	"\x05error\x18\r \x01(\tR\x05error\x12\x18\n" +
-	"\aversion\x18\x0e \x01(\x03R\aversionJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xae\x01\n" +
+	"\aversion\x18\x0e \x01(\x03R\aversion\x12%\n" +
+	"\x0ecomposition_id\x18\x0f \x01(\tR\rcompositionId\x12/\n" +
+	"\x13composition_version\x18\x10 \x01(\tR\x12compositionVersion\x12#\n" +
+	"\rsnapshot_json\x18\x11 \x01(\tR\fsnapshotJsonJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xab\x02\n" +
 	"\x12CreateAlertRequest\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12\x1f\n" +
 	"\vworkflow_id\x18\x03 \x01(\tR\n" +
 	"workflowId\x12&\n" +
 	"\x0fsource_event_id\x18\x04 \x01(\tR\rsourceEventId\x12\x1f\n" +
 	"\venvelope_id\x18\x05 \x01(\tR\n" +
-	"envelopeIdJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
+	"envelopeId\x12%\n" +
+	"\x0ecomposition_id\x18\x06 \x01(\tR\rcompositionId\x12/\n" +
+	"\x13composition_version\x18\a \x01(\tR\x12compositionVersion\x12#\n" +
+	"\rsnapshot_json\x18\b \x01(\tR\fsnapshotJsonJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
 	"\x0fGetAlertRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"T\n" +
 	"\x1bGetAlertByEnvelopeIdRequest\x12\x1f\n" +
@@ -768,7 +910,14 @@ const file_alert_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\"$\n" +
 	"\x12DeleteAlertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\xfd\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xcd\x01\n" +
+	"\x1dRecordAlertCompositionRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\venvelope_id\x18\x02 \x01(\tR\n" +
+	"envelopeId\x12%\n" +
+	"\x0ecomposition_id\x18\x03 \x01(\tR\rcompositionId\x12/\n" +
+	"\x13composition_version\x18\x04 \x01(\tR\x12compositionVersion\x12#\n" +
+	"\rsnapshot_json\x18\x05 \x01(\tR\fsnapshotJson2\xd3\x04\n" +
 	"\fAlertService\x12>\n" +
 	"\vCreateAlert\x12\x19.alert.CreateAlertRequest\x1a\x14.alert.AlertResponse\x128\n" +
 	"\bGetAlert\x12\x16.alert.GetAlertRequest\x1a\x14.alert.AlertResponse\x12P\n" +
@@ -776,7 +925,8 @@ const file_alert_proto_rawDesc = "" +
 	"\n" +
 	"ListAlerts\x12\x18.alert.ListAlertsRequest\x1a\x19.alert.ListAlertsResponse\x12J\n" +
 	"\x11UpdateAlertStatus\x12\x1f.alert.UpdateAlertStatusRequest\x1a\x14.alert.AlertResponse\x12P\n" +
-	"\x14UpdateAlertLifecycle\x12\".alert.UpdateAlertLifecycleRequest\x1a\x14.alert.AlertResponse\x12@\n" +
+	"\x14UpdateAlertLifecycle\x12\".alert.UpdateAlertLifecycleRequest\x1a\x14.alert.AlertResponse\x12T\n" +
+	"\x16RecordAlertComposition\x12$.alert.RecordAlertCompositionRequest\x1a\x14.alert.AlertResponse\x12@\n" +
 	"\vDeleteAlert\x12\x19.alert.DeleteAlertRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
@@ -791,30 +941,31 @@ func file_alert_proto_rawDescGZIP() []byte {
 	return file_alert_proto_rawDescData
 }
 
-var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_alert_proto_goTypes = []any{
-	(*Alert)(nil),                       // 0: alert.Alert
-	(*CreateAlertRequest)(nil),          // 1: alert.CreateAlertRequest
-	(*GetAlertRequest)(nil),             // 2: alert.GetAlertRequest
-	(*GetAlertByEnvelopeIdRequest)(nil), // 3: alert.GetAlertByEnvelopeIdRequest
-	(*UpdateAlertLifecycleRequest)(nil), // 4: alert.UpdateAlertLifecycleRequest
-	(*AlertResponse)(nil),               // 5: alert.AlertResponse
-	(*ListAlertsRequest)(nil),           // 6: alert.ListAlertsRequest
-	(*ListAlertsResponse)(nil),          // 7: alert.ListAlertsResponse
-	(*UpdateAlertStatusRequest)(nil),    // 8: alert.UpdateAlertStatusRequest
-	(*DeleteAlertRequest)(nil),          // 9: alert.DeleteAlertRequest
-	(*timestamppb.Timestamp)(nil),       // 10: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),              // 11: common.ResponseStatus
+	(*Alert)(nil),                         // 0: alert.Alert
+	(*CreateAlertRequest)(nil),            // 1: alert.CreateAlertRequest
+	(*GetAlertRequest)(nil),               // 2: alert.GetAlertRequest
+	(*GetAlertByEnvelopeIdRequest)(nil),   // 3: alert.GetAlertByEnvelopeIdRequest
+	(*UpdateAlertLifecycleRequest)(nil),   // 4: alert.UpdateAlertLifecycleRequest
+	(*AlertResponse)(nil),                 // 5: alert.AlertResponse
+	(*ListAlertsRequest)(nil),             // 6: alert.ListAlertsRequest
+	(*ListAlertsResponse)(nil),            // 7: alert.ListAlertsResponse
+	(*UpdateAlertStatusRequest)(nil),      // 8: alert.UpdateAlertStatusRequest
+	(*DeleteAlertRequest)(nil),            // 9: alert.DeleteAlertRequest
+	(*RecordAlertCompositionRequest)(nil), // 10: alert.RecordAlertCompositionRequest
+	(*timestamppb.Timestamp)(nil),         // 11: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                // 12: common.ResponseStatus
 }
 var file_alert_proto_depIdxs = []int32{
-	10, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
-	10, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
-	10, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
-	10, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
-	10, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
-	11, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
+	11, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
+	11, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
+	11, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
+	11, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
+	11, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
+	12, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
 	0,  // 6: alert.AlertResponse.alert:type_name -> alert.Alert
-	11, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
+	12, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
 	0,  // 8: alert.ListAlertsResponse.alerts:type_name -> alert.Alert
 	1,  // 9: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
 	2,  // 10: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
@@ -822,16 +973,18 @@ var file_alert_proto_depIdxs = []int32{
 	6,  // 12: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
 	8,  // 13: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
 	4,  // 14: alert.AlertService.UpdateAlertLifecycle:input_type -> alert.UpdateAlertLifecycleRequest
-	9,  // 15: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
-	5,  // 16: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
-	5,  // 17: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
-	5,  // 18: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
-	7,  // 19: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
-	5,  // 20: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
-	5,  // 21: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
-	11, // 22: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
+	10, // 15: alert.AlertService.RecordAlertComposition:input_type -> alert.RecordAlertCompositionRequest
+	9,  // 16: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
+	5,  // 17: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
+	5,  // 18: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
+	5,  // 19: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
+	7,  // 20: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
+	5,  // 21: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
+	5,  // 22: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
+	5,  // 23: alert.AlertService.RecordAlertComposition:output_type -> alert.AlertResponse
+	12, // 24: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
@@ -849,7 +1002,7 @@ func file_alert_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_alert_proto_rawDesc), len(file_alert_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

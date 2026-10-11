@@ -72,5 +72,6 @@ func All() []*gormigrate.Migration {
 		AddWidgetBehaviors(),
 		AddSceneCompositions(),
 		AddCompositionLinks(),
+		AddAlertCompositionSnapshot(),
 	}
 }

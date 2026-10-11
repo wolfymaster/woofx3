@@ -18,8 +18,8 @@ import (
 )
 
 // Composition links: which workflow or chat command steps play which alert.
-// An owner's links are replaced whole, in the transaction its definition is
-// written in (see replaceOwnerCompositionLinks), so the table matches the
+// The workflow and command services replace an owner's links in the same
+// transaction as they write its definition, so the table always matches the
 // saved definitions; the SceneService RPCs here read it, to show where an
 // alert is used, and deleting an alert that is used is refused.
 
@@ -37,6 +37,62 @@ type CompositionLinkRefusal struct {
 
 func (e *CompositionLinkRefusal) Error() string {
 	return e.Reason
+}
+
+// alertStepJSON is the part of a workflow step, or a command action, that
+// says whether it plays a stored composition. The two share a shape (see
+// command.proto's actions_json).
+type alertStepJSON struct {
+	ID         string         `json:"id"`
+	Action     string         `json:"action"`
+	Parameters map[string]any `json:"parameters"`
+}
+
+// alertCompositionAction is the handler name an alert step carries, as the
+// workflow engine registers it (see NewAlertAction in workflow/actions.go).
+const alertCompositionAction = "alert"
+
+// compositionLinksOf reads the links a definition's steps make: one per alert
+// step whose `parameters.composition` names a stored composition. A step is
+// named by its id, or by its position (`step[2]`) when it has none, as a
+// command's actions may not.
+//
+// Steps JSON that is not an array of objects makes no links rather than an
+// error, as for the resource reference edges: whether such a definition may
+// be saved at all is not decided here.
+func compositionLinksOf(stepsJSON string) ([]repo.CompositionLinkTarget, error) {
+	var steps []alertStepJSON
+	if err := json.Unmarshal([]byte(stepsJSON), &steps); err != nil {
+		return nil, nil
+	}
+	var targets []repo.CompositionLinkTarget
+	named := make(map[string]bool)
+	for i, step := range steps {
+		if step.Action != alertCompositionAction {
+			continue
+		}
+		raw, present := step.Parameters["composition"]
+		if !present {
+			continue
+		}
+		stepID := step.ID
+		if stepID == "" {
+			stepID = fmt.Sprintf("step[%d]", i)
+		}
+		if named[stepID] {
+			return nil, &CompositionLinkRefusal{Reason: fmt.Sprintf("alert step %q appears twice", stepID)}
+		}
+		named[stepID] = true
+		text, _ := raw.(string)
+		id, err := uuid.Parse(text)
+		if err != nil {
+			return nil, &CompositionLinkRefusal{
+				Reason: fmt.Sprintf("alert step %q: composition must be an alert composition id", stepID),
+			}
+		}
+		targets = append(targets, repo.CompositionLinkTarget{CompositionID: id, StepID: stepID})
+	}
+	return targets, nil
 }
 
 // replaceOwnerCompositionLinks makes `targets` the only links of one owner,

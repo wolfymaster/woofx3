@@ -73,6 +73,19 @@ export interface Alert {
    * snapshots of one row by it: two writes never share a version.
    */
   version: bigint;
+  /**
+   * The stored alert composition the step played, and which published
+   * version of it played (a digest of that document). Empty for an alert
+   * whose step carried its layout inline.
+   */
+  compositionId: string;
+  compositionVersion: string;
+  /**
+   * The composition as it played, inputs bound: the inline document a replay
+   * plays. Empty for an inline alert, whose payload is what it showed, and
+   * until the scene manager has recorded it.
+   */
+  snapshotJson: string;
 }
 
 export interface CreateAlertRequest {
@@ -92,6 +105,13 @@ export interface CreateAlertRequest {
    * don't supply this still create rows, just without the index hit.
    */
   envelopeId: string;
+  /**
+   * Set by a replay of an alert that played a composition, so the new row
+   * records what it plays (see Alert.composition_id). All three or none.
+   */
+  compositionId: string;
+  compositionVersion: string;
+  snapshotJson: string;
 }
 
 export interface GetAlertRequest {
@@ -152,6 +172,20 @@ export interface UpdateAlertStatusRequest {
 
 export interface DeleteAlertRequest {
   id: string;
+}
+
+/**
+ * Record which composition a play showed, and the document it showed (see
+ * Alert.snapshot_json), on the row CreateAlert returned for the play. The row
+ * must carry `envelope_id`. Recorded once: a row that already has a snapshot
+ * is answered as it stands and not changed. Every field is required.
+ */
+export interface RecordAlertCompositionRequest {
+  id: string;
+  envelopeId: string;
+  compositionId: string;
+  compositionVersion: string;
+  snapshotJson: string;
 }
 
 //========================================//
@@ -225,6 +259,18 @@ export async function UpdateAlertLifecycle(
   const response = await PBrequest(
     "/alert.AlertService/UpdateAlertLifecycle",
     UpdateAlertLifecycleRequest.encode(updateAlertLifecycleRequest),
+    config,
+  );
+  return AlertResponse.decode(response);
+}
+
+export async function RecordAlertComposition(
+  recordAlertCompositionRequest: RecordAlertCompositionRequest,
+  config?: ClientConfiguration,
+): Promise<AlertResponse> {
+  const response = await PBrequest(
+    "/alert.AlertService/RecordAlertComposition",
+    RecordAlertCompositionRequest.encode(recordAlertCompositionRequest),
     config,
   );
   return AlertResponse.decode(response);
@@ -318,6 +364,18 @@ export async function UpdateAlertLifecycleJSON(
   return AlertResponseJSON.decode(response);
 }
 
+export async function RecordAlertCompositionJSON(
+  recordAlertCompositionRequest: RecordAlertCompositionRequest,
+  config?: ClientConfiguration,
+): Promise<AlertResponse> {
+  const response = await JSONrequest(
+    "/alert.AlertService/RecordAlertComposition",
+    RecordAlertCompositionRequestJSON.encode(recordAlertCompositionRequest),
+    config,
+  );
+  return AlertResponseJSON.decode(response);
+}
+
 export async function DeleteAlertJSON(
   deleteAlertRequest: DeleteAlertRequest,
   config?: ClientConfiguration,
@@ -343,6 +401,11 @@ export async function DeleteAlertJSON(
  * re-publishes `payload` to the `ui.notify.alert` NATS subject (so
  * streamware broadcasts it to overlays exactly like the original
  * dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
+ *
+ * Composition path: when a step plays a stored alert composition, the scene
+ * manager binds the step's inputs into the composition's latest published
+ * version and records the result on the row, via `RecordAlertComposition`,
+ * before it delivers the alert. A replay plays that snapshot.
  *
  * Lifecycle path: the scene manager reports each play's `playing` /
  * `completed` / `failed` / `skipped` against the row CreateAlert returned for
@@ -373,6 +436,10 @@ export interface AlertService<Context = unknown> {
   ) => Promise<AlertResponse> | AlertResponse;
   UpdateAlertLifecycle: (
     updateAlertLifecycleRequest: UpdateAlertLifecycleRequest,
+    context: Context,
+  ) => Promise<AlertResponse> | AlertResponse;
+  RecordAlertComposition: (
+    recordAlertCompositionRequest: RecordAlertCompositionRequest,
     context: Context,
   ) => Promise<AlertResponse> | AlertResponse;
   DeleteAlert: (
@@ -427,6 +494,15 @@ export function createAlertService<Context>(service: AlertService<Context>) {
         input: {
           protobuf: UpdateAlertLifecycleRequest,
           json: UpdateAlertLifecycleRequestJSON,
+        },
+        output: { protobuf: AlertResponse, json: AlertResponseJSON },
+      },
+      RecordAlertComposition: {
+        name: "RecordAlertComposition",
+        handler: service.RecordAlertComposition,
+        input: {
+          protobuf: RecordAlertCompositionRequest,
+          json: RecordAlertCompositionRequestJSON,
         },
         output: { protobuf: AlertResponse, json: AlertResponseJSON },
       },
@@ -486,6 +562,9 @@ export const Alert = {
       completedAt: protoscript.Timestamp.initialize(),
       error: "",
       version: 0n,
+      compositionId: "",
+      compositionVersion: "",
+      snapshotJson: "",
       ...msg,
     };
   },
@@ -556,6 +635,15 @@ export const Alert = {
     if (msg.version) {
       writer.writeInt64String(14, msg.version.toString() as any);
     }
+    if (msg.compositionId) {
+      writer.writeString(15, msg.compositionId);
+    }
+    if (msg.compositionVersion) {
+      writer.writeString(16, msg.compositionVersion);
+    }
+    if (msg.snapshotJson) {
+      writer.writeString(17, msg.snapshotJson);
+    }
     return writer;
   },
 
@@ -624,6 +712,18 @@ export const Alert = {
           msg.version = BigInt(reader.readInt64String());
           break;
         }
+        case 15: {
+          msg.compositionId = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.compositionVersion = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.snapshotJson = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -664,6 +764,9 @@ export const CreateAlertRequest = {
       workflowId: "",
       sourceEventId: "",
       envelopeId: "",
+      compositionId: "",
+      compositionVersion: "",
+      snapshotJson: "",
       ...msg,
     };
   },
@@ -686,6 +789,15 @@ export const CreateAlertRequest = {
     }
     if (msg.envelopeId) {
       writer.writeString(5, msg.envelopeId);
+    }
+    if (msg.compositionId) {
+      writer.writeString(6, msg.compositionId);
+    }
+    if (msg.compositionVersion) {
+      writer.writeString(7, msg.compositionVersion);
+    }
+    if (msg.snapshotJson) {
+      writer.writeString(8, msg.snapshotJson);
     }
     return writer;
   },
@@ -714,6 +826,18 @@ export const CreateAlertRequest = {
         }
         case 5: {
           msg.envelopeId = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.compositionId = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.compositionVersion = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.snapshotJson = reader.readString();
           break;
         }
         default: {
@@ -1358,6 +1482,110 @@ export const DeleteAlertRequest = {
   },
 };
 
+export const RecordAlertCompositionRequest = {
+  /**
+   * Serializes RecordAlertCompositionRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<RecordAlertCompositionRequest>,
+  ): Uint8Array {
+    return RecordAlertCompositionRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes RecordAlertCompositionRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): RecordAlertCompositionRequest {
+    return RecordAlertCompositionRequest._readMessage(
+      RecordAlertCompositionRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes RecordAlertCompositionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordAlertCompositionRequest>,
+  ): RecordAlertCompositionRequest {
+    return {
+      id: "",
+      envelopeId: "",
+      compositionId: "",
+      compositionVersion: "",
+      snapshotJson: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordAlertCompositionRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.envelopeId) {
+      writer.writeString(2, msg.envelopeId);
+    }
+    if (msg.compositionId) {
+      writer.writeString(3, msg.compositionId);
+    }
+    if (msg.compositionVersion) {
+      writer.writeString(4, msg.compositionVersion);
+    }
+    if (msg.snapshotJson) {
+      writer.writeString(5, msg.snapshotJson);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordAlertCompositionRequest,
+    reader: protoscript.BinaryReader,
+  ): RecordAlertCompositionRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.envelopeId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.compositionId = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.compositionVersion = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.snapshotJson = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -1395,6 +1623,9 @@ export const AlertJSON = {
       completedAt: protoscript.TimestampJSON.initialize(),
       error: "",
       version: 0n,
+      compositionId: "",
+      compositionVersion: "",
+      snapshotJson: "",
       ...msg,
     };
   },
@@ -1445,6 +1676,15 @@ export const AlertJSON = {
     }
     if (msg.version) {
       json["version"] = String(msg.version);
+    }
+    if (msg.compositionId) {
+      json["compositionId"] = msg.compositionId;
+    }
+    if (msg.compositionVersion) {
+      json["compositionVersion"] = msg.compositionVersion;
+    }
+    if (msg.snapshotJson) {
+      json["snapshotJson"] = msg.snapshotJson;
     }
     return json;
   },
@@ -1505,6 +1745,19 @@ export const AlertJSON = {
     if (_version_) {
       msg.version = BigInt(_version_);
     }
+    const _compositionId_ = json["compositionId"] ?? json["composition_id"];
+    if (_compositionId_) {
+      msg.compositionId = _compositionId_;
+    }
+    const _compositionVersion_ =
+      json["compositionVersion"] ?? json["composition_version"];
+    if (_compositionVersion_) {
+      msg.compositionVersion = _compositionVersion_;
+    }
+    const _snapshotJson_ = json["snapshotJson"] ?? json["snapshot_json"];
+    if (_snapshotJson_) {
+      msg.snapshotJson = _snapshotJson_;
+    }
     return msg;
   },
 };
@@ -1536,6 +1789,9 @@ export const CreateAlertRequestJSON = {
       workflowId: "",
       sourceEventId: "",
       envelopeId: "",
+      compositionId: "",
+      compositionVersion: "",
+      snapshotJson: "",
       ...msg,
     };
   },
@@ -1558,6 +1814,15 @@ export const CreateAlertRequestJSON = {
     }
     if (msg.envelopeId) {
       json["envelopeId"] = msg.envelopeId;
+    }
+    if (msg.compositionId) {
+      json["compositionId"] = msg.compositionId;
+    }
+    if (msg.compositionVersion) {
+      json["compositionVersion"] = msg.compositionVersion;
+    }
+    if (msg.snapshotJson) {
+      json["snapshotJson"] = msg.snapshotJson;
     }
     return json;
   },
@@ -1584,6 +1849,19 @@ export const CreateAlertRequestJSON = {
     const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
     if (_envelopeId_) {
       msg.envelopeId = _envelopeId_;
+    }
+    const _compositionId_ = json["compositionId"] ?? json["composition_id"];
+    if (_compositionId_) {
+      msg.compositionId = _compositionId_;
+    }
+    const _compositionVersion_ =
+      json["compositionVersion"] ?? json["composition_version"];
+    if (_compositionVersion_) {
+      msg.compositionVersion = _compositionVersion_;
+    }
+    const _snapshotJson_ = json["snapshotJson"] ?? json["snapshot_json"];
+    if (_snapshotJson_) {
+      msg.snapshotJson = _snapshotJson_;
     }
     return msg;
   },
@@ -2125,6 +2403,97 @@ export const DeleteAlertRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
+    }
+    return msg;
+  },
+};
+
+export const RecordAlertCompositionRequestJSON = {
+  /**
+   * Serializes RecordAlertCompositionRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<RecordAlertCompositionRequest>): string {
+    return JSON.stringify(RecordAlertCompositionRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes RecordAlertCompositionRequest from JSON.
+   */
+  decode: function (json: string): RecordAlertCompositionRequest {
+    return RecordAlertCompositionRequestJSON._readMessage(
+      RecordAlertCompositionRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes RecordAlertCompositionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordAlertCompositionRequest>,
+  ): RecordAlertCompositionRequest {
+    return {
+      id: "",
+      envelopeId: "",
+      compositionId: "",
+      compositionVersion: "",
+      snapshotJson: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordAlertCompositionRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.envelopeId) {
+      json["envelopeId"] = msg.envelopeId;
+    }
+    if (msg.compositionId) {
+      json["compositionId"] = msg.compositionId;
+    }
+    if (msg.compositionVersion) {
+      json["compositionVersion"] = msg.compositionVersion;
+    }
+    if (msg.snapshotJson) {
+      json["snapshotJson"] = msg.snapshotJson;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordAlertCompositionRequest,
+    json: any,
+  ): RecordAlertCompositionRequest {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
+    if (_envelopeId_) {
+      msg.envelopeId = _envelopeId_;
+    }
+    const _compositionId_ = json["compositionId"] ?? json["composition_id"];
+    if (_compositionId_) {
+      msg.compositionId = _compositionId_;
+    }
+    const _compositionVersion_ =
+      json["compositionVersion"] ?? json["composition_version"];
+    if (_compositionVersion_) {
+      msg.compositionVersion = _compositionVersion_;
+    }
+    const _snapshotJson_ = json["snapshotJson"] ?? json["snapshot_json"];
+    if (_snapshotJson_) {
+      msg.snapshotJson = _snapshotJson_;
     }
     return msg;
   },

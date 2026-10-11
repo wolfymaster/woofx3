@@ -20,7 +20,8 @@ import (
 // touches. Hand DDL, same reason: production gorm tags rely on
 // Postgres-only uuid_generate_v4().
 // compositionTablesDDL creates the scenes and composition links tables,
-// which every test database has.
+// which every test database has: saving a workflow or a command maintains its
+// composition links.
 var compositionTablesDDL = []string{
 	`CREATE TABLE scenes (
 			id TEXT PRIMARY KEY,
