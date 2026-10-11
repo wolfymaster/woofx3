@@ -60,8 +60,11 @@ export interface SceneWrite {
   id: string;
   widgetsJson?: string;
   layoutJson?: string;
+  behaviorsJson?: string;
   draftWidgetsJson?: string;
   draftLayoutJson?: string;
+  /** Stored with the draft's widgets and layout. */
+  draftBehaviorsJson?: string;
   clearDraft?: boolean;
   /** The scene editor's sync state, stored in the same row update as the documents. */
   editorStateJson?: string;
@@ -130,10 +133,9 @@ function numberOr(value: unknown, fallback: number): number {
 }
 
 /**
- * A scene state as a document: placements keyed by id, stacked as saved.
- * The store keeps no behaviors (see `storedSceneOf`), so a loaded scene has
- * none; behaviors added while the scene is held live in its in-memory
- * documents only.
+ * A scene state as a document: placements keyed by id, stacked as saved,
+ * with the version's behaviors as stored. `inputs` is present only when the
+ * composition declares some, so a scene's document has no such key.
  */
 export function documentOf(state: OverlaySceneState): SceneDocument {
   const widgets: SceneDocument["widgets"] = {};
@@ -162,18 +164,28 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
       extra,
     };
   });
-  return { layout: { ...state.layout }, widgets, behaviors: {} };
+  const doc: SceneDocument = { layout: { ...state.layout }, widgets, behaviors: structuredClone(state.behaviors) };
+  if (state.inputs.length > 0) {
+    doc.inputs = structuredClone(state.inputs);
+  }
+  return doc;
 }
 
 /**
  * A document in the shapes the database stores and the editor reads:
  * `widgets_json` is the placements in stacking order, each as the editor
- * writes one, and `layout_json` the layout. A scene row has no column for
- * behaviors, so they are not written.
+ * writes one, `layout_json` the layout and `behaviors_json` the behaviors.
+ * Inputs are not among them: the editor never changes them, so they are
+ * written only where they are set (the api), and a write from here never
+ * races one there.
  */
-export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string } {
+export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string; behaviorsJson: string } {
   const widgets = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
-  return { widgetsJson: JSON.stringify(widgets), layoutJson: JSON.stringify(doc.layout) };
+  return {
+    widgetsJson: JSON.stringify(widgets),
+    layoutJson: JSON.stringify(doc.layout),
+    behaviorsJson: JSON.stringify(doc.behaviors),
+  };
 }
 
 /** One placement as the editor stores it. */
@@ -672,9 +684,7 @@ export class SceneDocuments {
         return;
       }
       held.name = loaded.name;
-      // The store holds no behaviors, so a save made elsewhere says nothing
-      // about them: the held ones stay.
-      const saved = { ...documentOf(loaded), behaviors: held.state.docs.published.behaviors };
+      const saved = documentOf(loaded);
       const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
         kind: "external",
@@ -693,10 +703,40 @@ export class SceneDocuments {
       const meta = await this.metaFor(held, plan.docs, { knownPublished: framingOf(loaded.instances) });
       const before = viewOf(held);
       this.afterCommit(held, commit(held.state, plan, meta.changes, null, this.clock.now()), meta, before);
+      this.takeInInputs(held, saved);
     }).catch((err) => {
       // Callers do not wait on a refresh; the next save or load picks the change up.
       this.logger.warn("scene documents: taking in a save made elsewhere failed", { sceneId, error: errorText(err) });
     });
+  }
+
+  /**
+   * Inputs are not drafted: both versions declare the ones stored. A save
+   * made elsewhere reaches the draft through the published entry only when
+   * the scene has no draft, so a scene with one gets the new inputs in an
+   * entry of their own.
+   */
+  private takeInInputs(held: HeldScene, saved: SceneDocument): void {
+    const draft = held.state.docs.draft;
+    const ops = diffDocuments(draft, { ...draft, inputs: saved.inputs });
+    if (ops.length === 0) {
+      return;
+    }
+    const plan = prepare(held.state, held.state.v, {
+      kind: "external",
+      version: "draft",
+      ops,
+      mirrorIntoDraft: false,
+    });
+    if (plan.refused) {
+      this.logger.warn("scene documents: stored inputs could not be applied to the draft", {
+        sceneId: held.sceneId,
+        detail: plan.detail,
+      });
+      return;
+    }
+    const before = viewOf(held);
+    this.afterCommit(held, commit(held.state, plan, {}, null, this.clock.now()), noMeta(held), before);
   }
 
   /**
@@ -1163,6 +1203,11 @@ export class SceneDocuments {
 /** The ops `applyChange` takes. */
 type SceneDocumentOps = ExternalBody["ops"];
 
+/** A change that leaves every placement's meta as it is. */
+function noMeta(held: HeldScene): MetaPlan {
+  return { next: held.meta, unframed: held.unframed, changes: {} };
+}
+
 function savePending(held: HeldScene): boolean {
   return held.save.dirty || held.save.timer !== null || held.save.writing !== null;
 }
@@ -1173,7 +1218,11 @@ function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
   const draft = hasDraft
     ? (() => {
         const stored = storedSceneOf(docs.draft);
-        return { draftWidgetsJson: stored.widgetsJson, draftLayoutJson: stored.layoutJson };
+        return {
+          draftWidgetsJson: stored.widgetsJson,
+          draftLayoutJson: stored.layoutJson,
+          draftBehaviorsJson: stored.behaviorsJson,
+        };
       })()
     : { clearDraft: true };
   const editorState = { ...editorStateOf(held.state, now), digest: documentsDigest(docs) };
@@ -1181,6 +1230,7 @@ function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
     id: held.sceneId,
     widgetsJson: published.widgetsJson,
     layoutJson: published.layoutJson,
+    behaviorsJson: published.behaviorsJson,
     ...draft,
     editorStateJson: JSON.stringify(editorState),
   };

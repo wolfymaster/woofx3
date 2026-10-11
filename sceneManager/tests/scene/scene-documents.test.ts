@@ -453,6 +453,8 @@ describe("SceneDocuments — writing back", () => {
     expect(store.writes).toHaveLength(1);
     const [write] = store.writes;
     expect(Object.keys(write!).sort()).toEqual([
+      "behaviorsJson",
+      "draftBehaviorsJson",
       "draftLayoutJson",
       "draftWidgetsJson",
       "editorStateJson",
@@ -608,6 +610,122 @@ describe("SceneDocuments — writing back", () => {
   });
 });
 
+describe("SceneDocuments — behaviors and inputs", () => {
+  const fade = (target = "a") => ({
+    type: "transition",
+    kind: "fade",
+    target,
+    order: "a0",
+    timing: { anchor: "enter", offsetMs: 0, durationMs: 400, easing: "ease-out" },
+    params: { phase: "in" },
+  });
+  const field = (id: string) => ({ id, label: id, type: "text" });
+
+  function alertRow(): SceneRow {
+    return {
+      ...sceneRow("s1", [storedPlacement("a")]),
+      kind: "alert",
+      behaviorsJson: JSON.stringify({ b1: fade() }),
+      inputsJson: JSON.stringify([field("name")]),
+    };
+  }
+
+  it("loads each version's stored behaviors and the inputs into both", async () => {
+    const row = alertRow();
+    row.draftWidgetsJson = row.widgetsJson;
+    row.draftLayoutJson = row.layoutJson;
+    row.draftBehaviorsJson = JSON.stringify({ b2: fade() });
+    const { documents } = setup([row]);
+    const published = (await documents.snapshot("s1"))!.doc;
+    const draft = (await documents.snapshot("s1", "draft"))!.doc;
+    expect(Object.keys(published.behaviors)).toEqual(["b1"]);
+    expect(Object.keys(draft.behaviors)).toEqual(["b2"]);
+    expect(published.inputs).toEqual([field("name")]);
+    expect(draft.inputs).toEqual([field("name")]);
+  });
+
+  it("gives a scene with no inputs a document without them", async () => {
+    const { documents } = setup();
+    expect("inputs" in (await documents.snapshot("s1"))!.doc).toBe(false);
+  });
+
+  it("writes behaviors back with the documents, published and draft, but never the inputs", async () => {
+    const { documents, store, clock } = setup([alertRow()]);
+    await open(documents, "c1");
+    await submit(documents, "c1", 1, 0, edit("draft", [{ p: ["behaviors", "b2"], oi: fade() }]));
+    await clock.advance(AUTOSAVE_MS);
+    const row = store.rows.get("s1")!;
+    expect(Object.keys(JSON.parse(row.draftBehaviorsJson!)).sort()).toEqual(["b1", "b2"]);
+    expect(Object.keys(JSON.parse(row.behaviorsJson))).toEqual(["b1"]);
+    expect(store.writes.every((write) => !("inputsJson" in write))).toBe(true);
+
+    await submit(documents, "c1", 2, 1, { kind: "publish" });
+    await clock.advance(AUTOSAVE_MS);
+    expect(Object.keys(JSON.parse(row.behaviorsJson)).sort()).toEqual(["b1", "b2"]);
+    expect(row.draftBehaviorsJson).toBeNull();
+  });
+
+  it("keeps behaviors across a restart, resuming the editors' head", async () => {
+    const { documents, store, clock, make } = setup();
+    const socket = await open(documents, "c1");
+    socket.take();
+    await submit(documents, "c1", 1, 0, edit("published", [{ p: ["behaviors", "b1"], oi: fade() }]));
+    const [entry] = entries(socket);
+    await clock.advance(AUTOSAVE_MS);
+    await documents.close();
+    expect(Object.keys(JSON.parse(store.rows.get("s1")!.behaviorsJson))).toEqual(["b1"]);
+
+    const restarted = make();
+    expect(Object.keys((await restarted.snapshot("s1"))!.doc.behaviors)).toEqual(["b1"]);
+    const again = await open(restarted, "c1", { v: entry.v, id: entry.id });
+    expect(again.take()[0]).toMatchObject({ catchup: [], last: { seq: 1, outcome: "applied" } });
+  });
+
+  it("takes in behaviors from a save made elsewhere", async () => {
+    const { documents, store, published } = setup();
+    await documents.snapshot("s1");
+    store.rows.get("s1")!.behaviorsJson = JSON.stringify({ b1: fade() });
+    await documents.refresh("s1");
+    expect(published().at(-1).ops).toEqual([{ p: ["behaviors", "b1"], oi: fade() }]);
+    expect(Object.keys((await documents.snapshot("s1", "draft"))!.doc.behaviors)).toEqual(["b1"]);
+  });
+
+  it("takes in inputs set elsewhere into both versions, draft or not", async () => {
+    for (const withDraft of [false, true]) {
+      const row = alertRow();
+      const { documents, store, clock } = setup([row]);
+      const socket = await open(documents, "c1");
+      if (withDraft) {
+        await submit(documents, "c1", 1, 0, edit("draft", [x("a", 0, 5)]));
+        await clock.advance(AUTOSAVE_MS);
+      }
+      socket.take();
+      row.inputsJson = JSON.stringify([field("name"), field("amount")]);
+      await documents.refresh("s1");
+      const sent = entries(socket);
+      expect(sent.length).toBe(withDraft ? 2 : 1);
+      for (const version of ["published", "draft"] as const) {
+        expect((await documents.snapshot("s1", version))!.doc.inputs).toEqual([field("name"), field("amount")]);
+      }
+      expect((await documents.snapshot("s1", "draft"))!.doc.widgets.a!.x).toBe(withDraft ? 5 : 0);
+      await clock.advance(AUTOSAVE_MS);
+      expect(store.writes.every((write) => !("inputsJson" in write))).toBe(true);
+    }
+  });
+
+  it("edits an alert like a scene: same items, drafts and autosave", async () => {
+    const { documents, store, clock } = setup([alertRow()]);
+    const socket = await open(documents, "c1");
+    expect(socket.take()[0]).toMatchObject({ type: "welcome" });
+    const replies = await submit(documents, "c1", 1, 0, edit("draft", [x("a", 0, 7)]));
+    expect(replies).toEqual([]);
+    expect(entries(socket)).toHaveLength(1);
+    await clock.advance(AUTOSAVE_MS);
+    expect(JSON.parse(store.rows.get("s1")!.draftWidgetsJson!)[0].position.x).toBe(7);
+    expect(store.rows.get("s1")!.kind).toBe("alert");
+  });
+});
+
 describe("documentOf + storedSceneOf", () => {
   function instance(id: string, overrides: Partial<OverlayWidgetInstance> = {}): OverlayWidgetInstance {
     return {
@@ -628,6 +746,9 @@ describe("documentOf + storedSceneOf", () => {
   const scene = (instances: OverlayWidgetInstance[]): OverlaySceneState => ({
     sceneId: "s1",
     name: "Main",
+    kind: "scene",
+    behaviors: {},
+    inputs: [],
     layout: {},
     instances,
   });
