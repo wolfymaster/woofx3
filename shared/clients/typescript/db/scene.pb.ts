@@ -54,6 +54,26 @@ export interface Scene {
    * editor and opaque here. Empty when no editor has synced the scene.
    */
   editorStateJson: string;
+  /**
+   * "scene" or "alert", fixed at creation. A scene is shown by overlays;
+   * an alert is a library entry an alert step's layout is copied from,
+   * never an overlay page.
+   */
+  kind: string;
+  /**
+   * The published document's behaviors, a JSON object keyed by behavior
+   * id; `{}` when it has none.
+   */
+  behaviorsJson: string;
+  /**
+   * The draft's behaviors, the same shape. Set only when `has_draft`.
+   */
+  draftBehaviorsJson: string;
+  /**
+   * The inputs the composition takes, a JSON array of ConfigFields; `[]`
+   * when it takes none. Not drafted: both documents declare these.
+   */
+  inputsJson: string;
 }
 
 export interface CreateSceneRequest {
@@ -71,6 +91,18 @@ export interface CreateSceneRequest {
   layoutJson: string;
   createdByType: string;
   createdByRef: string;
+  /**
+   * "scene" or "alert"; empty creates a scene. Anything else is refused.
+   */
+  kind: string;
+  /**
+   * JSON object of behaviors keyed by id; empty stores `{}`.
+   */
+  behaviorsJson: string;
+  /**
+   * JSON array of input fields; empty stores `[]`.
+   */
+  inputsJson: string;
 }
 
 export interface GetSceneRequest {
@@ -96,13 +128,16 @@ export interface UpdateSceneRequest {
   layoutJson: string;
   /**
    * Store a draft, the same shapes as `widgets_json` and `layout_json`.
-   * Both are set together; empty leaves the draft unchanged.
+   * Both are set together; empty leaves the draft unchanged. The draft's
+   * behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+   * that is empty, so a stored draft never pairs with behaviors from an
+   * older one.
    */
   draftWidgetsJson: string;
   draftLayoutJson: string;
   /**
-   * Drop the draft (it was published or discarded). Wins over a draft
-   * set in the same request.
+   * Drop the draft (it was published or discarded), behaviors included.
+   * Wins over a draft set in the same request.
    */
   clearDraft: boolean;
   /**
@@ -120,6 +155,23 @@ export interface UpdateSceneRequest {
    * together with `editor_state_json`.
    */
   clearEditorState: boolean;
+  /**
+   * The published behaviors, a JSON object; empty leaves them unchanged.
+   * A document like `widgets_json`: refused when not a JSON object.
+   */
+  behaviorsJson: string;
+  /**
+   * The draft's behaviors, a JSON object, written only with a draft
+   * (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+   * JSON object, or set without the draft.
+   */
+  draftBehaviorsJson: string;
+  /**
+   * The inputs, a JSON array of input fields; empty leaves them
+   * unchanged. A document like `widgets_json`: refused when not a JSON
+   * array.
+   */
+  inputsJson: string;
 }
 
 export interface DeleteSceneRequest {
@@ -131,6 +183,11 @@ export interface ListScenesRequest {
   pageSize: number;
   sortBy: string;
   sortDesc: boolean;
+  /**
+   * Which kind to list, "scene" or "alert". Empty lists scenes, so a
+   * caller that predates alerts never sees one.
+   */
+  kind: string;
 }
 
 export interface ListScenesResponse {
@@ -397,6 +454,10 @@ export const Scene = {
       draftLayoutJson: "",
       hasDraft: false,
       editorStateJson: "",
+      kind: "",
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -454,6 +515,18 @@ export const Scene = {
     }
     if (msg.editorStateJson) {
       writer.writeString(14, msg.editorStateJson);
+    }
+    if (msg.kind) {
+      writer.writeString(15, msg.kind);
+    }
+    if (msg.behaviorsJson) {
+      writer.writeString(16, msg.behaviorsJson);
+    }
+    if (msg.draftBehaviorsJson) {
+      writer.writeString(17, msg.draftBehaviorsJson);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(18, msg.inputsJson);
     }
     return writer;
   },
@@ -517,6 +590,22 @@ export const Scene = {
           msg.editorStateJson = reader.readString();
           break;
         }
+        case 15: {
+          msg.kind = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.behaviorsJson = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.draftBehaviorsJson = reader.readString();
+          break;
+        }
+        case 18: {
+          msg.inputsJson = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -559,6 +648,9 @@ export const CreateSceneRequest = {
       layoutJson: "",
       createdByType: "",
       createdByRef: "",
+      kind: "",
+      behaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -587,6 +679,15 @@ export const CreateSceneRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(7, msg.createdByRef);
+    }
+    if (msg.kind) {
+      writer.writeString(8, msg.kind);
+    }
+    if (msg.behaviorsJson) {
+      writer.writeString(9, msg.behaviorsJson);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(10, msg.inputsJson);
     }
     return writer;
   },
@@ -623,6 +724,18 @@ export const CreateSceneRequest = {
         }
         case 7: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.kind = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.behaviorsJson = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.inputsJson = reader.readString();
           break;
         }
         default: {
@@ -815,6 +928,9 @@ export const UpdateSceneRequest = {
       clearDraft: false,
       editorStateJson: "",
       clearEditorState: false,
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -855,6 +971,15 @@ export const UpdateSceneRequest = {
     }
     if (msg.clearEditorState) {
       writer.writeBool(10, msg.clearEditorState);
+    }
+    if (msg.behaviorsJson) {
+      writer.writeString(11, msg.behaviorsJson);
+    }
+    if (msg.draftBehaviorsJson) {
+      writer.writeString(12, msg.draftBehaviorsJson);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(13, msg.inputsJson);
     }
     return writer;
   },
@@ -907,6 +1032,18 @@ export const UpdateSceneRequest = {
         }
         case 10: {
           msg.clearEditorState = reader.readBool();
+          break;
+        }
+        case 11: {
+          msg.behaviorsJson = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.draftBehaviorsJson = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.inputsJson = reader.readString();
           break;
         }
         default: {
@@ -1017,6 +1154,7 @@ export const ListScenesRequest = {
       pageSize: 0,
       sortBy: "",
       sortDesc: false,
+      kind: "",
       ...msg,
     };
   },
@@ -1039,6 +1177,9 @@ export const ListScenesRequest = {
     }
     if (msg.sortDesc) {
       writer.writeBool(5, msg.sortDesc);
+    }
+    if (msg.kind) {
+      writer.writeString(6, msg.kind);
     }
     return writer;
   },
@@ -1067,6 +1208,10 @@ export const ListScenesRequest = {
         }
         case 5: {
           msg.sortDesc = reader.readBool();
+          break;
+        }
+        case 6: {
+          msg.kind = reader.readString();
           break;
         }
         default: {
@@ -1218,6 +1363,10 @@ export const SceneJSON = {
       draftLayoutJson: "",
       hasDraft: false,
       editorStateJson: "",
+      kind: "",
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -1265,6 +1414,18 @@ export const SceneJSON = {
     }
     if (msg.editorStateJson) {
       json["editorStateJson"] = msg.editorStateJson;
+    }
+    if (msg.kind) {
+      json["kind"] = msg.kind;
+    }
+    if (msg.behaviorsJson) {
+      json["behaviorsJson"] = msg.behaviorsJson;
+    }
+    if (msg.draftBehaviorsJson) {
+      json["draftBehaviorsJson"] = msg.draftBehaviorsJson;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
     }
     return json;
   },
@@ -1328,6 +1489,23 @@ export const SceneJSON = {
     if (_editorStateJson_) {
       msg.editorStateJson = _editorStateJson_;
     }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = _kind_;
+    }
+    const _behaviorsJson_ = json["behaviorsJson"] ?? json["behaviors_json"];
+    if (_behaviorsJson_) {
+      msg.behaviorsJson = _behaviorsJson_;
+    }
+    const _draftBehaviorsJson_ =
+      json["draftBehaviorsJson"] ?? json["draft_behaviors_json"];
+    if (_draftBehaviorsJson_) {
+      msg.draftBehaviorsJson = _draftBehaviorsJson_;
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
+    }
     return msg;
   },
 };
@@ -1361,6 +1539,9 @@ export const CreateSceneRequestJSON = {
       layoutJson: "",
       createdByType: "",
       createdByRef: "",
+      kind: "",
+      behaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -1389,6 +1570,15 @@ export const CreateSceneRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.kind) {
+      json["kind"] = msg.kind;
+    }
+    if (msg.behaviorsJson) {
+      json["behaviorsJson"] = msg.behaviorsJson;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
     }
     return json;
   },
@@ -1423,6 +1613,18 @@ export const CreateSceneRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = _kind_;
+    }
+    const _behaviorsJson_ = json["behaviorsJson"] ?? json["behaviors_json"];
+    if (_behaviorsJson_) {
+      msg.behaviorsJson = _behaviorsJson_;
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
     }
     return msg;
   },
@@ -1581,6 +1783,9 @@ export const UpdateSceneRequestJSON = {
       clearDraft: false,
       editorStateJson: "",
       clearEditorState: false,
+      behaviorsJson: "",
+      draftBehaviorsJson: "",
+      inputsJson: "",
       ...msg,
     };
   },
@@ -1621,6 +1826,15 @@ export const UpdateSceneRequestJSON = {
     }
     if (msg.clearEditorState) {
       json["clearEditorState"] = msg.clearEditorState;
+    }
+    if (msg.behaviorsJson) {
+      json["behaviorsJson"] = msg.behaviorsJson;
+    }
+    if (msg.draftBehaviorsJson) {
+      json["draftBehaviorsJson"] = msg.draftBehaviorsJson;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
     }
     return json;
   },
@@ -1675,6 +1889,19 @@ export const UpdateSceneRequestJSON = {
       json["clearEditorState"] ?? json["clear_editor_state"];
     if (_clearEditorState_) {
       msg.clearEditorState = _clearEditorState_;
+    }
+    const _behaviorsJson_ = json["behaviorsJson"] ?? json["behaviors_json"];
+    if (_behaviorsJson_) {
+      msg.behaviorsJson = _behaviorsJson_;
+    }
+    const _draftBehaviorsJson_ =
+      json["draftBehaviorsJson"] ?? json["draft_behaviors_json"];
+    if (_draftBehaviorsJson_) {
+      msg.draftBehaviorsJson = _draftBehaviorsJson_;
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
     }
     return msg;
   },
@@ -1763,6 +1990,7 @@ export const ListScenesRequestJSON = {
       pageSize: 0,
       sortBy: "",
       sortDesc: false,
+      kind: "",
       ...msg,
     };
   },
@@ -1785,6 +2013,9 @@ export const ListScenesRequestJSON = {
     }
     if (msg.sortDesc) {
       json["sortDesc"] = msg.sortDesc;
+    }
+    if (msg.kind) {
+      json["kind"] = msg.kind;
     }
     return json;
   },
@@ -1811,6 +2042,10 @@ export const ListScenesRequestJSON = {
     const _sortDesc_ = json["sortDesc"] ?? json["sort_desc"];
     if (_sortDesc_) {
       msg.sortDesc = _sortDesc_;
+    }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = _kind_;
     }
     return msg;
   },
