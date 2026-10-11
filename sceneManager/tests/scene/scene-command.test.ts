@@ -14,6 +14,9 @@ function fakeLogger() {
 const SCENE: OverlaySceneState = {
   sceneId: "scene-1",
   name: "Main",
+  kind: "scene",
+  behaviors: {},
+  inputs: [],
   layout: {},
   instances: [
     {
