@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
@@ -367,5 +369,36 @@ func TestSceneService_Update_KeepsAConcurrentWritersColumns(t *testing.T) {
 	scene := resp.Scene
 	if scene.Name != "renamed" || scene.WidgetsJson != `[{"id":"w1"}]` || scene.EditorStateJson != state {
 		t.Fatalf("an update overwrote a concurrent writer's columns: %+v", scene)
+	}
+}
+
+func TestSceneService_NamesAreUniquePerKind(t *testing.T) {
+	svc, _, _, _ := newSceneSvc(t)
+	ctx := context.Background()
+	create := func(kind, name string) (*client.SceneResponse, error) {
+		return svc.CreateScene(ctx, &client.CreateSceneRequest{Kind: kind, Name: name})
+	}
+
+	first, err := create(models.SceneKindAlert, "Follower thanks")
+	if err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+	_, err = create(models.SceneKindAlert, "Follower thanks")
+	assertTwirpCode(t, err, twirp.AlreadyExists)
+	if want := `an alert named "Follower thanks" already exists`; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q does not say %q", err, want)
+	}
+	if _, err := create(models.SceneKindScene, "Follower thanks"); err != nil {
+		t.Fatalf("a scene may share an alert's name: %v", err)
+	}
+
+	second, err := create(models.SceneKindAlert, "Raid welcome")
+	if err != nil {
+		t.Fatalf("create second alert: %v", err)
+	}
+	_, err = svc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: second.Scene.Id, Name: "Follower thanks"})
+	assertTwirpCode(t, err, twirp.AlreadyExists)
+	if _, err := svc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: first.Scene.Id, Name: "Follower thanks"}); err != nil {
+		t.Fatalf("keeping its own name: %v", err)
 	}
 }

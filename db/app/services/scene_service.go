@@ -111,6 +111,10 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 		return nil, twirp.InvalidArgumentError("inputs_json", problem)
 	}
 
+	if err := s.requireUniqueName(kind, req.Name, nil); err != nil {
+		return nil, err
+	}
+
 	// The id is assigned here: the column default is Postgres-only
 	// (uuid_generate_v4()), and on SQLite every row would get the zero UUID.
 	scene := &models.Scene{
@@ -140,6 +144,25 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 		},
 		Scene: s.sceneToProto(scene),
 	}, nil
+}
+
+// requireUniqueName refuses a name another row of the same kind holds, as
+// AlreadyExists with a message a person can act on. The unique index still
+// guards a concurrent writer that passes this check first; that writer gets
+// the index's error.
+func (s *sceneService) requireUniqueName(kind, name string, excludeID *uuid.UUID) error {
+	taken, err := s.repo.NameTaken(kind, name, excludeID)
+	if err != nil {
+		return twirp.InternalErrorWith(fmt.Errorf("failed to check scene name: %w", err))
+	}
+	if taken {
+		noun := "a scene"
+		if kind == models.SceneKindAlert {
+			noun = "an alert"
+		}
+		return twirp.NewError(twirp.AlreadyExists, fmt.Sprintf("%s named %q already exists", noun, name))
+	}
+	return nil
 }
 
 func (s *sceneService) GetScene(ctx context.Context, req *client.GetSceneRequest) (*client.SceneResponse, error) {
@@ -244,6 +267,9 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 	// rest of the request migrates to `optional` scalars.
 	columns := map[string]any{}
 	if req.Name != "" {
+		if err := s.requireUniqueName(scene.Kind, req.Name, &scene.ID); err != nil {
+			return nil, err
+		}
 		columns["name"] = req.Name
 	}
 	if req.Description != "" {
