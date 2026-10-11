@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.28.0](https://github.com/wolfymaster/woofx3/compare/v0.27.0...v0.28.0) (2026-10-11)
+
+### Features
+
+* **fonts:** serve any Google Fonts family to widgets from the engine ([d30faab](https://github.com/wolfymaster/woofx3/commit/d30faab0dcfe5ba1492577c71ac2aec41bb72738))
+
 ## [0.27.0](https://github.com/wolfymaster/woofx3/compare/v0.26.0...v0.27.0) (2026-10-11)
 
 ### Features
