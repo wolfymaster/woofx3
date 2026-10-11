@@ -55,14 +55,6 @@ func getComposition(t *testing.T, svc client.SceneService, id string) *client.Sc
 	return resp.Scene
 }
 
-func twirpCode(err error) twirp.ErrorCode {
-	var terr twirp.Error
-	if errors.As(err, &terr) {
-		return terr.Code()
-	}
-	return ""
-}
-
 // A row is a scene unless created as an alert; behaviors (published and
 // draft) and inputs are stored and returned; listing returns one kind,
 // scenes by default; names are unique per kind.
