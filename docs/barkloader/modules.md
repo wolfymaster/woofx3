@@ -1090,7 +1090,7 @@ function add(ctx, label) {
 ```
 
 A resource kind's `schema` may declare a `list` field the same way, for rows that
-belong to each instance rather than to the module: the entries of one wheel, say,
+belong to each instance rather than to the module: the entries of one list, say,
 typed by the streamer when they create or edit it. Functions of the module that
 declares the kind read them from `ctx.resources.get(id).settings.<field>` and change
 them with `ctx.resources.compareAndSetSetting(id, field, expected, value)`, which works
@@ -1099,11 +1099,11 @@ the field the instance does not hold it, so it reads as `undefined`; pass back w
 read, not a defaulted `[]`, as the first `expected`:
 
 ```js
-function add(ctx, wheel, label) {
-  var current = ctx.resources.get(wheel).settings.items;
+function add(ctx, id, label) {
+  var current = ctx.resources.get(id).settings.items;
   for (var attempt = 0; attempt < 8; attempt++) {
     var next = (current || []).concat([{ label: label }]);
-    var outcome = ctx.resources.compareAndSetSetting(wheel, "items", current, next);
+    var outcome = ctx.resources.compareAndSetSetting(id, "items", current, next);
     if (outcome.swapped) {
       return next;
     }

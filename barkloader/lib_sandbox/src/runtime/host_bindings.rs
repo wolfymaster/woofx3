@@ -748,9 +748,9 @@ mod tests {
         }
     }
 
-    /// Two modules' `wheel` instances, whatever kind is asked for.
-    struct TwoWheelsClient;
-    impl crate::host::ResourceClient for TwoWheelsClient {
+    /// Two modules' `list` instances, whatever kind is asked for.
+    struct TwoModulesListClient;
+    impl crate::host::ResourceClient for TwoModulesListClient {
         fn create(
             &self,
             _owning_module_name: &str,
@@ -771,13 +771,13 @@ mod tests {
             Ok(None)
         }
         fn list_by_kind(&self, kind: &str) -> Result<Vec<crate::host::ResourceInstance>, String> {
-            assert_eq!(kind, "wheel", "the client is asked for the bare kind");
-            Ok(["spinner", "prizes"]
+            assert_eq!(kind, "list", "the client is asked for the bare kind");
+            Ok(["alpha", "beta"]
                 .iter()
                 .map(|module| crate::host::ResourceInstance {
-                    canonical_id: format!("{module}:wheel:main"),
+                    canonical_id: format!("{module}:list:main"),
                     module_name: module.to_string(),
-                    kind: "wheel".to_string(),
+                    kind: "list".to_string(),
                     instance_id: "main".to_string(),
                     display_name: "Main".to_string(),
                     settings: serde_json::json!({}),
@@ -789,7 +789,7 @@ mod tests {
     #[test]
     fn resources_list_keeps_one_modules_instances_for_a_qualified_kind() {
         let mut host = noop_host_context();
-        host.resources = std::sync::Arc::new(TwoWheelsClient);
+        host.resources = std::sync::Arc::new(TwoModulesListClient);
         let canonical_ids = |v: Value| -> Vec<String> {
             v.as_array()
                 .unwrap()
@@ -798,12 +798,12 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            canonical_ids(resources_list(&host, "prizes:wheel").unwrap()),
-            vec!["prizes:wheel:main"]
+            canonical_ids(resources_list(&host, "beta:list").unwrap()),
+            vec!["beta:list:main"]
         );
         assert_eq!(
-            canonical_ids(resources_list(&host, "wheel").unwrap()),
-            vec!["spinner:wheel:main", "prizes:wheel:main"]
+            canonical_ids(resources_list(&host, "list").unwrap()),
+            vec!["alpha:list:main", "beta:list:main"]
         );
     }
 
@@ -920,7 +920,7 @@ mod tests {
         settings: Value,
     ) -> (HostContext, Arc<crate::host::recording::InstanceSettings>) {
         let instance = Arc::new(crate::host::recording::InstanceSettings::new(
-            "wheel_spin:wheel:prizes",
+            "mymod:list:main",
             settings,
         ));
         let mut host = crate::host::noop::noop_host_context();
@@ -934,10 +934,10 @@ mod tests {
         let err = resources_compare_and_set_setting(
             &host,
             "intruder",
-            "wheel_spin:wheel:prizes",
+            "mymod:list:main",
             "items",
             &Value::Null,
-            &serde_json::json!(["Pizza"]),
+            &serde_json::json!(["first"]),
         )
         .unwrap_err();
         assert!(err.contains("only the module that owns"), "{err}");
@@ -950,7 +950,7 @@ mod tests {
         let builtin = resources_compare_and_set_setting(
             &host,
             "",
-            "wheel_spin:wheel:prizes",
+            "mymod:list:main",
             "items",
             &Value::Null,
             &serde_json::json!([]),
@@ -958,8 +958,8 @@ mod tests {
         assert!(builtin.is_err());
         let no_key = resources_compare_and_set_setting(
             &host,
-            "wheel_spin",
-            "wheel_spin:wheel:prizes",
+            "mymod",
+            "mymod:list:main",
             "",
             &Value::Null,
             &serde_json::json!([]),
@@ -972,21 +972,21 @@ mod tests {
         let (host, instance) = instance_settings_host(serde_json::json!({}));
         let won = resources_compare_and_set_setting(
             &host,
-            "wheel_spin",
-            "wheel_spin:wheel:prizes",
+            "mymod",
+            "mymod:list:main",
             "items",
             &Value::Null,
-            &serde_json::json!(["Pizza"]),
+            &serde_json::json!(["first"]),
         )
         .unwrap();
         assert_eq!(
             won,
-            serde_json::json!({ "swapped": true, "current": ["Pizza"] })
+            serde_json::json!({ "swapped": true, "current": ["first"] })
         );
         let lost = resources_compare_and_set_setting(
             &host,
-            "wheel_spin",
-            "wheel_spin:wheel:prizes",
+            "mymod",
+            "mymod:list:main",
             "items",
             &Value::Null,
             &serde_json::json!([]),
@@ -994,7 +994,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             lost,
-            serde_json::json!({ "swapped": false, "current": ["Pizza"] })
+            serde_json::json!({ "swapped": false, "current": ["first"] })
         );
         assert_eq!(*instance.writes.lock().unwrap(), vec!["items".to_string()]);
     }

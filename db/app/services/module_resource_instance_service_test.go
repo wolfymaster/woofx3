@@ -34,9 +34,9 @@ func newInstanceSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	}
 	module := &models.Module{
 		ID:        uuid.New(),
-		ModuleKey: "woofx3_wheel_spin:1.0.0:abc",
-		ModuleID:  "woofx3_wheel_spin",
-		Name:      "Wheel Spin",
+		ModuleKey: "mymod:1.0.0:abc",
+		ModuleID:  "mymod",
+		Name:      "My Module",
 		Version:   "1.0.0",
 	}
 	if err := db.Create(module).Error; err != nil {
@@ -62,13 +62,13 @@ func newInstanceSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	return svc, db
 }
 
-func createWheel(t *testing.T, svc *moduleService, settingsJSON string) *client.ModuleResourceInstance {
+func createInstance(t *testing.T, svc *moduleService, settingsJSON string) *client.ModuleResourceInstance {
 	t.Helper()
 	resp, err := svc.CreateResourceInstance(context.Background(), &client.CreateResourceInstanceRequest{
-		ModuleName:   "woofx3_wheel_spin",
-		Kind:         "wheel",
-		InstanceId:   "prizes",
-		DisplayName:  "Prizes",
+		ModuleName:   "mymod",
+		Kind:         "list",
+		InstanceId:   "main",
+		DisplayName:  "Main",
 		SettingsJson: settingsJSON,
 	})
 	if err != nil {
@@ -80,16 +80,16 @@ func createWheel(t *testing.T, svc *moduleService, settingsJSON string) *client.
 func TestAnInstanceIsAddressedByItsModulesManifestIdNotItsName(t *testing.T) {
 	svc, db := newInstanceSvc(t)
 
-	created := createWheel(t, svc, "")
-	if created.CanonicalId != "woofx3_wheel_spin:wheel:prizes" {
-		t.Fatalf("canonical id = %q, want woofx3_wheel_spin:wheel:prizes", created.CanonicalId)
+	created := createInstance(t, svc, "")
+	if created.CanonicalId != "mymod:list:main" {
+		t.Fatalf("canonical id = %q, want mymod:list:main", created.CanonicalId)
 	}
-	if created.ModuleName != "woofx3_wheel_spin" {
-		t.Fatalf("module name = %q, want woofx3_wheel_spin", created.ModuleName)
+	if created.ModuleName != "mymod" {
+		t.Fatalf("module name = %q, want mymod", created.ModuleName)
 	}
 
 	got, err := svc.GetResourceInstance(context.Background(), &client.GetResourceInstanceRequest{
-		CanonicalId: "woofx3_wheel_spin:wheel:prizes",
+		CanonicalId: "mymod:list:main",
 	})
 	if err != nil {
 		t.Fatalf("GetResourceInstance by the manifest id: %v", err)
@@ -102,15 +102,15 @@ func TestAnInstanceIsAddressedByItsModulesManifestIdNotItsName(t *testing.T) {
 	if err := db.Where("entity_type = ? AND operation = ?", "module.resource.instance", "created").First(&event).Error; err != nil {
 		t.Fatalf("created event: %v", err)
 	}
-	if want := `"canonical_id":"woofx3_wheel_spin:wheel:prizes"`; !strings.Contains(event.Payload, want) {
+	if want := `"canonical_id":"mymod:list:main"`; !strings.Contains(event.Payload, want) {
 		t.Fatalf("event payload %s does not carry %s", event.Payload, want)
 	}
 }
 
-func casWheel(t *testing.T, svc *moduleService, caller, key, expected, value string) *client.CompareAndSetResourceInstanceSettingResponse {
+func casSetting(t *testing.T, svc *moduleService, caller, key, expected, value string) *client.CompareAndSetResourceInstanceSettingResponse {
 	t.Helper()
 	resp, err := svc.CompareAndSetResourceInstanceSetting(context.Background(), &client.CompareAndSetResourceInstanceSettingRequest{
-		CanonicalId:  "woofx3_wheel_spin:wheel:prizes",
+		CanonicalId:  "mymod:list:main",
 		ModuleName:   caller,
 		Key:          key,
 		ExpectedJson: expected,
@@ -122,10 +122,10 @@ func casWheel(t *testing.T, svc *moduleService, caller, key, expected, value str
 	return resp
 }
 
-func storedWheelSettings(t *testing.T, svc *moduleService) string {
+func storedSettings(t *testing.T, svc *moduleService) string {
 	t.Helper()
 	got, err := svc.GetResourceInstance(context.Background(), &client.GetResourceInstanceRequest{
-		CanonicalId: "woofx3_wheel_spin:wheel:prizes",
+		CanonicalId: "mymod:list:main",
 	})
 	if err != nil {
 		t.Fatalf("GetResourceInstance: %v", err)
@@ -144,13 +144,13 @@ func countInstanceEvents(t *testing.T, db *gorm.DB, op string) int64 {
 
 func TestInstanceSettingCASWritesAnAbsentKeyFromNull(t *testing.T) {
 	svc, db := newInstanceSvc(t)
-	createWheel(t, svc, `{"spinSeconds":5}`)
+	createInstance(t, svc, `{"limit":5}`)
 
-	resp := casWheel(t, svc, "woofx3_wheel_spin", "items", "", `[{"label":"Pizza"}]`)
-	if !resp.Swapped || resp.CurrentJson != `[{"label":"Pizza"}]` {
+	resp := casSetting(t, svc, "mymod", "items", "", `[{"label":"first"}]`)
+	if !resp.Swapped || resp.CurrentJson != `[{"label":"first"}]` {
 		t.Fatalf("resp = %+v, want swapped with the written value", resp)
 	}
-	if got := storedWheelSettings(t, svc); got != `{"items":[{"label":"Pizza"}],"spinSeconds":5}` {
+	if got := storedSettings(t, svc); got != `{"items":[{"label":"first"}],"limit":5}` {
 		t.Fatalf("settings = %s", got)
 	}
 	if n := countInstanceEvents(t, db, "updated"); n != 1 {
@@ -160,10 +160,10 @@ func TestInstanceSettingCASWritesAnAbsentKeyFromNull(t *testing.T) {
 
 func TestInstanceSettingCASRefusesAStaleExpectationWithTheStoredValue(t *testing.T) {
 	svc, db := newInstanceSvc(t)
-	createWheel(t, svc, `{"items":[{"label":"Pizza"}]}`)
+	createInstance(t, svc, `{"items":[{"label":"first"}]}`)
 
-	resp := casWheel(t, svc, "woofx3_wheel_spin", "items", `[]`, `[{"label":"Tacos"}]`)
-	if resp.Swapped || resp.CurrentJson != `[{"label":"Pizza"}]` {
+	resp := casSetting(t, svc, "mymod", "items", `[]`, `[{"label":"second"}]`)
+	if resp.Swapped || resp.CurrentJson != `[{"label":"first"}]` {
 		t.Fatalf("resp = %+v, want refused with the stored list", resp)
 	}
 	if n := countInstanceEvents(t, db, "updated"); n != 0 {
@@ -171,95 +171,95 @@ func TestInstanceSettingCASRefusesAStaleExpectationWithTheStoredValue(t *testing
 	}
 
 	// A null expectation means "unset", which a key holding a list is not.
-	if resp := casWheel(t, svc, "woofx3_wheel_spin", "items", "null", `[]`); resp.Swapped {
+	if resp := casSetting(t, svc, "mymod", "items", "null", `[]`); resp.Swapped {
 		t.Fatalf("a null expectation swapped a key that holds a value")
 	}
 }
 
 func TestInstanceSettingCASComparesByMeaning(t *testing.T) {
 	svc, _ := newInstanceSvc(t)
-	createWheel(t, svc, `{"items":[{"label":"Pizza","weight":1}],"empty":{}}`)
+	createInstance(t, svc, `{"items":[{"label":"first","weight":1}],"empty":{}}`)
 
-	if resp := casWheel(t, svc, "woofx3_wheel_spin", "items", `[{"weight":1.0,"label":"Pizza"}]`, `[]`); !resp.Swapped {
+	if resp := casSetting(t, svc, "mymod", "items", `[{"weight":1.0,"label":"first"}]`, `[]`); !resp.Swapped {
 		t.Fatalf("key order and 1 vs 1.0 refused the swap: %+v", resp)
 	}
-	if resp := casWheel(t, svc, "woofx3_wheel_spin", "empty", `[]`, `[{"label":"Tacos"}]`); !resp.Swapped {
+	if resp := casSetting(t, svc, "mymod", "empty", `[]`, `[{"label":"second"}]`); !resp.Swapped {
 		t.Fatalf("an empty array did not match an empty object: %+v", resp)
 	}
 }
 
 func TestInstanceSettingCASIsRefusedToAModuleThatDoesNotOwnTheInstance(t *testing.T) {
 	svc, _ := newInstanceSvc(t)
-	createWheel(t, svc, "")
+	createInstance(t, svc, "")
 
-	for _, caller := range []string{"someone_else", "Wheel Spin"} {
+	for _, caller := range []string{"someone_else", "My Module"} {
 		_, err := svc.CompareAndSetResourceInstanceSetting(context.Background(), &client.CompareAndSetResourceInstanceSettingRequest{
-			CanonicalId: "woofx3_wheel_spin:wheel:prizes",
+			CanonicalId: "mymod:list:main",
 			ModuleName:  caller,
 			Key:         "items",
 			ValueJson:   `[]`,
 		})
 		wantTwirpCode(t, err, twirp.PermissionDenied)
 	}
-	if got := storedWheelSettings(t, svc); got != "{}" {
+	if got := storedSettings(t, svc); got != "{}" {
 		t.Fatalf("settings = %s, want untouched", got)
 	}
 }
 
 func TestInstanceSettingCASRefusesBadRequests(t *testing.T) {
 	svc, _ := newInstanceSvc(t)
-	createWheel(t, svc, "")
+	createInstance(t, svc, "")
 	ctx := context.Background()
 
 	_, err := svc.CompareAndSetResourceInstanceSetting(ctx, &client.CompareAndSetResourceInstanceSettingRequest{
-		CanonicalId: "woofx3_wheel_spin:wheel:missing", ModuleName: "woofx3_wheel_spin", Key: "items", ValueJson: `[]`,
+		CanonicalId: "mymod:list:missing", ModuleName: "mymod", Key: "items", ValueJson: `[]`,
 	})
 	wantTwirpCode(t, err, twirp.NotFound)
 
 	_, err = svc.CompareAndSetResourceInstanceSetting(ctx, &client.CompareAndSetResourceInstanceSettingRequest{
-		CanonicalId: "woofx3_wheel_spin:wheel:prizes", ModuleName: "woofx3_wheel_spin", Key: "items", ValueJson: `{not json`,
+		CanonicalId: "mymod:list:main", ModuleName: "mymod", Key: "items", ValueJson: `{not json`,
 	})
 	wantTwirpCode(t, err, twirp.InvalidArgument)
 
 	_, err = svc.CompareAndSetResourceInstanceSetting(ctx, &client.CompareAndSetResourceInstanceSettingRequest{
-		CanonicalId: "woofx3_wheel_spin:wheel:prizes", Key: "items", ValueJson: `[]`,
+		CanonicalId: "mymod:list:main", Key: "items", ValueJson: `[]`,
 	})
 	wantTwirpCode(t, err, twirp.InvalidArgument)
 }
 
 func TestInstanceSettingCASKeepsAChangeToAnotherKeyMadeInBetween(t *testing.T) {
 	svc, _ := newInstanceSvc(t)
-	createWheel(t, svc, `{"items":[],"spinSeconds":5}`)
+	createInstance(t, svc, `{"items":[],"limit":5}`)
 
 	// The streamer saves another field between this call's read and write:
 	// simulated by writing it straight to the row before the first attempt.
-	inst, err := svc.instanceRepo.GetByModuleKindInstance(mustModuleUUID(t, svc), "wheel", "prizes")
+	inst, err := svc.instanceRepo.GetByModuleKindInstance(mustModuleUUID(t, svc), "list", "main")
 	if err != nil {
 		t.Fatalf("load instance: %v", err)
 	}
-	if ok, err := svc.instanceRepo.CompareAndSetSettings(inst.ID, inst.Settings, `{"items":[],"spinSeconds":9}`); !ok || err != nil {
+	if ok, err := svc.instanceRepo.CompareAndSetSettings(inst.ID, inst.Settings, `{"items":[],"limit":9}`); !ok || err != nil {
 		t.Fatalf("seed concurrent edit: %v %v", ok, err)
 	}
 
-	if resp := casWheel(t, svc, "woofx3_wheel_spin", "items", `[]`, `["Pizza"]`); !resp.Swapped {
+	if resp := casSetting(t, svc, "mymod", "items", `[]`, `["first"]`); !resp.Swapped {
 		t.Fatalf("a change to another key refused the swap: %+v", resp)
 	}
-	if got := storedWheelSettings(t, svc); got != `{"items":["Pizza"],"spinSeconds":9}` {
+	if got := storedSettings(t, svc); got != `{"items":["first"],"limit":9}` {
 		t.Fatalf("settings = %s, want both changes kept", got)
 	}
 }
 
 func TestInstanceSettingCASLetsOnlyOneOfTwoRacingWritersSwap(t *testing.T) {
 	svc, _ := newInstanceSvc(t)
-	createWheel(t, svc, `{"items":[]}`)
+	createInstance(t, svc, `{"items":[]}`)
 
 	const writers = 8
 	results := make(chan bool, writers)
 	for i := 0; i < writers; i++ {
 		go func(i int) {
 			resp, err := svc.CompareAndSetResourceInstanceSetting(context.Background(), &client.CompareAndSetResourceInstanceSettingRequest{
-				CanonicalId:  "woofx3_wheel_spin:wheel:prizes",
-				ModuleName:   "woofx3_wheel_spin",
+				CanonicalId:  "mymod:list:main",
+				ModuleName:   "mymod",
 				Key:          "items",
 				ExpectedJson: `[]`,
 				ValueJson:    fmt.Sprintf(`[%d]`, i),
@@ -280,22 +280,22 @@ func TestInstanceSettingCASLetsOnlyOneOfTwoRacingWritersSwap(t *testing.T) {
 
 func TestInstanceSettingCASClearsAListWithLuasEmptyTable(t *testing.T) {
 	svc, _ := newInstanceSvc(t)
-	createWheel(t, svc, `{"items":["Pizza"],"style":{"a":1}}`)
+	createInstance(t, svc, `{"items":["first"],"style":{"a":1}}`)
 
-	if resp := casWheel(t, svc, "woofx3_wheel_spin", "items", `["Pizza"]`, `{}`); !resp.Swapped || resp.CurrentJson != "[]" {
+	if resp := casSetting(t, svc, "mymod", "items", `["first"]`, `{}`); !resp.Swapped || resp.CurrentJson != "[]" {
 		t.Fatalf("resp = %+v, want swapped to []", resp)
 	}
-	if resp := casWheel(t, svc, "woofx3_wheel_spin", "style", `{"a":1}`, `{}`); !resp.Swapped || resp.CurrentJson != "{}" {
+	if resp := casSetting(t, svc, "mymod", "style", `{"a":1}`, `{}`); !resp.Swapped || resp.CurrentJson != "{}" {
 		t.Fatalf("resp = %+v, want an object kept an object", resp)
 	}
-	if got := storedWheelSettings(t, svc); got != `{"items":[],"style":{}}` {
+	if got := storedSettings(t, svc); got != `{"items":[],"style":{}}` {
 		t.Fatalf("settings = %s", got)
 	}
 }
 
 func mustModuleUUID(t *testing.T, svc *moduleService) uuid.UUID {
 	t.Helper()
-	module, err := svc.repo.GetByName("woofx3_wheel_spin")
+	module, err := svc.repo.GetByName("mymod")
 	if err != nil {
 		t.Fatalf("load module: %v", err)
 	}

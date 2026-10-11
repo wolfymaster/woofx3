@@ -989,7 +989,7 @@ mod tests {
         let code = r#"
             function run(ctx)
                 local items = ctx.module.settings.items
-                local outcome = ctx.module.compareAndSetSetting("items", items, { { label = "Pizza" } })
+                local outcome = ctx.module.compareAndSetSetting("items", items, { { label = "first" } })
                 return { swapped = outcome.swapped }
             end
         "#;
@@ -997,7 +997,7 @@ mod tests {
         assert_eq!(result["swapped"], true);
         assert_eq!(
             *settings.items.lock().unwrap(),
-            serde_json::json!([{ "label": "Pizza" }])
+            serde_json::json!([{ "label": "first" }])
         );
     }
 
@@ -1006,8 +1006,8 @@ mod tests {
     #[test]
     fn lua_ctx_resources_compare_and_set_setting_writes_from_what_was_read() {
         let instance = std::sync::Arc::new(crate::host::recording::InstanceSettings::new(
-            "wheel_spin:wheel:prizes",
-            serde_json::json!({ "winners": [] }),
+            "mymod:list:main",
+            serde_json::json!({ "tags": [] }),
         ));
         let mut host = noop_host_context();
         host.resources = instance.clone();
@@ -1016,8 +1016,8 @@ mod tests {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
             host,
-            module_id: "wheel_spin".to_string(),
-            module_name: "Wheel Spin".to_string(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
@@ -1025,20 +1025,20 @@ mod tests {
         };
         let code = r#"
             function run(ctx)
-                local id = "wheel_spin:wheel:prizes"
+                local id = "mymod:list:main"
                 local settings = ctx.resources.get(id).settings
-                local items = ctx.resources.compareAndSetSetting(id, "items", settings.items, { { label = "Pizza" } })
-                local winners = ctx.resources.compareAndSetSetting(id, "winners", settings.winners, { "Ann" })
+                local items = ctx.resources.compareAndSetSetting(id, "items", settings.items, { { label = "first" } })
+                local tags = ctx.resources.compareAndSetSetting(id, "tags", settings.tags, { "a" })
                 local stale = ctx.resources.compareAndSetSetting(id, "items", nil, {})
-                return { items = items.swapped, winners = winners.swapped, stale = stale.swapped }
+                return { items = items.swapped, tags = tags.swapped, stale = stale.swapped }
             end
         "#;
         let result = adapter.execute(code, "run", &invocation).unwrap();
         assert_eq!(result["items"], true);
-        assert_eq!(result["winners"], true);
+        assert_eq!(result["tags"], true);
         assert_eq!(result["stale"], false);
         let settings = instance.settings.lock().unwrap();
-        assert_eq!(settings["items"], serde_json::json!([{ "label": "Pizza" }]));
-        assert_eq!(settings["winners"], serde_json::json!(["Ann"]));
+        assert_eq!(settings["items"], serde_json::json!([{ "label": "first" }]));
+        assert_eq!(settings["tags"], serde_json::json!(["a"]));
     }
 }

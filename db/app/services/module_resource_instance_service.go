@@ -136,8 +136,8 @@ const instanceSettingCASAttempts = 8
 
 // CompareAndSetResourceInstanceSetting writes one key of an instance's
 // settings only while that key still holds the expected value, so concurrent
-// read-modify-write updates, such as two runs each adding an entry to a
-// wheel's list, can't lose one another's change. Only the module that owns the
+// read-modify-write updates, such as two runs each adding an entry to the
+// same list, can't lose one another's change. Only the module that owns the
 // instance may write it: a kind's settings mean something only to the module
 // that declares the kind.
 //

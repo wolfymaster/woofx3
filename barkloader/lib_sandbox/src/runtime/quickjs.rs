@@ -1262,13 +1262,13 @@ mod tests {
     #[test]
     fn quickjs_ctx_module_compare_and_set_setting_writes_from_what_was_read() {
         let (invocation, settings) = list_settings_invocation(
-            serde_json::json!([{ "label": "Pizza" }]),
+            serde_json::json!([{ "label": "first" }]),
             Default::default(),
         );
         let adapter = QuickJSAdapter::new().unwrap();
         let code = "function run(ctx) { \
             const items = ctx.module.settings.items; \
-            const next = items.concat([{ label: 'Tacos' }]); \
+            const next = items.concat([{ label: 'second' }]); \
             const won = ctx.module.compareAndSetSetting('items', items, next); \
             const lost = ctx.module.compareAndSetSetting('items', items, []); \
             return { won, lost }; \
@@ -1276,7 +1276,7 @@ mod tests {
         let result = adapter.execute(code, "run", &invocation).unwrap();
         assert_eq!(result["won"]["swapped"], true);
         assert_eq!(result["lost"]["swapped"], false);
-        let both = serde_json::json!([{ "label": "Pizza" }, { "label": "Tacos" }]);
+        let both = serde_json::json!([{ "label": "first" }, { "label": "second" }]);
         assert_eq!(result["lost"]["current"], both);
         assert_eq!(*settings.items.lock().unwrap(), both);
     }
@@ -1301,7 +1301,7 @@ mod tests {
         Arc<crate::host::recording::InstanceSettings>,
     ) {
         let instance = Arc::new(crate::host::recording::InstanceSettings::new(
-            "wheel_spin:wheel:prizes",
+            "mymod:list:main",
             settings,
         ));
         let mut host = noop_host_context();
@@ -1311,7 +1311,7 @@ mod tests {
             user: serde_json::Value::Null,
             host,
             module_id: module_id.to_string(),
-            module_name: "Wheel Spin".to_string(),
+            module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
@@ -1320,30 +1320,30 @@ mod tests {
         (invocation, instance)
     }
 
-    // A wheel the streamer never typed entries for has no `items` key; the
+    // An instance the streamer never saved `items` on has no `items` key; the
     // function reads undefined, and handing that back must match.
     #[test]
     fn quickjs_ctx_resources_compare_and_set_setting_writes_from_what_was_read() {
         let (invocation, instance) =
-            instance_settings_invocation("wheel_spin", serde_json::json!({ "spinSeconds": 5 }));
+            instance_settings_invocation("mymod", serde_json::json!({ "limit": 5 }));
         let adapter = QuickJSAdapter::new().unwrap();
         let code = "function run(ctx) { \
-            const id = 'wheel_spin:wheel:prizes'; \
+            const id = 'mymod:list:main'; \
             const items = ctx.resources.get(id).settings.items; \
-            const next = (items || []).concat([{ label: 'Pizza' }]); \
+            const next = (items || []).concat([{ label: 'first' }]); \
             const won = ctx.resources.compareAndSetSetting(id, 'items', items, next); \
             const lost = ctx.resources.compareAndSetSetting(id, 'items', items, []); \
             return { won, lost }; \
         }";
         let result = adapter.execute(code, "run", &invocation).unwrap();
-        let pizza = serde_json::json!([{ "label": "Pizza" }]);
+        let first = serde_json::json!([{ "label": "first" }]);
         assert_eq!(result["won"]["swapped"], true);
-        assert_eq!(result["won"]["current"], pizza);
+        assert_eq!(result["won"]["current"], first);
         assert_eq!(result["lost"]["swapped"], false);
-        assert_eq!(result["lost"]["current"], pizza);
+        assert_eq!(result["lost"]["current"], first);
         let settings = instance.settings.lock().unwrap();
-        assert_eq!(settings["items"], pizza);
-        assert_eq!(settings["spinSeconds"], 5);
+        assert_eq!(settings["items"], first);
+        assert_eq!(settings["limit"], 5);
     }
 
     #[test]
@@ -1352,7 +1352,7 @@ mod tests {
             instance_settings_invocation("intruder", serde_json::json!({}));
         let adapter = QuickJSAdapter::new().unwrap();
         let code = "function run(ctx) { \
-            return ctx.resources.compareAndSetSetting('wheel_spin:wheel:prizes', 'items', undefined, []); \
+            return ctx.resources.compareAndSetSetting('mymod:list:main', 'items', undefined, []); \
         }";
         let err = adapter.execute(code, "run", &invocation).unwrap_err();
         assert!(
@@ -1364,11 +1364,10 @@ mod tests {
 
     #[test]
     fn quickjs_ctx_resources_compare_and_set_setting_refuses_a_value_json_cannot_hold() {
-        let (invocation, instance) =
-            instance_settings_invocation("wheel_spin", serde_json::json!({}));
+        let (invocation, instance) = instance_settings_invocation("mymod", serde_json::json!({}));
         let adapter = QuickJSAdapter::new().unwrap();
         let code = "function run(ctx) { \
-            return ctx.resources.compareAndSetSetting('wheel_spin:wheel:prizes', 'items', undefined, function () {}); \
+            return ctx.resources.compareAndSetSetting('mymod:list:main', 'items', undefined, function () {}); \
         }";
         assert!(adapter.execute(code, "run", &invocation).is_err());
         assert!(instance.writes.lock().unwrap().is_empty());
