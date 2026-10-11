@@ -72,6 +72,30 @@ export interface Widget {
    * none.
    */
   taxonomy: string[];
+  /**
+   * The transition and effect kinds the widget plays on its own content,
+   * beyond the ones the overlay plays on every widget's box. The overlay
+   * hands a widget only the kinds it declares here.
+   */
+  behaviorKinds: WidgetBehaviorKinds;
+}
+
+/**
+ * Kinds a widget declares for itself, by behavior type. Both lists are
+ * empty for a widget that declares none.
+ */
+export interface WidgetBehaviorKinds {
+  transitions: WidgetBehaviorKind[];
+  effects: WidgetBehaviorKind[];
+}
+
+/**
+ * One declared kind: `id` is what a behavior's `kind` names, `label` what an
+ * editor shows for it.
+ */
+export interface WidgetBehaviorKind {
+  id: string;
+  label: string;
 }
 
 export interface WidgetInput {
@@ -92,6 +116,10 @@ export interface WidgetInput {
    * See Widget.taxonomy.
    */
   taxonomy: string[];
+  /**
+   * See Widget.behavior_kinds.
+   */
+  behaviorKinds: WidgetBehaviorKinds;
 }
 
 export interface RegisterWidgetsRequest {
@@ -174,6 +202,7 @@ export const Widget = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      behaviorKinds: WidgetBehaviorKinds.initialize(),
       ...msg,
     };
   },
@@ -226,6 +255,13 @@ export const Widget = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(16, msg.taxonomy);
+    }
+    if (msg.behaviorKinds) {
+      writer.writeMessage(
+        17,
+        msg.behaviorKinds,
+        WidgetBehaviorKinds._writeMessage,
+      );
     }
     return writer;
   },
@@ -296,6 +332,179 @@ export const Widget = {
           msg.taxonomy.push(reader.readString());
           break;
         }
+        case 17: {
+          reader.readMessage(
+            msg.behaviorKinds,
+            WidgetBehaviorKinds._readMessage,
+          );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const WidgetBehaviorKinds = {
+  /**
+   * Serializes WidgetBehaviorKinds to protobuf.
+   */
+  encode: function (msg: PartialDeep<WidgetBehaviorKinds>): Uint8Array {
+    return WidgetBehaviorKinds._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes WidgetBehaviorKinds from protobuf.
+   */
+  decode: function (bytes: ByteSource): WidgetBehaviorKinds {
+    return WidgetBehaviorKinds._readMessage(
+      WidgetBehaviorKinds.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes WidgetBehaviorKinds with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<WidgetBehaviorKinds>,
+  ): WidgetBehaviorKinds {
+    return {
+      transitions: [],
+      effects: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<WidgetBehaviorKinds>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.transitions?.length) {
+      writer.writeRepeatedMessage(
+        1,
+        msg.transitions as any,
+        WidgetBehaviorKind._writeMessage,
+      );
+    }
+    if (msg.effects?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.effects as any,
+        WidgetBehaviorKind._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: WidgetBehaviorKinds,
+    reader: protoscript.BinaryReader,
+  ): WidgetBehaviorKinds {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          const m = WidgetBehaviorKind.initialize();
+          reader.readMessage(m, WidgetBehaviorKind._readMessage);
+          msg.transitions.push(m);
+          break;
+        }
+        case 2: {
+          const m = WidgetBehaviorKind.initialize();
+          reader.readMessage(m, WidgetBehaviorKind._readMessage);
+          msg.effects.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const WidgetBehaviorKind = {
+  /**
+   * Serializes WidgetBehaviorKind to protobuf.
+   */
+  encode: function (msg: PartialDeep<WidgetBehaviorKind>): Uint8Array {
+    return WidgetBehaviorKind._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes WidgetBehaviorKind from protobuf.
+   */
+  decode: function (bytes: ByteSource): WidgetBehaviorKind {
+    return WidgetBehaviorKind._readMessage(
+      WidgetBehaviorKind.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes WidgetBehaviorKind with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<WidgetBehaviorKind>): WidgetBehaviorKind {
+    return {
+      id: "",
+      label: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<WidgetBehaviorKind>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.label) {
+      writer.writeString(2, msg.label);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: WidgetBehaviorKind,
+    reader: protoscript.BinaryReader,
+  ): WidgetBehaviorKind {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.label = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -342,6 +551,7 @@ export const WidgetInput = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      behaviorKinds: WidgetBehaviorKinds.initialize(),
       ...msg,
     };
   },
@@ -382,6 +592,13 @@ export const WidgetInput = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(12, msg.taxonomy);
+    }
+    if (msg.behaviorKinds) {
+      writer.writeMessage(
+        13,
+        msg.behaviorKinds,
+        WidgetBehaviorKinds._writeMessage,
+      );
     }
     return writer;
   },
@@ -434,6 +651,13 @@ export const WidgetInput = {
         }
         case 12: {
           msg.taxonomy.push(reader.readString());
+          break;
+        }
+        case 13: {
+          reader.readMessage(
+            msg.behaviorKinds,
+            WidgetBehaviorKinds._readMessage,
+          );
           break;
         }
         default: {
@@ -840,6 +1064,7 @@ export const WidgetJSON = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      behaviorKinds: WidgetBehaviorKindsJSON.initialize(),
       ...msg,
     };
   },
@@ -890,6 +1115,14 @@ export const WidgetJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.behaviorKinds) {
+      const _behaviorKinds_ = WidgetBehaviorKindsJSON._writeMessage(
+        msg.behaviorKinds,
+      );
+      if (Object.keys(_behaviorKinds_).length > 0) {
+        json["behaviorKinds"] = _behaviorKinds_;
+      }
     }
     return json;
   },
@@ -954,6 +1187,150 @@ export const WidgetJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
+    const _behaviorKinds_ = json["behaviorKinds"] ?? json["behavior_kinds"];
+    if (_behaviorKinds_) {
+      WidgetBehaviorKindsJSON._readMessage(msg.behaviorKinds, _behaviorKinds_);
+    }
+    return msg;
+  },
+};
+
+export const WidgetBehaviorKindsJSON = {
+  /**
+   * Serializes WidgetBehaviorKinds to JSON.
+   */
+  encode: function (msg: PartialDeep<WidgetBehaviorKinds>): string {
+    return JSON.stringify(WidgetBehaviorKindsJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes WidgetBehaviorKinds from JSON.
+   */
+  decode: function (json: string): WidgetBehaviorKinds {
+    return WidgetBehaviorKindsJSON._readMessage(
+      WidgetBehaviorKindsJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes WidgetBehaviorKinds with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<WidgetBehaviorKinds>,
+  ): WidgetBehaviorKinds {
+    return {
+      transitions: [],
+      effects: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<WidgetBehaviorKinds>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.transitions?.length) {
+      json["transitions"] = msg.transitions.map(
+        WidgetBehaviorKindJSON._writeMessage,
+      );
+    }
+    if (msg.effects?.length) {
+      json["effects"] = msg.effects.map(WidgetBehaviorKindJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: WidgetBehaviorKinds,
+    json: any,
+  ): WidgetBehaviorKinds {
+    const _transitions_ = json["transitions"];
+    if (_transitions_) {
+      for (const item of _transitions_) {
+        const m = WidgetBehaviorKindJSON.initialize();
+        WidgetBehaviorKindJSON._readMessage(m, item);
+        msg.transitions.push(m);
+      }
+    }
+    const _effects_ = json["effects"];
+    if (_effects_) {
+      for (const item of _effects_) {
+        const m = WidgetBehaviorKindJSON.initialize();
+        WidgetBehaviorKindJSON._readMessage(m, item);
+        msg.effects.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const WidgetBehaviorKindJSON = {
+  /**
+   * Serializes WidgetBehaviorKind to JSON.
+   */
+  encode: function (msg: PartialDeep<WidgetBehaviorKind>): string {
+    return JSON.stringify(WidgetBehaviorKindJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes WidgetBehaviorKind from JSON.
+   */
+  decode: function (json: string): WidgetBehaviorKind {
+    return WidgetBehaviorKindJSON._readMessage(
+      WidgetBehaviorKindJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes WidgetBehaviorKind with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<WidgetBehaviorKind>): WidgetBehaviorKind {
+    return {
+      id: "",
+      label: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<WidgetBehaviorKind>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.label) {
+      json["label"] = msg.label;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: WidgetBehaviorKind,
+    json: any,
+  ): WidgetBehaviorKind {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _label_ = json["label"];
+    if (_label_) {
+      msg.label = _label_;
+    }
     return msg;
   },
 };
@@ -991,6 +1368,7 @@ export const WidgetInputJSON = {
       surfaces: [],
       hostsSurface: "",
       taxonomy: [],
+      behaviorKinds: WidgetBehaviorKindsJSON.initialize(),
       ...msg,
     };
   },
@@ -1031,6 +1409,14 @@ export const WidgetInputJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.behaviorKinds) {
+      const _behaviorKinds_ = WidgetBehaviorKindsJSON._writeMessage(
+        msg.behaviorKinds,
+      );
+      if (Object.keys(_behaviorKinds_).length > 0) {
+        json["behaviorKinds"] = _behaviorKinds_;
+      }
     }
     return json;
   },
@@ -1078,6 +1464,10 @@ export const WidgetInputJSON = {
     const _taxonomy_ = json["taxonomy"];
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
+    }
+    const _behaviorKinds_ = json["behaviorKinds"] ?? json["behavior_kinds"];
+    if (_behaviorKinds_) {
+      WidgetBehaviorKindsJSON._readMessage(msg.behaviorKinds, _behaviorKinds_);
     }
     return msg;
   },

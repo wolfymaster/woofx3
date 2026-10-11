@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -326,5 +327,52 @@ func TestProjectionKeyVersionPinningIsFunctionsOnly(t *testing.T) {
 	}
 	if got, want := fnRow["canonical_id"], "twitch_platform:function:sendChatMessage"; got != want {
 		t.Errorf("function canonical_id = %v, want %q (never version-pinned)", got, want)
+	}
+}
+
+func TestWidgetPayloadsCarryDeclaredBehaviorKinds(t *testing.T) {
+	widget := &models.Widget{
+		ID:            uuid.New(),
+		Name:          "Text",
+		ManifestID:    "text",
+		BehaviorKinds: `{"transitions":[{"id":"typewriter","label":"Typewriter"}],"effects":[{"id":"sparkle","label":"Sparkle"}]}`,
+	}
+	want := behaviorKinds{
+		Transitions: []behaviorKind{{ID: "typewriter", Label: "Typewriter"}},
+		Effects:     []behaviorKind{{ID: "sparkle", Label: "Sparkle"}},
+	}
+	for name, data := range map[string]map[string]any{
+		"registered":   buildWidgetRegisteredData("woofx3", "woofx3:1.0.0:abc1234", "Woofx3", "1.0.0", []*models.Widget{widget}),
+		"deregistered": buildWidgetDeregisteredData("woofx3", "woofx3:1.0.0:abc1234", []*models.Widget{widget}),
+	} {
+		row := data["widgets"].([]map[string]any)[0]
+		if got := row["behavior_kinds"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: behavior_kinds = %#v, want %#v", name, got, want)
+		}
+	}
+
+	proto := widgetToProto(widget).BehaviorKinds
+	if len(proto.Transitions) != 1 || proto.Transitions[0].Id != "typewriter" || len(proto.Effects) != 1 || proto.Effects[0].Label != "Sparkle" {
+		t.Errorf("proto behavior kinds = %v", proto)
+	}
+}
+
+// A row registered before widgets declared kinds, and a registration that
+// sends none, both read as two empty lists rather than null.
+func TestWidgetBehaviorKindsDefaultToEmptyLists(t *testing.T) {
+	bare := &models.Widget{ID: uuid.New(), Name: "Image", ManifestID: "image"}
+	empty := behaviorKinds{Transitions: []behaviorKind{}, Effects: []behaviorKind{}}
+	if got := widgetBehaviorKinds(bare); !reflect.DeepEqual(got, empty) {
+		t.Errorf("unset column: got %#v", got)
+	}
+	if got := behaviorKindsOfInput(nil); !reflect.DeepEqual(got, empty) {
+		t.Errorf("no input: got %#v", got)
+	}
+	encoded, err := json.Marshal(behaviorKindsOfInput(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"transitions":[],"effects":[]}`; string(encoded) != want {
+		t.Errorf("stored = %s, want %s", encoded, want)
 	}
 }

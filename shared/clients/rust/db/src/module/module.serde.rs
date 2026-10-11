@@ -10842,6 +10842,9 @@ impl serde::Serialize for Widget {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if self.behavior_kinds.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Widget", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -10885,6 +10888,9 @@ impl serde::Serialize for Widget {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if let Some(v) = self.behavior_kinds.as_ref() {
+            struct_ser.serialize_field("behaviorKinds", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -10916,6 +10922,8 @@ impl<'de> serde::Deserialize<'de> for Widget {
             "hosts_surface",
             "hostsSurface",
             "taxonomy",
+            "behavior_kinds",
+            "behaviorKinds",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -10934,6 +10942,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             Surfaces,
             HostsSurface,
             Taxonomy,
+            BehaviorKinds,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -10969,6 +10978,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             "surfaces" => Ok(GeneratedField::Surfaces),
                             "hostsSurface" | "hosts_surface" => Ok(GeneratedField::HostsSurface),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "behaviorKinds" | "behavior_kinds" => Ok(GeneratedField::BehaviorKinds),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -11002,6 +11012,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                 let mut surfaces__ = None;
                 let mut hosts_surface__ = None;
                 let mut taxonomy__ = None;
+                let mut behavior_kinds__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -11088,6 +11099,12 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::BehaviorKinds => {
+                            if behavior_kinds__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorKinds"));
+                            }
+                            behavior_kinds__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(Widget {
@@ -11105,10 +11122,227 @@ impl<'de> serde::Deserialize<'de> for Widget {
                     surfaces: surfaces__.unwrap_or_default(),
                     hosts_surface: hosts_surface__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    behavior_kinds: behavior_kinds__,
                 })
             }
         }
         deserializer.deserialize_struct("module.Widget", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for WidgetBehaviorKind {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.label.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.WidgetBehaviorKind", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.label.is_empty() {
+            struct_ser.serialize_field("label", &self.label)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for WidgetBehaviorKind {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "label",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            Label,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "label" => Ok(GeneratedField::Label),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = WidgetBehaviorKind;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.WidgetBehaviorKind")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<WidgetBehaviorKind, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut label__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Label => {
+                            if label__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("label"));
+                            }
+                            label__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(WidgetBehaviorKind {
+                    id: id__.unwrap_or_default(),
+                    label: label__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.WidgetBehaviorKind", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for WidgetBehaviorKinds {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.transitions.is_empty() {
+            len += 1;
+        }
+        if !self.effects.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.WidgetBehaviorKinds", len)?;
+        if !self.transitions.is_empty() {
+            struct_ser.serialize_field("transitions", &self.transitions)?;
+        }
+        if !self.effects.is_empty() {
+            struct_ser.serialize_field("effects", &self.effects)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for WidgetBehaviorKinds {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "transitions",
+            "effects",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Transitions,
+            Effects,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "transitions" => Ok(GeneratedField::Transitions),
+                            "effects" => Ok(GeneratedField::Effects),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = WidgetBehaviorKinds;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.WidgetBehaviorKinds")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<WidgetBehaviorKinds, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut transitions__ = None;
+                let mut effects__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Transitions => {
+                            if transitions__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("transitions"));
+                            }
+                            transitions__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Effects => {
+                            if effects__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("effects"));
+                            }
+                            effects__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(WidgetBehaviorKinds {
+                    transitions: transitions__.unwrap_or_default(),
+                    effects: effects__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.WidgetBehaviorKinds", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for WidgetInput {
@@ -11149,6 +11383,9 @@ impl serde::Serialize for WidgetInput {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if self.behavior_kinds.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.WidgetInput", len)?;
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
@@ -11180,6 +11417,9 @@ impl serde::Serialize for WidgetInput {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if let Some(v) = self.behavior_kinds.as_ref() {
+            struct_ser.serialize_field("behaviorKinds", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -11204,6 +11444,8 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             "hosts_surface",
             "hostsSurface",
             "taxonomy",
+            "behavior_kinds",
+            "behaviorKinds",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -11218,6 +11460,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             Surfaces,
             HostsSurface,
             Taxonomy,
+            BehaviorKinds,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -11249,6 +11492,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             "surfaces" => Ok(GeneratedField::Surfaces),
                             "hostsSurface" | "hosts_surface" => Ok(GeneratedField::HostsSurface),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "behaviorKinds" | "behavior_kinds" => Ok(GeneratedField::BehaviorKinds),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -11278,6 +11522,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                 let mut surfaces__ = None;
                 let mut hosts_surface__ = None;
                 let mut taxonomy__ = None;
+                let mut behavior_kinds__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ManifestId => {
@@ -11340,6 +11585,12 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::BehaviorKinds => {
+                            if behavior_kinds__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorKinds"));
+                            }
+                            behavior_kinds__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(WidgetInput {
@@ -11353,6 +11604,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                     surfaces: surfaces__.unwrap_or_default(),
                     hosts_surface: hosts_surface__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    behavior_kinds: behavior_kinds__,
                 })
             }
         }

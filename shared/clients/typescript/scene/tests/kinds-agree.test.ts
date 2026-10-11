@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   compileAnimation,
   declaresKind,
   EFFECT_DEFAULTS,
   HOST_EFFECT_KINDS,
+  HOST_TRANSITION_KINDS,
   isDeclaredBehaviorKinds,
   NO_DECLARED_KINDS,
   STRICT_REGISTRY,
@@ -21,6 +24,27 @@ describe("host effect kinds", () => {
       expect(compileAnimation(behavior as never, { startMs: 0, endMs: 1000 })).not.toBeNull();
     });
   }
+});
+
+// Barkloader refuses a widget declaring a host kind as its own; a host kind it
+// does not know of would let a widget shadow one the overlay plays.
+describe("host kinds as barkloader knows them", () => {
+  const manifestRs = readFileSync(
+    join(import.meta.dir, "../../../../../barkloader/lib_module/src/module_manifest.rs"),
+    "utf8"
+  );
+  const rustKinds = (name: string): string[] => {
+    const match = new RegExp(`pub const ${name}: \\[&str; \\d+\\] =\\s*\\[([^\\]]*)\\]`).exec(manifestRs);
+    if (match === null) {
+      throw new Error(`module_manifest.rs has no ${name}`);
+    }
+    return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  };
+
+  test("match the model's", () => {
+    expect(rustKinds("HOST_TRANSITION_KINDS")).toEqual([...HOST_TRANSITION_KINDS]);
+    expect(rustKinds("HOST_EFFECT_KINDS")).toEqual([...HOST_EFFECT_KINDS]);
+  });
 });
 
 describe("declaresKind", () => {
