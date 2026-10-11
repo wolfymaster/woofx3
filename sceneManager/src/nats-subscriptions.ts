@@ -1,6 +1,10 @@
 import { OBS_STATUS_SUBJECT } from "@woofx3/common/cloudevents/Obs/commands";
 import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import { SCENE_COMMAND_SUBJECT } from "@woofx3/common/cloudevents/Scene/commands";
+import {
+  COMPOSITION_PREVIEW_TOKEN_SUBJECT,
+  type CompositionPreviewTokenReply,
+} from "@woofx3/common/cloudevents/Scene/composition-preview";
 import { SCENE_EDITOR_TOKEN_SUBJECT, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
@@ -44,6 +48,8 @@ interface InitArgs {
   sceneDocuments: SavedScenes;
   /** Mints the token that opens a scene's editor socket (see routes/editor.ts). */
   editorToken: (sceneId: string) => Promise<SceneEditorTokenReply>;
+  /** Mints the token that opens the composition preview page (see routes/composition-preview.ts). */
+  previewToken: () => Promise<CompositionPreviewTokenReply>;
   logger: Logger;
 }
 
@@ -134,6 +140,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     resolver,
     sceneDocuments,
     editorToken,
+    previewToken,
     logger,
   } = args;
 
@@ -306,6 +313,10 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     return sceneId ? editorToken(sceneId) : ({ ok: false, reason: "sceneId required" } satisfies SceneEditorTokenReply);
   });
   logger.info(`Answering ${SCENE_EDITOR_TOKEN_SUBJECT}`);
+
+  // The api asks for this when a dashboard opens the alert editor's preview.
+  await answer(COMPOSITION_PREVIEW_TOKEN_SUBJECT, () => previewToken());
+  logger.info(`Answering ${COMPOSITION_PREVIEW_TOKEN_SUBJECT}`);
 
   // A workflow step changing a scene (scene.widget.visibility): applied to
   // the published scene like an edit, and answered so the step knows.

@@ -55,3 +55,36 @@ describe("SessionTokenService — editor tokens", () => {
     expect(await tokens.verifyEditor(session)).toBeNull();
   });
 });
+
+describe("SessionTokenService — composition preview tokens", () => {
+  const tokens = new SessionTokenService("test-secret");
+
+  it("opens the preview page with its token, and keeps the page's session apart from it", async () => {
+    const entry = await tokens.mintPreview();
+    const session = await tokens.mintPreviewSession();
+    expect(await tokens.verifyPreview(entry)).toBe(true);
+    expect(await tokens.verifyPreviewSession(session)).toBe(true);
+    expect(await tokens.verifyPreview(session)).toBe(false);
+    expect(await tokens.verifyPreviewSession(entry)).toBe(false);
+  });
+
+  it("is never an overlay's session or an editor's token, nor they a preview's", async () => {
+    const entry = await tokens.mintPreview();
+    const session = await tokens.mintPreviewSession();
+    for (const preview of [entry, session]) {
+      expect(await tokens.verify(preview)).toBeNull();
+      expect(await tokens.verifyEditor(preview)).toBeNull();
+    }
+    for (const other of [await tokens.mint({ sceneId: "s1" }), await tokens.mintEditor({ sceneId: "s1" })]) {
+      expect(await tokens.verifyPreview(other)).toBe(false);
+      expect(await tokens.verifyPreviewSession(other)).toBe(false);
+    }
+  });
+
+  it("refuses a preview token signed with another secret, or none at all", async () => {
+    const entry = await new SessionTokenService("other-secret").mintPreview();
+    expect(await tokens.verifyPreview(entry)).toBe(false);
+    expect(await tokens.verifyPreview("")).toBe(false);
+    expect(await tokens.verifyPreview("not-a-jwt")).toBe(false);
+  });
+});

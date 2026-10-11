@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { CompositionPreviewTokenReply } from "@woofx3/common/cloudevents/Scene/composition-preview";
 import { reportAlertNotPlayed } from "../src/events/alert-dispatch";
 import { initSubscriptions, notifySceneUpdated } from "../src/nats-subscriptions";
 
@@ -138,7 +139,11 @@ describe("alert queue control subjects", () => {
     return reply;
   }
 
-  async function wire(deliveryStore: Record<string, unknown>, db: Record<string, unknown> = {}) {
+  async function wire(
+    deliveryStore: Record<string, unknown>,
+    db: Record<string, unknown> = {},
+    previewToken: () => Promise<CompositionPreviewTokenReply> = async () => ({ ok: false, reason: "unused" })
+  ) {
     const { handlers, nats } = fakeNats();
     await initSubscriptions({
       nats: nats as any,
@@ -156,6 +161,7 @@ describe("alert queue control subjects", () => {
         published: async () => null,
       },
       editorToken: async () => ({ ok: false, reason: "unused" }),
+      previewToken,
       logger: fakeLogger(),
     });
     return handlers;
@@ -216,6 +222,22 @@ describe("alert queue control subjects", () => {
     expect(responded).toBe(false);
   });
 
+  it("answers the api's request for a composition preview token", async () => {
+    const handlers = await wire({}, {}, async () => ({
+      ok: true,
+      token: "preview-token",
+      expiresInSeconds: 300,
+      path: "/preview/composition",
+    }));
+
+    expect(await request(handlers, "engine.scene.composition-preview-token", {})).toEqual({
+      ok: true,
+      token: "preview-token",
+      expiresInSeconds: 300,
+      path: "/preview/composition",
+    });
+  });
+
   it("refuses a replay without an id", async () => {
     const handlers = await wire({ connectedSceneIds: () => ["scene-1"] });
 
@@ -253,6 +275,7 @@ describe("module setting changes", () => {
         published: async () => null,
       },
       editorToken: async () => ({ ok: false, reason: "unused" }),
+      previewToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
     const deliver = (data: unknown) => {
@@ -329,6 +352,7 @@ describe("module setting changes", () => {
         published: async () => null,
       },
       editorToken: async () => ({ ok: false, reason: "unused" }),
+      previewToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
     const handler = handlers.get("engine.obs.status");

@@ -36,6 +36,19 @@ export const EDITOR_TOKEN_TTL_SECONDS = 300;
 /** The claim that makes a token an editor's. */
 const EDIT_SCOPE = "edit";
 
+/**
+ * The composition preview's tokens (see routes/composition-preview.ts): one
+ * that opens the page, minted for the dashboard through the api and presented
+ * once, and the page's session after. They name no scene, so neither ever
+ * verifies as an overlay's session or an editor's token, and those never
+ * verify as either of these.
+ */
+const PREVIEW_SCOPE = "composition-preview";
+const PREVIEW_SESSION_SCOPE = "composition-preview-session";
+
+/** As an editor token: long enough for the dashboard to load the page it was minted for. */
+export const PREVIEW_TOKEN_TTL_SECONDS = 300;
+
 export class SessionTokenService {
   private readonly key: Uint8Array;
 
@@ -75,6 +88,44 @@ export class SessionTokenService {
    *  An overlay's session never lets its holder edit the scene. */
   async verifyEditor(token: string): Promise<SessionClaims | null> {
     return this.claims(token, true);
+  }
+
+  /** A token that opens the composition preview page, minted for the dashboard through the api. */
+  async mintPreview(): Promise<string> {
+    return this.mintScoped(PREVIEW_SCOPE, PREVIEW_TOKEN_TTL_SECONDS);
+  }
+
+  /** The preview page's session, carried as a cookie and refreshed like an overlay's. */
+  async mintPreviewSession(): Promise<string> {
+    return this.mintScoped(PREVIEW_SESSION_SCOPE, SESSION_TOKEN_TTL_SECONDS);
+  }
+
+  async verifyPreview(token: string): Promise<boolean> {
+    return this.hasScope(token, PREVIEW_SCOPE);
+  }
+
+  async verifyPreviewSession(token: string): Promise<boolean> {
+    return this.hasScope(token, PREVIEW_SESSION_SCOPE);
+  }
+
+  private async mintScoped(scope: string, ttlSeconds: number): Promise<string> {
+    return new SignJWT({ scope })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime(`${ttlSeconds}s`)
+      .sign(this.key);
+  }
+
+  private async hasScope(token: string, scope: string): Promise<boolean> {
+    if (!token) {
+      return false;
+    }
+    try {
+      const { payload } = await jwtVerify(token, this.key, { algorithms: ["HS256"] });
+      return payload.scope === scope && payload.sceneId === undefined;
+    } catch {
+      return false;
+    }
   }
 
   private async claims(token: string, editor: boolean): Promise<SessionClaims | null> {
