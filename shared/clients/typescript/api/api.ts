@@ -812,6 +812,19 @@ export type DeleteAlertCompositionResult =
   /** Steps still play it (`links`, empty when the alert does not exist or the delete failed otherwise). */
   | { success: false; links: CompositionLinkInfo[] };
 
+/**
+ * Returned by `getCompositionPreviewUrl`: sceneManager's composition preview
+ * page with a token that opens it once. The page plays whatever composition
+ * the page framing it posts, driven by the protocol in
+ * `@woofx3/scene/runtime` (`preview-protocol.ts`).
+ */
+export interface CompositionPreviewUrl {
+  /** Absolute: `{sceneManager public URL}/preview/composition?token=…`. */
+  url: string;
+  /** How long `url` may be loaded for; ask again to load the page after. */
+  expiresInSeconds: number;
+}
+
 /** Returned by `getSceneEditorSession`. */
 export interface SceneEditorSession {
   token: string;
@@ -1788,6 +1801,14 @@ export interface Woofx3EngineApi {
   deleteAlertComposition(id: string, correlationKey?: string): Promise<DeleteAlertCompositionResult>;
   /** The workflow and command steps that play a composition, ordered by owner then step. */
   listCompositionLinks(compositionId: string): Promise<CompositionLinkInfo[]>;
+  /**
+   * A URL for the alert editor's live preview: sceneManager's page that plays
+   * a composition the dashboard posts to it, with real widget frames, on a
+   * timeline the dashboard plays, pauses and scrubs. Null when sceneManager
+   * did not answer. The URL opens only that page, never an overlay, and names
+   * no composition. Requires the `compositions.preview` capability.
+   */
+  getCompositionPreviewUrl(): Promise<CompositionPreviewUrl | null>;
 
   // Stream status
   /** The broadcaster's live state. Single-broadcaster per deployment, so

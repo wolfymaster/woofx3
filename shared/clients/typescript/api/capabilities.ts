@@ -86,6 +86,12 @@ export const ENGINE_CAPABILITIES = {
    */
   compositionsAlerts: "compositions.alerts",
   /**
+   * The alert editor's live preview: `getCompositionPreviewUrl`, and
+   * sceneManager's `/preview/composition` page driven by the protocol in
+   * `@woofx3/scene/runtime` (`preview-protocol.ts`).
+   */
+  compositionsPreview: "compositions.preview",
+  /**
    * An `alert` workflow or command step may play a stored alert composition
    * (`parameters.composition`, its id) with values for its inputs
    * (`parameters.inputs`) in place of an inline `layout`. Saving a step that
