@@ -201,6 +201,54 @@ pub mod scene_service_client {
                 .insert(GrpcMethod::new("scene.SceneService", "ListScenes"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn list_composition_links(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListCompositionLinksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CompositionLinksResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/scene.SceneService/ListCompositionLinks",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("scene.SceneService", "ListCompositionLinks"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn count_composition_links(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CountCompositionLinksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CountCompositionLinksResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/scene.SceneService/CountCompositionLinks",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("scene.SceneService", "CountCompositionLinks"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -240,6 +288,20 @@ pub mod scene_service_server {
             request: tonic::Request<super::ListScenesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListScenesResponse>,
+            tonic::Status,
+        >;
+        async fn list_composition_links(
+            &self,
+            request: tonic::Request<super::ListCompositionLinksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CompositionLinksResponse>,
+            tonic::Status,
+        >;
+        async fn count_composition_links(
+            &self,
+            request: tonic::Request<super::CountCompositionLinksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CountCompositionLinksResponse>,
             tonic::Status,
         >;
     }
@@ -529,6 +591,101 @@ pub mod scene_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListScenesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/scene.SceneService/ListCompositionLinks" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListCompositionLinksSvc<T: SceneService>(pub Arc<T>);
+                    impl<
+                        T: SceneService,
+                    > tonic::server::UnaryService<super::ListCompositionLinksRequest>
+                    for ListCompositionLinksSvc<T> {
+                        type Response = super::CompositionLinksResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListCompositionLinksRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SceneService>::list_composition_links(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListCompositionLinksSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/scene.SceneService/CountCompositionLinks" => {
+                    #[allow(non_camel_case_types)]
+                    struct CountCompositionLinksSvc<T: SceneService>(pub Arc<T>);
+                    impl<
+                        T: SceneService,
+                    > tonic::server::UnaryService<super::CountCompositionLinksRequest>
+                    for CountCompositionLinksSvc<T> {
+                        type Response = super::CountCompositionLinksResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CountCompositionLinksRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SceneService>::count_composition_links(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CountCompositionLinksSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

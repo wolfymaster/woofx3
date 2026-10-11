@@ -151,6 +151,12 @@ export class DbClient {
     return alert.UpdateAlertLifecycle(req, this.config);
   }
 
+  // Records the composition an alert played, with the bound document it
+  // showed, on the alert's row; a replay plays that document. Once per row.
+  async recordAlertComposition(req: alert.RecordAlertCompositionRequest): Promise<alert.AlertResponse> {
+    return alert.RecordAlertComposition(req, this.config);
+  }
+
   // Replay reads a recorded alert, records the replay as a row of its own, and
   // marks the original `replayed`.
   async getAlert(req: alert.GetAlertRequest): Promise<alert.AlertResponse> {

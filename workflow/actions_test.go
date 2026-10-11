@@ -155,6 +155,38 @@ func TestValidateAlertParams_AcceptsAnEmptyWidgetList(t *testing.T) {
 	}
 }
 
+func TestValidateAlertParams_AcceptsACompositionLayout(t *testing.T) {
+	params := map[string]any{
+		"layout": map[string]any{
+			"layout":    map[string]any{"width": 1920.0, "height": 1080.0},
+			"widgets":   map[string]any{"t1": map[string]any{"widget": "woofx3:widget:text"}},
+			"behaviors": map[string]any{},
+		},
+	}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+func TestValidateAlertParams_NamesTheCompositionFieldAtFault(t *testing.T) {
+	cases := []struct {
+		layout map[string]any
+		want   string
+	}{
+		{map[string]any{"layout": "x", "widgets": map[string]any{}}, `layout.layout must be an object, got the string "x"`},
+		{map[string]any{"layout": map[string]any{"height": 1.0}, "widgets": map[string]any{}}, "layout.layout.width must be a positive number, got nothing"},
+		{map[string]any{"layout": map[string]any{"width": 1.0, "height": 0.0}, "widgets": map[string]any{}}, "layout.layout.height must be a positive number, got number 0"},
+		{map[string]any{"layout": map[string]any{"width": 1.0, "height": 1.0}, "widgets": []any{}}, "layout.widgets must be an object keyed by id, got an array"},
+		{map[string]any{"layout": map[string]any{"width": 1.0, "height": 1.0}, "widgets": map[string]any{}, "behaviors": []any{}}, "layout.behaviors must be an object keyed by id, got an array"},
+	}
+	for _, tc := range cases {
+		err := validateAlertParams(map[string]any{"layout": tc.layout})
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("validateAlertParams(%v) = %v, want %q", tc.layout, err, tc.want)
+		}
+	}
+}
+
 // The message is the whole point: an author sees it on a failed run and has to
 // be able to act on it without reading engine source.
 func TestValidateAlertParams_NamesTheFieldAtFault(t *testing.T) {
@@ -166,7 +198,7 @@ func TestValidateAlertParams_NamesTheFieldAtFault(t *testing.T) {
 		{
 			name:   "no layout at all, which is what a stale module produces",
 			params: map[string]any{"target": "default"},
-			want:   "layout must be an object, got nothing",
+			want:   "an alert needs a layout or a composition, got neither",
 		},
 		{
 			name:   "layout is not an object",
@@ -211,5 +243,100 @@ func TestValidateAlertParams_NamesTheFieldAtFault(t *testing.T) {
 				t.Errorf("error = %q, want %q", err.Error(), tc.want)
 			}
 		})
+	}
+}
+
+func TestValidateAlertParams_AcceptsACompositionWithInputs(t *testing.T) {
+	params := map[string]any{
+		"target":      "default",
+		"composition": "0b7f6a52-5d0c-4a8e-9a57-2f1c3f0e8d11",
+		"inputs":      map[string]any{"name": "alice", "amount": 100.0},
+	}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+func TestValidateAlertParams_AcceptsACompositionWithoutInputs(t *testing.T) {
+	// Every input then takes its default, or the scene manager refuses the
+	// alert naming the inputs that have none.
+	params := map[string]any{"composition": "0b7f6a52-5d0c-4a8e-9a57-2f1c3f0e8d11"}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+func TestValidateAlertParams_RefusesAMalformedCompositionStep(t *testing.T) {
+	const id = "0b7f6a52-5d0c-4a8e-9a57-2f1c3f0e8d11"
+	layout := map[string]any{"width": 10.0, "height": 10.0, "widgets": []any{}}
+	cases := []struct {
+		name   string
+		params map[string]any
+		want   string
+	}{
+		{
+			name:   "both a layout and a composition",
+			params: map[string]any{"layout": layout, "composition": id},
+			want:   "an alert shows a layout or a composition, not both",
+		},
+		{
+			name:   "composition is empty",
+			params: map[string]any{"composition": ""},
+			want:   `composition must be an alert composition id, got the string ""`,
+		},
+		{
+			name:   "composition is not an id",
+			params: map[string]any{"composition": "cheer-alert"},
+			want:   `composition must be an alert composition id, got the string "cheer-alert"`,
+		},
+		{
+			name:   "inputs is a list",
+			params: map[string]any{"composition": id, "inputs": []any{"alice"}},
+			want:   "inputs must be an object keyed by input id, got an array",
+		},
+		{
+			name:   "inputs beside a layout",
+			params: map[string]any{"layout": layout, "inputs": map[string]any{}},
+			want:   "inputs fill a composition's inputs; an alert with a layout takes none",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateAlertParams(tc.params)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error = %q, want %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+// The scene manager binds inputs; the envelope carries them as the step
+// resolved them, beside the composition id and with no layout.
+func TestBuildAlertEnvelope_CarriesTheCompositionAndInputs(t *testing.T) {
+	params := map[string]any{
+		"composition": "0b7f6a52-5d0c-4a8e-9a57-2f1c3f0e8d11",
+		"inputs":      map[string]any{"name": "alice"},
+	}
+	payload, _, err := buildAlertEnvelope(params, nil)
+	if err != nil {
+		t.Fatalf("buildAlertEnvelope: %v", err)
+	}
+	var got struct {
+		Parameters map[string]any `json:"parameters"`
+	}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Parameters["composition"] != "0b7f6a52-5d0c-4a8e-9a57-2f1c3f0e8d11" {
+		t.Errorf("parameters.composition = %v", got.Parameters["composition"])
+	}
+	if inputs, _ := got.Parameters["inputs"].(map[string]any); inputs["name"] != "alice" {
+		t.Errorf("parameters.inputs = %v", got.Parameters["inputs"])
+	}
+	if _, ok := got.Parameters["layout"]; ok {
+		t.Errorf("parameters.layout is present; a composition alert carries none")
 	}
 }

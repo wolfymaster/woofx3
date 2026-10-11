@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { STRICT_REGISTRY, TOLERANT_REGISTRY, withoutWidget } from "../../../scene/model";
 import {
   applyOps,
   composeOps,
@@ -6,12 +7,15 @@ import {
   invalidOps,
   invalidResult,
   invertOps,
+  isSceneDocument,
   type Ops,
+  parseSnapshot,
   type SceneDocument,
   sameValue,
   transformOps,
 } from "../../scene-editor/document";
-import { placement, sceneDoc } from "./test-support";
+import { parseServerMessage } from "../../scene-editor/protocol";
+import { behavior, placement, sceneDoc } from "./test-support";
 
 describe("json0 tie convention", () => {
   // Pinned because the sequencer and the client rely on it: the server
@@ -93,10 +97,10 @@ describe("invalidOps", () => {
 
   test("refuses ops outside the document's shape", () => {
     expect(invalidOps([])).toBe("ops must be a non-empty list");
-    expect(invalidOps([{ p: ["other"], oi: 1 }])).toBe("a path must start at a layout key or a placement");
-    expect(invalidOps([{ p: ["widgets", "a"], oi: { widget: "x" } }])).toBe("a placement must be inserted whole");
+    expect(invalidOps([{ p: ["other"], oi: 1 }])).toBe("a path must start at a layout key, a placement or a behavior");
+    expect(invalidOps([{ p: ["widgets", "a"], oi: { widget: "x" } }])).toContain("a placement must be inserted whole");
     expect(invalidOps([{ p: ["widgets", "a", "colour"], od: 1, oi: 2 }])).toBe("a placement has no field colour");
-    expect(invalidOps([{ p: ["widgets", "a", "opacity"], od: 1, oi: 2 }])).toBe("invalid opacity");
+    expect(invalidOps([{ p: ["widgets", "a", "opacity"], od: 1, oi: 2 }])).toBe("invalid placement opacity");
   });
 
   const refused: Array<[string, unknown]> = [
@@ -143,11 +147,21 @@ describe("invalidOps", () => {
     expect(invalidOps([{ p: ["widgets", "a"], od: placement() }])).toBeNull();
   });
 
+  test("the canvas size stays a positive number and is never removed", () => {
+    expect(invalidOps([{ p: ["layout", "height"], od: 1080, oi: 720 }])).toBeNull();
+    expect(invalidOps([{ p: ["layout", "width"], od: 1920, oi: 0 }])).toBe("a canvas width is a positive number");
+    expect(invalidOps([{ p: ["layout", "height"], oi: -1 }])).toBe("a canvas height is a positive number");
+    expect(invalidOps([{ p: ["layout", "width"], od: 1920, oi: "1280" }])).toBe("a canvas width is a positive number");
+    expect(invalidOps([{ p: ["layout", "width"], od: 1920 }])).toBe("a canvas keeps its width");
+    expect(invalidOps([{ p: ["layout", "backgroundColor"], oi: 0 }])).toBe("a canvas backgroundColor is a string");
+    expect(invalidOps([{ p: ["layout", "backgroundColor"], od: "#000" }])).toBeNull();
+  });
+
   test("invalidResult refuses text spliced past a field's length limit", () => {
     const doc = sceneDoc({ a: placement({ name: "x".repeat(256) }) });
     const ops: Ops = [{ p: ["widgets", "a", "name", 0], si: "y" }];
     expect(invalidOps(ops)).toBeNull();
-    expect(invalidResult(applyOps(doc, ops), ops)).toBe("placement a would not be valid");
+    expect(invalidResult(applyOps(doc, ops), ops)).toBe("placement a would not be valid: invalid placement name");
     expect(invalidResult(doc, [{ p: ["widgets", "a", "x"], od: 0, oi: 1 }])).toBeNull();
   });
 });
@@ -210,6 +224,196 @@ describe("diffDocuments makes only shapes invalidOps accepts", () => {
     const ops = diffDocuments(base, to);
     expect(ops).toHaveLength(1);
     expect(ops[0]!.p).toEqual(["widgets", "a"]);
-    expect(invalidOps(ops)).toBe("a placement must be inserted whole");
+    expect(invalidOps(ops)).toContain("a placement must be inserted whole");
+  });
+});
+
+describe("behaviors", () => {
+  const base = sceneDoc(
+    { a: placement(), b: placement({ z: "a0001" }) },
+    {
+      in: behavior(),
+      out: behavior({
+        kind: "slide",
+        order: "a1",
+        timing: { anchor: "exit", offsetMs: 0, durationMs: 300, easing: "ease-in" },
+        params: { phase: "out", direction: "up" },
+      }),
+    }
+  );
+
+  const edits: Array<[string, (doc: SceneDocument) => void, Ops | null]> = [
+    [
+      "add a behavior",
+      (d) => Object.assign(d.behaviors, { pulse: behavior({ type: "effect", kind: "pulse", params: {} }) }),
+      null,
+    ],
+    ["remove a behavior", (d) => delete d.behaviors.in, [{ p: ["behaviors", "in"], od: behavior() }]],
+    [
+      "change its kind",
+      (d) => Object.assign(d.behaviors.in!, { kind: "zoom" }),
+      [{ p: ["behaviors", "in", "kind"], od: "fade", oi: "zoom" }],
+    ],
+    [
+      "retarget it",
+      (d) => Object.assign(d.behaviors.in!, { target: "b" }),
+      [{ p: ["behaviors", "in", "target"], od: "a", oi: "b" }],
+    ],
+    [
+      "reorder it",
+      (d) => Object.assign(d.behaviors.in!, { order: "a2" }),
+      [{ p: ["behaviors", "in", "order"], od: "a0", oi: "a2" }],
+    ],
+    [
+      "delay it",
+      (d) => Object.assign(d.behaviors.in!.timing, { offsetMs: 500 }),
+      [{ p: ["behaviors", "in", "timing", "offsetMs"], od: 0, oi: 500 }],
+    ],
+    [
+      "anchor it to another widget",
+      (d) => Object.assign(d.behaviors.in!.timing, { anchor: "complete", node: "b" }),
+      [
+        { p: ["behaviors", "in", "timing", "anchor"], od: "enter", oi: "complete" },
+        { p: ["behaviors", "in", "timing", "node"], oi: "b" },
+      ],
+    ],
+    [
+      "change a param",
+      (d) => Object.assign(d.behaviors.out!.params, { direction: "left" }),
+      [{ p: ["behaviors", "out", "params", "direction"], od: "up", oi: "left" }],
+    ],
+    [
+      "remove a param",
+      (d) => delete d.behaviors.out!.params.direction,
+      [{ p: ["behaviors", "out", "params", "direction"], od: "up" }],
+    ],
+    ["change its type", (d) => Object.assign(d.behaviors.in!, { type: "effect", kind: "pulse", params: {} }), null],
+  ];
+  for (const [name, change, expected] of edits) {
+    test(name, () => {
+      const to = structuredClone(base);
+      change(to);
+      const ops = diffDocuments(base, to);
+      if (expected !== null) {
+        expect(ops).toEqual(expected);
+      }
+      expect(invalidOps(ops)).toBeNull();
+      const applied = applyOps(base, ops);
+      expect(sameValue(applied, to)).toBe(true);
+      expect(invalidResult(applied, ops)).toBeNull();
+      expect(sameValue(applyOps(applied, invertOps(ops)), base)).toBe(true);
+    });
+  }
+
+  test("a change of type replaces the behavior whole", () => {
+    const to = structuredClone(base);
+    to.behaviors.in = behavior({ type: "effect", kind: "pulse", params: {} });
+    expect(diffDocuments(base, to)).toEqual([{ p: ["behaviors", "in"], od: base.behaviors.in, oi: to.behaviors.in }]);
+  });
+
+  const refused: Array<[string, unknown]> = [
+    ["replacing every behavior", { p: ["behaviors"], od: {}, oi: {} }],
+    ["a behavior inserted without its fields", { p: ["behaviors", "x"], oi: { type: "transition" } }],
+    ["a behavior of a type the engine does not know", { p: ["behaviors", "x"], oi: behavior({ type: "sound" }) }],
+    ["its type replaced alone", { p: ["behaviors", "in", "type"], od: "transition", oi: "effect" }],
+    ["a field it does not have", { p: ["behaviors", "in", "speed"], od: 1, oi: 2 }],
+    ["text spliced into its kind", { p: ["behaviors", "in", "kind", 0], si: "x" }],
+    ["text spliced into a param", { p: ["behaviors", "in", "params", "phase", 0], si: "x" }],
+    ["a param path into a list", { p: ["behaviors", "in", "params", "steps", 0], oi: 1 }],
+    ["a required timing field removed", { p: ["behaviors", "in", "timing", "anchor"], od: "enter" }],
+    ["a timing field inserted", { p: ["behaviors", "in", "timing", "pace"], oi: 1 }],
+    ["an invalid timing value", { p: ["behaviors", "in", "timing", "easing"], od: "ease-out", oi: "springy" }],
+    ["a path deeper than a timing field", { p: ["behaviors", "in", "timing", "anchor", "x"], od: 1, oi: 2 }],
+    ["the inputs replaced", { p: ["inputs"], oi: [] }],
+  ];
+  for (const [name, component] of refused) {
+    test(`refuses ${name}`, () => {
+      expect(invalidOps([component])).not.toBeNull();
+    });
+  }
+
+  test("a param valid alone but not for the behavior's kind is refused on the result, by the engine only", () => {
+    const ops: Ops = [{ p: ["behaviors", "in", "params", "direction"], oi: "left" }];
+    expect(invalidOps(ops)).toBeNull();
+    const applied = applyOps(base, ops);
+    expect(invalidResult(applied, ops)).toContain("behavior in would not be valid");
+    expect(invalidResult(applied, ops, TOLERANT_REGISTRY)).toBeNull();
+  });
+
+  test("a behavior of an unknown type is refused by the engine and kept by an editor", () => {
+    const future = { ...behavior(), type: "sound", kind: "chime", params: { volume: 1 } };
+    const ops: Ops = [{ p: ["behaviors", "chime"], oi: future }];
+    expect(invalidOps(ops, STRICT_REGISTRY)).toContain("unknown behavior type");
+    expect(invalidOps(ops, TOLERANT_REGISTRY)).toBeNull();
+  });
+
+  test("an editor's edit around a behavior it does not know leaves that behavior as it was", () => {
+    const doc = structuredClone(base);
+    (doc.behaviors as Record<string, unknown>).chime = { type: "sound", kind: "chime", target: "a", volume: 1 };
+    const to = structuredClone(doc);
+    to.behaviors.in!.order = "a5";
+    const ops = diffDocuments(doc, to, TOLERANT_REGISTRY);
+    expect(ops).toEqual([{ p: ["behaviors", "in", "order"], od: "a0", oi: "a5" }]);
+    expect(invalidResult(applyOps(doc, ops), ops, TOLERANT_REGISTRY)).toBeNull();
+  });
+
+  test("deleting a widget removes its behaviors in the same ops", () => {
+    const ops = diffDocuments(base, withoutWidget(base, "a"));
+    expect(ops.map((component) => component.p)).toEqual([
+      ["widgets", "a"],
+      ["behaviors", "in"],
+      ["behaviors", "out"],
+    ]);
+    expect(invalidOps(ops)).toBeNull();
+    const applied = applyOps(base, ops);
+    expect(applied.behaviors).toEqual({});
+    expect(Object.keys(applied.widgets)).toEqual(["b"]);
+  });
+
+  test("a change to the inputs is diffed, and refused", () => {
+    const to = { ...structuredClone(base), inputs: [{ id: "user", label: "User", type: "text" }] };
+    const ops = diffDocuments(base, to);
+    expect(ops).toEqual([{ p: ["inputs"], oi: to.inputs }]);
+    expect(invalidOps(ops)).not.toBeNull();
+  });
+});
+
+describe("documents from before behaviors", () => {
+  const legacy = { layout: { width: 1920 }, widgets: { a: placement() } };
+
+  test("are not scene documents until normalized", () => {
+    expect(isSceneDocument(legacy)).toBe(false);
+    expect(isSceneDocument({ ...legacy, behaviors: {} })).toBe(true);
+  });
+
+  test("parseSnapshot gives them an empty behaviors collection", () => {
+    const snapshot = parseSnapshot({ sceneId: "s", name: "S", seq: 1, doc: legacy, meta: {} });
+    expect(snapshot?.doc).toEqual({ ...legacy, behaviors: {} });
+    expect(parseSnapshot({ sceneId: "s", name: "S", seq: 1, doc: { ...legacy, behaviors: [] }, meta: {} })).toBeNull();
+  });
+
+  test("a welcome snapshot gives both versions an empty behaviors collection", () => {
+    const message = parseServerMessage({
+      type: "welcome",
+      protocol: 2,
+      features: [],
+      clientId: "me",
+      last: null,
+      diverged: false,
+      snapshot: {
+        v: 0,
+        id: "",
+        docs: { draft: legacy, published: legacy },
+        meta: { draft: {}, published: {} },
+        hasDraft: false,
+        name: "S",
+      },
+    });
+    expect(message?.type).toBe("welcome");
+    if (message?.type !== "welcome" || !("snapshot" in message)) {
+      throw new Error("not a snapshot welcome");
+    }
+    expect(message.snapshot.docs.draft.behaviors).toEqual({});
+    expect(message.snapshot.docs.published.behaviors).toEqual({});
   });
 });

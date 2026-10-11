@@ -219,6 +219,27 @@ pub mod alert_service_client {
                 .insert(GrpcMethod::new("alert.AlertService", "UpdateAlertLifecycle"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn record_alert_composition(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecordAlertCompositionRequest>,
+        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/alert.AlertService/RecordAlertComposition",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("alert.AlertService", "RecordAlertComposition"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn delete_alert(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteAlertRequest>,
@@ -284,6 +305,10 @@ pub mod alert_service_server {
         async fn update_alert_lifecycle(
             &self,
             request: tonic::Request<super::UpdateAlertLifecycleRequest>,
+        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
+        async fn record_alert_composition(
+            &self,
+            request: tonic::Request<super::RecordAlertCompositionRequest>,
         ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
         async fn delete_alert(
             &self,
@@ -630,6 +655,55 @@ pub mod alert_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdateAlertLifecycleSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/alert.AlertService/RecordAlertComposition" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecordAlertCompositionSvc<T: AlertService>(pub Arc<T>);
+                    impl<
+                        T: AlertService,
+                    > tonic::server::UnaryService<super::RecordAlertCompositionRequest>
+                    for RecordAlertCompositionSvc<T> {
+                        type Response = super::AlertResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecordAlertCompositionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as AlertService>::record_alert_composition(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RecordAlertCompositionSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

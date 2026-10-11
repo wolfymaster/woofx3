@@ -26,8 +26,9 @@ export function renderSceneShell(config: SceneShellConfig): string {
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
   #widgets { position: relative; width: 100%; height: 100%; }
-  .widget-frame { position: absolute; border: 0; }
-  .alert-widget { position: absolute; overflow: hidden; }
+  /* Each fills its placement's slot; the scene runtime sizes and places the slot. */
+  .widget-frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; }
+  .alert-widget { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; }
   .alert-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 
   /* Connection indicator. Deliberately a small corner badge rather than

@@ -46,6 +46,15 @@ impl serde::Serialize for Alert {
         if self.version != 0 {
             len += 1;
         }
+        if !self.composition_id.is_empty() {
+            len += 1;
+        }
+        if !self.composition_version.is_empty() {
+            len += 1;
+        }
+        if !self.snapshot_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.Alert", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -88,6 +97,15 @@ impl serde::Serialize for Alert {
             #[allow(clippy::needless_borrows_for_generic_args)]
             struct_ser.serialize_field("version", ToString::to_string(&self.version).as_str())?;
         }
+        if !self.composition_id.is_empty() {
+            struct_ser.serialize_field("compositionId", &self.composition_id)?;
+        }
+        if !self.composition_version.is_empty() {
+            struct_ser.serialize_field("compositionVersion", &self.composition_version)?;
+        }
+        if !self.snapshot_json.is_empty() {
+            struct_ser.serialize_field("snapshotJson", &self.snapshot_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -119,6 +137,12 @@ impl<'de> serde::Deserialize<'de> for Alert {
             "completedAt",
             "error",
             "version",
+            "composition_id",
+            "compositionId",
+            "composition_version",
+            "compositionVersion",
+            "snapshot_json",
+            "snapshotJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -136,6 +160,9 @@ impl<'de> serde::Deserialize<'de> for Alert {
             CompletedAt,
             Error,
             Version,
+            CompositionId,
+            CompositionVersion,
+            SnapshotJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -170,6 +197,9 @@ impl<'de> serde::Deserialize<'de> for Alert {
                             "completedAt" | "completed_at" => Ok(GeneratedField::CompletedAt),
                             "error" => Ok(GeneratedField::Error),
                             "version" => Ok(GeneratedField::Version),
+                            "compositionId" | "composition_id" => Ok(GeneratedField::CompositionId),
+                            "compositionVersion" | "composition_version" => Ok(GeneratedField::CompositionVersion),
+                            "snapshotJson" | "snapshot_json" => Ok(GeneratedField::SnapshotJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -202,6 +232,9 @@ impl<'de> serde::Deserialize<'de> for Alert {
                 let mut completed_at__ = None;
                 let mut error__ = None;
                 let mut version__ = None;
+                let mut composition_id__ = None;
+                let mut composition_version__ = None;
+                let mut snapshot_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -284,6 +317,24 @@ impl<'de> serde::Deserialize<'de> for Alert {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::CompositionId => {
+                            if composition_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compositionId"));
+                            }
+                            composition_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CompositionVersion => {
+                            if composition_version__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compositionVersion"));
+                            }
+                            composition_version__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::SnapshotJson => {
+                            if snapshot_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("snapshotJson"));
+                            }
+                            snapshot_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Alert {
@@ -300,6 +351,9 @@ impl<'de> serde::Deserialize<'de> for Alert {
                     completed_at: completed_at__,
                     error: error__.unwrap_or_default(),
                     version: version__.unwrap_or_default(),
+                    composition_id: composition_id__.unwrap_or_default(),
+                    composition_version: composition_version__.unwrap_or_default(),
+                    snapshot_json: snapshot_json__.unwrap_or_default(),
                 })
             }
         }
@@ -434,6 +488,15 @@ impl serde::Serialize for CreateAlertRequest {
         if !self.envelope_id.is_empty() {
             len += 1;
         }
+        if !self.composition_id.is_empty() {
+            len += 1;
+        }
+        if !self.composition_version.is_empty() {
+            len += 1;
+        }
+        if !self.snapshot_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.CreateAlertRequest", len)?;
         if !self.payload.is_empty() {
             struct_ser.serialize_field("payload", &self.payload)?;
@@ -446,6 +509,15 @@ impl serde::Serialize for CreateAlertRequest {
         }
         if !self.envelope_id.is_empty() {
             struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
+        }
+        if !self.composition_id.is_empty() {
+            struct_ser.serialize_field("compositionId", &self.composition_id)?;
+        }
+        if !self.composition_version.is_empty() {
+            struct_ser.serialize_field("compositionVersion", &self.composition_version)?;
+        }
+        if !self.snapshot_json.is_empty() {
+            struct_ser.serialize_field("snapshotJson", &self.snapshot_json)?;
         }
         struct_ser.end()
     }
@@ -464,6 +536,12 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
             "sourceEventId",
             "envelope_id",
             "envelopeId",
+            "composition_id",
+            "compositionId",
+            "composition_version",
+            "compositionVersion",
+            "snapshot_json",
+            "snapshotJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -472,6 +550,9 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
             WorkflowId,
             SourceEventId,
             EnvelopeId,
+            CompositionId,
+            CompositionVersion,
+            SnapshotJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -497,6 +578,9 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             "sourceEventId" | "source_event_id" => Ok(GeneratedField::SourceEventId),
                             "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
+                            "compositionId" | "composition_id" => Ok(GeneratedField::CompositionId),
+                            "compositionVersion" | "composition_version" => Ok(GeneratedField::CompositionVersion),
+                            "snapshotJson" | "snapshot_json" => Ok(GeneratedField::SnapshotJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -520,6 +604,9 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                 let mut workflow_id__ = None;
                 let mut source_event_id__ = None;
                 let mut envelope_id__ = None;
+                let mut composition_id__ = None;
+                let mut composition_version__ = None;
+                let mut snapshot_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Payload => {
@@ -546,6 +633,24 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                             }
                             envelope_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::CompositionId => {
+                            if composition_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compositionId"));
+                            }
+                            composition_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CompositionVersion => {
+                            if composition_version__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compositionVersion"));
+                            }
+                            composition_version__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::SnapshotJson => {
+                            if snapshot_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("snapshotJson"));
+                            }
+                            snapshot_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateAlertRequest {
@@ -553,6 +658,9 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                     workflow_id: workflow_id__.unwrap_or_default(),
                     source_event_id: source_event_id__.unwrap_or_default(),
                     envelope_id: envelope_id__.unwrap_or_default(),
+                    composition_id: composition_id__.unwrap_or_default(),
+                    composition_version: composition_version__.unwrap_or_default(),
+                    snapshot_json: snapshot_json__.unwrap_or_default(),
                 })
             }
         }
@@ -1111,6 +1219,169 @@ impl<'de> serde::Deserialize<'de> for ListAlertsResponse {
             }
         }
         deserializer.deserialize_struct("alert.ListAlertsResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for RecordAlertCompositionRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.envelope_id.is_empty() {
+            len += 1;
+        }
+        if !self.composition_id.is_empty() {
+            len += 1;
+        }
+        if !self.composition_version.is_empty() {
+            len += 1;
+        }
+        if !self.snapshot_json.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("alert.RecordAlertCompositionRequest", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.envelope_id.is_empty() {
+            struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
+        }
+        if !self.composition_id.is_empty() {
+            struct_ser.serialize_field("compositionId", &self.composition_id)?;
+        }
+        if !self.composition_version.is_empty() {
+            struct_ser.serialize_field("compositionVersion", &self.composition_version)?;
+        }
+        if !self.snapshot_json.is_empty() {
+            struct_ser.serialize_field("snapshotJson", &self.snapshot_json)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for RecordAlertCompositionRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "envelope_id",
+            "envelopeId",
+            "composition_id",
+            "compositionId",
+            "composition_version",
+            "compositionVersion",
+            "snapshot_json",
+            "snapshotJson",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            EnvelopeId,
+            CompositionId,
+            CompositionVersion,
+            SnapshotJson,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
+                            "compositionId" | "composition_id" => Ok(GeneratedField::CompositionId),
+                            "compositionVersion" | "composition_version" => Ok(GeneratedField::CompositionVersion),
+                            "snapshotJson" | "snapshot_json" => Ok(GeneratedField::SnapshotJson),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = RecordAlertCompositionRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct alert.RecordAlertCompositionRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<RecordAlertCompositionRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut envelope_id__ = None;
+                let mut composition_id__ = None;
+                let mut composition_version__ = None;
+                let mut snapshot_json__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EnvelopeId => {
+                            if envelope_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("envelopeId"));
+                            }
+                            envelope_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CompositionId => {
+                            if composition_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compositionId"));
+                            }
+                            composition_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CompositionVersion => {
+                            if composition_version__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compositionVersion"));
+                            }
+                            composition_version__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::SnapshotJson => {
+                            if snapshot_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("snapshotJson"));
+                            }
+                            snapshot_json__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(RecordAlertCompositionRequest {
+                    id: id__.unwrap_or_default(),
+                    envelope_id: envelope_id__.unwrap_or_default(),
+                    composition_id: composition_id__.unwrap_or_default(),
+                    composition_version: composition_version__.unwrap_or_default(),
+                    snapshot_json: snapshot_json__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("alert.RecordAlertCompositionRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for UpdateAlertLifecycleRequest {

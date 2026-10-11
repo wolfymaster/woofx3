@@ -27,6 +27,14 @@ service SceneService {
     rpc UpdateScene(UpdateSceneRequest) returns (SceneResponse);
     rpc DeleteScene(DeleteSceneRequest) returns (common.ResponseStatus);
     rpc ListScenes(ListScenesRequest) returns (ListScenesResponse);
+
+    // Composition links: which workflow or chat command steps play which
+    // alert. They are derived from the definitions: saving a workflow or a
+    // command replaces its links in the same transaction (see the workflow
+    // and command services), so there is no RPC to write them. Deleting an
+    // alert that still has links is refused (see `DeleteScene`).
+    rpc ListCompositionLinks(ListCompositionLinksRequest) returns (CompositionLinksResponse);
+    rpc CountCompositionLinks(CountCompositionLinksRequest) returns (CountCompositionLinksResponse);
 }
 
 message Scene {
@@ -59,6 +67,17 @@ message Scene {
     // The scene editor's sync state as a JSON object, owned by the scene
     // editor and opaque here. Empty when no editor has synced the scene.
     string editor_state_json = 14;
+    // "scene" or "alert", fixed at creation. A scene is shown by overlays;
+    // an alert is a composition steps play, never an overlay page.
+    string kind = 15;
+    // The published document's behaviors, a JSON object keyed by behavior
+    // id; `{}` when it has none.
+    string behaviors_json = 16;
+    // The draft's behaviors, the same shape. Set only when `has_draft`.
+    string draft_behaviors_json = 17;
+    // The inputs the composition takes, a JSON array of ConfigFields; `[]`
+    // when it takes none. Not drafted: both documents declare these.
+    string inputs_json = 18;
 }
 
 message CreateSceneRequest {
@@ -74,6 +93,12 @@ message CreateSceneRequest {
     string layout_json = 5;
     string created_by_type = 6;
     string created_by_ref = 7;
+    // "scene" or "alert"; empty creates a scene. Anything else is refused.
+    string kind = 8;
+    // JSON object of behaviors keyed by id; empty stores `{}`.
+    string behaviors_json = 9;
+    // JSON array of input fields; empty stores `[]`.
+    string inputs_json = 10;
 }
 
 message GetSceneRequest {
@@ -96,11 +121,14 @@ message UpdateSceneRequest {
     string widgets_json = 4;
     string layout_json = 5;
     // Store a draft, the same shapes as `widgets_json` and `layout_json`.
-    // Both are set together; empty leaves the draft unchanged.
+    // Both are set together; empty leaves the draft unchanged. The draft's
+    // behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+    // that is empty, so a stored draft never pairs with behaviors from an
+    // older one.
     string draft_widgets_json = 6;
     string draft_layout_json = 7;
-    // Drop the draft (it was published or discarded). Wins over a draft
-    // set in the same request.
+    // Drop the draft (it was published or discarded), behaviors included.
+    // Wins over a draft set in the same request.
     bool clear_draft = 8;
     // Store the scene editor's sync state, a JSON object. Written in the
     // same row update as the documents and draft in this request, so the
@@ -113,8 +141,22 @@ message UpdateSceneRequest {
     // Drop the stored editor state in the same row update. Refused
     // together with `editor_state_json`.
     bool clear_editor_state = 10;
+    // The published behaviors, a JSON object; empty leaves them unchanged.
+    // A document like `widgets_json`: refused when not a JSON object.
+    string behaviors_json = 11;
+    // The draft's behaviors, a JSON object, written only with a draft
+    // (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+    // JSON object, or set without the draft.
+    string draft_behaviors_json = 12;
+    // The inputs, a JSON array of input fields; empty leaves them
+    // unchanged. A document like `widgets_json`: refused when not a JSON
+    // array.
+    string inputs_json = 13;
 }
 
+// An alert that composition links still point at is not deleted: the
+// request fails with `failed_precondition`, its message naming the linking
+// steps.
 message DeleteSceneRequest {
     string id = 1;
 }
@@ -126,6 +168,9 @@ message ListScenesRequest {
     int32 page_size = 3;
     string sort_by = 4;  // e.g. "name", "created_at", "updated_at"
     bool sort_desc = 5;
+    // Which kind to list, "scene" or "alert". Empty lists scenes, so a
+    // caller that predates alerts never sees one.
+    string kind = 6;
 }
 
 message ListScenesResponse {
@@ -134,4 +179,37 @@ message ListScenesResponse {
     int32 total_count = 3;
     int32 page = 4;
     int32 page_size = 5;
+}
+
+// One step that plays a composition.
+message CompositionLink {
+    string id = 1;
+    string composition_id = 2;
+    // "workflow" or "command".
+    string owner_kind = 3;
+    // The workflow's or command's id.
+    string owner_id = 4;
+    // The step within the owner's definition.
+    string step_id = 5;
+    google.protobuf.Timestamp created_at = 6;
+    google.protobuf.Timestamp updated_at = 7;
+}
+
+message ListCompositionLinksRequest {
+    string composition_id = 1;
+}
+
+message CompositionLinksResponse {
+    common.ResponseStatus status = 1;
+    // Ordered by owner kind, owner id, then step id.
+    repeated CompositionLink links = 2;
+}
+
+message CountCompositionLinksRequest {
+    string composition_id = 1;
+}
+
+message CountCompositionLinksResponse {
+    common.ResponseStatus status = 1;
+    int32 count = 2;
 }

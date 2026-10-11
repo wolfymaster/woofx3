@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { applyOps, type Ops, type SceneDocument, transformOps } from "../../scene-editor/document";
+import { applyOps, invalidOps, type Ops, type SceneDocument, transformOps } from "../../scene-editor/document";
 import type { ItemBody } from "../../scene-editor/protocol";
-import { rebaseFieldwise } from "../../scene-editor/rebase";
-import { bothDocs, placement, sceneDoc } from "./test-support";
+import { rebaseFieldwise, replacementsBetween } from "../../scene-editor/rebase";
+import { behavior, bothDocs, placement, sceneDoc } from "./test-support";
 
 function edit(version: "draft" | "published", ops: Ops): ItemBody {
   return { kind: "edit", version, ops };
@@ -86,7 +86,7 @@ describe("rebaseFieldwise", () => {
 
   test("layout keys are set or removed as the edit meant", () => {
     const base = bothDocs(sceneDoc());
-    const target = bothDocs({ layout: { width: 1280, height: 720, theme: "dark" }, widgets: {} });
+    const target = bothDocs({ layout: { width: 1280, height: 720, theme: "dark" }, widgets: {}, behaviors: {} });
     const rebased = rebaseFieldwise(
       base,
       [
@@ -129,5 +129,42 @@ describe("rebaseFieldwise", () => {
     const base = bothDocs(sceneDoc());
     const rebased = rebaseFieldwise(base, [edit("draft", [{ p: ["widgets", "missing", "x"], od: 0, oi: 1 }])], base);
     expect(rebased).toEqual([null]);
+  });
+});
+
+describe("rebaseFieldwise with behaviors", () => {
+  test("an edit to one timing field sets the whole timing it meant; the snapshot's other fields stay", () => {
+    const base = bothDocs(sceneDoc({ w: placement() }, { in: behavior({ target: "w" }) }));
+    const target = bothDocs(sceneDoc({ w: placement() }, { in: behavior({ target: "w", kind: "zoom" }) }));
+    const rebased = rebaseFieldwise(
+      base,
+      [edit("draft", [{ p: ["behaviors", "in", "timing", "offsetMs"], od: 0, oi: 300 }])],
+      target
+    );
+    expect(rebased[0]).toMatchObject({
+      ops: [{ p: ["behaviors", "in", "timing"], od: target.draft.behaviors.in!.timing }],
+    });
+    expect(draftAfter(target.draft, rebased).behaviors.in).toMatchObject({ kind: "zoom", timing: { offsetMs: 300 } });
+  });
+
+  test("a behavior the snapshot removed is not brought back by an edit to it", () => {
+    const base = bothDocs(sceneDoc({ w: placement() }, { in: behavior({ target: "w" }) }));
+    const target = bothDocs(sceneDoc({ w: placement() }));
+    const rebased = rebaseFieldwise(
+      base,
+      [edit("draft", [{ p: ["behaviors", "in", "kind"], od: "fade", oi: "pop" }])],
+      target
+    );
+    expect(draftAfter(target.draft, rebased).behaviors).toEqual({});
+  });
+
+  test("replacements change a behavior field by field, and its type only with the whole behavior", () => {
+    const from = sceneDoc({}, { in: behavior() });
+    const kindChanged = sceneDoc({}, { in: behavior({ kind: "pop" }) });
+    expect(replacementsBetween(from, kindChanged)).toEqual([{ p: ["behaviors", "in", "kind"], od: "fade", oi: "pop" }]);
+    const typeChanged = sceneDoc({}, { in: behavior({ type: "effect", kind: "pulse", params: {} }) });
+    const ops = replacementsBetween(from, typeChanged);
+    expect(ops).toEqual([{ p: ["behaviors", "in"], od: from.behaviors.in, oi: typeChanged.behaviors.in }]);
+    expect(invalidOps(ops)).toBeNull();
   });
 });

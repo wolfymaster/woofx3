@@ -41,8 +41,11 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { FrameCatalog } = await import("./scene/frame-catalog");
     const { SceneDocuments } = await import("./scene/scene-documents");
     const { MediaProxy } = await import("./scene/media-proxy");
-    const { EDITOR_TOKEN_TTL_SECONDS, SessionTokenService } = await import("./scene/session-token");
+    const { EDITOR_TOKEN_TTL_SECONDS, PREVIEW_TOKEN_TTL_SECONDS, SessionTokenService } = await import(
+      "./scene/session-token"
+    );
     const { sceneEditorPath } = await import("@woofx3/common/cloudevents/Scene/editor");
+    const { COMPOSITION_PREVIEW_PATH } = await import("@woofx3/common/cloudevents/Scene/composition-preview");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
@@ -82,8 +85,11 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
             description: "",
             widgetsJson: "",
             layoutJson: "",
+            behaviorsJson: "",
+            inputsJson: "",
             draftWidgetsJson: "",
             draftLayoutJson: "",
+            draftBehaviorsJson: "",
             clearDraft: false,
             editorStateJson: "",
             clearEditorState: false,
@@ -197,6 +203,12 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
           path: sceneEditorPath(sceneId),
         };
       },
+      previewToken: async () => ({
+        ok: true,
+        token: await sessionTokens.mintPreview(),
+        expiresInSeconds: PREVIEW_TOKEN_TTL_SECONDS,
+        path: COMPOSITION_PREVIEW_PATH,
+      }),
       logger: ctx.logger,
     });
 

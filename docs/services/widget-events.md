@@ -127,19 +127,30 @@ A scene placement's frame document is the widget's own, served at
 `v` (a hash of what barkloader resolved for it) is current. The placement --
 nonce, instance id, settings and linked resources -- is appended in the URL's
 fragment (`#boot=…`) and merged in by the shim, so it never reaches the server
-and every placement of a widget shares one cached document.
+and every placement of a widget shares one cached document. The fragment may also
+carry `surface`: the cached document says `scene`, and the
+[composition preview](./composition-preview.md) frames an alert's widgets from the
+same documents with `surface: "alert"`.
 
 ### Alerts
 
 A scene gets alerts through **alert widgets** (`woofx3:widget:alert`): named areas the
 page draws itself, with no frame of their own. The workflow `alert` action carries a
-target name and a layout (see [Tasks → alert](../workflow/tasks.md#alert)). The scene
+target name and a layout, or a stored alert composition and the values for its inputs
+(see [Tasks → alert](../workflow/tasks.md#alert)). A composition is bound into an inline
+layout and recorded on the alert's log row first (see
+[Alerts played from a composition](./scene-documents.md#alerts-played-from-a-composition)),
+so everything below sees an inline layout either way. The scene
 manager validates the layout against the widget catalog and records one scene event for
 each running scene that has an alert widget answering to the target; a scene nobody has
 open gets nothing.
 
-For each alert, the page frames the layout's widgets inside the alert widget's area,
-scaled from the layout's canvas, at `/scene/{sceneId}/alert/{eventId}/widget/{widgetId}`.
+Every alert is delivered as a composition (a layout in the older list shape is
+converted on the way in). For each alert, the page plays it with the scene runtime
+(`@woofx3/scene/runtime`) inside the alert widget's area, scaled from the layout's
+canvas: each widget is placed, rotated, faded and stacked as its placement says, and
+its transitions and effects play around it. A widget whose placement is hidden does not
+play at all. Each frame loads from `/scene/{sceneId}/alert/{eventId}/widget/{widgetId}`.
 That frame is assembled only from the stored scene event, so it can show nothing the
 scene manager did not validate and deliver to that scene. Each layout widget boots with
 `surface: "alert"` and receives one `alert` event whose `data` is the triggering
@@ -147,8 +158,9 @@ CloudEvent (`{ type, data }`, or `null` when nothing triggered the workflow).
 
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
-none. Once every timed widget is done, or after 5 seconds when none is timed, the page
-removes the frames, acks the scene event, and plays the alert widget's next alert.
+none. Once every timed widget is done, or after 5 seconds when none is timed, the
+widgets play their exits; once those are over the page removes the frames, acks the
+scene event, and plays the alert widget's next alert.
 
 #### Skip, clear and replay
 
@@ -212,7 +224,9 @@ proxy moves that envelope's newest row.
 
 Replay reads the row, gives its stored envelope a fresh id, records that as a new row,
 and dispatches it with that row's id exactly as `ui.notify.alert` would, so a layout or target that no
-longer matches anything is refused with the same reason. The original row is marked
+longer matches anything is refused with the same reason. An alert that played a stored
+composition replays the bound document recorded on its row, not the composition as it
+now stands. The original row is marked
 `replayed` only once the replay was queued on at least one scene. A repeat replay of the
 same row while one is in flight, or within 30 s of one that succeeded, gets that replay's
 answer and plays nothing, so an api retry after a timeout (15 s for replay) cannot play

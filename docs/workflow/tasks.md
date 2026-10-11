@@ -145,15 +145,38 @@ Plays an on-stream alert. The step publishes an envelope onto NATS `ui.notify.al
 }
 ```
 
+A step can instead play an alert composition stored in the engine (capability `alerts.compositions`), by id, filling in the inputs the composition declares:
+
+```json
+{
+  "id": "follower-alert",
+  "type": "action",
+  "action": "alert",
+  "parameters": {
+    "target": "default",
+    "composition": "0b7f6a52-5d0c-4a8e-9a57-2f1c3f0e8d11",
+    "inputs": { "name": "${trigger.data.userName}", "sound": "${asset:pleasure}" }
+  }
+}
+```
+
+A step names exactly one of `layout` and `composition`; one with both or neither fails without publishing.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"alert"`. Set at the task top level. |
 | `parameters.target` | `string` | No | Name of the alert widgets to play on. Defaults to `"default"`, the name a scene's first alert widget gets. |
-| `parameters.layout` | `object` | Yes | The alert: a canvas `width` × `height` and the `widgets` placed on it. The alert widget scales the canvas to fit its area. |
-| `parameters.layout.widgets[]` | `object` | Yes | `id` (letters, digits, `-` or `_`, unique in the layout), the `widgetCanonicalId` of a widget whose `surfaces` include `"alert"`, `position`, `size` and `settings`. A widget that fails these rules is dropped with a warning. |
+| `parameters.layout` | `object` | One of `layout` or `composition` | The alert written into the step, as a composition: `layout` (the canvas, `width` × `height`, which the alert widget scales to fit its area), `widgets` keyed by id (placements: `widget` canonical id, `x`, `y`, `width`, `height`, `rotation`, `opacity`, `visible`, `z`, `settings`, ...) and `behaviors` keyed by id (transitions and effects). Each entry must pass the engine's strict registry; each widget must name a widget whose `surfaces` include `"alert"` under an id of letters, digits, `-` or `_`. A widget or behavior that fails is dropped with a warning, a widget taking its behaviors with it. A widget with `visible: false` does not play. |
+| `parameters.layout` (list shape) | `object` | — | Still accepted: a canvas `width` × `height` and `widgets[]`, each with `id`, `widgetCanonicalId`, `position`, `size` and `settings`, and optionally the `name`, `visible`, `rotation`, `opacity`, `locked` and `zIndex` the dashboard writes. It is converted to a composition with no behaviors: entries stack by `zIndex` when every entry has one, else in list order; a placement field that is missing or out of range takes the placement default; any other entry field is kept in the placement's `extra`. |
+| `parameters.composition` | `string` | One of `layout` or `composition` | The id of a stored alert composition. Its latest published version plays, so editing and publishing the alert changes every step that plays it. |
+| `parameters.inputs` | `object` | No | With `composition` only: a value for each of the composition's inputs, by input id. An input given no value takes its default; one with no default fails the alert. Values for inputs the composition does not declare are ignored. |
 | `parameters.id` | `string` | No | Pin the envelope id (useful for tests / replays). When omitted, the action stamps a UUID — see below. |
 
-`${…}` expressions anywhere in the layout, widget settings included, are resolved before the envelope is published, so layout widgets receive final values.
+`${…}` expressions anywhere in the layout, widget settings included, and in `inputs`, are resolved before the envelope is published, so layout widgets and the composition receive final values. A whole-value expression keeps its type, so a number input can be filled with `${trigger.data.amount}`. A composition itself refers only to its inputs, never to event data: the step decides what goes into each input.
+
+Saving a workflow or a chat command records, for each alert step with a `composition`, a link from the step to that alert (see [Composition links](../services/scene-documents.md#composition-links)). The save is refused when the composition does not exist or is not an alert, and an alert a step links cannot be deleted. The composition id must therefore be written as it is, not as an expression.
+
+When the step plays, the scene manager binds the inputs into the composition, records the result on the alert's log row, and plays it as it would an inline layout; a missing composition or input fails the alert with the reason on that row. A replay of the alert plays that record, not the composition as it stands (see [Alerts played from a composition](../services/scene-documents.md#alerts-played-from-a-composition)).
 
 An alert lasts as long as its longest widget. A widget with a length of its own (a sound, a video, anything with a duration set) holds the alert until it finishes; one without (a Text or Image with no duration) stays up for the rest of the alert. An alert with no timed widget stays up for 5 seconds.
 

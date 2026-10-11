@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
@@ -282,8 +283,18 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		ArgumentPattern: cmd.ArgumentPattern,
 	}
 
-	if err := s.repo.Create(&m); err != nil {
-		return nil, err
+	links, err := compositionLinksOf(m.Actions)
+	if err != nil {
+		return nil, saveError("actions_json", "create command", err)
+	}
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		if err := repo.NewCommandRepository(tx).Create(&m); err != nil {
+			return err
+		}
+		return replaceOwnerCompositionLinks(tx, models.CompositionLinkOwnerCommand, m.ID.String(), links, time.Now().UTC())
+	})
+	if err != nil {
+		return nil, saveError("actions_json", "create command", err)
 	}
 
 	s.syncCommandEdges(&m, m.Actions, m.CreatedByType, m.CreatedByRef)
@@ -375,9 +386,18 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	}
 	m.ArgumentPattern = req.ArgumentPattern
 
-	err = s.repo.Update(m)
+	links, err := compositionLinksOf(m.Actions)
 	if err != nil {
-		return nil, err
+		return nil, saveError("actions_json", "update command", err)
+	}
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		if err := repo.NewCommandRepository(tx).Update(m); err != nil {
+			return err
+		}
+		return replaceOwnerCompositionLinks(tx, models.CompositionLinkOwnerCommand, m.ID.String(), links, time.Now().UTC())
+	})
+	if err != nil {
+		return nil, saveError("actions_json", "update command", err)
 	}
 
 	s.syncCommandEdges(m, m.Actions, m.CreatedByType, m.CreatedByRef)
@@ -421,7 +441,12 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 		return nil, err
 	}
 
-	err = s.repo.Delete(m)
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		if err := repo.NewCommandRepository(tx).Delete(m); err != nil {
+			return err
+		}
+		return replaceOwnerCompositionLinks(tx, models.CompositionLinkOwnerCommand, m.ID.String(), nil, time.Now().UTC())
+	})
 	if err != nil {
 		return nil, err
 	}

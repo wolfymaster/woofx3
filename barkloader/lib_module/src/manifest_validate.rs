@@ -32,11 +32,12 @@ use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
     COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
-    LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand,
-    ManifestConfigField, ManifestDataShape, ManifestFunction, ManifestResourceKind,
-    ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
-    WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES, ManifestAction,
+    ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape,
+    ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme, ManifestTrigger,
+    ManifestWidgetBehaviorKind, ManifestWorkflow, ModuleManifest, ModuleWidget,
+    SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
+    WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
@@ -382,6 +383,7 @@ pub fn validate_with_provenance(
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_widget_surfaces(&manifest.widgets, provenance)?;
+    validate_widget_behavior_kinds(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
     validate_action_taxonomies(&manifest.actions)?;
@@ -1700,6 +1702,73 @@ fn validate_widget_surfaces(widgets: &[ModuleWidget], provenance: InstallProvena
         }
     }
     Ok(())
+}
+
+/// Check the transition and effect kinds each widget declares for itself. An
+/// id ends up in a CSS attribute selector in the widget's stylesheet and in a
+/// behavior's `kind`, so it is held to the token the scene model accepts
+/// there, and it may not shadow a kind the overlay plays itself, which would
+/// be played instead.
+fn validate_widget_behavior_kinds(widgets: &[ModuleWidget]) -> Result<()> {
+    for (i, w) in widgets.iter().enumerate() {
+        let label = format!("widget #{i} ({})", w.id);
+        let declared: [(&str, &str, &[ManifestWidgetBehaviorKind], &[&str]); 2] = [
+            (
+                "transitions",
+                "transition",
+                &w.transitions,
+                &HOST_TRANSITION_KINDS,
+            ),
+            ("effects", "effect", &w.effects, &HOST_EFFECT_KINDS),
+        ];
+        for (field, noun, kinds, host_kinds) in declared {
+            if kinds.is_empty() {
+                continue;
+            }
+            if w.hosts_surface.is_some() {
+                return Err(anyhow!(
+                    "{label}: a widget that hosts a surface has no content of its own to animate, so it declares no `{field}`"
+                ));
+            }
+            let mut seen: HashSet<&str> = HashSet::with_capacity(kinds.len());
+            for kind in kinds {
+                let id = kind.id.as_str();
+                if !is_widget_behavior_kind(id) {
+                    return Err(anyhow!(
+                        "{label}: {noun} id {id:?} must be a lowercase letter followed by up to 31 lowercase letters, digits or '-'"
+                    ));
+                }
+                if host_kinds.contains(&id) {
+                    return Err(anyhow!(
+                        "{label}: {noun} id {id:?} is one the overlay plays itself"
+                    ));
+                }
+                if !seen.insert(id) {
+                    return Err(anyhow!("{label}: `{field}` lists {id:?} twice"));
+                }
+                let text = kind.label.trim();
+                if text.is_empty() || text.chars().count() > WIDGET_BEHAVIOR_LABEL_MAX {
+                    return Err(anyhow!(
+                        "{label}: {noun} {id:?} needs a label of 1 to {WIDGET_BEHAVIOR_LABEL_MAX} characters"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `^[a-z][a-z0-9-]{0,31}$`. Must match `KIND_ID` in @woofx3/scene's
+/// model/entity-types.ts and `WIDGET_BEHAVIOR_KIND` in the module SDK's
+/// widget-behaviors.ts.
+fn is_widget_behavior_kind(id: &str) -> bool {
+    let mut chars = id.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && id.len() <= 32
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 fn validate_surface(surface: &str, context: &str) -> Result<()> {
@@ -3087,6 +3156,117 @@ mod tests {
         parse(&format!(
             r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0", "widgets": [{widget}]}}"#
         ))
+    }
+
+    #[test]
+    fn accepts_a_widget_declaring_its_own_transitions_and_effects() {
+        let m = minimal(
+            r#", "widgets": [{ "id": "w1", "name": "W1", "transitions": [{ "id": "typewriter", "label": "Typewriter" }, { "id": "wave-2", "label": "Wave" }], "effects": [{ "id": "sparkle", "label": " Sparkle " }] }]"#,
+        );
+        validate(&m).expect("validate ok");
+        let input = m.widgets[0].to_input();
+        let ids = |kinds: &[crate::db_proxy::WidgetBehaviorKindJson]| {
+            kinds.iter().map(|k| k.id.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&input.behavior_kinds.transitions),
+            ["typewriter", "wave-2"]
+        );
+        assert_eq!(ids(&input.behavior_kinds.effects), ["sparkle"]);
+        assert_eq!(input.behavior_kinds.effects[0].label, "Sparkle");
+        let json = serde_json::to_value(&input).expect("serialize");
+        assert_eq!(json["behaviorKinds"]["effects"][0]["id"], "sparkle");
+    }
+
+    #[test]
+    fn a_widget_declaring_nothing_registers_empty_kinds() {
+        let m = minimal(r#", "widgets": [{ "id": "w1", "name": "W1" }]"#);
+        let json = serde_json::to_value(m.widgets[0].to_input()).expect("serialize");
+        assert_eq!(
+            json["behaviorKinds"],
+            serde_json::json!({ "transitions": [], "effects": [] })
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_host_repeated_or_unlabelled_kinds() {
+        for (field, kinds, expected) in [
+            (
+                "transitions",
+                r#"[{ "id": "Typewriter", "label": "T" }]"#,
+                "lowercase",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "type writer", "label": "T" }]"#,
+                "lowercase",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "fade", "label": "Fade" }]"#,
+                "plays itself",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "wave", "label": "Wave" }, { "id": "wave", "label": "Wave again" }]"#,
+                "twice",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "wave", "label": "  " }]"#,
+                "label",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "Sparkle", "label": "S" }]"#,
+                "lowercase",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "shake", "label": "Shake" }]"#,
+                "plays itself",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "blur", "label": "Blur" }]"#,
+                "plays itself",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "sparkle", "label": "S" }, { "id": "sparkle", "label": "S" }]"#,
+                "twice",
+            ),
+            ("effects", r#"[{ "id": "sparkle", "label": "" }]"#, "label"),
+        ] {
+            let err = widget_rejection(&format!(
+                r#"{{ "id": "w1", "name": "W1", "{field}": {kinds} }}"#
+            ));
+            assert!(err.contains(expected), "{field} {kinds}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_widget_may_declare_an_effect_named_like_a_host_transition() {
+        let m = minimal(
+            r#", "widgets": [{ "id": "w1", "name": "W1", "effects": [{ "id": "fade", "label": "Fade" }] }]"#,
+        );
+        validate(&m).expect("kinds are per behavior type");
+    }
+
+    #[test]
+    fn a_widget_that_hosts_a_surface_declares_no_kinds() {
+        for field in ["transitions", "effects"] {
+            let m = system_module_with_widget(&format!(
+                r#"{{ "id": "alert", "name": "Alert", "surfaces": ["scene"], "hostsSurface": "alert", "{field}": [{{ "id": "wave", "label": "Wave" }}] }}"#
+            ));
+            let err = validate_with_provenance(&m, InstallProvenance::System)
+                .expect_err("a hosting widget has no content")
+                .to_string();
+            assert!(
+                err.contains("no content of its own") && err.contains(field),
+                "{err}"
+            );
+        }
     }
 
     #[test]

@@ -4,9 +4,11 @@ import {
   type AlertDelivery,
   alertTarget,
   alertWidgetsNamed,
+  hasVisibleWidget,
   parseAlertLayout,
 } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
+import { type BoundComposition, type CompositionSource, materializeAlert } from "./alert-composition";
 import type { DeliveryStore } from "./delivery-store";
 
 /** The `ui.notify.alert` envelope the workflow engine publishes and records. */
@@ -39,6 +41,17 @@ export interface AlertReportTarget {
  */
 export interface AlertLifecycleWriter {
   updateAlertLifecycle(req: { id: string; envelopeId: string; status: string; error: string }): Promise<unknown>;
+}
+
+/** The slice of the db client that records what an alert composition played. */
+export interface AlertCompositionRecorder {
+  recordAlertComposition(req: {
+    id: string;
+    envelopeId: string;
+    compositionId: string;
+    compositionVersion: string;
+    snapshotJson: string;
+  }): Promise<unknown>;
 }
 
 /** Report `status` for an alert, against its row when the target names one. */
@@ -85,8 +98,10 @@ function alertRowIdOf(value: unknown): string {
 }
 
 export interface AlertDispatchDeps {
-  db: AlertLifecycleWriter;
+  db: AlertLifecycleWriter & AlertCompositionRecorder;
   host: Pick<OverlayHost, "loadWidgetCatalog" | "loadSceneById">;
+  /** Where an alert step's stored composition is loaded from. */
+  compositions: CompositionSource;
   deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "recordEvent">;
   logger: Logger;
 }
@@ -100,8 +115,17 @@ export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; r
  * operator's replay arrive here, so a replay plays exactly as the original
  * would have. A refusal is recorded against the alert's row as well as
  * returned.
+ *
+ * An envelope that names a stored `composition` is materialized first (see
+ * alert-composition.ts) and its bound document recorded on the alert's row;
+ * from then on it is played as an inline layout is. `played` is a composition
+ * already bound, for a replay: it is played as it is, never loaded again.
  */
-export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps): Promise<AlertDispatchOutcome> {
+export async function dispatchAlert(
+  raw: AlertEnvelope,
+  deps: AlertDispatchDeps,
+  played?: BoundComposition
+): Promise<AlertDispatchOutcome> {
   const { db, host, logger } = deps;
   const alertId = typeof raw.id === "string" ? raw.id : "";
   if (!alertId) {
@@ -111,7 +135,13 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
   const target: AlertReportTarget = { rowId: typeof raw.rowId === "string" ? raw.rowId : "", envelopeId: alertId };
   const parameters =
     typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
-  const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
+  const shown = played ? { ok: true as const, layout: played.document } : await layoutOf(parameters, target, deps);
+  if (!shown.ok) {
+    logger.warn("ui.notify.alert: the alert's composition cannot play; dropping", { alertId, reason: shown.reason });
+    await reportAlertNotPlayed(db, logger, { target, reason: shown.reason });
+    return { ok: false, reason: shown.reason };
+  }
+  const parsed = parseAlertLayout(shown.layout, await host.loadWidgetCatalog());
   if (!parsed.ok) {
     logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
     await reportAlertNotPlayed(db, logger, { target, reason: parsed.reason });
@@ -123,7 +153,13 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
       rejected: parsed.rejected,
     });
   }
-  if (parsed.layout.widgets.length === 0) {
+  if (parsed.rejectedBehaviors.length > 0) {
+    logger.warn("ui.notify.alert: dropped layout behaviors the engine cannot play", {
+      alertId,
+      rejected: parsed.rejectedBehaviors,
+    });
+  }
+  if (Object.keys(parsed.layout.widgets).length === 0) {
     // An empty layout is nearly always the consequence of the rejections
     // above, so the reason carries them: "the layout contains no widgets" on
     // its own sends the operator back to look for what it already knows.
@@ -135,6 +171,14 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     await reportAlertNotPlayed(db, logger, { target, reason });
     return { ok: false, reason };
   }
+  if (!hasVisibleWidget(parsed.layout)) {
+    // A hidden widget does not play, so this alert would be an empty
+    // stretch of the queue.
+    const reason = "every widget in the layout is hidden";
+    logger.warn("ui.notify.alert: layout has no visible widget; dropping", { alertId });
+    await reportAlertNotPlayed(db, logger, { target, reason });
+    return { ok: false, reason };
+  }
   const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
   const delivery: AlertDelivery = {
     alertId,
@@ -143,6 +187,79 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
   };
   return fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps);
+}
+
+/**
+ * What an alert step shows: its inline `layout` as it is, or its stored
+ * `composition` bound with `inputs`, which is recorded on the alert's row
+ * before anything is delivered.
+ */
+async function layoutOf(
+  parameters: Record<string, unknown>,
+  target: AlertReportTarget,
+  deps: AlertDispatchDeps
+): Promise<{ ok: true; layout: unknown } | { ok: false; reason: string }> {
+  if (parameters.composition === undefined) {
+    return { ok: true, layout: parameters.layout };
+  }
+  // The workflow engine refuses such a step; an envelope from anywhere else
+  // is held to the same rule rather than one of the two winning silently.
+  if (parameters.layout !== undefined) {
+    return { ok: false, reason: "the alert names both a layout and a composition" };
+  }
+  const compositionId = typeof parameters.composition === "string" ? parameters.composition : "";
+  if (!compositionId) {
+    return { ok: false, reason: "the alert's composition is not a composition id" };
+  }
+  const inputs = parameters.inputs ?? {};
+  if (typeof inputs !== "object" || inputs === null || Array.isArray(inputs)) {
+    return { ok: false, reason: "the alert's inputs are not an object keyed by input id" };
+  }
+  const materialized = await materializeAlert(compositionId, inputs as Record<string, unknown>, deps.compositions);
+  if (!materialized.ok) {
+    return materialized;
+  }
+  if (materialized.ignoredInputs.length > 0) {
+    deps.logger.warn("ui.notify.alert: the step gives values for inputs the composition does not declare", {
+      alertId: target.envelopeId,
+      compositionId,
+      inputs: materialized.ignoredInputs,
+    });
+  }
+  await recordPlayedComposition(deps, target, materialized.composition);
+  return { ok: true, layout: materialized.composition.document };
+}
+
+/**
+ * Record on the alert's row what it plays, which is what a replay will play.
+ *
+ * Best-effort like every write to the row: the row itself is best-effort, so
+ * an alert without one has nowhere to record this and still plays. Such an
+ * alert cannot be replayed as it played, which the replay says when asked.
+ */
+async function recordPlayedComposition(
+  deps: AlertDispatchDeps,
+  target: AlertReportTarget,
+  composition: BoundComposition
+): Promise<void> {
+  if (!target.rowId) {
+    return;
+  }
+  try {
+    await deps.db.recordAlertComposition({
+      id: target.rowId,
+      envelopeId: target.envelopeId,
+      compositionId: composition.compositionId,
+      compositionVersion: composition.version,
+      snapshotJson: JSON.stringify(composition.document),
+    });
+  } catch (err) {
+    deps.logger.warn("ui.notify.alert: the played composition was not recorded; a replay cannot play it", {
+      alertId: target.envelopeId,
+      rowId: target.rowId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**
@@ -190,7 +307,9 @@ async function fanOutAlert(
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
-    if (!state) {
+    // An alert composition is played by steps, never delivered to: only a
+    // scene's alert widgets receive alerts, even if a page were open on one.
+    if (!state || state.kind !== "scene") {
       continue;
     }
     const targetInstanceIds = alertWidgetsNamed(state.instances, alert.target).map((instance) => instance.id);

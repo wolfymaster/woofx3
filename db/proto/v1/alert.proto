@@ -15,6 +15,11 @@ import "google/protobuf/timestamp.proto";
 // streamware broadcasts it to overlays exactly like the original
 // dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
 //
+// Composition path: when a step plays a stored alert composition, the scene
+// manager binds the step's inputs into the composition's latest published
+// version and records the result on the row, via `RecordAlertComposition`,
+// before it delivers the alert. A replay plays that snapshot.
+//
 // Lifecycle path: the scene manager reports each play's `playing` /
 // `completed` / `failed` / `skipped` against the row CreateAlert returned for
 // it, via `UpdateAlertLifecycle`, which atomically advances `status` and
@@ -27,6 +32,7 @@ service AlertService {
   rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
   rpc UpdateAlertStatus(UpdateAlertStatusRequest) returns (AlertResponse);
   rpc UpdateAlertLifecycle(UpdateAlertLifecycleRequest) returns (AlertResponse);
+  rpc RecordAlertComposition(RecordAlertCompositionRequest) returns (AlertResponse);
   rpc DeleteAlert(DeleteAlertRequest) returns (common.ResponseStatus);
 }
 
@@ -71,6 +77,15 @@ message Alert {
   // Incremented by every write that publishes the row. Receivers order
   // snapshots of one row by it: two writes never share a version.
   int64 version = 14;
+  // The stored alert composition the step played, and which published
+  // version of it played (a digest of that document). Empty for an alert
+  // whose step carried its layout inline.
+  string composition_id = 15;
+  string composition_version = 16;
+  // The composition as it played, inputs bound: the inline document a replay
+  // plays. Empty for an inline alert, whose payload is what it showed, and
+  // until the scene manager has recorded it.
+  string snapshot_json = 17;
 }
 
 message CreateAlertRequest {
@@ -86,6 +101,11 @@ message CreateAlertRequest {
   // ack path. Optional for backwards compatibility — older callers that
   // don't supply this still create rows, just without the index hit.
   string envelope_id = 5;
+  // Set by a replay of an alert that played a composition, so the new row
+  // records what it plays (see Alert.composition_id). All three or none.
+  string composition_id = 6;
+  string composition_version = 7;
+  string snapshot_json = 8;
 }
 
 message GetAlertRequest {
@@ -148,4 +168,16 @@ message UpdateAlertStatusRequest {
 
 message DeleteAlertRequest {
   string id = 1;
+}
+
+// Record which composition a play showed, and the document it showed (see
+// Alert.snapshot_json), on the row CreateAlert returned for the play. The row
+// must carry `envelope_id`. Recorded once: a row that already has a snapshot
+// is answered as it stands and not changed. Every field is required.
+message RecordAlertCompositionRequest {
+  string id = 1;
+  string envelope_id = 2;
+  string composition_id = 3;
+  string composition_version = 4;
+  string snapshot_json = 5;
 }

@@ -22,6 +22,7 @@ func SceneRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddlew
 		sceneRepository,
 		repo.NewOverlayTokenRepository(app.Db),
 		repo.NewResourceReferenceRepository(app.Db),
+		repo.NewCompositionLinkRepository(app.Db),
 		app.EventPublisher,
 	)
 	sceneHandler := client.NewSceneServiceServer(

@@ -61,6 +61,24 @@ message Widget {
   // on the module that shipped the widget. Empty when the author declared
   // none.
   repeated string taxonomy = 16;
+  // The transition and effect kinds the widget plays on its own content,
+  // beyond the ones the overlay plays on every widget's box. The overlay
+  // hands a widget only the kinds it declares here.
+  WidgetBehaviorKinds behavior_kinds = 17;
+}
+
+// Kinds a widget declares for itself, by behavior type. Both lists are
+// empty for a widget that declares none.
+message WidgetBehaviorKinds {
+  repeated WidgetBehaviorKind transitions = 1;
+  repeated WidgetBehaviorKind effects = 2;
+}
+
+// One declared kind: `id` is what a behavior's `kind` names, `label` what an
+// editor shows for it.
+message WidgetBehaviorKind {
+  string id = 1;
+  string label = 2;
 }
 
 message WidgetInput {
@@ -81,6 +99,8 @@ message WidgetInput {
   string hosts_surface = 11;
   // See Widget.taxonomy.
   repeated string taxonomy = 12;
+  // See Widget.behavior_kinds.
+  WidgetBehaviorKinds behavior_kinds = 13;
 }
 
 message RegisterWidgetsRequest {

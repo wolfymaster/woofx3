@@ -30,6 +30,11 @@ type NewAlert struct {
 	WorkflowID    *uuid.UUID
 	SourceEventID string
 	EnvelopeID    string
+	// Set only for a replay of an alert that played a composition; see
+	// models.Alert.SnapshotJSON. Nil Snapshot means none.
+	CompositionID      string
+	CompositionVersion string
+	SnapshotJSON       *string
 }
 
 // RecordAlertChange records a row a write changed, as it stands after the
@@ -50,16 +55,20 @@ func (r *AlertRepository) Create(a NewAlert, record RecordAlertChange) (*models.
 		now, at := r.writeClock()
 		res := tx.Raw(
 			`INSERT INTO alerts (id, payload, workflow_id, source_event_id, envelope_id, status, error, version,
-				dispatched_at, created_at, updated_at)
-			VALUES (@id, @payload, @workflow_id, @source_event_id, @envelope_id, 'sent', '', 1, `+now+`, `+now+`, `+now+`)
+				composition_id, composition_version, snapshot_json, dispatched_at, created_at, updated_at)
+			VALUES (@id, @payload, @workflow_id, @source_event_id, @envelope_id, 'sent', '', 1,
+				@composition_id, @composition_version, @snapshot_json, `+now+`, `+now+`, `+now+`)
 			RETURNING *`,
 			map[string]interface{}{
-				"id":              a.ID,
-				"payload":         a.Payload,
-				"workflow_id":     a.WorkflowID,
-				"source_event_id": a.SourceEventID,
-				"envelope_id":     a.EnvelopeID,
-				"now":             at,
+				"id":                  a.ID,
+				"payload":             a.Payload,
+				"workflow_id":         a.WorkflowID,
+				"source_event_id":     a.SourceEventID,
+				"envelope_id":         a.EnvelopeID,
+				"composition_id":      a.CompositionID,
+				"composition_version": a.CompositionVersion,
+				"snapshot_json":       a.SnapshotJSON,
+				"now":                 at,
 			},
 		).Scan(&stored)
 		if res.Error != nil {
@@ -269,6 +278,79 @@ func (r *AlertRepository) MarkReplayed(id uuid.UUID, record RecordAlertChange) (
 	return r.transition(AlertStatusReplayed, "", record, func(tx *gorm.DB) (uuid.UUID, error) {
 		return id, nil
 	})
+}
+
+// AlertComposition is what a play of a stored composition showed: the
+// composition, the published version that played, and that version with the
+// step's inputs bound into it.
+type AlertComposition struct {
+	CompositionID      string
+	CompositionVersion string
+	SnapshotJSON       string
+}
+
+// RecordComposition records on the row with `id`, which must carry
+// `envelopeID`, the composition its play showed, and returns the row as it
+// stands and whether the write applied; gorm.ErrRecordNotFound when there is
+// no such row.
+//
+// Once only: a row that already holds a snapshot keeps it. A row is one play,
+// and what it showed does not change after the fact; the condition is in the
+// UPDATE's WHERE clause, so two racing writers cannot both apply. An applied
+// write increments `version` and is recorded in its transaction, like every
+// write that changes the row.
+func (r *AlertRepository) RecordComposition(
+	id uuid.UUID,
+	envelopeID string,
+	composition AlertComposition,
+	record RecordAlertChange,
+) (*models.Alert, bool, error) {
+	if envelopeID == "" {
+		return nil, false, fmt.Errorf("envelope_id is required")
+	}
+	if composition.CompositionID == "" || composition.CompositionVersion == "" || composition.SnapshotJSON == "" {
+		return nil, false, fmt.Errorf("composition id, version and snapshot are all required")
+	}
+	var row *models.Alert
+	applied := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var current models.Alert
+		if err := tx.Where("id = ? AND envelope_id = ?", id, envelopeID).First(&current).Error; err != nil {
+			return err
+		}
+		now, at := r.writeClock()
+		var updated models.Alert
+		res := tx.Raw(
+			`UPDATE alerts SET composition_id = @composition_id, composition_version = @composition_version,
+				snapshot_json = @snapshot_json, version = version + 1, updated_at = `+now+`
+			WHERE id = @id AND snapshot_json IS NULL
+			RETURNING *`,
+			map[string]interface{}{
+				"id":                  id,
+				"composition_id":      composition.CompositionID,
+				"composition_version": composition.CompositionVersion,
+				"snapshot_json":       composition.SnapshotJSON,
+				"now":                 at,
+			},
+		).Scan(&updated)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			row = &current
+			return nil
+		}
+		if err := record(tx, &updated); err != nil {
+			return err
+		}
+		row = &updated
+		applied = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return row, applied, nil
 }
 
 // UpdateLifecycle moves the row with `id` to a lifecycle status, under the rule

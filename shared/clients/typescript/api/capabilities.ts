@@ -11,6 +11,12 @@
  * Every id must also be listed in docs/services/engine-capabilities.md.
  */
 export const ENGINE_CAPABILITIES = {
+  /**
+   * An Alert step's inline `layout` may be a composition (`{ layout, widgets,
+   * behaviors }`: the canvas, placements keyed by id, and behaviors keyed by
+   * id) as well as the list shape (`{ width, height, widgets: [] }`).
+   */
+  alertsCompositionLayout: "alerts.compositionLayout",
   /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
   analyticsSessions: "analytics.sessions",
   /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */
@@ -63,6 +69,37 @@ export const ENGINE_CAPABILITIES = {
    * token `getSceneEditorSession` gives, and `protocol=2`.
    */
   scenesEditorSync: "scenes.editorSync",
+  /**
+   * A composition's behaviors (transitions, effects, activity windows) are
+   * stored with it, published and draft, so they survive sceneManager
+   * restarts and saves made elsewhere. Without it an engine keeps behaviors
+   * only while sceneManager holds the scene, and a client should not offer
+   * them.
+   */
+  scenesBehaviors: "scenes.behaviors",
+  /**
+   * Alert compositions stored in the engine: `listAlertCompositions`,
+   * `getAlertComposition`, `createAlertComposition`,
+   * `updateAlertComposition`, `deleteAlertComposition` (refused while steps
+   * link it), `listCompositionLinks`, editing one with
+   * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
+   */
+  compositionsAlerts: "compositions.alerts",
+  /**
+   * The alert editor's live preview: `getCompositionPreviewUrl`, and
+   * sceneManager's `/preview/composition` page driven by the protocol in
+   * `@woofx3/scene/runtime` (`preview-protocol.ts`).
+   */
+  compositionsPreview: "compositions.preview",
+  /**
+   * An `alert` workflow or command step may play a stored alert composition
+   * (`parameters.composition`, its id) with values for its inputs
+   * (`parameters.inputs`) in place of an inline `layout`. Saving a step that
+   * names a composition that is not a stored alert is refused; the latest
+   * published version plays, inputs bound, and a replay plays what the
+   * original showed.
+   */
+  alertsCompositions: "alerts.compositions",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

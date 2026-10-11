@@ -289,10 +289,17 @@ func resolveNotFoundResponse() *client.ResolveOverlayTokenResponse {
 	}
 }
 
-// validateSceneExists confirms the scene a token will address exists.
+// validateSceneExists confirms the scene a token will address exists and is a
+// scene.
 func (s *overlayTokenService) validateSceneExists(sceneID uuid.UUID) error {
-	if _, err := s.sceneRepo.GetByID(sceneID); err != nil {
+	scene, err := s.sceneRepo.GetByID(sceneID)
+	if err != nil {
 		return twirp.NotFoundError("scene not found")
+	}
+	// A token is a browser-source URL, and an alert is never an overlay
+	// page: steps play it inside a scene.
+	if scene.Kind != models.SceneKindScene {
+		return twirp.InvalidArgumentError("scene_id", "is an alert, which has no overlay page")
 	}
 	return nil
 }
