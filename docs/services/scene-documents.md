@@ -383,6 +383,13 @@ Everything that serves or lists scenes reads only `scene` rows:
 
 The OBS integration names OBS's own scenes and never reads this table.
 
+A `scene.widget.visibility` step refuses an alert: it is not running
+anywhere, and changing one of its widgets would change what every later copy
+starts from, which is an edit for the editor. Stored documents are brought to
+the current shape by the registry's migrations when they are loaded (a
+placement's legacy `transitionIn` / `transitionOut` become transition
+behaviors); the row changes only when the document is next written.
+
 The api serves alerts apart from scenes (capability `compositions.alerts`):
 `listAlertCompositions`, `getAlertComposition`, `createAlertComposition`,
 `updateAlertComposition` (name, description and inputs; the document is
