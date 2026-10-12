@@ -801,6 +801,26 @@ function isWidgetProtocolEnvelope(value) {
   const msg = value;
   return msg.proto === WIDGET_PROTOCOL && msg.v === PROTOCOL_VERSION && typeof msg.type === "string" && msg.type.length > 0 && typeof msg.nonce === "string" && msg.nonce.length > 0;
 }
+// ../shared/clients/typescript/module-sdk/dist/widget-fonts.js
+var GENERIC_FAMILIES = new Set([
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "ui-serif",
+  "ui-sans-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "emoji",
+  "math",
+  "fangsong",
+  "inherit",
+  "initial",
+  "unset",
+  "revert"
+]);
 // public/scene-manager/widget-bridge.ts
 class WidgetBridge {
   instanceId;
@@ -1817,6 +1837,817 @@ function createReconnectCoordinator() {
 
 // ../shared/clients/typescript/api/scene-editor/document.ts
 var import_ot_json0 = __toESM(require_lib(), 1);
+
+// ../shared/clients/typescript/scene/model/composition.ts
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(`invariant violated: ${message}`);
+  }
+}
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function sameValue(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+  }
+  const aRecord = a;
+  const bRecord = b;
+  const aKeys = Object.keys(aRecord);
+  if (aKeys.length !== Object.keys(bRecord).length) {
+    return false;
+  }
+  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
+}
+function isCompositionShape(value) {
+  return isPlainObject(value) && isPlainObject(value.layout) && isPlainObject(value.widgets) && isPlainObject(value.behaviors);
+}
+function normalizeComposition(value) {
+  if (!isPlainObject(value) || !isPlainObject(value.layout) || !isPlainObject(value.widgets)) {
+    return null;
+  }
+  if (value.behaviors === undefined) {
+    return { ...value, behaviors: {} };
+  }
+  if (!isPlainObject(value.behaviors)) {
+    return null;
+  }
+  return value;
+}
+
+// ../shared/clients/typescript/scene/model/types.ts
+var CANVAS_TARGET = "canvas";
+var ANCHOR_KINDS = ["start", "end", "enter", "exit", "complete"];
+var EASINGS = ["linear", "ease", "ease-in", "ease-out", "ease-in-out"];
+
+// ../shared/clients/typescript/scene/model/entity-types.ts
+var ENTRY_ID_MAX_LENGTH = 128;
+var KIND_ID = /^[a-z][a-z0-9-]{0,31}$/;
+var HOST_TRANSITION_KINDS = ["fade", "slide", "zoom", "bounce", "spin", "pop", "blur"];
+var TRANSITION_PHASES = ["in", "out"];
+var TRANSITION_DIRECTIONS = ["up", "down", "left", "right"];
+var MIN_TRANSITION_MS = 50;
+var MAX_TRANSITION_MS = 1e4;
+var DEFAULT_TRANSITION_MS = 400;
+var HOST_EFFECT_KINDS = ["shake", "pulse", "float", "glow", "flash", "blur"];
+var NO_DECLARED_KINDS = Object.freeze({
+  transitions: Object.freeze([]),
+  effects: Object.freeze([])
+});
+var ACTIVITY_KINDS = ["window"];
+var MAX_TIMING_MS = 5 * 60 * 1000;
+var MAX_WIDGET_ID_LENGTH = 256;
+var PLACEMENT_NAME_MAX_LENGTH = 256;
+var MAX_KEY_LENGTH = 64;
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function isIntegerIn(value, min, max) {
+  return Number.isSafeInteger(value) && value >= min && value <= max;
+}
+function isNumberIn(value, min, max) {
+  return isFiniteNumber(value) && value >= min && value <= max;
+}
+function isEntryId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= ENTRY_ID_MAX_LENGTH;
+}
+function isSortKey(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_KEY_LENGTH;
+}
+function isOneOf(options, value) {
+  return options.includes(value);
+}
+var ID_SCHEMA = { type: "string", minLength: 1, maxLength: ENTRY_ID_MAX_LENGTH };
+var SORT_KEY_SCHEMA = { type: "string", minLength: 1, maxLength: MAX_KEY_LENGTH };
+var FINITE_NUMBER_SCHEMA = { type: "number" };
+var OBJECT_SCHEMA = { type: "object" };
+function field(grain, valid, schema) {
+  return { grain, valid, schema };
+}
+var PLACEMENT_FIELDS = {
+  widget: field("value", (v) => typeof v === "string" && v.length > 0 && v.length <= MAX_WIDGET_ID_LENGTH, {
+    type: "string",
+    minLength: 1,
+    maxLength: MAX_WIDGET_ID_LENGTH
+  }),
+  x: field("value", isFiniteNumber, FINITE_NUMBER_SCHEMA),
+  y: field("value", isFiniteNumber, FINITE_NUMBER_SCHEMA),
+  width: field("value", (v) => isFiniteNumber(v) && v >= 0, { type: "number", minimum: 0 }),
+  height: field("value", (v) => isFiniteNumber(v) && v >= 0, { type: "number", minimum: 0 }),
+  visible: field("value", (v) => typeof v === "boolean", { type: "boolean" }),
+  z: field("value", isSortKey, SORT_KEY_SCHEMA),
+  settings: field("freeform", isPlainObject, OBJECT_SCHEMA),
+  name: field("text", (v) => typeof v === "string" && v.length <= PLACEMENT_NAME_MAX_LENGTH, {
+    type: "string",
+    maxLength: PLACEMENT_NAME_MAX_LENGTH
+  }),
+  rotation: field("value", isFiniteNumber, FINITE_NUMBER_SCHEMA),
+  opacity: field("value", (v) => isNumberIn(v, 0, 1), { type: "number", minimum: 0, maximum: 1 }),
+  locked: field("value", (v) => typeof v === "boolean", { type: "boolean" }),
+  extra: field("freeform", isPlainObject, OBJECT_SCHEMA)
+};
+function isDuration(value) {
+  return value === "until-exit" || isIntegerIn(value, 0, MAX_TIMING_MS);
+}
+var TIMING_SUBFIELDS = {
+  anchor: {
+    optional: false,
+    valid: (v) => isOneOf(ANCHOR_KINDS, v),
+    schema: { enum: [...ANCHOR_KINDS] }
+  },
+  node: { optional: true, valid: isEntryId, schema: ID_SCHEMA },
+  offsetMs: {
+    optional: false,
+    valid: (v) => isIntegerIn(v, -MAX_TIMING_MS, MAX_TIMING_MS),
+    schema: { type: "integer", minimum: -MAX_TIMING_MS, maximum: MAX_TIMING_MS }
+  },
+  durationMs: {
+    optional: false,
+    valid: isDuration,
+    schema: {
+      anyOf: [{ const: "until-exit" }, { type: "integer", minimum: 0, maximum: MAX_TIMING_MS }]
+    }
+  },
+  easing: { optional: false, valid: (v) => isOneOf(EASINGS, v), schema: { enum: [...EASINGS] } }
+};
+function isTiming(value, mode) {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  for (const [name, sub] of Object.entries(TIMING_SUBFIELDS)) {
+    const present = Object.hasOwn(value, name);
+    if (!present && !sub.optional) {
+      return false;
+    }
+    if (present && !sub.valid(value[name])) {
+      return false;
+    }
+  }
+  return mode === "tolerant" || Object.keys(value).every((key) => Object.hasOwn(TIMING_SUBFIELDS, key));
+}
+var BEHAVIOR_FIELDS = {
+  type: field("fixed", (v) => typeof v === "string" && KIND_ID.test(v), { type: "string", pattern: KIND_ID.source }),
+  kind: field("value", (v) => typeof v === "string" && KIND_ID.test(v), { type: "string", pattern: KIND_ID.source }),
+  target: field("value", isEntryId, ID_SCHEMA),
+  order: field("value", isSortKey, SORT_KEY_SCHEMA),
+  timing: {
+    grain: "struct",
+    valid: isTiming,
+    subfields: TIMING_SUBFIELDS,
+    schema: {
+      type: "object",
+      required: Object.entries(TIMING_SUBFIELDS).filter(([, sub]) => !sub.optional).map(([name]) => name),
+      properties: Object.fromEntries(Object.entries(TIMING_SUBFIELDS).map(([name, sub]) => [name, sub.schema]))
+    }
+  },
+  params: field("keyed", isPlainObject, OBJECT_SCHEMA)
+};
+var WIDGETS_COLLECTION = {
+  name: "widgets",
+  noun: "placement",
+  fields: PLACEMENT_FIELDS,
+  typeOf: () => WIDGET_TYPE_NAME
+};
+var BEHAVIORS_COLLECTION = {
+  name: "behaviors",
+  noun: "behavior",
+  fields: BEHAVIOR_FIELDS,
+  typeOf: (entry) => typeof entry.type === "string" ? entry.type : null
+};
+var BUILTIN_COLLECTIONS = [WIDGETS_COLLECTION, BEHAVIORS_COLLECTION];
+var WIDGET_TYPE_NAME = "widget";
+var PLACEMENT_DEFAULTS = {
+  x: 0,
+  y: 0,
+  visible: true,
+  settings: {},
+  name: "",
+  rotation: 0,
+  opacity: 1,
+  locked: false,
+  extra: {}
+};
+var BUILTIN_WIDGET_TRAITS = {
+  "woofx3:widget:text": { heightFollowsText: true },
+  "woofx3:widget:image": { keepsAspect: true },
+  "woofx3:widget:video": { keepsAspect: true },
+  "woofx3:widget:lottie": { keepsAspect: true }
+};
+var LEGACY_TRANSITION_FIELDS = {
+  transitionIn: "in",
+  transitionOut: "out"
+};
+var WIDGET_TYPE = {
+  collection: "widgets",
+  name: WIDGET_TYPE_NAME,
+  invalid: () => null,
+  withDefaults(seed) {
+    return {
+      ...structuredClone(PLACEMENT_DEFAULTS),
+      ...seed
+    };
+  },
+  migrate(entry, id) {
+    if (!isPlainObject(entry.extra)) {
+      return { entry };
+    }
+    const extra = { ...entry.extra };
+    const behaviors = {};
+    for (const [key, phase] of Object.entries(LEGACY_TRANSITION_FIELDS)) {
+      const behavior = behaviorOfLegacyTransition(extra[key], id, phase);
+      if (behavior !== null) {
+        behaviors[legacyTransitionId(id, phase)] = behavior;
+        delete extra[key];
+      }
+    }
+    if (Object.keys(behaviors).length === 0) {
+      return { entry };
+    }
+    return { entry: { ...entry, extra }, behaviors };
+  },
+  schema: () => ({})
+};
+function legacyTransitionId(placementId, phase) {
+  return `${placementId}:transition-${phase}`;
+}
+function behaviorOfLegacyTransition(value, target, phase) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const { type, durationMs, easing, direction } = value;
+  const known = Object.keys(value).every((key) => ["type", "durationMs", "easing", "direction"].includes(key));
+  if (!known || typeof type !== "string" || !KIND_ID.test(type) || !isIntegerIn(durationMs, MIN_TRANSITION_MS, MAX_TRANSITION_MS) || !(easing === undefined || isOneOf(EASINGS, easing)) || !(direction === undefined || type === "slide" && isOneOf(TRANSITION_DIRECTIONS, direction))) {
+    return null;
+  }
+  return {
+    type: TRANSITION_TYPE_NAME,
+    kind: type,
+    target,
+    order: "a0",
+    timing: {
+      anchor: phase === "in" ? "enter" : "exit",
+      offsetMs: 0,
+      durationMs,
+      easing: easing ?? defaultTransitionEasing(phase)
+    },
+    params: direction === undefined ? { phase } : { phase, direction }
+  };
+}
+function behaviorType(definition) {
+  const executorOf = (kind) => {
+    if (definition.hostKinds.includes(kind)) {
+      return "host";
+    }
+    return definition.widgetKinds && KIND_ID.test(kind) ? "widget" : null;
+  };
+  return {
+    collection: "behaviors",
+    name: definition.name,
+    executorOf,
+    invalid(entry, mode) {
+      const behavior = entry;
+      const executor = executorOf(behavior.kind);
+      if (executor === null) {
+        return `a ${definition.name} has no kind ${behavior.kind}`;
+      }
+      if (behavior.target === CANVAS_TARGET && !definition.canvasTarget) {
+        return `a ${definition.name} targets a widget, not the canvas`;
+      }
+      const timing = definition.invalidTiming(behavior.timing);
+      if (timing !== null) {
+        return timing;
+      }
+      return invalidParams(definition, behavior, executor, mode);
+    },
+    withDefaults: (seed) => definition.withDefaults(seed),
+    schema: (mode) => behaviorTypeSchema(definition, mode)
+  };
+}
+function invalidParams(definition, behavior, executor, mode) {
+  const hostParams = executor === "host" ? definition.hostParams[behavior.kind] ?? {} : {};
+  for (const [name, spec] of Object.entries(definition.commonParams)) {
+    if (!Object.hasOwn(behavior.params, name)) {
+      if (spec.required) {
+        return `a ${definition.name} needs params.${name}`;
+      }
+      continue;
+    }
+    if (!spec.valid(behavior.params[name])) {
+      return `invalid ${definition.name} params.${name}`;
+    }
+  }
+  for (const [name, value] of Object.entries(behavior.params)) {
+    if (Object.hasOwn(definition.commonParams, name)) {
+      continue;
+    }
+    if (Object.hasOwn(hostParams, name)) {
+      if (!hostParams[name].valid(value)) {
+        return `invalid ${definition.name} params.${name}`;
+      }
+      continue;
+    }
+    if (executor === "host" && mode === "strict") {
+      return `a ${behavior.kind} ${definition.name} has no param ${name}`;
+    }
+  }
+  return null;
+}
+function behaviorTypeSchema(definition, mode) {
+  const common = Object.fromEntries(Object.entries(definition.commonParams).map(([name, spec]) => [name, spec.schema]));
+  const required = Object.entries(definition.commonParams).filter(([, spec]) => spec.required).map(([name]) => name);
+  const hostBranches = definition.hostKinds.map((kind) => {
+    const params = definition.hostParams[kind] ?? {};
+    return {
+      properties: {
+        kind: { const: kind },
+        params: {
+          type: "object",
+          required,
+          properties: {
+            ...common,
+            ...Object.fromEntries(Object.entries(params).map(([name, spec]) => [name, spec.schema]))
+          },
+          additionalProperties: mode === "tolerant"
+        }
+      }
+    };
+  });
+  const kindBranches = [...hostBranches];
+  if (definition.widgetKinds) {
+    kindBranches.push({
+      properties: {
+        kind: { type: "string", pattern: KIND_ID.source, not: { enum: [...definition.hostKinds] } },
+        params: { type: "object", required, properties: common }
+      }
+    });
+  }
+  const schema = {
+    properties: { type: { const: definition.name }, timing: definition.timingSchema },
+    oneOf: kindBranches
+  };
+  if (!definition.canvasTarget) {
+    schema.properties = {
+      ...schema.properties,
+      target: { not: { const: CANVAS_TARGET } }
+    };
+  }
+  return schema;
+}
+function defaultTransitionEasing(phase) {
+  return phase === "in" ? "ease-out" : "ease-in";
+}
+function timingWithDefaults(seed, defaults) {
+  return { ...defaults, ...seed ?? {} };
+}
+function behaviorBase(seed, name, kind) {
+  assert(seed.target !== undefined, `a new ${name} names its target`);
+  return {
+    type: name,
+    kind: seed.kind ?? kind,
+    target: seed.target,
+    order: seed.order ?? "a0",
+    params: { ...seed.params ?? {} }
+  };
+}
+var TRANSITION_TYPE_NAME = "transition";
+var EFFECT_TYPE_NAME = "effect";
+var ACTIVITY_TYPE_NAME = "activity";
+var TRANSITION_TYPE = behaviorType({
+  name: TRANSITION_TYPE_NAME,
+  hostKinds: HOST_TRANSITION_KINDS,
+  widgetKinds: true,
+  commonParams: {
+    phase: {
+      required: true,
+      valid: (v) => isOneOf(TRANSITION_PHASES, v),
+      schema: { enum: [...TRANSITION_PHASES] }
+    }
+  },
+  hostParams: {
+    slide: {
+      direction: { valid: (v) => isOneOf(TRANSITION_DIRECTIONS, v), schema: { enum: [...TRANSITION_DIRECTIONS] } }
+    }
+  },
+  canvasTarget: true,
+  invalidTiming(timing) {
+    if (!isIntegerIn(timing.durationMs, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) {
+      return `a transition lasts from ${MIN_TRANSITION_MS} to ${MAX_TRANSITION_MS} ms`;
+    }
+    return null;
+  },
+  timingSchema: {
+    properties: { durationMs: { type: "integer", minimum: MIN_TRANSITION_MS, maximum: MAX_TRANSITION_MS } }
+  },
+  withDefaults(seed) {
+    const base = behaviorBase(seed, TRANSITION_TYPE_NAME, "fade");
+    const phase = isOneOf(TRANSITION_PHASES, base.params.phase) ? base.params.phase : "in";
+    const params = { ...base.params, phase };
+    if (base.kind === "slide" && params.direction === undefined) {
+      params.direction = "up";
+    }
+    return {
+      ...base,
+      params,
+      timing: timingWithDefaults(seed.timing, {
+        anchor: phase === "in" ? "enter" : "exit",
+        offsetMs: 0,
+        durationMs: DEFAULT_TRANSITION_MS,
+        easing: defaultTransitionEasing(phase)
+      })
+    };
+  }
+});
+var HEX_COLOR_PATTERN = "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$";
+var EFFECT_DEFAULTS = {
+  shake: { distancePx: 10, periodMs: 400 },
+  pulse: { scale: 1.1, periodMs: 1000 },
+  float: { distancePx: 8, periodMs: 2000 },
+  glow: { radiusPx: 12, color: "#ffffff", periodMs: 1500 },
+  flash: { brightness: 1.8, periodMs: 800 },
+  blur: { radiusPx: 8 }
+};
+var DISTANCE = {
+  label: "Distance",
+  input: "number",
+  unit: "px",
+  min: 1,
+  max: 500,
+  minExclusive: false,
+  step: 1
+};
+var PERIOD = {
+  label: "Cycle",
+  input: "number",
+  unit: "ms",
+  min: 50,
+  max: 60000,
+  minExclusive: false,
+  step: 50
+};
+var RADIUS = {
+  label: "Radius",
+  input: "number",
+  unit: "px",
+  min: 0,
+  max: 200,
+  minExclusive: true,
+  step: 1
+};
+var COLOR = { label: "Color", input: "color", minExclusive: false, step: 1 };
+function paramsOf(kind, shapes) {
+  const defaults = EFFECT_DEFAULTS[kind];
+  return Object.entries(shapes).map(([name, shape]) => ({
+    name,
+    ...shape,
+    defaultValue: defaults[name]
+  }));
+}
+var EFFECT_PARAMS = {
+  shake: paramsOf("shake", { distancePx: DISTANCE, periodMs: PERIOD }),
+  pulse: paramsOf("pulse", {
+    scale: { label: "Scale", input: "number", unit: "×", min: 1, max: 3, minExclusive: false, step: 0.05 },
+    periodMs: PERIOD
+  }),
+  float: paramsOf("float", { distancePx: DISTANCE, periodMs: PERIOD }),
+  glow: paramsOf("glow", { color: COLOR, radiusPx: RADIUS, periodMs: PERIOD }),
+  flash: paramsOf("flash", {
+    brightness: { label: "Brightness", input: "number", unit: "×", min: 1, max: 5, minExclusive: false, step: 0.1 },
+    periodMs: PERIOD
+  }),
+  blur: paramsOf("blur", { radiusPx: RADIUS })
+};
+function paramSpecOf(spec) {
+  if (spec.input === "color") {
+    return {
+      valid: (v) => typeof v === "string" && new RegExp(HEX_COLOR_PATTERN).test(v),
+      schema: { type: "string", pattern: HEX_COLOR_PATTERN }
+    };
+  }
+  const { min, max, minExclusive } = spec;
+  const schema = { type: "number" };
+  if (min !== undefined) {
+    schema[minExclusive ? "exclusiveMinimum" : "minimum"] = min;
+  }
+  if (max !== undefined) {
+    schema.maximum = max;
+  }
+  return {
+    valid: (v) => isFiniteNumber(v) && (min === undefined || (minExclusive ? v > min : v >= min)) && (max === undefined || v <= max),
+    schema
+  };
+}
+function hostParamsOf(table) {
+  return Object.fromEntries(Object.entries(table).map(([kind, specs]) => [
+    kind,
+    Object.fromEntries(specs.map((spec) => [spec.name, paramSpecOf(spec)]))
+  ]));
+}
+var EFFECT_TYPE = behaviorType({
+  name: EFFECT_TYPE_NAME,
+  hostKinds: HOST_EFFECT_KINDS,
+  widgetKinds: true,
+  commonParams: {},
+  hostParams: hostParamsOf(EFFECT_PARAMS),
+  canvasTarget: true,
+  invalidTiming(timing) {
+    if (timing.durationMs === 0) {
+      return "an effect lasts some time";
+    }
+    return null;
+  },
+  timingSchema: {
+    properties: {
+      durationMs: { anyOf: [{ const: "until-exit" }, { type: "integer", minimum: 1, maximum: MAX_TIMING_MS }] }
+    }
+  },
+  withDefaults(seed) {
+    return {
+      ...behaviorBase(seed, EFFECT_TYPE_NAME, "pulse"),
+      timing: timingWithDefaults(seed.timing, {
+        anchor: "enter",
+        offsetMs: 0,
+        durationMs: "until-exit",
+        easing: "ease-in-out"
+      })
+    };
+  }
+});
+var ACTIVITY_TYPE = behaviorType({
+  name: ACTIVITY_TYPE_NAME,
+  hostKinds: ACTIVITY_KINDS,
+  widgetKinds: false,
+  commonParams: {},
+  hostParams: {},
+  canvasTarget: false,
+  invalidTiming: () => null,
+  timingSchema: {},
+  withDefaults(seed) {
+    return {
+      ...behaviorBase(seed, ACTIVITY_TYPE_NAME, "window"),
+      timing: timingWithDefaults(seed.timing, {
+        anchor: "start",
+        offsetMs: 0,
+        durationMs: "until-exit",
+        easing: "linear"
+      })
+    };
+  }
+});
+var BUILTIN_TYPES = [WIDGET_TYPE, TRANSITION_TYPE, EFFECT_TYPE, ACTIVITY_TYPE];
+
+// ../shared/clients/typescript/scene/model/keys.ts
+var DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+var BASE = DIGITS.length;
+var FIRST_KEY = DIGITS[BASE / 2];
+function compareKeyed(a, b) {
+  if (a.key !== b.key) {
+    return a.key < b.key ? -1 : 1;
+  }
+  if (a.id !== b.id) {
+    return a.id < b.id ? -1 : 1;
+  }
+  return 0;
+}
+function orderByKey(entries, keyOf) {
+  return Object.entries(entries).map(([id, entry]) => ({ id, key: keyOf(entry) })).sort(compareKeyed).map(({ id }) => id);
+}
+function stackOrder(doc) {
+  return orderByKey(doc.widgets, (placement) => placement.z);
+}
+
+// ../shared/clients/typescript/scene/model/registry.ts
+var DEFAULT_WIDGET_TRAITS = { keepsAspect: false, heightFollowsText: false };
+
+class TypeRegistry {
+  mode;
+  collections;
+  types;
+  traits;
+  constructor(mode, collections, types, widgetTraits = {}) {
+    const byName = new Map;
+    for (const collection of collections) {
+      assert(!byName.has(collection.name), `collection ${collection.name} is defined once`);
+      byName.set(collection.name, collection);
+    }
+    const byKey = new Map;
+    for (const type of types) {
+      assert(byName.has(type.collection), `type ${type.name} belongs to a defined collection`);
+      const key = typeKey(type.collection, type.name);
+      assert(!byKey.has(key), `type ${key} is registered once`);
+      byKey.set(key, type);
+    }
+    this.mode = mode;
+    this.collections = byName;
+    this.types = byKey;
+    this.traits = new Map(Object.entries(widgetTraits).map(([widgetId, traits]) => [widgetId, { ...DEFAULT_WIDGET_TRAITS, ...traits }]));
+  }
+  widgetTraits(widgetId) {
+    return this.traits.get(widgetId) ?? DEFAULT_WIDGET_TRAITS;
+  }
+  isCollection(name) {
+    return typeof name === "string" && this.collections.has(name);
+  }
+  collection(name) {
+    const collection = this.collections.get(name);
+    assert(collection !== undefined, `collection ${name} is defined`);
+    return collection;
+  }
+  collectionNames() {
+    return [...this.collections.keys()];
+  }
+  field(collection, field2) {
+    const fields = this.collection(collection).fields;
+    return Object.hasOwn(fields, field2) ? fields[field2] : undefined;
+  }
+  type(collection, name) {
+    return this.types.get(typeKey(collection, name));
+  }
+  typesOf(collection) {
+    return [...this.types.values()].filter((type) => type.collection === collection);
+  }
+  executorOf(type, kind) {
+    return this.type("behaviors", type)?.executorOf?.(kind) ?? null;
+  }
+  hasExactFields(collection, value) {
+    if (!isPlainObject(value)) {
+      return false;
+    }
+    const fields = this.collection(collection).fields;
+    const keys = Object.keys(value);
+    return keys.length === Object.keys(fields).length && keys.every((key) => Object.hasOwn(fields, key));
+  }
+  invalidEntry(collection, value) {
+    const definition = this.collection(collection);
+    if (!isPlainObject(value)) {
+      return `a ${definition.noun} must be an object`;
+    }
+    const typeName = definition.typeOf(value);
+    const type = typeName === null ? undefined : this.type(collection, typeName);
+    if (type === undefined) {
+      if (this.mode === "tolerant" && typeName !== null) {
+        return null;
+      }
+      return `unknown ${definition.noun} type ${JSON.stringify(typeName)}`;
+    }
+    for (const [field2, spec] of Object.entries(definition.fields)) {
+      if (!Object.hasOwn(value, field2)) {
+        return `a ${definition.noun} needs ${field2}`;
+      }
+      if (!spec.valid(value[field2], this.mode)) {
+        return `invalid ${definition.noun} ${field2}`;
+      }
+    }
+    if (this.mode === "strict") {
+      for (const key of Object.keys(value)) {
+        if (!Object.hasOwn(definition.fields, key)) {
+          return `a ${definition.noun} has no field ${key}`;
+        }
+      }
+    }
+    return type.invalid(value, this.mode);
+  }
+  isEntry(collection, value) {
+    return this.invalidEntry(collection, value) === null;
+  }
+  invalidField(collection, field2, value) {
+    const definition = this.collection(collection);
+    const spec = this.field(collection, field2);
+    if (spec === undefined) {
+      return `a ${definition.noun} has no field ${field2}`;
+    }
+    if (spec.grain === "fixed") {
+      return `a ${definition.noun}'s ${field2} changes only with the whole ${definition.noun}`;
+    }
+    return spec.valid(value, this.mode) ? null : `invalid ${definition.noun} ${field2}`;
+  }
+  invalidSubfield(collection, field2, subfield, change) {
+    const spec = this.field(collection, field2);
+    if (spec === undefined || spec.grain !== "struct" || spec.subfields === undefined) {
+      return `${field2} has no fields of its own`;
+    }
+    const sub = Object.hasOwn(spec.subfields, subfield) ? spec.subfields[subfield] : undefined;
+    if (sub === undefined) {
+      return `${field2} has no field ${subfield}`;
+    }
+    if (!sub.optional && !(change.inserts && change.removes)) {
+      return `${field2}.${subfield} can only be replaced`;
+    }
+    if (change.inserts && !sub.valid(change.value)) {
+      return `invalid ${field2}.${subfield}`;
+    }
+    return null;
+  }
+  invalidLayoutKey(key, value) {
+    if (CANVAS_SIZE_KEYS.has(key)) {
+      if (value === undefined) {
+        return `a canvas keeps its ${key}`;
+      }
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        return `a canvas ${key} is a positive number`;
+      }
+      return null;
+    }
+    if (key === "backgroundColor" && value !== undefined && typeof value !== "string") {
+      return "a canvas backgroundColor is a string";
+    }
+    return null;
+  }
+  invalidEdit(before, after) {
+    if (!isCompositionShape(after)) {
+      return "a composition has a layout, and widgets and behaviors keyed by id";
+    }
+    for (const key of new Set([...Object.keys(before.layout), ...Object.keys(after.layout)])) {
+      const value = Object.hasOwn(after.layout, key) ? after.layout[key] : undefined;
+      const was = Object.hasOwn(before.layout, key) ? before.layout[key] : undefined;
+      if (sameValue(was, value)) {
+        continue;
+      }
+      const invalid = this.invalidLayoutKey(key, value);
+      if (invalid !== null) {
+        return invalid;
+      }
+    }
+    for (const collection of this.collectionNames()) {
+      const was = before[collection];
+      const is = after[collection];
+      const noun = this.collection(collection).noun;
+      for (const [id, entry] of Object.entries(is)) {
+        if (Object.hasOwn(was, id) && sameValue(was[id], entry)) {
+          continue;
+        }
+        if (id.length === 0 || id.length > ENTRY_ID_MAX_LENGTH) {
+          return `a ${noun} id is 1 to ${ENTRY_ID_MAX_LENGTH} characters`;
+        }
+        const invalid = this.invalidEntry(collection, entry);
+        if (invalid !== null) {
+          return `${noun} ${id} would not be valid: ${invalid}`;
+        }
+      }
+    }
+    return null;
+  }
+  create(collection, type, seed) {
+    const built = this.tryCreate(collection, type, seed);
+    assert(built.ok, `a new ${type} is valid: ${built.ok ? "" : built.detail}`);
+    return built.entry;
+  }
+  tryCreate(collection, type, seed) {
+    const entityType = this.type(collection, type);
+    if (entityType === undefined) {
+      return { ok: false, detail: `there is no ${this.collection(collection).noun} type ${type}` };
+    }
+    const entry = entityType.withDefaults(seed);
+    const invalid = this.invalidEntry(collection, entry);
+    return invalid === null ? { ok: true, entry } : { ok: false, detail: invalid };
+  }
+  migrateDocument(doc) {
+    const next = { ...doc, widgets: { ...doc.widgets }, behaviors: { ...doc.behaviors } };
+    for (const collection of this.collectionNames()) {
+      const entries = next[collection];
+      for (const [id, value] of Object.entries(entries)) {
+        if (!isPlainObject(value)) {
+          continue;
+        }
+        const typeName = this.collection(collection).typeOf(value);
+        const type = typeName === null ? undefined : this.type(collection, typeName);
+        if (type?.migrate === undefined) {
+          continue;
+        }
+        const migrated = type.migrate(value, id);
+        entries[id] = migrated.entry;
+        for (const [behaviorId, behavior] of Object.entries(migrated.behaviors ?? {})) {
+          if (!Object.hasOwn(next.behaviors, behaviorId)) {
+            next.behaviors[behaviorId] = behavior;
+          }
+        }
+      }
+    }
+    return next;
+  }
+}
+var CANVAS_SIZE_KEYS = new Set(["width", "height"]);
+function typeKey(collection, name) {
+  return `${collection}/${name}`;
+}
+function createRegistry(mode, extra = [], extraWidgetTraits = {}) {
+  for (const widgetId of Object.keys(extraWidgetTraits)) {
+    assert(!Object.hasOwn(BUILTIN_WIDGET_TRAITS, widgetId), `widget ${widgetId} declares its traits once`);
+  }
+  return new TypeRegistry(mode, BUILTIN_COLLECTIONS, [...BUILTIN_TYPES, ...extra], {
+    ...BUILTIN_WIDGET_TRAITS,
+    ...extraWidgetTraits
+  });
+}
+var STRICT_REGISTRY = createRegistry("strict");
+var TOLERANT_REGISTRY = createRegistry("tolerant");
+
+// ../shared/clients/typescript/api/scene-editor/document.ts
 var json0 = import_ot_json0.default.type;
 function isVersion(value) {
   return value === "draft" || value === "published";
@@ -1826,22 +2657,6 @@ var MAX_DOCUMENT_BYTES = 1024 * 1024;
 var MAX_ITEM_BYTES = 3 * MAX_DOCUMENT_BYTES;
 function applyOps(doc, ops) {
   return json0.apply(structuredClone(doc), structuredClone([...ops]));
-}
-function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function stackOrder(doc) {
-  return Object.keys(doc.widgets).sort((a, b) => {
-    const za = doc.widgets[a].z;
-    const zb = doc.widgets[b].z;
-    if (za !== zb) {
-      return za < zb ? -1 : 1;
-    }
-    if (a !== b) {
-      return a < b ? -1 : 1;
-    }
-    return 0;
-  });
 }
 function mergeMeta(meta, changes) {
   const next = { ...meta };
@@ -1858,10 +2673,11 @@ function parseSnapshot(value) {
   if (!isPlainObject(value)) {
     return null;
   }
-  if (typeof value.sceneId !== "string" || typeof value.seq !== "number" || !isSceneDocument(value.doc) || !isPlainObject(value.meta)) {
+  const doc = normalizeComposition(value.doc);
+  if (typeof value.sceneId !== "string" || typeof value.seq !== "number" || doc === null || !isPlainObject(value.meta)) {
     return null;
   }
-  return value;
+  return { ...value, doc };
 }
 function parseSceneOpsEvent(value) {
   if (!isPlainObject(value)) {
@@ -1875,11 +2691,6 @@ function parseSceneOpsEvent(value) {
   }
   return value;
 }
-function isSceneDocument(value) {
-  return isPlainObject(value) && isPlainObject(value.layout) && isPlainObject(value.widgets);
-}
-var TEXT_FIELDS = new Set(["name"]);
-var FREEFORM_FIELDS = new Set(["settings", "extra"]);
 var COMPONENT_KEYS = new Set(["p", "oi", "od", "si", "sd"]);
 
 // public/scene-manager/scene-document.ts
@@ -2260,11 +3071,11 @@ function planSceneUpdate(current, next) {
   return plan;
 }
 function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue2(a.settings, b.settings));
 }
 function settingsUpdate(current, next, reads) {
   const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
-  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
+  const changed = [...keys].filter((key) => !sameValue2(current[key], next[key]));
   if (changed.length === 0) {
     return "none";
   }
@@ -2278,7 +3089,7 @@ function themeOf(settings) {
   const value = settings[THEME_SETTING_ID];
   return typeof value === "string" ? value.trim() : "";
 }
-function sameValue(a, b) {
+function sameValue2(a, b) {
   if (a === b) {
     return true;
   }
@@ -2286,7 +3097,7 @@ function sameValue(a, b) {
     return false;
   }
   if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue2(item, b[i]));
   }
   const aRecord = a;
   const bRecord = b;
@@ -2294,7 +3105,7 @@ function sameValue(a, b) {
   if (aKeys.length !== Object.keys(bRecord).length) {
     return false;
   }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
+  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue2(aRecord[key], bRecord[key]));
 }
 function parseSceneConfig(body) {
   if (typeof body !== "object" || body === null) {
@@ -2318,7 +3129,7 @@ function parseSceneConfig(body) {
 
 // public/scene-manager/preview-layout.ts
 var PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
-function isFiniteNumber(value) {
+function isFiniteNumber2(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 function parseWidget(raw) {
@@ -2329,7 +3140,7 @@ function parseWidget(raw) {
   if (typeof w.id !== "string" || w.id.length === 0) {
     return null;
   }
-  if (!isFiniteNumber(w.x) || !isFiniteNumber(w.y) || !isFiniteNumber(w.width) || !isFiniteNumber(w.height)) {
+  if (!isFiniteNumber2(w.x) || !isFiniteNumber2(w.y) || !isFiniteNumber2(w.width) || !isFiniteNumber2(w.height)) {
     return null;
   }
   return { id: w.id, x: w.x, y: w.y, width: w.width, height: w.height };

@@ -129,7 +129,12 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** A scene state as a document: placements keyed by id, stacked as saved. */
+/**
+ * A scene state as a document: placements keyed by id, stacked as saved.
+ * The store keeps no behaviors (see `storedSceneOf`), so a loaded scene has
+ * none; behaviors added while the scene is held live in its in-memory
+ * documents only.
+ */
 export function documentOf(state: OverlaySceneState): SceneDocument {
   const widgets: SceneDocument["widgets"] = {};
   state.instances.forEach((instance, index) => {
@@ -157,13 +162,14 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
       extra,
     };
   });
-  return { layout: { ...state.layout }, widgets };
+  return { layout: { ...state.layout }, widgets, behaviors: {} };
 }
 
 /**
  * A document in the shapes the database stores and the editor reads:
  * `widgets_json` is the placements in stacking order, each as the editor
- * writes one, and `layout_json` the layout.
+ * writes one, and `layout_json` the layout. A scene row has no column for
+ * behaviors, so they are not written.
  */
 export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string } {
   const widgets = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
@@ -665,7 +671,10 @@ export class SceneDocuments {
         return;
       }
       held.name = loaded.name;
-      const ops = diffDocuments(held.state.docs.published, documentOf(loaded));
+      // The store holds no behaviors, so a save made elsewhere says nothing
+      // about them: the held ones stay.
+      const saved = { ...documentOf(loaded), behaviors: held.state.docs.published.behaviors };
+      const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
         kind: "external",
         version: "published",

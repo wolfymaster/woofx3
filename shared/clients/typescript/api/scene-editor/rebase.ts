@@ -8,13 +8,15 @@
 // field (last writer wins) at the cost of merging concurrent text edits. The
 // sequencer copies a live edit into the draft the same way.
 
+import { type CollectionName, STRICT_REGISTRY, type TypeRegistry } from "../../scene/model/registry";
 import {
   applyOps,
+  isUneditedRoot,
   type Json0Component,
   type Ops,
-  type PlacementDocument,
   type SceneDocument,
   sameValue,
+  type UneditedRoot,
   type Version,
 } from "./document";
 import type { ItemBody } from "./protocol";
@@ -62,29 +64,54 @@ export function rebaseFieldwise(
 
 /**
  * The ops that turn `from` into `to` by replacing whole fields: each layout
- * key set, inserted or removed whole; each placement inserted or removed
- * whole; each differing field of a placement both have replaced whole, text
- * included. A rebased edit must say "this field is now this value": as text
- * splices (what `diffDocuments` makes) it would be merged with concurrent
- * splices character by character when the server transforms it, making a
- * value neither side wrote, where a replacement is transformed as last
- * writer wins.
+ * key set, inserted or removed whole; each entry of a collection inserted
+ * or removed whole; each differing field of an entry both have replaced
+ * whole, text included. An entry whose fields are not exactly its
+ * collection's, or whose `fixed` field (a behavior's type) differs, is
+ * replaced whole, since `invalidOps` takes no op on such a field. A rebased
+ * edit must say "this field is now this value": as text splices (what
+ * `diffDocuments` makes) it would be merged with concurrent splices
+ * character by character when the server transforms it, making a value
+ * neither side wrote, where a replacement is transformed as last writer
+ * wins.
  */
-export function replacementsBetween(from: SceneDocument, to: SceneDocument): Ops {
+export function replacementsBetween(
+  from: SceneDocument,
+  to: SceneDocument,
+  registry: TypeRegistry = STRICT_REGISTRY
+): Ops {
   const ops: Ops = [];
   replaceKeys(["layout"], from.layout, to.layout, ops, (path, a, b) => {
     ops.push({ p: path, od: a, oi: b });
   });
-  replaceKeys(["widgets"], from.widgets, to.widgets, ops, (path, a, b) => {
-    const fromPlacement = a as unknown as Record<string, unknown>;
-    const toPlacement = b as unknown as Record<string, unknown>;
-    for (const field of Object.keys(toPlacement)) {
-      if (!sameValue(fromPlacement[field], toPlacement[field])) {
-        ops.push({ p: [...path, field], od: fromPlacement[field], oi: toPlacement[field] });
+  for (const collection of registry.collectionNames()) {
+    const fromEntries = from[collection] as Record<string, unknown>;
+    const toEntries = to[collection] as Record<string, unknown>;
+    replaceKeys([collection], fromEntries, toEntries, ops, (path, a, b) => {
+      if (!fieldwise(registry, collection, a, b)) {
+        ops.push({ p: path, od: a, oi: b });
+        return;
       }
-    }
-  });
+      const fromEntry = a as Record<string, unknown>;
+      const toEntry = b as Record<string, unknown>;
+      for (const field of Object.keys(toEntry)) {
+        if (!sameValue(fromEntry[field], toEntry[field])) {
+          ops.push({ p: [...path, field], od: fromEntry[field], oi: toEntry[field] });
+        }
+      }
+    });
+  }
   return ops;
+}
+
+/** Whether two entries of `collection` can be told apart by replacing fields. */
+function fieldwise(registry: TypeRegistry, collection: CollectionName, a: unknown, b: unknown): boolean {
+  if (!registry.hasExactFields(collection, a) || !registry.hasExactFields(collection, b)) {
+    return false;
+  }
+  return Object.entries(registry.collection(collection).fields).every(
+    ([field, spec]) => spec.grain !== "fixed" || sameValue(a[field], b[field])
+  );
 }
 
 function replaceKeys<T>(
@@ -115,16 +142,23 @@ function replaceKeys<T>(
  * snapshot, so both work at the same grain. A field is one of:
  *
  * - a layout key: set, or removed when `after` has no such key;
- * - a placement (an op on `widgets.<id>` itself): removed when `after` has
- *   none; otherwise copied whole when `into` has it, or when `before` did
- *   not (the ops added it). A placement `before` had and `into` lacks was
- *   removed on `into`'s side, and stays removed;
- * - a placement's field (any op inside `widgets.<id>.<field>`, so settings
- *   are copied whole): set when both `into` and `after` have the placement,
- *   else skipped, so an edit never brings back a placement `into` removed.
+ * - an entry of a collection (an op on `widgets.<id>` or `behaviors.<id>`
+ *   itself): removed when `after` has none; otherwise copied whole when
+ *   `into` has it, or when `before` did not (the ops added it). An entry
+ *   `before` had and `into` lacks was removed on `into`'s side, and stays
+ *   removed;
+ * - an entry's field (any op inside `<collection>.<id>.<field>`, so a
+ *   placement's settings or a behavior's timing are copied whole): set when
+ *   both `into` and `after` have the entry, else skipped, so an edit never
+ *   brings back an entry `into` removed.
  *
- * Field paths are applied before placement paths, so a placement the ops
- * replaced or removed wins over the ops' own edits to its fields.
+ * - a document key outside the layout and the collections (`inputs`,
+ *   replaced whole by an external change): set, or removed when `after`
+ *   has no such key.
+ *
+ * Field paths are applied before entry paths, so an entry the ops replaced
+ * or removed wins over the ops' own edits to its fields. Ops on a root this
+ * build does not know are skipped.
  */
 export function copyTouched(
   before: SceneDocument,
@@ -147,23 +181,34 @@ export function copyTouched(
         }
         break;
       }
-      case "placement": {
-        const intended = after.widgets[path.id];
+      case "entry": {
+        const entries = next[path.collection] as Record<string, unknown>;
+        const intended = (after[path.collection] as Record<string, unknown>)[path.id];
+        const had = (before[path.collection] as Record<string, unknown>)[path.id];
         if (intended === undefined) {
-          delete next.widgets[path.id];
-        } else if (next.widgets[path.id] !== undefined || before.widgets[path.id] === undefined) {
-          next.widgets[path.id] = structuredClone(intended);
+          delete entries[path.id];
+        } else if (entries[path.id] !== undefined || had === undefined) {
+          entries[path.id] = structuredClone(intended);
+        }
+        break;
+      }
+      case "root": {
+        if (after[path.key] === undefined) {
+          delete next[path.key];
+        } else {
+          (next as Record<UneditedRoot, unknown>)[path.key] = structuredClone(after[path.key]);
         }
         break;
       }
       case "field": {
-        const placement = next.widgets[path.id];
-        const intended = after.widgets[path.id];
-        if (placement === undefined || intended === undefined) {
+        const entry = (next[path.collection] as Record<string, unknown>)[path.id];
+        const intended = (after[path.collection] as Record<string, unknown>)[path.id];
+        if (entry === undefined || intended === undefined) {
           break;
         }
-        const field = path.field as keyof PlacementDocument;
-        (placement as unknown as Record<string, unknown>)[field] = structuredClone(intended[field]);
+        (entry as Record<string, unknown>)[path.field] = structuredClone(
+          (intended as Record<string, unknown>)[path.field]
+        );
         break;
       }
     }
@@ -173,32 +218,37 @@ export function copyTouched(
 
 type TouchedPath =
   | { kind: "layout" }
+  | { kind: "root"; key: UneditedRoot }
   | { kind: "layoutKey"; key: string }
-  | { kind: "placement"; id: string }
-  | { kind: "field"; id: string; field: string };
+  | { kind: "entry"; collection: CollectionName; id: string }
+  | { kind: "field"; collection: CollectionName; id: string; field: string };
 
 /** The fields `ops` touch, in the order `copyTouched` applies them. */
 function touchedPaths(ops: readonly Json0Component[]): TouchedPath[] {
   const fields = new Map<string, TouchedPath>();
-  const placements = new Map<string, TouchedPath>();
+  const entries = new Map<string, TouchedPath>();
   for (const component of ops) {
     const [root, second, third] = component.p;
+    if (isUneditedRoot(root) && component.p.length === 1) {
+      entries.set(root, { kind: "root", key: root });
+      continue;
+    }
     if (root === "layout") {
       if (typeof second === "string") {
         fields.set(`layout.${second}`, { kind: "layoutKey", key: second });
       } else {
-        placements.set("layout", { kind: "layout" });
+        entries.set("layout", { kind: "layout" });
       }
       continue;
     }
-    if (root !== "widgets" || typeof second !== "string") {
+    if (!STRICT_REGISTRY.isCollection(root) || typeof second !== "string") {
       continue;
     }
     if (typeof third === "string") {
-      fields.set(`widgets.${second}.${third}`, { kind: "field", id: second, field: third });
+      fields.set(`${root}.${second}.${third}`, { kind: "field", collection: root, id: second, field: third });
     } else {
-      placements.set(`widgets.${second}`, { kind: "placement", id: second });
+      entries.set(`${root}.${second}`, { kind: "entry", collection: root, id: second });
     }
   }
-  return [...fields.values(), ...placements.values()];
+  return [...fields.values(), ...entries.values()];
 }

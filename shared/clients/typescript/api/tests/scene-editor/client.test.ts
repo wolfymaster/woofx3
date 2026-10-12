@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { withoutWidget } from "../../../scene/model";
 import {
   assertSyncInvariants,
   BACKOFF_BASE_MS,
@@ -29,7 +30,8 @@ import {
   type ServerMessage,
   type Watermark,
 } from "../../scene-editor/protocol";
-import { bothDocs, flush, ManualClock, placement, sceneDoc } from "./test-support";
+import { commit, createSequencerState, EMPTY_EDITOR_STATE, prepare } from "../../scene-editor/sequencer";
+import { behavior, bothDocs, flush, ManualClock, placement, sceneDoc } from "./test-support";
 
 class FakeSocket implements SyncSocket {
   readonly sent: ClientMessage[] = [];
@@ -615,7 +617,7 @@ describe("SceneSyncClient transitions by event", () => {
       doc.widgets.w!.opacity = 4;
       return doc;
     });
-    expect(result).toEqual({ ok: false, detail: "invalid opacity" });
+    expect(result).toEqual({ ok: false, detail: "invalid placement opacity" });
     expect(h.client.hasPending()).toBe(false);
   });
 
@@ -948,5 +950,84 @@ describe("SceneSyncClient local documents", () => {
     });
     expect(h.client.getState().local!.published).toBe(published);
     assertSyncInvariants(h.client.inspect());
+  });
+});
+
+describe("SceneSyncClient behaviors", () => {
+  test("edits to behaviors go through the engine's sequencer and come back as the client's own entry", async () => {
+    const h = harness();
+    await ready(h);
+    const engine = createSequencerState({
+      docs: bothDocs(START),
+      hasDraft: false,
+      editorState: { ...EMPTY_EDITOR_STATE, clients: {} },
+      epoch: "s",
+    });
+
+    /** Run the client's in-flight item through the engine and deliver the entry back. */
+    const roundTrip = (): void => {
+      const item = h.socket().items().at(-1);
+      if (item === undefined) {
+        throw new Error("no item sent");
+      }
+      const plan = prepare(engine, item.base, item.body);
+      if (plan.refused) {
+        throw new Error(`engine refused: ${plan.detail}`);
+      }
+      const entry = commit(engine, plan, {}, { clientId: "me", seq: item.seq }, 0);
+      if (entry === null) {
+        throw new Error("no entry");
+      }
+      h.socket().deliver({ type: "entry", ...entry });
+    };
+
+    expect(
+      h.client.edit("draft", (doc) => {
+        doc.behaviors.in = behavior({ target: "w", kind: "slide", params: { phase: "in", direction: "left" } });
+        return doc;
+      })
+    ).toEqual({ ok: true });
+    roundTrip();
+    await h.clock.advance(SEND_SPACING_MS);
+
+    expect(
+      h.client.edit("draft", (doc) => {
+        doc.behaviors.in!.timing.offsetMs = 250;
+        doc.behaviors.in!.params.direction = "right";
+        return doc;
+      })
+    ).toEqual({ ok: true });
+    expect(h.socket().items().at(-1)?.body).toEqual({
+      kind: "edit",
+      version: "draft",
+      ops: [
+        { p: ["behaviors", "in", "timing", "offsetMs"], od: 0, oi: 250 },
+        { p: ["behaviors", "in", "params", "direction"], od: "left", oi: "right" },
+      ],
+    });
+    roundTrip();
+    await h.clock.advance(SEND_SPACING_MS);
+
+    expect(h.client.edit("draft", (doc) => withoutWidget(doc, "w"))).toEqual({ ok: true });
+    roundTrip();
+
+    expect(h.client.hasPending()).toBe(false);
+    expect(h.client.inspect().server?.docs.draft).toEqual(engine.docs.draft);
+    expect(engine.docs.draft).toEqual({ ...START, widgets: {}, behaviors: {} });
+    assertSyncInvariants(h.client.inspect());
+  });
+
+  test("a behavior edit the registry refuses is refused at once and changes nothing", async () => {
+    const h = harness();
+    await ready(h);
+    const result = h.client.edit("draft", (doc) => {
+      doc.behaviors.in = behavior({
+        target: "w",
+        timing: { anchor: "enter", offsetMs: 0, durationMs: 5, easing: "linear" },
+      });
+      return doc;
+    });
+    expect(result.ok).toBe(false);
+    expect(h.client.hasPending()).toBe(false);
   });
 });

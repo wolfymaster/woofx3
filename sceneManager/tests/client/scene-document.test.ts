@@ -30,7 +30,7 @@ function placement(z: string, settings: Record<string, unknown> = {}) {
 }
 
 function doc(widgets: SceneDocument["widgets"], layout: Record<string, unknown> = {}): SceneDocument {
-  return { layout, widgets };
+  return { layout, widgets, behaviors: {} };
 }
 
 describe("diffDocuments + applyOps", () => {
