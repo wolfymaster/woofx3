@@ -551,11 +551,26 @@ const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
     "action.execute",
 ];
 
-fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static str] {
-    match provenance {
-        InstallProvenance::User => &USER_RESERVED_EVENT_PREFIXES,
-        InstallProvenance::System => &[WEBHOOK_EVENT_PREFIX],
-    }
+/// Event prefixes only the engine publishes, which uploads may not declare.
+///
+/// Unlike a platform event such as `channel.`, which the module bringing that
+/// platform declares, nothing outside the engine asserts these, so an upload
+/// declaring one could only forge it through its webhook handler: `viewer.`
+/// carries segment entered/left edges computed by the db proxy. The bundled
+/// system module declares triggers on them and stays exempt. Each entry must
+/// also appear in EngineEventSubjectPrefixes in
+/// shared/common/golang/cloudevents/reserved.go.
+const UPLOAD_ENGINE_ONLY_EVENT_PREFIXES: [&str; 1] = ["viewer."];
+
+fn reserved_event_prefixes(provenance: InstallProvenance) -> impl Iterator<Item = &'static str> {
+    let (commands, engine_only): (&[&str], &[&str]) = match provenance {
+        InstallProvenance::User => (
+            &USER_RESERVED_EVENT_PREFIXES,
+            &UPLOAD_ENGINE_ONLY_EVENT_PREFIXES,
+        ),
+        InstallProvenance::System => (&[WEBHOOK_EVENT_PREFIX], &[]),
+    };
+    commands.iter().chain(engine_only).copied()
 }
 
 /// The subject barkloader's field-options responder answers. It runs
@@ -758,9 +773,7 @@ fn validate_trigger_transports(
             } else {
                 &trigger.event
             };
-            if let Some(prefix) = reserved_event_prefixes(provenance)
-                .iter()
-                .find(|p| event.starts_with(**p))
+            if let Some(prefix) = reserved_event_prefixes(provenance).find(|p| event.starts_with(p))
             {
                 return Err(anyhow!(
                     "{label}: event {event:?} uses the reserved prefix {prefix:?}"
@@ -2930,6 +2943,8 @@ mod tests {
             "workflow.replay",
             "workflow.cancel",
             "action.execute",
+            "viewer.segment.entered",
+            "viewer.segment.left",
         ] {
             let trigger = format!(
                 r#"{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}"#
@@ -2937,6 +2952,22 @@ mod tests {
             let err = rejection(&trigger, "");
             assert!(err.contains("reserved prefix"), "{event}: {err}");
         }
+    }
+
+    // The bundled module declares the segment edge triggers, so the engine-only
+    // prefixes bind uploads alone.
+    #[test]
+    fn the_system_module_may_declare_engine_only_events() {
+        let manifest = parse(
+            r#"{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "triggers": [{ "id": "entered", "name": "Entered", "type": "eventbus", "event": "viewer.segment.entered" }]}"#,
+        );
+        validate_with_provenance(&manifest, InstallProvenance::System)
+            .expect("a system module may declare viewer.* triggers");
+        let err = validate(&manifest)
+            .expect_err("an upload may not declare viewer.* triggers")
+            .to_string();
+        assert!(err.contains("reserved prefix \"viewer.\""), "{err}");
     }
 
     // A trigger with no `event` fires on its id, so the id is checked too.
