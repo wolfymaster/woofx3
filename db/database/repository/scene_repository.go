@@ -41,16 +41,17 @@ func (r *SceneRepository) GetByID(id uuid.UUID) (*models.Scene, error) {
 	return &s, err
 }
 
-func (r *SceneRepository) GetAll() ([]*models.Scene, error) {
+// ListByKind returns every row of one kind (`models.SceneKind*`).
+func (r *SceneRepository) ListByKind(kind string) ([]*models.Scene, error) {
 	var scenes []*models.Scene
-	err := r.db.Find(&scenes).Error
+	err := r.db.Where("kind = ?", kind).Find(&scenes).Error
 	return scenes, err
 }
 
-// GetByName resolves a scene by its name — backed by the unique index
-// `idx_scenes_name` so the editor can use names as stable handles.
-func (r *SceneRepository) GetByName(name string) (*models.Scene, error) {
+// GetByKindAndName resolves a row by its name within its kind, backed by the
+// unique index `idx_scenes_kind_name`.
+func (r *SceneRepository) GetByKindAndName(kind, name string) (*models.Scene, error) {
 	var s models.Scene
-	err := r.db.Where("name = ?", name).First(&s).Error
+	err := r.db.Where("kind = ? AND name = ?", kind, name).First(&s).Error
 	return &s, err
 }

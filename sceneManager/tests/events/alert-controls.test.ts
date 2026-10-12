@@ -129,11 +129,22 @@ const catalog = [
   { moduleKey: "woofx3", manifestId: "text", entry: "index.html", surfaces: ["alert"], hostsSurface: "" },
 ];
 
-function fakeHost(scenes: Record<string, OverlayWidgetInstance[]>) {
+/** A host over scenes by id; ids in `alerts` load as alert compositions. */
+function fakeHost(scenes: Record<string, OverlayWidgetInstance[]>, alerts: ReadonlySet<string> = new Set()) {
   return {
     loadWidgetCatalog: async () => catalog,
     loadSceneById: async (sceneId: string) =>
-      scenes[sceneId] ? { sceneId, name: sceneId, layout: {}, instances: scenes[sceneId]! } : null,
+      scenes[sceneId]
+        ? {
+            sceneId,
+            name: sceneId,
+            kind: alerts.has(sceneId) ? "alert" : "scene",
+            behaviors: {},
+            inputs: [],
+            layout: {},
+            instances: scenes[sceneId]!,
+          }
+        : null,
   };
 }
 
@@ -482,16 +493,31 @@ describe("replayAlert", () => {
 });
 
 describe("dispatchAlert", () => {
-  function setup(scenes: Record<string, OverlayWidgetInstance[]>) {
+  function setup(scenes: Record<string, OverlayWidgetInstance[]>, alerts: ReadonlySet<string> = new Set()) {
     const { db, writes } = fakeDb();
     const store = new DeliveryStore(db as any, fakeLogger());
     const overlays = Object.keys(scenes).map((sceneId) => fakeOverlay(store, sceneId));
     return {
       writes,
       overlays,
-      deps: { db, host: fakeHost(scenes) as any, deliveryStore: store, logger: fakeLogger() },
+      deps: { db, host: fakeHost(scenes, alerts) as any, deliveryStore: store, logger: fakeLogger() },
     };
   }
+
+  it("never delivers to an alert composition, even one with a stream open on it", async () => {
+    const { overlays, deps } = setup(
+      {
+        "scene-1": [alertInstance("inst-1", "default")],
+        "alert-1": [alertInstance("inst-2", "default")],
+      },
+      new Set(["alert-1"])
+    );
+
+    await dispatchAlert({ ...JSON.parse(envelope()), rowId: "row-9" }, deps);
+
+    expect(overlays[0]!.deliveries()).toHaveLength(1);
+    expect(overlays[1]!.deliveries()).toEqual([]);
+  });
 
   it("carries the engine's row id into the delivery", async () => {
     const { overlays, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });

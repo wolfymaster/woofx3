@@ -4,6 +4,7 @@ import { actionsRoutes } from "./actions";
 import { alertsRoutes } from "./alerts";
 import { analyticsRoutes } from "./analytics";
 import { commandsRoutes } from "./commands";
+import { compositionsRoutes } from "./compositions";
 import { configBundlesRoutes } from "./config-bundles";
 import type { ApiRouteHost } from "./context";
 import { dashboardRoutes } from "./dashboard";
@@ -45,6 +46,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof modulesRoutes &
   typeof workflowsRoutes &
   typeof scenesRoutes &
+  typeof compositionsRoutes &
   typeof dashboardStatsRoutes &
   typeof triggersRoutes &
   typeof alertsRoutes &
@@ -103,6 +105,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(modulesRoutes),
     instrumentRoutes(workflowsRoutes),
     instrumentRoutes(scenesRoutes),
+    instrumentRoutes(compositionsRoutes),
     instrumentRoutes(dashboardStatsRoutes),
     instrumentRoutes(triggersRoutes),
     instrumentRoutes(alertsRoutes),

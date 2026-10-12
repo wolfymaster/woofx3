@@ -9,7 +9,8 @@ change.
 
 sceneManager holds each scene an overlay or editor has open as two JSON
 documents, the published scene overlays show and the editor's draft (see
-[Drafts](#drafts-and-live-editing)), each like this:
+[Drafts](#drafts-and-live-editing)), each like this. An alert composition
+is held and edited the same way (see [Scenes and alerts](#scenes-and-alerts)):
 
 ```json
 {
@@ -80,7 +81,13 @@ compositions had them) is given an empty collection wherever a document is
 parsed: `parseSnapshot`, the editor welcome's snapshot, and sceneManager's
 load. The sequencer refuses to start from a document that lacks it. A
 composition's `inputs` and `base` are part of the same type, but the scene
-editor never changes them: an edit that does is refused.
+editor never changes them: an edit that does is refused. Inputs are set
+where the composition is managed (`createAlertComposition`,
+`updateAlertComposition`), and reach open editors as an `external` entry
+replacing `inputs` whole (`invalidExternalOps`), the one change an external
+entry may make that an edit may not. They are not drafted: both versions
+declare the stored inputs, and a document whose composition declares none
+has no `inputs` key.
 
 The document's types come from the scene package's model
 (`@woofx3/scene/model`, `shared/clients/typescript/scene/model/types.ts`);
@@ -106,6 +113,7 @@ components: a path into the document and what changes there.
 | A behavior's kind, target or order | replace `["behaviors", id, "kind"]` (and `target`, `order`) |
 | A behavior's timing | replace `["behaviors", id, "timing", "offsetMs"]` (any timing field; `node` may also be inserted or removed) |
 | A behavior's param | insert, delete or replace `["behaviors", id, "params", key]`, or deeper |
+| The inputs (an `external` entry only, never an edit) | insert, delete or replace `["inputs"]` whole |
 
 ## Entry types and validation
 
@@ -290,17 +298,21 @@ draft keeps its other edits.
 
 There is no save button. A scene is written back at most two seconds after
 its first unwritten change, in one `UpdateScene`: the published scene
-(`widgets_json`, `layout_json`), the draft (`draft_widgets_json`,
-`draft_layout_json`, or `clearDraft` when there is none) and the editor state
+(`widgets_json`, `layout_json`, `behaviors_json`), the draft
+(`draft_widgets_json`, `draft_layout_json`, `draft_behaviors_json`, or
+`clearDraft` when there is none) and the editor state
 (`editor_state_json`: the head `v` and its id, each client's watermark kept
 for 30 days and at most 500 clients, and a digest of both documents). A
 failed write is tried again with the next window. A scene is dropped from
 memory only when nothing is open on it and nothing is waiting to be written.
 
-The scene row has no column for behaviors, so they are not written: a loaded
-scene has none, behaviors added while sceneManager holds the scene live in its
-memory until the scene is dropped, and a save made elsewhere leaves them as
-they are.
+Behaviors are stored as a JSON object keyed by behavior id, in their own
+columns, so they survive restarts and a save made elsewhere carries them like
+any other part of the document (capability `scenes.behaviors`). A draft's
+behaviors are stored with its widgets and layout and cleared with them; a
+draft written without behaviors has none. `inputs_json` is never written by
+sceneManager: the api writes it, and sceneManager takes it in from the save
+(see [The document](#the-document)).
 
 On shutdown, `close()` stops taking items (later ones are answered
 `unavailable`, so editors resend them to the next process), lets the queues
@@ -328,6 +340,9 @@ error), the scene starts from head 0 under a new epoch. A crash loses what
 was committed since the last write; editors that had it are told their
 history diverged.
 
+The digest covers the whole of both documents, behaviors and inputs
+included, so a load resumes the head only when they read back as written.
+
 The scene row's `editor_state_json` column holds that state: a JSON object
 the engine owns, stored as text so it reads back exactly as written.
 `UpdateScene` stores it in the same row update as the documents and draft
@@ -335,12 +350,44 @@ named in the request, and refuses (writing nothing) a value that is not a
 JSON object. A request without it leaves it unchanged, unless the request
 writes a document (widgets, layout, draft or `clearDraft`): the stored state
 then describes documents that were replaced, so the db proxy clears it in the
-same write. `clearEditorState` clears it on purpose; it cannot be combined
+same write; `behaviors_json`, `draft_behaviors_json` and `inputs_json` are
+documents in this sense too. `clearEditorState` clears it on purpose; it cannot be combined
 with a new value. `UpdateScene` writes only the columns a request names, so
 concurrent writers of different columns (an editor's autosave, a rename) do
 not overwrite each other. Overlay scene state never carries it:
 `OverlayHost.loadEditableScene` reads both versions and the editor state from
 one read of the row, for the scene documents alone.
+
+## Scenes and alerts
+
+A row of the scenes table holds a composition of one of two kinds, fixed
+when it is created (`kind`, migration `0060_scene_compositions`):
+
+- `scene`: shown by overlays, in OBS and in the editor's preview.
+- `alert`: a library entry. A client copies its published version into an
+  alert step's own `layout`, filling its inputs (`{{id}}` placeholders) as it
+  copies, and the step never refers back to it. It is never an overlay page.
+
+Names are unique per kind. Both are edited through the same editor socket,
+sequencer, drafts and autosave; `getSceneEditorSession` takes either id.
+Everything that serves or lists scenes reads only `scene` rows:
+
+| Reader | How |
+| --- | --- |
+| `ListScenes` (db) | Lists `scene` rows unless asked for `kind: "alert"`, so every caller that predates alerts sees scenes only. |
+| `getScenes`, `getScene`, `updateScene`, `deleteScene` (api) | Scenes only: `getScene` is null for an alert, `updateScene` and `deleteScene` refuse one. |
+| Overlay tokens | `MintOverlayToken` refuses an alert, so no browser-source URL addresses one. |
+| `/scene/{id}?token=…` (sceneManager) | `loadScene` serves no page for a token that resolves to an alert; every other overlay route needs the session that page mints. |
+| Alert fan-out (`fanOutAlert`) and the alert queue controls | Skip anything that is not a scene. |
+| `scene.*` webhooks | Carry `kind` (and the behaviors and inputs) in the snapshot, and `kind` on delete, so a dashboard cache of scenes skips alerts. |
+
+The OBS integration names OBS's own scenes and never reads this table.
+
+The api serves alerts apart from scenes (capability `compositions.alerts`):
+`listAlertCompositions`, `getAlertComposition`, `createAlertComposition`,
+`updateAlertComposition` (name, description and inputs; the document is
+edited through the socket) and `deleteAlertComposition`. Deleting an alert
+changes no step: each holds its own copy.
 
 ## What overlays see
 
@@ -369,13 +416,27 @@ limited to the placements a change touches.
   pending edits onto a snapshot (touched fields are replaced whole, so text
   two editors rebased concurrently is never spliced into a value neither
   wrote), the client, and clients and sequencer together.
+- `shared/clients/typescript/api/tests/scene-editor/sequencer.test.ts` also
+  covers inputs: an external change replaces them, an edit never does.
+- `db/app/services/scene_composition_test.go` covers kinds, behaviors and
+  inputs in the scene service, listing by kind, and an overlay token refused
+  for an alert; `db/database/migrate/migrations/sqlite/0060_*_test.go`
+  covers the migration.
+- `api/tests/compositions.test.ts` covers the alert routes and that the scene
+  and alert routes never touch each other's rows.
 - `sceneManager/tests/scene/scene-documents.test.ts` drives the real
   `SceneDocuments` over an in-memory scene store
   (`tests/scene/fake-scene-store.ts`, which applies writes the way the db
   proxy does) on a controlled clock: items and their answers, saves made
   elsewhere (a meta-only one included, and a refresh whose read fails, which
   never rejects), editors reconnecting, writing back and its retries
-  (`close()` retrying a write that fails at shutdown), and restarts.
+  (`close()` retrying a write that fails at shutdown), restarts, and
+  behaviors and inputs: loaded per version, written back (inputs never),
+  kept across a restart, and taken in from a save made elsewhere.
+- `sceneManager/tests/scene/scene-host.test.ts` covers loading kinds,
+  behaviors and inputs, and that no page is served for an alert;
+  `sceneManager/tests/events/alert-controls.test.ts` that an alert
+  composition never receives an alert.
 - `sceneManager/tests/routes/editor.test.ts` covers the editor socket:
   upgrade, session errors and presence.
 - `sceneManager/tests/scene/media-proxy.test.ts` covers what overlays see

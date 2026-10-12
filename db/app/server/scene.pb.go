@@ -51,8 +51,20 @@ type Scene struct {
 	// The scene editor's sync state as a JSON object, owned by the scene
 	// editor and opaque here. Empty when no editor has synced the scene.
 	EditorStateJson string `protobuf:"bytes,14,opt,name=editor_state_json,json=editorStateJson,proto3" json:"editor_state_json,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// "scene" or "alert", fixed at creation. A scene is shown by overlays;
+	// an alert is a library entry an alert step's layout is copied from,
+	// never an overlay page.
+	Kind string `protobuf:"bytes,15,opt,name=kind,proto3" json:"kind,omitempty"`
+	// The published document's behaviors, a JSON object keyed by behavior
+	// id; `{}` when it has none.
+	BehaviorsJson string `protobuf:"bytes,16,opt,name=behaviors_json,json=behaviorsJson,proto3" json:"behaviors_json,omitempty"`
+	// The draft's behaviors, the same shape. Set only when `has_draft`.
+	DraftBehaviorsJson string `protobuf:"bytes,17,opt,name=draft_behaviors_json,json=draftBehaviorsJson,proto3" json:"draft_behaviors_json,omitempty"`
+	// The inputs the composition takes, a JSON array of ConfigFields; `[]`
+	// when it takes none. Not drafted: both documents declare these.
+	InputsJson    string `protobuf:"bytes,18,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Scene) Reset() {
@@ -176,6 +188,34 @@ func (x *Scene) GetEditorStateJson() string {
 	return ""
 }
 
+func (x *Scene) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Scene) GetBehaviorsJson() string {
+	if x != nil {
+		return x.BehaviorsJson
+	}
+	return ""
+}
+
+func (x *Scene) GetDraftBehaviorsJson() string {
+	if x != nil {
+		return x.DraftBehaviorsJson
+	}
+	return ""
+}
+
+func (x *Scene) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
 type CreateSceneRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -188,6 +228,12 @@ type CreateSceneRequest struct {
 	LayoutJson    string `protobuf:"bytes,5,opt,name=layout_json,json=layoutJson,proto3" json:"layout_json,omitempty"`
 	CreatedByType string `protobuf:"bytes,6,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string `protobuf:"bytes,7,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	// "scene" or "alert"; empty creates a scene. Anything else is refused.
+	Kind string `protobuf:"bytes,8,opt,name=kind,proto3" json:"kind,omitempty"`
+	// JSON object of behaviors keyed by id; empty stores `{}`.
+	BehaviorsJson string `protobuf:"bytes,9,opt,name=behaviors_json,json=behaviorsJson,proto3" json:"behaviors_json,omitempty"`
+	// JSON array of input fields; empty stores `[]`.
+	InputsJson    string `protobuf:"bytes,10,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -260,6 +306,27 @@ func (x *CreateSceneRequest) GetCreatedByType() string {
 func (x *CreateSceneRequest) GetCreatedByRef() string {
 	if x != nil {
 		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *CreateSceneRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CreateSceneRequest) GetBehaviorsJson() string {
+	if x != nil {
+		return x.BehaviorsJson
+	}
+	return ""
+}
+
+func (x *CreateSceneRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
 	}
 	return ""
 }
@@ -372,11 +439,14 @@ type UpdateSceneRequest struct {
 	WidgetsJson string                 `protobuf:"bytes,4,opt,name=widgets_json,json=widgetsJson,proto3" json:"widgets_json,omitempty"`
 	LayoutJson  string                 `protobuf:"bytes,5,opt,name=layout_json,json=layoutJson,proto3" json:"layout_json,omitempty"`
 	// Store a draft, the same shapes as `widgets_json` and `layout_json`.
-	// Both are set together; empty leaves the draft unchanged.
+	// Both are set together; empty leaves the draft unchanged. The draft's
+	// behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+	// that is empty, so a stored draft never pairs with behaviors from an
+	// older one.
 	DraftWidgetsJson string `protobuf:"bytes,6,opt,name=draft_widgets_json,json=draftWidgetsJson,proto3" json:"draft_widgets_json,omitempty"`
 	DraftLayoutJson  string `protobuf:"bytes,7,opt,name=draft_layout_json,json=draftLayoutJson,proto3" json:"draft_layout_json,omitempty"`
-	// Drop the draft (it was published or discarded). Wins over a draft
-	// set in the same request.
+	// Drop the draft (it was published or discarded), behaviors included.
+	// Wins over a draft set in the same request.
 	ClearDraft bool `protobuf:"varint,8,opt,name=clear_draft,json=clearDraft,proto3" json:"clear_draft,omitempty"`
 	// Store the scene editor's sync state, a JSON object. Written in the
 	// same row update as the documents and draft in this request, so the
@@ -389,8 +459,19 @@ type UpdateSceneRequest struct {
 	// Drop the stored editor state in the same row update. Refused
 	// together with `editor_state_json`.
 	ClearEditorState bool `protobuf:"varint,10,opt,name=clear_editor_state,json=clearEditorState,proto3" json:"clear_editor_state,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The published behaviors, a JSON object; empty leaves them unchanged.
+	// A document like `widgets_json`: refused when not a JSON object.
+	BehaviorsJson string `protobuf:"bytes,11,opt,name=behaviors_json,json=behaviorsJson,proto3" json:"behaviors_json,omitempty"`
+	// The draft's behaviors, a JSON object, written only with a draft
+	// (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+	// JSON object, or set without the draft.
+	DraftBehaviorsJson string `protobuf:"bytes,12,opt,name=draft_behaviors_json,json=draftBehaviorsJson,proto3" json:"draft_behaviors_json,omitempty"`
+	// The inputs, a JSON array of input fields; empty leaves them
+	// unchanged. A document like `widgets_json`: refused when not a JSON
+	// array.
+	InputsJson    string `protobuf:"bytes,13,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateSceneRequest) Reset() {
@@ -493,6 +574,27 @@ func (x *UpdateSceneRequest) GetClearEditorState() bool {
 	return false
 }
 
+func (x *UpdateSceneRequest) GetBehaviorsJson() string {
+	if x != nil {
+		return x.BehaviorsJson
+	}
+	return ""
+}
+
+func (x *UpdateSceneRequest) GetDraftBehaviorsJson() string {
+	if x != nil {
+		return x.DraftBehaviorsJson
+	}
+	return ""
+}
+
+func (x *UpdateSceneRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
 type DeleteSceneRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -538,11 +640,14 @@ func (x *DeleteSceneRequest) GetId() string {
 }
 
 type ListScenesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
-	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	SortBy        string                 `protobuf:"bytes,4,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"` // e.g. "name", "created_at", "updated_at"
-	SortDesc      bool                   `protobuf:"varint,5,opt,name=sort_desc,json=sortDesc,proto3" json:"sort_desc,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Page     int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	SortBy   string                 `protobuf:"bytes,4,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"` // e.g. "name", "created_at", "updated_at"
+	SortDesc bool                   `protobuf:"varint,5,opt,name=sort_desc,json=sortDesc,proto3" json:"sort_desc,omitempty"`
+	// Which kind to list, "scene" or "alert". Empty lists scenes, so a
+	// caller that predates alerts never sees one.
+	Kind          string `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -603,6 +708,13 @@ func (x *ListScenesRequest) GetSortDesc() bool {
 		return x.SortDesc
 	}
 	return false
+}
+
+func (x *ListScenesRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
 }
 
 type ListScenesResponse struct {
@@ -685,7 +797,7 @@ var File_scene_proto protoreflect.FileDescriptor
 
 const file_scene_proto_rawDesc = "" +
 	"\n" +
-	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
+	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\x05\n" +
 	"\x05Scene\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
@@ -703,7 +815,12 @@ const file_scene_proto_rawDesc = "" +
 	"\x12draft_widgets_json\x18\v \x01(\tR\x10draftWidgetsJson\x12*\n" +
 	"\x11draft_layout_json\x18\f \x01(\tR\x0fdraftLayoutJson\x12\x1b\n" +
 	"\thas_draft\x18\r \x01(\bR\bhasDraft\x12*\n" +
-	"\x11editor_state_json\x18\x0e \x01(\tR\x0feditorStateJsonJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xf2\x01\n" +
+	"\x11editor_state_json\x18\x0e \x01(\tR\x0feditorStateJson\x12\x12\n" +
+	"\x04kind\x18\x0f \x01(\tR\x04kind\x12%\n" +
+	"\x0ebehaviors_json\x18\x10 \x01(\tR\rbehaviorsJson\x120\n" +
+	"\x14draft_behaviors_json\x18\x11 \x01(\tR\x12draftBehaviorsJson\x12\x1f\n" +
+	"\vinputs_json\x18\x12 \x01(\tR\n" +
+	"inputsJsonJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xce\x02\n" +
 	"\x12CreateSceneRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12!\n" +
@@ -711,12 +828,17 @@ const file_scene_proto_rawDesc = "" +
 	"\vlayout_json\x18\x05 \x01(\tR\n" +
 	"layoutJson\x12&\n" +
 	"\x0fcreated_by_type\x18\x06 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRefJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
+	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRef\x12\x12\n" +
+	"\x04kind\x18\b \x01(\tR\x04kind\x12%\n" +
+	"\x0ebehaviors_json\x18\t \x01(\tR\rbehaviorsJson\x12\x1f\n" +
+	"\vinputs_json\x18\n" +
+	" \x01(\tR\n" +
+	"inputsJsonJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
 	"\x0fGetSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
 	"\rSceneResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
-	"\x05scene\x18\x02 \x01(\v2\f.scene.SceneR\x05scene\"\xf3\x02\n" +
+	"\x05scene\x18\x02 \x01(\v2\f.scene.SceneR\x05scene\"\xed\x03\n" +
 	"\x12UpdateSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -730,14 +852,19 @@ const file_scene_proto_rawDesc = "" +
 	"clearDraft\x12*\n" +
 	"\x11editor_state_json\x18\t \x01(\tR\x0feditorStateJson\x12,\n" +
 	"\x12clear_editor_state\x18\n" +
-	" \x01(\bR\x10clearEditorState\"$\n" +
+	" \x01(\bR\x10clearEditorState\x12%\n" +
+	"\x0ebehaviors_json\x18\v \x01(\tR\rbehaviorsJson\x120\n" +
+	"\x14draft_behaviors_json\x18\f \x01(\tR\x12draftBehaviorsJson\x12\x1f\n" +
+	"\vinputs_json\x18\r \x01(\tR\n" +
+	"inputsJson\"$\n" +
 	"\x12DeleteSceneRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x90\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xa4\x01\n" +
 	"\x11ListScenesRequest\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x17\n" +
 	"\asort_by\x18\x04 \x01(\tR\x06sortBy\x12\x1b\n" +
-	"\tsort_desc\x18\x05 \x01(\bR\bsortDescJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xbc\x01\n" +
+	"\tsort_desc\x18\x05 \x01(\bR\bsortDesc\x12\x12\n" +
+	"\x04kind\x18\x06 \x01(\tR\x04kindJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xbc\x01\n" +
 	"\x12ListScenesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06scenes\x18\x02 \x03(\v2\f.scene.SceneR\x06scenes\x12\x1f\n" +

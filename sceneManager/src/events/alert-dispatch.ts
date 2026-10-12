@@ -205,7 +205,9 @@ async function fanOutAlert(
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
-    if (!state) {
+    // An alert composition is played by steps, never delivered to: only a
+    // scene's alert widgets receive alerts, even if a page were open on one.
+    if (!state || state.kind !== "scene") {
       continue;
     }
     const targetInstanceIds = alertWidgetsNamed(state.instances, alert.target).map((instance) => instance.id);

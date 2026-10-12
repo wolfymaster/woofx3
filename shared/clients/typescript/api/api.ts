@@ -763,6 +763,39 @@ export interface ModuleOAuthConnected {
   scope: string[];
 }
 
+/**
+ * What a scenes-table row composes. A `scene` is shown by overlays; an
+ * `alert` is a library entry an alert step's layout is copied from, and is
+ * never an overlay page. Fixed at creation.
+ */
+export type CompositionKind = "scene" | "alert";
+
+/**
+ * An alert composition: the same document as a scene (widgets, layout,
+ * behaviors) plus its inputs, the `{{id}}` placeholders a client fills in
+ * when it copies the alert into a step. The JSON fields
+ * are passed through as stored, like a scene's `widgetsJson`; the document
+ * is edited through the editor socket (`getSceneEditorSession` takes an
+ * alert's id as well as a scene's).
+ */
+export interface AlertComposition {
+  id: string;
+  name: string;
+  description: string;
+  /** The published placements, in stacking order, as the scene editor stores them. */
+  widgetsJson: string;
+  /** The published canvas: `width`, `height`, `backgroundColor`, and any other keys. */
+  layoutJson: string;
+  /** The published behaviors, a JSON object keyed by behavior id. */
+  behaviorsJson: string;
+  /** The inputs, a JSON array of input fields (`{ id, label, type, ... }`, the engine's ConfigField). */
+  inputsJson: string;
+  /** Whether the editor holds unpublished changes. A copy is taken from the published document. */
+  hasDraft: boolean;
+  createdByType: string;
+  createdByRef: string;
+}
+
 /** Returned by `getSceneEditorSession`. */
 export interface SceneEditorSession {
   token: string;
@@ -1696,6 +1729,48 @@ export interface Woofx3EngineApi {
     }
   ): Promise<{ success: boolean }>;
   deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }>;
+
+  // Alert compositions
+  //
+  // Stored beside scenes (the same row, `kind: "alert"`) and edited with
+  // the same editor socket, but never listed with scenes, never shown as an
+  // overlay page and never given an overlay token. They form a library: a
+  // client copies one into an alert step's own layout, filling its inputs,
+  // and the step never refers back to it. Each change emits the `scene.*`
+  // webhooks with `kind: "alert"` in the snapshot. Requires the
+  // `compositions.alerts` capability.
+  listAlertCompositions(): Promise<{ compositions: AlertComposition[] }>;
+  /** The alert, or null when the id is unknown or names a scene. */
+  getAlertComposition(id: string): Promise<AlertComposition | null>;
+  /**
+   * Create an alert. Omitted documents start empty (`[]`, `{}`, `{}`, `[]`).
+   * `behaviorsJson` must be a JSON object and `inputsJson` an array of
+   * input fields with unique ids; anything else is refused.
+   */
+  createAlertComposition(data: {
+    name: string;
+    description?: string;
+    widgetsJson?: string;
+    layoutJson?: string;
+    behaviorsJson?: string;
+    inputsJson?: string;
+    correlationKey?: string;
+  }): Promise<{ id: string }>;
+  /**
+   * Rename an alert, or replace the inputs it declares. Patch semantics:
+   * omit a field to leave it unchanged. The document itself changes through
+   * the editor socket. `success` is false when the id is unknown, names a
+   * scene, or the values are refused.
+   */
+  updateAlertComposition(
+    id: string,
+    data: { name?: string; description?: string; inputsJson?: string; correlationKey?: string }
+  ): Promise<{ success: boolean }>;
+  /**
+   * Delete an alert. Steps that started from it keep their own copies.
+   * `success` is false when the id is unknown or names a scene.
+   */
+  deleteAlertComposition(id: string, correlationKey?: string): Promise<{ success: boolean }>;
 
   // Stream status
   /** The broadcaster's live state. Single-broadcaster per deployment, so
