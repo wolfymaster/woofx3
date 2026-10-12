@@ -67,8 +67,9 @@ target enters or exits (`params.phase` is `in` or `out`), `effect` modifies
 it for a while, and `activity` is the window in which it is active. `kind` is
 a host kind the overlay plays on the widget's box (a transition's `fade`,
 `slide`, `zoom`, `bounce`, `spin`, `pop`, `blur`; an effect's `shake`,
-`pulse`, `float`, `glow`, `flash`) or a kind the widget declares for itself,
-a lowercase token (`typewriter`), which the widget plays. `timing` is
+`pulse`, `float`, `glow`, `flash`, `blur`) or a kind the widget declares
+for itself in its manifest's `transitions` or `effects`, a lowercase token
+(`typewriter`), which the widget plays. `timing` is
 anchored rather than absolute: `anchor` (`start`, `end`, `enter`, `exit`,
 `complete`), `offsetMs`, `durationMs` (or `"until-exit"`), `easing`, and for
 `complete` optionally the `node` whose completion counts. A behavior whose
@@ -132,7 +133,22 @@ defaults for new entries and migrations from older shapes: a placement that
 kept its transitions as `transitionIn` and `transitionOut` in `extra` has
 them lifted into transition behaviors. Whether a widget actually declares a
 widget kind depends on what is installed, so it is checked where the catalog
-is known, not by the registry.
+is known, not by the registry: the strict registry accepts any well-formed
+kind that is not a host kind as the widget's own.
+
+The catalog's declared kinds (`widgets.behavior_kinds`, see
+[Widget entry](../barkloader/modules.md#declared-behavior-kinds)) reach each
+placement's meta as `behaviorKinds: { transitions: string[], effects:
+string[] }`, ids only. The overlay plans with them
+(`PlanOptions.declaredKinds` in @woofx3/scene's runtime/plan.ts): a behavior
+of a widget kind its widget does not declare is skipped, reported once as
+`undeclared-kind` in the page's console, and never sent to the frame; a
+placement whose meta has no `behaviorKinds` (its widget is not in the
+catalog, or the catalog could not be read) declares none. Host kinds need no
+declaration. An alert is checked when it is dispatched: `parseAlertLayout`
+drops such a behavior with a reason (`the widget ... does not play the
+transition "wave"`), like any other behavior the engine cannot play, so a
+delivered alert holds only kinds its widgets play.
 
 A registry is strict or tolerant. sceneManager validates every item with the
 strict one: an entry of a type it does not know, or with a field (or a host

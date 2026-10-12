@@ -138,8 +138,12 @@ manager validates the layout against the widget catalog and records one scene ev
 each running scene that has an alert widget answering to the target; a scene nobody has
 open gets nothing.
 
-For each alert, the page frames the layout's widgets inside the alert widget's area,
-scaled from the layout's canvas, at `/scene/{sceneId}/alert/{eventId}/widget/{widgetId}`.
+Every alert is delivered as a composition (a layout in the older list shape is
+converted on the way in). For each alert, the page plays it with the scene runtime
+(`@woofx3/scene/runtime`) inside the alert widget's area, scaled from the layout's
+canvas: each widget is placed, rotated, faded and stacked as its placement says, and
+its transitions and effects play around it. A widget whose placement is hidden does not
+play at all. Each frame loads from `/scene/{sceneId}/alert/{eventId}/widget/{widgetId}`.
 That frame is assembled only from the stored scene event, so it can show nothing the
 scene manager did not validate and deliver to that scene. Each layout widget boots with
 `surface: "alert"` and receives one `alert` event whose `data` is the triggering
@@ -147,8 +151,9 @@ CloudEvent (`{ type, data }`, or `null` when nothing triggered the workflow).
 
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
-none. Once every timed widget is done, or after 5 seconds when none is timed, the page
-removes the frames, acks the scene event, and plays the alert widget's next alert.
+none. Once every timed widget is done, or after 5 seconds when none is timed, the
+widgets play their exits; once those are over the page removes the frames, acks the
+scene event, and plays the alert widget's next alert.
 
 #### Skip, clear and replay
 

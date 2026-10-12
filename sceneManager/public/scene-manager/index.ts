@@ -1,9 +1,12 @@
 // Client runtime entry — the entire browser-side surface besides the
-// vendored data-star bundle. Replaces streamware/ui's React SPA:
-// mounts one sandboxed iframe per widget instance, bridges the P1
-// widget<->host protocol, runs the per-instance client-side event
-// queue, and drives the Disconnected banner from the SSE connection
-// state.
+// vendored data-star bundle. Plays the scene's composition with the scene
+// runtime (@woofx3/scene/runtime): one DOM renderer on #widgets places,
+// stacks, shows and animates every placement, and one scheduler keeps it in
+// step with the scene's timeline as widgets paint and the scene changes.
+// The page fills each placement's slot with its content (a sandboxed iframe,
+// or an alert area it draws itself), bridges the P1 widget<->host protocol,
+// runs the per-instance client-side event queue, and drives the
+// Disconnected banner from the SSE connection state.
 
 import { AlertWidget } from "./alert-widget";
 import {
@@ -19,11 +22,11 @@ import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
 import {
-  applyPreviewLayout,
   draftFrameKey,
   parsePreviewLayout,
   parsePreviewPlacements,
   settingsOf,
+  transientOfPreviewLayout,
   type PreviewWidgetLayout,
 } from "./preview-layout";
 import {
@@ -42,15 +45,20 @@ import {
   type SceneConfig,
   type WidgetPlacementConfig,
 } from "./scene-update";
-import { encodePlacementBoot } from "@woofx3/module-sdk";
+import { encodePlacementBoot, type WidgetBehaviorState } from "@woofx3/module-sdk";
+import { declaresKind, NO_DECLARED_KINDS, PROFILES } from "@woofx3/scene/model";
+import { createDomRenderer, createScheduler, type Scheduler } from "@woofx3/scene/runtime";
 import {
   type SceneOpsEvent,
   type SceneSnapshot,
   applyOps,
+  compositionOfConfig,
   configOfSnapshot,
   mergeMeta,
   parseSnapshot,
 } from "./scene-document";
+import { PAGE_CLOCK } from "./page-clock";
+import { BehaviorRelay, entranceOf } from "./widget-behaviors";
 
 declare global {
   interface Window {
@@ -80,34 +88,22 @@ function generateNonce(): string {
 /**
  * A frame's URL with its placement in the fragment (see `WidgetPlacementBoot`):
  * the document is the widget's and cached, the placement never reaches the
- * server.
+ * server. `entrance` is the widget's own entrance, which it is marked with
+ * from boot (see `entranceOf`).
  */
-function frameSrc(instance: WidgetPlacementConfig, nonce: string): string {
+function frameSrc(instance: WidgetPlacementConfig, nonce: string, entrance: WidgetBehaviorState | null): string {
   const boot = encodePlacementBoot({
     nonce,
     instanceId: instance.id,
     settings: instance.settings,
     linkedResources: instance.linkedResources ?? {},
+    ...(entrance === null ? {} : { behavior: entrance }),
   });
   return `${instance.frameUrl}#${boot}`;
 }
 
-/** A placement hidden in the editor keeps its frame running, out of sight. */
-function showIf(element: HTMLElement | undefined, visible: boolean | undefined): void {
-  if (element) {
-    element.style.visibility = visible === false ? "hidden" : "";
-  }
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-}
-
-function placeAt(element: HTMLElement, position: WidgetPlacementConfig["position"]): void {
-  element.style.left = `${position.x}px`;
-  element.style.top = `${position.y}px`;
-  element.style.width = `${position.width}px`;
-  element.style.height = `${position.height}px`;
 }
 
 function renderConnected(connected: boolean): void {
@@ -148,8 +144,6 @@ function main(): void {
   const view = new URLSearchParams(location.search).get("view") === "draft" ? "draft" : "published";
 
   const bridges = new Set<WidgetBridge>();
-  // Every placed element by widget instance id, for the editor's live layout.
-  const widgetElements = new Map<string, HTMLElement>();
   const queueManager = new EventQueueManager();
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
@@ -192,22 +186,40 @@ function main(): void {
     }).catch(() => {});
   }
 
-  // Each placement on the page by id: what it was mounted from, how to remove
-  // it, its bridge when it is framed, and a frame being swapped in, if any.
-  interface MountedPlacement {
-    config: WidgetPlacementConfig;
+  // What each placement on the page was last configured with, by id. The
+  // runtime decides where a placement is and whether it shows; this is what
+  // its content (a frame, or an alert area) is made from.
+  let configs = new Map<string, WidgetPlacementConfig>(sceneData.widgets.map((instance) => [instance.id, instance]));
+
+  // The content in each placement's slot: how to remove it, its bridge when
+  // it is framed, and a frame being swapped in, if any.
+  interface MountedContent {
+    slot: HTMLElement;
     unmount: () => void;
     bridge: WidgetBridge | null;
     swap: { cancel: () => void } | null;
   }
-  const mounted = new Map<string, MountedPlacement>();
+  const contents = new Map<string, MountedContent>();
 
-  const mountAlertWidget = (instance: WidgetPlacementConfig): (() => void) => {
+  // The composition the page plays: placements from `configs`, everything
+  // else from the scene's document.
+  let composition = compositionOfConfig(sceneData, sceneDoc?.doc ?? null);
+  // The runtime calls back into the page (a frame painted) only from events
+  // after it was created, never while `createScheduler` runs.
+  let scheduler: Scheduler | null = null;
+  function playing(): Scheduler {
+    if (scheduler === null) {
+      throw new Error("scene: the scene runtime is not running yet");
+    }
+    return scheduler;
+  }
+
+  const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state));
+
+  const mountAlertArea = (instance: WidgetPlacementConfig, slot: HTMLElement): (() => void) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
-    placeAt(element, instance.position);
-    container.appendChild(element);
-    widgetElements.set(instance.id, element);
+    slot.appendChild(element);
 
     // The page plays alerts itself, so it registers the queue a framed
     // widget would register on subscribe: one alert at a time.
@@ -234,12 +246,14 @@ function main(): void {
       () => {},
       (eventId) => alertWidget.stop(eventId)
     );
+    // The page draws the area itself, so it has painted as soon as it is
+    // in the page. Reported once the runtime's current update is done.
+    queueMicrotask(() => playing().widgetRendered(instance.id));
 
     return () => {
       // Finishes what is playing while the queue is still there to hear it.
       alertWidget.dispose();
       queueManager.unregister(subId);
-      widgetElements.delete(instance.id);
       element.remove();
     };
   };
@@ -250,12 +264,20 @@ function main(): void {
     unmount: () => void;
   }
 
-  /** A widget's frame. A `hidden` one is loading to replace another (see `swapFrame`). */
-  const mountFramedWidget = (instance: WidgetPlacementConfig, hidden = false, onRendered?: () => void): Frame => {
+  /**
+   * A widget's frame, filling its slot. A `swapping` one is loading to
+   * replace another (see `swapFrame`): it stays transparent until it has
+   * painted, and is not marked with the widget's entrance, which has played.
+   */
+  const mountFrame = (
+    instance: WidgetPlacementConfig,
+    slot: HTMLElement,
+    swapping: boolean,
+    onRendered: () => void
+  ): Frame => {
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
-    placeAt(iframe, instance.position);
-    if (hidden) {
+    if (swapping) {
       iframe.style.opacity = "0";
     }
     // No allow-same-origin: the frame runs with an opaque origin, and
@@ -275,6 +297,7 @@ function main(): void {
       onStatusReport: (report) => postStatus(instance.id, report),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;
+        playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
         queueManager.register(
           subId,
           instance.id,
@@ -312,13 +335,14 @@ function main(): void {
       sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
     };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    iframe.src = frameSrc(instance, nonce);
+    const declared = instance.behaviorKinds ?? NO_DECLARED_KINDS;
+    const entrance = swapping
+      ? null
+      : entranceOf(composition, instance.id, (type, kind) => declaresKind(declared, type, kind));
+    iframe.src = frameSrc(instance, nonce, entrance);
 
     bridges.add(bridge);
-    container.appendChild(iframe);
-    if (!hidden) {
-      widgetElements.set(instance.id, iframe);
-    }
+    slot.appendChild(iframe);
     bridge.attach(iframe);
 
     const unmount = (): void => {
@@ -326,42 +350,71 @@ function main(): void {
       bridge.detach();
       bridges.delete(bridge);
       moduleState.unwatchAll(storageTarget);
-      if (widgetElements.get(instance.id) === iframe) {
-        widgetElements.delete(instance.id);
-      }
       iframe.remove();
     };
     return { element: iframe, bridge, unmount };
   };
 
-  function mount(instance: WidgetPlacementConfig): void {
-    if (instance.hostsSurface === "alert") {
-      mounted.set(instance.id, { config: instance, unmount: mountAlertWidget(instance), bridge: null, swap: null });
-    } else {
-      const frame = mountFramedWidget(instance);
-      mounted.set(instance.id, { config: instance, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+  /** Put a placement's content in its slot, from its current config. */
+  function mountContent(slot: HTMLElement, id: string): void {
+    const instance = configs.get(id);
+    if (!instance) {
+      throw new Error(`scene: placement ${id} is on the page with no config`);
     }
-    showIf(widgetElements.get(instance.id), instance.visible);
+    if (instance.hostsSurface === "alert") {
+      contents.set(id, { slot, unmount: mountAlertArea(instance, slot), bridge: null, swap: null });
+    } else {
+      const frame = mountFrame(instance, slot, false, () => playing().widgetRendered(id));
+      contents.set(id, { slot, unmount: frame.unmount, bridge: frame.bridge, swap: null });
+    }
   }
 
-  function unmountPlacement(id: string): void {
-    const entry = mounted.get(id);
+  function unmountContent(id: string): void {
+    const entry = contents.get(id);
     entry?.swap?.cancel();
     entry?.unmount();
-    mounted.delete(id);
+    contents.delete(id);
   }
+
+  const renderer = createDomRenderer<HTMLElement>({
+    document,
+    root: container,
+    mountContent: (slot, id, widget) => {
+      if (configs.get(id)?.widgetCanonicalId !== widget) {
+        throw new Error(`scene: placement ${id} is mounted as ${widget}, which its config does not name`);
+      }
+      mountContent(slot, id);
+      return () => {
+        unmountContent(id);
+        relay.forget(id);
+      };
+    },
+    onDelegate: (id, request) => relay.handle(id, request),
+  });
+  scheduler = createScheduler({
+    doc: composition,
+    profile: PROFILES.scene,
+    clock: PAGE_CLOCK,
+    renderer,
+    // Read at every plan, so it follows `configs` as the scene changes.
+    declaredKinds: (id) => configs.get(id)?.behaviorKinds,
+    onSkipped: (skips) => console.warn("[scene-manager] scene behaviors skipped", skips),
+  });
 
   /**
    * Give a placement a new frame without a blank moment: the new frame loads
-   * invisibly at the same spot and takes the old one's place once it has
+   * invisibly in the same slot and takes the old one's place once it has
    * painted. A newer swap for the placement cancels this one. An alert area
-   * has no frame, so it is simply mounted again.
+   * has no frame, so its content is simply mounted again.
    */
   function swapFrame(next: WidgetPlacementConfig): void {
-    const entry = mounted.get(next.id);
-    if (!entry || next.hostsSurface !== "" || entry.config.hostsSurface !== "") {
-      unmountPlacement(next.id);
-      mount(next);
+    const entry = contents.get(next.id);
+    if (!entry) {
+      return;
+    }
+    if (next.hostsSurface !== "" || entry.bridge === null) {
+      unmountContent(next.id);
+      mountContent(entry.slot, next.id);
       return;
     }
     entry.swap?.cancel();
@@ -375,19 +428,15 @@ function main(): void {
       if (timer !== null) {
         clearTimeout(timer);
       }
-      const old = widgetElements.get(next.id);
-      fresh.element.style.zIndex = old?.style.zIndex ?? "";
-      fresh.element.style.display = old?.style.display ?? "";
       fresh.element.style.opacity = "";
-      showIf(fresh.element, next.visible);
       entry.unmount();
-      widgetElements.set(next.id, fresh.element);
-      mounted.set(next.id, { config: next, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
-      if (previewLayout) {
-        applyPreviewLayout(widgetElements, previewLayout);
+      contents.set(next.id, { slot: entry.slot, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
+      for (const state of relay.ongoing(next.id)) {
+        fresh.bridge.sendBehavior(state);
       }
+      playing().widgetRendered(next.id);
     };
-    const fresh = mountFramedWidget(next, true, finish);
+    const fresh = mountFrame(next, entry.slot, true, finish);
     timer = setTimeout(finish, SWAP_TIMEOUT_MS);
     entry.swap = {
       cancel: () => {
@@ -408,39 +457,24 @@ function main(): void {
    * script read one that changed (see `settingsUpdate`).
    */
   function updateSettings(id: string, settings: Record<string, unknown>): void {
-    const entry = mounted.get(id);
-    if (!entry) {
+    const config = configs.get(id);
+    const entry = contents.get(id);
+    if (!config || !entry) {
       return;
     }
     // While a frame is being swapped in, nothing is known about it yet.
     const reads = entry.swap || !entry.bridge ? null : entry.bridge.settingsReads();
-    const decision = settingsUpdate(entry.config.settings, settings, reads);
+    const decision = settingsUpdate(config.settings, settings, reads);
     if (decision === "none") {
       return;
     }
+    configs.set(id, { ...config, settings });
     if (decision === "patch" && entry.bridge) {
       entry.bridge.sendSettings(settings);
-      entry.config = { ...entry.config, settings };
       return;
     }
-    swapFrame({ ...entry.config, settings });
+    swapFrame({ ...config, settings });
   }
-
-  // Stacked by z-index rather than by document order: moving an iframe in
-  // the document reloads it, which is what a scene update avoids.
-  function stack(order: readonly string[]): void {
-    order.forEach((id, index) => {
-      const element = widgetElements.get(id);
-      if (element) {
-        element.style.zIndex = String(index);
-      }
-    });
-  }
-
-  for (const instance of sceneData.widgets) {
-    mount(instance);
-  }
-  stack(sceneData.widgets.map((instance) => instance.id));
 
   let mediaRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   // Fetches of the scene that failed in a row since one last applied; a
@@ -455,8 +489,8 @@ function main(): void {
       mediaRefreshTimer = null;
     }
     let earliest: number | null = null;
-    for (const entry of mounted.values()) {
-      const expiry = earliestMediaProxyExpiry(entry.config.settings, entry.config.mediaProxyBase);
+    for (const config of configs.values()) {
+      const expiry = earliestMediaProxyExpiry(config.settings, config.mediaProxyBase);
       if (expiry !== null && (earliest === null || expiry < earliest)) {
         earliest = expiry;
       }
@@ -501,7 +535,7 @@ function main(): void {
   // in the key, so it asks once per change rather than once per message; the
   // editor's op putting it in the scene brings the page back here.
   const draftKeyOf = (placements: readonly unknown[]): string =>
-    draftFrameKey(placements, (id) => mounted.get(id)?.config.hostsSurface === "alert") +
+    draftFrameKey(placements, (id) => configs.get(id)?.hostsSurface === "alert") +
     JSON.stringify(
       placements.flatMap((raw) => {
         const placement = asRecord(raw);
@@ -527,7 +561,7 @@ function main(): void {
       const layout = parsePreviewLayout(event.data);
       if (layout) {
         previewLayout = layout;
-        applyPreviewLayout(widgetElements, layout);
+        playing().setTransient(transientOfPreviewLayout(layout, configs.keys()));
       }
       const placements = parsePreviewPlacements(event.data);
       if (placements) {
@@ -537,10 +571,10 @@ function main(): void {
         // too, since one is mounted again for any change.
         for (const raw of placements) {
           const placement = asRecord(raw);
-          const entry = typeof placement.id === "string" ? mounted.get(placement.id) : undefined;
+          const config = typeof placement.id === "string" ? configs.get(placement.id) : undefined;
           const settings = draftSettingsOf(placement);
-          if (entry && entry.config.hostsSurface === "" && themeOf(entry.config.settings) === themeOf(settings)) {
-            updateSettings(entry.config.id, settings);
+          if (config && config.hostsSurface === "" && themeOf(config.settings) === themeOf(settings)) {
+            updateSettings(config.id, settings);
           }
         }
         const key = draftKeyOf(placements);
@@ -570,35 +604,34 @@ function main(): void {
         }
       }
     }
-    const plan = planSceneUpdate(
-      [...mounted.values()].map((entry) => entry.config),
-      next.widgets
+    const previous = configs;
+    const plan = planSceneUpdate([...previous.values()], next.widgets);
+    // A placement whose frame stays keeps the settings its frame has until
+    // `updateSettings` below decides how the new ones reach it.
+    const kept = new Set(plan.place.map((instance) => instance.id));
+    configs = new Map(
+      next.widgets.map((instance) => {
+        const old = previous.get(instance.id);
+        return [instance.id, kept.has(instance.id) && old ? { ...instance, settings: old.settings } : instance];
+      })
     );
-    for (const id of plan.remove) {
-      unmountPlacement(id);
-    }
-    for (const instance of plan.place) {
-      const entry = mounted.get(instance.id);
-      const element = widgetElements.get(instance.id);
-      if (entry && element) {
-        entry.config = { ...instance, settings: entry.config.settings };
-        placeAt(element, instance.position);
-        showIf(element, instance.visible);
-        updateSettings(instance.id, instance.settings);
+    composition = compositionOfConfig(next, sceneDoc?.doc ?? null, fromDraft ? draftPlacements : null);
+    // Removes, mounts and moves placements; one whose widget changed is
+    // mounted again, from its new config.
+    playing().setDocument(composition);
+    for (const instance of plan.replace) {
+      if (previous.get(instance.id)?.widgetCanonicalId === instance.widgetCanonicalId) {
+        swapFrame(instance);
       }
     }
-    for (const instance of plan.replace) {
-      swapFrame(instance);
+    for (const instance of plan.place) {
+      updateSettings(instance.id, instance.settings);
     }
-    for (const instance of plan.mount) {
-      mount(instance);
+    if (previewLayout) {
+      playing().setTransient(transientOfPreviewLayout(previewLayout, configs.keys()));
     }
-    stack(plan.order);
     scheduleMediaRefresh();
     applySceneBackground(document.body, next.layout);
-    if (previewLayout) {
-      applyPreviewLayout(widgetElements, previewLayout);
-    }
   }
 
   /**

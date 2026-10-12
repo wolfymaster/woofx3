@@ -4,7 +4,7 @@ import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
-import type { OverlayHost } from "./scene-host";
+import { type OverlayHost, parseWidgetCanonicalId } from "./scene-host";
 import {
   type FrameTheme,
   buildThemeStyle,
@@ -319,17 +319,19 @@ export class FrameAssembler {
   ): Promise<Response> {
     const event = await this.host.loadSceneEvent(sceneId, eventId);
     const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
-    const widget = delivery?.layout.widgets.find((w) => w.id === widgetId);
-    if (!widget) {
+    const widget =
+      delivery && Object.hasOwn(delivery.layout.widgets, widgetId) ? delivery.layout.widgets[widgetId] : undefined;
+    const canonical = widget ? parseWidgetCanonicalId(widget.widget) : null;
+    if (!widget || !canonical) {
       return this.blankResponse();
     }
     return this.assembleFrame(
       sceneId,
       {
-        instanceId: `${eventId}.${widget.id}`,
-        moduleId: widget.moduleId,
-        manifestId: widget.manifestId,
-        widgetCanonicalId: widget.widgetCanonicalId,
+        instanceId: `${eventId}.${widgetId}`,
+        moduleId: canonical.moduleKey,
+        manifestId: canonical.manifestId,
+        widgetCanonicalId: widget.widget,
         settings: widget.settings,
         surface: "alert",
       },

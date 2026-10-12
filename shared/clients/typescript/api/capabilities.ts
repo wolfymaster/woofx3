@@ -11,6 +11,12 @@
  * Every id must also be listed in docs/services/engine-capabilities.md.
  */
 export const ENGINE_CAPABILITIES = {
+  /**
+   * An Alert step's inline `layout` may be a composition (`{ layout, widgets,
+   * behaviors }`: the canvas, placements keyed by id, and behaviors keyed by
+   * id) as well as the list shape (`{ width, height, widgets: [] }`).
+   */
+  alertsCompositionLayout: "alerts.compositionLayout",
   /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
   analyticsSessions: "analytics.sessions",
   /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */

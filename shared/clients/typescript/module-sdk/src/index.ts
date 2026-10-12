@@ -62,6 +62,7 @@ export type {
   WidgetSettingsChangedMessage,
   WidgetSettingsReadsMessage,
   WidgetToHostMessage,
+  WidgetBehaviorMessage,
 } from "./widget-protocol";
 export {
   PROTOCOL_VERSION,
@@ -74,6 +75,21 @@ export {
   isWidgetProtocolEnvelope,
   isWidgetTheme,
 } from "./widget-protocol";
+
+export type {
+  WidgetBehaviorEasing,
+  WidgetBehaviorKindDefinition,
+  WidgetBehaviorState,
+  WidgetBehaviorType,
+  WidgetTransitionPhase,
+} from "./widget-behaviors";
+export {
+  WIDGET_BEHAVIOR_EASINGS,
+  WIDGET_BEHAVIOR_KIND,
+  WIDGET_BEHAVIOR_TYPES,
+  applyWidgetBehavior,
+  isWidgetBehaviorState,
+} from "./widget-behaviors";
 
 export type { BindingDocument } from "./widget-bindings";
 export { applySettingBindings } from "./widget-bindings";

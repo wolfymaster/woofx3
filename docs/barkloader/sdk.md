@@ -310,6 +310,56 @@ host.onEvent((event) => {
 }, { autoComplete: false });
 ```
 
+Don't hide yourself when you are done: completing is what takes a widget off
+screen, after its exit transition.
+
+### Transitions and effects
+
+How a placed widget enters, leaves and moves while shown is the composition's:
+transitions and effects are behaviors on the placement, and the overlay plays
+its own kinds (fade, slide, zoom, shake, ...) on the widget's box without the
+widget knowing. A widget can also declare kinds that animate its own content in
+its manifest's `transitions` (`[{ "id": "typewriter", "label": "Typewriter" }]`)
+and `effects` (see [Widget entry](./modules.md#widget-entry-widgets)), and
+animate them in CSS from the marks the shim puts on `:root`:
+
+| Behavior | Marks |
+| --- | --- |
+| transition | `data-transition` (the kind), `data-transition-phase` (`in` or `out`), `--transition-duration`, `--transition-easing` |
+| effect | `data-effect` (the kind), `--effect-duration` (absent while open-ended), `--effect-easing` |
+
+```css
+:root[data-transition="typewriter"][data-transition-phase="in"] .letter {
+  animation: reveal var(--transition-duration) var(--transition-easing) both;
+}
+```
+
+How a delegated behavior reaches the widget:
+
+- The overlay plans it from the composition's timeline and, when it starts,
+  sends the `behavior` message (`{ type: "behavior", behavior }`, see
+  `WidgetBehaviorMessage` in `widget-protocol.ts`). `behavior` is
+  `{ type, kind, phase?, durationMs, easing, params }`: `phase` only for a
+  transition, `durationMs` `null` for an effect that runs until it is
+  withdrawn, `easing` one of `linear`, `ease`, `ease-in`, `ease-out`,
+  `ease-in-out`, and `params` the behavior's own params as the composition
+  gives them, for a widget that reads more than the marks.
+- The shim (`applyWidgetBehavior` in `widget-behaviors.ts`) clears the marks
+  of that type, forces a layout read, then sets them again, so the same
+  behavior sent twice restarts its CSS animations. It holds one transition
+  and one effect at a time; a new one of a type replaces the last.
+- `behavior: null` clears every mark: the widget shows as it is. When one of
+  several behaviors is withdrawn the overlay clears and sends the ones still
+  playing again.
+- A frame boots already marked with the widget's entrance (`boot.behavior`,
+  the first in-transition of a kind it declares), so its content does not
+  show whole before the message arrives; the message as the widget enters
+  restarts it then.
+- Only kinds the widget declares are sent. A behavior of any other widget
+  kind on it is skipped and reported by the overlay (`undeclared-kind`), and
+  an alert carrying one has it dropped when it is dispatched. A declared kind
+  your CSS does not select on simply leaves the widget as it is.
+
 The full surface lives in
 `shared/clients/typescript/module-sdk/src/widget-host.ts` (the SDK
 package) — and is the **single source of truth** for the contract.
