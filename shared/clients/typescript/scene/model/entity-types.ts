@@ -271,15 +271,14 @@ const PLACEMENT_DEFAULTS: Omit<PlacementDocument, "widget" | "width" | "height" 
 };
 
 /**
- * The bundled widgets' traits, by canonical id. Media keep the frame of
- * what they show; Text is sized by its own content, so its height is never
- * something the user drags into a value that clips or pads it.
+ * The bundled widgets' traits, by canonical id. Text is sized by its own
+ * content, so its height is never something the user drags into a value that
+ * clips or pads it. Media resize freely, as every other box does, with Shift
+ * to keep the aspect: each media widget has a fit setting for how it fills a
+ * box of any shape.
  */
 export const BUILTIN_WIDGET_TRAITS: Readonly<Record<string, Partial<WidgetTraits>>> = {
   "woofx3:widget:text": { heightFollowsText: true },
-  "woofx3:widget:image": { keepsAspect: true },
-  "woofx3:widget:video": { keepsAspect: true },
-  "woofx3:widget:lottie": { keepsAspect: true },
 };
 
 /**

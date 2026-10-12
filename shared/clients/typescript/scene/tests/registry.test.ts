@@ -316,10 +316,7 @@ describe("edits", () => {
 describe("widget traits", () => {
   test("bundled widgets declare theirs, and an undeclared widget has the defaults", () => {
     expect(STRICT_REGISTRY.widgetTraits("woofx3:widget:text")).toEqual({ keepsAspect: false, heightFollowsText: true });
-    expect(TOLERANT_REGISTRY.widgetTraits("woofx3:widget:video")).toEqual({
-      keepsAspect: true,
-      heightFollowsText: false,
-    });
+    expect(TOLERANT_REGISTRY.widgetTraits("woofx3:widget:video")).toEqual(DEFAULT_WIDGET_TRAITS);
     expect(STRICT_REGISTRY.widgetTraits("example:widget:clock")).toEqual(DEFAULT_WIDGET_TRAITS);
   });
 

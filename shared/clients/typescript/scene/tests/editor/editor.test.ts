@@ -140,16 +140,16 @@ describe("gestures", () => {
     expect(source.getDocument().widgets.a).toMatchObject({ width: 600, height: 300 });
   });
 
-  test("media keep their aspect by default, and Shift frees it", () => {
+  test("media resize freely like any other box, and Shift keeps the aspect", () => {
     const { editor } = harness(
       composition({ v: placement({ widget: VIDEO, width: 640, height: 360 }) }),
       PROFILES.alert
     );
     editor.gesture.begin({ kind: "resize", node: "v", handle: "e", point: { x: 640, y: 180 } });
-    editor.gesture.update({ x: 960, y: 180 });
-    expect(editor.getState().transient?.boxes.v).toMatchObject({ width: 960, height: 540 });
-    editor.gesture.update({ x: 960, y: 180 }, { shift: true, alt: true });
+    editor.gesture.update({ x: 960, y: 180 }, { alt: true });
     expect(editor.getState().transient?.boxes.v).toMatchObject({ width: 960, height: 360 });
+    editor.gesture.update({ x: 960, y: 180 }, { shift: true, alt: true });
+    expect(editor.getState().transient?.boxes.v).toMatchObject({ width: 960, height: 540 });
     editor.gesture.cancel();
   });
 
@@ -481,15 +481,15 @@ describe("patching nodes", () => {
     expect(source.getDocument().widgets.a?.name).toBe("one");
   });
 
-  test("resize keeps the centre and a media aspect; moveCenter clamps", () => {
+  test("resize keeps the centre, and a media its height when none is given; moveCenter clamps", () => {
     const { editor, source } = harness(
       composition({ v: placement({ widget: IMAGE, x: 0, y: 0, width: 640, height: 360 }) }),
       PROFILES.alert
     );
     editor.nodes.resize("v", { width: 320 });
-    expect(source.getDocument().widgets.v).toMatchObject({ x: 160, y: 90, width: 320, height: 180 });
+    expect(source.getDocument().widgets.v).toMatchObject({ x: 160, y: 0, width: 320, height: 360 });
     editor.nodes.moveCenter("v", { x: 5000, y: -5 });
-    expect(source.getDocument().widgets.v).toMatchObject({ x: 1920 - 160, y: -90 });
+    expect(source.getDocument().widgets.v).toMatchObject({ x: 1920 - 160, y: -180 });
   });
 
   test("the registry refuses a change before it is applied; the default tolerates what it does not know", () => {

@@ -7,7 +7,7 @@
 // alert area hosts alerts). How a new layer starts out (its size, its length
 // on an alert, Text's starting text) is the editor's choice for the bundled
 // widgets, keyed by their canonical ids here. How a widget's box is edited
-// once placed (media keep their aspect, Text's height follows its text) is a
+// once placed (Text's height follows its text) is a
 // constraint of the widget, and lives with its traits in the type registry.
 //
 // Alert-host naming must agree with the scene manager's matching (woofx3
