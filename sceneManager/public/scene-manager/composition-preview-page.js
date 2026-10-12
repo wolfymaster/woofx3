@@ -254,10 +254,7 @@ var PLACEMENT_DEFAULTS = {
   extra: {}
 };
 var BUILTIN_WIDGET_TRAITS = {
-  "woofx3:widget:text": { heightFollowsText: true },
-  "woofx3:widget:image": { keepsAspect: true },
-  "woofx3:widget:video": { keepsAspect: true },
-  "woofx3:widget:lottie": { keepsAspect: true }
+  "woofx3:widget:text": { heightFollowsText: true }
 };
 var LEGACY_TRANSITION_FIELDS = {
   transitionIn: "in",
