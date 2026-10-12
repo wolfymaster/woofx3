@@ -113,6 +113,11 @@ per-type distribution (`db/database/models/treat_summary.go:10-24`). Whatever
 happens to treats, that is the shape a leaderboard wants, computed rather than
 maintained.
 
+Per-viewer values defined by a trigger and an aggregate rather than by a
+table, such as a viewer's total bits or the streams they chatted in, are
+[viewer facts](/services/viewer-facts). They are kept as they happen and read
+one viewer at a time; this page's totals are read from the log.
+
 ### What was not stored
 
 Until the fact log existed, follows, subs, cheers, raids and gift subs were

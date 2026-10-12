@@ -69,6 +69,8 @@ func All() []*gormigrate.Migration {
 		AddAlertVersion(),
 		NormaliseAlertTimestamps(),
 		AddSceneEditorState(),
+		AddViewerFacts(),
+		AddViewerSegments(),
 		AddWidgetBehaviors(),
 		AddSceneCompositions(),
 	}

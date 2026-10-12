@@ -22,7 +22,7 @@ type WorkerEvent struct {
 	EventType  string `gorm:"type:varchar(255);not null;index"`
 	ClientID   string `gorm:"type:varchar(255);not null;default:''"`
 	EntityType string `gorm:"type:varchar(100);not null;index"`
-	EntityID   string `gorm:"type:varchar(36);not null;index"`
+	EntityID   string `gorm:"type:varchar(255);not null;index"`
 	Operation  string `gorm:"type:varchar(50);not null"`
 
 	Payload string `gorm:"type:jsonb;not null"`
@@ -39,6 +39,11 @@ type WorkerEvent struct {
 
 	NATSSubject string  `gorm:"type:varchar(500);not null"`
 	AckSubject  *string `gorm:"type:varchar(500)"`
+
+	// Extensions are CloudEvent extension attributes the event is published
+	// with besides the ones every outbox event carries, as a JSON object of
+	// strings. NULL for most events.
+	Extensions *string `gorm:"column:extensions;type:jsonb"`
 
 	CreatedAt time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
 	UpdatedAt time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`

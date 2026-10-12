@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/wolfymaster/woofx3/common/conditions"
 )
 
 type Condition struct {
@@ -12,6 +14,9 @@ type Condition struct {
 	Value    any
 }
 
+// Evaluate resolves a condition's field and value and applies its operator.
+// A field that resolves to nil satisfies only an operator about presence or
+// difference; see EvaluateAtomValue.
 func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 	fieldValue, err := resolver.ResolveString(condition.Field)
 	if err != nil {
@@ -27,7 +32,7 @@ func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 		expectedValue = resolved
 	}
 
-	return evaluateOperator(condition.Operator, fieldValue, expectedValue)
+	return EvaluateAtomValue(condition.Operator, fieldValue, expectedValue)
 }
 
 // EvaluateMultiple evaluates multiple conditions with the specified logic ("and" or "or")
@@ -62,19 +67,33 @@ func EvaluateMultiple(conditions []Condition, logic string, resolver *Resolver) 
 	return !useOr, nil
 }
 
-func evaluateOperator(op string, actual, expected any) (bool, error) {
-	switch op {
-	case "eq", "==", "equals":
+// CanonicalOperator returns the canonical name of an operator spelling, and
+// false when the spelling is not an operator. Callers comparing operators (two
+// filters sharing one evaluation, a rule that depends on what an operator does
+// with a missing value) compare the canonical name rather than every alias.
+func CanonicalOperator(op string) (string, bool) {
+	return conditions.Canonical(op)
+}
+
+// EvaluateOperator applies a condition operator to an actual and an expected
+// value. Both are taken as they are: nothing is resolved from a template.
+func EvaluateOperator(op string, actual, expected any) (bool, error) {
+	canonical, ok := CanonicalOperator(op)
+	if !ok {
+		return false, fmt.Errorf("unknown operator: %s", op)
+	}
+	switch canonical {
+	case "eq":
 		return equals(actual, expected), nil
-	case "ne", "!=", "not_equals":
+	case "ne":
 		return !equals(actual, expected), nil
-	case "gt", ">":
+	case "gt":
 		return compare(actual, expected) > 0, nil
-	case "gte", ">=":
+	case "gte":
 		return compare(actual, expected) >= 0, nil
-	case "lt", "<":
+	case "lt":
 		return compare(actual, expected) < 0, nil
-	case "lte", "<=":
+	case "lte":
 		return compare(actual, expected) <= 0, nil
 	case "contains":
 		return containsCheck(actual, expected), nil
@@ -90,12 +109,12 @@ func evaluateOperator(op string, actual, expected any) (bool, error) {
 		return actual != nil, nil
 	case "not_exists":
 		return actual == nil, nil
-	case "regex", "matches":
+	case "regex":
 		return regexCheck(actual, expected)
-	case "between", "range":
+	case "between":
 		return betweenCheck(actual, expected)
 	default:
-		return false, fmt.Errorf("unknown operator: %s", op)
+		panic(fmt.Sprintf("operator %q has a canonical name %q with no evaluation", op, canonical))
 	}
 }
 
@@ -166,11 +185,43 @@ func inCheck(actual, expected any) bool {
 	return false
 }
 
-func regexCheck(actual, expected any) (bool, error) {
-	pattern := fmt.Sprintf("%v", expected)
-	re, err := regexp.Compile(pattern)
+// checkExpected reports an expected value the operator cannot use, with the
+// error evaluating it would give.
+func checkExpected(canonical string, expected any) error {
+	switch canonical {
+	case "regex":
+		_, err := compilePattern(expected)
+		return err
+	case "between":
+		_, err := rangeBounds(expected)
+		return err
+	}
+	return nil
+}
+
+func compilePattern(expected any) (*regexp.Regexp, error) {
+	re, err := regexp.Compile(fmt.Sprintf("%v", expected))
 	if err != nil {
-		return false, fmt.Errorf("invalid regex pattern: %w", err)
+		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+	}
+	return re, nil
+}
+
+func rangeBounds(expected any) ([]any, error) {
+	bounds, ok := expected.([]any)
+	if !ok {
+		return nil, fmt.Errorf("between operator requires [min, max] array, got %T", expected)
+	}
+	if len(bounds) != 2 {
+		return nil, fmt.Errorf("between operator requires exactly 2 values [min, max], got %d", len(bounds))
+	}
+	return bounds, nil
+}
+
+func regexCheck(actual, expected any) (bool, error) {
+	re, err := compilePattern(expected)
+	if err != nil {
+		return false, err
 	}
 
 	actualStr := fmt.Sprintf("%v", actual)
@@ -178,13 +229,9 @@ func regexCheck(actual, expected any) (bool, error) {
 }
 
 func betweenCheck(actual, expected any) (bool, error) {
-	bounds, ok := expected.([]any)
-	if !ok {
-		return false, fmt.Errorf("between operator requires [min, max] array, got %T", expected)
-	}
-
-	if len(bounds) != 2 {
-		return false, fmt.Errorf("between operator requires exactly 2 values [min, max], got %d", len(bounds))
+	bounds, err := rangeBounds(expected)
+	if err != nil {
+		return false, err
 	}
 
 	min, max := bounds[0], bounds[1]

@@ -343,7 +343,7 @@ func (n binary) eval(r *Resolver) (any, error) {
 	if (left == nil || right == nil) && n.op != "==" && n.op != "!=" {
 		return false, nil
 	}
-	return evaluateOperator(n.op, left, right)
+	return EvaluateOperator(n.op, left, right)
 }
 
 type conditional struct {

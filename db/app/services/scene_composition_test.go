@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"reflect"
 	"testing"
 
@@ -37,14 +36,6 @@ func getComposition(t *testing.T, svc client.SceneService, id string) *client.Sc
 		t.Fatalf("get %s: %v", id, err)
 	}
 	return resp.Scene
-}
-
-func twirpCode(err error) twirp.ErrorCode {
-	var terr twirp.Error
-	if errors.As(err, &terr) {
-		return terr.Code()
-	}
-	return ""
 }
 
 // A row is a scene unless created as an alert; behaviors (published and

@@ -1,0 +1,356 @@
+syntax = "proto3";
+
+package viewer_fact;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Per-viewer facts: running aggregates of one field across the trigger events
+// that name a viewer, defined as data rather than as columns. A definition
+// says which triggers feed the fact, which emitted field names the viewer, and
+// how matching events fold into one value. The workflow service evaluates the
+// definitions against each event and sends the resulting deltas here; this
+// service is the only writer of the values.
+service ViewerFactService {
+  // Creates or replaces a definition, after resolving each source's trigger
+  // and checking every path against what that trigger emits.
+  //
+  // A change to the definition body or window increments `revision` and
+  // deletes every stored value of the fact in the same transaction, so a value
+  // is only ever folded under one definition. A change to the name or
+  // description alone keeps both. Saving an identical definition writes
+  // nothing.
+  //
+  // Fails with `invalid_argument` when the definition is invalid, and with
+  // `failed_precondition` when a source names a trigger that is not
+  // registered and the definition is not module-declared (a module may
+  // declare a fact over a trigger of a module installed later), or when the
+  // id is owned by a different creator.
+  rpc UpsertFactDefinition(UpsertFactDefinitionRequest) returns (FactDefinitionResponse);
+  // Deletes a definition and every value of it. Fails with `not_found` when
+  // there is no such definition, and with `failed_precondition`, naming them,
+  // when a segment reads it.
+  rpc DeleteFactDefinition(DeleteFactDefinitionRequest) returns (common.ResponseStatus);
+  // Every definition, each re-resolved against the triggers registered now.
+  // A definition is applied only while its status is `active`.
+  rpc ListFactDefinitions(ListFactDefinitionsRequest) returns (ListFactDefinitionsResponse);
+  // Folds the deltas one event produced into the stored values in one
+  // transaction, and returns every value that changed.
+  //
+  // Idempotent on (source, event_id): applying an event again writes nothing
+  // and returns `applied` false. A delta computed against a revision that is
+  // no longer current, or against a deleted definition, is dropped; one that
+  // does not fit its definition is counted invalid. Neither fails the rest of
+  // the event. `last` and the session aggregates ignore an event older than
+  // the stored value, so a replay of old events cannot move them back.
+  //
+  // In the same transaction, every segment reading a changed value is
+  // evaluated for that viewer, its membership updated, and each viewer that
+  // entered or left it announced as `viewer.segment.entered` or
+  // `viewer.segment.left` (subject and CloudEvent type alike). A `silent`
+  // apply updates membership and announces nothing. A segment reading a fact
+  // that is not active, or whose condition no longer fits its facts, is
+  // frozen: neither its membership nor its edges move until it fits again. A
+  // session segment moves only for an event of the current stream session.
+  rpc ApplyFactDeltas(ApplyFactDeltasRequest) returns (ApplyFactDeltasResponse);
+  // One viewer's lifetime values and their values in the current stream
+  // session, of active facts only: a fact that is not active has stopped
+  // counting, so its stored value is stale.
+  rpc GetViewerFacts(GetViewerFactsRequest) returns (GetViewerFactsResponse);
+
+  // Creates or replaces a segment: a condition over one viewer's facts. A
+  // change to the condition increments `revision`. Creating a segment or
+  // changing its condition fills its membership from the stored values in
+  // the same transaction, announcing nothing, so a save never floods
+  // workflows with edges. A change to the name or description alone keeps
+  // both.
+  //
+  // A segment saved while a fact it reads is not active is `frozen`: it is
+  // saved, but its membership is filled only once that fact is active again,
+  // which the response's status and message say.
+  //
+  // Fails with `invalid_argument` when the condition is malformed or applies
+  // an operator the fact's value kind does not support, with `not_found` when
+  // it reads a fact that does not exist, and with `failed_precondition` when
+  // the id is owned by a different creator.
+  rpc UpsertSegmentDefinition(UpsertSegmentDefinitionRequest) returns (SegmentDefinitionResponse);
+  // Deletes a segment and its membership, announcing no edges. Fails with
+  // `not_found` when there is no such segment.
+  rpc DeleteSegmentDefinition(DeleteSegmentDefinitionRequest) returns (common.ResponseStatus);
+  // Every segment, each re-checked against the facts it reads now.
+  rpc ListSegmentDefinitions(ListSegmentDefinitionsRequest) returns (ListSegmentDefinitionsResponse);
+  // The segments one viewer is in now: lifetime segments, and session
+  // segments entered in the current stream session.
+  rpc GetViewerSegments(GetViewerSegmentsRequest) returns (GetViewerSegmentsResponse);
+}
+
+message FactDefinition {
+  // Canonical fact id, e.g. `woofx3:fact:messages` or `user:fact:<slug>`.
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The definition body as JSON:
+  // `{"sources": [{"trigger", "subject", "where", "value"}], "aggregate": {"fn"}}`.
+  string definition = 4;
+  // `number`, `string` or `timestamp`. Derived from the aggregate and, for
+  // `last`, the type of the value field. A timestamp is epoch milliseconds.
+  string value_kind = 5;
+  // `lifetime` or `session`.
+  string window_kind = 6;
+  int64 revision = 7;
+  string created_by_type = 8;
+  string created_by_ref = 9;
+  // When the current revision started counting live events.
+  google.protobuf.Timestamp counting_since = 10;
+  // How far a backfill from the event log has reached. Absent when none ran.
+  optional google.protobuf.Timestamp backfilled_through = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  // `active`, `unresolved` (a source's trigger is not registered, or was
+  // archived when its module dropped it) or
+  // `invalid` (a source no longer fits what its trigger emits). Resolved when
+  // the definition is read, against the triggers registered then.
+  string status = 14;
+  // Why the status is not `active`. Empty when it is.
+  string reason = 15;
+  // One per source, in definition order. A source whose trigger did not
+  // resolve has an empty `event`.
+  repeated ResolvedFactSource sources = 16;
+  // The aggregate function the fact folds with, the body's `aggregate.fn`.
+  string aggregate = 17;
+}
+
+// A source with its trigger resolved: what the workflow service needs to
+// match events and extract the viewer without reading the trigger itself.
+message ResolvedFactSource {
+  // Canonical trigger id, `{moduleId}:trigger:{manifestId}`.
+  string trigger = 1;
+  // The trigger's event pattern, the subject its events arrive on.
+  string event = 2;
+  // Emits path of the identity field naming the viewer.
+  string subject_path = 3;
+  // True when the subject is an array: each id in it is a subject.
+  bool subject_is_array = 4;
+  // Emits path of the boolean that is true when the identity is withheld, or
+  // empty. Events where it is true are attributed to nobody.
+  string anonymous_when = 5;
+  // Emits path of the viewer's display name, or empty.
+  string display_name = 6;
+  // Emits path of the value the aggregate reads, or empty.
+  string value_path = 7;
+  // The condition tree an event must satisfy, as JSON, or empty for every
+  // event.
+  string where = 8;
+}
+
+message UpsertFactDefinitionRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The definition body as JSON; see FactDefinition.definition.
+  string definition = 4;
+  // `lifetime` or `session`.
+  string window_kind = 5;
+  // Who declares the definition: `USER` for one saved from the UI, `MODULE`
+  // for one a module manifest declares. Defaults to `USER`.
+  string created_by_type = 6;
+  string created_by_ref = 7;
+}
+
+message FactDefinitionResponse {
+  common.ResponseStatus status = 1;
+  FactDefinition definition = 2;
+}
+
+message DeleteFactDefinitionRequest {
+  string id = 1;
+}
+
+message ListFactDefinitionsRequest {}
+
+message ListFactDefinitionsResponse {
+  common.ResponseStatus status = 1;
+  repeated FactDefinition definitions = 2;
+}
+
+// A stored value. Numbers and timestamps are in `num`, strings in `str`. The
+// session aggregates keep their count in `num` and the last session counted
+// in `str`.
+message FactValue {
+  optional double num = 1;
+  optional string str = 2;
+}
+
+message FactDelta {
+  string fact_id = 1;
+  // The definition revision the delta was computed against.
+  int64 revision = 2;
+  string platform = 3;
+  string subject_id = 4;
+  optional string subject_name = 5;
+  // The definition's aggregate function; a delta naming another is counted
+  // invalid.
+  string op = 6;
+  // The value the aggregate reads: `num` for sum, min and max, exactly one
+  // for last (the one its value kind names), neither for the rest.
+  optional double num = 7;
+  optional string str = 8;
+}
+
+message ApplyFactDeltasRequest {
+  // The CloudEvent's identity. Required unless `silent`.
+  string source = 1;
+  string event_id = 2;
+  // When the event happened. Timestamps and the stream session a session
+  // window resolves to are taken from it.
+  google.protobuf.Timestamp occurred_at = 3;
+  // The stream session the event was stamped with. Used only when no session
+  // had started by `occurred_at`.
+  string session_stamp = 4;
+  // A backfill: the deltas are applied without recording the event as
+  // applied, since the live path may apply the same event too. Every delta
+  // must be for one fact.
+  bool silent = 5;
+  repeated FactDelta deltas = 6;
+}
+
+message FactValueChange {
+  string fact_id = 1;
+  string platform = 2;
+  string subject_id = 3;
+  // Empty for a lifetime value, the stream session id for a session value.
+  string window_key = 4;
+  optional string subject_name = 5;
+  // Absent when the value did not exist before.
+  FactValue before = 6;
+  FactValue after = 7;
+}
+
+message ApplyFactDeltasResponse {
+  common.ResponseStatus status = 1;
+  // False when the event had been applied before; nothing was written.
+  bool applied = 2;
+  // Deltas dropped for a stale revision or a deleted definition.
+  int32 dropped = 3;
+  repeated FactValueChange changes = 4;
+  // Deltas that do not fit their definition (another op, a missing, extra
+  // or non-finite input, a value of another kind), or that repeat the fact
+  // and viewer of an earlier delta of the event. The rest of the event is
+  // applied regardless.
+  int32 invalid = 5;
+  // Deltas that need a stream session when none had started and no stamp
+  // was given.
+  int32 skipped = 6;
+}
+
+message GetViewerFactsRequest {
+  string platform = 1;
+  string subject_id = 2;
+}
+
+message ViewerFactValue {
+  string fact_id = 1;
+  // `lifetime` or `session`.
+  string window_kind = 2;
+  string value_kind = 3;
+  FactValue value = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message GetViewerFactsResponse {
+  common.ResponseStatus status = 1;
+  // The stream session the session values belong to, or empty when no
+  // session has started.
+  string session_id = 2;
+  // The viewer's most recently seen display name, or absent.
+  optional string subject_name = 3;
+  // Lifetime values and current-session values. A fact the viewer has no
+  // value for is absent.
+  repeated ViewerFactValue values = 4;
+}
+
+message SegmentDefinition {
+  // Canonical segment id, e.g. `user:segment:<slug>`.
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The condition as JSON: `{"all": [...]}`, `{"any": [...]}`, `{"not": {...}}`
+  // or an atom `{"fact": "<fact id>", "op": "...", "value": ...}`. Ops: eq,
+  // ne, gt, gte, lt, lte, exists, not_exists, and within and older_than,
+  // whose value is a duration such as "720h" and which read timestamp facts.
+  string when = 4;
+  // The facts the condition reads, in id order.
+  repeated string facts = 5;
+  // `session` when the condition reads any session-window fact: membership is
+  // then kept per stream session and a new session starts it empty.
+  // `lifetime` otherwise.
+  string window_kind = 6;
+  // True when the condition has a within or older_than atom. Membership can
+  // then change with time alone; it is re-evaluated, and edges announced,
+  // only when one of the viewer's facts changes, so the stored membership is
+  // as of the viewer's last change.
+  bool time_relative = 7;
+  int64 revision = 8;
+  string created_by_type = 9;
+  string created_by_ref = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  // `active`; `invalid` when the condition no longer fits the facts it reads
+  // (a fact's value kind changed); or `frozen` when a fact it reads is not
+  // active, so its membership is not kept and was not filled. A frozen
+  // segment is refilled silently once every fact it reads is active again,
+  // which the db checks whenever triggers are registered or removed.
+  string status = 13;
+  // Why the status is not `active`. Empty when it is.
+  string reason = 14;
+}
+
+message UpsertSegmentDefinitionRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // The condition as JSON; see SegmentDefinition.when.
+  string when = 4;
+  // Who declares the segment: `USER` for one saved from the UI, `MODULE` for
+  // one a module manifest declares. Defaults to `USER`.
+  string created_by_type = 5;
+  string created_by_ref = 6;
+}
+
+message SegmentDefinitionResponse {
+  common.ResponseStatus status = 1;
+  SegmentDefinition definition = 2;
+}
+
+message DeleteSegmentDefinitionRequest {
+  string id = 1;
+}
+
+message ListSegmentDefinitionsRequest {}
+
+message ListSegmentDefinitionsResponse {
+  common.ResponseStatus status = 1;
+  repeated SegmentDefinition definitions = 2;
+}
+
+message GetViewerSegmentsRequest {
+  string platform = 1;
+  string subject_id = 2;
+}
+
+message ViewerSegment {
+  string segment_id = 1;
+  // Empty for a lifetime segment, the stream session id for a session one.
+  string window_key = 2;
+  google.protobuf.Timestamp entered_at = 3;
+  // See SegmentDefinition.time_relative.
+  bool time_relative = 4;
+}
+
+message GetViewerSegmentsResponse {
+  common.ResponseStatus status = 1;
+  // The current stream session, or empty when none has started.
+  string session_id = 2;
+  repeated ViewerSegment segments = 3;
+}
