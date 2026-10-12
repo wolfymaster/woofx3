@@ -229,6 +229,11 @@ func TestUpsertFactDefinitionRefusesWhatDoesNotFitTheTrigger(t *testing.T) {
 			{"where has an empty group", factBody("count", "chatterId", "", `{"any": []}`), "lifetime", "no conditions"},
 			{"where atom has an unknown key", factBody("count", "chatterId", "", `{"path": "message", "op": "eq", "vaule": "a"}`), "lifetime", "unknown field"},
 			{"where node has an unknown key", factBody("count", "chatterId", "", `{"all": [{"path": "message", "op": "eq", "value": "a"}], "note": "x"}`), "lifetime", "unknown field"},
+			{"where has an unknown operator", factBody("count", "chatterId", "", `{"path": "message", "op": "contians", "value": "apple"}`), "lifetime", `unknown operator "contians"`},
+			{"where nests an unknown operator", factBody("count", "chatterId", "", `{"not": {"path": "bits", "op": "above", "value": 1}}`), "lifetime", `not: bits: unknown operator "above"`},
+			{"where regex does not compile", factBody("count", "chatterId", "", `{"path": "message", "op": "matches", "value": "("}`), "lifetime", "invalid regex"},
+			{"where in without a list", factBody("count", "chatterId", "", `{"path": "message", "op": "in", "value": "apple"}`), "lifetime", "needs a list"},
+			{"where between without a pair", factBody("count", "chatterId", "", `{"path": "bits", "op": "between", "value": [1]}`), "lifetime", "[min, max]"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {

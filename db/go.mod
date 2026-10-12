@@ -16,6 +16,7 @@ require (
 	github.com/wolfymaster/woofx3/clients/db v0.0.0
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
 	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0
+	github.com/wolfymaster/woofx3/common/conditions v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/otel v1.43.0
@@ -131,6 +132,7 @@ replace (
 	github.com/wolfymaster/woofx3/clients/db => ../shared/clients/golang/db
 	github.com/wolfymaster/woofx3/clients/nats => ../shared/clients/golang/nats
 	github.com/wolfymaster/woofx3/common/cloudevents => ../shared/common/golang/cloudevents
+	github.com/wolfymaster/woofx3/common/conditions => ../shared/common/golang/conditions
 	github.com/wolfymaster/woofx3/common/logging => ../shared/common/golang/logging
 	github.com/wolfymaster/woofx3/common/runtime => ../shared/common/golang/runtime
 )

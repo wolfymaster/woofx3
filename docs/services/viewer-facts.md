@@ -116,7 +116,10 @@ The operators are the workflow condition operators: `eq`, `ne`, `gt`, `gte`,
 `not_exists`, `regex` and `between`, with their usual aliases (`==`, `!=`,
 `>`, `>=`, `<`, `<=`, `equals`, `not_equals`, `matches`, `range`). `in` and
 `not_in` take a list, `between` takes `[min, max]`, and `regex` takes a
-pattern that must compile.
+pattern that must compile. An unknown operator, or a value its operator cannot
+use, is refused at save; the operator list is shared with the workflow
+service (`shared/common/golang/conditions`), so the db proxy saves no
+operator or value that the workflow service would refuse.
 
 - **Values are literal.** `${...}` in a value is compared as text, never
   resolved.

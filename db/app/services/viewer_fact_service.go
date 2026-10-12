@@ -12,6 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
+	"github.com/wolfymaster/woofx3/common/conditions"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -588,8 +589,9 @@ func parseTriggerID(canonical string) (triggerID, error) {
 }
 
 // factCondition is the condition tree a source's events must satisfy. The
-// workflow service evaluates it and owns the operators; what is checked here
-// is its shape and that every path it reads is one the trigger emits.
+// workflow service evaluates it; what is checked here is its shape, that each
+// operator and expected value is one the workflow service accepts, and that
+// every path it reads is one the trigger emits.
 type factCondition struct {
 	All   []factCondition `json:"all,omitempty"`
 	Any   []factCondition `json:"any,omitempty"`
@@ -653,6 +655,19 @@ func (c *factCondition) validate() error {
 		}
 		if c.Op == "" {
 			return fmt.Errorf("%s: condition has no op", c.Path)
+		}
+		canonical, ok := conditions.Canonical(c.Op)
+		if !ok {
+			return fmt.Errorf("%s: unknown operator %q", c.Path, c.Op)
+		}
+		var expected any
+		if len(c.Value) > 0 {
+			if err := json.Unmarshal(c.Value, &expected); err != nil {
+				return fmt.Errorf("%s: value: %w", c.Path, err)
+			}
+		}
+		if err := conditions.ValidateExpected(canonical, expected); err != nil {
+			return fmt.Errorf("%s: %w", c.Path, err)
 		}
 	}
 	return nil
