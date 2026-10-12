@@ -34,7 +34,11 @@ export function serializeSessionCookie(sceneId: string, token: string, maxAgeSec
 }
 
 export function readSessionCookie(req: Request, sceneId: string): string | null {
-  const wanted = sessionCookieName(sceneId);
+  return readCookie(req, sessionCookieName(sceneId));
+}
+
+/** The value of the cookie `wanted`, or null when the request carries none. */
+export function readCookie(req: Request, wanted: string): string | null {
   const header = req.headers.get("Cookie");
   if (!header) {
     return null;

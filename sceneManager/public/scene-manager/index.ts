@@ -36,6 +36,7 @@ import {
   parseMediaUrls,
   replaceMediaUrls,
 } from "./media-url";
+import { swapFrameIn } from "./frame-swap";
 import { applySceneBackground } from "./scene-background";
 import {
   parseSceneConfig,
@@ -71,10 +72,6 @@ const REFRESH_INTERVAL_MS = 50_000;
 // Adding a widget or changing a theme in the editor needs the server to
 // resolve the new frame; waiting for a pause asks it once.
 const DRAFT_SETTLE_MS = 400;
-
-// A frame swapped in for another is shown once it reports it has painted, or
-// after this long, so a widget that never reports still appears.
-const SWAP_TIMEOUT_MS = 2000;
 
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
@@ -418,37 +415,29 @@ function main(): void {
       return;
     }
     entry.swap?.cancel();
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const finish = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timer !== null) {
-        clearTimeout(timer);
-      }
-      fresh.element.style.opacity = "";
-      entry.unmount();
-      contents.set(next.id, { slot: entry.slot, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
-      for (const state of relay.ongoing(next.id)) {
-        fresh.bridge.sendBehavior(state);
-      }
-      playing().widgetRendered(next.id);
-    };
-    const fresh = mountFrame(next, entry.slot, true, finish);
-    timer = setTimeout(finish, SWAP_TIMEOUT_MS);
-    entry.swap = {
-      cancel: () => {
-        if (!settled) {
-          settled = true;
-          if (timer !== null) {
-            clearTimeout(timer);
-          }
-          fresh.unmount();
-        }
+    entry.swap = swapFrameIn({
+      mountFresh: (painted) => {
+        const frame = mountFrame(next, entry.slot, true, painted);
+        return {
+          ...frame,
+          reveal: () => {
+            frame.element.style.opacity = "";
+          },
+        };
       },
-    };
+      retire: () => entry.unmount(),
+      swapped: (fresh) => {
+        contents.set(next.id, { slot: entry.slot, unmount: fresh.unmount, bridge: fresh.bridge, swap: null });
+        for (const state of relay.ongoing(next.id)) {
+          fresh.bridge.sendBehavior(state);
+        }
+        playing().widgetRendered(next.id);
+      },
+      schedule: (callback, ms) => {
+        const timer = setTimeout(callback, ms);
+        return () => clearTimeout(timer);
+      },
+    });
   }
 
   /**

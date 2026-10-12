@@ -127,7 +127,10 @@ A scene placement's frame document is the widget's own, served at
 `v` (a hash of what barkloader resolved for it) is current. The placement --
 nonce, instance id, settings and linked resources -- is appended in the URL's
 fragment (`#boot=…`) and merged in by the shim, so it never reaches the server
-and every placement of a widget shares one cached document.
+and every placement of a widget shares one cached document. The fragment may also
+carry `surface`: the cached document says `scene`, and the
+[composition preview](./composition-preview.md) frames an alert's widgets from the
+same documents with `surface: "alert"`.
 
 ### Alerts
 

@@ -11,6 +11,14 @@ import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
+import {
+  COMPOSITION_PREVIEW_FRAMES_PATH,
+  COMPOSITION_PREVIEW_REFRESH_PATH,
+  handleCompositionPreviewFramesRoute,
+  handleCompositionPreviewRefreshRoute,
+  handleCompositionPreviewRoute,
+} from "./routes/composition-preview";
+import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/composition-preview";
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
@@ -159,6 +167,17 @@ export function createHttpServer(deps: HttpDeps) {
 
           if (url.pathname.startsWith("/assets/")) {
             return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
+          }
+
+          // The editor's composition preview (routes/composition-preview.ts).
+          if (url.pathname === COMPOSITION_PREVIEW_PATH && req.method === "GET") {
+            return withCors(await handleCompositionPreviewRoute(url, deps));
+          }
+          if (url.pathname === COMPOSITION_PREVIEW_FRAMES_PATH && req.method === "POST") {
+            return withCors(await handleCompositionPreviewFramesRoute(req, deps));
+          }
+          if (url.pathname === COMPOSITION_PREVIEW_REFRESH_PATH && req.method === "POST") {
+            return withCors(await handleCompositionPreviewRefreshRoute(req, deps));
           }
 
           // GET /scene/{sceneId} — shell + JWT mint.
