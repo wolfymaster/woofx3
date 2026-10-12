@@ -738,6 +738,8 @@ than calling `ctx.chat.sendMessage(...)` directly — see
 | `steps[]` | array | yes | Ordered steps. Each step's `action` field references an action by manifest-local id (or full canonical id for cross-module references); resolved at install. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). Set at install time only — not currently editable after creation. |
 
+A bundled workflow is created **enabled**: it is part of what installing the module means, so the module works as soon as it is installed. The manifest has no field to ship one disabled. Installing a new version of the module updates its workflows in place and leaves each one's enabled state alone, so a workflow the streamer switched off stays off.
+
 ### Widget entry (`widgets[]`)
 
 | Field | Type | Required | Description |
