@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": false,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["model", "editor", "tests"]
+  "include": ["model", "editor", "runtime", "tests"]
 }
