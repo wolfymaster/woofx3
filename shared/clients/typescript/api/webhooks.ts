@@ -364,8 +364,27 @@ export interface WidgetDefinition {
    * the module that shipped the widget. Empty when none was declared.
    */
   taxonomy: string[];
+  /**
+   * The transition and effect kinds the widget plays on its own content (a
+   * text widget's typewriter), offered beside the overlay's own kinds when a
+   * composition adds a behavior to one of its placements. The overlay hands
+   * a widget only the kinds listed here.
+   */
+  behaviorKinds: WidgetBehaviorKinds;
   createdByType: string;
   createdByRef: string;
+}
+
+/** Kinds a widget declares for itself, by behavior type; empty lists when it declares none. */
+export interface WidgetBehaviorKinds {
+  transitions: WidgetBehaviorKind[];
+  effects: WidgetBehaviorKind[];
+}
+
+/** One declared kind: `id` is what a behavior's `kind` names, `label` what an editor shows. */
+export interface WidgetBehaviorKind {
+  id: string;
+  label: string;
 }
 
 export interface ModuleWidgetRegisteredEvent {

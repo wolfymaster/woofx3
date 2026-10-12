@@ -8,7 +8,15 @@ function fakeLogger() {
 
 function hostWith(
   placements: unknown[],
-  catalog: Array<{ moduleId: string; manifestId: string; hostsSurface?: string }>
+  catalog: Array<{
+    moduleId: string;
+    manifestId: string;
+    hostsSurface?: string;
+    behaviorKinds?: {
+      transitions: Array<{ id: string; label: string }>;
+      effects: Array<{ id: string; label: string }>;
+    };
+  }>
 ) {
   const logger = fakeLogger();
   const db = {
@@ -56,6 +64,25 @@ describe("scene placement resolution", () => {
     );
     const state = await host.loadScene("ovl_token");
     expect(state?.instances.map((i) => i.hostsSurface)).toEqual(["alert", ""]);
+  });
+
+  it("gives each placement the kinds its widget declares, ids only", async () => {
+    const { host } = hostWith(
+      [placement("inst-1", "woofx3:widget:text"), placement("inst-2", "woofx3:widget:image")],
+      [
+        {
+          moduleId: "woofx3",
+          manifestId: "text",
+          behaviorKinds: { transitions: [{ id: "typewriter", label: "Typewriter" }], effects: [] },
+        },
+        { moduleId: "woofx3", manifestId: "image" },
+      ]
+    );
+    const state = await host.loadScene("ovl_token");
+    expect(state?.instances.map((i) => i.behaviorKinds)).toEqual([
+      { transitions: ["typewriter"], effects: [] },
+      { transitions: [], effects: [] },
+    ]);
   });
 
   it("marks a placement resolved when its widget is in the catalog", async () => {

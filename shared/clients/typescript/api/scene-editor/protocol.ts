@@ -8,6 +8,7 @@
 // commit order: every entry with `v <= x` is sent before any reply whose
 // decision saw head `x`.
 
+import { isDeclaredBehaviorKinds } from "../../scene/model/entity-types";
 import {
   type Entry,
   type EntryKind,
@@ -252,7 +253,8 @@ function isPlacementMeta(value: unknown): value is PlacementMeta {
     typeof value.hostsSurface === "string" &&
     typeof value.frameUrl === "string" &&
     isPlainObject(value.linkedResources) &&
-    (value.mediaProxyBase === undefined || typeof value.mediaProxyBase === "string")
+    (value.mediaProxyBase === undefined || typeof value.mediaProxyBase === "string") &&
+    (value.behaviorKinds === undefined || isDeclaredBehaviorKinds(value.behaviorKinds))
   );
 }
 

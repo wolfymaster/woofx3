@@ -17,6 +17,7 @@ const proxiedMeta = {
   frameUrl: "/frames/w?v=2",
   linkedResources: {},
   mediaProxyBase: "http://localhost/media/",
+  behaviorKinds: { transitions: ["typewriter"], effects: [] },
 };
 
 const validClient: ClientMessage[] = [
@@ -127,6 +128,16 @@ describe("protocol parsers", () => {
         kind: "external",
         changes: {},
         meta: { published: { w: { ...proxiedMeta, mediaProxyBase: 5 } } },
+        hasDraft: false,
+      },
+      {
+        type: "entry",
+        v: 1,
+        id: "e.1",
+        src: null,
+        kind: "external",
+        changes: {},
+        meta: { published: { w: { ...proxiedMeta, behaviorKinds: { transitions: ["Typewriter"], effects: [] } } } },
         hasDraft: false,
       },
       { type: "nack", seq: 1, code: "invalid", retryable: true, detail: "" },

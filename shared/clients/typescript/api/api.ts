@@ -10,7 +10,13 @@ import type {
 } from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
-import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
+import type {
+  ActionDefinition,
+  ModuleResourceUsage,
+  ResourceInstanceDefinition,
+  TriggerDefinition,
+  WidgetBehaviorKinds,
+} from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
 // ==================== Modules ====================
@@ -1649,6 +1655,8 @@ export interface Woofx3EngineApi {
       surfaces: string[];
       hostsSurface: string;
       taxonomy: string[];
+      /** See `WidgetDefinition.behaviorKinds`. */
+      behaviorKinds: WidgetBehaviorKinds;
       createdByType: string;
       createdByRef: string;
     }>;

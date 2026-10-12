@@ -73,7 +73,11 @@ type Widget struct {
 	// same axis triggers and actions carry. A catalog groups on it instead of
 	// on the module that shipped the widget. Empty when the author declared
 	// none.
-	Taxonomy      []string `protobuf:"bytes,16,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Taxonomy []string `protobuf:"bytes,16,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// The transition and effect kinds the widget plays on its own content,
+	// beyond the ones the overlay plays on every widget's box. The overlay
+	// hands a widget only the kinds it declares here.
+	BehaviorKinds *WidgetBehaviorKinds `protobuf:"bytes,17,opt,name=behavior_kinds,json=behaviorKinds,proto3" json:"behavior_kinds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -206,6 +210,121 @@ func (x *Widget) GetTaxonomy() []string {
 	return nil
 }
 
+func (x *Widget) GetBehaviorKinds() *WidgetBehaviorKinds {
+	if x != nil {
+		return x.BehaviorKinds
+	}
+	return nil
+}
+
+// Kinds a widget declares for itself, by behavior type. Both lists are
+// empty for a widget that declares none.
+type WidgetBehaviorKinds struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Transitions   []*WidgetBehaviorKind  `protobuf:"bytes,1,rep,name=transitions,proto3" json:"transitions,omitempty"`
+	Effects       []*WidgetBehaviorKind  `protobuf:"bytes,2,rep,name=effects,proto3" json:"effects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WidgetBehaviorKinds) Reset() {
+	*x = WidgetBehaviorKinds{}
+	mi := &file_module_widget_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WidgetBehaviorKinds) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WidgetBehaviorKinds) ProtoMessage() {}
+
+func (x *WidgetBehaviorKinds) ProtoReflect() protoreflect.Message {
+	mi := &file_module_widget_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WidgetBehaviorKinds.ProtoReflect.Descriptor instead.
+func (*WidgetBehaviorKinds) Descriptor() ([]byte, []int) {
+	return file_module_widget_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *WidgetBehaviorKinds) GetTransitions() []*WidgetBehaviorKind {
+	if x != nil {
+		return x.Transitions
+	}
+	return nil
+}
+
+func (x *WidgetBehaviorKinds) GetEffects() []*WidgetBehaviorKind {
+	if x != nil {
+		return x.Effects
+	}
+	return nil
+}
+
+// One declared kind: `id` is what a behavior's `kind` names, `label` what an
+// editor shows for it.
+type WidgetBehaviorKind struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WidgetBehaviorKind) Reset() {
+	*x = WidgetBehaviorKind{}
+	mi := &file_module_widget_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WidgetBehaviorKind) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WidgetBehaviorKind) ProtoMessage() {}
+
+func (x *WidgetBehaviorKind) ProtoReflect() protoreflect.Message {
+	mi := &file_module_widget_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WidgetBehaviorKind.ProtoReflect.Descriptor instead.
+func (*WidgetBehaviorKind) Descriptor() ([]byte, []int) {
+	return file_module_widget_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *WidgetBehaviorKind) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WidgetBehaviorKind) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
 type WidgetInput struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ManifestId     string                 `protobuf:"bytes,1,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
@@ -220,14 +339,16 @@ type WidgetInput struct {
 	Surfaces     []string `protobuf:"bytes,10,rep,name=surfaces,proto3" json:"surfaces,omitempty"`
 	HostsSurface string   `protobuf:"bytes,11,opt,name=hosts_surface,json=hostsSurface,proto3" json:"hosts_surface,omitempty"`
 	// See Widget.taxonomy.
-	Taxonomy      []string `protobuf:"bytes,12,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Taxonomy []string `protobuf:"bytes,12,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// See Widget.behavior_kinds.
+	BehaviorKinds *WidgetBehaviorKinds `protobuf:"bytes,13,opt,name=behavior_kinds,json=behaviorKinds,proto3" json:"behavior_kinds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WidgetInput) Reset() {
 	*x = WidgetInput{}
-	mi := &file_module_widget_proto_msgTypes[1]
+	mi := &file_module_widget_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -239,7 +360,7 @@ func (x *WidgetInput) String() string {
 func (*WidgetInput) ProtoMessage() {}
 
 func (x *WidgetInput) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[1]
+	mi := &file_module_widget_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -252,7 +373,7 @@ func (x *WidgetInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetInput.ProtoReflect.Descriptor instead.
 func (*WidgetInput) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{1}
+	return file_module_widget_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *WidgetInput) GetManifestId() string {
@@ -325,6 +446,13 @@ func (x *WidgetInput) GetTaxonomy() []string {
 	return nil
 }
 
+func (x *WidgetInput) GetBehaviorKinds() *WidgetBehaviorKinds {
+	if x != nil {
+		return x.BehaviorKinds
+	}
+	return nil
+}
+
 type RegisterWidgetsRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ModuleKey  string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`    // composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
@@ -347,7 +475,7 @@ type RegisterWidgetsRequest struct {
 
 func (x *RegisterWidgetsRequest) Reset() {
 	*x = RegisterWidgetsRequest{}
-	mi := &file_module_widget_proto_msgTypes[2]
+	mi := &file_module_widget_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -359,7 +487,7 @@ func (x *RegisterWidgetsRequest) String() string {
 func (*RegisterWidgetsRequest) ProtoMessage() {}
 
 func (x *RegisterWidgetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[2]
+	mi := &file_module_widget_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -372,7 +500,7 @@ func (x *RegisterWidgetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterWidgetsRequest.ProtoReflect.Descriptor instead.
 func (*RegisterWidgetsRequest) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{2}
+	return file_module_widget_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RegisterWidgetsRequest) GetModuleKey() string {
@@ -434,7 +562,7 @@ type ListWidgetsRequest struct {
 
 func (x *ListWidgetsRequest) Reset() {
 	*x = ListWidgetsRequest{}
-	mi := &file_module_widget_proto_msgTypes[3]
+	mi := &file_module_widget_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -446,7 +574,7 @@ func (x *ListWidgetsRequest) String() string {
 func (*ListWidgetsRequest) ProtoMessage() {}
 
 func (x *ListWidgetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[3]
+	mi := &file_module_widget_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +587,7 @@ func (x *ListWidgetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWidgetsRequest.ProtoReflect.Descriptor instead.
 func (*ListWidgetsRequest) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{3}
+	return file_module_widget_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListWidgetsRequest) GetCreatedByType() string {
@@ -486,7 +614,7 @@ type ListWidgetsResponse struct {
 
 func (x *ListWidgetsResponse) Reset() {
 	*x = ListWidgetsResponse{}
-	mi := &file_module_widget_proto_msgTypes[4]
+	mi := &file_module_widget_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +626,7 @@ func (x *ListWidgetsResponse) String() string {
 func (*ListWidgetsResponse) ProtoMessage() {}
 
 func (x *ListWidgetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[4]
+	mi := &file_module_widget_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +639,7 @@ func (x *ListWidgetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWidgetsResponse.ProtoReflect.Descriptor instead.
 func (*ListWidgetsResponse) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{4}
+	return file_module_widget_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListWidgetsResponse) GetStatus() *ResponseStatus {
@@ -538,7 +666,7 @@ type WidgetResponse struct {
 
 func (x *WidgetResponse) Reset() {
 	*x = WidgetResponse{}
-	mi := &file_module_widget_proto_msgTypes[5]
+	mi := &file_module_widget_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -550,7 +678,7 @@ func (x *WidgetResponse) String() string {
 func (*WidgetResponse) ProtoMessage() {}
 
 func (x *WidgetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_widget_proto_msgTypes[5]
+	mi := &file_module_widget_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -563,7 +691,7 @@ func (x *WidgetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WidgetResponse.ProtoReflect.Descriptor instead.
 func (*WidgetResponse) Descriptor() ([]byte, []int) {
-	return file_module_widget_proto_rawDescGZIP(), []int{5}
+	return file_module_widget_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *WidgetResponse) GetStatus() *ResponseStatus {
@@ -584,7 +712,7 @@ var File_module_widget_proto protoreflect.FileDescriptor
 
 const file_module_widget_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\xdb\x03\n" +
+	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\x9f\x04\n" +
 	"\x06Widget\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -602,7 +730,14 @@ const file_module_widget_proto_rawDesc = "" +
 	"\x05entry\x18\f \x01(\tR\x05entry\x12\x1a\n" +
 	"\bsurfaces\x18\x0e \x03(\tR\bsurfaces\x12#\n" +
 	"\rhosts_surface\x18\x0f \x01(\tR\fhostsSurface\x12\x1a\n" +
-	"\btaxonomy\x18\x10 \x03(\tR\btaxonomyJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\asurfaceR\x0faccepted_events\"\xe5\x02\n" +
+	"\btaxonomy\x18\x10 \x03(\tR\btaxonomy\x12B\n" +
+	"\x0ebehavior_kinds\x18\x11 \x01(\v2\x1b.module.WidgetBehaviorKindsR\rbehaviorKindsJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\asurfaceR\x0faccepted_events\"\x89\x01\n" +
+	"\x13WidgetBehaviorKinds\x12<\n" +
+	"\vtransitions\x18\x01 \x03(\v2\x1a.module.WidgetBehaviorKindR\vtransitions\x124\n" +
+	"\aeffects\x18\x02 \x03(\v2\x1a.module.WidgetBehaviorKindR\aeffects\":\n" +
+	"\x12WidgetBehaviorKind\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\"\xa9\x03\n" +
 	"\vWidgetInput\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
@@ -616,7 +751,8 @@ const file_module_widget_proto_rawDesc = "" +
 	"\bsurfaces\x18\n" +
 	" \x03(\tR\bsurfaces\x12#\n" +
 	"\rhosts_surface\x18\v \x01(\tR\fhostsSurface\x12\x1a\n" +
-	"\btaxonomy\x18\f \x03(\tR\btaxonomyJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
+	"\btaxonomy\x18\f \x03(\tR\btaxonomy\x12B\n" +
+	"\x0ebehavior_kinds\x18\r \x01(\v2\x1b.module.WidgetBehaviorKindsR\rbehaviorKindsJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
 	"R\asurfaceR\x0faccepted_events\"\xa2\x02\n" +
 	"\x16RegisterWidgetsRequest\x12\x1d\n" +
 	"\n" +
@@ -650,27 +786,33 @@ func file_module_widget_proto_rawDescGZIP() []byte {
 	return file_module_widget_proto_rawDescData
 }
 
-var file_module_widget_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_module_widget_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_module_widget_proto_goTypes = []any{
 	(*Widget)(nil),                 // 0: module.Widget
-	(*WidgetInput)(nil),            // 1: module.WidgetInput
-	(*RegisterWidgetsRequest)(nil), // 2: module.RegisterWidgetsRequest
-	(*ListWidgetsRequest)(nil),     // 3: module.ListWidgetsRequest
-	(*ListWidgetsResponse)(nil),    // 4: module.ListWidgetsResponse
-	(*WidgetResponse)(nil),         // 5: module.WidgetResponse
-	(*ResponseStatus)(nil),         // 6: common.ResponseStatus
+	(*WidgetBehaviorKinds)(nil),    // 1: module.WidgetBehaviorKinds
+	(*WidgetBehaviorKind)(nil),     // 2: module.WidgetBehaviorKind
+	(*WidgetInput)(nil),            // 3: module.WidgetInput
+	(*RegisterWidgetsRequest)(nil), // 4: module.RegisterWidgetsRequest
+	(*ListWidgetsRequest)(nil),     // 5: module.ListWidgetsRequest
+	(*ListWidgetsResponse)(nil),    // 6: module.ListWidgetsResponse
+	(*WidgetResponse)(nil),         // 7: module.WidgetResponse
+	(*ResponseStatus)(nil),         // 8: common.ResponseStatus
 }
 var file_module_widget_proto_depIdxs = []int32{
-	1, // 0: module.RegisterWidgetsRequest.widgets:type_name -> module.WidgetInput
-	6, // 1: module.ListWidgetsResponse.status:type_name -> common.ResponseStatus
-	0, // 2: module.ListWidgetsResponse.widgets:type_name -> module.Widget
-	6, // 3: module.WidgetResponse.status:type_name -> common.ResponseStatus
-	0, // 4: module.WidgetResponse.widget:type_name -> module.Widget
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	1, // 0: module.Widget.behavior_kinds:type_name -> module.WidgetBehaviorKinds
+	2, // 1: module.WidgetBehaviorKinds.transitions:type_name -> module.WidgetBehaviorKind
+	2, // 2: module.WidgetBehaviorKinds.effects:type_name -> module.WidgetBehaviorKind
+	1, // 3: module.WidgetInput.behavior_kinds:type_name -> module.WidgetBehaviorKinds
+	3, // 4: module.RegisterWidgetsRequest.widgets:type_name -> module.WidgetInput
+	8, // 5: module.ListWidgetsResponse.status:type_name -> common.ResponseStatus
+	0, // 6: module.ListWidgetsResponse.widgets:type_name -> module.Widget
+	8, // 7: module.WidgetResponse.status:type_name -> common.ResponseStatus
+	0, // 8: module.WidgetResponse.widget:type_name -> module.Widget
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_module_widget_proto_init() }
@@ -685,7 +827,7 @@ func file_module_widget_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_widget_proto_rawDesc), len(file_module_widget_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

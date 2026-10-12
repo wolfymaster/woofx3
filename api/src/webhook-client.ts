@@ -34,6 +34,8 @@ export type {
   ModuleWidgetRegisteredEvent,
   ResourceInstanceDefinition,
   TriggerDefinition,
+  WidgetBehaviorKind,
+  WidgetBehaviorKinds,
   WidgetDefinition,
 } from "@woofx3/api/webhooks";
 export { EngineEventType, makeCallbackEnvelope } from "@woofx3/api/webhooks";
