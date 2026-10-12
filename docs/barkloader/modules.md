@@ -738,6 +738,8 @@ than calling `ctx.chat.sendMessage(...)` directly — see
 | `steps[]` | array | yes | Ordered steps. Each step's `action` field references an action by manifest-local id (or full canonical id for cross-module references); resolved at install. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). Set at install time only — not currently editable after creation. |
 
+A bundled workflow is created **enabled**: it is part of what installing the module means, so the module works as soon as it is installed. The manifest has no field to ship one disabled. Installing a new version of the module updates its workflows in place and leaves each one's enabled state alone, so a workflow the streamer switched off stays off.
+
 ### Widget entry (`widgets[]`)
 
 | Field | Type | Required | Description |
@@ -750,9 +752,39 @@ than calling `ctx.chat.sendMessage(...)` directly — see
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values reach the widget as `widgetHost.settings` and through its setting bindings, and edits reach it while it runs (see [Live settings](./sdk.md#live-settings)). |
 | `surfaces` | string[] | no | Where the widget may be placed: `"scene"`, `"alert"` (inside an alert layout), or both. Defaults to `["scene"]`. |
 | `hostsSurface` | string | no | Bundled system module only. Marks a widget whose placements host a surface: the `"alert"` widget is the area of a scene where alert layouts play. The scene manager draws it, so it declares no `entry`, and it cannot be placed on the surface it hosts. |
+| `transitions` | object[] | no | Transition kinds the widget plays on its own content, each `{ id, label }`: `id` a lowercase token (`^[a-z][a-z0-9-]{0,31}$`) that is not one the overlay plays itself (`fade`, `slide`, `zoom`, `bounce`, `spin`, `pop`, `blur`), unique in the list, `label` 1 to 64 characters (trimmed). The overlay hands a transition of such a kind to the widget, whose CSS animates it (see [Transitions and effects](./sdk.md#transitions-and-effects)). Not allowed on a widget that hosts a surface. |
+| `effects` | object[] | no | Effect kinds the widget plays on its own content while shown, each `{ id, label }` under the same rules as `transitions`, except that `id` may not be one of the overlay's own effects (`shake`, `pulse`, `float`, `glow`, `flash`, `blur`). An effect id may repeat a transition id: kinds are per behavior type. |
 | `theme` | object | no | Opts the widget into themes by declaring a theme contract. Absent means the widget cannot be themed and nothing about it changes. See [Themes](#themes). |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
+
+#### Declared behavior kinds
+
+`transitions` and `effects` are the only kinds a widget is ever asked to play.
+On install they are registered with the widget and stored in
+`widgets.behavior_kinds` (migration `0059_widget_behaviors`) as
+`{ "transitions": [{ "id", "label" }], "effects": [...] }`, both lists present
+and empty for a widget that declares none. The catalog carries them as
+`Widget.behavior_kinds` (`WidgetBehaviorKinds` in `module_widget.proto`), the
+`module.widget.registered` / `deregistered` payloads as `behavior_kinds`, and
+the api as `WidgetDefinition.behaviorKinds` and in `getAvailableWidgets`, so an
+editor offers them beside the overlay's own kinds (`offeredKinds` in
+@woofx3/scene's editor/catalog.ts). A composition may still name any
+well-formed kind; the engine drops a behavior of a widget kind its widget
+does not declare when it dispatches an alert, and the overlay skips one on a
+scene (see [Scene documents](../services/scene-documents.md)).
+
+```json
+{
+  "id": "text",
+  "name": "Text",
+  "transitions": [
+    { "id": "typewriter", "label": "Typewriter" },
+    { "id": "letters", "label": "Letters" }
+  ],
+  "effects": [{ "id": "sparkle", "label": "Sparkle" }]
+}
+```
 
 #### Widget runtime — the `widgetHost` contract
 

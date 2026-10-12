@@ -4,6 +4,7 @@ import {
   type AlertDelivery,
   alertTarget,
   alertWidgetsNamed,
+  hasVisibleWidget,
   parseAlertLayout,
 } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
@@ -123,7 +124,13 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
       rejected: parsed.rejected,
     });
   }
-  if (parsed.layout.widgets.length === 0) {
+  if (parsed.rejectedBehaviors.length > 0) {
+    logger.warn("ui.notify.alert: dropped layout behaviors the engine cannot play", {
+      alertId,
+      rejected: parsed.rejectedBehaviors,
+    });
+  }
+  if (Object.keys(parsed.layout.widgets).length === 0) {
     // An empty layout is nearly always the consequence of the rejections
     // above, so the reason carries them: "the layout contains no widgets" on
     // its own sends the operator back to look for what it already knows.
@@ -132,6 +139,14 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
         ? `no widget in the layout can play in an alert: ${parsed.rejected.map((r) => r.reason).join("; ")}`
         : "the layout contains no widgets";
     logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId, reason });
+    await reportAlertNotPlayed(db, logger, { target, reason });
+    return { ok: false, reason };
+  }
+  if (!hasVisibleWidget(parsed.layout)) {
+    // A hidden widget does not play, so this alert would be an empty
+    // stretch of the queue.
+    const reason = "every widget in the layout is hidden";
+    logger.warn("ui.notify.alert: layout has no visible widget; dropping", { alertId });
     await reportAlertNotPlayed(db, logger, { target, reason });
     return { ok: false, reason };
   }
@@ -190,7 +205,9 @@ async function fanOutAlert(
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
-    if (!state) {
+    // An alert composition is played by steps, never delivered to: only a
+    // scene's alert widgets receive alerts, even if a page were open on one.
+    if (!state || state.kind !== "scene") {
       continue;
     }
     const targetInstanceIds = alertWidgetsNamed(state.instances, alert.target).map((instance) => instance.id);

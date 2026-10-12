@@ -106,7 +106,8 @@ async function loadAlertWidgets(deps: AlertQueueDeps): Promise<Map<string, Set<s
   const alertWidgets = new Map<string, Set<string>>();
   for (const sceneId of sceneIds) {
     const state = await deps.host.loadSceneById(sceneId);
-    const ids = (state?.instances ?? [])
+    // Alerts are only ever delivered to scenes (see fanOutAlert).
+    const ids = (state?.kind === "scene" ? state.instances : [])
       .filter((instance) => instance.hostsSurface === ALERT_SURFACE)
       .map((instance) => instance.id);
     alertWidgets.set(sceneId, new Set(ids));

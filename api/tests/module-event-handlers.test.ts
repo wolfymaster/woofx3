@@ -388,11 +388,41 @@ describe("parseModuleWidgetRegistered", () => {
             // The raw widget declares none, so the parser reports an empty axis
             // rather than inventing one.
             taxonomy: [],
+            // Likewise for the kinds it plays itself.
+            behaviorKinds: { transitions: [], effects: [] },
             createdByType: "MODULE",
             createdByRef: "scene_widgets",
           },
         ],
       },
+    });
+  });
+
+  test("carries the kinds a widget declares, dropping entries without an id", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        widgets: [
+          {
+            id: "uuid-w1",
+            manifest_id: "text",
+            name: "Text",
+            directory: "widgets/text",
+            behavior_kinds: {
+              transitions: [{ id: "typewriter", label: "Typewriter" }, { id: "wave" }, { label: "No id" }, "fade"],
+              effects: [{ id: "sparkle", label: "Sparkle" }],
+            },
+          },
+        ],
+      },
+    };
+    const result = parseModuleWidgetRegistered(ce);
+    expect(result.event.widgets[0]?.behaviorKinds).toEqual({
+      transitions: [
+        { id: "typewriter", label: "Typewriter" },
+        { id: "wave", label: "wave" },
+      ],
+      effects: [{ id: "sparkle", label: "Sparkle" }],
     });
   });
 

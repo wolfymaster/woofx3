@@ -14,6 +14,10 @@ name: api checks
 # The api package resolves several workspace packages by relative path, so
 # their dependencies have to be installed too or every `.pb` import fails to
 # resolve `protoscript` and the run reports hundreds of phantom errors.
+#
+# The scene editor core takes its document model and type registry from
+# shared/clients/typescript/scene by relative path, so that package is
+# checked here as well, with its own program and tests.
 
 on:
   push:
@@ -51,6 +55,7 @@ jobs:
             shared/clients/typescript/db \
             shared/clients/typescript/nats \
             shared/clients/typescript/api \
+            shared/clients/typescript/scene \
             api
           do
             echo "::group::bun install ($dir)"
@@ -70,4 +75,12 @@ jobs:
       # directory, outside api/, so api's test run does not find them.
       - name: Test the api package
         working-directory: shared/clients/typescript/api
+        run: bun test
+
+      - name: Type check the scene package
+        working-directory: shared/clients/typescript/scene
+        run: bun run typecheck
+
+      - name: Test the scene package
+        working-directory: shared/clients/typescript/scene
         run: bun test

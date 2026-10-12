@@ -201,10 +201,29 @@ pub struct WidgetInputJson {
     pub hosts_surface: String,
     /// Open, multi-valued classification; see `ModuleWidget::taxonomy`.
     pub taxonomy: Vec<String>,
+    /// The transition and effect kinds the widget plays itself; see
+    /// `ModuleWidget::transitions` and `ModuleWidget::effects`.
+    pub behavior_kinds: WidgetBehaviorKindsJson,
     /// Entry path relative to the widget asset root (assets-relative,
     /// matching the prefix-stripped repository keys). Empty means the
     /// consumer falls back to `index.html`.
     pub entry: String,
+}
+
+/// Kinds a widget declares, by behavior type. Matches `WidgetBehaviorKinds`
+/// in db/proto/v1/module_widget.proto.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetBehaviorKindsJson {
+    pub transitions: Vec<WidgetBehaviorKindJson>,
+    pub effects: Vec<WidgetBehaviorKindJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetBehaviorKindJson {
+    pub id: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -81,6 +81,36 @@ describe("parseSceneUpdated", () => {
   });
 });
 
+describe("composition kinds", () => {
+  it("carries an alert's kind, behaviors and inputs so a scene cache can skip it", () => {
+    const { event } = parseSceneUpdated(
+      snakeCe({
+        id: SCENE_ID,
+        kind: "alert",
+        name: "Follow",
+        behaviors_json: '{"b1":{}}',
+        inputs_json: '[{"id":"name","label":"Name","type":"text"}]',
+      })
+    );
+    expect(event?.scene.kind).toBe("alert");
+    expect(event?.scene.behaviorsJson).toBe('{"b1":{}}');
+    expect(event?.scene.inputsJson).toBe('[{"id":"name","label":"Name","type":"text"}]');
+    expect(parseSceneDeleted(snakeCe({ id: SCENE_ID, kind: "alert" })).event?.kind).toBe("alert");
+  });
+
+  it("reads a row without a kind as a scene with no behaviors or inputs", () => {
+    const { event } = parseSceneCreated(snakeCe({ id: SCENE_ID, name: "Main" }));
+    expect(event?.scene.kind).toBe("scene");
+    expect(event?.scene.behaviorsJson).toBe("{}");
+    expect(event?.scene.inputsJson).toBe("[]");
+    expect(parseSceneDeleted(snakeCe({ id: SCENE_ID })).event?.kind).toBe("scene");
+  });
+
+  it("refuses a kind it does not know rather than guessing", () => {
+    expect(() => parseSceneCreated(snakeCe({ id: SCENE_ID, kind: "widget" }))).toThrow();
+  });
+});
+
 describe("parseSceneDeleted", () => {
   it("returns SCENE_DELETED with the scene id", () => {
     const ce = snakeCe({ id: SCENE_ID });

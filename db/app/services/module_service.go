@@ -1312,6 +1312,10 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 		if err != nil {
 			return nil, fmt.Errorf("marshal taxonomy for widget %q: %w", in.Name, err)
 		}
+		behaviorKindsJSON, err := json.Marshal(behaviorKindsOfInput(in.BehaviorKinds))
+		if err != nil {
+			return nil, fmt.Errorf("marshal behavior kinds for widget %q: %w", in.Name, err)
+		}
 		w := &models.Widget{
 			ID:             uuid.New(),
 			Name:           in.Name,
@@ -1323,6 +1327,7 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			Surfaces:       string(surfacesJSON),
 			HostsSurface:   in.HostsSurface,
 			Taxonomy:       string(taxonomyJSON),
+			BehaviorKinds:  string(behaviorKindsJSON),
 			CreatedByType:  createdByType,
 			CreatedByRef:   createdByRef,
 			ManifestID:     in.ManifestId,
@@ -1536,6 +1541,7 @@ func widgetToProto(w *models.Widget) *client.Widget {
 		Surfaces:       widgetSurfaces(w),
 		HostsSurface:   w.HostsSurface,
 		Taxonomy:       widgetTaxonomy(w),
+		BehaviorKinds:  widgetBehaviorKinds(w).proto(),
 		CreatedByType:  w.CreatedByType,
 		CreatedByRef:   w.CreatedByRef,
 	}
@@ -1563,6 +1569,62 @@ func widgetTaxonomy(w *models.Widget) []string {
 		taxonomy = []string{}
 	}
 	return taxonomy
+}
+
+// behaviorKinds is the kinds a widget declares it plays itself, as the
+// widgets.behavior_kinds column and the widget outbox payloads carry them.
+// Both lists are always present, empty when the widget declares none.
+type behaviorKinds struct {
+	Transitions []behaviorKind `json:"transitions"`
+	Effects     []behaviorKind `json:"effects"`
+}
+
+type behaviorKind struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// behaviorKindsOfInput copies a registration's declared kinds. Barkloader
+// validated them against the manifest rules, so they are stored as given; a
+// widget that sent none declares none.
+func behaviorKindsOfInput(in *client.WidgetBehaviorKinds) behaviorKinds {
+	kinds := behaviorKinds{Transitions: []behaviorKind{}, Effects: []behaviorKind{}}
+	if in == nil {
+		return kinds
+	}
+	for _, k := range in.Transitions {
+		kinds.Transitions = append(kinds.Transitions, behaviorKind{ID: k.Id, Label: k.Label})
+	}
+	for _, k := range in.Effects {
+		kinds.Effects = append(kinds.Effects, behaviorKind{ID: k.Id, Label: k.Label})
+	}
+	return kinds
+}
+
+// widgetBehaviorKinds decodes a widget row's declared kinds.
+func widgetBehaviorKinds(w *models.Widget) behaviorKinds {
+	var kinds behaviorKinds
+	if w.BehaviorKinds != "" {
+		json.Unmarshal([]byte(w.BehaviorKinds), &kinds)
+	}
+	if kinds.Transitions == nil {
+		kinds.Transitions = []behaviorKind{}
+	}
+	if kinds.Effects == nil {
+		kinds.Effects = []behaviorKind{}
+	}
+	return kinds
+}
+
+func (kinds behaviorKinds) proto() *client.WidgetBehaviorKinds {
+	convert := func(list []behaviorKind) []*client.WidgetBehaviorKind {
+		out := make([]*client.WidgetBehaviorKind, 0, len(list))
+		for _, k := range list {
+			out = append(out, &client.WidgetBehaviorKind{Id: k.ID, Label: k.Label})
+		}
+		return out
+	}
+	return &client.WidgetBehaviorKinds{Transitions: convert(kinds.Transitions), Effects: convert(kinds.Effects)}
 }
 
 // ---------------------------------------------------------------------

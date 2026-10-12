@@ -292,7 +292,15 @@ async function submit(docs: SceneDocuments, ops: unknown[]): Promise<{ ok: boole
 }
 
 function documents(instances: OverlayWidgetInstance[], framed: OverlayWidgetInstance[] = []) {
-  const state: OverlaySceneState = { sceneId: "s1", name: "Main", layout: {}, instances };
+  const state: OverlaySceneState = {
+    sceneId: "s1",
+    name: "Main",
+    kind: "scene",
+    behaviors: {},
+    inputs: [],
+    layout: {},
+    instances,
+  };
   const sent: Array<{ event: string; data: any }> = [];
   const docs = new SceneDocuments(
     loaderOf(
@@ -467,6 +475,9 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     const state: OverlaySceneState = {
       sceneId: "s1",
       name: "Main",
+      kind: "scene",
+      behaviors: {},
+      inputs: [],
       layout: {},
       instances: [unframed("themed", { image: external() })],
     };
@@ -507,7 +518,15 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     let attempts = 0;
     const docs = new SceneDocuments(
       loaderOf(
-        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [unframed("themed", { image: external() })] }),
+        () => ({
+          sceneId: "s1",
+          name: "Main",
+          kind: "scene",
+          behaviors: {},
+          inputs: [],
+          layout: {},
+          instances: [unframed("themed", { image: external() })],
+        }),
         async () => {
           attempts++;
           return new Promise<OverlayWidgetInstance[]>(() => {});
@@ -530,7 +549,15 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     let attempts = 0;
     const docs = new SceneDocuments(
       loaderOf(
-        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [unframed("themed", { image: external() })] }),
+        () => ({
+          sceneId: "s1",
+          name: "Main",
+          kind: "scene",
+          behaviors: {},
+          inputs: [],
+          layout: {},
+          instances: [unframed("themed", { image: external() })],
+        }),
         async () => {
           attempts++;
           return [unframed("themed", { image: external() })];
@@ -548,7 +575,15 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
   it("tells editors the meta barkloader's answer brings, as an external entry with no ops", async () => {
     const docs = new SceneDocuments(
       loaderOf(
-        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [unframed("themed", { image: external() })] }),
+        () => ({
+          sceneId: "s1",
+          name: "Main",
+          kind: "scene",
+          behaviors: {},
+          inputs: [],
+          layout: {},
+          instances: [unframed("themed", { image: external() })],
+        }),
         async () => [{ ...instance("themed", { image: external() }, true), frameUrl: "/frames/woofx3/timer?v=abc" }]
       ),
       { broadcast: () => {}, connectedSceneIds: () => [] },
@@ -577,7 +612,7 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     const sent: Array<{ event: string; data: any }> = [];
     const docs = new SceneDocuments(
       loaderOf(
-        () => ({ sceneId: "s1", name: "Main", layout: {}, instances: [] }),
+        () => ({ sceneId: "s1", name: "Main", kind: "scene", behaviors: {}, inputs: [], layout: {}, instances: [] }),
         async () => {
           calls++;
           if (calls === 1) {

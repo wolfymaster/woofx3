@@ -436,6 +436,68 @@ describe("installWidgetHostShim — settings", () => {
   });
 });
 
+describe("installWidgetHostShim — behaviors", () => {
+  const typewriter = {
+    type: "transition",
+    kind: "typewriter",
+    phase: "in",
+    durationMs: 800,
+    easing: "ease-out",
+    params: { phase: "in" },
+  } as const;
+
+  it("marks the frame with the entrance in the boot payload before the widget runs", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot({ behavior: typewriter }));
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    expect(doc.attributes.get("data-transition")).toBe("typewriter");
+    expect(doc.attributes.get("data-transition-phase")).toBe("in");
+    expect(doc.vars.get("--transition-duration")).toBe("800ms");
+    expect(doc.vars.get("--transition-easing")).toBe("ease-out");
+  });
+
+  it("refuses a boot payload whose entrance is malformed", () => {
+    const h = makeHarness(makeBoot({ behavior: { ...typewriter, phase: undefined } as never }));
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    expect(
+      installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: fakeDocument() })
+    ).toBeNull();
+    expect(errors).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays what the host sends, a transition and an effect side by side, and clears both on null", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "behavior", behavior: { ...typewriter, phase: "out" } }));
+    h.deliver(
+      fromParent({
+        type: "behavior",
+        behavior: { type: "effect", kind: "sparkle", durationMs: null, easing: "linear", params: {} },
+      })
+    );
+    expect(doc.attributes.get("data-transition-phase")).toBe("out");
+    expect(doc.attributes.get("data-effect")).toBe("sparkle");
+    expect(doc.vars.has("--effect-duration")).toBe(false);
+    expect(doc.vars.get("--effect-easing")).toBe("linear");
+    h.deliver(fromParent({ type: "behavior", behavior: null }));
+    expect(doc.attributes.has("data-transition")).toBe(false);
+    expect(doc.attributes.has("data-effect")).toBe(false);
+    expect([...doc.vars.keys()].filter((name) => /^--(transition|effect)-/.test(name))).toEqual([]);
+  });
+
+  it("ignores a malformed behavior", () => {
+    const doc = fakeDocument();
+    const h = makeHarness(makeBoot());
+    installWidgetHostShim({ windowRef: h.windowRef, parentRef: h.parent, documentRef: doc });
+    h.deliver(initMsg());
+    h.deliver(fromParent({ type: "behavior", behavior: { ...typewriter, kind: "x y" } }));
+    h.deliver(fromParent({ type: "behavior", behavior: { ...typewriter, type: "activity" } }));
+    expect(doc.attributes.has("data-transition")).toBe(false);
+  });
+});
+
 describe("installWidgetHostShim — rendered", () => {
   it("reports rendered two frames after load", async () => {
     const h = makeHarness(makeBoot());
@@ -465,7 +527,7 @@ function fakeDocument() {
     removeAttribute: (name: string) => void attributes.delete(name),
     textContent: null as string | null,
   };
-  return { vars, documentElement, querySelectorAll: () => [] };
+  return { vars, attributes, documentElement, querySelectorAll: () => [] };
 }
 
 describe("installWidgetHostShim — events", () => {

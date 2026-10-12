@@ -1,7 +1,15 @@
-import type { ActionStep, CommandSnapshot, Scene, WorkflowDefinition } from "@woofx3/api";
+import type {
+  ActionStep,
+  AlertComposition,
+  CommandSnapshot,
+  CompositionKind,
+  Scene,
+  WorkflowDefinition,
+} from "@woofx3/api";
+import type { SceneSnapshot } from "@woofx3/api/webhooks";
 import type * as command from "@woofx3/db/command.pb";
 import type * as scene from "@woofx3/db/scene.pb";
-import * as protoscript from "protoscript";
+import type * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
 
 /**
@@ -63,27 +71,53 @@ export function dbSceneToWire(s: scene.Scene): Scene {
  * columns — they round-trip verbatim so the Convex side can parse
  * them with the full widget-instance shape it knows about.
  */
-export function dbSceneToSnapshot(s: scene.Scene): {
-  id: string;
-  name: string;
-  description: string;
-  widgetsJson: string;
-  layoutJson: string;
-  createdByType: string;
-  createdByRef: string;
-  createdAt: string;
-  updatedAt: string;
-} {
+export function dbSceneToSnapshot(s: scene.Scene): SceneSnapshot {
   return {
     id: s.id ?? "",
+    kind: compositionKindOf(s.kind),
     name: s.name ?? "",
     description: s.description ?? "",
     widgetsJson: s.widgetsJson ?? "[]",
     layoutJson: s.layoutJson ?? "{}",
+    behaviorsJson: s.behaviorsJson || "{}",
+    inputsJson: s.inputsJson || "[]",
     createdByType: s.createdByType ?? "USER",
     createdByRef: s.createdByRef ?? "",
     createdAt: timestampToIso(s.createdAt),
     updatedAt: timestampToIso(s.updatedAt),
+  };
+}
+
+/**
+ * The kind a db-proxy row or outbox event names. Empty is a scene: a row
+ * read from a db-proxy that predates kinds is one. Any other value means
+ * the two disagree on what kinds exist, which no reader can paper over.
+ */
+export function compositionKindOf(kind: string | undefined): CompositionKind {
+  if (kind === undefined || kind === "" || kind === "scene") {
+    return "scene";
+  }
+  if (kind === "alert") {
+    return "alert";
+  }
+  throw new Error(`unknown composition kind ${JSON.stringify(kind)}`);
+}
+
+export function dbSceneToAlertComposition(s: scene.Scene): AlertComposition {
+  if (compositionKindOf(s.kind) !== "alert") {
+    throw new Error(`scene ${s.id} is not an alert`);
+  }
+  return {
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    widgetsJson: s.widgetsJson || "[]",
+    layoutJson: s.layoutJson || "{}",
+    behaviorsJson: s.behaviorsJson || "{}",
+    inputsJson: s.inputsJson || "[]",
+    hasDraft: s.hasDraft,
+    createdByType: s.createdByType || "USER",
+    createdByRef: s.createdByRef,
   };
 }
 

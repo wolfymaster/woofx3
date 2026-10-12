@@ -20,9 +20,11 @@ import {
   type EntryKind,
   type EntrySource,
   entryIdOf,
+  invalidExternalOps,
   invalidOps,
   invalidResult,
   isPlainObject,
+  isSceneDocument,
   type Json0Component,
   MAX_DOCUMENT_BYTES,
   MAX_ITEM_BYTES,
@@ -102,6 +104,10 @@ export interface SequencerInit {
 export function createSequencerState(init: SequencerInit): SequencerState {
   assert(init.epoch.length > 0 && !init.epoch.includes("."), "an epoch is non-empty and has no dot");
   assert(Number.isSafeInteger(init.editorState.v) && init.editorState.v >= 0, "v is a non-negative integer");
+  assert(
+    isSceneDocument(init.docs.draft) && isSceneDocument(init.docs.published),
+    "both documents are normalized compositions"
+  );
   return {
     v: init.editorState.v,
     headId: init.editorState.headId,
@@ -207,7 +213,7 @@ function prepareEdit(
   if (body.kind === "external" && body.ops.length === 0) {
     return planOf(state, kind, {}, unchanged);
   }
-  const invalid = invalidOps(body.ops);
+  const invalid = body.kind === "external" ? invalidExternalOps(body.ops) : invalidOps(body.ops);
   if (invalid !== null) {
     return refuse("invalid", invalid);
   }
@@ -308,11 +314,12 @@ function planOf(
 /**
  * The draft with what a live edit (`ops`, which turned the published scene
  * `before` into `after`) changed copied in, at the grain `copyTouched`
- * defines: per layout key, per placement field, and per placement added or
- * removed. The live edit wins over the draft's own value for each of those
- * it touched, and the draft keeps every other edit it has. A live edit to a
- * placement the draft removed is skipped: the draft keeps it removed, and
- * publishing the draft removes it from the live scene too.
+ * defines: per layout key, per field of a placement or behavior, and per
+ * placement or behavior added or removed. The live edit wins over the
+ * draft's own value for each of those it touched, and the draft keeps every
+ * other edit it has. A live edit to an entry the draft removed is skipped:
+ * the draft keeps it removed, and publishing the draft removes it from the
+ * live scene too.
  */
 export function mirrorIntoDraft(
   draft: SceneDocument,
@@ -325,7 +332,7 @@ export function mirrorIntoDraft(
 
 /**
  * The JSON length of `after`, which `ops` made from `before` (`beforeBytes`
- * long), measuring only the layout keys and placements the ops touched:
+ * long), measuring only the layout keys and entries the ops touched:
  * each one's entry (key, colon and value) before and after, and the commas
  * between entries, which follow from how many entries the object has.
  * Exact, since a document's JSON is exactly those parts.
@@ -336,16 +343,16 @@ function documentBytesAfter(
   beforeBytes: number,
   ops: readonly Json0Component[]
 ): number {
-  const touched = { layout: new Set<string>(), widgets: new Set<string>() };
+  const touched: Record<SizedRoot, Set<string>> = { layout: new Set(), widgets: new Set(), behaviors: new Set() };
   for (const component of ops) {
     const [root, key] = component.p;
-    if ((root !== "layout" && root !== "widgets") || typeof key !== "string") {
+    if (!isSizedRoot(root) || typeof key !== "string") {
       return JSON.stringify(after).length;
     }
     touched[root].add(key);
   }
   let bytes = beforeBytes;
-  for (const root of ["layout", "widgets"] as const) {
+  for (const root of SIZED_ROOTS) {
     if (touched[root].size === 0) {
       continue;
     }
@@ -357,6 +364,14 @@ function documentBytesAfter(
     bytes += commas(Object.keys(to).length) - commas(Object.keys(from).length);
   }
   return bytes;
+}
+
+/** The document's keyed objects, whose size `documentBytesAfter` updates entry by entry. */
+const SIZED_ROOTS = ["layout", "widgets", "behaviors"] as const;
+type SizedRoot = (typeof SIZED_ROOTS)[number];
+
+function isSizedRoot(value: unknown): value is SizedRoot {
+  return (SIZED_ROOTS as readonly unknown[]).includes(value);
 }
 
 function memberBytes(record: Record<string, unknown>, key: string): number {

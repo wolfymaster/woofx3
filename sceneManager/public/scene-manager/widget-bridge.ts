@@ -19,6 +19,7 @@ import {
   PROTOCOL_VERSION,
   isWidgetProtocolEnvelope,
   type EventQueueConfig,
+  type WidgetBehaviorState,
   type WidgetEvent,
 } from "@woofx3/module-sdk";
 
@@ -303,6 +304,15 @@ export class WidgetBridge {
     if (this.initialized) {
       this.post({ type: "settings.changed", settings });
     }
+  }
+
+  /**
+   * Have the widget play one of its own behaviors from now, or clear them
+   * all (`null`). Sent whether or not the handshake is done: the shim marks
+   * its document as soon as it hears it.
+   */
+  sendBehavior(behavior: WidgetBehaviorState | null): void {
+    this.post({ type: "behavior", behavior });
   }
 
   dispose(): void {

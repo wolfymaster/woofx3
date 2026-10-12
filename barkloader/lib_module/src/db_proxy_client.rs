@@ -633,6 +633,8 @@ mod test_support {
         failing_command: Option<&'static str>,
         /// `(command, actions_json)` for every `register_command`, in order.
         registered_commands: Mutex<Vec<(String, String)>>,
+        /// Every `register_workflow` request, in order.
+        registered_workflows: Mutex<Vec<woofx3::db::workflow::CreateWorkflowRequest>>,
         /// What `list_modules` answers: the modules already installed.
         installed: Mutex<Vec<ModuleRecord>>,
         /// The module's settings as the db would hold them, key to value.
@@ -655,6 +657,7 @@ mod test_support {
                 commands: Mutex::new(Vec::new()),
                 failing_command: None,
                 registered_commands: Mutex::new(Vec::new()),
+                registered_workflows: Mutex::new(Vec::new()),
                 installed: Mutex::new(Vec::new()),
                 settings: Mutex::new(Default::default()),
                 instances: Mutex::new(Vec::new()),
@@ -728,6 +731,13 @@ mod test_support {
             self.registered_commands
                 .lock()
                 .expect("registered_commands mutex poisoned")
+                .clone()
+        }
+
+        pub fn registered_workflows(&self) -> Vec<woofx3::db::workflow::CreateWorkflowRequest> {
+            self.registered_workflows
+                .lock()
+                .expect("registered_workflows mutex poisoned")
                 .clone()
         }
 
@@ -1016,9 +1026,14 @@ mod test_support {
 
         async fn register_workflow(
             &self,
-            _request: woofx3::db::workflow::CreateWorkflowRequest,
+            request: woofx3::db::workflow::CreateWorkflowRequest,
         ) -> Result<()> {
-            self.record("register_workflow")
+            self.record("register_workflow")?;
+            self.registered_workflows
+                .lock()
+                .expect("registered_workflows mutex poisoned")
+                .push(request);
+            Ok(())
         }
 
         async fn register_command(

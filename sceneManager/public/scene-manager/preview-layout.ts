@@ -2,8 +2,9 @@
 //
 // The editor embeds this overlay as its canvas preview. The overlay only
 // knows the scene as last saved, so while a widget is being dragged the
-// editor posts its draft layout here and the page moves its widget
-// elements to match -- without saving and without reloading any widget.
+// editor posts its draft layout here and the page lays it over the scene as
+// the runtime's transient state (`transientOfPreviewLayout`) -- without
+// saving and without reloading any widget.
 // The message also carries the draft placements themselves, so a widget
 // added or reconfigured in the editor shows before it is saved; only that
 // widget reloads, into a frame rendering the draft. Nothing is persisted: a
@@ -12,6 +13,8 @@
 // The message shape must match `buildPreviewLayoutMessage` in the
 // dashboard (woofx3-ui client/src/lib/scene-preview-layout.ts).
 
+import { evenKeys, type NodeId } from "@woofx3/scene/model";
+import type { TransientOverrides } from "@woofx3/scene/runtime";
 import { themeOf } from "./scene-update";
 
 export const PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
@@ -22,6 +25,10 @@ export interface PreviewWidgetLayout {
   y: number;
   width: number;
   height: number;
+  /** Degrees clockwise; absent from an editor that does not send it. */
+  rotation?: number;
+  /** 0 to 1; absent from an editor that does not send it. */
+  opacity?: number;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -39,7 +46,14 @@ function parseWidget(raw: unknown): PreviewWidgetLayout | null {
   if (!isFiniteNumber(w.x) || !isFiniteNumber(w.y) || !isFiniteNumber(w.width) || !isFiniteNumber(w.height)) {
     return null;
   }
-  return { id: w.id, x: w.x, y: w.y, width: w.width, height: w.height };
+  const widget: PreviewWidgetLayout = { id: w.id, x: w.x, y: w.y, width: w.width, height: w.height };
+  if (isFiniteNumber(w.rotation)) {
+    widget.rotation = w.rotation;
+  }
+  if (isFiniteNumber(w.opacity) && w.opacity >= 0 && w.opacity <= 1) {
+    widget.opacity = w.opacity;
+  }
+  return widget;
 }
 
 /** The widgets of a layout message, or null for anything else posted to the page. */
@@ -107,22 +121,31 @@ export function settingsOf(placement: Record<string, unknown>): Record<string, u
 }
 
 /**
- * Place each rendered widget where the layout puts it. A widget the layout
- * leaves out has been removed in the editor, so it is hidden rather than
- * left standing where it was saved.
+ * The editor's draft layout as transient state over the scene's widgets
+ * (`ids`): each listed widget where the layout puts it, stacked in the
+ * layout's order (bottom first). A widget the layout leaves out has been
+ * removed in the editor, so it is made fully transparent rather than left
+ * standing where it was saved; its frame keeps running in case the removal
+ * is undone.
  */
-export function applyPreviewLayout(elements: ReadonlyMap<string, HTMLElement>, layout: PreviewWidgetLayout[]): void {
-  const byId = new Map(layout.map((widget) => [widget.id, widget]));
-  for (const [id, element] of elements) {
-    const widget = byId.get(id);
-    if (!widget) {
-      element.style.display = "none";
-      continue;
+export function transientOfPreviewLayout(layout: PreviewWidgetLayout[], ids: Iterable<NodeId>): TransientOverrides {
+  const transient: Record<NodeId, TransientOverrides[NodeId]> = {};
+  const zKeys = evenKeys(layout.length);
+  layout.forEach((widget, index) => {
+    transient[widget.id] = {
+      x: widget.x,
+      y: widget.y,
+      width: widget.width,
+      height: widget.height,
+      z: zKeys[index] as string,
+      ...(widget.rotation === undefined ? {} : { rotation: widget.rotation }),
+      ...(widget.opacity === undefined ? {} : { opacity: widget.opacity }),
+    };
+  });
+  for (const id of ids) {
+    if (!Object.hasOwn(transient, id)) {
+      transient[id] = { opacity: 0 };
     }
-    element.style.display = "";
-    element.style.left = `${widget.x}px`;
-    element.style.top = `${widget.y}px`;
-    element.style.width = `${widget.width}px`;
-    element.style.height = `${widget.height}px`;
   }
+  return transient;
 }

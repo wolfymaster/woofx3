@@ -25,6 +25,15 @@ impl serde::Serialize for CreateSceneRequest {
         if !self.created_by_ref.is_empty() {
             len += 1;
         }
+        if !self.kind.is_empty() {
+            len += 1;
+        }
+        if !self.behaviors_json.is_empty() {
+            len += 1;
+        }
+        if !self.inputs_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.CreateSceneRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -43,6 +52,15 @@ impl serde::Serialize for CreateSceneRequest {
         }
         if !self.created_by_ref.is_empty() {
             struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
+        if !self.kind.is_empty() {
+            struct_ser.serialize_field("kind", &self.kind)?;
+        }
+        if !self.behaviors_json.is_empty() {
+            struct_ser.serialize_field("behaviorsJson", &self.behaviors_json)?;
+        }
+        if !self.inputs_json.is_empty() {
+            struct_ser.serialize_field("inputsJson", &self.inputs_json)?;
         }
         struct_ser.end()
     }
@@ -64,6 +82,11 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
             "createdByType",
             "created_by_ref",
             "createdByRef",
+            "kind",
+            "behaviors_json",
+            "behaviorsJson",
+            "inputs_json",
+            "inputsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -74,6 +97,9 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
             LayoutJson,
             CreatedByType,
             CreatedByRef,
+            Kind,
+            BehaviorsJson,
+            InputsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -101,6 +127,9 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                             "layoutJson" | "layout_json" => Ok(GeneratedField::LayoutJson),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "kind" => Ok(GeneratedField::Kind),
+                            "behaviorsJson" | "behaviors_json" => Ok(GeneratedField::BehaviorsJson),
+                            "inputsJson" | "inputs_json" => Ok(GeneratedField::InputsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -126,6 +155,9 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                 let mut layout_json__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
+                let mut kind__ = None;
+                let mut behaviors_json__ = None;
+                let mut inputs_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -164,6 +196,24 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                             }
                             created_by_ref__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Kind => {
+                            if kind__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("kind"));
+                            }
+                            kind__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::BehaviorsJson => {
+                            if behaviors_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorsJson"));
+                            }
+                            behaviors_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::InputsJson => {
+                            if inputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("inputsJson"));
+                            }
+                            inputs_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateSceneRequest {
@@ -173,6 +223,9 @@ impl<'de> serde::Deserialize<'de> for CreateSceneRequest {
                     layout_json: layout_json__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
+                    kind: kind__.unwrap_or_default(),
+                    behaviors_json: behaviors_json__.unwrap_or_default(),
+                    inputs_json: inputs_json__.unwrap_or_default(),
                 })
             }
         }
@@ -381,6 +434,9 @@ impl serde::Serialize for ListScenesRequest {
         if self.sort_desc {
             len += 1;
         }
+        if !self.kind.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.ListScenesRequest", len)?;
         if self.page != 0 {
             struct_ser.serialize_field("page", &self.page)?;
@@ -393,6 +449,9 @@ impl serde::Serialize for ListScenesRequest {
         }
         if self.sort_desc {
             struct_ser.serialize_field("sortDesc", &self.sort_desc)?;
+        }
+        if !self.kind.is_empty() {
+            struct_ser.serialize_field("kind", &self.kind)?;
         }
         struct_ser.end()
     }
@@ -411,6 +470,7 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
             "sortBy",
             "sort_desc",
             "sortDesc",
+            "kind",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -419,6 +479,7 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
             PageSize,
             SortBy,
             SortDesc,
+            Kind,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -444,6 +505,7 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                             "pageSize" | "page_size" => Ok(GeneratedField::PageSize),
                             "sortBy" | "sort_by" => Ok(GeneratedField::SortBy),
                             "sortDesc" | "sort_desc" => Ok(GeneratedField::SortDesc),
+                            "kind" => Ok(GeneratedField::Kind),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -467,6 +529,7 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                 let mut page_size__ = None;
                 let mut sort_by__ = None;
                 let mut sort_desc__ = None;
+                let mut kind__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Page => {
@@ -497,6 +560,12 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                             }
                             sort_desc__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Kind => {
+                            if kind__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("kind"));
+                            }
+                            kind__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ListScenesRequest {
@@ -504,6 +573,7 @@ impl<'de> serde::Deserialize<'de> for ListScenesRequest {
                     page_size: page_size__.unwrap_or_default(),
                     sort_by: sort_by__.unwrap_or_default(),
                     sort_desc: sort_desc__.unwrap_or_default(),
+                    kind: kind__.unwrap_or_default(),
                 })
             }
         }
@@ -724,6 +794,18 @@ impl serde::Serialize for Scene {
         if !self.editor_state_json.is_empty() {
             len += 1;
         }
+        if !self.kind.is_empty() {
+            len += 1;
+        }
+        if !self.behaviors_json.is_empty() {
+            len += 1;
+        }
+        if !self.draft_behaviors_json.is_empty() {
+            len += 1;
+        }
+        if !self.inputs_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.Scene", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -764,6 +846,18 @@ impl serde::Serialize for Scene {
         if !self.editor_state_json.is_empty() {
             struct_ser.serialize_field("editorStateJson", &self.editor_state_json)?;
         }
+        if !self.kind.is_empty() {
+            struct_ser.serialize_field("kind", &self.kind)?;
+        }
+        if !self.behaviors_json.is_empty() {
+            struct_ser.serialize_field("behaviorsJson", &self.behaviors_json)?;
+        }
+        if !self.draft_behaviors_json.is_empty() {
+            struct_ser.serialize_field("draftBehaviorsJson", &self.draft_behaviors_json)?;
+        }
+        if !self.inputs_json.is_empty() {
+            struct_ser.serialize_field("inputsJson", &self.inputs_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -797,6 +891,13 @@ impl<'de> serde::Deserialize<'de> for Scene {
             "hasDraft",
             "editor_state_json",
             "editorStateJson",
+            "kind",
+            "behaviors_json",
+            "behaviorsJson",
+            "draft_behaviors_json",
+            "draftBehaviorsJson",
+            "inputs_json",
+            "inputsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -814,6 +915,10 @@ impl<'de> serde::Deserialize<'de> for Scene {
             DraftLayoutJson,
             HasDraft,
             EditorStateJson,
+            Kind,
+            BehaviorsJson,
+            DraftBehaviorsJson,
+            InputsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -848,6 +953,10 @@ impl<'de> serde::Deserialize<'de> for Scene {
                             "draftLayoutJson" | "draft_layout_json" => Ok(GeneratedField::DraftLayoutJson),
                             "hasDraft" | "has_draft" => Ok(GeneratedField::HasDraft),
                             "editorStateJson" | "editor_state_json" => Ok(GeneratedField::EditorStateJson),
+                            "kind" => Ok(GeneratedField::Kind),
+                            "behaviorsJson" | "behaviors_json" => Ok(GeneratedField::BehaviorsJson),
+                            "draftBehaviorsJson" | "draft_behaviors_json" => Ok(GeneratedField::DraftBehaviorsJson),
+                            "inputsJson" | "inputs_json" => Ok(GeneratedField::InputsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -880,6 +989,10 @@ impl<'de> serde::Deserialize<'de> for Scene {
                 let mut draft_layout_json__ = None;
                 let mut has_draft__ = None;
                 let mut editor_state_json__ = None;
+                let mut kind__ = None;
+                let mut behaviors_json__ = None;
+                let mut draft_behaviors_json__ = None;
+                let mut inputs_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -960,6 +1073,30 @@ impl<'de> serde::Deserialize<'de> for Scene {
                             }
                             editor_state_json__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Kind => {
+                            if kind__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("kind"));
+                            }
+                            kind__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::BehaviorsJson => {
+                            if behaviors_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorsJson"));
+                            }
+                            behaviors_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::DraftBehaviorsJson => {
+                            if draft_behaviors_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("draftBehaviorsJson"));
+                            }
+                            draft_behaviors_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::InputsJson => {
+                            if inputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("inputsJson"));
+                            }
+                            inputs_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Scene {
@@ -976,6 +1113,10 @@ impl<'de> serde::Deserialize<'de> for Scene {
                     draft_layout_json: draft_layout_json__.unwrap_or_default(),
                     has_draft: has_draft__.unwrap_or_default(),
                     editor_state_json: editor_state_json__.unwrap_or_default(),
+                    kind: kind__.unwrap_or_default(),
+                    behaviors_json: behaviors_json__.unwrap_or_default(),
+                    draft_behaviors_json: draft_behaviors_json__.unwrap_or_default(),
+                    inputs_json: inputs_json__.unwrap_or_default(),
                 })
             }
         }
@@ -1128,6 +1269,15 @@ impl serde::Serialize for UpdateSceneRequest {
         if self.clear_editor_state {
             len += 1;
         }
+        if !self.behaviors_json.is_empty() {
+            len += 1;
+        }
+        if !self.draft_behaviors_json.is_empty() {
+            len += 1;
+        }
+        if !self.inputs_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("scene.UpdateSceneRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -1159,6 +1309,15 @@ impl serde::Serialize for UpdateSceneRequest {
         if self.clear_editor_state {
             struct_ser.serialize_field("clearEditorState", &self.clear_editor_state)?;
         }
+        if !self.behaviors_json.is_empty() {
+            struct_ser.serialize_field("behaviorsJson", &self.behaviors_json)?;
+        }
+        if !self.draft_behaviors_json.is_empty() {
+            struct_ser.serialize_field("draftBehaviorsJson", &self.draft_behaviors_json)?;
+        }
+        if !self.inputs_json.is_empty() {
+            struct_ser.serialize_field("inputsJson", &self.inputs_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -1186,6 +1345,12 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
             "editorStateJson",
             "clear_editor_state",
             "clearEditorState",
+            "behaviors_json",
+            "behaviorsJson",
+            "draft_behaviors_json",
+            "draftBehaviorsJson",
+            "inputs_json",
+            "inputsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1200,6 +1365,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
             ClearDraft,
             EditorStateJson,
             ClearEditorState,
+            BehaviorsJson,
+            DraftBehaviorsJson,
+            InputsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1231,6 +1399,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                             "clearDraft" | "clear_draft" => Ok(GeneratedField::ClearDraft),
                             "editorStateJson" | "editor_state_json" => Ok(GeneratedField::EditorStateJson),
                             "clearEditorState" | "clear_editor_state" => Ok(GeneratedField::ClearEditorState),
+                            "behaviorsJson" | "behaviors_json" => Ok(GeneratedField::BehaviorsJson),
+                            "draftBehaviorsJson" | "draft_behaviors_json" => Ok(GeneratedField::DraftBehaviorsJson),
+                            "inputsJson" | "inputs_json" => Ok(GeneratedField::InputsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1260,6 +1431,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                 let mut clear_draft__ = None;
                 let mut editor_state_json__ = None;
                 let mut clear_editor_state__ = None;
+                let mut behaviors_json__ = None;
+                let mut draft_behaviors_json__ = None;
+                let mut inputs_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -1322,6 +1496,24 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                             }
                             clear_editor_state__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::BehaviorsJson => {
+                            if behaviors_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorsJson"));
+                            }
+                            behaviors_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::DraftBehaviorsJson => {
+                            if draft_behaviors_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("draftBehaviorsJson"));
+                            }
+                            draft_behaviors_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::InputsJson => {
+                            if inputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("inputsJson"));
+                            }
+                            inputs_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateSceneRequest {
@@ -1335,6 +1527,9 @@ impl<'de> serde::Deserialize<'de> for UpdateSceneRequest {
                     clear_draft: clear_draft__.unwrap_or_default(),
                     editor_state_json: editor_state_json__.unwrap_or_default(),
                     clear_editor_state: clear_editor_state__.unwrap_or_default(),
+                    behaviors_json: behaviors_json__.unwrap_or_default(),
+                    draft_behaviors_json: draft_behaviors_json__.unwrap_or_default(),
+                    inputs_json: inputs_json__.unwrap_or_default(),
                 })
             }
         }

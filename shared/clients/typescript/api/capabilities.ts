@@ -11,6 +11,17 @@
  * Every id must also be listed in docs/services/engine-capabilities.md.
  */
 export const ENGINE_CAPABILITIES = {
+  /**
+   * An Alert step's inline `layout` may be a composition (`{ layout, widgets,
+   * behaviors }`: the canvas, placements keyed by id, and behaviors keyed by
+   * id) as well as the list shape (`{ width, height, widgets: [] }`).
+   */
+  alertsCompositionLayout: "alerts.compositionLayout",
+  /**
+   * Ending the alert playing on every open overlay and dropping every alert
+   * still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`.
+   */
+  alertsQueueControls: "alerts.queueControls",
   /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
   analyticsSessions: "analytics.sessions",
   /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */
@@ -63,6 +74,29 @@ export const ENGINE_CAPABILITIES = {
    * token `getSceneEditorSession` gives, and `protocol=2`.
    */
   scenesEditorSync: "scenes.editorSync",
+  /**
+   * A composition's behaviors (transitions, effects, activity windows) are
+   * stored with it, published and draft, so they survive sceneManager
+   * restarts and saves made elsewhere. Without it an engine keeps behaviors
+   * only while sceneManager holds the scene, and a client should not offer
+   * them.
+   */
+  scenesBehaviors: "scenes.behaviors",
+  /**
+   * Alert compositions stored in the engine: `listAlertCompositions`,
+   * `getAlertComposition`, `createAlertComposition`,
+   * `updateAlertComposition`, `deleteAlertComposition`, editing one with
+   * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
+   * An alert step never plays one by id: a client copies it into the step's
+   * own layout.
+   */
+  compositionsAlerts: "compositions.alerts",
+  /**
+   * The alert editor's live preview: `getCompositionPreviewUrl`, and
+   * sceneManager's `/preview/composition` page driven by the protocol in
+   * `@woofx3/scene/runtime` (`preview-protocol.ts`).
+   */
+  compositionsPreview: "compositions.preview",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

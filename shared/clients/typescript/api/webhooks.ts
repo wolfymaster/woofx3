@@ -364,8 +364,27 @@ export interface WidgetDefinition {
    * the module that shipped the widget. Empty when none was declared.
    */
   taxonomy: string[];
+  /**
+   * The transition and effect kinds the widget plays on its own content (a
+   * text widget's typewriter), offered beside the overlay's own kinds when a
+   * composition adds a behavior to one of its placements. The overlay hands
+   * a widget only the kinds listed here.
+   */
+  behaviorKinds: WidgetBehaviorKinds;
   createdByType: string;
   createdByRef: string;
+}
+
+/** Kinds a widget declares for itself, by behavior type; empty lists when it declares none. */
+export interface WidgetBehaviorKinds {
+  transitions: WidgetBehaviorKind[];
+  effects: WidgetBehaviorKind[];
+}
+
+/** One declared kind: `id` is what a behavior's `kind` names, `label` what an editor shows. */
+export interface WidgetBehaviorKind {
+  id: string;
+  label: string;
 }
 
 export interface ModuleWidgetRegisteredEvent {
@@ -766,6 +785,11 @@ export interface WorkflowDeletedEvent {
  */
 export interface SceneSnapshot {
   id: string;
+  /**
+   * `scene` or `alert` (see `CompositionKind` in api.ts). Alerts share these
+   * events, so a cache of scenes keeps only `scene` snapshots.
+   */
+  kind: "scene" | "alert";
   name: string;
   description: string;
   /** JSON-encoded array of placed widget instances. Persisted in
@@ -773,6 +797,10 @@ export interface SceneSnapshot {
   widgetsJson: string;
   /** JSON-encoded layout object (canvas dimensions, theme). */
   layoutJson: string;
+  /** JSON object of the published behaviors, keyed by behavior id. */
+  behaviorsJson: string;
+  /** JSON array of the inputs the composition takes; `[]` for a scene. */
+  inputsJson: string;
   /** Origin metadata. `USER` for UI-authored scenes; `MODULE` if a
    *  future manifest surface ships preset scenes. */
   createdByType: string;
@@ -797,6 +825,8 @@ export interface SceneDeletedEvent {
   type: typeof EngineEventType.SCENE_DELETED;
   correlationKey?: string;
   sceneId: string;
+  /** What was deleted, a `scene` or an `alert`. */
+  kind: "scene" | "alert";
 }
 
 // ---------------------------------------------------------------------------
