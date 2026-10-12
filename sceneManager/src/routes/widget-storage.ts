@@ -1,5 +1,7 @@
+import type { PlacementMeta } from "@woofx3/api/scene-editor";
 import type { HttpDeps } from "../http";
 import { storageModuleFor } from "../scene/module-state";
+import type { SceneVersion } from "../scene/scene-host";
 import { readSessionCookie } from "../scene/session-cookie";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -22,6 +24,13 @@ function jsonResponse(status: number, body: unknown): Response {
  * the instance owner's storage (see `storageModuleFor`), and its own module's
  * `list` settings, at `setting:<settingId>`.
  *
+ * The placement is looked up in the scene's held documents, published and
+ * draft, rather than in the stored row. Pages mount a placement the moment an
+ * editor's change reaches them, while the row is written back only after the
+ * autosave delay and holds a draft placement only under its draft: a widget
+ * added in the editor's preview, or added live, would otherwise be refused
+ * every value until the page reloaded.
+ *
  * The key travels as a query parameter because storage keys carry colons
  * (`state:woofx3:counter:deaths`).
  */
@@ -41,9 +50,17 @@ export async function handleWidgetStorageRoute(
     return jsonResponse(400, { error: "missing_key" });
   }
 
-  const state = await deps.host.loadSceneById(sceneId);
-  // A placement that hosts a surface is drawn by the page and has no module code to read for.
-  const instance = state?.instances.find((w) => w.id === instanceId && w.hostsSurface === "");
+  let instance: PlacementMeta | null;
+  try {
+    instance = await placedWidget(deps, sceneId, instanceId);
+  } catch (err) {
+    deps.ctx.logger.warn("widget storage: scene unavailable", {
+      sceneId,
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return jsonResponse(502, { error: "unavailable" });
+  }
   if (!instance) {
     return jsonResponse(404, { error: "not_found" });
   }
@@ -62,4 +79,26 @@ export async function handleWidgetStorageRoute(
     });
     return jsonResponse(502, { error: "unavailable" });
   }
+}
+
+/** Versions searched for a placement; a placement in both reads as published. */
+const PLACEMENT_VERSIONS: readonly SceneVersion[] = ["published", "draft"];
+
+/**
+ * The meta of a placement on either version of the scene, or null when it is
+ * on neither or hosts a surface: such a placement is drawn by the page and
+ * has no module code to read for.
+ */
+async function placedWidget(deps: HttpDeps, sceneId: string, instanceId: string): Promise<PlacementMeta | null> {
+  for (const version of PLACEMENT_VERSIONS) {
+    const snapshot = await deps.sceneDocuments.snapshot(sceneId, version);
+    if (!snapshot) {
+      return null;
+    }
+    const meta = Object.hasOwn(snapshot.meta, instanceId) ? snapshot.meta[instanceId] : undefined;
+    if (meta) {
+      return meta.hostsSurface === "" ? meta : null;
+    }
+  }
+  return null;
 }
