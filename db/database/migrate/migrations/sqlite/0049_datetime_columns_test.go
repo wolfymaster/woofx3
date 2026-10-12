@@ -22,6 +22,7 @@ var modelsWithTables = []any{
 	&models.ModuleResourceInstance{}, &models.ModuleSetting{}, &models.OverlayToken{},
 	&models.Permission{}, &models.Resource{}, &models.ResourceReference{}, &models.Scene{},
 	&models.SceneEvent{}, &models.SceneEventDelivery{}, &models.SceneEventLogEntry{},
+	&models.SegmentDefinition{}, &models.SegmentFact{}, &models.SegmentMember{},
 	&models.Setting{}, &models.StreamGaugeSample{}, &models.StreamSession{},
 	&models.StreamSessionSegment{}, &models.Trigger{}, &models.User{}, &models.UserEvent{},
 	&models.UserGroup{}, &models.UserMeta{},
