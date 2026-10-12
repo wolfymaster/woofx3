@@ -1,3 +1,4 @@
+import type { CompositionKind } from "@woofx3/api";
 import {
   type AckMessage,
   CLOSE_CODES,
@@ -38,6 +39,7 @@ import {
   zKey,
 } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
+import { STRICT_REGISTRY } from "@woofx3/scene/model";
 import { externalMediaUrls } from "../../public/scene-manager/media-url";
 import { themeOf } from "../../public/scene-manager/scene-update";
 import type { MediaProxy } from "./media-proxy";
@@ -60,8 +62,11 @@ export interface SceneWrite {
   id: string;
   widgetsJson?: string;
   layoutJson?: string;
+  behaviorsJson?: string;
   draftWidgetsJson?: string;
   draftLayoutJson?: string;
+  /** Stored with the draft's widgets and layout. */
+  draftBehaviorsJson?: string;
   clearDraft?: boolean;
   /** The scene editor's sync state, stored in the same row update as the documents. */
   editorStateJson?: string;
@@ -129,7 +134,16 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** A scene state as a document: placements keyed by id, stacked as saved. */
+/**
+ * A scene state as a document: placements keyed by id, stacked as saved,
+ * with the version's behaviors as stored. `inputs` is present only when the
+ * composition declares some, so a scene's document has no such key.
+ *
+ * Entries stored in an older shape are brought to the current one by the
+ * registry's migrations (a placement's `transitionIn` / `transitionOut` in
+ * `extra` become transition behaviors), so everything past this point sees
+ * one shape. The stored row changes only when the document is next written.
+ */
 export function documentOf(state: OverlaySceneState): SceneDocument {
   const widgets: SceneDocument["widgets"] = {};
   state.instances.forEach((instance, index) => {
@@ -157,17 +171,36 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
       extra,
     };
   });
-  return { layout: { ...state.layout }, widgets };
+  const doc: SceneDocument = { layout: { ...state.layout }, widgets, behaviors: structuredClone(state.behaviors) };
+  if (state.inputs.length > 0) {
+    doc.inputs = structuredClone(state.inputs);
+  }
+  return STRICT_REGISTRY.migrateDocument(doc);
+}
+
+/** A composition's published document and what it is, as `SceneDocuments.published` gives it. */
+export interface PublishedComposition {
+  sceneId: string;
+  name: string;
+  kind: CompositionKind;
+  doc: SceneDocument;
 }
 
 /**
  * A document in the shapes the database stores and the editor reads:
  * `widgets_json` is the placements in stacking order, each as the editor
- * writes one, and `layout_json` the layout.
+ * writes one, `layout_json` the layout and `behaviors_json` the behaviors.
+ * Inputs are not among them: the editor never changes them, so they are
+ * written only where they are set (the api), and a write from here never
+ * races one there.
  */
-export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string } {
+export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string; behaviorsJson: string } {
   const widgets = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
-  return { widgetsJson: JSON.stringify(widgets), layoutJson: JSON.stringify(doc.layout) };
+  return {
+    widgetsJson: JSON.stringify(widgets),
+    layoutJson: JSON.stringify(doc.layout),
+    behaviorsJson: JSON.stringify(doc.behaviors),
+  };
 }
 
 /** One placement as the editor stores it. */
@@ -217,6 +250,7 @@ function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
     frameUrl: instance.frameUrl,
     linkedResources: instance.linkedResources ?? {},
     ...(instance.mediaProxyBase === undefined ? {} : { mediaProxyBase: instance.mediaProxyBase }),
+    ...(instance.behaviorKinds === undefined ? {} : { behaviorKinds: instance.behaviorKinds }),
   };
 }
 
@@ -290,6 +324,8 @@ interface ReframeState {
 interface HeldScene {
   sceneId: string;
   name: string;
+  /** Fixed when the row is created, so never changes while held. */
+  kind: CompositionKind;
   state: SequencerState;
   meta: Record<Version, Record<string, PlacementMeta>>;
   /** Placements whose meta was worked out without barkloader's answer, so
@@ -425,6 +461,20 @@ export class SceneDocuments {
       }
     }
     return urls;
+  }
+
+  /**
+   * A composition's published document and its kind, loading it when it is
+   * not held; null when there is no such row. The document is the one
+   * overlays and editors have, with live edits not yet written back.
+   */
+  async published(sceneId: string): Promise<PublishedComposition | null> {
+    await this.queues.get(sceneId);
+    const held = await this.hold(sceneId);
+    if (!held) {
+      return null;
+    }
+    return { sceneId, name: held.name, kind: held.kind, doc: structuredClone(held.state.docs.published) };
   }
 
   /** The number a version's overlays should be at; 0 when the scene is not held. */
@@ -665,7 +715,8 @@ export class SceneDocuments {
         return;
       }
       held.name = loaded.name;
-      const ops = diffDocuments(held.state.docs.published, documentOf(loaded));
+      const saved = documentOf(loaded);
+      const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
         kind: "external",
         version: "published",
@@ -683,10 +734,40 @@ export class SceneDocuments {
       const meta = await this.metaFor(held, plan.docs, { knownPublished: framingOf(loaded.instances) });
       const before = viewOf(held);
       this.afterCommit(held, commit(held.state, plan, meta.changes, null, this.clock.now()), meta, before);
+      this.takeInInputs(held, saved);
     }).catch((err) => {
       // Callers do not wait on a refresh; the next save or load picks the change up.
       this.logger.warn("scene documents: taking in a save made elsewhere failed", { sceneId, error: errorText(err) });
     });
+  }
+
+  /**
+   * Inputs are not drafted: both versions declare the ones stored. A save
+   * made elsewhere reaches the draft through the published entry only when
+   * the scene has no draft, so a scene with one gets the new inputs in an
+   * entry of their own.
+   */
+  private takeInInputs(held: HeldScene, saved: SceneDocument): void {
+    const draft = held.state.docs.draft;
+    const ops = diffDocuments(draft, { ...draft, inputs: saved.inputs });
+    if (ops.length === 0) {
+      return;
+    }
+    const plan = prepare(held.state, held.state.v, {
+      kind: "external",
+      version: "draft",
+      ops,
+      mirrorIntoDraft: false,
+    });
+    if (plan.refused) {
+      this.logger.warn("scene documents: stored inputs could not be applied to the draft", {
+        sceneId: held.sceneId,
+        detail: plan.detail,
+      });
+      return;
+    }
+    const before = viewOf(held);
+    this.afterCommit(held, commit(held.state, plan, {}, null, this.clock.now()), noMeta(held), before);
   }
 
   /**
@@ -1035,6 +1116,7 @@ export class SceneDocuments {
     const held: HeldScene = {
       sceneId,
       name: published.name,
+      kind: published.kind,
       state: createSequencerState({ docs, hasDraft: published.hasDraft === true, editorState: restored.state, epoch }),
       meta: { published: framing.published.meta, draft: framing.draft.meta },
       unframed: { published: framing.published.unframed, draft: framing.draft.unframed },
@@ -1153,6 +1235,11 @@ export class SceneDocuments {
 /** The ops `applyChange` takes. */
 type SceneDocumentOps = ExternalBody["ops"];
 
+/** A change that leaves every placement's meta as it is. */
+function noMeta(held: HeldScene): MetaPlan {
+  return { next: held.meta, unframed: held.unframed, changes: {} };
+}
+
 function savePending(held: HeldScene): boolean {
   return held.save.dirty || held.save.timer !== null || held.save.writing !== null;
 }
@@ -1163,7 +1250,11 @@ function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
   const draft = hasDraft
     ? (() => {
         const stored = storedSceneOf(docs.draft);
-        return { draftWidgetsJson: stored.widgetsJson, draftLayoutJson: stored.layoutJson };
+        return {
+          draftWidgetsJson: stored.widgetsJson,
+          draftLayoutJson: stored.layoutJson,
+          draftBehaviorsJson: stored.behaviorsJson,
+        };
       })()
     : { clearDraft: true };
   const editorState = { ...editorStateOf(held.state, now), digest: documentsDigest(docs) };
@@ -1171,6 +1262,7 @@ function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
     id: held.sceneId,
     widgetsJson: published.widgetsJson,
     layoutJson: published.layoutJson,
+    behaviorsJson: published.behaviorsJson,
     ...draft,
     editorStateJson: JSON.stringify(editorState),
   };

@@ -7,10 +7,14 @@ import type { EditableScene, OverlaySceneState, OverlayWidgetInstance, SceneVers
 export interface SceneRow {
   id: string;
   name: string;
+  kind: "scene" | "alert";
   widgetsJson: string;
   layoutJson: string;
+  behaviorsJson: string;
+  inputsJson: string;
   draftWidgetsJson: string | null;
   draftLayoutJson: string | null;
+  draftBehaviorsJson: string | null;
   editorStateJson: string | null;
 }
 
@@ -18,10 +22,14 @@ export function sceneRow(id: string, placements: Array<Record<string, unknown>>,
   return {
     id,
     name: "Main",
+    kind: "scene",
     widgetsJson: JSON.stringify(placements),
     layoutJson: JSON.stringify(layout),
+    behaviorsJson: "{}",
+    inputsJson: "[]",
     draftWidgetsJson: null,
     draftLayoutJson: null,
+    draftBehaviorsJson: null,
     editorStateJson: null,
   };
 }
@@ -85,6 +93,9 @@ function stateOf(row: SceneRow, version: SceneVersion, frameVersion: string): Ov
   return {
     sceneId: row.id,
     name: row.name,
+    kind: row.kind,
+    behaviors: JSON.parse(draft ? (row.draftBehaviorsJson ?? "{}") : row.behaviorsJson),
+    inputs: JSON.parse(row.inputsJson),
     layout: JSON.parse(draft ? row.draftLayoutJson! : row.layoutJson),
     instances: placements
       .map((placement) => instanceOf(placement, frameVersion))
@@ -98,6 +109,7 @@ function applyWrite(row: SceneRow, write: SceneWrite): void {
   const changesDocuments =
     write.widgetsJson !== undefined ||
     write.layoutJson !== undefined ||
+    write.behaviorsJson !== undefined ||
     write.clearDraft === true ||
     (write.draftWidgetsJson !== undefined && write.draftLayoutJson !== undefined);
   if (write.widgetsJson !== undefined) {
@@ -106,12 +118,17 @@ function applyWrite(row: SceneRow, write: SceneWrite): void {
   if (write.layoutJson !== undefined) {
     row.layoutJson = write.layoutJson;
   }
+  if (write.behaviorsJson !== undefined) {
+    row.behaviorsJson = write.behaviorsJson;
+  }
   if (write.clearDraft === true) {
     row.draftWidgetsJson = null;
     row.draftLayoutJson = null;
+    row.draftBehaviorsJson = null;
   } else if (write.draftWidgetsJson !== undefined && write.draftLayoutJson !== undefined) {
     row.draftWidgetsJson = write.draftWidgetsJson;
     row.draftLayoutJson = write.draftLayoutJson;
+    row.draftBehaviorsJson = write.draftBehaviorsJson ?? "{}";
   }
   if (write.editorStateJson !== undefined && write.editorStateJson !== "") {
     row.editorStateJson = write.editorStateJson;

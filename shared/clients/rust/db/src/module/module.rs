@@ -707,7 +707,7 @@ pub struct ConnectionMessageResponse {
 /// `settings_schema` is a serialized JSON document describing the widget's
 /// configuration surface. Engine treats it as opaque; the UI parses it into
 /// WidgetSettingDefinition\[\] for rendering. Same opacity as triggers.config_schema.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Widget {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -750,8 +750,31 @@ pub struct Widget {
     /// none.
     #[prost(string, repeated, tag="16")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The transition and effect kinds the widget plays on its own content,
+    /// beyond the ones the overlay plays on every widget's box. The overlay
+    /// hands a widget only the kinds it declares here.
+    #[prost(message, optional, tag="17")]
+    pub behavior_kinds: ::core::option::Option<WidgetBehaviorKinds>,
 }
+/// Kinds a widget declares for itself, by behavior type. Both lists are
+/// empty for a widget that declares none.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WidgetBehaviorKinds {
+    #[prost(message, repeated, tag="1")]
+    pub transitions: ::prost::alloc::vec::Vec<WidgetBehaviorKind>,
+    #[prost(message, repeated, tag="2")]
+    pub effects: ::prost::alloc::vec::Vec<WidgetBehaviorKind>,
+}
+/// One declared kind: `id` is what a behavior's `kind` names, `label` what an
+/// editor shows for it.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WidgetBehaviorKind {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub label: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WidgetInput {
     #[prost(string, tag="1")]
     pub manifest_id: ::prost::alloc::string::String,
@@ -776,6 +799,9 @@ pub struct WidgetInput {
     /// See Widget.taxonomy.
     #[prost(string, repeated, tag="12")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// See Widget.behavior_kinds.
+    #[prost(message, optional, tag="13")]
+    pub behavior_kinds: ::core::option::Option<WidgetBehaviorKinds>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {
@@ -818,7 +844,7 @@ pub struct ListWidgetsResponse {
     #[prost(message, repeated, tag="2")]
     pub widgets: ::prost::alloc::vec::Vec<Widget>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WidgetResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<super::common::ResponseStatus>,

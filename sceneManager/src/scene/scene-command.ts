@@ -9,6 +9,7 @@
 // carried out has to say why in words a streamer can act on -- the reason
 // becomes the step's error in the run log.
 
+import type { CompositionKind } from "@woofx3/api";
 import type { SceneControlCommand, SceneControlReply } from "@woofx3/common/cloudevents/Scene/commands";
 import type { Logger } from "@woofx3/common/runtime";
 import { z } from "zod";
@@ -32,6 +33,8 @@ const commandSchema = z.discriminatedUnion("command", [
 
 /** The slice of `SceneDocuments` a command changes a scene through. */
 export interface SceneCommandDeps {
+  /** Read to refuse a command addressed to an alert composition. */
+  published(sceneId: string): Promise<{ name: string; kind: CompositionKind } | null>;
   applyChange(
     sceneId: string,
     version: SceneVersion,
@@ -54,10 +57,28 @@ export function parseSceneControlCommand(data: unknown): ParsedSceneCommand {
   return { ok: true, command: parsed.data };
 }
 
+/**
+ * Carry out a command on a scene's published version.
+ *
+ * Only a scene is changed. An alert composition is a library entry, not
+ * running anywhere: showing or hiding one of its widgets would edit what
+ * every later copy of it starts from, which is the editor's job and not a
+ * workflow step's.
+ */
 export async function executeSceneControlCommand(
   deps: SceneCommandDeps,
   command: SceneControlCommand
 ): Promise<SceneControlReply> {
+  const composition = await deps.published(command.sceneId);
+  if (composition === null) {
+    return { ok: false, error: `scene ${JSON.stringify(command.sceneId)} does not exist` };
+  }
+  if (composition.kind !== "scene") {
+    return {
+      ok: false,
+      error: `${JSON.stringify(composition.name)} is an alert composition, not a scene; only a running scene's widgets can be shown or hidden`,
+    };
+  }
   const result = await deps.applyChange(command.sceneId, "published", (snapshot) => {
     const placement = snapshot.doc.widgets[command.placementId];
     if (!placement) {

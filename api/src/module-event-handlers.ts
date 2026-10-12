@@ -23,6 +23,8 @@ import type {
   ResourceInstanceDefinition,
   TriggerDefinition,
   WebhookClient,
+  WidgetBehaviorKind,
+  WidgetBehaviorKinds,
   WidgetDefinition,
 } from "./webhook-client";
 import { asString } from "./outbox";
@@ -90,6 +92,7 @@ interface RawWidget {
   surfaces?: unknown;
   hosts_surface?: unknown;
   taxonomy?: unknown;
+  behavior_kinds?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -231,6 +234,35 @@ function mapFunction(raw: RawFunction): FunctionDefinition {
   return def;
 }
 
+/**
+ * The kinds a widget payload declares. The db proxy always writes both lists;
+ * a payload without them (one from before widgets declared kinds) declares
+ * none, and an entry without an id is dropped rather than offered.
+ */
+function asWidgetBehaviorKinds(raw: unknown): WidgetBehaviorKinds {
+  const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  return { transitions: asBehaviorKindList(record.transitions), effects: asBehaviorKindList(record.effects) };
+}
+
+function asBehaviorKindList(raw: unknown): WidgetBehaviorKind[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const kinds: WidgetBehaviorKind[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const id = asString((entry as Record<string, unknown>).id);
+    if (id === "") {
+      continue;
+    }
+    const label = asString((entry as Record<string, unknown>).label);
+    kinds.push({ id, label: label === "" ? id : label });
+  }
+  return kinds;
+}
+
 function mapWidget(raw: RawWidget): WidgetDefinition {
   const alertTypesRaw = (Array.isArray(raw.alert_types) ? raw.alert_types : raw.alertTypes) ?? [];
   const alertTypes = Array.isArray(alertTypesRaw) ? alertTypesRaw.map((a) => asString(a)) : [];
@@ -246,6 +278,7 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
     settings: parseFieldList(asString(raw.settings_schema)),
     surfaces: asStringArray(raw.surfaces).filter(isWidgetSurface),
     taxonomy: asStringArray(raw.taxonomy),
+    behaviorKinds: asWidgetBehaviorKinds(raw.behavior_kinds),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };

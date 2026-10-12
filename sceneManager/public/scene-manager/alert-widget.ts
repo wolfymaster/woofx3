@@ -1,28 +1,150 @@
-// Plays alert layouts inside an alert widget's area on the scene. An alert
-// widget has no frame of its own: for each alert, the page frames the
-// layout's widgets inside the area, scaled from the layout's canvas to fit,
-// and removes them once the alert is over (see alert-timeline.ts). The
-// event queue holds the next alert until this one finishes, so an alert
-// widget plays one alert at a time.
+// Plays alerts inside an alert widget's area on the scene. An alert widget
+// has no frame of its own: each alert is a composition, which the page plays
+// with the scene runtime on a stage scaled from the alert's canvas to fit the
+// area. The runtime places, stacks, shows and animates the alert's widgets
+// as the alert's timeline says, each widget's frame reporting what the
+// timeline is made of (it subscribed, painted, completed), and the alert is
+// over once every widget has played out, exit animations included. The event
+// queue holds the next alert until this one finishes, so an alert widget
+// plays one alert at a time.
 
-import type { WidgetEvent } from "@woofx3/module-sdk";
-import { AlertTimeline } from "./alert-timeline";
+import { encodePlacementBoot, type WidgetBehaviorState, type WidgetEvent } from "@woofx3/module-sdk";
+import { alertCompositionOf, type CompositionDocument, type NodeId, PROFILES } from "@woofx3/scene/model";
+import {
+  createDomRenderer,
+  createScheduler,
+  fitCanvas,
+  type RenderDocument,
+  type RenderElement,
+  type Scheduler,
+  type SchedulerClock,
+} from "@woofx3/scene/runtime";
 import type { QueuedEvent } from "./event-queue";
+import { PAGE_CLOCK } from "./page-clock";
+import { BehaviorRelay, entranceOf } from "./widget-behaviors";
 import { createFrameLoadHandler, WidgetBridge, type WidgetStatusReportPayload } from "./widget-bridge";
 
-const TICK_MS = 250;
-
-interface Position {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+/** The slice of the server's `AlertDelivery` the page needs. */
+export interface AlertDelivery {
+  layout: CompositionDocument;
+  event: { type: string; data: unknown } | null;
 }
 
-/** The slice of the server's `AlertDelivery` the page needs. */
-interface AlertDelivery {
-  layout: { width: number; height: number; widgets: Array<{ id: string; position: Position }> };
-  event: { type: string; data: unknown } | null;
+/** What one widget's frame reports: the facts the alert's timeline is made of. */
+export interface AlertFrameFacts {
+  /** The widget subscribed to its event; `timed` when it will call `complete()` itself. */
+  subscribed(timed: boolean): void;
+  rendered(): void;
+  completed(): void;
+}
+
+/** One widget's frame in an alert, as the player drives it. */
+export interface AlertFrame {
+  sendBehavior(state: WidgetBehaviorState | null): void;
+  unmount(): void;
+}
+
+export interface AlertPlayerOptions<TElement extends RenderElement<TElement>, THandle> {
+  document: RenderDocument<TElement>;
+  /** Where the alert's canvas goes. */
+  stage: TElement;
+  doc: CompositionDocument;
+  clock: SchedulerClock<THandle>;
+  /**
+   * Put a widget's frame in its slot. `entrance` is the widget's own
+   * entrance, to mark the frame with from boot (see `entranceOf`).
+   */
+  mountFrame(
+    slot: TElement,
+    widgetId: NodeId,
+    entrance: WidgetBehaviorState | null,
+    facts: AlertFrameFacts
+  ): AlertFrame;
+  /** Every widget has played out, exits included. Called once, after the player has stopped. */
+  onFinished(): void;
+}
+
+export interface AlertPlayer {
+  /** Take the alert off the stage now, without reporting it finished. Idempotent. */
+  stop(): void;
+}
+
+/** Play one alert on `stage` until it finishes or is stopped. */
+export function playAlert<TElement extends RenderElement<TElement>, THandle>(
+  options: AlertPlayerOptions<TElement, THandle>
+): AlertPlayer {
+  const { doc } = options;
+  const frames = new Map<NodeId, AlertFrame>();
+  const subscribed = new Set<NodeId>();
+  const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state));
+  let scheduler: Scheduler | null = null;
+  let stopped = false;
+
+  function record(fact: (playing: Scheduler) => void): void {
+    if (stopped) {
+      return;
+    }
+    if (scheduler === null) {
+      throw new Error("alert: a frame reported before the alert started playing");
+    }
+    fact(scheduler);
+  }
+
+  const renderer = createDomRenderer({
+    document: options.document,
+    root: options.stage,
+    mountContent: (slot, widgetId) => {
+      // The engine dispatched only the widget kinds each widget declares
+      // (see alert-layout.ts in the server), so every one left is played.
+      const frame = options.mountFrame(
+        slot,
+        widgetId,
+        entranceOf(doc, widgetId, () => true),
+        {
+          subscribed: (timed) => {
+            subscribed.add(widgetId);
+            record((playing) => playing.widgetSubscribed(widgetId, timed));
+          },
+          rendered: () => record((playing) => playing.widgetRendered(widgetId)),
+          completed: () => {
+            // Only a widget the alert is waiting on can finish; a completion
+            // without a subscription is not one.
+            if (subscribed.has(widgetId)) {
+              record((playing) => playing.widgetCompleted(widgetId));
+            }
+          },
+        }
+      );
+      frames.set(widgetId, frame);
+      return () => {
+        frames.delete(widgetId);
+        relay.forget(widgetId);
+        frame.unmount();
+      };
+    },
+    onDelegate: (widgetId, request) => relay.handle(widgetId, request),
+  });
+
+  function stop(): void {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    scheduler?.dispose();
+    renderer.dispose();
+  }
+
+  scheduler = createScheduler({
+    doc,
+    profile: PROFILES.alert,
+    clock: options.clock,
+    renderer,
+    onFinished: () => {
+      stop();
+      options.onFinished();
+    },
+  });
+  return { stop };
 }
 
 export interface AlertWidgetOptions {
@@ -79,23 +201,17 @@ export class AlertWidget {
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
-    const { element, sceneBase, bridges } = this.opts;
-    const { layout } = delivery;
+    const { element } = this.opts;
+    const canvas = canvasOf(delivery.layout);
 
     const stage = document.createElement("div");
     stage.className = "alert-stage";
-    stage.style.width = `${layout.width}px`;
-    stage.style.height = `${layout.height}px`;
-    const scale = Math.min(element.clientWidth / layout.width, element.clientHeight / layout.height);
-    const offsetX = (element.clientWidth - layout.width * scale) / 2;
-    const offsetY = (element.clientHeight - layout.height * scale) / 2;
-    stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    stage.style.width = `${canvas.width}px`;
+    stage.style.height = `${canvas.height}px`;
+    const fit = fitCanvas(canvas, { width: element.clientWidth, height: element.clientHeight });
+    stage.style.transform = `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`;
     element.appendChild(stage);
 
-    const timeline = new AlertTimeline(
-      layout.widgets.map((widget) => widget.id),
-      Date.now()
-    );
     const alertEvent: WidgetEvent = {
       type: "alert",
       source: "scene-manager",
@@ -104,70 +220,101 @@ export class AlertWidget {
       eventId,
     };
 
-    const children: WidgetBridge[] = [];
-    for (const widget of layout.widgets) {
-      const instanceId = `${eventId}.${widget.id}`;
-      const nonce = this.opts.generateNonce();
-      const iframe = document.createElement("iframe");
-      iframe.className = "widget-frame";
-      iframe.style.left = `${widget.position.x}px`;
-      iframe.style.top = `${widget.position.y}px`;
-      iframe.style.width = `${widget.position.width}px`;
-      iframe.style.height = `${widget.position.height}px`;
-      iframe.setAttribute("sandbox", "allow-scripts");
-
-      const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
-        onStorageGet: () => null,
-        onStorageSubscribe: () => {},
-        onStorageUnsubscribe: () => {},
-        onStatusReport: (report) => this.opts.postStatus(instanceId, report),
-        onEventsSubscribe: (subId, queue) => {
-          timeline.subscribed(widget.id, queue?.autoComplete === false);
-          bridge.sendEvent(subId, alertEvent);
-        },
-        onEventsUnsubscribe: () => {},
-        onEventComplete: () => timeline.completed(widget.id),
-        onDispose: () => {},
-      });
-      iframe.addEventListener("load", createFrameLoadHandler(bridge));
-      iframe.src =
-        `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widget.id)}` +
-        `?nonce=${encodeURIComponent(nonce)}`;
-
-      bridges.add(bridge);
-      stage.appendChild(iframe);
-      bridge.attach(iframe);
-      children.push(bridge);
-    }
-
-    const tearDown = () => {
-      clearInterval(timer);
+    let player: AlertPlayer | null = null;
+    const tearDown = (): void => {
       this.playing.delete(eventId);
-      for (const bridge of children) {
+      player?.stop();
+      stage.remove();
+    };
+    this.playing.set(eventId, tearDown);
+    player = playAlert<HTMLElement, ReturnType<typeof setTimeout>>({
+      document,
+      stage,
+      doc: delivery.layout,
+      clock: PAGE_CLOCK,
+      mountFrame: (slot, widgetId, entrance, facts) =>
+        this.mountFrame(eventId, alertEvent, slot, widgetId, entrance, facts),
+      onFinished: () => {
+        tearDown();
+        this.opts.onFinished(eventId);
+      },
+    });
+  }
+
+  private mountFrame(
+    eventId: string,
+    alertEvent: WidgetEvent,
+    slot: HTMLElement,
+    widgetId: NodeId,
+    entrance: WidgetBehaviorState | null,
+    facts: AlertFrameFacts
+  ): AlertFrame {
+    const { sceneBase, bridges } = this.opts;
+    const instanceId = `${eventId}.${widgetId}`;
+    const nonce = this.opts.generateNonce();
+    const iframe = document.createElement("iframe");
+    iframe.className = "widget-frame";
+    iframe.setAttribute("sandbox", "allow-scripts");
+
+    const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
+      onStorageGet: () => null,
+      onStorageSubscribe: () => {},
+      onStorageUnsubscribe: () => {},
+      onStatusReport: (report) => this.opts.postStatus(instanceId, report),
+      onEventsSubscribe: (subId, queue) => {
+        facts.subscribed(queue?.autoComplete === false);
+        bridge.sendEvent(subId, alertEvent);
+      },
+      onEventsUnsubscribe: () => {},
+      onEventComplete: () => facts.completed(),
+      onDispose: () => {},
+      onRendered: () => facts.rendered(),
+    });
+    iframe.addEventListener("load", createFrameLoadHandler(bridge));
+    // The frame document inlines the placement, so the fragment carries only
+    // the entrance it is marked with from boot.
+    const fragment = entrance === null ? "" : `#${encodePlacementBoot({ behavior: entrance })}`;
+    iframe.src =
+      `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widgetId)}` +
+      `?nonce=${encodeURIComponent(nonce)}${fragment}`;
+
+    bridges.add(bridge);
+    slot.appendChild(iframe);
+    bridge.attach(iframe);
+    return {
+      sendBehavior: (state) => bridge.sendBehavior(state),
+      unmount: () => {
         bridge.dispose();
         bridge.detach();
         bridges.delete(bridge);
-      }
-      stage.remove();
+        iframe.remove();
+      },
     };
-    const timer = setInterval(() => {
-      if (!timeline.isOver(Date.now())) {
-        return;
-      }
-      tearDown();
-      this.opts.onFinished(eventId);
-    }, TICK_MS);
-    this.playing.set(eventId, tearDown);
   }
 }
 
-function parseDelivery(value: unknown): AlertDelivery | null {
+/** An alert's canvas size; `parseDelivery` has checked both are positive. */
+function canvasOf(doc: CompositionDocument): { width: number; height: number } {
+  return { width: doc.layout.width as number, height: doc.layout.height as number };
+}
+
+/**
+ * The alert in a delivery, or null for one the page cannot play. A delivery
+ * recorded before alerts were compositions holds the list shape, and is
+ * converted.
+ */
+export function parseDelivery(value: unknown): AlertDelivery | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
-  const { layout, event } = value as Partial<AlertDelivery>;
-  if (!layout || !(layout.width > 0) || !(layout.height > 0) || !Array.isArray(layout.widgets)) {
+  const { layout, event } = value as { layout?: unknown; event?: AlertDelivery["event"] };
+  const doc = alertCompositionOf(layout);
+  if (doc === null || !isPositive(doc.layout.width) || !isPositive(doc.layout.height)) {
     return null;
   }
-  return { layout, event: event ?? null };
+  return { layout: doc, event: event ?? null };
+}
+
+function isPositive(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

@@ -24,6 +24,7 @@ import type {
   WidgetTheme,
 } from "./widget-host";
 import { type BindingDocument, applySettingBindings } from "./widget-bindings";
+import { applyWidgetBehavior, isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
 import { type FontDocument, type FontLoader, createFontLoader } from "./widget-fonts";
 import {
   PROTOCOL_VERSION,
@@ -252,6 +253,17 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     }
   }
 
+  function markBehavior(state: WidgetBehaviorState | null): void {
+    if (!documentRef) {
+      return;
+    }
+    try {
+      applyWidgetBehavior(documentRef, state);
+    } catch (err) {
+      console.error("[widget-host-shim] applying a behavior failed", err);
+    }
+  }
+
   function allocId(prefix: string): string {
     nextLocalId += 1;
     return prefix + "-" + nextLocalId;
@@ -422,6 +434,12 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         bind(previous);
         return;
       }
+      case "behavior": {
+        if (m.behavior === null || isWidgetBehaviorState(m.behavior)) {
+          markBehavior(m.behavior);
+        }
+        return;
+      }
       case "dispose": {
         teardown();
         return;
@@ -550,6 +568,9 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   // right after this script see a fully usable `window.widgetHost`.
   windowRef.widgetHost = host;
   bind({});
+  if (boot.behavior !== undefined) {
+    markBehavior(boot.behavior);
+  }
   if (documentRef?.readyState === "loading") {
     windowRef.addEventListener("DOMContentLoaded", onDocumentReady);
   }

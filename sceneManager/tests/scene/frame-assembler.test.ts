@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
 import {
   buildFrameScaffold,
   FrameAssembler,
@@ -7,9 +8,8 @@ import {
   SHIM_SRC,
 } from "../../src/scene/frame-assembler";
 import { frameVersion } from "../../src/scene/frame-catalog";
-import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
-import type { FrameTheme } from "../../src/scene/widget-theme";
 import type { OverlayHost, OverlaySceneState } from "../../src/scene/scene-host";
+import type { FrameTheme } from "../../src/scene/widget-theme";
 
 function minimalBoot(): FrameScaffold["boot"] {
   return {
@@ -257,7 +257,7 @@ describe("FrameAssembler.assembleDocument", () => {
 });
 
 function emptyState(): OverlaySceneState {
-  return { sceneId: "scene-1", name: "Scene", layout: {}, instances: [] };
+  return { sceneId: "scene-1", name: "Scene", kind: "scene", behaviors: {}, inputs: [], layout: {}, instances: [] };
 }
 
 function bootOf(html: string): Record<string, unknown> {

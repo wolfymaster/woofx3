@@ -122,7 +122,7 @@ func TestDropApplicationsKeepsTheOneApplicationsData(t *testing.T) {
 
 	for _, index := range []string{
 		"idx_settings_key",
-		"idx_scenes_name",
+		"idx_scenes_kind_name",
 		"idx_groups_name",
 		"widget_status_unique",
 		"idx_stream_sessions_one_open",
