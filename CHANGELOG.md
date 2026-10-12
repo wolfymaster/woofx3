@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.29.1](https://github.com/wolfymaster/woofx3/compare/v0.29.0...v0.29.1) (2026-10-12)
+
+### Bug Fixes
+
+* **dev:** stop worktree processes on rm instead of retrying migrations ([e812a5f](https://github.com/wolfymaster/woofx3/commit/e812a5f3dbf86a11741cf699543136815de4cc9a))
+
 ## [0.29.0](https://github.com/wolfymaster/woofx3/compare/v0.28.0...v0.29.0) (2026-10-12)
 
 ### Features
