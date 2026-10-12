@@ -46,7 +46,7 @@ func TestViewerFactsApplyPerSessionOnPostgres(t *testing.T) {
 	}
 }
 
-func noFactOutbox(*gorm.DB, *models.FactDefinition) error {
+func noFactOutbox(*gorm.DB, *models.FactDefinition, repository.FactDefinitionWrite) error {
 	return nil
 }
 

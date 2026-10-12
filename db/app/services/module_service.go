@@ -23,6 +23,28 @@ type moduleService struct {
 	refRepo      *repo.ResourceReferenceRepository
 	instanceRepo *repo.ModuleResourceInstanceRepository
 	publisher    *workers.EventPublisher
+	// reconcileSegments runs after triggers are registered or removed, which
+	// can make the facts viewer segments read active or not. Optional.
+	reconcileSegments func() error
+}
+
+// SetSegmentReconciler sets the pass run after every trigger registration or
+// removal (see NewSegmentReconciler).
+func (s *moduleService) SetSegmentReconciler(reconcile func() error) {
+	s.reconcileSegments = reconcile
+}
+
+// triggersChanged runs the segment reconciler, if any, after a trigger
+// write. The write has committed by then; a failure is returned so the
+// caller retries, and a retry of the idempotent write reconciles again.
+func (s *moduleService) triggersChanged() error {
+	if s.reconcileSegments == nil {
+		return nil
+	}
+	if err := s.reconcileSegments(); err != nil {
+		return twirp.InternalErrorWith(fmt.Errorf("reconcile viewer segments: %w", err))
+	}
+	return nil
 }
 
 func NewModuleService(
@@ -461,6 +483,9 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			AutoAcknowledge: true,
 		})
 	}
+	if err := s.triggersChanged(); err != nil {
+		return nil, err
+	}
 
 	protoTriggers := make([]*client.Trigger, len(saved))
 	for i, t := range saved {
@@ -544,6 +569,9 @@ func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *clien
 			Data:            buildTriggerDeregisteredData(req.ModuleId, req.ModuleKey, triggers),
 			AutoAcknowledge: true,
 		})
+	}
+	if err := s.triggersChanged(); err != nil {
+		return nil, err
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
@@ -952,6 +980,9 @@ func (s *moduleService) ArchiveResourceByManifestId(ctx context.Context, req *cl
 				Data:            buildTriggerDeregisteredData(req.ModuleId, "", []*models.Trigger{archived}),
 				AutoAcknowledge: true,
 			})
+		}
+		if err := s.triggersChanged(); err != nil {
+			return nil, err
 		}
 	case "action":
 		if err := s.repo.ArchiveActionByManifestID(req.ModuleId, req.ManifestId); err != nil {

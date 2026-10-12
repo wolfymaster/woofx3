@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -24,6 +25,12 @@ type ViewerSegmentRepository struct {
 
 func NewViewerSegmentRepository(db *gorm.DB) *ViewerSegmentRepository {
 	return &ViewerSegmentRepository{db: db}
+}
+
+// Transaction runs fn in a transaction; bind the repository to it with
+// WithDB.
+func (r *ViewerSegmentRepository) Transaction(fn func(tx *gorm.DB) error) error {
+	return r.db.Transaction(fn)
 }
 
 // WithDB returns a repository that runs on `db`, typically a transaction.
@@ -84,23 +91,42 @@ func (r *ViewerSegmentRepository) ListDefinitions() ([]*models.SegmentDefinition
 // and TimeRelative are written on every change, as they follow from the
 // condition and the facts it reads.
 //
-// Fails with ErrSegmentDefinitionOwned when the id is held by a different
+// prepare runs in the transaction once the facts are locked, and may refuse
+// the save or derive fields of `in` from the facts as they stand then (their
+// kinds and windows cannot change until the transaction ends).
+//
+// Fails with a *SegmentFactsMissingError when a fact in factIDs does not
+// exist, and with ErrSegmentDefinitionOwned when the id is held by a different
 // (created_by_type, created_by_ref). record runs for every write and never for
 // SegmentDefinitionUnchanged.
-func (r *ViewerSegmentRepository) UpsertDefinition(in *models.SegmentDefinition, factIDs []string, record RecordSegmentDefinitionChange) (*models.SegmentDefinition, SegmentDefinitionWrite, error) {
-	stored, write, err := r.upsertDefinitionOnce(in, factIDs, record)
+func (r *ViewerSegmentRepository) UpsertDefinition(in *models.SegmentDefinition, factIDs []string, prepare PrepareSegmentDefinition, record RecordSegmentDefinitionChange) (*models.SegmentDefinition, SegmentDefinitionWrite, error) {
+	stored, write, err := r.upsertDefinitionOnce(in, factIDs, prepare, record)
 	// Two first saves of one id both find no row; the loser's insert does
 	// nothing. Its second attempt finds the winner's row and compares against
 	// it like any later save.
 	if errors.Is(err, errSegmentDefinitionCreatedConcurrently) {
-		stored, write, err = r.upsertDefinitionOnce(in, factIDs, record)
+		stored, write, err = r.upsertDefinitionOnce(in, factIDs, prepare, record)
 	}
 	return stored, write, err
 }
 
+// PrepareSegmentDefinition validates and completes a definition inside its
+// save's transaction; see UpsertDefinition.
+type PrepareSegmentDefinition func(tx *gorm.DB, in *models.SegmentDefinition) error
+
+// SegmentFactsMissingError refuses a segment that reads facts which do not
+// exist.
+type SegmentFactsMissingError struct {
+	FactIDs []string
+}
+
+func (e *SegmentFactsMissingError) Error() string {
+	return fmt.Sprintf("no fact %s", strings.Join(e.FactIDs, ", "))
+}
+
 var errSegmentDefinitionCreatedConcurrently = errors.New("segment definition was created concurrently")
 
-func (r *ViewerSegmentRepository) upsertDefinitionOnce(in *models.SegmentDefinition, factIDs []string, record RecordSegmentDefinitionChange) (*models.SegmentDefinition, SegmentDefinitionWrite, error) {
+func (r *ViewerSegmentRepository) upsertDefinitionOnce(in *models.SegmentDefinition, factIDs []string, prepare PrepareSegmentDefinition, record RecordSegmentDefinitionChange) (*models.SegmentDefinition, SegmentDefinitionWrite, error) {
 	if len(factIDs) == 0 {
 		return nil, SegmentDefinitionUnchanged, fmt.Errorf("segment definition %s reads no facts", in.ID)
 	}
@@ -109,13 +135,10 @@ func (r *ViewerSegmentRepository) upsertDefinitionOnce(in *models.SegmentDefinit
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		txRepo := r.WithDB(tx)
 		now := time.Now().UTC()
-		// The facts are locked before the segment, in id order, the order a
-		// fact revision takes them in (its fact, then the segments reading
-		// it), so a save and a revision cannot deadlock.
-		ids := slices.Sorted(slices.Values(factIDs))
-		var facts []models.FactDefinition
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Select("id").Where("id IN ?", ids).Order("id ASC").Find(&facts).Error; err != nil {
+		if err := txRepo.lockFacts(factIDs); err != nil {
+			return err
+		}
+		if err := prepare(tx, in); err != nil {
 			return err
 		}
 		var existing []models.SegmentDefinition
@@ -192,6 +215,56 @@ func (r *ViewerSegmentRepository) upsertDefinitionOnce(in *models.SegmentDefinit
 		return nil, SegmentDefinitionUnchanged, err
 	}
 	return &stored, write, nil
+}
+
+// lockFacts takes share locks on the facts, in id order, the order a fact
+// revision takes them in (its fact, then the segments reading it), so a
+// segment write and a revision cannot deadlock. Fails with a
+// *SegmentFactsMissingError when any does not exist.
+func (r *ViewerSegmentRepository) lockFacts(factIDs []string) error {
+	ids := slices.Compact(slices.Sorted(slices.Values(factIDs)))
+	var found []string
+	if err := r.db.Model(&models.FactDefinition{}).Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id IN ?", ids).Order("id ASC").Pluck("id", &found).Error; err != nil {
+		return err
+	}
+	if len(found) == len(ids) {
+		return nil
+	}
+	var missing []string
+	for _, id := range ids {
+		if !slices.Contains(found, id) {
+			missing = append(missing, id)
+		}
+	}
+	return &SegmentFactsMissingError{FactIDs: missing}
+}
+
+// LockForRefill locks a segment for a refill outside any save or revision:
+// the facts it reads (share, in id order), then its row (update), the order
+// a save takes them in. Returns nil when the segment no longer exists.
+func (r *ViewerSegmentRepository) LockForRefill(id string) (*models.SegmentDefinition, error) {
+	read, err := r.FactsRead([]string{id})
+	if err != nil {
+		return nil, err
+	}
+	if err := r.lockFacts(read[id]); err != nil {
+		return nil, err
+	}
+	var segments []*models.SegmentDefinition
+	if err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).Limit(1).Find(&segments).Error; err != nil {
+		return nil, err
+	}
+	if len(segments) == 0 {
+		return nil, nil
+	}
+	return segments[0], nil
+}
+
+// SetStale records whether a segment's membership is behind its condition.
+func (r *ViewerSegmentRepository) SetStale(id string, stale bool) error {
+	return r.db.Model(&models.SegmentDefinition{}).Where("id = ?", id).Update("stale", stale).Error
 }
 
 func (r *ViewerSegmentRepository) replaceFacts(segmentID string, factIDs []string) error {

@@ -229,6 +229,119 @@ pub mod viewer_fact_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn upsert_segment_definition(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpsertSegmentDefinitionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SegmentDefinitionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/viewer_fact.ViewerFactService/UpsertSegmentDefinition",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "viewer_fact.ViewerFactService",
+                        "UpsertSegmentDefinition",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_segment_definition(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteSegmentDefinitionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/viewer_fact.ViewerFactService/DeleteSegmentDefinition",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "viewer_fact.ViewerFactService",
+                        "DeleteSegmentDefinition",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_segment_definitions(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListSegmentDefinitionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSegmentDefinitionsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/viewer_fact.ViewerFactService/ListSegmentDefinitions",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "viewer_fact.ViewerFactService",
+                        "ListSegmentDefinitions",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_viewer_segments(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetViewerSegmentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetViewerSegmentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/viewer_fact.ViewerFactService/GetViewerSegments",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("viewer_fact.ViewerFactService", "GetViewerSegments"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -277,6 +390,34 @@ pub mod viewer_fact_service_server {
             request: tonic::Request<super::GetViewerFactsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetViewerFactsResponse>,
+            tonic::Status,
+        >;
+        async fn upsert_segment_definition(
+            &self,
+            request: tonic::Request<super::UpsertSegmentDefinitionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SegmentDefinitionResponse>,
+            tonic::Status,
+        >;
+        async fn delete_segment_definition(
+            &self,
+            request: tonic::Request<super::DeleteSegmentDefinitionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn list_segment_definitions(
+            &self,
+            request: tonic::Request<super::ListSegmentDefinitionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSegmentDefinitionsResponse>,
+            tonic::Status,
+        >;
+        async fn get_viewer_segments(
+            &self,
+            request: tonic::Request<super::GetViewerSegmentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetViewerSegmentsResponse>,
             tonic::Status,
         >;
     }
@@ -580,6 +721,206 @@ pub mod viewer_fact_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetViewerFactsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/viewer_fact.ViewerFactService/UpsertSegmentDefinition" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpsertSegmentDefinitionSvc<T: ViewerFactService>(pub Arc<T>);
+                    impl<
+                        T: ViewerFactService,
+                    > tonic::server::UnaryService<super::UpsertSegmentDefinitionRequest>
+                    for UpsertSegmentDefinitionSvc<T> {
+                        type Response = super::SegmentDefinitionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::UpsertSegmentDefinitionRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ViewerFactService>::upsert_segment_definition(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpsertSegmentDefinitionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/viewer_fact.ViewerFactService/DeleteSegmentDefinition" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteSegmentDefinitionSvc<T: ViewerFactService>(pub Arc<T>);
+                    impl<
+                        T: ViewerFactService,
+                    > tonic::server::UnaryService<super::DeleteSegmentDefinitionRequest>
+                    for DeleteSegmentDefinitionSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::DeleteSegmentDefinitionRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ViewerFactService>::delete_segment_definition(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteSegmentDefinitionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/viewer_fact.ViewerFactService/ListSegmentDefinitions" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSegmentDefinitionsSvc<T: ViewerFactService>(pub Arc<T>);
+                    impl<
+                        T: ViewerFactService,
+                    > tonic::server::UnaryService<super::ListSegmentDefinitionsRequest>
+                    for ListSegmentDefinitionsSvc<T> {
+                        type Response = super::ListSegmentDefinitionsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListSegmentDefinitionsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ViewerFactService>::list_segment_definitions(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListSegmentDefinitionsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/viewer_fact.ViewerFactService/GetViewerSegments" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetViewerSegmentsSvc<T: ViewerFactService>(pub Arc<T>);
+                    impl<
+                        T: ViewerFactService,
+                    > tonic::server::UnaryService<super::GetViewerSegmentsRequest>
+                    for GetViewerSegmentsSvc<T> {
+                        type Response = super::GetViewerSegmentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetViewerSegmentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ViewerFactService>::get_viewer_segments(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetViewerSegmentsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

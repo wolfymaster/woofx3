@@ -8,6 +8,7 @@ import (
 	"math"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -109,6 +110,20 @@ type FactApplyResult struct {
 // (fact, platform, subject) order, so two batches lock shared values in one
 // order and cannot deadlock.
 func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) {
+	return r.ApplyThen(batch, nil)
+}
+
+// FactApplyHook runs inside an apply's transaction once every delta is
+// folded, with the result so far and the stream session the event belongs to
+// (resolved at most once per apply, and only if asked for; see SessionAt).
+// The segment service uses it to diff membership against the changed values,
+// so the values, the membership and its announcements commit or roll back
+// together. Returning an error rolls the apply back.
+type FactApplyHook func(tx *gorm.DB, result *FactApplyResult, session func() (SessionRef, error)) error
+
+// ApplyThen is Apply, running `after` (when non-nil) in the transaction once
+// the batch is folded, if it was applied and changed any value.
+func (r *ViewerFactRepository) ApplyThen(batch FactBatch, after FactApplyHook) (*FactApplyResult, error) {
 	if batch.OccurredAt.IsZero() {
 		return nil, errors.New("fact batch: occurred_at is required")
 	}
@@ -176,7 +191,10 @@ func (r *ViewerFactRepository) Apply(batch FactBatch) (*FactApplyResult, error) 
 				}
 			}
 		}
-		return nil
+		if after == nil || len(result.Changes) == 0 {
+			return nil
+		}
+		return after(tx, result, sessions.currentSession)
 	})
 	if err != nil {
 		return nil, err
@@ -725,13 +743,28 @@ const (
 	// FactDefinitionRevised: what the fact computes changed, so the revision
 	// was incremented and every value deleted.
 	FactDefinitionRevised
+	// FactDefinitionDeleted: the definition and its values are gone.
+	FactDefinitionDeleted
 )
 
 // RecordFactDefinitionChange records a definition a write changed, as it
 // stands after the write, in the write's transaction. The service uses it to
-// write the outbox entry, so the change and its announcement commit or roll
-// back together. Returning an error rolls the write back.
-type RecordFactDefinitionChange func(tx *gorm.DB, definition *models.FactDefinition) error
+// write the outbox entry and to refill the segments reading a revised fact, so
+// the change, its consequences and its announcement commit or roll back
+// together. Returning an error rolls the write back.
+type RecordFactDefinitionChange func(tx *gorm.DB, definition *models.FactDefinition, write FactDefinitionWrite) error
+
+// FactDefinitionReferencedError refuses deleting a fact that segments read:
+// they would be left reading nothing.
+type FactDefinitionReferencedError struct {
+	FactID   string
+	Segments []string
+}
+
+func (e *FactDefinitionReferencedError) Error() string {
+	return fmt.Sprintf("fact %s is read by segment %s; change or delete them first",
+		e.FactID, strings.Join(e.Segments, ", "))
+}
 
 func (r *ViewerFactRepository) GetDefinition(id string) (*models.FactDefinition, error) {
 	var definition models.FactDefinition
@@ -800,7 +833,7 @@ func (r *ViewerFactRepository) upsertDefinitionOnce(in *models.FactDefinition, r
 				return errFactDefinitionCreatedConcurrently
 			}
 			write = FactDefinitionCreated
-			return record(tx, &stored)
+			return record(tx, &stored, write)
 		}
 
 		stored = existing[0]
@@ -851,7 +884,7 @@ func (r *ViewerFactRepository) upsertDefinitionOnce(in *models.FactDefinition, r
 		}).Error; err != nil {
 			return err
 		}
-		return record(tx, &stored)
+		return record(tx, &stored, write)
 	})
 	if err != nil {
 		return nil, FactDefinitionUnchanged, err
@@ -860,7 +893,8 @@ func (r *ViewerFactRepository) upsertDefinitionOnce(in *models.FactDefinition, r
 }
 
 // DeleteDefinition deletes a definition; its values go with it by cascade.
-// Returns gorm.ErrRecordNotFound when there is no such definition.
+// Returns gorm.ErrRecordNotFound when there is no such definition, and a
+// *FactDefinitionReferencedError when a segment reads it.
 func (r *ViewerFactRepository) DeleteDefinition(id string, record RecordFactDefinitionChange) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var existing models.FactDefinition
@@ -868,10 +902,17 @@ func (r *ViewerFactRepository) DeleteDefinition(id string, record RecordFactDefi
 			Where("id = ?", id).First(&existing).Error; err != nil {
 			return err
 		}
+		segments, err := NewViewerSegmentRepository(tx).SegmentIDsReading(id)
+		if err != nil {
+			return err
+		}
+		if len(segments) > 0 {
+			return &FactDefinitionReferencedError{FactID: id, Segments: segments}
+		}
 		if err := tx.Where("id = ?", id).Delete(&models.FactDefinition{}).Error; err != nil {
 			return err
 		}
-		return record(tx, &existing)
+		return record(tx, &existing, FactDefinitionDeleted)
 	})
 }
 

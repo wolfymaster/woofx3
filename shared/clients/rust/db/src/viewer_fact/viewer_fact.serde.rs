@@ -451,6 +451,97 @@ impl<'de> serde::Deserialize<'de> for DeleteFactDefinitionRequest {
         deserializer.deserialize_struct("viewer_fact.DeleteFactDefinitionRequest", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for DeleteSegmentDefinitionRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.DeleteSegmentDefinitionRequest", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for DeleteSegmentDefinitionRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = DeleteSegmentDefinitionRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.DeleteSegmentDefinitionRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<DeleteSegmentDefinitionRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(DeleteSegmentDefinitionRequest {
+                    id: id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.DeleteSegmentDefinitionRequest", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for FactDefinition {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -1713,6 +1804,241 @@ impl<'de> serde::Deserialize<'de> for GetViewerFactsResponse {
         deserializer.deserialize_struct("viewer_fact.GetViewerFactsResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for GetViewerSegmentsRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.platform.is_empty() {
+            len += 1;
+        }
+        if !self.subject_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.GetViewerSegmentsRequest", len)?;
+        if !self.platform.is_empty() {
+            struct_ser.serialize_field("platform", &self.platform)?;
+        }
+        if !self.subject_id.is_empty() {
+            struct_ser.serialize_field("subjectId", &self.subject_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetViewerSegmentsRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "platform",
+            "subject_id",
+            "subjectId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Platform,
+            SubjectId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "platform" => Ok(GeneratedField::Platform),
+                            "subjectId" | "subject_id" => Ok(GeneratedField::SubjectId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetViewerSegmentsRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.GetViewerSegmentsRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetViewerSegmentsRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut platform__ = None;
+                let mut subject_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Platform => {
+                            if platform__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("platform"));
+                            }
+                            platform__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::SubjectId => {
+                            if subject_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("subjectId"));
+                            }
+                            subject_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(GetViewerSegmentsRequest {
+                    platform: platform__.unwrap_or_default(),
+                    subject_id: subject_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.GetViewerSegmentsRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for GetViewerSegmentsResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.session_id.is_empty() {
+            len += 1;
+        }
+        if !self.segments.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.GetViewerSegmentsResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.session_id.is_empty() {
+            struct_ser.serialize_field("sessionId", &self.session_id)?;
+        }
+        if !self.segments.is_empty() {
+            struct_ser.serialize_field("segments", &self.segments)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetViewerSegmentsResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "session_id",
+            "sessionId",
+            "segments",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            SessionId,
+            Segments,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "sessionId" | "session_id" => Ok(GeneratedField::SessionId),
+                            "segments" => Ok(GeneratedField::Segments),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetViewerSegmentsResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.GetViewerSegmentsResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetViewerSegmentsResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut session_id__ = None;
+                let mut segments__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::SessionId => {
+                            if session_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sessionId"));
+                            }
+                            session_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Segments => {
+                            if segments__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("segments"));
+                            }
+                            segments__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(GetViewerSegmentsResponse {
+                    status: status__,
+                    session_id: session_id__.unwrap_or_default(),
+                    segments: segments__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.GetViewerSegmentsResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for ListFactDefinitionsRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -1890,6 +2216,185 @@ impl<'de> serde::Deserialize<'de> for ListFactDefinitionsResponse {
             }
         }
         deserializer.deserialize_struct("viewer_fact.ListFactDefinitionsResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListSegmentDefinitionsRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let len = 0;
+        let struct_ser = serializer.serialize_struct("viewer_fact.ListSegmentDefinitionsRequest", len)?;
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListSegmentDefinitionsRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                            Err(serde::de::Error::unknown_field(value, FIELDS))
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListSegmentDefinitionsRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.ListSegmentDefinitionsRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListSegmentDefinitionsRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                while map_.next_key::<GeneratedField>()?.is_some() {
+                    let _ = map_.next_value::<serde::de::IgnoredAny>()?;
+                }
+                Ok(ListSegmentDefinitionsRequest {
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.ListSegmentDefinitionsRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListSegmentDefinitionsResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.definitions.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.ListSegmentDefinitionsResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.definitions.is_empty() {
+            struct_ser.serialize_field("definitions", &self.definitions)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListSegmentDefinitionsResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "definitions",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Definitions,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "definitions" => Ok(GeneratedField::Definitions),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListSegmentDefinitionsResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.ListSegmentDefinitionsResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListSegmentDefinitionsResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut definitions__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Definitions => {
+                            if definitions__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("definitions"));
+                            }
+                            definitions__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ListSegmentDefinitionsResponse {
+                    status: status__,
+                    definitions: definitions__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.ListSegmentDefinitionsResponse", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for ResolvedFactSource {
@@ -2107,6 +2612,436 @@ impl<'de> serde::Deserialize<'de> for ResolvedFactSource {
         deserializer.deserialize_struct("viewer_fact.ResolvedFactSource", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for SegmentDefinition {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.description.is_empty() {
+            len += 1;
+        }
+        if !self.when.is_empty() {
+            len += 1;
+        }
+        if !self.facts.is_empty() {
+            len += 1;
+        }
+        if !self.window_kind.is_empty() {
+            len += 1;
+        }
+        if self.time_relative {
+            len += 1;
+        }
+        if self.revision != 0 {
+            len += 1;
+        }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
+        if self.created_at.is_some() {
+            len += 1;
+        }
+        if self.updated_at.is_some() {
+            len += 1;
+        }
+        if !self.status.is_empty() {
+            len += 1;
+        }
+        if !self.reason.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.SegmentDefinition", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.description.is_empty() {
+            struct_ser.serialize_field("description", &self.description)?;
+        }
+        if !self.when.is_empty() {
+            struct_ser.serialize_field("when", &self.when)?;
+        }
+        if !self.facts.is_empty() {
+            struct_ser.serialize_field("facts", &self.facts)?;
+        }
+        if !self.window_kind.is_empty() {
+            struct_ser.serialize_field("windowKind", &self.window_kind)?;
+        }
+        if self.time_relative {
+            struct_ser.serialize_field("timeRelative", &self.time_relative)?;
+        }
+        if self.revision != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("revision", ToString::to_string(&self.revision).as_str())?;
+        }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
+        if let Some(v) = self.created_at.as_ref() {
+            struct_ser.serialize_field("createdAt", v)?;
+        }
+        if let Some(v) = self.updated_at.as_ref() {
+            struct_ser.serialize_field("updatedAt", v)?;
+        }
+        if !self.status.is_empty() {
+            struct_ser.serialize_field("status", &self.status)?;
+        }
+        if !self.reason.is_empty() {
+            struct_ser.serialize_field("reason", &self.reason)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for SegmentDefinition {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "name",
+            "description",
+            "when",
+            "facts",
+            "window_kind",
+            "windowKind",
+            "time_relative",
+            "timeRelative",
+            "revision",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
+            "created_at",
+            "createdAt",
+            "updated_at",
+            "updatedAt",
+            "status",
+            "reason",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            Name,
+            Description,
+            When,
+            Facts,
+            WindowKind,
+            TimeRelative,
+            Revision,
+            CreatedByType,
+            CreatedByRef,
+            CreatedAt,
+            UpdatedAt,
+            Status,
+            Reason,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "name" => Ok(GeneratedField::Name),
+                            "description" => Ok(GeneratedField::Description),
+                            "when" => Ok(GeneratedField::When),
+                            "facts" => Ok(GeneratedField::Facts),
+                            "windowKind" | "window_kind" => Ok(GeneratedField::WindowKind),
+                            "timeRelative" | "time_relative" => Ok(GeneratedField::TimeRelative),
+                            "revision" => Ok(GeneratedField::Revision),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
+                            "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
+                            "status" => Ok(GeneratedField::Status),
+                            "reason" => Ok(GeneratedField::Reason),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = SegmentDefinition;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.SegmentDefinition")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<SegmentDefinition, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut name__ = None;
+                let mut description__ = None;
+                let mut when__ = None;
+                let mut facts__ = None;
+                let mut window_kind__ = None;
+                let mut time_relative__ = None;
+                let mut revision__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
+                let mut created_at__ = None;
+                let mut updated_at__ = None;
+                let mut status__ = None;
+                let mut reason__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Description => {
+                            if description__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("description"));
+                            }
+                            description__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::When => {
+                            if when__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("when"));
+                            }
+                            when__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Facts => {
+                            if facts__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("facts"));
+                            }
+                            facts__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::WindowKind => {
+                            if window_kind__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("windowKind"));
+                            }
+                            window_kind__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::TimeRelative => {
+                            if time_relative__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("timeRelative"));
+                            }
+                            time_relative__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Revision => {
+                            if revision__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("revision"));
+                            }
+                            revision__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedAt => {
+                            if created_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdAt"));
+                            }
+                            created_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::UpdatedAt => {
+                            if updated_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("updatedAt"));
+                            }
+                            updated_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Reason => {
+                            if reason__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("reason"));
+                            }
+                            reason__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(SegmentDefinition {
+                    id: id__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    description: description__.unwrap_or_default(),
+                    when: when__.unwrap_or_default(),
+                    facts: facts__.unwrap_or_default(),
+                    window_kind: window_kind__.unwrap_or_default(),
+                    time_relative: time_relative__.unwrap_or_default(),
+                    revision: revision__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
+                    created_at: created_at__,
+                    updated_at: updated_at__,
+                    status: status__.unwrap_or_default(),
+                    reason: reason__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.SegmentDefinition", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for SegmentDefinitionResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if self.definition.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.SegmentDefinitionResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if let Some(v) = self.definition.as_ref() {
+            struct_ser.serialize_field("definition", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for SegmentDefinitionResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "definition",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Definition,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "definition" => Ok(GeneratedField::Definition),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = SegmentDefinitionResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.SegmentDefinitionResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<SegmentDefinitionResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut definition__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Definition => {
+                            if definition__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("definition"));
+                            }
+                            definition__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(SegmentDefinitionResponse {
+                    status: status__,
+                    definition: definition__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.SegmentDefinitionResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for UpsertFactDefinitionRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -2303,6 +3238,184 @@ impl<'de> serde::Deserialize<'de> for UpsertFactDefinitionRequest {
         deserializer.deserialize_struct("viewer_fact.UpsertFactDefinitionRequest", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for UpsertSegmentDefinitionRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.description.is_empty() {
+            len += 1;
+        }
+        if !self.when.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.UpsertSegmentDefinitionRequest", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.description.is_empty() {
+            struct_ser.serialize_field("description", &self.description)?;
+        }
+        if !self.when.is_empty() {
+            struct_ser.serialize_field("when", &self.when)?;
+        }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for UpsertSegmentDefinitionRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "name",
+            "description",
+            "when",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            Name,
+            Description,
+            When,
+            CreatedByType,
+            CreatedByRef,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "name" => Ok(GeneratedField::Name),
+                            "description" => Ok(GeneratedField::Description),
+                            "when" => Ok(GeneratedField::When),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = UpsertSegmentDefinitionRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.UpsertSegmentDefinitionRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<UpsertSegmentDefinitionRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut name__ = None;
+                let mut description__ = None;
+                let mut when__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Description => {
+                            if description__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("description"));
+                            }
+                            description__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::When => {
+                            if when__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("when"));
+                            }
+                            when__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(UpsertSegmentDefinitionRequest {
+                    id: id__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    description: description__.unwrap_or_default(),
+                    when: when__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.UpsertSegmentDefinitionRequest", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for ViewerFactValue {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -2464,5 +3577,151 @@ impl<'de> serde::Deserialize<'de> for ViewerFactValue {
             }
         }
         deserializer.deserialize_struct("viewer_fact.ViewerFactValue", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ViewerSegment {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.segment_id.is_empty() {
+            len += 1;
+        }
+        if !self.window_key.is_empty() {
+            len += 1;
+        }
+        if self.entered_at.is_some() {
+            len += 1;
+        }
+        if self.time_relative {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("viewer_fact.ViewerSegment", len)?;
+        if !self.segment_id.is_empty() {
+            struct_ser.serialize_field("segmentId", &self.segment_id)?;
+        }
+        if !self.window_key.is_empty() {
+            struct_ser.serialize_field("windowKey", &self.window_key)?;
+        }
+        if let Some(v) = self.entered_at.as_ref() {
+            struct_ser.serialize_field("enteredAt", v)?;
+        }
+        if self.time_relative {
+            struct_ser.serialize_field("timeRelative", &self.time_relative)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ViewerSegment {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "segment_id",
+            "segmentId",
+            "window_key",
+            "windowKey",
+            "entered_at",
+            "enteredAt",
+            "time_relative",
+            "timeRelative",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            SegmentId,
+            WindowKey,
+            EnteredAt,
+            TimeRelative,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "segmentId" | "segment_id" => Ok(GeneratedField::SegmentId),
+                            "windowKey" | "window_key" => Ok(GeneratedField::WindowKey),
+                            "enteredAt" | "entered_at" => Ok(GeneratedField::EnteredAt),
+                            "timeRelative" | "time_relative" => Ok(GeneratedField::TimeRelative),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ViewerSegment;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct viewer_fact.ViewerSegment")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ViewerSegment, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut segment_id__ = None;
+                let mut window_key__ = None;
+                let mut entered_at__ = None;
+                let mut time_relative__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::SegmentId => {
+                            if segment_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("segmentId"));
+                            }
+                            segment_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::WindowKey => {
+                            if window_key__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("windowKey"));
+                            }
+                            window_key__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EnteredAt => {
+                            if entered_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("enteredAt"));
+                            }
+                            entered_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::TimeRelative => {
+                            if time_relative__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("timeRelative"));
+                            }
+                            time_relative__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ViewerSegment {
+                    segment_id: segment_id__.unwrap_or_default(),
+                    window_key: window_key__.unwrap_or_default(),
+                    entered_at: entered_at__,
+                    time_relative: time_relative__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("viewer_fact.ViewerSegment", FIELDS, GeneratedVisitor)
     }
 }

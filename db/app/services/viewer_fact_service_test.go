@@ -50,6 +50,7 @@ func newFactSvc(t *testing.T, db *gorm.DB) *viewerFactService {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := NewViewerFactService(
 		repo.NewViewerFactRepository(db),
+		repo.NewViewerSegmentRepository(db),
 		repo.NewModuleRepository(db),
 		workers.NewEventPublisher(repo.NewDbEventRepository(db), logger),
 	).(*viewerFactService)

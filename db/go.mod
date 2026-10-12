@@ -15,6 +15,7 @@ require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/wolfymaster/woofx3/clients/db v0.0.0
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
+	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/otel v1.43.0
@@ -94,7 +95,6 @@ require (
 	github.com/tetratelabs/wazero v1.2.1 // indirect
 	github.com/wasilibs/go-re2 v1.3.0 // indirect
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0 // indirect
-	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.13.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0 // indirect
