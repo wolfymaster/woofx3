@@ -26,6 +26,7 @@ const SNAPSHOT: SceneSnapshot = {
         extra: {},
       },
     },
+    behaviors: {},
   },
   meta: { w1: { moduleId: "woofx3", hostsSurface: "", frameUrl: "/frames/woofx3/text?v=x", linkedResources: {} } },
 };

@@ -1,0 +1,19 @@
+{
+  "name": "@woofx3/scene",
+  "version": "0.1.0",
+  "description": "The composition model behind scenes and alerts: the document, its type registry and timeline (model), the headless editor (editor), and the overlay renderer (runtime)",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "exports": {
+    "./model": "./model/index.ts",
+    "./editor": "./editor/index.ts",
+    "./runtime": "./runtime/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

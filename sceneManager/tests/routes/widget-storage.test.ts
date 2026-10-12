@@ -11,30 +11,42 @@ const logger = {
   error: mock(() => undefined),
 };
 
-function placement(id: string, moduleId: string, hostsSurface = "") {
-  return { id, moduleId, hostsSurface };
+function meta(moduleId: string, hostsSurface = "") {
+  return { moduleId, hostsSurface, frameUrl: "", linkedResources: {} };
 }
+
+const PUBLISHED = {
+  "counter-1": meta("woofx3"),
+  "spotify-1": meta("spotify"),
+  alerts: meta("woofx3", "alert"),
+};
 
 type SettingRow = { key: string; value: string; valueType: string };
 
-function deps(opts: { read?: (...args: unknown[]) => Promise<unknown>; settings?: Record<string, SettingRow[]> } = {}) {
+type Meta = ReturnType<typeof meta>;
+
+function deps(
+  opts: {
+    read?: (...args: unknown[]) => Promise<unknown>;
+    settings?: Record<string, SettingRow[]>;
+    /** Placements held per version; the draft defaults to the published scene. */
+    held?: { published?: Record<string, Meta>; draft?: Record<string, Meta> };
+    snapshot?: (sceneId: string, version: string) => Promise<unknown>;
+  } = {}
+) {
   const read = mock(opts.read ?? (async () => ({ value: 3, reached: {} })));
+  const published = opts.held?.published ?? PUBLISHED;
+  const draft = opts.held?.draft ?? published;
   const d = {
     ctx: { logger },
     sessionTokens: {
       verify: async (token: string) => (token === "good" ? { sceneId: "scene-1" } : null),
     },
-    host: {
-      loadSceneById: async (sceneId: string) =>
-        sceneId === "scene-1"
-          ? {
-              instances: [
-                placement("counter-1", "woofx3"),
-                placement("spotify-1", "spotify"),
-                placement("alerts", "woofx3", "alert"),
-              ],
-            }
-          : null,
+    sceneDocuments: {
+      snapshot:
+        opts.snapshot ??
+        (async (sceneId: string, version: string) =>
+          sceneId === "scene-1" ? { sceneId, meta: version === "draft" ? draft : published } : null),
     },
     moduleState: { read },
     settingsDb: { listModuleSettings: async (moduleId: string) => opts.settings?.[moduleId] ?? [] },
@@ -84,6 +96,40 @@ describe("handleWidgetStorageRoute", () => {
     const { deps: d, read } = deps();
     expect((await handleWidgetStorageRoute(request("nope", KEY), "scene-1", "nope", d)).status).toBe(404);
     expect((await handleWidgetStorageRoute(request("alerts", KEY), "scene-1", "alerts", d)).status).toBe(404);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("reads through a placement only the draft has, as the editor's preview shows it", async () => {
+    const { deps: d, read } = deps({
+      held: { published: PUBLISHED, draft: { ...PUBLISHED, "timer-1": meta("woofx3") } },
+    });
+    const resp = await handleWidgetStorageRoute(request("timer-1", KEY), "scene-1", "timer-1", d);
+    expect(resp.status).toBe(200);
+    expect(read).toHaveBeenCalledWith("scene-1", "woofx3", KEY, "woofx3");
+  });
+
+  it("reads through a placement held but not yet written back to the scene", async () => {
+    const { deps: d, read } = deps({ held: { published: { ...PUBLISHED, "timer-1": meta("woofx3") } } });
+    const resp = await handleWidgetStorageRoute(request("timer-1", KEY), "scene-1", "timer-1", d);
+    expect(resp.status).toBe(200);
+    expect(read).toHaveBeenCalledWith("scene-1", "woofx3", KEY, "woofx3");
+  });
+
+  it("refuses a placement the draft draws itself", async () => {
+    const { deps: d, read } = deps({
+      held: { published: PUBLISHED, draft: { ...PUBLISHED, area: meta("woofx3", "alert") } },
+    });
+    expect((await handleWidgetStorageRoute(request("area", KEY), "scene-1", "area", d)).status).toBe(404);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("answers 502 when the scene cannot be loaded", async () => {
+    const { deps: d, read } = deps({
+      snapshot: async () => {
+        throw new Error("db down");
+      },
+    });
+    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(502);
     expect(read).not.toHaveBeenCalled();
   });
 

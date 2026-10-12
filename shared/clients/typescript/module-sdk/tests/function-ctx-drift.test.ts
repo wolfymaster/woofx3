@@ -73,7 +73,7 @@ const KNOWN_NESTED: Record<string, string[]> = {
   crypto: ["hmac", "verifyEd25519", "timingSafeEqual"],
   storage: ["get", "set", "compareAndSet"],
   http: ["request"],
-  resources: ["create", "delete", "get", "list"],
+  resources: ["create", "delete", "get", "list", "run", "compareAndSetSetting"],
   schedule: ["at", "cancel"],
   // `module` appears here *and* in KNOWN_DATA_FIELDS below: it is the one
   // namespace that mixes plain properties with a callable, and the two maps

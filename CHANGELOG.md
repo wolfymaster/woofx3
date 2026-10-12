@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.28.0](https://github.com/wolfymaster/woofx3/compare/v0.27.0...v0.28.0) (2026-10-11)
+
+### Features
+
+* **fonts:** serve any Google Fonts family to widgets from the engine ([d30faab](https://github.com/wolfymaster/woofx3/commit/d30faab0dcfe5ba1492577c71ac2aec41bb72738))
+
+## [0.27.0](https://github.com/wolfymaster/woofx3/compare/v0.26.0...v0.27.0) (2026-10-11)
+
+### Features
+
+* **api:** serve a stream session's events for its timeline ([7e98f52](https://github.com/wolfymaster/woofx3/commit/7e98f52653ba5a5ee35558b0fa03cdcfa358adc5))
+* **barkloader:** ctx.resources.compareAndSetSetting for instance settings ([8552dd1](https://github.com/wolfymaster/woofx3/commit/8552dd15de3cc821406834dc723ffed970ac7b44))
+* **barkloader:** file actions in the picker by their first taxonomy entry ([41018c6](https://github.com/wolfymaster/woofx3/commit/41018c6809b1b43d528ffbde52a71798f9b359b1))
+* **db:** list a stream session's counted user events in time order ([231d5b1](https://github.com/wolfymaster/woofx3/commit/231d5b1850304471598677118500fcc29ae919fe))
+
+### Bug Fixes
+
+* **db:** address resource instances by their module's manifest id ([0aa2902](https://github.com/wolfymaster/woofx3/commit/0aa2902f5c05dd2482a6007ceb28dc5f4120f9e5))
+
+## [0.26.0](https://github.com/wolfymaster/woofx3/compare/v0.25.0...v0.26.0) (2026-10-10)
+
+### Features
+
+* **modules:** drop the highlight color from the Text, Counter and Timer widgets ([0f9a896](https://github.com/wolfymaster/woofx3/commit/0f9a896df753681eb1c4fbfe0fe34a4c7f8c4f64))
+* **sceneManager:** scene editor protocol 2 on the shared sequencer ([056d181](https://github.com/wolfymaster/woofx3/commit/056d181053f3f8c0d74cd0bfde7331ac2b1efcdd))
+
 ## [0.25.0](https://github.com/wolfymaster/woofx3/compare/v0.24.0...v0.25.0) (2026-10-10)
 
 ### Features

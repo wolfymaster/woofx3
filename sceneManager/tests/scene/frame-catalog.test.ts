@@ -23,7 +23,12 @@ function placement(overrides: Partial<OverlayWidgetInstance>): OverlayWidgetInst
   };
 }
 
-const INFO: BarkloaderFrameInfo = { entryHtml: "<html></html>", resourceBaseUrl: "https://e/mod/abc/", theme: null };
+const INFO: BarkloaderFrameInfo = {
+  entryHtml: "<html></html>",
+  resourceBaseUrl: "https://e/mod/abc/",
+  theme: null,
+  fontSettings: [],
+};
 
 describe("frameVersion", () => {
   it("changes exactly when the frame document would", () => {

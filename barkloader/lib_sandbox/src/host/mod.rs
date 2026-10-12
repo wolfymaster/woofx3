@@ -210,6 +210,27 @@ pub trait ResourceClient: Send + Sync {
     /// One instance by canonical id, or `None` when nothing has that id.
     fn get(&self, canonical_id: &str) -> Result<Option<ResourceInstance>, String>;
     fn list_by_kind(&self, kind: &str) -> Result<Vec<ResourceInstance>, String>;
+    /// `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`:
+    /// writes `settings[key] = value` on the instance only while
+    /// `settings[key]` still holds `expected`, compared as a function reads it
+    /// (`setting_values_equal`). A `Value::Null` expectation matches a key the
+    /// instance does not hold.
+    ///
+    /// `owning_module_name` is the invoking module, bound by the host; the
+    /// write is refused unless that module owns the instance.
+    ///
+    /// `current` in the outcome is `settings[key]` as a function would read it
+    /// now, `None` when the instance holds no such key.
+    fn compare_and_set_setting(
+        &self,
+        _owning_module_name: &str,
+        _canonical_id: &str,
+        _key: &str,
+        _expected: &Value,
+        _value: &Value,
+    ) -> Result<CompareAndSetOutcome, String> {
+        Err("ctx.resources.compareAndSetSetting is not available on this engine".to_string())
+    }
 }
 
 /// One-shot invocations a module schedules against the deadlines its manifest

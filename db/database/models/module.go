@@ -220,7 +220,11 @@ type Widget struct {
 	HostsSurface   string `gorm:"column:hosts_surface;type:text;not null;default:''"`
 	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
 	// classification terms. See Trigger.Taxonomy.
-	Taxonomy      string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+	Taxonomy string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+	// BehaviorKinds is a JSON-encoded `{"transitions": [...], "effects":
+	// [...]}` of `{"id", "label"}`: the kinds the widget plays on its own
+	// content.
+	BehaviorKinds string `gorm:"column:behavior_kinds;type:jsonb;not null;default:'{\"transitions\":[],\"effects\":[]}'"`
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`

@@ -346,6 +346,13 @@ valid cron expression), a non-empty
 }
 ```
 
+A workflow created through this method is always stored disabled, and the input has no
+field to change that, so nothing someone is authoring goes live before they switch it on.
+A caller that installs a ready-made workflow it wants running (a config bundle, a starter
+pack) creates it, then calls `setWorkflowEnabled(id, true)`. Workflows a module declares
+are registered by the module install instead and are created enabled; see
+[Workflow entry](../barkloader/modules.md#workflow-entry-workflows).
+
 The full workflow snapshot (with timestamps) also fires as a `workflow.created` webhook
 to the registered callback URL.
 

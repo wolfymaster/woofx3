@@ -2,6 +2,7 @@ import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
+import type { GoogleFontCache } from "./fonts/google-font-cache";
 import type { FrameAssembler } from "./scene/frame-assembler";
 import type { MediaProxy } from "./scene/media-proxy";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
@@ -10,9 +11,18 @@ import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
+import {
+  COMPOSITION_PREVIEW_FRAMES_PATH,
+  COMPOSITION_PREVIEW_REFRESH_PATH,
+  handleCompositionPreviewFramesRoute,
+  handleCompositionPreviewRefreshRoute,
+  handleCompositionPreviewRoute,
+} from "./routes/composition-preview";
+import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/composition-preview";
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleFontRoute, isFontPath } from "./routes/fonts";
 import { handleMediaProxyRoute, isMediaProxyPath } from "./routes/media";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
@@ -44,6 +54,8 @@ export interface HttpDeps {
   settingsDb: LinkedResourcesDb;
   /** Each open scene as a sequenced document (see scene-documents.ts). */
   sceneDocuments: SceneDocuments;
+  /** Google families for widgets' `font` settings. */
+  fonts: GoogleFontCache;
   /** Points external media in what overlays are sent at the media proxy,
    *  for the placements whose frames need it. */
   mediaProxy: MediaProxy;
@@ -145,12 +157,27 @@ export function createHttpServer(deps: HttpDeps) {
             return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
           }
 
+          if (isFontPath(url.pathname)) {
+            return withCors(await handleFontRoute(req, url, deps.fonts));
+          }
+
           if (isMediaProxyPath(url.pathname)) {
             return handleMediaProxyRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger);
           }
 
           if (url.pathname.startsWith("/assets/")) {
             return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
+          }
+
+          // The editor's composition preview (routes/composition-preview.ts).
+          if (url.pathname === COMPOSITION_PREVIEW_PATH && req.method === "GET") {
+            return withCors(await handleCompositionPreviewRoute(url, deps));
+          }
+          if (url.pathname === COMPOSITION_PREVIEW_FRAMES_PATH && req.method === "POST") {
+            return withCors(await handleCompositionPreviewFramesRoute(req, deps));
+          }
+          if (url.pathname === COMPOSITION_PREVIEW_REFRESH_PATH && req.method === "POST") {
+            return withCors(await handleCompositionPreviewRefreshRoute(req, deps));
           }
 
           // GET /scene/{sceneId} — shell + JWT mint.

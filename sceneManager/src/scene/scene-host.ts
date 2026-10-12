@@ -1,10 +1,13 @@
+import type { CompositionKind } from "@woofx3/api";
+import type { SceneDocument } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
-import type * as scene from "@woofx3/db/scene.pb";
+import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
+import type * as scene from "@woofx3/db/scene.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
+import { frameDocumentUrl, type PlacementFraming, UNAVAILABLE_VERSION } from "./frame-catalog";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
-import { type PlacementFraming, UNAVAILABLE_VERSION, frameDocumentUrl } from "./frame-catalog";
 import { selectedThemeId } from "./widget-theme";
 
 export interface OverlayWidgetPosition {
@@ -51,6 +54,12 @@ export interface OverlayWidgetInstance {
   frameUnavailable?: true;
   /** False for a placement hidden in the editor. */
   visible: boolean;
+  /**
+   * The kinds the widget declares it plays itself, from the catalog. Absent
+   * until the placement is resolved against it, or when the catalog could
+   * not be read; a page then hands the widget none of its own kinds.
+   */
+  behaviorKinds?: DeclaredBehaviorKinds;
   /** The placement exactly as stored, for writing the scene back without
    *  losing the fields only the editor reads (see scene-documents.ts). */
   stored?: Record<string, unknown>;
@@ -78,8 +87,21 @@ export interface OverlaySceneLayout {
 export interface OverlaySceneState {
   sceneId: string;
   name: string;
+  /**
+   * A `scene`, shown by overlays, or an `alert`, which steps play and which
+   * is never an overlay page: token loads refuse it and alerts are never
+   * delivered to it.
+   */
+  kind: CompositionKind;
   layout: OverlaySceneLayout;
   instances: OverlayWidgetInstance[];
+  /**
+   * The version's behaviors as stored. The scene editor's sequencer checks
+   * every change it commits; what is stored is not checked again here.
+   */
+  behaviors: SceneDocument["behaviors"];
+  /** The inputs the composition takes; empty for a scene. The same for both versions. */
+  inputs: NonNullable<SceneDocument["inputs"]>;
   /** Whether the scene has an unpublished draft (see `loadSceneById`). */
   hasDraft?: boolean;
 }
@@ -106,6 +128,8 @@ export interface OverlayWidgetDefinition {
   entry: string;
   surfaces: string[];
   hostsSurface: string;
+  /** The transition and effect kinds the widget declares it plays itself. */
+  behaviorKinds: DeclaredBehaviorKinds;
 }
 
 /** The slice of DbClient the scene host depends on (injectable for tests). */
@@ -225,13 +249,21 @@ export class OverlayHost {
       return null;
     }
 
-    const s = response.scene;
-    return {
-      sceneId: s.id,
-      name: s.name,
-      layout: parseLayout(s.layoutJson),
-      instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
-    };
+    const state = await this.stateOf(response.scene, "published");
+    if (state === null) {
+      return null;
+    }
+    if (state.kind !== "scene") {
+      // Tokens are never minted for an alert; one that resolves to an alert
+      // means the row was not a scene when it was minted or the db is
+      // inconsistent. Either way it is not a page.
+      this.logger.warn("overlay token resolves to an alert, which has no overlay page", {
+        sceneId: state.sceneId,
+        token: maskToken(token),
+      });
+      return null;
+    }
+    return state;
   }
 
   /**
@@ -268,6 +300,7 @@ export class OverlayHost {
       return {
         ...instance,
         hostsSurface: definition?.hostsSurface ?? "",
+        ...(definition === undefined ? {} : { behaviorKinds: definition.behaviorKinds }),
         resolved: definition !== undefined,
       };
     });
@@ -332,6 +365,9 @@ export class OverlayHost {
     }
     const s = response.scene;
     const [published, draft] = await Promise.all([this.stateOf(s, "published"), this.stateOf(s, "draft")]);
+    if (published === null || draft === null) {
+      return null;
+    }
     const framed = async (state: OverlaySceneState): Promise<OverlaySceneState> =>
       this.framing ? { ...state, instances: await this.framing.frame(state.instances) } : state;
     return {
@@ -341,18 +377,48 @@ export class OverlayHost {
     };
   }
 
-  private async stateOf(s: scene.Scene, version: SceneVersion): Promise<OverlaySceneState> {
+  /** One version of a row, or null when the row is of a kind this build does not know. */
+  private async stateOf(s: scene.Scene, version: SceneVersion): Promise<OverlaySceneState | null> {
+    const kind = compositionKindOf(s.kind);
+    if (kind === null) {
+      this.logger.warn("scene row has a kind this build does not know; not loaded", { sceneId: s.id, kind: s.kind });
+      return null;
+    }
     // A scene with no draft reads as its own draft.
     const draft = version === "draft" && s.hasDraft;
     const widgetsJson = draft ? s.draftWidgetsJson : s.widgetsJson;
     const layoutJson = draft ? s.draftLayoutJson : s.layoutJson;
+    const behaviorsJson = draft ? s.draftBehaviorsJson : s.behaviorsJson;
     return {
       sceneId: s.id,
       name: s.name,
+      kind,
       layout: parseLayout(layoutJson),
       instances: await this.resolveInstances(this.parseInstances(widgetsJson, s.id), s.id),
+      behaviors: this.parseBehaviors(behaviorsJson, s.id),
+      inputs: this.parseInputs(s.inputsJson, s.id),
       hasDraft: s.hasDraft,
     };
+  }
+
+  /** Stored behaviors; `{}` (said once in the log) when the text is not a JSON object. */
+  private parseBehaviors(behaviorsJson: string, sceneId: string): SceneDocument["behaviors"] {
+    const parsed = parseJson(behaviorsJson || "{}");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      this.logger.warn("scene behaviors are not a JSON object; loading none", { sceneId });
+      return {};
+    }
+    return parsed as SceneDocument["behaviors"];
+  }
+
+  /** Stored inputs; none (said in the log) when the text is not a JSON array. */
+  private parseInputs(inputsJson: string, sceneId: string): NonNullable<SceneDocument["inputs"]> {
+    const parsed = parseJson(inputsJson || "[]");
+    if (!Array.isArray(parsed)) {
+      this.logger.warn("scene inputs are not a JSON array; loading none", { sceneId });
+      return [];
+    }
+    return parsed as NonNullable<SceneDocument["inputs"]>;
   }
 
   /**
@@ -496,6 +562,7 @@ export class OverlayHost {
         entry: w.entry ?? "",
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
+        behaviorKinds: declaredKindsOf(w.behaviorKinds),
       }));
       this.widgetCache = { rows, expiresAt: this.now() + this.widgetCacheTtlMs };
       return rows;
@@ -613,10 +680,19 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
         frameUrl: w.frameUrl,
         linkedResources: w.linkedResources ?? {},
         ...(w.mediaProxyBase === undefined ? {} : { mediaProxyBase: w.mediaProxyBase }),
+        ...(w.behaviorKinds === undefined ? {} : { behaviorKinds: w.behaviorKinds }),
         visible: w.visible,
         resolved: w.resolved,
       })),
     },
+  };
+}
+
+/** A catalog row's declared kinds, ids only: what a page decides delegation on. */
+function declaredKindsOf(kinds: module_widget.WidgetBehaviorKinds | null | undefined): DeclaredBehaviorKinds {
+  return {
+    transitions: (kinds?.transitions ?? []).map((kind) => kind.id),
+    effects: (kinds?.effects ?? []).map((kind) => kind.id),
   };
 }
 
@@ -640,6 +716,25 @@ export function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosi
     width: num(position.width) ?? num(size.width) ?? 0,
     height: num(position.height) ?? num(size.height) ?? 0,
   };
+}
+
+/**
+ * The kind a row names, or null for one this build does not know. Empty is
+ * a scene: a db proxy that predates kinds stores only scenes.
+ */
+export function compositionKindOf(kind: string | undefined): CompositionKind | null {
+  if (kind === undefined || kind === "" || kind === "scene") {
+    return "scene";
+  }
+  return kind === "alert" ? "alert" : null;
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 function parseLayout(layoutJson: string): OverlaySceneLayout {

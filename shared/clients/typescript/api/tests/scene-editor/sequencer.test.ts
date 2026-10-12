@@ -30,7 +30,7 @@ import {
   type SequencerState,
   watermarkOf,
 } from "../../scene-editor/sequencer";
-import { bothDocs, placement, sceneDoc } from "./test-support";
+import { behavior, bothDocs, placement, sceneDoc } from "./test-support";
 
 const A: EntrySource = { clientId: "client-a", seq: 1 };
 
@@ -491,6 +491,55 @@ describe("external changes", () => {
   });
 });
 
+describe("inputs", () => {
+  const field = { id: "name", label: "Name", type: "text" };
+
+  test("an external change replaces them whole, copied into the draft with the rest", () => {
+    const state = newState();
+    const ops = diffDocuments(state.docs.published, { ...state.docs.published, inputs: [field] });
+    const entry = commit(
+      state,
+      planOf(prepare(state, 0, { kind: "external", version: "published", ops, mirrorIntoDraft: true })),
+      {},
+      null,
+      0
+    );
+    expect(entry?.changes.published).toEqual([{ p: ["inputs"], oi: [field] }]);
+    expect(entry?.changes.draft).toEqual([{ p: ["inputs"], oi: [field] }]);
+    expect(state.docs.published.inputs).toEqual([field]);
+    expect(state.docs.draft.inputs).toEqual([field]);
+
+    const cleared = diffDocuments(state.docs.draft, { ...state.docs.draft, inputs: undefined });
+    commit(
+      state,
+      planOf(prepare(state, 1, { kind: "external", version: "draft", ops: cleared, mirrorIntoDraft: false })),
+      {},
+      null,
+      0
+    );
+    expect("inputs" in state.docs.draft).toBe(false);
+    expect(state.docs.published.inputs).toEqual([field]);
+  });
+
+  test("an editor never changes them", () => {
+    const state = newState();
+    const refused = prepare(state, 0, edit("draft", [{ p: ["inputs"], oi: [field] }]));
+    expect(refused).toMatchObject({ refused: true, code: "invalid" });
+  });
+
+  test("an external change cannot set ones an input form could not render, nor splice them", () => {
+    const state = newState();
+    const external = (ops: Ops) =>
+      prepare(state, 0, { kind: "external", version: "published", ops, mirrorIntoDraft: true });
+    expect(external([{ p: ["inputs"], oi: [{ id: "a", type: "text" }] }])).toMatchObject({ refused: true });
+    expect(external([{ p: ["inputs"], oi: [field, field] }])).toMatchObject({ refused: true });
+    expect(external([{ p: ["inputs"], oi: {} }])).toMatchObject({ refused: true });
+    expect(external([{ p: ["inputs", 0], li: field } as never])).toMatchObject({ refused: true });
+    expect(external([{ p: ["base"], oi: { id: "x", version: "1" } }])).toMatchObject({ refused: true });
+    expect(state.v).toBe(0);
+  });
+});
+
 describe("item size", () => {
   test("an item larger than a client queues, as transforms can make it, is taken up to MAX_ITEM_BYTES", () => {
     const state = newState();
@@ -509,7 +558,7 @@ describe("item size", () => {
     expect(prepare(state, 0, edit("draft", [{ p: ["widgets", "w", "name", 0], si: "y" }]))).toMatchObject({
       refused: true,
       code: "invalid",
-      detail: "placement w would not be valid",
+      detail: "placement w would not be valid: invalid placement name",
     });
   });
 });
@@ -562,5 +611,88 @@ describe("bounded state", () => {
     expect(state.docBytes).toEqual(exact());
     send({ kind: "discard" });
     expect(state.docBytes).toEqual(exact());
+  });
+});
+
+describe("behaviors", () => {
+  test("a live edit to a behavior's field is copied into the draft, keeping the draft's edit to another field", () => {
+    const state = newState(sceneDoc({ w: placement() }, { in: behavior({ target: "w" }) }));
+    submit(state, A, 0, edit("draft", [{ p: ["behaviors", "in", "kind"], od: "fade", oi: "zoom" }]));
+    const reply = submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("published", [{ p: ["behaviors", "in", "timing", "offsetMs"], od: 0, oi: 250 }])
+    );
+    expect(reply).toMatchObject({
+      type: "entry",
+      changes: { draft: [{ p: ["behaviors", "in", "timing", "offsetMs"], od: 0, oi: 250 }] },
+    });
+    expect(state.docs.draft.behaviors.in).toMatchObject({ kind: "zoom", timing: { offsetMs: 250 } });
+    expect(state.docs.published.behaviors.in).toMatchObject({ kind: "fade", timing: { offsetMs: 250 } });
+  });
+
+  test("a live addition and removal of a behavior are copied into the draft", () => {
+    const state = newState(sceneDoc({ w: placement() }, { in: behavior({ target: "w" }) }));
+    submit(state, A, 0, edit("published", [{ p: ["behaviors", "in"], od: behavior({ target: "w" }) }]));
+    submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("published", [{ p: ["behaviors", "out"], oi: behavior({ target: "w", params: { phase: "out" } }) }])
+    );
+    expect(Object.keys(state.docs.draft.behaviors)).toEqual(["out"]);
+    expect(state.hasDraft).toBe(false);
+  });
+
+  test("a live edit to a behavior the draft removed does not bring it back", () => {
+    const state = newState(sceneDoc({ w: placement() }, { in: behavior({ target: "w" }) }));
+    submit(state, A, 0, edit("draft", [{ p: ["behaviors", "in"], od: behavior({ target: "w" }) }]));
+    submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("published", [{ p: ["behaviors", "in", "order"], od: "a0", oi: "a1" }])
+    );
+    expect(state.docs.draft.behaviors).toEqual({});
+    expect(state.docs.published.behaviors.in!.order).toBe("a1");
+  });
+
+  test("deleting a widget with its behaviors is one entry; publishing carries both removals", () => {
+    const doc = sceneDoc({ w: placement(), v: placement() }, { in: behavior({ target: "w" }) });
+    const state = newState(doc);
+    const ops = diffDocuments(doc, { ...doc, widgets: { v: placement() }, behaviors: {} });
+    const reply = submit(state, A, 0, edit("draft", ops));
+    expect(reply.type).toBe("entry");
+    const published = submit(state, { clientId: A.clientId, seq: 2 }, 1, { kind: "publish" });
+    expect(published).toMatchObject({ type: "entry", kind: "publish" });
+    expect(state.docs.published).toEqual({ ...doc, widgets: { v: placement() }, behaviors: {} });
+  });
+
+  test("a behavior that is not valid for its kind is refused", () => {
+    const state = newState(sceneDoc({ w: placement() }, { in: behavior({ target: "w" }) }));
+    const result = prepare(
+      state,
+      0,
+      edit("draft", [{ p: ["behaviors", "in", "params", "phase"], od: "in", oi: "up" }])
+    );
+    expect(result).toMatchObject({ refused: true, code: "invalid" });
+  });
+
+  test("the documents' sizes stay exact across behavior edits", () => {
+    const state = newState(sceneDoc({ w: placement() }));
+    submit(state, A, 0, edit("draft", [{ p: ["behaviors", "in"], oi: behavior({ target: "w" }) }]));
+    submit(
+      state,
+      { clientId: A.clientId, seq: 2 },
+      1,
+      edit("draft", [{ p: ["behaviors", "in", "timing", "node"], oi: "w" }])
+    );
+    expect(state.docBytes.draft).toBe(JSON.stringify(state.docs.draft).length);
+  });
+
+  test("the documents it starts from must be normalized", () => {
+    const legacy = { layout: {}, widgets: {} } as unknown as SceneDocument;
+    expect(() => newState(legacy)).toThrow("normalized");
   });
 });

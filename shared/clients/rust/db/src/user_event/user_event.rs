@@ -210,6 +210,25 @@ pub struct ListRecentUserEventsResponse {
     #[prost(int64, tag="3")]
     pub total: i64,
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListStreamSessionUserEventsRequest {
+    #[prost(string, tag="1")]
+    pub stream_session_id: ::prost::alloc::string::String,
+    /// 1-1000. Defaults to 500.
+    #[prost(int32, optional, tag="2")]
+    pub limit: ::core::option::Option<i32>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListStreamSessionUserEventsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// Oldest first by occurred_at, at most `limit` of them.
+    #[prost(message, repeated, tag="2")]
+    pub events: ::prost::alloc::vec::Vec<UserEvent>,
+    /// Every counted event in the session, not only those returned.
+    #[prost(int64, tag="3")]
+    pub total: i64,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum LeaderboardMetric {

@@ -1,9 +1,10 @@
 import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
-import type { OverlayHost } from "./scene-host";
+import { type OverlayHost, parseWidgetCanonicalId } from "./scene-host";
 import {
   type FrameTheme,
   buildThemeStyle,
@@ -49,6 +50,8 @@ export interface BarkloaderFrameInfo {
   resourceBaseUrl: string;
   /** `null` for a widget that declares no theme contract. */
   theme: FrameTheme | null;
+  /** Ids of the widget's `font` settings. */
+  fontSettings: string[];
 }
 
 /** The slice of Barkloader's HTTP surface the assembler depends on
@@ -95,7 +98,12 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
       });
       return null;
     }
-    const body = (await response.json()) as { entryHtml?: unknown; resourceBaseUrl?: unknown; theme?: unknown };
+    const body = (await response.json()) as {
+      entryHtml?: unknown;
+      resourceBaseUrl?: unknown;
+      theme?: unknown;
+      fontSettings?: unknown;
+    };
     if (typeof body.entryHtml !== "string" || typeof body.resourceBaseUrl !== "string") {
       this.logger.warn("barkloader widget frame response missing entryHtml/resourceBaseUrl", {
         moduleKey,
@@ -109,8 +117,21 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
       entryHtml: body.entryHtml,
       resourceBaseUrl: body.resourceBaseUrl,
       theme: parseFrameTheme(body.theme),
+      fontSettings: parseFontSettings(body.fontSettings),
     };
   }
+}
+
+/** An older barkloader sends no font settings; the widget's fonts are then used by name only. */
+function parseFontSettings(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** What the shim needs to link a widget's fonts; absent for a widget without font settings. */
+function frameFonts(frameInfo: BarkloaderFrameInfo): Pick<WidgetBootPayload, "fonts"> {
+  return frameInfo.fontSettings.length === 0
+    ? {}
+    : { fonts: { settings: [...frameInfo.fontSettings], stylesheetUrl: FONT_STYLESHEET_PATH } };
 }
 
 export interface FrameAssemblerOptions {
@@ -276,6 +297,7 @@ export class FrameAssembler {
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: frameInfo.theme ? hostTheme(frameInfo.theme) : null,
+      ...frameFonts(frameInfo),
     };
     const cacheable = versionParam !== null && versionParam === frameVersion(frameInfo);
     return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache");
@@ -297,17 +319,19 @@ export class FrameAssembler {
   ): Promise<Response> {
     const event = await this.host.loadSceneEvent(sceneId, eventId);
     const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
-    const widget = delivery?.layout.widgets.find((w) => w.id === widgetId);
-    if (!widget) {
+    const widget =
+      delivery && Object.hasOwn(delivery.layout.widgets, widgetId) ? delivery.layout.widgets[widgetId] : undefined;
+    const canonical = widget ? parseWidgetCanonicalId(widget.widget) : null;
+    if (!widget || !canonical) {
       return this.blankResponse();
     }
     return this.assembleFrame(
       sceneId,
       {
-        instanceId: `${eventId}.${widget.id}`,
-        moduleId: widget.moduleId,
-        manifestId: widget.manifestId,
-        widgetCanonicalId: widget.widgetCanonicalId,
+        instanceId: `${eventId}.${widgetId}`,
+        moduleId: canonical.moduleKey,
+        manifestId: canonical.manifestId,
+        widgetCanonicalId: widget.widget,
         settings: widget.settings,
         surface: "alert",
       },
@@ -377,6 +401,7 @@ export class FrameAssembler {
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
       linkedResources,
+      ...frameFonts(frameInfo),
     };
     return this.render(frameInfo, boot, "no-store");
   }

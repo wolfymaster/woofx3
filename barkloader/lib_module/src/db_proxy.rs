@@ -201,10 +201,29 @@ pub struct WidgetInputJson {
     pub hosts_surface: String,
     /// Open, multi-valued classification; see `ModuleWidget::taxonomy`.
     pub taxonomy: Vec<String>,
+    /// The transition and effect kinds the widget plays itself; see
+    /// `ModuleWidget::transitions` and `ModuleWidget::effects`.
+    pub behavior_kinds: WidgetBehaviorKindsJson,
     /// Entry path relative to the widget asset root (assets-relative,
     /// matching the prefix-stripped repository keys). Empty means the
     /// consumer falls back to `index.html`.
     pub entry: String,
+}
+
+/// Kinds a widget declares, by behavior type. Matches `WidgetBehaviorKinds`
+/// in db/proto/v1/module_widget.proto.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetBehaviorKindsJson {
+    pub transitions: Vec<WidgetBehaviorKindJson>,
+    pub effects: Vec<WidgetBehaviorKindJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetBehaviorKindJson {
+    pub id: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1759,6 +1778,64 @@ pub async fn get_resource_instance(
         .await
         .map_err(|e| anyhow!("parse GetResourceInstance response: {}", e))?;
     Ok(parsed.instance)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CompareAndSetResourceInstanceSettingResponseJson {
+    #[serde(default)]
+    pub swapped: bool,
+    /// JSON text of the setting after the call; empty when the instance does
+    /// not hold the key.
+    #[serde(default)]
+    pub current_json: String,
+}
+
+/// Twirp JSON for `module.ModuleService/CompareAndSetResourceInstanceSetting`.
+/// `module_name` is the invoking module's manifest id; db-proxy refuses the
+/// write unless that module owns the instance. `expected_json` of `null`
+/// matches a key the instance does not hold.
+pub async fn compare_and_set_resource_instance_setting(
+    db_proxy_url: &str,
+    module_name: &str,
+    canonical_id: &str,
+    key: &str,
+    expected_json: &str,
+    value_json: &str,
+    request_context: Option<&RequestContext>,
+) -> Result<CompareAndSetResourceInstanceSettingResponseJson> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/CompareAndSetResourceInstanceSetting",
+        db_proxy_url
+    );
+    let body = serde_json::json!({
+        "canonical_id": canonical_id,
+        "module_name": module_name,
+        "key": key,
+        "expected_json": expected_json,
+        "value_json": value_json,
+        "request_context": request_context,
+    });
+    let response = HTTP_CLIENT
+        .clone()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("CompareAndSetResourceInstanceSetting request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "CompareAndSetResourceInstanceSetting failed {}: {}",
+            status,
+            text
+        ));
+    }
+    response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse CompareAndSetResourceInstanceSetting response: {}", e))
 }
 
 /// Twirp JSON for `module.ModuleService/ListResourceInstancesByKind`.

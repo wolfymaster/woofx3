@@ -130,7 +130,7 @@ Plays an on-stream alert. The step publishes an envelope onto NATS `ui.notify.al
           "widgetCanonicalId": "woofx3:widget:text",
           "position": { "x": 360, "y": 780 },
           "size": { "width": 1200, "height": 160 },
-          "settings": { "text": "{primary}${trigger.data.userName}{primary} just followed!", "duration": 6 }
+          "settings": { "text": "${trigger.data.userName} just followed!", "duration": 6 }
         },
         {
           "id": "sound",
@@ -149,8 +149,8 @@ Plays an on-stream alert. The step publishes an envelope onto NATS `ui.notify.al
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"alert"`. Set at the task top level. |
 | `parameters.target` | `string` | No | Name of the alert widgets to play on. Defaults to `"default"`, the name a scene's first alert widget gets. |
-| `parameters.layout` | `object` | Yes | The alert: a canvas `width` × `height` and the `widgets` placed on it. The alert widget scales the canvas to fit its area. |
-| `parameters.layout.widgets[]` | `object` | Yes | `id` (letters, digits, `-` or `_`, unique in the layout), the `widgetCanonicalId` of a widget whose `surfaces` include `"alert"`, `position`, `size` and `settings`. A widget that fails these rules is dropped with a warning. |
+| `parameters.layout` | `object` | Yes | The alert, as a composition: `layout` (the canvas, `width` × `height`, which the alert widget scales to fit its area), `widgets` keyed by id (placements: `widget` canonical id, `x`, `y`, `width`, `height`, `rotation`, `opacity`, `visible`, `z`, `settings`, ...) and `behaviors` keyed by id (transitions and effects). Each entry must pass the engine's strict registry; each widget must name a widget whose `surfaces` include `"alert"` under an id of letters, digits, `-` or `_`. A widget or behavior that fails is dropped with a warning, a widget taking its behaviors with it. A widget with `visible: false` does not play. |
+| `parameters.layout` (list shape) | `object` | — | Still accepted: a canvas `width` × `height` and `widgets[]`, each with `id`, `widgetCanonicalId`, `position`, `size` and `settings`, and optionally the `name`, `visible`, `rotation`, `opacity`, `locked` and `zIndex` the dashboard writes. It is converted to a composition with no behaviors: entries stack by `zIndex` when every entry has one, else in list order; a placement field that is missing or out of range takes the placement default; any other entry field is kept in the placement's `extra`. |
 | `parameters.id` | `string` | No | Pin the envelope id (useful for tests / replays). When omitted, the action stamps a UUID — see below. |
 
 `${…}` expressions anywhere in the layout, widget settings included, are resolved before the envelope is published, so layout widgets receive final values.

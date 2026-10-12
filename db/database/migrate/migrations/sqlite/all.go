@@ -65,5 +65,7 @@ func All() []*gormigrate.Migration {
 		AddSceneEditorState(),
 		AddViewerFacts(),
 		AddViewerSegments(),
+		AddWidgetBehaviors(),
+		AddSceneCompositions(),
 	}
 }

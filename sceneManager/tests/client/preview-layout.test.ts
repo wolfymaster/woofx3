@@ -2,14 +2,10 @@ import { describe, expect, it } from "bun:test";
 import {
   draftFrameKey,
   parsePreviewPlacements,
-  applyPreviewLayout,
+  transientOfPreviewLayout,
   PREVIEW_LAYOUT_MESSAGE,
   parsePreviewLayout,
 } from "../../public/scene-manager/preview-layout";
-
-function element(): HTMLElement {
-  return { style: {} as CSSStyleDeclaration } as HTMLElement;
-}
 
 describe("parsePreviewLayout", () => {
   it("reads the widgets of a layout message", () => {
@@ -18,6 +14,20 @@ describe("parsePreviewLayout", () => {
       widgets: [{ id: "w1", x: 10, y: 20, width: 300, height: 200 }],
     });
     expect(layout).toEqual([{ id: "w1", x: 10, y: 20, width: 300, height: 200 }]);
+  });
+
+  it("reads a rotation and an opacity when the editor sends them", () => {
+    const layout = parsePreviewLayout({
+      type: PREVIEW_LAYOUT_MESSAGE,
+      widgets: [
+        { id: "w1", x: 0, y: 0, width: 1, height: 1, rotation: -45, opacity: 0.25 },
+        { id: "w2", x: 0, y: 0, width: 1, height: 1, rotation: "45", opacity: 2 },
+      ],
+    });
+    expect(layout).toEqual([
+      { id: "w1", x: 0, y: 0, width: 1, height: 1, rotation: -45, opacity: 0.25 },
+      { id: "w2", x: 0, y: 0, width: 1, height: 1 },
+    ]);
   });
 
   // Widget frames post their own protocol messages to this page; those
@@ -43,31 +53,26 @@ describe("parsePreviewLayout", () => {
   });
 });
 
-describe("applyPreviewLayout", () => {
-  it("moves listed widgets and hides the ones the editor removed", () => {
-    const kept = element();
-    const removed = element();
-    applyPreviewLayout(
-      new Map([
-        ["kept", kept],
-        ["removed", removed],
-      ]),
-      [{ id: "kept", x: 5, y: 6, width: 70, height: 80 }]
+describe("transientOfPreviewLayout", () => {
+  it("places listed widgets, stacks them in the layout's order, and makes the ones the editor removed transparent", () => {
+    const transient = transientOfPreviewLayout(
+      [
+        { id: "top", x: 5, y: 6, width: 70, height: 80, rotation: 30, opacity: 0.5 },
+        { id: "bottom", x: 1, y: 2, width: 3, height: 4 },
+      ].reverse(),
+      ["top", "bottom", "removed"]
     );
-    expect(kept.style.left).toBe("5px");
-    expect(kept.style.top).toBe("6px");
-    expect(kept.style.width).toBe("70px");
-    expect(kept.style.height).toBe("80px");
-    expect(kept.style.display).toBe("");
-    expect(removed.style.display).toBe("none");
+    expect(transient.top).toMatchObject({ x: 5, y: 6, width: 70, height: 80, rotation: 30, opacity: 0.5 });
+    expect(transient.bottom).toEqual({ x: 1, y: 2, width: 3, height: 4, z: transient.bottom!.z });
+    expect(transient.bottom!.z! < transient.top!.z!).toBe(true);
+    expect(transient.removed).toEqual({ opacity: 0 });
   });
 
-  it("shows a widget again once the layout includes it", () => {
-    const widget = element();
-    const elements = new Map([["w", widget]]);
-    applyPreviewLayout(elements, []);
-    applyPreviewLayout(elements, [{ id: "w", x: 0, y: 0, width: 10, height: 10 }]);
-    expect(widget.style.display).toBe("");
+  it("leaves a widget listed again as the layout places it", () => {
+    expect(transientOfPreviewLayout([], ["w"]).w).toEqual({ opacity: 0 });
+    expect(
+      transientOfPreviewLayout([{ id: "w", x: 0, y: 0, width: 10, height: 10 }], ["w"]).w?.opacity
+    ).toBeUndefined();
   });
 });
 

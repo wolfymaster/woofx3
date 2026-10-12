@@ -11,12 +11,25 @@
  * Every id must also be listed in docs/services/engine-capabilities.md.
  */
 export const ENGINE_CAPABILITIES = {
+  /**
+   * An Alert step's inline `layout` may be a composition (`{ layout, widgets,
+   * behaviors }`: the canvas, placements keyed by id, and behaviors keyed by
+   * id) as well as the list shape (`{ width, height, widgets: [] }`).
+   */
+  alertsCompositionLayout: "alerts.compositionLayout",
+  /**
+   * Ending the alert playing on every open overlay and dropping every alert
+   * still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`.
+   */
+  alertsQueueControls: "alerts.queueControls",
   /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
   analyticsSessions: "analytics.sessions",
   /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */
   analyticsGauges: "analytics.gauges",
   /** Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard`. */
   analyticsAggregates: "analytics.aggregates",
+  /** A session's counted events in time order, for its timeline: `getStreamSessionEvents`. */
+  analyticsSessionEvents: "analytics.sessionEvents",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
@@ -46,9 +59,10 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
   /**
-   * Editing a scene live with sceneManager: `getSceneEditorSession`, the
-   * editor socket it opens (sequenced json0 ops on a draft and the published
-   * scene, publish, discard) and autosave in place of `updateScene`.
+   * Editing a scene live with sceneManager over editor socket protocol 1:
+   * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
+   * place of `updateScene`. No longer served; declared so a client can
+   * recognise an engine that only speaks it.
    */
   scenesEditorSessions: "scenes.editorSessions",
   /**
@@ -56,9 +70,33 @@ export const ENGINE_CAPABILITIES = {
    * (`@woofx3/api/scene-editor`): one ordered queue of items per editor across
    * the draft and the published scene, publish and discard as items, every
    * item answered exactly once, and reconnects that catch up from the
-   * server's log or rebase onto a snapshot.
+   * server's log or rebase onto a snapshot. The socket is opened with the
+   * token `getSceneEditorSession` gives, and `protocol=2`.
    */
   scenesEditorSync: "scenes.editorSync",
+  /**
+   * A composition's behaviors (transitions, effects, activity windows) are
+   * stored with it, published and draft, so they survive sceneManager
+   * restarts and saves made elsewhere. Without it an engine keeps behaviors
+   * only while sceneManager holds the scene, and a client should not offer
+   * them.
+   */
+  scenesBehaviors: "scenes.behaviors",
+  /**
+   * Alert compositions stored in the engine: `listAlertCompositions`,
+   * `getAlertComposition`, `createAlertComposition`,
+   * `updateAlertComposition`, `deleteAlertComposition`, editing one with
+   * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
+   * An alert step never plays one by id: a client copies it into the step's
+   * own layout.
+   */
+  compositionsAlerts: "compositions.alerts",
+  /**
+   * The alert editor's live preview: `getCompositionPreviewUrl`, and
+   * sceneManager's `/preview/composition` page driven by the protocol in
+   * `@woofx3/scene/runtime` (`preview-protocol.ts`).
+   */
+  compositionsPreview: "compositions.preview",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**
@@ -89,12 +127,12 @@ export interface EngineCapabilities {
 
 /**
  * Ids declared here that this build does not advertise, so clients can name
- * them before or after the engine supports them. sceneManager serves editor
- * socket protocol 1 (`scenes.editorSessions`) until it moves to protocol 2
- * (`scenes.editorSync`).
+ * them before or after the engine supports them. sceneManager serves only
+ * editor socket protocol 2 (`scenes.editorSync`), and answers a protocol 1
+ * socket (`scenes.editorSessions`) with HTTP 426.
  */
 export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
-  ENGINE_CAPABILITIES.scenesEditorSync,
+  ENGINE_CAPABILITIES.scenesEditorSessions,
 ]);
 
 /** The capability ids this build supports, sorted and unique. */

@@ -108,7 +108,7 @@ func TestDropApplicationsKeepsTheOneApplicationsData(t *testing.T) {
 		t.Errorf("%d application tables survived", got)
 	}
 	for _, index := range []string{
-		"idx_settings_key", "idx_scenes_name", "idx_groups_name", "widget_status_unique",
+		"idx_settings_key", "idx_scenes_kind_name", "idx_groups_name", "widget_status_unique",
 		"idx_stream_sessions_one_open", "idx_stream_session_segments_one_open",
 	} {
 		if count(t, db, `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = ?

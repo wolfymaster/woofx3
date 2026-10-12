@@ -481,6 +481,8 @@ fn build_http_namespace<'js>(
 ///     `{ canonicalId, moduleName, kind, instanceId, displayName }`
 ///   - `ctx.resources.delete(canonicalId)` → no return
 ///   - `ctx.resources.list(kind)` → array of the same instance objects
+///   - `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`
+///     → `{ swapped, current }`; owning module only
 ///
 /// `owning_module_name` is bound from `invocation.module_id` (the
 /// manifest-local id baked into the function's canonical path) so JS
@@ -585,6 +587,40 @@ fn build_resources_namespace<'js>(
     )
     .map_err(map)?;
     resources.set("run", run_fn).map_err(map)?;
+
+    // `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`
+    // -- write one setting of an instance this module owns, only while it
+    // still holds `expected`; answers `{ swapped, current }`.
+    let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let compare_and_set_setting_fn = JsFunction::new(
+        ctx.clone(),
+        move |ctx, canonical_id: String, key: String, expected: JsValue, value: JsValue| {
+            // A function would otherwise read as an empty object and be
+            // stored as one, a setting nobody meant to write.
+            if value.is_function() {
+                return Err(host_err(
+                    "ctx.resources.compareAndSetSetting: value must be JSON, not a function",
+                ));
+            }
+            let json_expected = js_to_json(&expected).map_err(|e| host_err(e.to_string()))?;
+            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            let outcome = super::host_bindings::resources_compare_and_set_setting(
+                &host,
+                &module_id,
+                &canonical_id,
+                &key,
+                &json_expected,
+                &json_val,
+            )
+            .map_err(host_err)?;
+            json_to_js(&ctx, &outcome).map_err(|e| host_err(e.to_string()))
+        },
+    )
+    .map_err(map)?;
+    resources
+        .set("compareAndSetSetting", compare_and_set_setting_fn)
+        .map_err(map)?;
 
     ctx_obj.set("resources", resources).map_err(map)?;
     Ok(())
@@ -1226,13 +1262,13 @@ mod tests {
     #[test]
     fn quickjs_ctx_module_compare_and_set_setting_writes_from_what_was_read() {
         let (invocation, settings) = list_settings_invocation(
-            serde_json::json!([{ "label": "Pizza" }]),
+            serde_json::json!([{ "label": "first" }]),
             Default::default(),
         );
         let adapter = QuickJSAdapter::new().unwrap();
         let code = "function run(ctx) { \
             const items = ctx.module.settings.items; \
-            const next = items.concat([{ label: 'Tacos' }]); \
+            const next = items.concat([{ label: 'second' }]); \
             const won = ctx.module.compareAndSetSetting('items', items, next); \
             const lost = ctx.module.compareAndSetSetting('items', items, []); \
             return { won, lost }; \
@@ -1240,7 +1276,7 @@ mod tests {
         let result = adapter.execute(code, "run", &invocation).unwrap();
         assert_eq!(result["won"]["swapped"], true);
         assert_eq!(result["lost"]["swapped"], false);
-        let both = serde_json::json!([{ "label": "Pizza" }, { "label": "Tacos" }]);
+        let both = serde_json::json!([{ "label": "first" }, { "label": "second" }]);
         assert_eq!(result["lost"]["current"], both);
         assert_eq!(*settings.items.lock().unwrap(), both);
     }
@@ -1255,5 +1291,85 @@ mod tests {
         let code = "function run(ctx) { return ctx.module.compareAndSetSetting('items', [], []); }";
         let err = adapter.execute(code, "run", &invocation).unwrap_err();
         assert!(err.to_string().contains("url setting"), "{err}");
+    }
+
+    fn instance_settings_invocation(
+        module_id: &str,
+        settings: serde_json::Value,
+    ) -> (
+        InvocationContext,
+        Arc<crate::host::recording::InstanceSettings>,
+    ) {
+        let instance = Arc::new(crate::host::recording::InstanceSettings::new(
+            "mymod:list:main",
+            settings,
+        ));
+        let mut host = noop_host_context();
+        host.resources = instance.clone();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: module_id.to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "1.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        (invocation, instance)
+    }
+
+    // An instance the streamer never saved `items` on has no `items` key; the
+    // function reads undefined, and handing that back must match.
+    #[test]
+    fn quickjs_ctx_resources_compare_and_set_setting_writes_from_what_was_read() {
+        let (invocation, instance) =
+            instance_settings_invocation("mymod", serde_json::json!({ "limit": 5 }));
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = "function run(ctx) { \
+            const id = 'mymod:list:main'; \
+            const items = ctx.resources.get(id).settings.items; \
+            const next = (items || []).concat([{ label: 'first' }]); \
+            const won = ctx.resources.compareAndSetSetting(id, 'items', items, next); \
+            const lost = ctx.resources.compareAndSetSetting(id, 'items', items, []); \
+            return { won, lost }; \
+        }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        let first = serde_json::json!([{ "label": "first" }]);
+        assert_eq!(result["won"]["swapped"], true);
+        assert_eq!(result["won"]["current"], first);
+        assert_eq!(result["lost"]["swapped"], false);
+        assert_eq!(result["lost"]["current"], first);
+        let settings = instance.settings.lock().unwrap();
+        assert_eq!(settings["items"], first);
+        assert_eq!(settings["limit"], 5);
+    }
+
+    #[test]
+    fn quickjs_ctx_resources_compare_and_set_setting_refuses_another_modules_instance() {
+        let (invocation, instance) =
+            instance_settings_invocation("intruder", serde_json::json!({}));
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = "function run(ctx) { \
+            return ctx.resources.compareAndSetSetting('mymod:list:main', 'items', undefined, []); \
+        }";
+        let err = adapter.execute(code, "run", &invocation).unwrap_err();
+        assert!(
+            err.to_string().contains("only the module that owns"),
+            "{err}"
+        );
+        assert!(instance.writes.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn quickjs_ctx_resources_compare_and_set_setting_refuses_a_value_json_cannot_hold() {
+        let (invocation, instance) = instance_settings_invocation("mymod", serde_json::json!({}));
+        let adapter = QuickJSAdapter::new().unwrap();
+        let code = "function run(ctx) { \
+            return ctx.resources.compareAndSetSetting('mymod:list:main', 'items', undefined, function () {}); \
+        }";
+        assert!(adapter.execute(code, "run", &invocation).is_err());
+        assert!(instance.writes.lock().unwrap().is_empty());
     }
 }

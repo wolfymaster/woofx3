@@ -916,6 +916,246 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsResponse {
         deserializer.deserialize_struct("user_event.ListRecentUserEventsResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for ListStreamSessionUserEventsRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.stream_session_id.is_empty() {
+            len += 1;
+        }
+        if self.limit.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("user_event.ListStreamSessionUserEventsRequest", len)?;
+        if !self.stream_session_id.is_empty() {
+            struct_ser.serialize_field("streamSessionId", &self.stream_session_id)?;
+        }
+        if let Some(v) = self.limit.as_ref() {
+            struct_ser.serialize_field("limit", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListStreamSessionUserEventsRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "stream_session_id",
+            "streamSessionId",
+            "limit",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            StreamSessionId,
+            Limit,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "streamSessionId" | "stream_session_id" => Ok(GeneratedField::StreamSessionId),
+                            "limit" => Ok(GeneratedField::Limit),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListStreamSessionUserEventsRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct user_event.ListStreamSessionUserEventsRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListStreamSessionUserEventsRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut stream_session_id__ = None;
+                let mut limit__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::StreamSessionId => {
+                            if stream_session_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("streamSessionId"));
+                            }
+                            stream_session_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Limit => {
+                            if limit__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("limit"));
+                            }
+                            limit__ = 
+                                map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
+                            ;
+                        }
+                    }
+                }
+                Ok(ListStreamSessionUserEventsRequest {
+                    stream_session_id: stream_session_id__.unwrap_or_default(),
+                    limit: limit__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("user_event.ListStreamSessionUserEventsRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListStreamSessionUserEventsResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.events.is_empty() {
+            len += 1;
+        }
+        if self.total != 0 {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("user_event.ListStreamSessionUserEventsResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.events.is_empty() {
+            struct_ser.serialize_field("events", &self.events)?;
+        }
+        if self.total != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("total", ToString::to_string(&self.total).as_str())?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListStreamSessionUserEventsResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "events",
+            "total",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Events,
+            Total,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "events" => Ok(GeneratedField::Events),
+                            "total" => Ok(GeneratedField::Total),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListStreamSessionUserEventsResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct user_event.ListStreamSessionUserEventsResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListStreamSessionUserEventsResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut events__ = None;
+                let mut total__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Events => {
+                            if events__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("events"));
+                            }
+                            events__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Total => {
+                            if total__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("total"));
+                            }
+                            total__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                    }
+                }
+                Ok(ListStreamSessionUserEventsResponse {
+                    status: status__,
+                    events: events__.unwrap_or_default(),
+                    total: total__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("user_event.ListStreamSessionUserEventsResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for ListViewerLeaderboardRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
