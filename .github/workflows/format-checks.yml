@@ -31,7 +31,7 @@ jobs:
         with:
           components: rustfmt
 
-      # The version devbox.json pins, as in go checks. No cache: gofmt reads
+      # The version mise.toml pins, as in go checks. No cache: gofmt reads
       # source only, and there is no root go.sum to key one by.
       - name: Set up Go
         uses: actions/setup-go@v5
