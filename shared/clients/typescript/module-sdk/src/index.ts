@@ -41,6 +41,7 @@ export type {
   WidgetEventDeliverMessage,
   WidgetEventsSubscribeMessage,
   WidgetEventsUnsubscribeMessage,
+  WidgetFonts,
   WidgetHelloMessage,
   WidgetInitMessage,
   WidgetInitRejectMessage,
@@ -61,6 +62,7 @@ export type {
   WidgetSettingsChangedMessage,
   WidgetSettingsReadsMessage,
   WidgetToHostMessage,
+  WidgetBehaviorMessage,
 } from "./widget-protocol";
 export {
   PROTOCOL_VERSION,
@@ -74,8 +76,26 @@ export {
   isWidgetTheme,
 } from "./widget-protocol";
 
+export type {
+  WidgetBehaviorEasing,
+  WidgetBehaviorKindDefinition,
+  WidgetBehaviorState,
+  WidgetBehaviorType,
+  WidgetTransitionPhase,
+} from "./widget-behaviors";
+export {
+  WIDGET_BEHAVIOR_EASINGS,
+  WIDGET_BEHAVIOR_KIND,
+  WIDGET_BEHAVIOR_TYPES,
+  applyWidgetBehavior,
+  isWidgetBehaviorState,
+} from "./widget-behaviors";
+
 export type { BindingDocument } from "./widget-bindings";
 export { applySettingBindings } from "./widget-bindings";
+
+export type { FontDocument, FontLinkElement, FontLoader } from "./widget-fonts";
+export { createFontLoader, primaryFontFamily, requestableFontFamily } from "./widget-fonts";
 
 export type {
   InstallWidgetHostShimOptions,

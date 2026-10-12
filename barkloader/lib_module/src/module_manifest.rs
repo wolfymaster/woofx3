@@ -280,10 +280,14 @@ pub struct ManifestConfigFieldOption {
 /// control, not the stored value, and the latter pair only ever appeared on
 /// module settings.
 ///
+/// `font` holds a CSS font-family list. A widget frame is told which of its
+/// settings are fonts (`font_setting_ids`), so the scene manager can serve the
+/// Google family the first entry names.
+///
 /// `theme` is in the list because consumers render it, but no manifest may
 /// declare one: the engine adds it to a widget that declares a `theme`
 /// contract (see `THEME_SETTING_ID`).
-pub const CONFIG_FIELD_TYPES: [&str; 13] = [
+pub const CONFIG_FIELD_TYPES: [&str; 14] = [
     "number",
     "range",
     "text",
@@ -291,6 +295,7 @@ pub const CONFIG_FIELD_TYPES: [&str; 13] = [
     "media",
     "toggle",
     "color",
+    "font",
     "asset",
     "resource_ref",
     "button",
@@ -309,6 +314,9 @@ pub const COMPARISON_OPERATORS: [&str; 6] = ["eq", "ne", "gt", "gte", "lt", "lte
 /// to a widget that declares a `theme` contract. The stored value is a theme's
 /// canonical id, or absent for the contract's defaults.
 pub const THEME_FIELD_TYPE: &str = "theme";
+
+/// The field type of a setting holding a CSS font-family list.
+pub const FONT_FIELD_TYPE: &str = "font";
 pub const THEME_SETTING_ID: &str = "theme";
 
 /// The types a `list` field's `itemFields` may use: controls that fit in one
@@ -321,6 +329,20 @@ pub const LIST_ITEM_FIELD_TYPES: [&str; 5] = ["number", "text", "select", "toggl
 /// module SDK.
 pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
 
+/// The transition kinds the overlay plays on any widget's box. A widget may
+/// not declare one of these as its own. Mirrors `HOST_TRANSITION_KINDS` in
+/// @woofx3/scene's model/entity-types.ts.
+pub const HOST_TRANSITION_KINDS: [&str; 7] =
+    ["fade", "slide", "zoom", "bounce", "spin", "pop", "blur"];
+
+/// The effect kinds the overlay plays on any widget's box. A widget may not
+/// declare one of these as its own. Mirrors `HOST_EFFECT_KINDS` in
+/// @woofx3/scene's model/entity-types.ts.
+pub const HOST_EFFECT_KINDS: [&str; 6] = ["shake", "pulse", "float", "glow", "flash", "blur"];
+
+/// The longest label a kind a widget declares for itself may carry.
+pub const WIDGET_BEHAVIOR_LABEL_MAX: usize = 64;
+
 /// A flat list of the paths a runtime value carries, with their types.
 ///
 /// Deliberately not JSON Schema: it matches `${trigger.data.X}` /
@@ -329,14 +351,19 @@ pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
 /// payload or a function result against it, so it carries no `required`, no
 /// nesting and no constraints — those would all be promises the engine does
 /// not keep.
+///
+/// Unknown keys are rejected at parse, here and on each field: a misspelt
+/// annotation such as `anonymouswhen` would otherwise be dropped and the
+/// install would succeed without the behaviour the author asked for.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManifestDataShape {
     #[serde(default)]
     pub fields: Vec<ManifestDataShapeField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManifestDataShapeField {
     /// Dot path into the value, e.g. `"bits"` or `"channel.title"`.
     pub path: String,
@@ -349,7 +376,33 @@ pub struct ManifestDataShapeField {
     pub description: Option<String>,
     #[serde(default)]
     pub example: Option<serde_json::Value>,
+    /// Marks this field as naming who the value is about, from
+    /// `DATA_SHAPE_IDENTITIES`. Per-viewer facts take their subject from a
+    /// field carrying `"viewer"`; an `array` field is a list of string ids
+    /// naming several viewers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+    /// Path of a `boolean` field in the same shape that is true when the
+    /// identity is withheld (an anonymous cheer or gift), so nothing is
+    /// attributed to whatever placeholder id the platform sends instead. On an
+    /// `array` identity it applies to the whole event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anonymous_when: Option<String>,
+    /// Path of a `string` field in the same shape carrying the identity's
+    /// human-readable name. Only on a `string` identity: one name cannot name
+    /// each viewer of an `array`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
+
+/// The accepted `identity` tokens for a data-shape field. Closed: each token
+/// is something the engine keys state by, so a new one needs engine support
+/// before a manifest can usefully name it.
+pub const DATA_SHAPE_IDENTITIES: [&str; 1] = ["viewer"];
+
+/// The `type` tokens a field may carry alongside `identity`: one string id, or
+/// an array of string ids naming several subjects of the same event.
+pub const DATA_SHAPE_IDENTITY_FIELD_TYPES: [&str; 2] = ["string", "array"];
 
 /// The accepted `type` tokens for a data-shape field. Closed on purpose: this
 /// drives a picker's rendering, so an unrecognised token is an author mistake
@@ -656,10 +709,35 @@ pub struct ModuleWidget {
     /// (see `resolve_taxonomy`).
     #[serde(default)]
     pub category: Option<String>,
+    /// Transition kinds the widget plays on its own content (a text widget
+    /// typing its letters in), offered beside the overlay's own kinds when a
+    /// composition picks how the widget enters and leaves. The overlay hands
+    /// them to the frame and the widget's CSS animates them from the marks
+    /// the shim sets (`data-transition`, see the module SDK's
+    /// widget-behaviors.ts). The overlay hands a widget only the kinds it
+    /// declares here.
+    #[serde(default)]
+    pub transitions: Vec<ManifestWidgetBehaviorKind>,
+    /// Effect kinds the widget plays on its own content while it is shown,
+    /// offered beside the overlay's own effects. Played the same way as
+    /// `transitions`, from the `data-effect` mark.
+    #[serde(default)]
+    pub effects: Vec<ManifestWidgetBehaviorKind>,
     /// Opts the widget into themes. Absent means the widget cannot be themed
     /// and nothing about it changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<WidgetThemeContract>,
+}
+
+/// A transition or effect kind a widget declares for its own content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestWidgetBehaviorKind {
+    /// What a behavior's `kind` names, and what the frame's `data-transition`
+    /// or `data-effect` attribute is set to: a lowercase token.
+    pub id: String,
+    /// What an editor shows for it.
+    pub label: String,
 }
 
 /// What a theme may change about a widget: named CSS variables and named
@@ -1243,6 +1321,20 @@ impl ManifestAsset {
     }
 }
 
+/// Declared kinds as the db-proxy stores them, labels trimmed as validation
+/// measured them.
+fn behavior_kinds_input(
+    kinds: &[ManifestWidgetBehaviorKind],
+) -> Vec<super::db_proxy::WidgetBehaviorKindJson> {
+    kinds
+        .iter()
+        .map(|kind| super::db_proxy::WidgetBehaviorKindJson {
+            id: kind.id.clone(),
+            label: kind.label.trim().to_string(),
+        })
+        .collect()
+}
+
 impl ManifestTrigger {
     /// Taxonomy for `RegisterTrigger` and install-time grouping: manifest
     /// `taxonomy` when non-empty, otherwise the legacy `category` (trimmed,
@@ -1332,6 +1424,17 @@ impl ModuleWidget {
     /// removed.
     pub fn resolved_alert_types(&self) -> Vec<String> {
         dedup_preserve_order(&self.alert_types)
+    }
+
+    /// The ids of the widget's `font` settings, in declaration order: the
+    /// settings whose first family the scene manager offers to serve.
+    pub fn font_setting_ids(&self) -> Vec<String> {
+        self.settings_schema
+            .iter()
+            .flatten()
+            .filter(|field| field.field_type == FONT_FIELD_TYPE)
+            .map(|field| field.id.clone())
+            .collect()
     }
 
     /// Normalize the manifest `entry` path relative to the widget asset
@@ -1425,6 +1528,10 @@ impl ModuleWidget {
             surfaces: self.surfaces.clone(),
             hosts_surface: self.hosts_surface.clone().unwrap_or_default(),
             taxonomy: self.resolve_taxonomy(),
+            behavior_kinds: super::db_proxy::WidgetBehaviorKindsJson {
+                transitions: behavior_kinds_input(&self.transitions),
+                effects: behavior_kinds_input(&self.effects),
+            },
             entry,
         }
     }
@@ -2286,6 +2393,46 @@ mod tests {
     }
 
     #[test]
+    fn trigger_to_input_keeps_identity_annotations_in_emits() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_cheer",
+            "name": "Cheer",
+            "event": "channel.cheer",
+            "emits": {
+                "fields": [
+                    {
+                        "path": "userId",
+                        "type": "string",
+                        "identity": "viewer",
+                        "anonymousWhen": "isAnonymous",
+                        "displayName": "userName"
+                    },
+                    { "path": "isAnonymous", "type": "boolean" },
+                    { "path": "userName", "type": "string" }
+                ]
+            }
+        }))
+        .expect("parse");
+        let emits = t.to_input("test_mod").emits;
+        let parsed: serde_json::Value = serde_json::from_str(&emits).expect("valid json");
+        assert_eq!(parsed["fields"][0]["identity"], "viewer");
+        assert_eq!(parsed["fields"][0]["anonymousWhen"], "isAnonymous");
+        assert_eq!(parsed["fields"][0]["displayName"], "userName");
+        let unannotated = parsed["fields"][1].as_object().expect("field is an object");
+        assert!(!unannotated.contains_key("identity"), "{emits}");
+        assert!(!unannotated.contains_key("anonymousWhen"), "{emits}");
+        assert!(!unannotated.contains_key("displayName"), "{emits}");
+
+        let reparsed: ManifestDataShape = serde_json::from_str(&emits).expect("round-trips");
+        assert_eq!(reparsed.fields[0].identity.as_deref(), Some("viewer"));
+        assert_eq!(
+            reparsed.fields[0].anonymous_when.as_deref(),
+            Some("isAnonymous")
+        );
+        assert_eq!(reparsed.fields[0].display_name.as_deref(), Some("userName"));
+    }
+
+    #[test]
     fn trigger_to_input_defaults_emits_to_empty_object() {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "channel_cheer",
@@ -2378,6 +2525,28 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].id, "minViewers");
         assert_eq!(fields[0].field_type, "number");
+    }
+
+    #[test]
+    fn font_setting_ids_lists_only_font_settings_in_order() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "settingsSchema": [
+                { "id": "headline", "label": "Headline", "type": "font" },
+                { "id": "color", "label": "Color", "type": "color" },
+                { "id": "body", "label": "Body", "type": "font" }
+            ]
+        }))
+        .expect("parse");
+        assert_eq!(w.font_setting_ids(), vec!["headline", "body"]);
+    }
+
+    #[test]
+    fn font_setting_ids_is_empty_without_a_schema() {
+        let w: ModuleWidget =
+            serde_json::from_value(serde_json::json!({ "id": "x", "name": "X" })).expect("parse");
+        assert!(w.font_setting_ids().is_empty());
     }
 
     #[test]

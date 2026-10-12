@@ -148,6 +148,44 @@ func (r *UserEventRepository) Recent(since time.Time, limit int) ([]*models.User
 	return events, total, nil
 }
 
+// SessionEvents returns the first `limit` events of the window that Totals
+// counts, oldest first, and how many there are in all. Gifted Subscribe rows
+// are left out for the reason Totals leaves them out of subs: the gift is
+// already the gifter's SubscriptionGift row. Events at the same instant are
+// ordered by id, so a read is stable across calls.
+func (r *UserEventRepository) SessionEvents(window EventWindow, limit int) ([]*models.UserEvent, int64, error) {
+	where := fmt.Sprintf(`event_type IN @types
+		AND NOT (event_type = @subscribe AND COALESCE(%s, FALSE))
+		AND %s`, r.isGiftedSub(), windowClause(&window))
+
+	args := eventTypeArgs()
+	args["types"] = []string{
+		models.UserEventTypeCheer,
+		models.UserEventTypeResub,
+		models.UserEventTypeSubscribe,
+		models.UserEventTypeSubscriptionGift,
+		models.UserEventTypeFollow,
+		models.UserEventTypeRaid,
+	}
+	addWindowArgs(args, &window)
+
+	span := r.db.Model(&models.UserEvent{}).Where(where, args)
+
+	var total int64
+	if err := span.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	events := []*models.UserEvent{}
+	if err := span.Session(&gorm.Session{}).
+		Order("occurred_at ASC").
+		Order("id ASC").
+		Limit(limit).
+		Find(&events).Error; err != nil {
+		return nil, 0, err
+	}
+	return events, total, nil
+}
+
 // ViewerTotals adds up what one viewer cheered and gifted. A nil window covers
 // every event recorded.
 func (r *UserEventRepository) ViewerTotals(platform, platformUserID string, window *EventWindow) (*ViewerEventTotals, error) {

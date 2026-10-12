@@ -12,6 +12,7 @@ const barkloader: BarkloaderFrameClient = {
     entryHtml: "<!doctype html><html><head></head><body></body></html>",
     resourceBaseUrl: "https://cdn.example.com/w/",
     theme: null,
+    fontSettings: [],
   })),
 };
 
@@ -59,6 +60,44 @@ describe("FrameAssembler.assembleAlertWidget", () => {
     });
   });
 
+  it("frames a widget of a composition-shaped delivery", async () => {
+    const composed = {
+      alertId: "alert-2",
+      layout: {
+        layout: { width: 100, height: 100 },
+        widgets: {
+          t1: {
+            widget: "woofx3:widget:text",
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            visible: true,
+            z: "a0",
+            settings: { text: "composed" },
+            name: "",
+            rotation: 0,
+            opacity: 1,
+            locked: false,
+            extra: {},
+          },
+        },
+        behaviors: {},
+      },
+      event: null,
+    };
+    const assembler = new FrameAssembler(hostWithEvent({ type: "alert", value: composed }), fakeLogger(), {
+      barkloader,
+    });
+    const resp = await assembler.assembleAlertWidget("scene-1", "evt-2", "t1", null);
+    expect(bootOf(await resp.text())).toMatchObject({
+      instanceId: "evt-2.t1",
+      moduleId: "woofx3",
+      widgetCanonicalId: "woofx3:widget:text",
+      settings: { text: "composed" },
+    });
+  });
+
   it("returns the uniform blank document for an unknown widget, a non-alert event, or another scene's event", async () => {
     const cases: Array<[{ type: string; value: unknown } | null, string]> = [
       [{ type: "alert", value: delivery }, "missing"],
@@ -79,6 +118,7 @@ describe("FrameAssembler.assembleDocument — surfaces", () => {
       entryHtml: "<!doctype html><html><head></head></html>",
       resourceBaseUrl: "https://e/",
       theme: null,
+      fontSettings: [],
     }),
   };
 

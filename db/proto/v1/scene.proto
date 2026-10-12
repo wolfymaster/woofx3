@@ -56,6 +56,21 @@ message Scene {
     string draft_widgets_json = 11;
     string draft_layout_json = 12;
     bool has_draft = 13;
+    // The scene editor's sync state as a JSON object, owned by the scene
+    // editor and opaque here. Empty when no editor has synced the scene.
+    string editor_state_json = 14;
+    // "scene" or "alert", fixed at creation. A scene is shown by overlays;
+    // an alert is a library entry an alert step's layout is copied from,
+    // never an overlay page.
+    string kind = 15;
+    // The published document's behaviors, a JSON object keyed by behavior
+    // id; `{}` when it has none.
+    string behaviors_json = 16;
+    // The draft's behaviors, the same shape. Set only when `has_draft`.
+    string draft_behaviors_json = 17;
+    // The inputs the composition takes, a JSON array of ConfigFields; `[]`
+    // when it takes none. Not drafted: both documents declare these.
+    string inputs_json = 18;
 }
 
 message CreateSceneRequest {
@@ -71,6 +86,12 @@ message CreateSceneRequest {
     string layout_json = 5;
     string created_by_type = 6;
     string created_by_ref = 7;
+    // "scene" or "alert"; empty creates a scene. Anything else is refused.
+    string kind = 8;
+    // JSON object of behaviors keyed by id; empty stores `{}`.
+    string behaviors_json = 9;
+    // JSON array of input fields; empty stores `[]`.
+    string inputs_json = 10;
 }
 
 message GetSceneRequest {
@@ -93,12 +114,37 @@ message UpdateSceneRequest {
     string widgets_json = 4;
     string layout_json = 5;
     // Store a draft, the same shapes as `widgets_json` and `layout_json`.
-    // Both are set together; empty leaves the draft unchanged.
+    // Both are set together; empty leaves the draft unchanged. The draft's
+    // behaviors (`draft_behaviors_json`) are stored with them, `{}` when
+    // that is empty, so a stored draft never pairs with behaviors from an
+    // older one.
     string draft_widgets_json = 6;
     string draft_layout_json = 7;
-    // Drop the draft (it was published or discarded). Wins over a draft
-    // set in the same request.
+    // Drop the draft (it was published or discarded), behaviors included.
+    // Wins over a draft set in the same request.
     bool clear_draft = 8;
+    // Store the scene editor's sync state, a JSON object. Written in the
+    // same row update as the documents and draft in this request, so the
+    // state never describes documents other than the stored ones. Empty
+    // leaves it unchanged, unless the request writes a document (widgets,
+    // layout, draft or clear_draft): the stored state is then cleared,
+    // since it described the documents being replaced. Anything that is
+    // not a JSON object is refused and nothing in the request is written.
+    string editor_state_json = 9;
+    // Drop the stored editor state in the same row update. Refused
+    // together with `editor_state_json`.
+    bool clear_editor_state = 10;
+    // The published behaviors, a JSON object; empty leaves them unchanged.
+    // A document like `widgets_json`: refused when not a JSON object.
+    string behaviors_json = 11;
+    // The draft's behaviors, a JSON object, written only with a draft
+    // (`draft_widgets_json` and `draft_layout_json`). Refused when not a
+    // JSON object, or set without the draft.
+    string draft_behaviors_json = 12;
+    // The inputs, a JSON array of input fields; empty leaves them
+    // unchanged. A document like `widgets_json`: refused when not a JSON
+    // array.
+    string inputs_json = 13;
 }
 
 message DeleteSceneRequest {
@@ -112,6 +158,9 @@ message ListScenesRequest {
     int32 page_size = 3;
     string sort_by = 4;  // e.g. "name", "created_at", "updated_at"
     bool sort_desc = 5;
+    // Which kind to list, "scene" or "alert". Empty lists scenes, so a
+    // caller that predates alerts never sees one.
+    string kind = 6;
 }
 
 message ListScenesResponse {

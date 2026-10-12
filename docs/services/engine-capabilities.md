@@ -16,7 +16,7 @@ getEngineCapabilities(): Promise<{ schema: 1; capabilities: string[] }>
 - `schema` versions the response shape, not the engine. It changes only if the response stops being a flat list of ids.
 - An id's presence means the engine supports that feature. There is no negative form: a missing id means unsupported.
 
-The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/typescript/api/capabilities.ts` (exported from `@woofx3/api`). The engine route returns exactly those values, so the list cannot drift from the build that serves it.
+The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/typescript/api/capabilities.ts` (exported from `@woofx3/api`). The engine route returns exactly those values, less the ids in `UNADVERTISED_ENGINE_CAPABILITIES`, so the list cannot drift from the build that serves it. An id is declared but not advertised when clients need to name it while this build does not support it: a shared contract that lands before the engine implements it, or an older protocol the engine no longer serves.
 
 ## Rules
 
@@ -31,9 +31,14 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 
 | Id | Feature |
 |---|---|
+| `alerts.compositionLayout` | An Alert step's inline `parameters.layout` may be a composition (`{ layout, widgets, behaviors }`: the canvas, placements keyed by id, and behaviors keyed by id) as well as the list shape (`{ width, height, widgets: [] }`). See [Task types → alert](../workflow/tasks.md#alert) |
+| `alerts.queueControls` | Ending the alert playing on every open overlay and dropping every alert still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`. See [Widget events → Skip, clear and replay](./widget-events.md#skip-clear-and-replay) |
 | `analytics.aggregates` | Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard` |
 | `analytics.gauges` | Per-minute viewer, follower and subscriber series for a session: `getStreamSessionGauges` |
+| `analytics.sessionEvents` | A session's counted events in time order, for its timeline: `getStreamSessionEvents` |
 | `analytics.sessions` | Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals` |
+| `compositions.alerts` | Alert compositions stored in the engine: `listAlertCompositions`, `getAlertComposition`, `createAlertComposition`, `updateAlertComposition`, `deleteAlertComposition`, editing an alert with `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots. An alert is never listed with scenes, served as an overlay page or given an overlay token. See [Scene documents](./scene-documents.md#scenes-and-alerts) |
+| `compositions.preview` | The alert editor's live preview: `getCompositionPreviewUrl` gives a short-lived URL of sceneManager's `/preview/composition` page, which plays a composition the dashboard posts to it (with a sample event and input values) with the real runtime and widget frames, and plays, pauses, seeks and restarts on the dashboard's messages (`@woofx3/scene/runtime`, `preview-protocol.ts`). The page opens only with that token, never an overlay token. See [Composition preview](./composition-preview.md) |
 | `config.bundles` | Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig` |
 | `modules.localEndpoints` | A manifest's `local[]` endpoints, `setRelayConfig`, the `relay.credential.requested` callback, and sceneManager's endpoint dialer reaching OBS through the companion's bridge. See [Local endpoints](./local-endpoints.md) |
 | `modules.files` | Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile` |
@@ -41,7 +46,9 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `obs.control` | The `ctx.obs` host extension and the `obs.control` manifest permission, which a module that changes OBS or lists its names needs to install and run |
 | `obs.status` | The OBS connection's state and last failure: `getObsStatus` |
 | `twitch.dashboardTokens` | A Twitch token that carries the app's `clientId` is renewed by asking the dashboard that sent it (`twitch.token.requested`), not with a refresh token, so the dashboard need not send one. See [Twitch channel → Who renews the token](./twitch-channel.md#who-renews-the-token) |
-| `scenes.editorSessions` | Editing a scene live with sceneManager: `getSceneEditorSession`, the editor socket it opens, and autosave in place of `updateScene`. See [Scene documents](./scene-documents.md) |
+| `scenes.behaviors` | A composition's behaviors (transitions, effects, activity windows) are stored with it, published and draft, so they survive sceneManager restarts and saves made elsewhere. Without it, behaviors last only while sceneManager holds the scene, and a dashboard should not offer them. See [Scene documents](./scene-documents.md#writing-back) |
+| `scenes.editorSessions` | Editing a scene live with sceneManager over editor socket protocol 1. Declared but no longer advertised: sceneManager answers a protocol 1 socket with HTTP 426, and a dashboard that only speaks it falls back to saving with `updateScene` |
+| `scenes.editorSync` | Editing a scene live with sceneManager over editor socket protocol 2 (`@woofx3/api/scene-editor`): one ordered queue of items per editor across the draft and the published scene, publish and discard as items, exactly one answer per item, and reconnects that catch up from the server's log or rebase onto a snapshot. The socket is opened with the token from `getSceneEditorSession` and `protocol=2`. See [Scene documents](./scene-documents.md) |
 | `widgets.themes` | Theme presets a widget declares, for the theme settings picker: `listWidgetThemes` |
 | `workflow.widgetVisibility` | The `scene.widget.visibility` workflow action, which saves a placement's `visible` on the published scene, and the `scenes` / `scenePlacements` field sources its form uses. See [Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility) |
 

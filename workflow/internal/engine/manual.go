@@ -79,19 +79,20 @@ func (e *Engine[TServices]) RunManual(req ManualRun) (ManualRunResult, error) {
 		if err != nil {
 			return ManualRunResult{}, fmt.Errorf("RunManual: %w", err)
 		}
-		if !req.SkipConditions {
-			if unmet := e.unmetTriggerConditions(def, event); len(unmet) > 0 {
-				e.logger.Info("Manual run refused: trigger conditions not met",
-					"workflow", def.ID,
-					"trigger_id", event.TriggerID,
-					"unmet", describeUnmet(unmet))
-				return ManualRunResult{Outcome: ManualRunConditionsNotMet, EventType: event.Type, Unmet: unmet}, nil
-			}
+	}
+	viewer := e.newViewerLoader(viewerTrigger(def), event)
+	if req.TriggerData != nil && !req.SkipConditions {
+		if unmet := e.unmetTriggerConditions(def, event, viewer); len(unmet) > 0 {
+			e.logger.Info("Manual run refused: trigger conditions not met",
+				"workflow", def.ID,
+				"trigger_id", event.TriggerID,
+				"unmet", describeUnmet(unmet))
+			return ManualRunResult{Outcome: ManualRunConditionsNotMet, EventType: event.Type, Unmet: unmet}, nil
 		}
 	}
 
 	// A request event stamped by a dry run stays dry, whatever was asked.
-	execution := e.beginExecutionAs(def, event, req.DryRun || event.DryRun)
+	execution := e.beginExecutionAs(def, event, req.DryRun || event.DryRun, viewer)
 	go e.runExecution(def, execution, event)
 	return ManualRunResult{Outcome: ManualRunStarted, ExecutionID: execution.ID, EventType: event.Type}, nil
 }

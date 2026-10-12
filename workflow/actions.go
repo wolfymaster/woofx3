@@ -313,10 +313,19 @@ func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string
 //
 // Structural only, deliberately. Whether a widget exists, or may play in an
 // alert, stays with the scene manager.
+//
+// A layout is a composition (`{layout, widgets, behaviors}`, the canvas under
+// `layout` and widgets keyed by id) or, from steps saved before alerts were
+// compositions, a canvas with a list of widgets. Which one is told by the
+// `layout` key, as parseAlertLayout in sceneManager/src/scene/alert-layout.ts
+// tells them.
 func validateAlertParams(params map[string]any) error {
 	layout, ok := params["layout"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("layout must be an object, got %s", describeParam(params["layout"]))
+	}
+	if _, composed := layout["layout"]; composed {
+		return validateAlertComposition(layout)
 	}
 	if !isPositiveNumber(layout["width"]) {
 		return fmt.Errorf("layout.width must be a positive number, got %s", describeParam(layout["width"]))
@@ -326,6 +335,28 @@ func validateAlertParams(params map[string]any) error {
 	}
 	if _, ok := layout["widgets"].([]any); !ok {
 		return fmt.Errorf("layout.widgets must be an array, got %s", describeParam(layout["widgets"]))
+	}
+	return nil
+}
+
+func validateAlertComposition(layout map[string]any) error {
+	canvas, ok := layout["layout"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("layout.layout must be an object, got %s", describeParam(layout["layout"]))
+	}
+	if !isPositiveNumber(canvas["width"]) {
+		return fmt.Errorf("layout.layout.width must be a positive number, got %s", describeParam(canvas["width"]))
+	}
+	if !isPositiveNumber(canvas["height"]) {
+		return fmt.Errorf("layout.layout.height must be a positive number, got %s", describeParam(canvas["height"]))
+	}
+	if _, ok := layout["widgets"].(map[string]any); !ok {
+		return fmt.Errorf("layout.widgets must be an object keyed by id, got %s", describeParam(layout["widgets"]))
+	}
+	if behaviors, present := layout["behaviors"]; present {
+		if _, ok := behaviors.(map[string]any); !ok {
+			return fmt.Errorf("layout.behaviors must be an object keyed by id, got %s", describeParam(behaviors))
+		}
 	}
 	return nil
 }

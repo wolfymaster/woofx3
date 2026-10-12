@@ -2,16 +2,28 @@ import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
+import type { GoogleFontCache } from "./fonts/google-font-cache";
 import type { FrameAssembler } from "./scene/frame-assembler";
+import type { MediaProxy } from "./scene/media-proxy";
 import type { LinkedResourcesDb, ModuleStateWatch } from "./scene/module-state";
 import type { SceneDocuments } from "./scene/scene-documents";
 import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneConfigRoute, handleSceneDraftConfigRoute, handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
+import {
+  COMPOSITION_PREVIEW_FRAMES_PATH,
+  COMPOSITION_PREVIEW_REFRESH_PATH,
+  handleCompositionPreviewFramesRoute,
+  handleCompositionPreviewRefreshRoute,
+  handleCompositionPreviewRoute,
+} from "./routes/composition-preview";
+import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/composition-preview";
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleFontRoute, isFontPath } from "./routes/fonts";
+import { handleMediaProxyRoute, isMediaProxyPath } from "./routes/media";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
 import {
   handleStorageAssetRoute,
@@ -42,6 +54,11 @@ export interface HttpDeps {
   settingsDb: LinkedResourcesDb;
   /** Each open scene as a sequenced document (see scene-documents.ts). */
   sceneDocuments: SceneDocuments;
+  /** Google families for widgets' `font` settings. */
+  fonts: GoogleFontCache;
+  /** Points external media in what overlays are sent at the media proxy,
+   *  for the placements whose frames need it. */
+  mediaProxy: MediaProxy;
   /** Identity of this sceneManager process, minted once at startup and
    *  announced on every SSE stream. Lets a reconnecting overlay tell a
    *  resumed stream from one that came back against a restarted server
@@ -66,8 +83,12 @@ const UPLOAD_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": UPLOAD_ALLOWED_METHODS,
 };
 
-/** CORS headers for a path: its preflight answer and its responses. */
+/** CORS headers for a path: its preflight answer and its responses. The
+ *  media proxy grants none (see routes/media.ts). */
 export function corsHeadersFor(pathname: string): Record<string, string> {
+  if (isMediaProxyPath(pathname)) {
+    return {};
+  }
   return isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS;
 }
 
@@ -136,8 +157,27 @@ export function createHttpServer(deps: HttpDeps) {
             return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
           }
 
+          if (isFontPath(url.pathname)) {
+            return withCors(await handleFontRoute(req, url, deps.fonts));
+          }
+
+          if (isMediaProxyPath(url.pathname)) {
+            return handleMediaProxyRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger);
+          }
+
           if (url.pathname.startsWith("/assets/")) {
             return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
+          }
+
+          // The editor's composition preview (routes/composition-preview.ts).
+          if (url.pathname === COMPOSITION_PREVIEW_PATH && req.method === "GET") {
+            return withCors(await handleCompositionPreviewRoute(url, deps));
+          }
+          if (url.pathname === COMPOSITION_PREVIEW_FRAMES_PATH && req.method === "POST") {
+            return withCors(await handleCompositionPreviewFramesRoute(req, deps));
+          }
+          if (url.pathname === COMPOSITION_PREVIEW_REFRESH_PATH && req.method === "POST") {
+            return withCors(await handleCompositionPreviewRefreshRoute(req, deps));
           }
 
           // GET /scene/{sceneId} — shell + JWT mint.

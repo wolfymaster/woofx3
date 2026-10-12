@@ -31,12 +31,14 @@ use super::canonical_id::{
 use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
-    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
-    LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand,
-    ManifestConfigField, ManifestDataShape, ManifestFunction, ManifestResourceKind,
-    ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
-    WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DATA_SHAPE_IDENTITIES,
+    DATA_SHAPE_IDENTITY_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP, HOST_EFFECT_KINDS,
+    HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl,
+    ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestDataShapeField,
+    ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme, ManifestTrigger,
+    ManifestWidgetBehaviorKind, ManifestWorkflow, ModuleManifest, ModuleWidget,
+    SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
+    WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
@@ -382,8 +384,10 @@ pub fn validate_with_provenance(
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_widget_surfaces(&manifest.widgets, provenance)?;
+    validate_widget_behavior_kinds(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
+    validate_action_taxonomies(&manifest.actions)?;
     validate_field_lists(manifest)?;
     validate_trigger_sentences(&manifest.triggers)?;
     validate_themes(manifest, &module_id)?;
@@ -550,11 +554,26 @@ const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
     "action.execute",
 ];
 
-fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static str] {
-    match provenance {
-        InstallProvenance::User => &USER_RESERVED_EVENT_PREFIXES,
-        InstallProvenance::System => &[WEBHOOK_EVENT_PREFIX],
-    }
+/// Event prefixes only the engine publishes, which uploads may not declare.
+///
+/// Unlike a platform event such as `channel.`, which the module bringing that
+/// platform declares, nothing outside the engine asserts these, so an upload
+/// declaring one could only forge it through its webhook handler: `viewer.`
+/// carries segment entered/left edges computed by the db proxy. The bundled
+/// system module declares triggers on them and stays exempt. Each entry must
+/// also appear in EngineEventSubjectPrefixes in
+/// shared/common/golang/cloudevents/reserved.go.
+const UPLOAD_ENGINE_ONLY_EVENT_PREFIXES: [&str; 1] = ["viewer."];
+
+fn reserved_event_prefixes(provenance: InstallProvenance) -> impl Iterator<Item = &'static str> {
+    let (commands, engine_only): (&[&str], &[&str]) = match provenance {
+        InstallProvenance::User => (
+            &USER_RESERVED_EVENT_PREFIXES,
+            &UPLOAD_ENGINE_ONLY_EVENT_PREFIXES,
+        ),
+        InstallProvenance::System => (&[WEBHOOK_EVENT_PREFIX], &[]),
+    };
+    commands.iter().chain(engine_only).copied()
 }
 
 /// The subject barkloader's field-options responder answers. It runs
@@ -757,9 +776,7 @@ fn validate_trigger_transports(
             } else {
                 &trigger.event
             };
-            if let Some(prefix) = reserved_event_prefixes(provenance)
-                .iter()
-                .find(|p| event.starts_with(**p))
+            if let Some(prefix) = reserved_event_prefixes(provenance).find(|p| event.starts_with(p))
             {
                 return Err(anyhow!(
                     "{label}: event {event:?} uses the reserved prefix {prefix:?}"
@@ -1701,6 +1718,73 @@ fn validate_widget_surfaces(widgets: &[ModuleWidget], provenance: InstallProvena
     Ok(())
 }
 
+/// Check the transition and effect kinds each widget declares for itself. An
+/// id ends up in a CSS attribute selector in the widget's stylesheet and in a
+/// behavior's `kind`, so it is held to the token the scene model accepts
+/// there, and it may not shadow a kind the overlay plays itself, which would
+/// be played instead.
+fn validate_widget_behavior_kinds(widgets: &[ModuleWidget]) -> Result<()> {
+    for (i, w) in widgets.iter().enumerate() {
+        let label = format!("widget #{i} ({})", w.id);
+        let declared: [(&str, &str, &[ManifestWidgetBehaviorKind], &[&str]); 2] = [
+            (
+                "transitions",
+                "transition",
+                &w.transitions,
+                &HOST_TRANSITION_KINDS,
+            ),
+            ("effects", "effect", &w.effects, &HOST_EFFECT_KINDS),
+        ];
+        for (field, noun, kinds, host_kinds) in declared {
+            if kinds.is_empty() {
+                continue;
+            }
+            if w.hosts_surface.is_some() {
+                return Err(anyhow!(
+                    "{label}: a widget that hosts a surface has no content of its own to animate, so it declares no `{field}`"
+                ));
+            }
+            let mut seen: HashSet<&str> = HashSet::with_capacity(kinds.len());
+            for kind in kinds {
+                let id = kind.id.as_str();
+                if !is_widget_behavior_kind(id) {
+                    return Err(anyhow!(
+                        "{label}: {noun} id {id:?} must be a lowercase letter followed by up to 31 lowercase letters, digits or '-'"
+                    ));
+                }
+                if host_kinds.contains(&id) {
+                    return Err(anyhow!(
+                        "{label}: {noun} id {id:?} is one the overlay plays itself"
+                    ));
+                }
+                if !seen.insert(id) {
+                    return Err(anyhow!("{label}: `{field}` lists {id:?} twice"));
+                }
+                let text = kind.label.trim();
+                if text.is_empty() || text.chars().count() > WIDGET_BEHAVIOR_LABEL_MAX {
+                    return Err(anyhow!(
+                        "{label}: {noun} {id:?} needs a label of 1 to {WIDGET_BEHAVIOR_LABEL_MAX} characters"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `^[a-z][a-z0-9-]{0,31}$`. Must match `KIND_ID` in @woofx3/scene's
+/// model/entity-types.ts and `WIDGET_BEHAVIOR_KIND` in the module SDK's
+/// widget-behaviors.ts.
+fn is_widget_behavior_kind(id: &str) -> bool {
+    let mut chars = id.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && id.len() <= 32
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 fn validate_surface(surface: &str, context: &str) -> Result<()> {
     if !WIDGET_SURFACES.contains(&surface) {
         return Err(anyhow!(
@@ -2110,6 +2194,8 @@ fn reject_theme_field(field_type: &str, context: &str) -> Result<()> {
 ///   - a `path` must be non-empty
 ///   - a `type` must be one of the accepted tokens
 ///   - paths must be unique within one shape
+///   - `identity`, `anonymousWhen` and `displayName` must be well-formed (see
+///     `validate_identity_annotation`), and appear only on a trigger's `emits`
 ///
 /// A duplicate path is rejected rather than deduplicated. A path is a
 /// variable's identity, so two entries under one path are either redundant or
@@ -2124,19 +2210,75 @@ fn reject_theme_field(field_type: &str, context: &str) -> Result<()> {
 fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]) -> Result<()> {
     for (i, t) in triggers.iter().enumerate() {
         if let Some(shape) = &t.emits {
-            validate_data_shape(shape, &format!("trigger #{i} ({}): `emits`", t.id))?;
+            validate_data_shape(
+                shape,
+                IdentityAnnotations::Allowed,
+                &format!("trigger #{i} ({}): `emits`", t.id),
+            )?;
         }
     }
     for (i, a) in actions.iter().enumerate() {
         if let Some(shape) = &a.returns {
-            validate_data_shape(shape, &format!("action #{i} ({}): `returns`", a.id))?;
+            validate_data_shape(
+                shape,
+                IdentityAnnotations::Forbidden,
+                &format!("action #{i} ({}): `returns`", a.id),
+            )?;
         }
     }
     Ok(())
 }
 
-fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
-    let mut seen: HashSet<&str> = HashSet::with_capacity(shape.fields.len());
+/// An action's `taxonomy` files it in the action picker: the first entry's
+/// first segment is the rail section and its second the heading inside it.
+/// The vocabulary stays open, so only the shape is checked: a path with an
+/// empty or odd segment would otherwise land the action under a blank
+/// heading, with nothing telling the author why.
+fn validate_action_taxonomies(actions: &[ManifestAction]) -> Result<()> {
+    for (i, a) in actions.iter().enumerate() {
+        let context = format!("action #{i} ({}): `taxonomy`", a.id);
+        validate_taxonomy(&a.taxonomy, &context)?;
+    }
+    Ok(())
+}
+
+/// Each entry a dotted path of `[A-Za-z0-9_-]` segments, no entry twice.
+fn validate_taxonomy(entries: &[String], context: &str) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(entries.len());
+    for entry in entries {
+        let well_formed = entry.split('.').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        });
+        if !well_formed {
+            return Err(anyhow!(
+                "{context}: {entry:?} must be names joined by `.`, each of [A-Za-z0-9_-] (e.g. \"platform.obs\")"
+            ));
+        }
+        if !seen.insert(entry.as_str()) {
+            return Err(anyhow!("{context}: {entry:?} is listed twice"));
+        }
+    }
+    Ok(())
+}
+
+/// Whether a shape may mark fields with `identity`. Only an event payload says
+/// who an event is about; a function result never attributes anything, so an
+/// annotation on `returns` would be a promise nothing reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IdentityAnnotations {
+    Allowed,
+    Forbidden,
+}
+
+fn validate_data_shape(
+    shape: &ManifestDataShape,
+    identity_annotations: IdentityAnnotations,
+    context: &str,
+) -> Result<()> {
+    let mut types_by_path: HashMap<&str, &str> = HashMap::with_capacity(shape.fields.len());
     for (i, field) in shape.fields.iter().enumerate() {
         let path = field.path.trim();
         if path.is_empty() {
@@ -2151,11 +2293,111 @@ fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
                 DATA_SHAPE_FIELD_TYPES.join(", ")
             ));
         }
-        if !seen.insert(path) {
+        if types_by_path
+            .insert(path, field.field_type.as_str())
+            .is_some()
+        {
             return Err(anyhow!("{context}: duplicate `path` {path:?}"));
         }
     }
+    for (i, field) in shape.fields.iter().enumerate() {
+        let path = field.path.trim();
+        let field_context = format!("{context} field #{i} ({path})");
+        validate_identity_annotation(field, &types_by_path, identity_annotations, &field_context)?;
+    }
     Ok(())
+}
+
+/// Check one field's `identity`, `anonymousWhen` and `displayName`.
+///
+/// The two references are only meaningful relative to an identity, so either
+/// one without `identity` is rejected rather than ignored: it is a slip in
+/// the manifest, and dropping it would leave anonymous events attributed to
+/// whatever placeholder id the platform sends. A reference must name a field
+/// declared in the same shape with the type it is read as, because consumers
+/// read it from the very payload the identity came from. `displayName` must
+/// name a different field than the identity: an id is not a name, and a
+/// self-reference would show ids where names were promised.
+fn validate_identity_annotation(
+    field: &ManifestDataShapeField,
+    types_by_path: &HashMap<&str, &str>,
+    identity_annotations: IdentityAnnotations,
+    context: &str,
+) -> Result<()> {
+    let Some(identity) = field.identity.as_deref() else {
+        if field.anonymous_when.is_some() {
+            return Err(anyhow!(
+                "{context}: `anonymousWhen` is only allowed on a field with `identity`"
+            ));
+        }
+        if field.display_name.is_some() {
+            return Err(anyhow!(
+                "{context}: `displayName` is only allowed on a field with `identity`"
+            ));
+        }
+        return Ok(());
+    };
+    if identity_annotations == IdentityAnnotations::Forbidden {
+        return Err(anyhow!(
+            "{context}: `identity` is only allowed on a trigger's `emits`"
+        ));
+    }
+    if !DATA_SHAPE_IDENTITIES.contains(&identity) {
+        return Err(anyhow!(
+            "{context}: unknown `identity` {identity:?}; expected one of {}",
+            DATA_SHAPE_IDENTITIES.join(", ")
+        ));
+    }
+    if !DATA_SHAPE_IDENTITY_FIELD_TYPES.contains(&field.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `identity` requires `type` to be one of {}, not {:?}",
+            DATA_SHAPE_IDENTITY_FIELD_TYPES.join(", "),
+            field.field_type
+        ));
+    }
+    if let Some(reference) = field.anonymous_when.as_deref() {
+        validate_sibling_reference(
+            reference,
+            "anonymousWhen",
+            "boolean",
+            types_by_path,
+            context,
+        )?;
+    }
+    if let Some(reference) = field.display_name.as_deref() {
+        if field.field_type != "string" {
+            return Err(anyhow!(
+                "{context}: `displayName` is only allowed on a `string` identity; one name \
+                 cannot name each viewer of an `{}`",
+                field.field_type
+            ));
+        }
+        if reference == field.path.trim() {
+            return Err(anyhow!(
+                "{context}: `displayName` {reference:?} names the identity field itself"
+            ));
+        }
+        validate_sibling_reference(reference, "displayName", "string", types_by_path, context)?;
+    }
+    Ok(())
+}
+
+fn validate_sibling_reference(
+    reference: &str,
+    key: &str,
+    expected_type: &str,
+    types_by_path: &HashMap<&str, &str>,
+    context: &str,
+) -> Result<()> {
+    match types_by_path.get(reference) {
+        None => Err(anyhow!(
+            "{context}: `{key}` {reference:?} is not a `path` declared in the same shape"
+        )),
+        Some(&found) if found != expected_type => Err(anyhow!(
+            "{context}: `{key}` {reference:?} must name a `{expected_type}` field, not `{found}`"
+        )),
+        Some(_) => Ok(()),
+    }
 }
 
 /// Cheap manifest-time validation for `assets[]`: each entry must have
@@ -2806,6 +3048,8 @@ mod tests {
             "workflow.replay",
             "workflow.cancel",
             "action.execute",
+            "viewer.segment.entered",
+            "viewer.segment.left",
         ] {
             let trigger = format!(
                 r#"{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}"#
@@ -2813,6 +3057,22 @@ mod tests {
             let err = rejection(&trigger, "");
             assert!(err.contains("reserved prefix"), "{event}: {err}");
         }
+    }
+
+    // The bundled module declares the segment edge triggers, so the engine-only
+    // prefixes bind uploads alone.
+    #[test]
+    fn the_system_module_may_declare_engine_only_events() {
+        let manifest = parse(
+            r#"{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "triggers": [{ "id": "entered", "name": "Entered", "type": "eventbus", "event": "viewer.segment.entered" }]}"#,
+        );
+        validate_with_provenance(&manifest, InstallProvenance::System)
+            .expect("a system module may declare viewer.* triggers");
+        let err = validate(&manifest)
+            .expect_err("an upload may not declare viewer.* triggers")
+            .to_string();
+        assert!(err.contains("reserved prefix \"viewer.\""), "{err}");
     }
 
     // A trigger with no `event` fires on its id, so the id is checked too.
@@ -3051,6 +3311,117 @@ mod tests {
         parse(&format!(
             r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0", "widgets": [{widget}]}}"#
         ))
+    }
+
+    #[test]
+    fn accepts_a_widget_declaring_its_own_transitions_and_effects() {
+        let m = minimal(
+            r#", "widgets": [{ "id": "w1", "name": "W1", "transitions": [{ "id": "typewriter", "label": "Typewriter" }, { "id": "wave-2", "label": "Wave" }], "effects": [{ "id": "sparkle", "label": " Sparkle " }] }]"#,
+        );
+        validate(&m).expect("validate ok");
+        let input = m.widgets[0].to_input();
+        let ids = |kinds: &[crate::db_proxy::WidgetBehaviorKindJson]| {
+            kinds.iter().map(|k| k.id.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&input.behavior_kinds.transitions),
+            ["typewriter", "wave-2"]
+        );
+        assert_eq!(ids(&input.behavior_kinds.effects), ["sparkle"]);
+        assert_eq!(input.behavior_kinds.effects[0].label, "Sparkle");
+        let json = serde_json::to_value(&input).expect("serialize");
+        assert_eq!(json["behaviorKinds"]["effects"][0]["id"], "sparkle");
+    }
+
+    #[test]
+    fn a_widget_declaring_nothing_registers_empty_kinds() {
+        let m = minimal(r#", "widgets": [{ "id": "w1", "name": "W1" }]"#);
+        let json = serde_json::to_value(m.widgets[0].to_input()).expect("serialize");
+        assert_eq!(
+            json["behaviorKinds"],
+            serde_json::json!({ "transitions": [], "effects": [] })
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_host_repeated_or_unlabelled_kinds() {
+        for (field, kinds, expected) in [
+            (
+                "transitions",
+                r#"[{ "id": "Typewriter", "label": "T" }]"#,
+                "lowercase",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "type writer", "label": "T" }]"#,
+                "lowercase",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "fade", "label": "Fade" }]"#,
+                "plays itself",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "wave", "label": "Wave" }, { "id": "wave", "label": "Wave again" }]"#,
+                "twice",
+            ),
+            (
+                "transitions",
+                r#"[{ "id": "wave", "label": "  " }]"#,
+                "label",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "Sparkle", "label": "S" }]"#,
+                "lowercase",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "shake", "label": "Shake" }]"#,
+                "plays itself",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "blur", "label": "Blur" }]"#,
+                "plays itself",
+            ),
+            (
+                "effects",
+                r#"[{ "id": "sparkle", "label": "S" }, { "id": "sparkle", "label": "S" }]"#,
+                "twice",
+            ),
+            ("effects", r#"[{ "id": "sparkle", "label": "" }]"#, "label"),
+        ] {
+            let err = widget_rejection(&format!(
+                r#"{{ "id": "w1", "name": "W1", "{field}": {kinds} }}"#
+            ));
+            assert!(err.contains(expected), "{field} {kinds}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_widget_may_declare_an_effect_named_like_a_host_transition() {
+        let m = minimal(
+            r#", "widgets": [{ "id": "w1", "name": "W1", "effects": [{ "id": "fade", "label": "Fade" }] }]"#,
+        );
+        validate(&m).expect("kinds are per behavior type");
+    }
+
+    #[test]
+    fn a_widget_that_hosts_a_surface_declares_no_kinds() {
+        for field in ["transitions", "effects"] {
+            let m = system_module_with_widget(&format!(
+                r#"{{ "id": "alert", "name": "Alert", "surfaces": ["scene"], "hostsSurface": "alert", "{field}": [{{ "id": "wave", "label": "Wave" }}] }}"#
+            ));
+            let err = validate_with_provenance(&m, InstallProvenance::System)
+                .expect_err("a hosting widget has no content")
+                .to_string();
+            assert!(
+                err.contains("no content of its own") && err.contains(field),
+                "{err}"
+            );
+        }
     }
 
     #[test]
@@ -3706,6 +4077,231 @@ mod tests {
             "names the offending action: {msg}"
         );
         assert!(msg.contains("`returns`"), "{msg}");
+    }
+
+    #[test]
+    fn accepts_a_dotted_taxonomy_on_an_action() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "taxonomy": ["platform.obs", "function.scene-control", "alert"] }]"#,
+        );
+        validate(&m).expect("a dotted taxonomy is valid");
+    }
+
+    #[test]
+    fn rejects_a_malformed_taxonomy_entry_on_an_action() {
+        for entry in [
+            "",
+            "platform.",
+            ".obs",
+            "platform..obs",
+            "platform obs",
+            "platform:obs",
+        ] {
+            let m = minimal(&format!(
+                r#",
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }}],
+                "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                    "taxonomy": ["{entry}"] }}]"#
+            ));
+            let msg = validate(&m)
+                .expect_err("a malformed entry must fail")
+                .to_string();
+            assert!(
+                msg.contains("action #0 (a1): `taxonomy`"),
+                "{entry:?}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_repeated_taxonomy_entry_on_an_action() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "taxonomy": ["platform.obs", "platform.obs"] }]"#,
+        );
+        let msg = validate(&m).expect_err("a repeat must fail").to_string();
+        assert!(msg.contains("listed twice"), "{msg}");
+    }
+
+    fn trigger_emitting(fields: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": {{ "fields": [{fields}] }} }}]"#
+        ))
+    }
+
+    fn emits_rejection(fields: &str) -> String {
+        let msg = bad_err(&trigger_emitting(fields));
+        assert!(msg.contains("trigger #0 (t1)"), "names the trigger: {msg}");
+        assert!(msg.contains("`emits`"), "names the shape: {msg}");
+        msg
+    }
+
+    #[test]
+    fn accepts_a_viewer_identity_with_its_annotations() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "userId", "type": "string", "identity": "viewer",
+              "anonymousWhen": "isAnonymous", "displayName": "userName" },
+            { "path": "isAnonymous", "type": "boolean" },
+            { "path": "userName", "type": "string" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_a_viewer_identity_on_an_array_field() {
+        validate(&trigger_emitting(
+            r#"{ "path": "chatterIds", "type": "array", "identity": "viewer" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_an_unknown_identity() {
+        let msg = emits_rejection(r#"{ "path": "userId", "type": "string", "identity": "user" }"#);
+        assert!(msg.contains("\"user\""), "{msg}");
+        assert!(msg.contains("viewer"), "lists the accepted tokens: {msg}");
+    }
+
+    #[test]
+    fn rejects_an_identity_on_a_field_that_cannot_hold_an_id() {
+        let msg =
+            emits_rejection(r#"{ "path": "userId", "type": "number", "identity": "viewer" }"#);
+        assert!(msg.contains("userId"), "{msg}");
+        assert!(msg.contains("string, array"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_anonymous_when_and_display_name_without_identity() {
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "anonymousWhen": "isAnonymous" },
+            { "path": "isAnonymous", "type": "boolean" }"#,
+        );
+        assert!(msg.contains("`anonymousWhen`"), "{msg}");
+
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "displayName": "userName" },
+            { "path": "userName", "type": "string" }"#,
+        );
+        assert!(msg.contains("`displayName`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_reference_to_an_undeclared_path() {
+        let msg = emits_rejection(
+            r#"{ "path": "userId", "type": "string", "identity": "viewer",
+                 "anonymousWhen": "isAnonymous" }"#,
+        );
+        assert!(msg.contains("isAnonymous"), "{msg}");
+        assert!(msg.contains("not a `path` declared"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_reference_to_a_field_of_the_wrong_type() {
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "identity": "viewer",
+              "anonymousWhen": "isAnonymous" },
+            { "path": "isAnonymous", "type": "string" }"#,
+        );
+        assert!(msg.contains("must name a `boolean` field"), "{msg}");
+
+        let msg = emits_rejection(
+            r#"
+            { "path": "userId", "type": "string", "identity": "viewer",
+              "displayName": "userName" },
+            { "path": "userName", "type": "object" }"#,
+        );
+        assert!(msg.contains("must name a `string` field"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_identity_on_returns() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "returns": { "fields": [
+                    { "path": "userId", "type": "string", "identity": "viewer" }
+                ] } }]"#,
+        );
+        let msg = bad_err(&m);
+        assert!(msg.contains("action #0 (a1)"), "{msg}");
+        assert!(
+            msg.contains("`identity` is only allowed on a trigger's `emits`"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn accepts_annotations_on_dotted_paths() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "user.id", "type": "string", "identity": "viewer",
+              "anonymousWhen": "user.isAnonymous", "displayName": "user.name" },
+            { "path": "user.isAnonymous", "type": "boolean" },
+            { "path": "user.name", "type": "string" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_anonymous_when_on_an_array_identity() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "recipientIds", "type": "array", "identity": "viewer",
+              "anonymousWhen": "isAnonymous" },
+            { "path": "isAnonymous", "type": "boolean" }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_a_display_name_on_an_array_identity() {
+        let msg = emits_rejection(
+            r#"
+            { "path": "chatterIds", "type": "array", "identity": "viewer",
+              "displayName": "chatterName" },
+            { "path": "chatterName", "type": "string" }"#,
+        );
+        assert!(
+            msg.contains("`displayName` is only allowed on a `string` identity"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_display_name_naming_the_identity_itself() {
+        let msg = emits_rejection(
+            r#"{ "path": "userId", "type": "string", "identity": "viewer",
+                 "displayName": "userId" }"#,
+        );
+        assert!(msg.contains("names the identity field itself"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_unknown_key_on_a_data_shape_field() {
+        let raw = r#"{ "fields": [{ "path": "userId", "type": "string",
+            "identity": "viewer", "anonymouswhen": "isAnonymous" }] }"#;
+        let err = serde_json::from_str::<ManifestDataShape>(raw)
+            .expect_err("a misspelt annotation must not be dropped silently")
+            .to_string();
+        assert!(err.contains("anonymouswhen"), "{err}");
+
+        let raw = r#"{ "fields": [], "required": ["userId"] }"#;
+        let err = serde_json::from_str::<ManifestDataShape>(raw)
+            .expect_err("an unknown shape key must not be dropped silently")
+            .to_string();
+        assert!(err.contains("required"), "{err}");
     }
 
     // Structure is serde's job; this pins that a malformed shape fails at

@@ -4,6 +4,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { asString, pickFirst, readRow } from "./outbox";
 import { subscribeProjections } from "./projection";
+import { compositionKindOf } from "./routes/helpers";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes scene lifecycle events on
@@ -17,6 +18,8 @@ import type { WebhookClient } from "./webhook-client";
 interface RawSceneRow {
   ID?: unknown;
   id?: unknown;
+  Kind?: unknown;
+  kind?: unknown;
   Name?: unknown;
   name?: unknown;
   Description?: unknown;
@@ -25,6 +28,10 @@ interface RawSceneRow {
   widgets_json?: unknown;
   LayoutJSON?: unknown;
   layout_json?: unknown;
+  BehaviorsJSON?: unknown;
+  behaviors_json?: unknown;
+  InputsJSON?: unknown;
+  inputs_json?: unknown;
   CreatedByType?: unknown;
   created_by_type?: unknown;
   CreatedByRef?: unknown;
@@ -46,10 +53,13 @@ function buildSnapshot(ce: Record<string, unknown>): SceneSnapshot | null {
   const layoutJson = pickFirst(row.LayoutJSON, row.layout_json) || "{}";
   return {
     id,
+    kind: compositionKindOf(pickFirst(row.Kind, row.kind)),
     name: pickFirst(row.Name, row.name),
     description: pickFirst(row.Description, row.description),
     widgetsJson,
     layoutJson,
+    behaviorsJson: pickFirst(row.BehaviorsJSON, row.behaviors_json) || "{}",
+    inputsJson: pickFirst(row.InputsJSON, row.inputs_json) || "[]",
     createdByType: pickFirst(row.CreatedByType, row.created_by_type) || "USER",
     createdByRef: pickFirst(row.CreatedByRef, row.created_by_ref),
     createdAt: now,
@@ -106,6 +116,7 @@ export function parseSceneDeleted(ce: Record<string, unknown>): ParsedSceneChang
     event: {
       type: EngineEventType.SCENE_DELETED,
       sceneId,
+      kind: compositionKindOf(pickFirst(row.Kind, row.kind)),
     },
   };
 }

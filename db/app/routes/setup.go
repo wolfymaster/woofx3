@@ -29,4 +29,5 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	StreamSessionRoutes(mux, app, casbinMiddleware)
 	UserEventRoutes(mux, app, casbinMiddleware)
 	StreamGaugeRoutes(mux, app, casbinMiddleware)
+	ViewerFactRoutes(mux, app, casbinMiddleware)
 }

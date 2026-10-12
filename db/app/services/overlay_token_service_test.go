@@ -31,11 +31,17 @@ func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
 			layout_json TEXT NOT NULL DEFAULT '{}',
 			draft_widgets_json TEXT,
 			draft_layout_json TEXT,
+			editor_state_json TEXT,
+			kind TEXT NOT NULL DEFAULT 'scene' CHECK (kind IN ('scene', 'alert')),
+			behaviors_json TEXT NOT NULL DEFAULT '{}',
+			draft_behaviors_json TEXT,
+			inputs_json TEXT NOT NULL DEFAULT '[]',
 			created_by_type TEXT NOT NULL DEFAULT 'USER',
 			created_by_ref TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE UNIQUE INDEX idx_scenes_kind_name ON scenes (kind, name)`,
 		`CREATE TABLE overlay_tokens (
 			id TEXT PRIMARY KEY,
 			token TEXT NOT NULL UNIQUE,

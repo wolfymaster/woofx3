@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -26,6 +28,18 @@ func (r *ModuleResourceInstanceRepository) Create(instance *models.ModuleResourc
 // callers, so a save cannot move an instance out from under what references it.
 func (r *ModuleResourceInstanceRepository) Update(instance *models.ModuleResourceInstance) error {
 	return r.db.Save(instance).Error
+}
+
+// CompareAndSetSettings replaces an instance's settings only while the row
+// still holds `expected`, the settings text the caller read, in one statement,
+// and reports whether it did. A single conditional UPDATE is atomic on both
+// SQLite and Postgres, so of two writers that read the same settings only one
+// swaps. On Postgres the column is jsonb and the comparison is by value.
+func (r *ModuleResourceInstanceRepository) CompareAndSetSettings(id uuid.UUID, expected, settings string) (bool, error) {
+	result := r.db.Model(&models.ModuleResourceInstance{}).
+		Where("id = ? AND settings = ?", id, expected).
+		Updates(map[string]interface{}{"settings": settings, "updated_at": time.Now()})
+	return result.RowsAffected > 0, result.Error
 }
 
 func (r *ModuleResourceInstanceRepository) Delete(instance *models.ModuleResourceInstance) error {

@@ -265,6 +265,16 @@ Triggers, actions, workflows, and modules all support an open, multi-valued `tax
 
 The vocabulary is intentionally open — there is no fixed enum and the engine does not validate taxonomy terms against a known list. Module authors are free to introduce new terms as new platforms or functional groupings come along; the UI is responsible for interpreting and displaying whatever terms appear.
 
+#### How the action picker reads an action's taxonomy
+
+An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `system.counter` under **Built-in › Counters**.
+
+An action with no `taxonomy` is listed under the module that provides it, as one section named after the module. Because of that fallback, a taxonomy is optional for an action that should simply sit with the rest of its module; declare one when the action belongs with similar actions from other modules (every `platform.obs` action reads as one OBS group regardless of which module ships it).
+
+The bundled `woofx3` module files its actions under the `system` family: `system.workflow` (Function, Print), `system.alerts`, `system.scenes`, `system.chat`, `system.counter`, `system.timer` and `system.queue`. The picker lists `system` first, labelled **Built-in**.
+
+On install, every action `taxonomy` entry must be a dotted path of names, each of `[A-Za-z0-9_-]` (`platform.obs`, not `platform.`, `platform..obs` or `platform obs`), and no entry may appear twice on one action. The vocabulary itself is not checked.
+
 `taxonomy` replaces the older single-value `category` field, which is still accepted on manifests for backward compatibility: when a manifest sets `category` but not `taxonomy`, the engine folds it into a single-element `taxonomy` array at parse time. Everything downstream of the manifest (the DB row, the outbox events, the API) carries only `taxonomy` — `category` is not persisted.
 
 ### Field declarations
@@ -306,7 +316,7 @@ The info icon next to a field's label appears if and only if `hint` or `exampleP
 
 #### Field types
 
-`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`, `list`, `theme`.
+`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `font`, `asset`, `resource_ref`, `button`, `layout`, `list`, `theme`.
 
 `theme` is never declared by a manifest; declaring one fails the install. The engine adds it, as the field `theme`, to the settings of a widget that declares a [theme contract](#themes). Its value is a theme canonical id (`{moduleId}:theme:{id}`), or absent for the widget's own look. The list is mirrored in `shared/clients/typescript/api/ui-schema.ts`, and a barkloader test fails when the two differ.
 
@@ -351,11 +361,12 @@ UI resolve those on top-level fields only.
 
 #### Picker field types
 
-These three `type` values render dedicated pickers in the UI rather than freeform inputs. The engine treats their values opaquely (canonical id strings) and forwards them to the function at runtime.
+These `type` values render dedicated pickers in the UI rather than freeform inputs. The engine treats their values opaquely (canonical id strings) and forwards them to the function at runtime.
 
 | `type` | Extra fields | Stored value | Picker source |
 |--------|-------------|---------------|----------------|
 | `color` | — | CSS color string (`"#7ad7ff"`). | Native browser color picker. |
+| `font` | — | CSS font-family list (`"\"Lobster\", cursive"`). Plain lists such as `"Roboto, system-ui, sans-serif"` are valid too. | Searchable list of every Google Fonts family; any other family name can be typed in. See [widget fonts](./sdk.md#fonts). |
 | `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
 | `resource_ref` | `kind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 
@@ -494,7 +505,7 @@ Both fields are **optional**. A module that declares neither behaves exactly as 
 
 Deliberately a flat list of path strings rather than full JSON Schema: it matches `${trigger.data.X}` access exactly and renders straight into a picker. It carries no `required`, no nesting and no constraints — those would all be promises the engine does not keep.
 
-**Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`), and these rules are checked after, each reporting the offending resource by id:
+**Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`; a key the shape or a field does not define is rejected, so a misspelling cannot be dropped silently), and these rules are checked after, each reporting the offending resource by id:
 
 | Rule | Why |
 |---|---|
@@ -522,6 +533,52 @@ Deliberately a flat list of path strings rather than full JSON Schema: it matche
 ```
 
 Not to be confused with the `examplePayload` property on an individual **config field**: that is an illustration rendered in that field's info popover, scoped to explaining one input, and nothing reads its keys. `emits` is the machine-readable declaration for the whole payload, and is what feeds variable autocomplete. Declaring both is reasonable — one is for a human reading the form, the other for the variable picker.
+
+#### Identity fields
+
+A field in `emits` can say **who** the event is about. Per-viewer facts take their subject from such a field, so a trigger that never marks one cannot feed a viewer fact.
+
+```json
+{
+  "id": "channel_cheer",
+  "name": "Cheer",
+  "type": "eventbus",
+  "event": "channel.cheer",
+  "emits": {
+    "fields": [
+      {
+        "path": "userId",
+        "type": "string",
+        "identity": "viewer",
+        "anonymousWhen": "isAnonymous",
+        "displayName": "userName"
+      },
+      { "path": "isAnonymous", "type": "boolean" },
+      { "path": "userName", "type": "string" }
+    ]
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `identity` | What the field identifies. `"viewer"` is the only accepted token. |
+| `anonymousWhen` | Optional. Path of a `boolean` field in the same shape that is true when the platform withheld the identity (an anonymous cheer or gift). Such events are not attributed to anyone, rather than to the placeholder id the platform sends. On an `array` identity it applies to the whole event. |
+| `displayName` | Optional, and only on a `string` identity. Path of a different `string` field in the same shape carrying the viewer's human-readable name. |
+
+An `array` identity field is an array of string ids naming several viewers at once (for example a list of chatter ids), and each one is a subject of the event.
+
+The annotations are kept verbatim in the `emits` registered for the trigger; a field without them is registered without the keys. They are validated at install with the rest of the shape:
+
+| Rule | Why |
+|---|---|
+| `identity` must be `"viewer"` | The engine keys state by it, so a token it does not know would identify nothing. |
+| `identity` only on a `string` or `array` field | An id is a string; an `array` is a list of string ids. |
+| `identity` only in a trigger's `emits` | A function result never attributes anything; on `returns` it is rejected. |
+| `anonymousWhen` and `displayName` only alongside `identity` | Without an identity there is nothing for them to qualify, and silently dropping `anonymousWhen` would attribute anonymous events. |
+| `anonymousWhen` names a declared `boolean` path; `displayName` a declared `string` path | Both are read from the same payload as the identity, by exact path. |
+| `displayName` only on a `string` identity | One name cannot name each viewer of an array. |
+| `displayName` names a field other than the identity | An id is not a name; pointing at itself would show ids where names were promised. |
 
 #### Trigger sentences
 
@@ -581,7 +638,7 @@ Common fields:
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
 | `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
-| `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification. The first entry places the action in the workflow builder's action picker; with none, the action is listed under its module. See [How the action picker reads an action's taxonomy](#how-the-action-picker-reads-an-action-s-taxonomy). |
 
 Type-specific fields:
 
@@ -727,6 +784,8 @@ than calling `ctx.chat.sendMessage(...)` directly — see
 | `steps[]` | array | yes | Ordered steps. Each step's `action` field references an action by manifest-local id (or full canonical id for cross-module references); resolved at install. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). Set at install time only — not currently editable after creation. |
 
+A bundled workflow is created **enabled**: it is part of what installing the module means, so the module works as soon as it is installed. The manifest has no field to ship one disabled. Installing a new version of the module updates its workflows in place and leaves each one's enabled state alone, so a workflow the streamer switched off stays off.
+
 ### Widget entry (`widgets[]`)
 
 | Field | Type | Required | Description |
@@ -739,9 +798,39 @@ than calling `ctx.chat.sendMessage(...)` directly — see
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values reach the widget as `widgetHost.settings` and through its setting bindings, and edits reach it while it runs (see [Live settings](./sdk.md#live-settings)). |
 | `surfaces` | string[] | no | Where the widget may be placed: `"scene"`, `"alert"` (inside an alert layout), or both. Defaults to `["scene"]`. |
 | `hostsSurface` | string | no | Bundled system module only. Marks a widget whose placements host a surface: the `"alert"` widget is the area of a scene where alert layouts play. The scene manager draws it, so it declares no `entry`, and it cannot be placed on the surface it hosts. |
+| `transitions` | object[] | no | Transition kinds the widget plays on its own content, each `{ id, label }`: `id` a lowercase token (`^[a-z][a-z0-9-]{0,31}$`) that is not one the overlay plays itself (`fade`, `slide`, `zoom`, `bounce`, `spin`, `pop`, `blur`), unique in the list, `label` 1 to 64 characters (trimmed). The overlay hands a transition of such a kind to the widget, whose CSS animates it (see [Transitions and effects](./sdk.md#transitions-and-effects)). Not allowed on a widget that hosts a surface. |
+| `effects` | object[] | no | Effect kinds the widget plays on its own content while shown, each `{ id, label }` under the same rules as `transitions`, except that `id` may not be one of the overlay's own effects (`shake`, `pulse`, `float`, `glow`, `flash`, `blur`). An effect id may repeat a transition id: kinds are per behavior type. |
 | `theme` | object | no | Opts the widget into themes by declaring a theme contract. Absent means the widget cannot be themed and nothing about it changes. See [Themes](#themes). |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
+
+#### Declared behavior kinds
+
+`transitions` and `effects` are the only kinds a widget is ever asked to play.
+On install they are registered with the widget and stored in
+`widgets.behavior_kinds` (migration `0059_widget_behaviors`) as
+`{ "transitions": [{ "id", "label" }], "effects": [...] }`, both lists present
+and empty for a widget that declares none. The catalog carries them as
+`Widget.behavior_kinds` (`WidgetBehaviorKinds` in `module_widget.proto`), the
+`module.widget.registered` / `deregistered` payloads as `behavior_kinds`, and
+the api as `WidgetDefinition.behaviorKinds` and in `getAvailableWidgets`, so an
+editor offers them beside the overlay's own kinds (`offeredKinds` in
+@woofx3/scene's editor/catalog.ts). A composition may still name any
+well-formed kind; the engine drops a behavior of a widget kind its widget
+does not declare when it dispatches an alert, and the overlay skips one on a
+scene (see [Scene documents](../services/scene-documents.md)).
+
+```json
+{
+  "id": "text",
+  "name": "Text",
+  "transitions": [
+    { "id": "typewriter", "label": "Typewriter" },
+    { "id": "letters", "label": "Letters" }
+  ],
+  "effects": [{ "id": "sparkle", "label": "Sparkle" }]
+}
+```
 
 #### Widget runtime — the `widgetHost` contract
 
@@ -843,7 +932,7 @@ A widget with a contract gets a `theme` field appended to its settings (see [Fie
 | `contractVersion` | Must equal the target contract's. |
 | `variables` | Contract variable id to value. Unset variables keep their default. |
 | `assets` | Contract slot id to a file in this zip. |
-| `stylesheet` | A `.css` file linked after the widget's own styles. Refer to files through `var(--theme-asset-*)`; a `url()` to anything else will not load (see [Rendering](#rendering-and-fallback)). |
+| `stylesheet` | A `.css` file linked after the widget's own styles. Refer to files through `var(--theme-asset-*)`; a `url()` or `@import` naming another host will not load, since the frame's policy limits styles, fonts, images and media to the engine's origins (see [Rendering](#rendering-and-fallback)). Install does not inspect the stylesheet: that policy is what keeps it from reaching other hosts. |
 | `preview` | An image the settings picker shows. |
 
 A theme entry carries nothing else: any other property fails the install, so there is nowhere for code to go. Any module may declare `themes` — a widget's own module can ship free themes for it — and a package whose manifest has only `themes` (plus metadata and `requires`) is a **theme pack**. `examples/theme-packs/timer-neon` is a sample pack for the bundled Timer widget.
@@ -866,7 +955,18 @@ The install fails, naming the offending field, when:
 
 When the scene manager assembles a themeable widget's frame it passes the placement's `theme` setting to barkloader (`GET /widgets/{moduleId}/{widgetId}/frame?theme=...`), which resolves it against the installed modules. The frame then gets, before any widget code runs: a `:root` block setting every `--theme-*` property (theme values over defaults), the theme stylesheet, and `widgetHost.theme` (see [the SDK](./sdk.md#themes)). Theme files are stored under `modules/{moduleId}/{hash}/themes/{themeId}/…` and served by barkloader itself.
 
-Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles and fonts to the engine's own origins, so a stylesheet's `@import` or font `url()` cannot reach another host. Images and media may load from any http(s) host, since a placement's media settings can point at a file hosted elsewhere. Scripts and connections are not restricted by it.
+Every frame of a widget with a contract, themed or not, is served with a Content-Security-Policy limiting styles, fonts, images and media to the engine's own origins, so a stylesheet's `url()` or `@import` cannot reach another host, and cannot carry what its selectors match on the page out to one. The one exception is images from Twitch's CDN, `https://static-cdn.jtvnw.net`, where emotes, badges and profile pictures in event data are hosted: a fixed platform host no theme author controls, so a request a theme makes to it cannot hand anything to someone who could read it. Scripts and connections are not restricted by it.
+
+A placement's media setting may still name a file hosted elsewhere (`{ "source": "url", "url": "https://…" }`). For a widget with a contract, the scene manager hands overlays such a value with its `url` pointed at the engine's media proxy, `{public URL}/assets/media/{token}`, which is on the engine's origin; see [External media](../services/asset-delivery.md#external-media). A widget without a contract has no such policy and gets the URL as entered.
+
+Only picker-shaped settings are proxied. That includes the media settings
+of a widget playing in an alert, whether the workflow's alert step names
+the URL or fills it from event data. A themeable widget cannot show
+external media that arrives any other way: a URL typed into a plain string
+setting, or one in the raw event it receives through `onEvent` (a clip
+thumbnail, an emote from a service other than Twitch). Those are blocked by the frame's policy, apart from
+images on Twitch's CDN. A widget that has to show such media should not
+declare a theme contract.
 
 A widget always renders. When the selected theme is uninstalled, is for another contract version, or no longer fits the contract, the frame uses the contract defaults and `widgetHost.theme.fallback` says why (`missing` or `incompatible`); a theme asset file missing from storage falls back to that slot's default.
 
@@ -1077,6 +1177,34 @@ function add(ctx, label) {
   throw new Error("the list kept changing; try again");
 }
 ```
+
+A resource kind's `schema` may declare a `list` field the same way, for rows that
+belong to each instance rather than to the module: the entries of one list, say,
+typed by the streamer when they create or edit it. Functions of the module that
+declares the kind read them from `ctx.resources.get(id).settings.<field>` and change
+them with `ctx.resources.compareAndSetSetting(id, field, expected, value)`, which works
+like `ctx.module.compareAndSetSetting` for that one instance. Until the streamer saves
+the field the instance does not hold it, so it reads as `undefined`; pass back what was
+read, not a defaulted `[]`, as the first `expected`:
+
+```js
+function add(ctx, id, label) {
+  var current = ctx.resources.get(id).settings.items;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    var next = (current || []).concat([{ label: label }]);
+    var outcome = ctx.resources.compareAndSetSetting(id, "items", current, next);
+    if (outcome.swapped) {
+      return next;
+    }
+    current = outcome.current;
+  }
+  throw new Error("the list kept changing; try again");
+}
+```
+
+Only the module that declares the kind may write an instance's settings. Lua has
+one empty table for `[]` and `{}`, so an empty table replacing a list is written as
+an empty list.
 
 #### Reading settings at runtime — `ctx.module`
 
@@ -1465,6 +1593,7 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
 | `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns every instance of that name across every installed module; `module:kind` returns only that module's. |
 | `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
+| `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)` | `{ swapped, current }` | Writes `settings[key] = value` on an instance this module owns, only while `settings[key]` still holds `expected`, compared by meaning (key order, `1` vs `1.0`, `[]` vs `{}`). `null`/`undefined` (`nil` in Lua) matches a key the instance does not hold, which is how a schema field the streamer never saved reads. `current` is the setting as it reads now, `null` when absent. A swap is announced as an instance update (`db.module.resource.instance.updated`), the same as a streamer's edit, so the dashboard and `resource:<canonicalId>` readers refresh. Throws for an instance another module owns, one that does not exist, or a value JSON cannot hold. See [List settings](#list-settings). |
 
 `ctx.resources.run` is how a module drives a resource another module provides. The
 action runs as the providing module — its function, its storage, the events it

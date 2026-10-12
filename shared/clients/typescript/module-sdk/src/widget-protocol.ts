@@ -13,6 +13,7 @@
 // carrying its `supportedVersions`. Unknown message `type`s are
 // ignored by both sides (forward compatibility).
 
+import { isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
 import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
@@ -62,21 +63,48 @@ export interface WidgetBootPayload {
    *  `resource_ref` settings, setting id to canonical id. Absent from an
    *  older host. Becomes `WidgetHost.linkedResources`. */
   linkedResources?: Record<string, string>;
+  /** The placement's entrance, when the widget plays it itself (see
+   *  `WidgetBehaviorMessage`). Marked before the widget's own scripts run, so
+   *  content that types itself in is never first shown whole; the host sends
+   *  the same behavior again as the widget actually enters, which restarts it
+   *  then. Absent otherwise. */
+  behavior?: WidgetBehaviorState;
+  /** The widget's `font` settings and where their stylesheets are served.
+   *  Absent for a widget with no font settings, and from an older host. */
+  fonts?: WidgetFonts;
+}
+
+/** See widget-fonts.ts. */
+export interface WidgetFonts {
+  /** Ids of the settings whose value is a CSS font-family list. */
+  settings: string[];
+  /** Path of the scene manager's font stylesheet route; the shim adds
+   *  `?family=` and resolves it against the frame URL. */
+  stylesheetUrl: string;
 }
 
 /**
  * The part of the boot payload that belongs to one placement rather than to
  * the widget. It travels in the frame URL's fragment (`#boot=…`), so the
  * frame document itself is the same for every placement of a widget version
- * and can be cached; the shim merges it over the inlined payload.
+ * and can be cached; the shim merges it over the inlined payload. `surface`
+ * is the placement's too: the cached document says "scene", and a frame the
+ * host shows as part of an alert says "alert" here.
  */
-export type WidgetPlacementBoot = Pick<WidgetBootPayload, "nonce" | "instanceId" | "settings" | "linkedResources">;
+export type WidgetPlacementBoot = Pick<
+  WidgetBootPayload,
+  "nonce" | "instanceId" | "settings" | "linkedResources" | "behavior" | "surface"
+>;
 
 /** The fragment parameter carrying a `WidgetPlacementBoot`. */
 export const WIDGET_BOOT_FRAGMENT_PARAM = "boot";
 
-/** `boot=<base64url JSON>`, to append to a frame URL after `#`. */
-export function encodePlacementBoot(boot: WidgetPlacementBoot): string {
+/**
+ * `boot=<base64url JSON>`, to append to a frame URL after `#`. A frame whose
+ * document inlines the placement already (an alert's widget) takes only what
+ * the fragment adds, such as its entrance.
+ */
+export function encodePlacementBoot(boot: Partial<WidgetPlacementBoot>): string {
   const bytes = new TextEncoder().encode(JSON.stringify(boot));
   let binary = "";
   for (const byte of bytes) {
@@ -318,6 +346,19 @@ export interface WidgetSettingsChangedMessage extends WidgetProtocolEnvelope {
   settings: Record<string, unknown>;
 }
 
+/**
+ * Play one of the widget's own behaviors from now, replacing the last one of
+ * its type, or, with `null`, clear every behavior so the widget shows as it
+ * is. Sent as a transition or effect of a kind the host does not play itself
+ * starts or is withdrawn; the host's own kinds play on the frame's box and
+ * never reach the widget. The shim marks the frame's root element (see
+ * widget-behaviors.ts) and the widget's CSS animates.
+ */
+export interface WidgetBehaviorMessage extends WidgetProtocolEnvelope {
+  type: "behavior";
+  behavior: WidgetBehaviorState | null;
+}
+
 /** Teardown order. The shim drops every subscription, resolves pending
  *  reads with `null`, and goes inert. */
 export interface WidgetDisposeMessage extends WidgetProtocolEnvelope {
@@ -368,6 +409,7 @@ export type HostToWidgetMessage =
   | WidgetStorageChangedMessage
   | WidgetEventDeliverMessage
   | WidgetSettingsChangedMessage
+  | WidgetBehaviorMessage
   | WidgetDisposeMessage
   | WidgetPingMessage
   | WidgetPongMessage;
@@ -421,7 +463,22 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     typeof boot.resourceBaseUrl === "string" &&
     boot.resourceBaseUrl.length > 0 &&
     (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme)) &&
-    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false))
+    (boot.linkedResources === undefined || isStringRecord(boot.linkedResources, false)) &&
+    (boot.behavior === undefined || isWidgetBehaviorState(boot.behavior)) &&
+    (boot.fonts === undefined || isWidgetFonts(boot.fonts))
+  );
+}
+
+function isWidgetFonts(value: unknown): value is WidgetFonts {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const fonts = value as Record<string, unknown>;
+  return (
+    Array.isArray(fonts.settings) &&
+    fonts.settings.every((id) => typeof id === "string") &&
+    typeof fonts.stylesheetUrl === "string" &&
+    fonts.stylesheetUrl.length > 0
   );
 }
 

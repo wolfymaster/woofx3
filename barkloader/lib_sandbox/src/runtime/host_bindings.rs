@@ -141,6 +141,52 @@ pub fn resources_get(host: &HostContext, canonical_id: &str) -> Result<Value, St
     }
 }
 
+/// `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`:
+/// write one setting of an instance the invoking module owns, only while it
+/// still holds `expected`. The safe way for a function to change a setting the
+/// streamer, or another run, may be changing at the same moment, such as an
+/// entry list declared in the kind's `schema`.
+///
+/// Only the owning module may write: the module segment of the canonical id
+/// must be the invoking module, which the host binds and module code never
+/// supplies. The engine checks the same again against the instance's row.
+///
+/// Returns `{ swapped, current }` for the module to marshal back: `current` is
+/// the setting as a function reads it now, null when the instance does not
+/// hold the key, which is what a caller that lost the race retries from.
+pub fn resources_compare_and_set_setting(
+    host: &HostContext,
+    module_id: &str,
+    canonical_id: &str,
+    key: &str,
+    expected: &Value,
+    value: &Value,
+) -> Result<Value, String> {
+    if module_id.is_empty() {
+        return Err(
+            "ctx.resources.compareAndSetSetting: only a module function can write instance settings"
+                .to_string(),
+        );
+    }
+    if key.is_empty() {
+        return Err("ctx.resources.compareAndSetSetting: key is required".to_string());
+    }
+    let owner = canonical_id.split(':').next().unwrap_or_default();
+    if owner != module_id {
+        return Err(format!(
+            "ctx.resources.compareAndSetSetting: {canonical_id:?} belongs to module {owner:?}; \
+             only the module that owns an instance may write its settings"
+        ));
+    }
+    let outcome =
+        host.resources
+            .compare_and_set_setting(module_id, canonical_id, key, expected, value)?;
+    Ok(serde_json::json!({
+        "swapped": outcome.swapped,
+        "current": outcome.current.unwrap_or(Value::Null),
+    }))
+}
+
 /// `ctx.resources.run(canonicalId, verb, params?)`: run the providing
 /// module's `{kind}.{verb}` action on the instance, as the invoking module
 /// asked. The caller's identity, grants and deadline come from the
@@ -702,9 +748,9 @@ mod tests {
         }
     }
 
-    /// Two modules' `wheel` instances, whatever kind is asked for.
-    struct TwoWheelsClient;
-    impl crate::host::ResourceClient for TwoWheelsClient {
+    /// Two modules' `list` instances, whatever kind is asked for.
+    struct TwoModulesListClient;
+    impl crate::host::ResourceClient for TwoModulesListClient {
         fn create(
             &self,
             _owning_module_name: &str,
@@ -725,13 +771,13 @@ mod tests {
             Ok(None)
         }
         fn list_by_kind(&self, kind: &str) -> Result<Vec<crate::host::ResourceInstance>, String> {
-            assert_eq!(kind, "wheel", "the client is asked for the bare kind");
-            Ok(["spinner", "prizes"]
+            assert_eq!(kind, "list", "the client is asked for the bare kind");
+            Ok(["alpha", "beta"]
                 .iter()
                 .map(|module| crate::host::ResourceInstance {
-                    canonical_id: format!("{module}:wheel:main"),
+                    canonical_id: format!("{module}:list:main"),
                     module_name: module.to_string(),
-                    kind: "wheel".to_string(),
+                    kind: "list".to_string(),
                     instance_id: "main".to_string(),
                     display_name: "Main".to_string(),
                     settings: serde_json::json!({}),
@@ -743,7 +789,7 @@ mod tests {
     #[test]
     fn resources_list_keeps_one_modules_instances_for_a_qualified_kind() {
         let mut host = noop_host_context();
-        host.resources = std::sync::Arc::new(TwoWheelsClient);
+        host.resources = std::sync::Arc::new(TwoModulesListClient);
         let canonical_ids = |v: Value| -> Vec<String> {
             v.as_array()
                 .unwrap()
@@ -752,12 +798,12 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            canonical_ids(resources_list(&host, "prizes:wheel").unwrap()),
-            vec!["prizes:wheel:main"]
+            canonical_ids(resources_list(&host, "beta:list").unwrap()),
+            vec!["beta:list:main"]
         );
         assert_eq!(
-            canonical_ids(resources_list(&host, "wheel").unwrap()),
-            vec!["spinner:wheel:main", "prizes:wheel:main"]
+            canonical_ids(resources_list(&host, "list").unwrap()),
+            vec!["alpha:list:main", "beta:list:main"]
         );
     }
 
@@ -868,5 +914,88 @@ mod tests {
             resources_get(&host, "mymod:counter:gone").unwrap(),
             Value::Null
         );
+    }
+
+    fn instance_settings_host(
+        settings: Value,
+    ) -> (HostContext, Arc<crate::host::recording::InstanceSettings>) {
+        let instance = Arc::new(crate::host::recording::InstanceSettings::new(
+            "mymod:list:main",
+            settings,
+        ));
+        let mut host = crate::host::noop::noop_host_context();
+        host.resources = instance.clone();
+        (host, instance)
+    }
+
+    #[test]
+    fn instance_setting_cas_refuses_an_instance_another_module_owns() {
+        let (host, instance) = instance_settings_host(serde_json::json!({}));
+        let err = resources_compare_and_set_setting(
+            &host,
+            "intruder",
+            "mymod:list:main",
+            "items",
+            &Value::Null,
+            &serde_json::json!(["first"]),
+        )
+        .unwrap_err();
+        assert!(err.contains("only the module that owns"), "{err}");
+        assert!(instance.writes.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn instance_setting_cas_needs_a_module_and_a_key() {
+        let (host, _) = instance_settings_host(serde_json::json!({}));
+        let builtin = resources_compare_and_set_setting(
+            &host,
+            "",
+            "mymod:list:main",
+            "items",
+            &Value::Null,
+            &serde_json::json!([]),
+        );
+        assert!(builtin.is_err());
+        let no_key = resources_compare_and_set_setting(
+            &host,
+            "mymod",
+            "mymod:list:main",
+            "",
+            &Value::Null,
+            &serde_json::json!([]),
+        );
+        assert!(no_key.is_err());
+    }
+
+    #[test]
+    fn instance_setting_cas_answers_swapped_and_current() {
+        let (host, instance) = instance_settings_host(serde_json::json!({}));
+        let won = resources_compare_and_set_setting(
+            &host,
+            "mymod",
+            "mymod:list:main",
+            "items",
+            &Value::Null,
+            &serde_json::json!(["first"]),
+        )
+        .unwrap();
+        assert_eq!(
+            won,
+            serde_json::json!({ "swapped": true, "current": ["first"] })
+        );
+        let lost = resources_compare_and_set_setting(
+            &host,
+            "mymod",
+            "mymod:list:main",
+            "items",
+            &Value::Null,
+            &serde_json::json!([]),
+        )
+        .unwrap();
+        assert_eq!(
+            lost,
+            serde_json::json!({ "swapped": false, "current": ["first"] })
+        );
+        assert_eq!(*instance.writes.lock().unwrap(), vec!["items".to_string()]);
     }
 }

@@ -1,8 +1,10 @@
 import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
 import { frameVersion } from "./frame-catalog";
-import type { OverlayHost } from "./scene-host";
+import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
+import { type OverlayHost, parseWidgetCanonicalId } from "./scene-host";
 import {
   type FrameTheme,
   buildThemeStyle,
@@ -48,6 +50,8 @@ export interface BarkloaderFrameInfo {
   resourceBaseUrl: string;
   /** `null` for a widget that declares no theme contract. */
   theme: FrameTheme | null;
+  /** Ids of the widget's `font` settings. */
+  fontSettings: string[];
 }
 
 /** The slice of Barkloader's HTTP surface the assembler depends on
@@ -57,13 +61,21 @@ export interface BarkloaderFrameClient {
   fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null>;
 }
 
+/**
+ * How long barkloader has to answer a frame request, body included. A hung
+ * barkloader then costs each frame lookup this long, and the lookup counts as
+ * failed (the callers' catch), rather than holding up whatever waits on it.
+ */
+export const FRAME_FETCH_TIMEOUT_MS = 5000;
+
 /** Real implementation — calls barkloader's `GET
  *  /widgets/{moduleKey}/{manifestId}/frame` endpoint. */
 export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
   constructor(
     private readonly barkloaderUrl: string,
     private readonly logger: Logger,
-    private readonly fetchFn: typeof fetch = fetch
+    private readonly fetchFn: typeof fetch = fetch,
+    private readonly timeoutMs: number = FRAME_FETCH_TIMEOUT_MS
   ) {}
 
   async fetchWidgetFrame(moduleKey: string, manifestId: string, themeId?: string): Promise<BarkloaderFrameInfo | null> {
@@ -71,7 +83,7 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     const url =
       `${this.barkloaderUrl.replace(/\/+$/, "")}/widgets/` +
       `${encodeURIComponent(moduleKey)}/${encodeURIComponent(manifestId)}/frame${query}`;
-    const response = await this.fetchFn(url);
+    const response = await this.fetchFn(url, { signal: AbortSignal.timeout(this.timeoutMs) });
     if (!response.ok) {
       // A non-OK response is not a transport error (loadFrameInfo's
       // catch never sees it) — log here or this is completely silent.
@@ -86,7 +98,12 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
       });
       return null;
     }
-    const body = (await response.json()) as { entryHtml?: unknown; resourceBaseUrl?: unknown; theme?: unknown };
+    const body = (await response.json()) as {
+      entryHtml?: unknown;
+      resourceBaseUrl?: unknown;
+      theme?: unknown;
+      fontSettings?: unknown;
+    };
     if (typeof body.entryHtml !== "string" || typeof body.resourceBaseUrl !== "string") {
       this.logger.warn("barkloader widget frame response missing entryHtml/resourceBaseUrl", {
         moduleKey,
@@ -100,8 +117,21 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
       entryHtml: body.entryHtml,
       resourceBaseUrl: body.resourceBaseUrl,
       theme: parseFrameTheme(body.theme),
+      fontSettings: parseFontSettings(body.fontSettings),
     };
   }
+}
+
+/** An older barkloader sends no font settings; the widget's fonts are then used by name only. */
+function parseFontSettings(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** What the shim needs to link a widget's fonts; absent for a widget without font settings. */
+function frameFonts(frameInfo: BarkloaderFrameInfo): Pick<WidgetBootPayload, "fonts"> {
+  return frameInfo.fontSettings.length === 0
+    ? {}
+    : { fonts: { settings: [...frameInfo.fontSettings], stylesheetUrl: FONT_STYLESHEET_PATH } };
 }
 
 export interface FrameAssemblerOptions {
@@ -110,6 +140,9 @@ export interface FrameAssemblerOptions {
   /** The instances a module links through its `resource_ref` settings (see
    *  module-state.ts `linkedResources`). None when absent. */
   linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
+  /** Points external media in a themeable widget's boot settings at the
+   *  engine's media proxy. Settings pass through as they are when absent. */
+  mediaProxy?: MediaProxy;
 }
 
 /**
@@ -264,6 +297,7 @@ export class FrameAssembler {
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: frameInfo.theme ? hostTheme(frameInfo.theme) : null,
+      ...frameFonts(frameInfo),
     };
     const cacheable = versionParam !== null && versionParam === frameVersion(frameInfo);
     return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache");
@@ -272,7 +306,10 @@ export class FrameAssembler {
   /**
    * One widget of the alert delivered to `sceneId` as scene event `eventId`.
    * The alert is read back from that event, so a frame can only ever show
-   * what the scene manager validated and delivered to this scene.
+   * what the scene manager validated and delivered to this scene. Its
+   * external media is proxied like a placement's, whether a workflow step
+   * entered it or event data filled it: the proxy's own checks (public
+   * addresses only, media types, size and relay limits) bound what it fetches.
    */
   async assembleAlertWidget(
     sceneId: string,
@@ -282,17 +319,19 @@ export class FrameAssembler {
   ): Promise<Response> {
     const event = await this.host.loadSceneEvent(sceneId, eventId);
     const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
-    const widget = delivery?.layout.widgets.find((w) => w.id === widgetId);
-    if (!widget) {
+    const widget =
+      delivery && Object.hasOwn(delivery.layout.widgets, widgetId) ? delivery.layout.widgets[widgetId] : undefined;
+    const canonical = widget ? parseWidgetCanonicalId(widget.widget) : null;
+    if (!widget || !canonical) {
       return this.blankResponse();
     }
     return this.assembleFrame(
       sceneId,
       {
-        instanceId: `${eventId}.${widget.id}`,
-        moduleId: widget.moduleId,
-        manifestId: widget.manifestId,
-        widgetCanonicalId: widget.widgetCanonicalId,
+        instanceId: `${eventId}.${widgetId}`,
+        moduleId: canonical.moduleKey,
+        manifestId: canonical.manifestId,
+        widgetCanonicalId: widget.widget,
         settings: widget.settings,
         surface: "alert",
       },
@@ -357,13 +396,27 @@ export class FrameAssembler {
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
-      settings: target.settings,
+      settings: this.bootSettings(target.settings, frameInfo),
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
       linkedResources,
+      ...frameFonts(frameInfo),
     };
     return this.render(frameInfo, boot, "no-store");
+  }
+
+  /**
+   * The settings a frame boots with. A widget with a theme contract runs
+   * under the theme policy (see `render`), which refuses external media, so
+   * its external media is pointed at the media proxy; any other widget loads
+   * it directly.
+   */
+  private bootSettings(settings: Record<string, unknown>, frameInfo: BarkloaderFrameInfo): Record<string, unknown> {
+    if (!this.opts.mediaProxy) {
+      return settings;
+    }
+    return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
   }
 
   /** The entry document with the scaffold, theme stylesheet and policy. */

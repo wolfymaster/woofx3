@@ -1,12 +1,12 @@
-import { routeModule } from "./context";
 import type { Scene, SceneEditorSession } from "@woofx3/api";
-import { EngineEventType } from "@woofx3/api/webhooks";
-import { dbSceneToSnapshot, dbSceneToWire } from "./helpers";
+import { EngineEventType, type WidgetBehaviorKinds } from "@woofx3/api/webhooks";
 import {
   SCENE_EDITOR_TOKEN_SUBJECT,
   type SceneEditorTokenReply,
   type SceneEditorTokenRequest,
 } from "@woofx3/common/cloudevents/Scene/editor";
+import { routeModule } from "./context";
+import { compositionKindOf, dbSceneToSnapshot, dbSceneToWire } from "./helpers";
 
 /** Short: sceneManager answers from memory, and an editor is waiting to open. */
 const SCENE_EDITOR_TOKEN_TIMEOUT_MS = 3_000;
@@ -25,6 +25,7 @@ export const scenesRoutes = routeModule({
       pageSize,
       sortBy: "updated_at",
       sortDesc: true,
+      kind: "scene",
     });
     return {
       scenes: response.scenes.map((s) => dbSceneToWire(s)),
@@ -34,9 +35,10 @@ export const scenesRoutes = routeModule({
     };
   },
 
+  /** Null for an alert composition as for an unknown id: this surface is scenes only. */
   async getScene(id: string): Promise<Scene | null> {
-    const found = await this.db.findScene({ id });
-    return found ? dbSceneToWire(found) : null;
+    const found = await this.db.findComposition(id);
+    return found && compositionKindOf(found.kind) === "scene" ? dbSceneToWire(found) : null;
   },
 
   async getAvailableWidgets(): Promise<{
@@ -51,6 +53,7 @@ export const scenesRoutes = routeModule({
       surfaces: string[];
       hostsSurface: string;
       taxonomy: string[];
+      behaviorKinds: WidgetBehaviorKinds;
       createdByType: string;
       createdByRef: string;
     }>;
@@ -68,6 +71,10 @@ export const scenesRoutes = routeModule({
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
         taxonomy: w.taxonomy ?? [],
+        behaviorKinds: {
+          transitions: (w.behaviorKinds?.transitions ?? []).map(({ id, label }) => ({ id, label })),
+          effects: (w.behaviorKinds?.effects ?? []).map(({ id, label }) => ({ id, label })),
+        },
         createdByType: w.createdByType ?? "",
         createdByRef: w.createdByRef ?? "",
       })),
@@ -89,6 +96,9 @@ export const scenesRoutes = routeModule({
       layoutJson: data.layoutJson ?? "{}",
       createdByType: "USER",
       createdByRef: "",
+      kind: "scene",
+      behaviorsJson: "",
+      inputsJson: "",
     });
     const created = response;
     this.logger.info("Created scene", { id: created.id, name: created.name });
@@ -112,6 +122,12 @@ export const scenesRoutes = routeModule({
     }
   ): Promise<{ success: boolean }> {
     this.logger.info("Updating scene", { id });
+    // Alerts are updated through `updateAlertComposition`, which never
+    // writes their documents from outside the editor.
+    const existing = await this.db.findComposition(id);
+    if (!existing || compositionKindOf(existing.kind) !== "scene") {
+      return { success: false };
+    }
     // Patch semantics — db-proxy's UpdateSceneRequest uses empty
     // strings for "leave alone", so map `undefined` → "" (no change)
     // and a real value → the value. Callers that genuinely want to
@@ -124,10 +140,17 @@ export const scenesRoutes = routeModule({
       description: data.description ?? "",
       widgetsJson: data.widgetsJson ?? "",
       layoutJson: data.layoutJson ?? "",
-      // Drafts are written by sceneManager's editor; this path leaves them be.
+      // Drafts and editor sync state are written by sceneManager's editor;
+      // this path names neither. A widgets or layout write here makes the
+      // db clear the editor state, which describes the replaced documents.
+      behaviorsJson: "",
+      inputsJson: "",
       draftWidgetsJson: "",
       draftLayoutJson: "",
+      draftBehaviorsJson: "",
       clearDraft: false,
+      editorStateJson: "",
+      clearEditorState: false,
     });
     if (!updated) {
       return { success: false };
@@ -144,12 +167,19 @@ export const scenesRoutes = routeModule({
 
   async deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }> {
     this.logger.info("Deleting scene", { id });
+    // An alert is deleted through `deleteAlertComposition`: the scene routes
+    // never change the other kind's rows.
+    const existing = await this.db.findComposition(id);
+    if (!existing || compositionKindOf(existing.kind) !== "scene") {
+      return { success: false };
+    }
     const success = await this.db.tryDeleteScene({ id });
     if (success) {
       void this.emitSceneWebhook({
         type: EngineEventType.SCENE_DELETED,
         correlationKey,
         sceneId: id,
+        kind: "scene",
       });
     }
     return { success };

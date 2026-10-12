@@ -152,7 +152,9 @@ A single condition that compares a field value against an expected value using a
 | `regex` | `matches` | Value matches regex pattern | `string` (regex) |
 | `between` | `range` | Value is within inclusive range | `[min, max]` |
 
-Numeric comparisons use type coercion -- string representations of numbers are converted to floats before comparison. Non-numeric values fall back to string comparison.
+A null or missing field satisfies only `eq null`, `ne`, `in` a list holding `null`, `not_in` and `not_exists`; every other operator is false for it. A malformed `value` (an invalid `regex`, a `between` that is not `[min, max]`) is an error even when the field is null.
+
+Comparisons are numeric when both sides are numbers. A string is never converted to a number: `"100"` against `99` compares as text. Any other pair falls back to string comparison.
 
 ---
 
@@ -295,6 +297,7 @@ All string values in task parameters, conditions, and workflow configs support t
 | `trigger` | The event that triggered the workflow | `${trigger.data.amount}`, `${trigger.type}`, `${trigger.id}` |
 | `<taskId>` | Exported values from a completed task | `${check-amount.result}`, `${fetch-user.name}` |
 | `env` | Environment variables | `${env.API_KEY}` |
+| `viewer` | Facts of the viewer the triggering event is about; see [Viewer facts](../services/viewer-facts.md#facts-in-workflows-viewer) | `${viewer.user.messages}`, `${viewer.name}` |
 
 ### Path Navigation
 

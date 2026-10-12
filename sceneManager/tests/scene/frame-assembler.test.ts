@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
 import {
   buildFrameScaffold,
   FrameAssembler,
@@ -7,9 +8,8 @@ import {
   SHIM_SRC,
 } from "../../src/scene/frame-assembler";
 import { frameVersion } from "../../src/scene/frame-catalog";
-import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
-import type { FrameTheme } from "../../src/scene/widget-theme";
 import type { OverlayHost, OverlaySceneState } from "../../src/scene/scene-host";
+import type { FrameTheme } from "../../src/scene/widget-theme";
 
 function minimalBoot(): FrameScaffold["boot"] {
   return {
@@ -134,6 +134,20 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     expect(warn.mock.calls[0]![0]).toContain("missing entryHtml");
   });
 
+  it("gives up on a barkloader that does not answer, which the assembler serves as unavailable", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const hung = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      })) as unknown as typeof fetch;
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, hung, 10);
+
+    await expect(client.fetchWidgetFrame("mymod", "mywid")).rejects.toThrow();
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), logger, { barkloader: client });
+    const resp = await assembler.assembleDocument("mymod", "mywid", null, null);
+    expect(resp.status).toBe(502);
+  });
+
   it("returns the parsed frame info on success without logging", async () => {
     const warn = mock((_message: string, _meta?: unknown) => {});
     const logger = { debug: () => {}, info: () => {}, warn, error: () => {} } as any;
@@ -143,8 +157,24 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
-    expect(result).toEqual({ entryHtml: "<html></html>", resourceBaseUrl: "https://cdn.example.com/w/", theme: null });
+    expect(result).toEqual({
+      entryHtml: "<html></html>",
+      resourceBaseUrl: "https://cdn.example.com/w/",
+      theme: null,
+      fontSettings: [],
+    });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("reads the widget's font settings", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const fetchFn = mock(async () =>
+      Response.json({ entryHtml: "<html></html>", resourceBaseUrl: "https://e/w/", fontSettings: ["fontFamily", 3] })
+    ) as unknown as typeof fetch;
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
+
+    const result = await client.fetchWidgetFrame("mymod", "mywid");
+    expect(result?.fontSettings).toEqual(["fontFamily"]);
   });
 });
 
@@ -164,6 +194,7 @@ describe("FrameAssembler.assembleDocument", () => {
     entryHtml: "<!doctype html><body></body>",
     resourceBaseUrl: "https://cdn.example.com/modules/mymod/abc123/widgets/mywid/",
     theme: null,
+    fontSettings: [],
   };
 
   it("frames the widget with no placement in the document", async () => {
@@ -188,6 +219,23 @@ describe("FrameAssembler.assembleDocument", () => {
     }
   });
 
+  it("tells the shim which settings are fonts and where their stylesheets are", async () => {
+    const withFonts = { ...info, fontSettings: ["fontFamily"] };
+    const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => withFonts) };
+    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+
+    const boot = bootOf(await (await assembler.assembleDocument("mymod", "mywid", null, null)).text());
+    expect(boot.fonts).toEqual({ settings: ["fontFamily"], stylesheetUrl: "/fonts/css" });
+    const plain = bootOf(
+      await (
+        await new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
+          barkloader: { fetchWidgetFrame: mock(async () => info) },
+        }).assembleDocument("mymod", "mywid", null, null)
+      ).text()
+    );
+    expect(plain).not.toHaveProperty("fonts");
+  });
+
   it("is cached for good while its version is current, and not otherwise", async () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => info) };
     const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
@@ -209,7 +257,7 @@ describe("FrameAssembler.assembleDocument", () => {
 });
 
 function emptyState(): OverlaySceneState {
-  return { sceneId: "scene-1", name: "Scene", layout: {}, instances: [] };
+  return { sceneId: "scene-1", name: "Scene", kind: "scene", behaviors: {}, inputs: [], layout: {}, instances: [] };
 }
 
 function bootOf(html: string): Record<string, unknown> {
@@ -238,6 +286,7 @@ async function assembleThemed(settings: Record<string, unknown>, theme: FrameThe
     entryHtml: "<!doctype html><html><head><style>#t{}</style></head><body><script>1</script></body></html>",
     resourceBaseUrl: THEMED_BASE,
     theme,
+    fontSettings: [],
   }));
   const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
     barkloader: { fetchWidgetFrame },
@@ -290,14 +339,33 @@ describe("FrameAssembler — widget themes", () => {
     });
   });
 
-  it("restricts styles and fonts to the engine, and lets images and media come from any http(s) host", async () => {
+  it("restricts styles, fonts, images and media to the engine for a themeable widget", async () => {
     const { resp } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
-    const csp = resp.headers.get("Content-Security-Policy");
-    expect(csp).toContain("style-src 'self' https://engine.example.com 'unsafe-inline'");
-    expect(csp).toContain("font-src 'self' https://engine.example.com data:");
-    expect(csp).toContain("img-src 'self' https://engine.example.com https: http: data: blob:");
-    expect(csp).toContain("media-src 'self' https://engine.example.com https: http: data: blob:");
-    expect(csp).not.toContain("script-src");
+    const csp = resp.headers.get("Content-Security-Policy") ?? "";
+    const directives = Object.fromEntries(
+      csp.split(";").map((directive) => {
+        const [name, ...sources] = directive.trim().split(/\s+/);
+        return [name, sources];
+      })
+    );
+    // Exact values, so the policy cannot widen without this test changing.
+    expect(directives).toEqual({
+      "style-src": ["'self'", "https://engine.example.com", "'unsafe-inline'"],
+      "font-src": ["'self'", "https://engine.example.com", "data:"],
+      "img-src": ["'self'", "https://engine.example.com", "https://static-cdn.jtvnw.net", "data:", "blob:"],
+      "media-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
+    });
+    expect(csp).toBe(
+      "style-src 'self' https://engine.example.com 'unsafe-inline'; " +
+        "font-src 'self' https://engine.example.com data:; " +
+        "img-src 'self' https://engine.example.com https://static-cdn.jtvnw.net data: blob:; " +
+        "media-src 'self' https://engine.example.com data: blob:"
+    );
+    for (const sources of Object.values(directives) as string[][]) {
+      for (const source of sources) {
+        expect(["https:", "http:", "*"]).not.toContain(source);
+      }
+    }
   });
 
   it("renders the defaults, and still loads, when the selected theme is missing", async () => {

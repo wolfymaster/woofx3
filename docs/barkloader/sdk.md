@@ -65,7 +65,7 @@ v0.1.0):
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value, options?)` |
 | `ctx.http` | `request(url, method, opts?)` — only to hosts the module declares (`net:<host>` permissions) or URLs the streamer entered in `url` settings; see [Module format → Where `ctx.http` may connect](./modules.md#where-ctx-http-may-connect) |
-| `ctx.resources` | `create(kind, instanceId, displayName?, settings?)`, `get(canonicalId)`, `delete(canonicalId)`, `list(kind)`, `run(canonicalId, verb, params?)` |
+| `ctx.resources` | `create(kind, instanceId, displayName?, settings?)`, `get(canonicalId)`, `delete(canonicalId)`, `list(kind)`, `run(canonicalId, verb, params?)`, `compareAndSetSetting(canonicalId, key, expected, value)` |
 | `ctx.schedule` | `at(deadlineId, key, whenMs, params?)`, `cancel(deadlineId, key)` — one-shot invocations of a function the manifest declares under `deadlines`; see below |
 | `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)`, `compareAndSetSetting(key, expected, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
@@ -233,6 +233,36 @@ A change of theme always swaps the widget, because the theme is applied
 before it runs. In the preview harness, **Send to running widget** applies a
 settings change through the bindings the same way.
 
+### Fonts
+
+Declare a font setting with `"type": "font"` and use it through its binding,
+with a fallback list of your own:
+
+```css
+#label { font-family: var(--setting-fontFamily, Roboto, system-ui, sans-serif); }
+```
+
+The value is a CSS font-family list; the dashboard's picker writes a Google
+Fonts family followed by a generic one (`"Lobster", cursive`). The widget does
+nothing to load it. The frame is told which of its settings are fonts, and the
+host links a stylesheet for each one's first family from the scene manager,
+moving it whenever the setting changes. For a Google family, the scene manager
+fetches the family from Google the first time any overlay asks for it, and
+each font file the first time a frame draws characters from it, and keeps both
+on the engine's disk (`{WOOFX3_ROOT_PATH}/cache/fonts`), so a family once shown
+keeps working offline. Any other first family, such as one installed on the
+streaming machine, is used by name. When a family cannot be had, the rest of
+the list renders.
+
+A frame whose widget has font settings reports itself rendered only once its
+fonts have loaded, so a reload never flashes the fallback font.
+
+The family list the picker offers is generated from the Google Fonts catalog
+(`shared/clients/typescript/api/google-fonts.generated.ts`, family and
+category only); refresh it with `bun run generate:google-fonts` in
+`shared/clients/typescript/api`. The scene manager serves only families in
+that list.
+
 ### Themes
 
 A widget whose manifest declares a [theme contract](./modules.md#themes) is rendered with its theme already applied: each contract variable is set as `--theme-{id}` and each filled asset slot as `--theme-asset-{id}: url(...)` on `:root`, and the theme's stylesheet is linked after the widget's own. Styling with those properties is usually all a widget needs:
@@ -279,6 +309,56 @@ host.onEvent((event) => {
   sound.play();
 }, { autoComplete: false });
 ```
+
+Don't hide yourself when you are done: completing is what takes a widget off
+screen, after its exit transition.
+
+### Transitions and effects
+
+How a placed widget enters, leaves and moves while shown is the composition's:
+transitions and effects are behaviors on the placement, and the overlay plays
+its own kinds (fade, slide, zoom, shake, ...) on the widget's box without the
+widget knowing. A widget can also declare kinds that animate its own content in
+its manifest's `transitions` (`[{ "id": "typewriter", "label": "Typewriter" }]`)
+and `effects` (see [Widget entry](./modules.md#widget-entry-widgets)), and
+animate them in CSS from the marks the shim puts on `:root`:
+
+| Behavior | Marks |
+| --- | --- |
+| transition | `data-transition` (the kind), `data-transition-phase` (`in` or `out`), `--transition-duration`, `--transition-easing` |
+| effect | `data-effect` (the kind), `--effect-duration` (absent while open-ended), `--effect-easing` |
+
+```css
+:root[data-transition="typewriter"][data-transition-phase="in"] .letter {
+  animation: reveal var(--transition-duration) var(--transition-easing) both;
+}
+```
+
+How a delegated behavior reaches the widget:
+
+- The overlay plans it from the composition's timeline and, when it starts,
+  sends the `behavior` message (`{ type: "behavior", behavior }`, see
+  `WidgetBehaviorMessage` in `widget-protocol.ts`). `behavior` is
+  `{ type, kind, phase?, durationMs, easing, params }`: `phase` only for a
+  transition, `durationMs` `null` for an effect that runs until it is
+  withdrawn, `easing` one of `linear`, `ease`, `ease-in`, `ease-out`,
+  `ease-in-out`, and `params` the behavior's own params as the composition
+  gives them, for a widget that reads more than the marks.
+- The shim (`applyWidgetBehavior` in `widget-behaviors.ts`) clears the marks
+  of that type, forces a layout read, then sets them again, so the same
+  behavior sent twice restarts its CSS animations. It holds one transition
+  and one effect at a time; a new one of a type replaces the last.
+- `behavior: null` clears every mark: the widget shows as it is. When one of
+  several behaviors is withdrawn the overlay clears and sends the ones still
+  playing again.
+- A frame boots already marked with the widget's entrance (`boot.behavior`,
+  the first in-transition of a kind it declares), so its content does not
+  show whole before the message arrives; the message as the widget enters
+  restarts it then.
+- Only kinds the widget declares are sent. A behavior of any other widget
+  kind on it is skipped and reported by the overlay (`undeclared-kind`), and
+  an alert carrying one has it dropped when it is dispatched. A declared kind
+  your CSS does not select on simply leaves the widget as it is.
 
 The full surface lives in
 `shared/clients/typescript/module-sdk/src/widget-host.ts` (the SDK

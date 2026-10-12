@@ -138,6 +138,33 @@ describe("OverlayHost.loadSceneById — drafts", () => {
     expect((await host.loadSceneById("scene-1", "draft"))!.instances.map((i) => i.id)).toEqual(["published"]);
   });
 
+  it("keeps the stored editor state out of every loaded version", async () => {
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson: '{"v":4}' });
+    expect(Object.keys((await host.loadSceneById("scene-1"))!)).not.toContain("editorStateJson");
+    expect(Object.keys((await host.loadSceneById("scene-1", "draft"))!)).not.toContain("editorStateJson");
+  });
+
+  it("loads both versions and the editor state from one read for the scene documents", async () => {
+    const editorStateJson = '{ "v": 4, "headId": "e.4", "clients": {} }';
+    const host = hostWith({
+      widgetsJson: placements("published"),
+      layoutJson: "{}",
+      hasDraft: true,
+      draftWidgetsJson: placements("draft"),
+      draftLayoutJson: "{}",
+      editorStateJson,
+    });
+    const editable = await host.loadEditableScene("scene-1");
+    expect(editable!.published.instances.map((i) => i.id)).toEqual(["published"]);
+    expect(editable!.draft.instances.map((i) => i.id)).toEqual(["draft"]);
+    expect(editable!.editorStateJson).toBe(editorStateJson);
+  });
+
+  it("loads no editor state when none is stored", async () => {
+    const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}", editorStateJson: "" });
+    expect((await host.loadEditableScene("scene-1"))!.editorStateJson).toBeNull();
+  });
+
   it("keeps each placement as stored", async () => {
     const host = hostWith({ widgetsJson: placements("published"), layoutJson: "{}" });
     expect((await host.loadSceneById("scene-1"))!.instances[0]!.stored).toEqual({
@@ -145,5 +172,60 @@ describe("OverlayHost.loadSceneById — drafts", () => {
       widgetCanonicalId: "woofx3:widget:text",
       settings: {},
     });
+  });
+});
+
+describe("OverlayHost — composition kinds", () => {
+  function hostWith(sceneFields: Record<string, unknown>) {
+    const db = {
+      getScene: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        scene: { id: "scene-1", name: "Main", widgetsJson: "[]", layoutJson: "{}", ...sceneFields },
+      })),
+      listWidgets: mock(async () => ({ status: { code: "OK" as const, message: "" }, widgets: [] })),
+    };
+    const resolver = new OverlayTokenResolver(
+      { resolveOverlayToken: async () => ({ status: { code: "OK" as const, message: "" }, sceneId: "scene-1" }) },
+      fakeLogger()
+    );
+    return new OverlayHost(resolver, db as any, fakeLogger());
+  }
+  const fade = { type: "transition", kind: "fade", target: "a", order: "a0", timing: {}, params: {} };
+  const field = { id: "name", label: "Name", type: "text" };
+
+  it("serves no overlay page for an alert, even through a token that resolves to one", async () => {
+    const host = hostWith({ kind: "alert" });
+    expect(await host.loadScene("ovl_token")).toBeNull();
+    expect(await host.buildConfig("ovl_token")).toEqual({ scene: null });
+    expect((await host.loadSceneById("scene-1"))!.kind).toBe("alert");
+  });
+
+  it("reads a row without a kind as a scene, and skips one of a kind it does not know", async () => {
+    expect((await hostWith({}).loadScene("ovl_token"))!.kind).toBe("scene");
+    expect(await hostWith({ kind: "widget" }).loadSceneById("scene-1")).toBeNull();
+  });
+
+  it("loads each version's behaviors and the inputs into both", async () => {
+    const host = hostWith({
+      kind: "alert",
+      behaviorsJson: JSON.stringify({ b1: fade }),
+      inputsJson: JSON.stringify([field]),
+      hasDraft: true,
+      draftWidgetsJson: "[]",
+      draftLayoutJson: "{}",
+      draftBehaviorsJson: JSON.stringify({ b2: fade }),
+    });
+    const editable = await host.loadEditableScene("scene-1");
+    expect(Object.keys(editable!.published.behaviors)).toEqual(["b1"]);
+    expect(Object.keys(editable!.draft.behaviors)).toEqual(["b2"]);
+    expect(editable!.published.inputs).toEqual([field]);
+    expect(editable!.draft.inputs).toEqual([field]);
+  });
+
+  it("loads none for behaviors or inputs that are not the stored shape", async () => {
+    const host = hostWith({ behaviorsJson: "[]", inputsJson: "{}" });
+    const state = await host.loadSceneById("scene-1");
+    expect(state!.behaviors).toEqual({});
+    expect(state!.inputs).toEqual([]);
   });
 });

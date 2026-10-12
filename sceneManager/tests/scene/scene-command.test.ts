@@ -4,7 +4,7 @@ import {
   executeSceneControlCommand,
   parseSceneControlCommand,
 } from "../../src/scene/scene-command";
-import { type SceneWrite, SceneDocuments } from "../../src/scene/scene-documents";
+import { SceneDocuments, type SceneWrite } from "../../src/scene/scene-documents";
 import type { OverlaySceneState } from "../../src/scene/scene-host";
 
 function fakeLogger() {
@@ -14,6 +14,9 @@ function fakeLogger() {
 const SCENE: OverlaySceneState = {
   sceneId: "scene-1",
   name: "Main",
+  kind: "scene",
+  behaviors: {},
+  inputs: [],
   layout: {},
   instances: [
     {
@@ -39,7 +42,14 @@ function documents(
   const sent: Array<{ event: string; data: any }> = [];
   const writes: SceneWrite[] = [];
   const docs = new SceneDocuments(
-    { loadFramedSceneById: load, framePlacements: async () => [] },
+    {
+      loadEditableScene: async (id) => {
+        const state = await load(id);
+        return state ? { published: state, draft: state, editorStateJson: null } : null;
+      },
+      loadFramedSceneById: load,
+      framePlacements: async () => [],
+    },
     { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["scene-1"] },
     fakeLogger(),
     {
@@ -103,6 +113,17 @@ describe("executeSceneControlCommand", () => {
       ok: false,
       error: 'scene "gone" does not exist',
     });
+  });
+
+  it("refuses an alert composition, which is not running anywhere, and leaves it alone", async () => {
+    const alert: OverlaySceneState = { ...SCENE, sceneId: "alert-1", name: "Follow", kind: "alert" };
+    const { docs, sent } = documents(async (id) => (id === "alert-1" ? alert : null));
+    expect(await executeSceneControlCommand(docs, { ...hide, sceneId: "alert-1" })).toEqual({
+      ok: false,
+      error: '"Follow" is an alert composition, not a scene; only a running scene\'s widgets can be shown or hidden',
+    });
+    expect(sent).toEqual([]);
+    expect((await docs.snapshot("alert-1"))!.doc.widgets["board-1"]!.visible).toBe(true);
   });
 
   it("names a placement that is not on the scene", async () => {

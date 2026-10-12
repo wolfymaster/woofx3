@@ -13,9 +13,12 @@ import (
 // engine's only job here is durable storage + delivery; presentation
 // semantics live entirely in the consumer.
 type Scene struct {
-	ID          uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	Name        string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_scenes_name"`
-	Description string    `gorm:"type:text;not null;default:''"`
+	ID uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	// What the row composes, `SceneKindScene` or `SceneKindAlert`, fixed at
+	// creation. Names are unique per kind.
+	Kind        string `gorm:"column:kind;type:text;not null;default:'scene';uniqueIndex:idx_scenes_kind_name,priority:1"`
+	Name        string `gorm:"type:varchar(255);not null;uniqueIndex:idx_scenes_kind_name,priority:2"`
+	Description string `gorm:"type:text;not null;default:''"`
 	// Array of placed widget instances. Shape:
 	// `[{ id, widgetCanonicalId, position: { x, y, width, height },
 	//    settings: { ... per-widget overrides ... } }, ... ]`.
@@ -30,6 +33,17 @@ type Scene struct {
 	// published scene.
 	DraftWidgetsJSON *string `gorm:"column:draft_widgets_json;type:jsonb"`
 	DraftLayoutJSON  *string `gorm:"column:draft_layout_json;type:jsonb"`
+	// The published document's behaviors, a JSON object keyed by behavior
+	// id, and the draft's, nil exactly when the draft documents are.
+	BehaviorsJSON      string  `gorm:"column:behaviors_json;type:jsonb;not null;default:'{}'"`
+	DraftBehaviorsJSON *string `gorm:"column:draft_behaviors_json;type:jsonb"`
+	// The inputs the composition takes, a JSON array of input fields. Not
+	// drafted: the scene editor never changes them.
+	InputsJSON string `gorm:"column:inputs_json;type:jsonb;not null;default:'[]'"`
+	// The scene editor's sync state, a JSON object stored as text so it
+	// reads back exactly as written. Nil until an editor has synced the
+	// scene, or after it was cleared.
+	EditorStateJSON *string `gorm:"column:editor_state_json;type:text"`
 
 	// Origin metadata — same convention as `WorkflowDefinition`.
 	// `USER` for UI-authored scenes, `MODULE` if a future manifest
@@ -38,6 +52,14 @@ type Scene struct {
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 }
+
+// The kinds of composition a scene row holds. A scene is shown by overlays;
+// an alert is a library entry alert steps copy their layout from, and is
+// never an overlay page.
+const (
+	SceneKindScene = "scene"
+	SceneKindAlert = "alert"
+)
 
 func (Scene) TableName() string {
 	return "scenes"

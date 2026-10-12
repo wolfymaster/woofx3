@@ -1877,6 +1877,296 @@ impl<'de> serde::Deserialize<'de> for CheckModuleResourceUsageResponse {
         deserializer.deserialize_struct("module.CheckModuleResourceUsageResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for CompareAndSetResourceInstanceSettingRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.canonical_id.is_empty() {
+            len += 1;
+        }
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        if !self.key.is_empty() {
+            len += 1;
+        }
+        if !self.expected_json.is_empty() {
+            len += 1;
+        }
+        if !self.value_json.is_empty() {
+            len += 1;
+        }
+        if self.request_context.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.CompareAndSetResourceInstanceSettingRequest", len)?;
+        if !self.canonical_id.is_empty() {
+            struct_ser.serialize_field("canonicalId", &self.canonical_id)?;
+        }
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        if !self.key.is_empty() {
+            struct_ser.serialize_field("key", &self.key)?;
+        }
+        if !self.expected_json.is_empty() {
+            struct_ser.serialize_field("expectedJson", &self.expected_json)?;
+        }
+        if !self.value_json.is_empty() {
+            struct_ser.serialize_field("valueJson", &self.value_json)?;
+        }
+        if let Some(v) = self.request_context.as_ref() {
+            struct_ser.serialize_field("requestContext", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompareAndSetResourceInstanceSettingRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "canonical_id",
+            "canonicalId",
+            "module_name",
+            "moduleName",
+            "key",
+            "expected_json",
+            "expectedJson",
+            "value_json",
+            "valueJson",
+            "request_context",
+            "requestContext",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            CanonicalId,
+            ModuleName,
+            Key,
+            ExpectedJson,
+            ValueJson,
+            RequestContext,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "canonicalId" | "canonical_id" => Ok(GeneratedField::CanonicalId),
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            "key" => Ok(GeneratedField::Key),
+                            "expectedJson" | "expected_json" => Ok(GeneratedField::ExpectedJson),
+                            "valueJson" | "value_json" => Ok(GeneratedField::ValueJson),
+                            "requestContext" | "request_context" => Ok(GeneratedField::RequestContext),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompareAndSetResourceInstanceSettingRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.CompareAndSetResourceInstanceSettingRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompareAndSetResourceInstanceSettingRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut canonical_id__ = None;
+                let mut module_name__ = None;
+                let mut key__ = None;
+                let mut expected_json__ = None;
+                let mut value_json__ = None;
+                let mut request_context__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::CanonicalId => {
+                            if canonical_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("canonicalId"));
+                            }
+                            canonical_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Key => {
+                            if key__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("key"));
+                            }
+                            key__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ExpectedJson => {
+                            if expected_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("expectedJson"));
+                            }
+                            expected_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ValueJson => {
+                            if value_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("valueJson"));
+                            }
+                            value_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::RequestContext => {
+                            if request_context__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("requestContext"));
+                            }
+                            request_context__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(CompareAndSetResourceInstanceSettingRequest {
+                    canonical_id: canonical_id__.unwrap_or_default(),
+                    module_name: module_name__.unwrap_or_default(),
+                    key: key__.unwrap_or_default(),
+                    expected_json: expected_json__.unwrap_or_default(),
+                    value_json: value_json__.unwrap_or_default(),
+                    request_context: request_context__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.CompareAndSetResourceInstanceSettingRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for CompareAndSetResourceInstanceSettingResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.swapped {
+            len += 1;
+        }
+        if !self.current_json.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.CompareAndSetResourceInstanceSettingResponse", len)?;
+        if self.swapped {
+            struct_ser.serialize_field("swapped", &self.swapped)?;
+        }
+        if !self.current_json.is_empty() {
+            struct_ser.serialize_field("currentJson", &self.current_json)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompareAndSetResourceInstanceSettingResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "swapped",
+            "current_json",
+            "currentJson",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Swapped,
+            CurrentJson,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "swapped" => Ok(GeneratedField::Swapped),
+                            "currentJson" | "current_json" => Ok(GeneratedField::CurrentJson),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompareAndSetResourceInstanceSettingResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.CompareAndSetResourceInstanceSettingResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompareAndSetResourceInstanceSettingResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut swapped__ = None;
+                let mut current_json__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Swapped => {
+                            if swapped__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("swapped"));
+                            }
+                            swapped__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CurrentJson => {
+                            if current_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("currentJson"));
+                            }
+                            current_json__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(CompareAndSetResourceInstanceSettingResponse {
+                    swapped: swapped__.unwrap_or_default(),
+                    current_json: current_json__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.CompareAndSetResourceInstanceSettingResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for CompleteModuleDeleteRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -10552,6 +10842,9 @@ impl serde::Serialize for Widget {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if self.behavior_kinds.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Widget", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -10595,6 +10888,9 @@ impl serde::Serialize for Widget {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if let Some(v) = self.behavior_kinds.as_ref() {
+            struct_ser.serialize_field("behaviorKinds", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -10626,6 +10922,8 @@ impl<'de> serde::Deserialize<'de> for Widget {
             "hosts_surface",
             "hostsSurface",
             "taxonomy",
+            "behavior_kinds",
+            "behaviorKinds",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -10644,6 +10942,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             Surfaces,
             HostsSurface,
             Taxonomy,
+            BehaviorKinds,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -10679,6 +10978,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             "surfaces" => Ok(GeneratedField::Surfaces),
                             "hostsSurface" | "hosts_surface" => Ok(GeneratedField::HostsSurface),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "behaviorKinds" | "behavior_kinds" => Ok(GeneratedField::BehaviorKinds),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -10712,6 +11012,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                 let mut surfaces__ = None;
                 let mut hosts_surface__ = None;
                 let mut taxonomy__ = None;
+                let mut behavior_kinds__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -10798,6 +11099,12 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::BehaviorKinds => {
+                            if behavior_kinds__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorKinds"));
+                            }
+                            behavior_kinds__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(Widget {
@@ -10815,10 +11122,227 @@ impl<'de> serde::Deserialize<'de> for Widget {
                     surfaces: surfaces__.unwrap_or_default(),
                     hosts_surface: hosts_surface__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    behavior_kinds: behavior_kinds__,
                 })
             }
         }
         deserializer.deserialize_struct("module.Widget", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for WidgetBehaviorKind {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.label.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.WidgetBehaviorKind", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.label.is_empty() {
+            struct_ser.serialize_field("label", &self.label)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for WidgetBehaviorKind {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "label",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            Label,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "label" => Ok(GeneratedField::Label),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = WidgetBehaviorKind;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.WidgetBehaviorKind")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<WidgetBehaviorKind, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut label__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Label => {
+                            if label__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("label"));
+                            }
+                            label__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(WidgetBehaviorKind {
+                    id: id__.unwrap_or_default(),
+                    label: label__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.WidgetBehaviorKind", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for WidgetBehaviorKinds {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.transitions.is_empty() {
+            len += 1;
+        }
+        if !self.effects.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.WidgetBehaviorKinds", len)?;
+        if !self.transitions.is_empty() {
+            struct_ser.serialize_field("transitions", &self.transitions)?;
+        }
+        if !self.effects.is_empty() {
+            struct_ser.serialize_field("effects", &self.effects)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for WidgetBehaviorKinds {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "transitions",
+            "effects",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Transitions,
+            Effects,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "transitions" => Ok(GeneratedField::Transitions),
+                            "effects" => Ok(GeneratedField::Effects),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = WidgetBehaviorKinds;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.WidgetBehaviorKinds")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<WidgetBehaviorKinds, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut transitions__ = None;
+                let mut effects__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Transitions => {
+                            if transitions__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("transitions"));
+                            }
+                            transitions__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Effects => {
+                            if effects__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("effects"));
+                            }
+                            effects__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(WidgetBehaviorKinds {
+                    transitions: transitions__.unwrap_or_default(),
+                    effects: effects__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.WidgetBehaviorKinds", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for WidgetInput {
@@ -10859,6 +11383,9 @@ impl serde::Serialize for WidgetInput {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if self.behavior_kinds.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.WidgetInput", len)?;
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
@@ -10890,6 +11417,9 @@ impl serde::Serialize for WidgetInput {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if let Some(v) = self.behavior_kinds.as_ref() {
+            struct_ser.serialize_field("behaviorKinds", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -10914,6 +11444,8 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             "hosts_surface",
             "hostsSurface",
             "taxonomy",
+            "behavior_kinds",
+            "behaviorKinds",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -10928,6 +11460,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             Surfaces,
             HostsSurface,
             Taxonomy,
+            BehaviorKinds,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -10959,6 +11492,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             "surfaces" => Ok(GeneratedField::Surfaces),
                             "hostsSurface" | "hosts_surface" => Ok(GeneratedField::HostsSurface),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "behaviorKinds" | "behavior_kinds" => Ok(GeneratedField::BehaviorKinds),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -10988,6 +11522,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                 let mut surfaces__ = None;
                 let mut hosts_surface__ = None;
                 let mut taxonomy__ = None;
+                let mut behavior_kinds__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ManifestId => {
@@ -11050,6 +11585,12 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::BehaviorKinds => {
+                            if behavior_kinds__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("behaviorKinds"));
+                            }
+                            behavior_kinds__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(WidgetInput {
@@ -11063,6 +11604,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                     surfaces: surfaces__.unwrap_or_default(),
                     hosts_surface: hosts_surface__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    behavior_kinds: behavior_kinds__,
                 })
             }
         }

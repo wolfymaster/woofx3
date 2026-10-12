@@ -8,6 +8,8 @@
 // for a fresh frame once that has painted. Only a different frame document
 // (another widget, version or theme) means a new frame for that reason.
 
+import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
+
 export interface WidgetPlacementConfig {
   id: string;
   widgetCanonicalId: string;
@@ -19,6 +21,12 @@ export interface WidgetPlacementConfig {
   frameUrl: string;
   /** The resource instances the widget's module links, handed to the frame. */
   linkedResources?: Record<string, string>;
+  /** The engine's media proxy URL prefix, for a widget whose frame runs
+   *  under the theme policy (see `PlacementMeta.mediaProxyBase`). */
+  mediaProxyBase?: string;
+  /** The kinds the widget declares it plays itself (see
+   *  `PlacementMeta.behaviorKinds`); absent means none. */
+  behaviorKinds?: DeclaredBehaviorKinds;
   /** False for a placement hidden in the editor; absent means shown. */
   visible?: boolean;
 }

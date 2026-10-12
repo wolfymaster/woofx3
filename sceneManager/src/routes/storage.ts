@@ -1,9 +1,15 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
 
 // Mirrors barkloader's ALLOWED_TOP_LEVEL_PREFIXES.
 const STORAGE_ASSET_PREFIXES = ["/assets/modules/", "/assets/user/"] as const;
 
-const RELAYED_HEADERS = ["Location", "Content-Type", "Cache-Control"] as const;
+const STORAGE_ASSET_RELAY: BarkloaderRelay = {
+  forwardedRequestHeaders: [],
+  relayedResponseHeaders: ["Location", "Content-Type", "Cache-Control"],
+  failure: "barkloader asset request failed",
+  loggedPath: (url) => url.pathname,
+};
 
 export function isStorageAssetPath(pathname: string): boolean {
   return STORAGE_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix));
@@ -24,25 +30,7 @@ export async function handleStorageAssetRoute(
   if (req.method !== "GET") {
     return new Response(null, { status: 404 });
   }
-  const upstreamUrl = `${barkloaderUrl.replace(/\/+$/, "")}${url.pathname}`;
-  let upstream: Response;
-  try {
-    upstream = await fetchFn(upstreamUrl, { method: "GET", redirect: "manual" });
-  } catch (err) {
-    logger.warn("barkloader asset request failed", {
-      path: url.pathname,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return new Response(null, { status: 502 });
-  }
-  const headers = new Headers();
-  for (const name of RELAYED_HEADERS) {
-    const value = upstream.headers.get(name);
-    if (value !== null) {
-      headers.set(name, value);
-    }
-  }
-  return new Response(upstream.body, { status: upstream.status, headers });
+  return relayGetToBarkloader(req, url, barkloaderUrl, logger, STORAGE_ASSET_RELAY, fetchFn);
 }
 
 /**

@@ -294,6 +294,24 @@ func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID 
 	return &trigger, nil
 }
 
+// GetActiveTriggerByModuleAndManifestID resolves a canonical id
+// (`{moduleID}:trigger:{manifestID}`) to its active row only, unlike
+// GetTriggerByModuleAndManifestID: an archived trigger is no longer
+// registered by any installed module, so nothing will fire it.
+//
+// Returns gorm.ErrRecordNotFound if no active row matches.
+func (r *ModuleRepository) GetActiveTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error) {
+	var trigger models.Trigger
+	err := r.db.Where(
+		"manifest_id = ? AND created_by_ref = ? AND archived_at IS NULL",
+		manifestID, moduleID,
+	).First(&trigger).Error
+	if err != nil {
+		return nil, err
+	}
+	return &trigger, nil
+}
+
 func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 	// See UpsertTrigger: scan RETURNING id into a struct so GORM delegates
 	// to uuid.UUID's sql.Scanner instead of treating the array as columns.
@@ -540,8 +558,8 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 		ID uuid.UUID `gorm:"column:id"`
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.widgets (id, name, description, directory, entry, alert_types, settings_schema, surfaces, hosts_surface, taxonomy, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.widgets (id, name, description, directory, entry, alert_types, settings_schema, surfaces, hosts_surface, taxonomy, behavior_kinds, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
@@ -552,9 +570,10 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 			surfaces = EXCLUDED.surfaces,
 			hosts_surface = EXCLUDED.hosts_surface,
 			taxonomy = EXCLUDED.taxonomy,
+			behavior_kinds = EXCLUDED.behavior_kinds,
 			updated_at = NOW()
 		RETURNING id
-	`, w.ID, w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surfaces, w.HostsSurface, w.Taxonomy, w.CreatedByType, w.CreatedByRef, w.ManifestID).Scan(&result).Error
+	`, w.ID, w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surfaces, w.HostsSurface, w.Taxonomy, w.BehaviorKinds, w.CreatedByType, w.CreatedByRef, w.ManifestID).Scan(&result).Error
 	if err != nil {
 		return err
 	}

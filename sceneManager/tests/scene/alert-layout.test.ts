@@ -6,14 +6,19 @@ import {
   parseAlertDelivery,
   parseAlertLayout,
 } from "../../src/scene/alert-layout";
+import type { BehaviorDocument } from "@woofx3/scene/model";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
-function definition(manifestId: string, surfaces: string[]): OverlayWidgetDefinition {
-  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "" };
+function definition(
+  manifestId: string,
+  surfaces: string[],
+  behaviorKinds: OverlayWidgetDefinition["behaviorKinds"] = { transitions: [], effects: [] }
+): OverlayWidgetDefinition {
+  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "", behaviorKinds };
 }
 
 const catalog = [
-  definition("text", ["scene", "alert"]),
+  definition("text", ["scene", "alert"], { transitions: ["typewriter"], effects: [] }),
   definition("audio", ["alert"]),
   definition("clock", ["scene"]),
 ];
@@ -36,8 +41,39 @@ function usable(parse: AlertLayoutParse) {
   return parse;
 }
 
-describe("parseAlertLayout", () => {
-  it("keeps widgets that can play in an alert, positioned from position and size", () => {
+/** A placement as the editor saves it in a composition-shaped layout. */
+function placementOf(manifestId: string, z: string, overrides: Record<string, unknown> = {}) {
+  return {
+    widget: `woofx3:widget:${manifestId}`,
+    x: 10,
+    y: 20,
+    width: 300,
+    height: 100,
+    visible: true,
+    z,
+    settings: { text: "hi" },
+    name: manifestId,
+    rotation: 15,
+    opacity: 0.5,
+    locked: false,
+    extra: {},
+    ...overrides,
+  };
+}
+
+function fade(target: string, phase: "in" | "out"): BehaviorDocument {
+  return {
+    type: "transition",
+    kind: "fade",
+    target,
+    order: "a0",
+    timing: { anchor: phase === "in" ? "enter" : "exit", offsetMs: 0, durationMs: 400, easing: "ease-out" },
+    params: { phase },
+  };
+}
+
+describe("parseAlertLayout, list shape", () => {
+  it("converts to a composition: widgets keyed by id, list order as z, shown, no behaviors", () => {
     const parsed = usable(
       parseAlertLayout(
         { width: 1920, height: 1080, widgets: [layoutWidget("t1", "text"), layoutWidget("a1", "audio")] },
@@ -45,26 +81,22 @@ describe("parseAlertLayout", () => {
       )
     );
     expect(parsed.rejected).toEqual([]);
-    expect(parsed.layout.width).toBe(1920);
-    expect(parsed.layout.height).toBe(1080);
-    expect(parsed.layout.widgets).toEqual([
-      {
-        id: "t1",
-        widgetCanonicalId: "woofx3:widget:text",
-        moduleId: "woofx3",
-        manifestId: "text",
-        position: { x: 10, y: 20, width: 300, height: 100 },
-        settings: { text: "hi" },
-      },
-      {
-        id: "a1",
-        widgetCanonicalId: "woofx3:widget:audio",
-        moduleId: "woofx3",
-        manifestId: "audio",
-        position: { x: 10, y: 20, width: 300, height: 100 },
-        settings: { text: "hi" },
-      },
-    ]);
+    expect(parsed.rejectedBehaviors).toEqual([]);
+    expect(parsed.layout.layout).toEqual({ width: 1920, height: 1080 });
+    expect(parsed.layout.behaviors).toEqual({});
+    expect(Object.keys(parsed.layout.widgets)).toEqual(["t1", "a1"]);
+    expect(parsed.layout.widgets.t1).toMatchObject({
+      widget: "woofx3:widget:text",
+      x: 10,
+      y: 20,
+      width: 300,
+      height: 100,
+      visible: true,
+      settings: { text: "hi" },
+      rotation: 0,
+      opacity: 1,
+    });
+    expect(parsed.layout.widgets.t1!.z < parsed.layout.widgets.a1!.z).toBe(true);
   });
 
   it("drops a scene-only widget, an unknown widget, a duplicate id and an unsafe id, reporting each", () => {
@@ -84,8 +116,13 @@ describe("parseAlertLayout", () => {
         catalog
       )
     );
-    expect(parsed.layout.widgets.map((w) => w.id)).toEqual(["t1"]);
-    expect(parsed.rejected.map((r) => r.index)).toEqual([0, 1, 3, 4]);
+    expect(Object.keys(parsed.layout.widgets)).toEqual(["t1"]);
+    expect(parsed.rejected.map((r) => [r.index, r.reason])).toEqual([
+      [0, "the widget cannot be placed in an alert"],
+      [1, "no such widget"],
+      [3, 'duplicate id "t1"'],
+      [4, "`id` must be 1-64 letters, digits, '-' or '_'"],
+    ]);
   });
 
   it("strips a version from a stored module key", () => {
@@ -99,7 +136,7 @@ describe("parseAlertLayout", () => {
         catalog
       )
     );
-    expect(parsed.layout.widgets[0]?.widgetCanonicalId).toBe("woofx3:widget:text");
+    expect(parsed.layout.widgets.t1?.widget).toBe("woofx3:widget:text");
   });
 
   // An unusable layout means an alert never plays and the operator sees only a
@@ -135,7 +172,121 @@ describe("parseAlertLayout", () => {
 
   it("frames nothing when the catalog could not be loaded", () => {
     const parsed = usable(parseAlertLayout({ width: 10, height: 10, widgets: [layoutWidget("t1", "text")] }, []));
-    expect(parsed.layout.widgets).toEqual([]);
+    expect(parsed.layout.widgets).toEqual({});
+  });
+});
+
+describe("parseAlertLayout, composition shape", () => {
+  it("keeps placements and behaviors the strict registry accepts, under canonical widget ids", () => {
+    const layout = {
+      layout: { width: 1280, height: 720, backgroundColor: "#000" },
+      widgets: {
+        title: placementOf("text", "a1"),
+        sound: placementOf("audio", "a0", { widget: "woofx3:0.5.0:abc1234:widget:audio", visible: false }),
+      },
+      behaviors: { "title-in": fade("title", "in"), "title-out": fade("title", "out") },
+    };
+    const parsed = usable(parseAlertLayout(layout, catalog));
+    expect(parsed.rejected).toEqual([]);
+    expect(parsed.rejectedBehaviors).toEqual([]);
+    expect(parsed.layout).toEqual({
+      ...layout,
+      widgets: { ...layout.widgets, sound: { ...layout.widgets.sound, widget: "woofx3:widget:audio" } },
+    });
+  });
+
+  it("drops what the strict registry or the catalog refuses, a widget taking its behaviors with it", () => {
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          layout: { width: 100, height: 100 },
+          widgets: {
+            title: placementOf("text", "a0"),
+            clock: placementOf("clock", "a1"),
+            odd: placementOf("text", "a2", { unknownField: 1 }),
+            "bad id": placementOf("text", "a3"),
+          },
+          behaviors: {
+            "clock-in": fade("clock", "in"),
+            ghost: fade("nobody", "in"),
+            typo: { ...fade("title", "in"), params: { phase: "in", speed: 2 } },
+            typewriter: { ...fade("title", "in"), kind: "typewriter" },
+          },
+        },
+        catalog
+      )
+    );
+    expect(Object.keys(parsed.layout.widgets)).toEqual(["title"]);
+    expect(Object.keys(parsed.layout.behaviors)).toEqual(["typewriter"]);
+    expect(parsed.rejected).toEqual([
+      {
+        id: "bad id",
+        widgetCanonicalId: "woofx3:widget:text",
+        reason: "`id` must be 1-64 letters, digits, '-' or '_'",
+      },
+      { id: "clock", widgetCanonicalId: "woofx3:widget:clock", reason: "the widget cannot be placed in an alert" },
+      { id: "odd", widgetCanonicalId: "woofx3:widget:text", reason: "a placement has no field unknownField" },
+    ]);
+    expect(parsed.rejectedBehaviors).toEqual([
+      { id: "ghost", reason: 'targets no widget: "nobody"' },
+      { id: "typo", reason: "a fade transition has no param speed" },
+    ]);
+  });
+
+  it("drops a widget kind its widget does not declare, keeping host kinds and declared ones", () => {
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          layout: { width: 100, height: 100 },
+          widgets: { title: placementOf("text", "a0"), sound: placementOf("audio", "a1") },
+          behaviors: {
+            typewriter: { ...fade("title", "in"), kind: "typewriter" },
+            wave: { ...fade("title", "in"), kind: "wave" },
+            sparkle: { ...fade("title", "in"), type: "effect", kind: "typewriter", params: {} },
+            "sound-in": { ...fade("sound", "in"), kind: "typewriter" },
+            "sound-fade": fade("sound", "in"),
+          },
+        },
+        catalog
+      )
+    );
+    expect(Object.keys(parsed.layout.behaviors).sort()).toEqual(["sound-fade", "typewriter"]);
+    expect(parsed.rejectedBehaviors).toEqual([
+      { id: "sound-in", reason: 'the widget woofx3:widget:audio does not play the transition "typewriter"' },
+      { id: "sparkle", reason: 'the widget woofx3:widget:text does not play the effect "typewriter"' },
+      { id: "wave", reason: 'the widget woofx3:widget:text does not play the transition "wave"' },
+    ]);
+  });
+
+  it("lifts transitions stored on a placement into behaviors, as the registry migrates them", () => {
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          layout: { width: 100, height: 100 },
+          widgets: { title: placementOf("text", "a0", { extra: { transitionIn: { type: "fade", durationMs: 300 } } }) },
+        },
+        catalog
+      )
+    );
+    expect(parsed.layout.widgets.title?.extra).toEqual({});
+    expect(Object.values(parsed.layout.behaviors)).toMatchObject([
+      { type: "transition", kind: "fade", target: "title", params: { phase: "in" } },
+    ]);
+  });
+
+  it("refuses an envelope it cannot use, naming the field at fault", () => {
+    expect(parseAlertLayout({ layout: { width: 0, height: 10 }, widgets: {} }, catalog)).toEqual({
+      ok: false,
+      reason: "layout.layout.width must be a positive number, got number 0",
+    });
+    expect(parseAlertLayout({ layout: { width: 10, height: 10 }, widgets: [] }, catalog)).toEqual({
+      ok: false,
+      reason: "layout.widgets must be an object keyed by id, got an array",
+    });
+    expect(parseAlertLayout({ layout: { width: 10, height: 10 }, widgets: {}, behaviors: [] }, catalog)).toEqual({
+      ok: false,
+      reason: "layout.behaviors must be an object keyed by id, got an array",
+    });
   });
 });
 
@@ -176,9 +327,33 @@ describe("alert widget targeting", () => {
 
 describe("parseAlertDelivery", () => {
   it("restores a stored delivery and refuses anything else", () => {
-    const delivery = { alertId: "a1", layout: { width: 10, height: 10, widgets: [] }, event: null };
+    const delivery = {
+      alertId: "a1",
+      layout: { layout: { width: 10, height: 10 }, widgets: { t1: placementOf("text", "a0") }, behaviors: {} },
+      event: null,
+    };
     expect(parseAlertDelivery(delivery)).toEqual(delivery);
     expect(parseAlertDelivery({ layout: delivery.layout })).toBeNull();
+    expect(parseAlertDelivery({ alertId: "a1", layout: { width: 10 } })).toBeNull();
     expect(parseAlertDelivery("nope")).toBeNull();
+  });
+
+  it("converts a delivery recorded with a list-shaped layout", () => {
+    const stored = {
+      alertId: "a1",
+      layout: {
+        width: 10,
+        height: 10,
+        widgets: [{ ...layoutWidget("t1", "text"), position: { x: 1, y: 2, width: 3, height: 4 } }],
+      },
+      event: null,
+    };
+    expect(parseAlertDelivery(stored)?.layout.widgets.t1).toMatchObject({
+      widget: "woofx3:widget:text",
+      x: 1,
+      y: 2,
+      width: 3,
+      height: 4,
+    });
   });
 });
