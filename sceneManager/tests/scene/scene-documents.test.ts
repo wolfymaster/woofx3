@@ -793,8 +793,48 @@ describe("documentOf + storedSceneOf", () => {
     ]);
   });
 
+  it("lifts a placement's legacy transitions into behaviors, which the next write stores", () => {
+    const stored = {
+      id: "a",
+      widgetCanonicalId: "woofx3:widget:text",
+      transitionIn: { type: "fade", durationMs: 300 },
+      transitionOut: { type: "slide", durationMs: 500, direction: "left" },
+      futureField: 1,
+    };
+    const doc = documentOf(scene([instance("a", { stored })]));
+    expect(doc.widgets.a!.extra).toEqual({ futureField: 1 });
+    expect(doc.behaviors["a:transition-in"]).toMatchObject({
+      type: "transition",
+      kind: "fade",
+      target: "a",
+      timing: { anchor: "enter", durationMs: 300 },
+      params: { phase: "in" },
+    });
+    expect(doc.behaviors["a:transition-out"]).toMatchObject({
+      kind: "slide",
+      params: { phase: "out", direction: "left" },
+    });
+    const written = storedSceneOf(doc);
+    expect(JSON.parse(written.widgetsJson)[0].transitionIn).toBeUndefined();
+    expect(Object.keys(JSON.parse(written.behaviorsJson)).sort()).toEqual(["a:transition-in", "a:transition-out"]);
+  });
+
   it("gives a placement stored before the editor tracked these fields their defaults", () => {
     const doc = documentOf(scene([instance("a", { stored: { id: "a", widgetCanonicalId: "woofx3:widget:text" } })]));
     expect(doc.widgets.a).toMatchObject({ name: "", rotation: 0, opacity: 1, locked: false, extra: {} });
+  });
+});
+
+describe("SceneDocuments.published", () => {
+  it("gives the published document of an alert with its kind, live edits included", async () => {
+    const alert = { ...sceneRow("al1", [storedPlacement("a")], { width: 800, height: 200 }), kind: "alert" as const };
+    const { documents } = setup([alert]);
+
+    const first = await documents.published("al1");
+    expect(first).toMatchObject({ sceneId: "al1", kind: "alert", doc: { layout: { width: 800, height: 200 } } });
+
+    await documents.applyChange("al1", "published", () => [{ p: ["widgets", "a", "x"], od: 0, oi: 5 }]);
+    expect((await documents.published("al1"))!.doc.widgets.a!.x).toBe(5);
+    expect(await documents.published("missing")).toBeNull();
   });
 });

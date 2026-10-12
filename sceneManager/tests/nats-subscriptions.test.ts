@@ -150,7 +150,11 @@ describe("alert queue control subjects", () => {
       deliveryStore: deliveryStore as any,
       moduleState: {} as any,
       resolver: {} as any,
-      sceneDocuments: { refresh: async () => {}, applyChange: async () => ({ ok: true as const }) },
+      sceneDocuments: {
+        refresh: async () => {},
+        applyChange: async () => ({ ok: true as const }),
+        published: async () => null,
+      },
       editorToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
@@ -243,7 +247,11 @@ describe("module setting changes", () => {
         },
       } as any,
       resolver: {} as any,
-      sceneDocuments: { refresh: async () => {}, applyChange: async () => ({ ok: true as const }) },
+      sceneDocuments: {
+        refresh: async () => {},
+        applyChange: async () => ({ ok: true as const }),
+        published: async () => null,
+      },
       editorToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
@@ -315,7 +323,11 @@ describe("module setting changes", () => {
       deliveryStore: {} as never,
       moduleState: {} as never,
       resolver: {} as never,
-      sceneDocuments: { refresh: async () => {}, applyChange: async () => ({ ok: true as const }) },
+      sceneDocuments: {
+        refresh: async () => {},
+        applyChange: async () => ({ ok: true as const }),
+        published: async () => null,
+      },
       editorToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });

@@ -1,3 +1,4 @@
+import type { CompositionKind } from "@woofx3/api";
 import {
   type AckMessage,
   CLOSE_CODES,
@@ -38,6 +39,7 @@ import {
   zKey,
 } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
+import { STRICT_REGISTRY } from "@woofx3/scene/model";
 import { externalMediaUrls } from "../../public/scene-manager/media-url";
 import { themeOf } from "../../public/scene-manager/scene-update";
 import type { MediaProxy } from "./media-proxy";
@@ -136,6 +138,11 @@ function numberOr(value: unknown, fallback: number): number {
  * A scene state as a document: placements keyed by id, stacked as saved,
  * with the version's behaviors as stored. `inputs` is present only when the
  * composition declares some, so a scene's document has no such key.
+ *
+ * Entries stored in an older shape are brought to the current one by the
+ * registry's migrations (a placement's `transitionIn` / `transitionOut` in
+ * `extra` become transition behaviors), so everything past this point sees
+ * one shape. The stored row changes only when the document is next written.
  */
 export function documentOf(state: OverlaySceneState): SceneDocument {
   const widgets: SceneDocument["widgets"] = {};
@@ -168,7 +175,15 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
   if (state.inputs.length > 0) {
     doc.inputs = structuredClone(state.inputs);
   }
-  return doc;
+  return STRICT_REGISTRY.migrateDocument(doc);
+}
+
+/** A composition's published document and what it is, as `SceneDocuments.published` gives it. */
+export interface PublishedComposition {
+  sceneId: string;
+  name: string;
+  kind: CompositionKind;
+  doc: SceneDocument;
 }
 
 /**
@@ -309,6 +324,8 @@ interface ReframeState {
 interface HeldScene {
   sceneId: string;
   name: string;
+  /** Fixed when the row is created, so never changes while held. */
+  kind: CompositionKind;
   state: SequencerState;
   meta: Record<Version, Record<string, PlacementMeta>>;
   /** Placements whose meta was worked out without barkloader's answer, so
@@ -444,6 +461,20 @@ export class SceneDocuments {
       }
     }
     return urls;
+  }
+
+  /**
+   * A composition's published document and its kind, loading it when it is
+   * not held; null when there is no such row. The document is the one
+   * overlays and editors have, with live edits not yet written back.
+   */
+  async published(sceneId: string): Promise<PublishedComposition | null> {
+    await this.queues.get(sceneId);
+    const held = await this.hold(sceneId);
+    if (!held) {
+      return null;
+    }
+    return { sceneId, name: held.name, kind: held.kind, doc: structuredClone(held.state.docs.published) };
   }
 
   /** The number a version's overlays should be at; 0 when the scene is not held. */
@@ -1085,6 +1116,7 @@ export class SceneDocuments {
     const held: HeldScene = {
       sceneId,
       name: published.name,
+      kind: published.kind,
       state: createSequencerState({ docs, hasDraft: published.hasDraft === true, editorState: restored.state, epoch }),
       meta: { published: framing.published.meta, draft: framing.draft.meta },
       unframed: { published: framing.published.unframed, draft: framing.draft.unframed },
