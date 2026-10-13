@@ -54,3 +54,11 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `workflow.widgetVisibility` | The `scene.widget.visibility` workflow action, which saves a placement's `visible` on the published scene, and the `scenes` / `scenePlacements` field sources its form uses. See [Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility) |
 
 A test in `api/tests/engine-capabilities.test.ts` fails if an id in `ENGINE_CAPABILITIES` has no row here.
+
+## Gateable capabilities
+
+A gateable capability is one a managed engine uses only while its entitlement grant lists it. Every other capability is always available. See [Engine entitlements](./engine-entitlements.md) and, for how gating fits together across the dashboard, maintenance and the engine, [Feature gating](./feature-gating.md).
+
+None yet.
+
+The list above must match `GATEABLE_ENGINE_CAPABILITIES`, one `` - `id` `` line per capability, and the same test checks that it does.

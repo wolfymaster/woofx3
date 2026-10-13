@@ -2,7 +2,7 @@
 
 A capability says what an engine build *can* do. An entitlement says what one engine *may* do. A self-hosted engine may do everything its build can. A managed engine, provisioned by the woofx3 maintenance API, uses a gateable feature only when the dashboard has granted it, which lets a feature ship in an engine release while it rolls out, or stays on a plan, across managed engines.
 
-The engine enforces this itself. A UI that hides a feature is not enough: the dashboard holds each engine's API credentials, and so does every browser session that talks to the engine.
+[Feature gating](./feature-gating.md) shows how this fits with the dashboard's signer and its UI flags. The engine enforces this itself. A UI that hides a feature is not enough: the dashboard holds each engine's API credentials, and so does every browser session that talks to the engine.
 
 ## Governed and ungoverned engines
 
@@ -61,6 +61,6 @@ A client that predates entitlements reads only `capabilities` and hides a withhe
 
 ## Adding a gateable capability
 
-1. Add the id to `GATEABLE_ENGINE_CAPABILITIES`, and mark it gateable in the [capability table](./engine-capabilities.md#capability-ids).
+1. Add the id to `GATEABLE_ENGINE_CAPABILITIES`, and list it under [Gateable capabilities](./engine-capabilities.md#gateable-capabilities).
 2. Map each of its RPC methods in `GATED_METHODS`, and add a check in any other service that serves it.
 3. Make sure the dashboard grants it to the managed engines that should have it before the release that gates it reaches them. A governed engine withholds a newly gateable capability from the moment it runs the release that gates it.

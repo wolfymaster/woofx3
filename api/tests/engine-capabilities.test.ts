@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   ENGINE_CAPABILITIES,
   type EngineCapabilities,
+  GATEABLE_ENGINE_CAPABILITIES,
   supportedEngineCapabilities,
   UNADVERTISED_ENGINE_CAPABILITIES,
 } from "@woofx3/api";
@@ -83,5 +84,13 @@ describe("ENGINE_CAPABILITIES", () => {
     for (const id of Object.values(ENGINE_CAPABILITIES)) {
       expect(doc).toContain(`| \`${id}\` |`);
     }
+  });
+
+  test("lists exactly the gateable ids under Gateable capabilities", () => {
+    const doc = readFileSync(DOC_PATH, "utf8");
+    const section = doc.split("## Gateable capabilities")[1];
+    expect(section).toBeDefined();
+    const listed = [...(section ?? "").matchAll(/^- `([^`]+)`/gm)].map((match) => match[1]);
+    expect(listed.sort()).toEqual([...GATEABLE_ENGINE_CAPABILITIES].sort());
   });
 });
