@@ -83,6 +83,21 @@ browser
 The grant's shape is identical either way, so nothing upstream branches on
 the provider or the mode.
 
+A grant admits exactly the `size` it was requested for. On S3 the presigned
+PUT signs `Content-Length`; on the relay the token carries the length. A
+body of any other length is refused, so a grant can never store more than
+was asked for, and the resource row, created with that size before any
+bytes are sent, accounts for everything the grant can store.
+`getResourceUsage()` totals the sizes of every file row, pending ones
+included, for a caller that budgets storage. The grant's headers include
+`Content-Length`; a browser cannot set that header itself, and `fetch`
+sends the body's own length, which is the same value for the file the
+grant was requested for.
+
+A single grant is capped at 512 MiB when relayed and at R2's single-PUT
+limit (5 GiB less 5 MiB) when presigned; larger requests are refused when
+the grant is requested.
+
 ### Relay or direct
 
 `storage.uploadMode` chooses where the browser sends the bytes: `relay`
@@ -121,12 +136,13 @@ origin is privileged over another. An upload over the size limit is
 refused from its declared `Content-Length` before any bytes are relayed;
 the limit is 512 MiB, and sceneManager and barkloader must agree on it.
 
-The token is an HMAC-signed grant naming one key, one content type and one
-expiry (`barkloader/app/src/services/upload_token.rs`). Barkloader holds
-the signing secret and is the only party that judges it. It refuses a
-grant that is expired (410), forged or not under `user/` (403), sent as a
-content type other than the one it was issued for (403), or whose key
-already holds an object (409) — a stored object is the record that the
+The token is an HMAC-signed grant naming one key, one content type, one
+byte length and one expiry (`barkloader/app/src/services/upload_token.rs`).
+Barkloader holds the signing secret and is the only party that judges it.
+It refuses a grant that is expired (410), forged or not under `user/`
+(403), sent as a content type or declared length other than the one it was
+issued for (403), whose body runs past its length (413) or ends short of
+it (400), or whose key already holds an object (409) — a stored object is the record that the
 grant was spent, which makes a grant single-use without a table of spent
 tokens. Bytes are written to a staging file and renamed into place, so a
 key never names a half-written object.
@@ -147,7 +163,7 @@ caller uploads that frame as the video's poster, then asks for processing:
 ```
 browser
   ├─> capture one frame of the video as an image
-  ├─> api.requestPosterUploadUrl(resourceId, contentType)
+  ├─> api.requestPosterUploadUrl(resourceId, contentType, size)
   │     └─> POST {barkloaderUrl}/assets/poster-upload-url
   ├─> PUT {uploadUrl}  (the frame, exactly the grant's headers)
   └─> api.requestProcessing(resourceId)

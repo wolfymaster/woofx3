@@ -168,6 +168,7 @@ export const RPC_METHODS = [
   "requestUploadUrl",
   "completeUpload",
   "requestPosterUploadUrl",
+  "getResourceUsage",
   "createFolder",
   "getResource",
   "listResources",

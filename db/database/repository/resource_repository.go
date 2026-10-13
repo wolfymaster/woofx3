@@ -40,6 +40,22 @@ func (r *ResourceRepository) GetByID(id uuid.UUID) (*models.Resource, error) {
 	return &resource, nil
 }
 
+// Usage sums the size of every file row; folders hold no bytes.
+func (r *ResourceRepository) Usage() (bytes int64, files int64, err error) {
+	var totals struct {
+		Bytes int64
+		Files int64
+	}
+	err = r.db.Model(&models.Resource{}).
+		Select("COALESCE(SUM(size), 0) AS bytes, COUNT(*) AS files").
+		Where("is_folder = ?", false).
+		Scan(&totals).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	return totals.Bytes, totals.Files, nil
+}
+
 // ListFilter selects the direct children of one folder. A nil ParentID
 // with ParentSet true means "the root"; ParentSet false means "do not
 // filter on parent at all".

@@ -55,6 +55,11 @@ service ResourceService {
   // the repository keys that the caller must now delete from storage
   // -- db-proxy never talks to the object store itself.
   rpc DeleteResource(DeleteResourceRequest) returns (DeleteResourceResponse);
+
+  // Total size and count of every file resource, whatever its status: a
+  // pending or failed row reserves bytes its grant may already have
+  // stored. Folders hold no bytes and are not counted.
+  rpc GetResourceUsage(GetResourceUsageRequest) returns (GetResourceUsageResponse);
 }
 
 // Lifecycle of a resource row.
@@ -128,6 +133,14 @@ message GetResourceRequest {
   string id = 1;
   reserved 2;
   reserved "application_id";
+}
+
+message GetResourceUsageRequest {}
+
+message GetResourceUsageResponse {
+  common.ResponseStatus status = 1;
+  int64 bytes = 2;
+  int64 files = 3;
 }
 
 message ListResourcesRequest {

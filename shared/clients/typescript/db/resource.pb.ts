@@ -89,6 +89,14 @@ export interface GetResourceRequest {
   id: string;
 }
 
+export interface GetResourceUsageRequest {}
+
+export interface GetResourceUsageResponse {
+  status: common.ResponseStatus;
+  bytes: bigint;
+  files: bigint;
+}
+
 export interface ListResourcesRequest {
   /**
    * Unset lists the root. Set lists that folder's direct children.
@@ -251,6 +259,23 @@ export async function DeleteResource(
   return DeleteResourceResponse.decode(response);
 }
 
+/**
+ * Total size and count of every file resource, whatever its status: a
+ * pending or failed row reserves bytes its grant may already have
+ * stored. Folders hold no bytes and are not counted.
+ */
+export async function GetResourceUsage(
+  getResourceUsageRequest: GetResourceUsageRequest,
+  config?: ClientConfiguration,
+): Promise<GetResourceUsageResponse> {
+  const response = await PBrequest(
+    "/resource.ResourceService/GetResourceUsage",
+    GetResourceUsageRequest.encode(getResourceUsageRequest),
+    config,
+  );
+  return GetResourceUsageResponse.decode(response);
+}
+
 //========================================//
 //      ResourceService JSON Client       //
 //========================================//
@@ -352,6 +377,23 @@ export async function DeleteResourceJSON(
   return DeleteResourceResponseJSON.decode(response);
 }
 
+/**
+ * Total size and count of every file resource, whatever its status: a
+ * pending or failed row reserves bytes its grant may already have
+ * stored. Folders hold no bytes and are not counted.
+ */
+export async function GetResourceUsageJSON(
+  getResourceUsageRequest: GetResourceUsageRequest,
+  config?: ClientConfiguration,
+): Promise<GetResourceUsageResponse> {
+  const response = await JSONrequest(
+    "/resource.ResourceService/GetResourceUsage",
+    GetResourceUsageRequestJSON.encode(getResourceUsageRequest),
+    config,
+  );
+  return GetResourceUsageResponseJSON.decode(response);
+}
+
 //========================================//
 //            ResourceService             //
 //========================================//
@@ -429,6 +471,15 @@ export interface ResourceService<Context = unknown> {
     deleteResourceRequest: DeleteResourceRequest,
     context: Context,
   ) => Promise<DeleteResourceResponse> | DeleteResourceResponse;
+  /**
+   * Total size and count of every file resource, whatever its status: a
+   * pending or failed row reserves bytes its grant may already have
+   * stored. Folders hold no bytes and are not counted.
+   */
+  GetResourceUsage: (
+    getResourceUsageRequest: GetResourceUsageRequest,
+    context: Context,
+  ) => Promise<GetResourceUsageResponse> | GetResourceUsageResponse;
 }
 
 export function createResourceService<Context>(
@@ -489,6 +540,18 @@ export function createResourceService<Context>(
         output: {
           protobuf: DeleteResourceResponse,
           json: DeleteResourceResponseJSON,
+        },
+      },
+      GetResourceUsage: {
+        name: "GetResourceUsage",
+        handler: service.GetResourceUsage,
+        input: {
+          protobuf: GetResourceUsageRequest,
+          json: GetResourceUsageRequestJSON,
+        },
+        output: {
+          protobuf: GetResourceUsageResponse,
+          json: GetResourceUsageResponseJSON,
         },
       },
     },
@@ -923,6 +986,139 @@ export const GetResourceRequest = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetResourceUsageRequest = {
+  /**
+   * Serializes GetResourceUsageRequest to protobuf.
+   */
+  encode: function (_msg?: PartialDeep<GetResourceUsageRequest>): Uint8Array {
+    return new Uint8Array();
+  },
+
+  /**
+   * Deserializes GetResourceUsageRequest from protobuf.
+   */
+  decode: function (_bytes?: ByteSource): GetResourceUsageRequest {
+    return {};
+  },
+
+  /**
+   * Initializes GetResourceUsageRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetResourceUsageRequest>,
+  ): GetResourceUsageRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<GetResourceUsageRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    _msg: GetResourceUsageRequest,
+    _reader: protoscript.BinaryReader,
+  ): GetResourceUsageRequest {
+    return _msg;
+  },
+};
+
+export const GetResourceUsageResponse = {
+  /**
+   * Serializes GetResourceUsageResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetResourceUsageResponse>): Uint8Array {
+    return GetResourceUsageResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetResourceUsageResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetResourceUsageResponse {
+    return GetResourceUsageResponse._readMessage(
+      GetResourceUsageResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetResourceUsageResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetResourceUsageResponse>,
+  ): GetResourceUsageResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      bytes: 0n,
+      files: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetResourceUsageResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.bytes) {
+      writer.writeInt64String(2, msg.bytes.toString() as any);
+    }
+    if (msg.files) {
+      writer.writeInt64String(3, msg.files.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetResourceUsageResponse,
+    reader: protoscript.BinaryReader,
+  ): GetResourceUsageResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          msg.bytes = BigInt(reader.readInt64String());
+          break;
+        }
+        case 3: {
+          msg.files = BigInt(reader.readInt64String());
           break;
         }
         default: {
@@ -1864,6 +2060,129 @@ export const GetResourceRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
+    }
+    return msg;
+  },
+};
+
+export const GetResourceUsageRequestJSON = {
+  /**
+   * Serializes GetResourceUsageRequest to JSON.
+   */
+  encode: function (_msg?: PartialDeep<GetResourceUsageRequest>): string {
+    return "{}";
+  },
+
+  /**
+   * Deserializes GetResourceUsageRequest from JSON.
+   */
+  decode: function (_json?: string): GetResourceUsageRequest {
+    return {};
+  },
+
+  /**
+   * Initializes GetResourceUsageRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetResourceUsageRequest>,
+  ): GetResourceUsageRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<GetResourceUsageRequest>,
+  ): Record<string, unknown> {
+    return {};
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetResourceUsageRequest,
+    _json: any,
+  ): GetResourceUsageRequest {
+    return msg;
+  },
+};
+
+export const GetResourceUsageResponseJSON = {
+  /**
+   * Serializes GetResourceUsageResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<GetResourceUsageResponse>): string {
+    return JSON.stringify(GetResourceUsageResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetResourceUsageResponse from JSON.
+   */
+  decode: function (json: string): GetResourceUsageResponse {
+    return GetResourceUsageResponseJSON._readMessage(
+      GetResourceUsageResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetResourceUsageResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetResourceUsageResponse>,
+  ): GetResourceUsageResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      bytes: 0n,
+      files: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetResourceUsageResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.bytes) {
+      json["bytes"] = String(msg.bytes);
+    }
+    if (msg.files) {
+      json["files"] = String(msg.files);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetResourceUsageResponse,
+    json: any,
+  ): GetResourceUsageResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _bytes_ = json["bytes"];
+    if (_bytes_) {
+      msg.bytes = BigInt(_bytes_);
+    }
+    const _files_ = json["files"];
+    if (_files_) {
+      msg.files = BigInt(_files_);
     }
     return msg;
   },

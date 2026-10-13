@@ -173,8 +173,8 @@ describe("requestUploadUrl", () => {
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/upload-url");
     const sent = JSON.parse(String(init?.body)) as Record<string, unknown> & { resource_id: string };
-    expect(sent).toMatchObject({ file_name: "clip.png", content_type: "image/png" });
-    expect(Object.keys(sent).sort()).toEqual(["content_type", "file_name", "resource_id"]);
+    expect(sent).toMatchObject({ file_name: "clip.png", content_type: "image/png", content_length: 2048 });
+    expect(Object.keys(sent).sort()).toEqual(["content_length", "content_type", "file_name", "resource_id"]);
     expect(sent.resource_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     // db-proxy refuses a file row without its key, so the row must be
@@ -205,8 +205,8 @@ describe("requestUploadUrl", () => {
     );
     const api = host({ db: { createResource }, barkloaderRequest: grantingBarkloader() });
 
-    await api.requestUploadUrl({ name: "a.png", contentType: "image/png" });
-    await api.requestUploadUrl({ name: "b.png", contentType: "image/png" });
+    await api.requestUploadUrl({ name: "a.png", contentType: "image/png", size: 1024 });
+    await api.requestUploadUrl({ name: "b.png", contentType: "image/png", size: 1024 });
 
     const ids = createResource.mock.calls.map((call) => call[0].id);
     expect(new Set(ids).size).toBe(2);
@@ -218,9 +218,9 @@ describe("requestUploadUrl", () => {
     );
     const api = host({ db: { createResource }, barkloaderRequest: grantingBarkloader() });
 
-    await api.requestUploadUrl({ name: "a.mp4", contentType: "video/mp4" });
-    await api.requestUploadUrl({ name: "b.mp3", contentType: "audio/mpeg" });
-    await api.requestUploadUrl({ name: "c.bin", contentType: "application/octet-stream" });
+    await api.requestUploadUrl({ name: "a.mp4", contentType: "video/mp4", size: 1024 });
+    await api.requestUploadUrl({ name: "b.mp3", contentType: "audio/mpeg", size: 1024 });
+    await api.requestUploadUrl({ name: "c.bin", contentType: "application/octet-stream", size: 1024 });
 
     const kinds = createResource.mock.calls.map((call) => call[0].kind);
     expect(kinds).toEqual(["video", "audio", "other"]);
@@ -244,9 +244,23 @@ describe("requestUploadUrl", () => {
       ),
     });
 
-    await expect(api.requestUploadUrl({ name: "clip.png", contentType: "image/png" })).rejects.toThrow(
+    await expect(api.requestUploadUrl({ name: "clip.png", contentType: "image/png", size: 1024 })).rejects.toThrow(
       "Upload grant repository key is not under"
     );
+    expect(createResource).not.toHaveBeenCalled();
+  });
+
+  test("rejects a size that no body can have before asking for a grant", async () => {
+    const createResource = mock(async (_req: unknown) => readyRow());
+    const barkloaderRequest = grantingBarkloader();
+    const api = host({ db: { createResource }, barkloaderRequest });
+
+    for (const size of [0, -1, 1.5, Number.NaN, 2 ** 53]) {
+      await expect(api.requestUploadUrl({ name: "clip.png", contentType: "image/png", size })).rejects.toThrow(
+        "size must be a whole number of bytes"
+      );
+    }
+    expect(barkloaderRequest).not.toHaveBeenCalled();
     expect(createResource).not.toHaveBeenCalled();
   });
 
@@ -255,7 +269,9 @@ describe("requestUploadUrl", () => {
     const barkloaderRequest = grantingBarkloader();
     const api = host({ db: { createResource }, barkloaderRequest });
 
-    await expect(api.requestUploadUrl({ name: "", contentType: "image/png" })).rejects.toThrow("name is required");
+    await expect(api.requestUploadUrl({ name: "", contentType: "image/png", size: 1024 })).rejects.toThrow(
+      "name is required"
+    );
     expect(barkloaderRequest).not.toHaveBeenCalled();
     expect(createResource).not.toHaveBeenCalled();
   });
@@ -400,13 +416,14 @@ describe("processing", () => {
       barkloaderRequest,
     });
 
-    const result = await api.requestPosterUploadUrl("res-1", "image/png");
+    const result = await api.requestPosterUploadUrl("res-1", "image/png", 4096);
 
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/poster-upload-url");
     expect(JSON.parse(String(init?.body))).toEqual({
       repository_key: "user/res-1/clip.mp4",
       content_type: "image/png",
+      content_length: 4096,
     });
     expect(result).toEqual({
       uploadUrl: grant.uploadUrl,
@@ -420,7 +437,7 @@ describe("processing", () => {
     const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response("{}"));
     const api = host({ db: { getResource: mock(async (_req: any) => readyRow()) }, barkloaderRequest });
 
-    await expect(api.requestPosterUploadUrl("res-1", "image/png")).rejects.toThrow("Only video resources");
+    await expect(api.requestPosterUploadUrl("res-1", "image/png", 4096)).rejects.toThrow("Only video resources");
     expect(barkloaderRequest).not.toHaveBeenCalled();
   });
 
@@ -428,8 +445,24 @@ describe("processing", () => {
     const getResource = mock(async (_req: any) => readyRow({ kind: "video" }));
     const api = host({ db: { getResource } });
 
-    await expect(api.requestPosterUploadUrl("res-1", "video/mp4")).rejects.toThrow("must be an image");
+    await expect(api.requestPosterUploadUrl("res-1", "video/mp4", 4096)).rejects.toThrow("must be an image");
     expect(getResource).not.toHaveBeenCalled();
+  });
+
+  test("a poster of a size no body can have is refused before the row is read", async () => {
+    const getResource = mock(async (_req: any) => readyRow({ kind: "video" }));
+    const api = host({ db: { getResource } });
+
+    await expect(api.requestPosterUploadUrl("res-1", "image/png", 0)).rejects.toThrow(
+      "size must be a whole number of bytes"
+    );
+    expect(getResource).not.toHaveBeenCalled();
+  });
+
+  test("getResourceUsage reports db-proxy's totals as numbers", async () => {
+    const api = host({ db: { getResourceUsage: mock(async () => ({ bytes: 5_000_000n, files: 3n })) } });
+
+    expect(await api.getResourceUsage()).toEqual({ bytes: 5_000_000, files: 3 });
   });
 
   test("a completed job records the thumbnail key", async () => {
