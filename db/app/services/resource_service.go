@@ -300,6 +300,18 @@ func (s *resourceService) DeleteResource(ctx context.Context, req *client.Delete
 	}, nil
 }
 
+func (s *resourceService) GetResourceUsage(ctx context.Context, req *client.GetResourceUsageRequest) (*client.GetResourceUsageResponse, error) {
+	bytes, files, err := s.repo.Usage()
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to total resources: %w", err))
+	}
+	return &client.GetResourceUsageResponse{
+		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
+		Bytes:  bytes,
+		Files:  files,
+	}, nil
+}
+
 // resolveParent turns the wire's optional parent_id into a validated
 // pointer. Absent or empty means the root. A present id must name an
 // existing folder — pointing a resource at a

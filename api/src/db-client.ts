@@ -232,6 +232,12 @@ export class DbClient {
     return response.repositoryKeys ?? [];
   }
 
+  async getResourceUsage(): Promise<{ bytes: bigint; files: bigint }> {
+    const response = await resource.GetResourceUsage({}, this.config);
+    unwrapVoid("getResourceUsage", response);
+    return { bytes: response.bytes ?? 0n, files: response.files ?? 0n };
+  }
+
   async createGroup(req: group.CreateGroupRequest): Promise<group.Group> {
     const response = await group.CreateGroup(req, this.config);
     return unwrap("createGroup", response, response.group);

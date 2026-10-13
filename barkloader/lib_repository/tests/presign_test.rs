@@ -39,6 +39,7 @@ async fn file_backend_reports_it_cannot_sign() {
         .presign_upload(UploadRequest {
             key: "user/app-1/res-1/photo.png",
             content_type: Some("image/png"),
+            content_length: 1024,
             ttl: Duration::from_secs(300),
         })
         .await
@@ -57,6 +58,7 @@ async fn s3_backend_signs_a_put_url_for_the_key() {
         .presign_upload(UploadRequest {
             key: "user/app-1/res-1/photo.png",
             content_type: Some("image/png"),
+            content_length: 1024,
             ttl: Duration::from_secs(300),
         })
         .await
@@ -78,11 +80,39 @@ async fn s3_backend_signs_a_put_url_for_the_key() {
         url.contains("X-Amz-Expires=300"),
         "presigned url must carry the requested TTL: {url}"
     );
+    assert!(
+        url.contains("X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"),
+        "presigned url must sign the length and type: {url}"
+    );
     // Only signature-covered headers are echoed back; sending an extra
     // header would break the signature the client is handed.
     assert_eq!(
         headers,
-        vec![("Content-Type".to_string(), "image/png".to_string())]
+        vec![
+            ("Content-Length".to_string(), "1024".to_string()),
+            ("Content-Type".to_string(), "image/png".to_string()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn s3_presign_signature_is_bound_to_the_length() {
+    let repo = s3_repo(s3_config()).await;
+    let presign = |content_length| {
+        repo.presign_upload(UploadRequest {
+            key: "user/app-1/res-1/a.png",
+            content_type: Some("image/png"),
+            content_length,
+            ttl: Duration::from_secs(300),
+        })
+    };
+
+    let small = presign(1024).await.expect("presign small");
+    let large = presign(1024 * 1024).await.expect("presign large");
+
+    assert_ne!(
+        small, large,
+        "a grant for one length must not be reusable for another"
     );
 }
 
@@ -96,6 +126,7 @@ async fn s3_presign_applies_the_configured_prefix() {
         .presign_upload(UploadRequest {
             key: "user/app-1/res-1/clip.mp4",
             content_type: Some("video/mp4"),
+            content_length: 1024,
             ttl: Duration::from_secs(60),
         })
         .await
@@ -111,13 +142,14 @@ async fn s3_presign_applies_the_configured_prefix() {
 }
 
 #[tokio::test]
-async fn s3_presign_without_content_type_returns_no_headers() {
+async fn s3_presign_without_content_type_requires_only_the_length() {
     let repo = s3_repo(s3_config()).await;
 
     let grant = repo
         .presign_upload(UploadRequest {
             key: "user/app-1/res-1/blob.bin",
             content_type: None,
+            content_length: 1024,
             ttl: Duration::from_secs(60),
         })
         .await
@@ -126,9 +158,10 @@ async fn s3_presign_without_content_type_returns_no_headers() {
     let UploadEndpoint::Presigned { headers, .. } = grant else {
         panic!("expected a presigned grant");
     };
-    assert!(
-        headers.is_empty(),
-        "no content type means no required headers"
+    assert_eq!(
+        headers,
+        vec![("Content-Length".to_string(), "1024".to_string())],
+        "no content type means the length is the only required header"
     );
 }
 
@@ -140,6 +173,7 @@ async fn s3_presign_signature_is_bound_to_the_key() {
         .presign_upload(UploadRequest {
             key: "user/app-1/res-1/a.png",
             content_type: Some("image/png"),
+            content_length: 1024,
             ttl: Duration::from_secs(300),
         })
         .await
@@ -148,6 +182,7 @@ async fn s3_presign_signature_is_bound_to_the_key() {
         .presign_upload(UploadRequest {
             key: "user/app-1/res-2/b.png",
             content_type: Some("image/png"),
+            content_length: 1024,
             ttl: Duration::from_secs(300),
         })
         .await

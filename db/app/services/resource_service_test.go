@@ -413,3 +413,42 @@ func TestDeleteResourceReturnsSubtreeRepositoryKeys(t *testing.T) {
 		t.Fatalf("total = %d, want 0 after deleting the whole subtree", list.Total)
 	}
 }
+
+func TestGetResourceUsageCountsEveryFileWhateverItsStatus(t *testing.T) {
+	svc := newResourceSvc(t)
+	ctx := context.Background()
+
+	empty, err := svc.GetResourceUsage(ctx, &client.GetResourceUsageRequest{})
+	if err != nil {
+		t.Fatalf("GetResourceUsage on an empty table: %v", err)
+	}
+	if empty.Bytes != 0 || empty.Files != 0 {
+		t.Fatalf("empty usage = %d bytes in %d files, want 0 and 0", empty.Bytes, empty.Files)
+	}
+
+	folder := createFolder(t, svc, "clips", nil)
+	pending := createUpload(t, svc, "one.png", models.ResourceKindImage, &folder.Id)
+	createUpload(t, svc, "two.png", models.ResourceKindImage, nil)
+	ready := models.ResourceStatusReady
+	size := int64(1000)
+	if _, err := svc.UpdateResource(ctx, &client.UpdateResourceRequest{
+		Id:     pending.Id,
+		Status: &ready,
+		Size:   &size,
+	}); err != nil {
+		t.Fatalf("confirm upload: %v", err)
+	}
+
+	usage, err := svc.GetResourceUsage(ctx, &client.GetResourceUsageRequest{})
+	if err != nil {
+		t.Fatalf("GetResourceUsage: %v", err)
+	}
+	// One ready file of 1000 bytes and one pending file still holding the
+	// 128 bytes it was created with; the folder adds nothing.
+	if usage.Bytes != 1128 {
+		t.Fatalf("bytes = %d, want 1128", usage.Bytes)
+	}
+	if usage.Files != 2 {
+		t.Fatalf("files = %d, want 2", usage.Files)
+	}
+}

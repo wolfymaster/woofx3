@@ -80,6 +80,18 @@ pub struct GetResourceRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetResourceUsageRequest {
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetResourceUsageResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(int64, tag="2")]
+    pub bytes: i64,
+    #[prost(int64, tag="3")]
+    pub files: i64,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListResourcesRequest {
     /// Unset lists the root. Set lists that folder's direct children.

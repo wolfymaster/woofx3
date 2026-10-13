@@ -3,7 +3,7 @@
 //! S3-compatible backends sign their own upload URLs; local disk cannot
 //! (see `lib_repository::UploadEndpoint`). This module is the local
 //! equivalent: a stateless, HMAC-signed capability naming exactly one
-//! repository key, one content type, and one expiry.
+//! repository key, one content type, one byte length, and one expiry.
 //!
 //! Stateless on purpose. A server-side table of outstanding tokens would
 //! have to survive restarts, be swept for expiry, and be shared if
@@ -28,6 +28,9 @@ pub struct UploadGrant {
     /// Content type the client declared. `None` means the client did
     /// not declare one; the grant still pins the key.
     pub content_type: Option<String>,
+    /// Exact byte length the body must have, as an S3 presigned PUT
+    /// signs it, so a grant stores what was asked for and nothing larger.
+    pub content_length: u64,
     /// Unix seconds. Absolute rather than a duration so a token cannot
     /// be replayed indefinitely by withholding it.
     pub expires_at: i64,
@@ -58,6 +61,7 @@ pub fn issue(
     secret: &str,
     key: &str,
     content_type: Option<&str>,
+    content_length: u64,
     ttl: Duration,
     now: i64,
 ) -> Result<(String, UploadGrant), anyhow::Error> {
@@ -67,10 +71,14 @@ pub fn issue(
     if key.is_empty() {
         anyhow::bail!("upload token key must not be empty");
     }
+    if content_length == 0 {
+        anyhow::bail!("upload token content length must be at least 1");
+    }
 
     let grant = UploadGrant {
         key: key.to_string(),
         content_type: content_type.map(|c| c.to_string()),
+        content_length,
         expires_at: now.saturating_add(ttl.as_secs() as i64),
     };
     let payload = serde_json::to_vec(&grant)?;
@@ -126,6 +134,7 @@ mod tests {
             SECRET,
             "user/res-1/photo.png",
             Some("image/png"),
+            4096,
             Duration::from_secs(300),
             NOW,
         )
@@ -135,6 +144,7 @@ mod tests {
         assert_eq!(verified, issued);
         assert_eq!(verified.key, "user/res-1/photo.png");
         assert_eq!(verified.content_type.as_deref(), Some("image/png"));
+        assert_eq!(verified.content_length, 4096);
         assert_eq!(verified.expires_at, NOW + 300);
     }
 
@@ -144,6 +154,7 @@ mod tests {
             SECRET,
             "user/res-1/blob.bin",
             None,
+            4096,
             Duration::from_secs(60),
             NOW,
         )
@@ -158,6 +169,7 @@ mod tests {
             SECRET,
             "user/res-1/photo.png",
             Some("image/png"),
+            4096,
             Duration::from_secs(300),
             NOW,
         )
@@ -180,6 +192,7 @@ mod tests {
             SECRET,
             "user/res-1/photo.png",
             Some("image/png"),
+            4096,
             Duration::from_secs(300),
             NOW,
         )
@@ -196,6 +209,7 @@ mod tests {
             SECRET,
             "user/res-1/photo.png",
             Some("image/png"),
+            4096,
             Duration::from_secs(300),
             NOW,
         )
@@ -207,6 +221,7 @@ mod tests {
         let forged_payload = serde_json::to_vec(&UploadGrant {
             key: "user/res-2/photo.png".to_string(),
             content_type: Some("image/png".to_string()),
+            content_length: 4096,
             expires_at: NOW + 300,
         })
         .expect("encode");
@@ -236,8 +251,33 @@ mod tests {
     }
 
     #[test]
-    fn empty_secret_or_key_fails_fast() {
-        assert!(issue("", "user/a/b/c.png", None, Duration::from_secs(60), NOW).is_err());
-        assert!(issue(SECRET, "", None, Duration::from_secs(60), NOW).is_err());
+    fn tampering_with_the_length_is_rejected() {
+        let (token, issued) = issue(
+            SECRET,
+            "user/res-1/photo.png",
+            Some("image/png"),
+            4096,
+            Duration::from_secs(300),
+            NOW,
+        )
+        .expect("issue");
+        let (_, signature) = token.split_once('.').expect("token shape");
+
+        let forged_payload = serde_json::to_vec(&UploadGrant {
+            content_length: 1 << 40,
+            ..issued
+        })
+        .expect("encode");
+        let forged = format!("{}.{}", URL_SAFE_NO_PAD.encode(forged_payload), signature);
+
+        assert_eq!(verify(SECRET, &forged, NOW), Err(TokenError::BadSignature));
+    }
+
+    #[test]
+    fn empty_secret_key_or_length_fails_fast() {
+        let ttl = Duration::from_secs(60);
+        assert!(issue("", "user/a/b/c.png", None, 1, ttl, NOW).is_err());
+        assert!(issue(SECRET, "", None, 1, ttl, NOW).is_err());
+        assert!(issue(SECRET, "user/a/b/c.png", None, 0, ttl, NOW).is_err());
     }
 }
