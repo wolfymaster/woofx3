@@ -6,6 +6,7 @@ import { analyticsRoutes } from "./analytics";
 import { commandsRoutes } from "./commands";
 import { compositionsRoutes } from "./compositions";
 import { configBundlesRoutes } from "./config-bundles";
+import { GATED_METHODS } from "../entitlements";
 import type { ApiRouteHost } from "./context";
 import { dashboardRoutes } from "./dashboard";
 import { dashboardStatsRoutes } from "./dashboard-stats";
@@ -66,7 +67,9 @@ type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
  * Wraps every capnweb route method in a span. Applying it once here, at
  * registration, keeps all 18 route modules free of telemetry boilerplate and
  * guarantees a new route is instrumented the moment it is registered.
- * `withSpan` is a pass-through while tracing is disabled.
+ * `withSpan` is a pass-through while tracing is disabled. A method in
+ * GATED_METHODS is refused here while its capability is withheld, so no
+ * route can forget the check.
  */
 function instrumentRoutes<T extends Record<string, unknown>>(routes: T): T {
   const instrumented: Record<string, unknown> = {};
@@ -76,8 +79,15 @@ function instrumentRoutes<T extends Record<string, unknown>>(routes: T): T {
       continue;
     }
     const method = value as RouteMethod;
+    const capability = (GATED_METHODS as Record<string, string | undefined>)[name];
     instrumented[name] = function instrumentedRoute(this: ApiRouteHost, ...args: unknown[]): Promise<unknown> {
-      return withSpan(`api.${name}`, () => method.apply(this, args), {
+      const call = async () => {
+        if (capability !== undefined) {
+          await this.entitlements.require(capability);
+        }
+        return method.apply(this, args);
+      };
+      return withSpan(`api.${name}`, call, {
         attributes: { "rpc.method": name, "rpc.system": "capnweb" },
         kind: SpanKind.SERVER,
       });

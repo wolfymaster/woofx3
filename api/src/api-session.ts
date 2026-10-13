@@ -117,6 +117,7 @@ export const RPC_METHODS = [
   "ping",
   "getEngineInfo",
   "getEngineCapabilities",
+  "setEntitlementGrant",
   "setOverlayPublicUrl",
   "getStorageConfig",
   "setStorageConfig",

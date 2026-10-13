@@ -47,7 +47,19 @@ export const engineRoutes = routeModule({
    * without probing methods or comparing image tags.
    */
   async getEngineCapabilities(): Promise<EngineCapabilities> {
-    return { schema: ENGINE_CAPABILITIES_SCHEMA, capabilities: supportedEngineCapabilities() };
+    const supported = supportedEngineCapabilities();
+    const withheld = await this.entitlements.withheld(supported);
+    return {
+      schema: ENGINE_CAPABILITIES_SCHEMA,
+      capabilities: supported.filter((id) => !withheld.includes(id)),
+      withheld,
+    };
+  },
+
+  async setEntitlementGrant(token: string): Promise<{ seq: number }> {
+    const result = await this.entitlements.setGrant(token);
+    this.logger.info("Entitlement grant stored", { seq: result.seq });
+    return result;
   },
 
   /**

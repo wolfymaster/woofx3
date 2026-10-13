@@ -12,6 +12,12 @@ export interface ApiConfig {
    */
   engineName: string | null;
   /**
+   * Ed25519 keys entitlement grants are signed with
+   * (`WOOFX3_ENTITLEMENT_PUBLIC_KEYS`, comma-separated `kid:key`), or null on
+   * an engine nobody governs, which withholds no feature.
+   */
+  entitlementPublicKeys: string | null;
+  /**
    * Secret a caller must present to register (`WOOFX3_REGISTRATION_TOKEN`),
    * or null when registration is open.
    */
@@ -58,6 +64,7 @@ export const ApiEnvSchema = z
     apiHost: z.string().optional(),
     woofx3Version: z.union([z.string(), z.number()]).optional(),
     woofx3EngineName: z.string().optional(),
+    woofx3EntitlementPublicKeys: z.string().optional(),
     woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
@@ -109,6 +116,10 @@ export function loadConfig(): ApiConfig {
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
   const engineName = String(config.woofx3EngineName ?? "").trim() || null;
+  const entitlementPublicKeys = String(config.woofx3EntitlementPublicKeys ?? "").trim() || null;
+  if (entitlementPublicKeys !== null && engineName === null) {
+    throw new Error("WOOFX3_ENTITLEMENT_PUBLIC_KEYS needs WOOFX3_ENGINE_NAME: a grant names the engine it is for");
+  }
   const registrationToken =
     config.woofx3RegistrationToken === undefined || String(config.woofx3RegistrationToken).trim() === ""
       ? null
@@ -159,6 +170,7 @@ export function loadConfig(): ApiConfig {
   return {
     version,
     engineName,
+    entitlementPublicKeys,
     registrationToken,
     port,
     host,

@@ -119,11 +119,25 @@ export const ENGINE_CAPABILITIES_SCHEMA = 1;
  * Returned by `getEngineCapabilities()`. `capabilities` is sorted and
  * unique. It is typed `string[]` rather than `EngineCapability[]` because a
  * client built against an older contract must tolerate ids it does not know.
+ *
+ * `withheld` lists ids this build supports but this engine may not use,
+ * because it is a managed engine whose entitlement grant does not include
+ * them. They are left out of `capabilities`, so a client that predates
+ * entitlements hides them too. Absent from engines that predate
+ * entitlements, which withhold nothing.
  */
 export interface EngineCapabilities {
   schema: typeof ENGINE_CAPABILITIES_SCHEMA;
   capabilities: string[];
+  withheld?: string[];
 }
+
+/**
+ * Capabilities a managed engine uses only when its entitlement grant lists
+ * them. A self-hosted engine, which has no entitlement keys configured, uses
+ * every capability its build has. See docs/services/engine-entitlements.md.
+ */
+export const GATEABLE_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([]);
 
 /**
  * Ids declared here that this build does not advertise, so clients can name

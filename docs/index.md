@@ -12,6 +12,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 
 - **[Engine integrity](/services/engine-integrity)** - Modules request, the engine acts: module code never drives the bus directly
 - **[Engine capabilities](/services/engine-capabilities)** - How the UI detects which features a connected engine supports, and the rule for adding capability ids
+- **[Engine entitlements](/services/engine-entitlements)** - Which gateable features a managed engine may use, from a grant the dashboard signs
 - **[CloudEvents](/services/cloudevents)** - Inter-service messaging format and the canonical NATS subject list
 - **[Widget event channel](/services/widget-events)** - The unified `widget.event` channel and `widgetHost` API contract
 - **[Widget storage](/services/widget-storage)** - Design: how an overlay widget reads and follows a module's stored values

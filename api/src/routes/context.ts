@@ -1,3 +1,4 @@
+import { GATEABLE_ENGINE_CAPABILITIES } from "@woofx3/api";
 import type {
   CommandCreatedEvent,
   CommandDeletedEvent,
@@ -26,6 +27,8 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
+import type { EntitlementPublicKeys } from "../entitlement-grant";
+import { ENTITLEMENT_GRANT_SETTING, Entitlements } from "../entitlements";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
@@ -62,6 +65,10 @@ export interface ApiOptions {
   logger: SharedLogger;
   /** The running release (`WOOFX3_VERSION`); "dev" for an unversioned build. */
   version?: string;
+  /** `WOOFX3_ENGINE_NAME`, which an entitlement grant must be addressed to. */
+  engineName?: string | null;
+  /** Keys entitlement grants are verified with; null or absent on an ungoverned engine. */
+  entitlementKeys?: EntitlementPublicKeys | null;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -86,6 +93,8 @@ export class ApiRouteHost extends RpcTarget {
   readonly twitchToken: TwitchTokenSource;
   /** The companion bridge's credential. An instance property for the same reason as `twitchToken`. */
   readonly relayCredential: RelayCredentialSource;
+  /** Which gateable features this engine may use. An instance property for the same reason as `twitchToken`. */
+  readonly entitlements: Entitlements;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -369,6 +378,18 @@ export class ApiRouteHost extends RpcTarget {
       readConfig: async () => readStoredRelayConfig(await this.db.getSetting(RELAY_CONFIG_SETTING)),
       writeConfig: (config) => this.writeRelayConfig(config),
       clearConfig: () => this.deleteRelayConfig(),
+      now: () => Date.now(),
+    });
+    this.entitlements = new Entitlements({
+      keys: opts.entitlementKeys ?? null,
+      audience: opts.engineName ?? null,
+      gateable: GATEABLE_ENGINE_CAPABILITIES,
+      readGrant: () => this.db.getSetting(ENTITLEMENT_GRANT_SETTING),
+      writeGrant: async (token) => {
+        if (!(await this.db.trySetSetting(ENTITLEMENT_GRANT_SETTING, token))) {
+          throw new Error(`could not store ${ENTITLEMENT_GRANT_SETTING}`);
+        }
+      },
       now: () => Date.now(),
     });
     this.nats = opts.nats;

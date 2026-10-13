@@ -9,12 +9,13 @@ Instead the engine lists what it supports.
 ## The method
 
 ```ts
-getEngineCapabilities(): Promise<{ schema: 1; capabilities: string[] }>
+getEngineCapabilities(): Promise<{ schema: 1; capabilities: string[]; withheld?: string[] }>
 ```
 
 - `capabilities` is a sorted, unique list of capability ids.
 - `schema` versions the response shape, not the engine. It changes only if the response stops being a flat list of ids.
 - An id's presence means the engine supports that feature. There is no negative form: a missing id means unsupported.
+- `withheld` lists ids this build supports that a managed engine may not use, which are also left out of `capabilities`. See [Engine entitlements](./engine-entitlements.md).
 
 The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/typescript/api/capabilities.ts` (exported from `@woofx3/api`). The engine route returns exactly those values, less the ids in `UNADVERTISED_ENGINE_CAPABILITIES`, so the list cannot drift from the build that serves it. An id is declared but not advertised when clients need to name it while this build does not support it: a shared contract that lands before the engine implements it, or an older protocol the engine no longer serves.
 

@@ -8,14 +8,25 @@ import {
   UNADVERTISED_ENGINE_CAPABILITIES,
 } from "@woofx3/api";
 import { RPC_METHODS } from "../src/api-session";
+import { Entitlements } from "../src/entitlements";
 import { engineRoutes } from "../src/routes/engine";
 
 const DOC_PATH = join(import.meta.dir, "../../docs/services/engine-capabilities.md");
 
-/** The route reads nothing from its host, so an empty `this` is enough. */
+/** An ungoverned engine, like every self-hosted one: nothing is withheld. */
+const ungoverned = new Entitlements({
+  keys: null,
+  audience: null,
+  gateable: new Set(),
+  readGrant: async () => null,
+  writeGrant: async () => {},
+  now: () => Date.now(),
+});
+
+/** The route reads only `entitlements` from its host. */
 function getEngineCapabilities(): Promise<EngineCapabilities> {
   const routes = engineRoutes as unknown as { getEngineCapabilities(): Promise<EngineCapabilities> };
-  return routes.getEngineCapabilities.call({});
+  return routes.getEngineCapabilities.call({ entitlements: ungoverned });
 }
 
 describe("getEngineCapabilities", () => {
@@ -46,6 +57,11 @@ describe("getEngineCapabilities", () => {
 
   test("is reachable over RPC", () => {
     expect(RPC_METHODS).toContain("getEngineCapabilities");
+  });
+
+  test("withholds nothing on an ungoverned engine", async () => {
+    const { withheld } = await getEngineCapabilities();
+    expect(withheld).toEqual([]);
   });
 });
 

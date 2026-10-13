@@ -74,6 +74,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
       { describeHealth },
+      { parseEntitlementPublicKeys },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -107,6 +108,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./readiness"),
       import("./message-bus"),
       import("./health"),
+      import("./entitlement-grant"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -147,6 +149,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     });
     functions.connect();
 
+    const entitlementKeys =
+      config.entitlementPublicKeys === null ? null : await parseEntitlementPublicKeys(config.entitlementPublicKeys);
     const api = new Api({
       db,
       nats: natsClient,
@@ -157,6 +161,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       apiUrl: config.apiUrl,
       logger,
       version: config.version,
+      engineName: config.engineName,
+      entitlementKeys,
     });
 
     // Barkloader readiness for GET /ready, from the heartbeats every service

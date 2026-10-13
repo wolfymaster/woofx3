@@ -1360,6 +1360,15 @@ export interface Woofx3EngineApi {
   getEngineCapabilities(): Promise<EngineCapabilities>;
 
   /**
+   * Store a signed entitlement grant, which decides the gateable features a
+   * managed engine may use. Refused by an engine with no entitlement keys
+   * configured, and for a grant that does not verify, has expired, is for
+   * another engine, or is older than the one held. Answers the held grant's
+   * sequence number. See docs/services/engine-entitlements.md.
+   */
+  setEntitlementGrant(token: string): Promise<{ seq: number }>;
+
+  /**
    * Set the `overlayPublicUrl` that `getEngineInfo()` returns — the
    * single public base URL for both overlay access and asset
    * resolution (see `EngineInfo`'s doc comment). The operator points
