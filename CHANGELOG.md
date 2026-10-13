@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.30.0](https://github.com/wolfymaster/woofx3/compare/v0.29.1...v0.30.0) (2026-10-13)
+
+### Features
+
+* **assets:** bind upload grants to their exact size and report usage ([369133a](https://github.com/wolfymaster/woofx3/commit/369133aaaa754cbe3ee438e1b55c1a868e6b93c1))
+
 ## [0.29.1](https://github.com/wolfymaster/woofx3/compare/v0.29.0...v0.29.1) (2026-10-12)
 
 ### Bug Fixes
