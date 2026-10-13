@@ -22,6 +22,13 @@ export const ENGINE_CAPABILITIES = {
    * still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`.
    */
   alertsQueueControls: "alerts.queueControls",
+  /**
+   * Upload grants that admit exactly the declared length: `requestUploadUrl`
+   * requires `size`, `requestPosterUploadUrl` takes it, every grant's headers
+   * carry `Content-Length`, and `getResourceUsage` totals what file
+   * resources hold.
+   */
+  assetsSizedUploads: "assets.sizedUploads",
   /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
   analyticsSessions: "analytics.sessions",
   /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */

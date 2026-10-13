@@ -68,6 +68,10 @@ pub struct UploadRequest<'a> {
     /// the backend supports it, so a grant for an image cannot be
     /// replayed to store something else.
     pub content_type: Option<&'a str>,
+    /// Exact byte length the client will send. Bound into the grant so
+    /// it stores what was asked for and nothing larger: whoever issues
+    /// grants can then account for every byte before it lands.
+    pub content_length: u64,
     /// How long the grant stays valid. Kept short -- this is a
     /// capability to write into the store.
     pub ttl: Duration,

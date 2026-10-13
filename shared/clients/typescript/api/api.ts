@@ -623,8 +623,18 @@ export interface RequestUploadUrlInput {
   name: string;
   contentType: string;
   parentId?: string | null;
-  size?: number;
+  /**
+   * Exact byte length of the upload. The grant is bound to it, so storage
+   * refuses a body of any other length.
+   */
+  size: number;
   ttlSeconds?: number;
+}
+
+/** What the engine's user assets hold: every file resource, pending or ready. */
+export interface ResourceUsage {
+  bytes: number;
+  files: number;
 }
 
 // ==================== Scenes ====================
@@ -1645,7 +1655,13 @@ export interface Woofx3EngineApi {
   completeUpload(resourceId: string, size?: number): Promise<Resource>;
   // The engine decodes no video: a video's thumbnail comes from a frame
   // the caller captures and PUTs to this grant before requestProcessing.
-  requestPosterUploadUrl(resourceId: string, contentType: string, ttlSeconds?: number): Promise<PosterUploadGrant>;
+  requestPosterUploadUrl(
+    resourceId: string,
+    contentType: string,
+    size: number,
+    ttlSeconds?: number
+  ): Promise<PosterUploadGrant>;
+  getResourceUsage(): Promise<ResourceUsage>;
   createFolder(name: string, parentId?: string | null): Promise<Resource>;
   getResource(id: string): Promise<Resource>;
   listResources(query?: ResourcesQuery): Promise<PaginatedResources>;
