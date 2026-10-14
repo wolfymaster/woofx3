@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.31.0](https://github.com/wolfymaster/woofx3/compare/v0.30.0...v0.31.0) (2026-10-14)
+
+### Features
+
+* **modules:** let a trigger's emits declare an alert summary ([4f1e83e](https://github.com/wolfymaster/woofx3/commit/4f1e83e9dcf2c7359f36fd7c38d29d3557d12622))
+
 ## [0.30.0](https://github.com/wolfymaster/woofx3/compare/v0.29.1...v0.30.0) (2026-10-13)
 
 ### Features
