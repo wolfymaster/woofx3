@@ -484,3 +484,46 @@ func (r *AlertRepository) Delete(id uuid.UUID, record RecordAlertChange) error {
 		return record(tx, &deleted)
 	})
 }
+
+// settledAlertStatuses are the statuses no report moves a row out of, apart
+// from a verdict replacing another: the alert has played, failed, been given
+// up on, skipped or replayed. A row in any other status may still be queued
+// or on screen.
+var settledAlertStatuses = []string{
+	AlertStatusCompleted,
+	AlertStatusFailed,
+	AlertStatusTimedOut,
+	AlertStatusSkipped,
+	AlertStatusReplayed,
+}
+
+// PruneSettled deletes settled alerts created before `before`, `batchSize`
+// rows per statement, and returns how many it deleted. A row still sent,
+// dispatched or playing is kept however old it is.
+//
+// Nothing is recorded to the outbox: the rows are dropped for age, not by an
+// operator, and a receiver holding copies keeps them for its own window.
+func (r *AlertRepository) PruneSettled(before time.Time, batchSize int) (int64, error) {
+	if batchSize < 1 {
+		return 0, fmt.Errorf("prune batch size must be at least 1, got %d", batchSize)
+	}
+	// SQLite compares the text it stored, which the repository writes in one
+	// fixed layout, so the bound is written in it too.
+	var cutoff interface{} = before.UTC()
+	if !r.isPostgres() {
+		cutoff = before.UTC().Truncate(time.Microsecond).Format(database.SQLiteTimestampLayout)
+	}
+	var total int64
+	for {
+		result := r.db.Exec(`DELETE FROM alerts WHERE id IN (
+			SELECT id FROM alerts WHERE status IN @settled AND created_at < @before LIMIT @limit)`,
+			map[string]interface{}{"settled": settledAlertStatuses, "before": cutoff, "limit": batchSize})
+		if result.Error != nil {
+			return total, result.Error
+		}
+		total += result.RowsAffected
+		if result.RowsAffected < int64(batchSize) {
+			return total, nil
+		}
+	}
+}
