@@ -9,6 +9,7 @@ import { readStreamSession } from "./routes/stream-sessions";
 import type { WebhookClient } from "./webhook-client";
 
 type SummaryReads = Pick<DbClient, "findStreamSession" | "findStreamSessionEventTotals" | "findStreamGaugeSamples">;
+type SummaryDb = SummaryReads & Pick<DbClient, "compactStreamSession">;
 
 /**
  * The summary of one session as it stands now, or null when the session no
@@ -54,19 +55,22 @@ export async function buildSessionSummary(
 }
 
 /**
- * Sends the UI a `SESSION_SUMMARY` for every session that ends.
+ * Sends the UI a `SESSION_SUMMARY` for every session that ends, after asking
+ * db-proxy to compact it.
  *
  * A consumer of `session.ended` like any other, rather than a step inside the
  * resolver: the summary is a read over data the resolver has already written,
  * and a slow or failing read must not hold up the next session being adopted.
  *
  * A summary is a snapshot, so `summarise` can be called again for the same
- * session at any time and the UI keeps the newest.
+ * session at any time and the UI keeps the newest. Compaction rebuilds the
+ * session's copy of its analytics from the raw event log, so re-summarising a
+ * session whose bounds moved also brings that copy up to date.
  */
 export class SessionSummaryEmitter {
   constructor(
     private nats: NATSClient,
-    private db: SummaryReads,
+    private db: SummaryDb,
     private webhook: WebhookClient,
     private logger: SharedLogger
   ) {}
@@ -77,11 +81,16 @@ export class SessionSummaryEmitter {
   }
 
   /**
-   * Build and send one session's summary. Returns false when the session no
-   * longer exists, which is not a fault: a merge can remove a session before
-   * its summary is built.
+   * Compact one session, then build and send its summary. Returns false when
+   * the session no longer exists, which is not a fault: a merge can remove a
+   * session before its summary is built.
+   *
+   * A failed compaction is logged and the summary still sent: it reads the
+   * raw log for a session not compacted, and db-proxy's cleaner compacts any
+   * closed session left behind before it prunes anything.
    */
   async summarise(sessionId: string): Promise<boolean> {
+    await this.compact(sessionId);
     const summary = await buildSessionSummary(this.db, sessionId);
     if (summary === null) {
       this.logger.warn("SessionSummaryEmitter: session no longer exists; nothing to summarise", { sessionId });
@@ -89,6 +98,17 @@ export class SessionSummaryEmitter {
     }
     await this.webhook.send(summary);
     return true;
+  }
+
+  private async compact(sessionId: string): Promise<void> {
+    try {
+      await this.db.compactStreamSession(sessionId);
+    } catch (err) {
+      this.logger.warn("SessionSummaryEmitter: compacting the session failed; summarising it from the raw log", {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private async handleSessionEnded(msg: Msg): Promise<void> {

@@ -649,6 +649,24 @@ export class DbClient {
     return response.samples ?? [];
   }
 
+  /**
+   * Copies a closed session's per-viewer totals and timeline out of the raw
+   * event log into permanent tables, rebuilding any earlier copy, so its
+   * analytics outlive the log's retention window. Null for an unknown
+   * session. Rejects with `failed_precondition` for the open session, and for
+   * one whose raw events are already being pruned, whose copy then stands.
+   */
+  async compactStreamSession(streamSessionId: string): Promise<user_event.CompactStreamSessionResponse | null> {
+    const response = await nullWhenSessionMissing("compactStreamSession", () =>
+      user_event.CompactStreamSession({ streamSessionId }, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("compactStreamSession", response);
+    return response;
+  }
+
   /** Channel totals for the time a session owns, or null for an unknown session. */
   async findStreamSessionEventTotals(streamSessionId: string): Promise<user_event.StreamSessionEventTotals | null> {
     const response = await nullWhenSessionMissing("findStreamSessionEventTotals", () =>

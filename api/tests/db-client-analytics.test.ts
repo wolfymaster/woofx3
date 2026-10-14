@@ -119,7 +119,14 @@ describe("DbClient analytics reads", () => {
       expect(
         await db().findViewerLeaderboard({ metric: "LEADERBOARD_METRIC_BITS", streamSessionId: "s-1" })
       ).toBeNull();
+      expect(await db().compactStreamSession("s-1")).toBeNull();
     }
+  });
+
+  test("refuses to compact a session db-proxy will not compact", async () => {
+    respondWith(() => twirpError(412, "failed_precondition"));
+
+    await expect(db().compactStreamSession("s-1")).rejects.toBeInstanceOf(DbError);
   });
 
   test("still fails on any other error", async () => {
