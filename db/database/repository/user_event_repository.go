@@ -111,14 +111,7 @@ func (r *UserEventRepository) Totals(window EventWindow) (*SessionEventTotals, e
 		WHERE event_type IN @types AND %s`, r.isGiftedSub(), windowClause(&window))
 
 	args := eventTypeArgs()
-	args["types"] = []string{
-		models.UserEventTypeCheer,
-		models.UserEventTypeResub,
-		models.UserEventTypeSubscribe,
-		models.UserEventTypeSubscriptionGift,
-		models.UserEventTypeFollow,
-		models.UserEventTypeRaid,
-	}
+	args["types"] = sessionEventTypes()
 	addWindowArgs(args, &window)
 
 	var totals SessionEventTotals
@@ -138,6 +131,8 @@ type RecentQuery struct {
 	// the newest event.
 	Before *UserEventPosition
 	Limit  int
+	// SkipTotal leaves RecentPage.Total zero instead of counting the span.
+	SkipTotal bool
 }
 
 // UserEventPosition is an event's place in the newest-first order: by
@@ -151,7 +146,7 @@ type UserEventPosition struct {
 type RecentPage struct {
 	Events []*models.UserEvent
 	// Total counts every event in the span of the requested types, whatever
-	// Before is.
+	// Before is. Zero when the query set SkipTotal.
 	Total int64
 	// More is true when older events of the span follow the last one returned.
 	More bool
@@ -170,8 +165,10 @@ func (r *UserEventRepository) Recent(query RecentQuery) (*RecentPage, error) {
 	}
 
 	var total int64
-	if err := span.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return nil, err
+	if !query.SkipTotal {
+		if err := span.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+			return nil, err
+		}
 	}
 	page := span.Session(&gorm.Session{})
 	if query.Before != nil {
@@ -206,14 +203,7 @@ func (r *UserEventRepository) SessionEvents(window EventWindow, limit int) ([]*m
 		AND %s`, r.isGiftedSub(), windowClause(&window))
 
 	args := eventTypeArgs()
-	args["types"] = []string{
-		models.UserEventTypeCheer,
-		models.UserEventTypeResub,
-		models.UserEventTypeSubscribe,
-		models.UserEventTypeSubscriptionGift,
-		models.UserEventTypeFollow,
-		models.UserEventTypeRaid,
-	}
+	args["types"] = sessionEventTypes()
 	addWindowArgs(args, &window)
 
 	span := r.db.Model(&models.UserEvent{}).Where(where, args)
@@ -233,17 +223,33 @@ func (r *UserEventRepository) SessionEvents(window EventWindow, limit int) ([]*m
 	return events, total, nil
 }
 
-// ViewerTotals adds up what one viewer cheered and gifted. A nil window covers
-// every event recorded.
+// ViewerTotals adds up what one viewer cheered and gifted. A window covers
+// the raw events in it and must not be a compacted session's (see
+// CompactedViewerTotals); a nil window covers every event recorded, read from
+// the compact rows where a compaction covers it and from the raw log
+// elsewhere.
 func (r *UserEventRepository) ViewerTotals(platform, platformUserID string, window *EventWindow) (*ViewerEventTotals, error) {
+	raw := fmt.Sprintf(`SELECT
+		COALESCE(SUM(CASE WHEN e.event_type = @cheer THEN e.amount END), 0) AS bits,
+		COUNT(CASE WHEN e.event_type = @cheer THEN 1 END) AS cheers,
+		COALESCE(SUM(CASE WHEN e.event_type = @gift THEN e.amount END), 0) AS gifted_subs,
+		COUNT(CASE WHEN e.event_type = @gift THEN 1 END) AS gifts
+		FROM user_events e
+		WHERE e.platform = @platform AND e.platform_user_id = @user
+			AND e.event_type IN @types AND %s`, windowClause(window))
+	compacted := ""
+	if window == nil {
+		raw += " AND " + uncoveredByCompaction
+		compacted = `UNION ALL
+			SELECT bits, cheers, gifted_subs, gifts FROM viewer_session_totals
+			WHERE platform = @platform AND platform_user_id = @user`
+	}
 	query := fmt.Sprintf(`SELECT
-		CAST(COALESCE(SUM(CASE WHEN event_type = @cheer THEN amount END), 0) AS BIGINT) AS bits,
-		COUNT(CASE WHEN event_type = @cheer THEN 1 END) AS cheers,
-		CAST(COALESCE(SUM(CASE WHEN event_type = @gift THEN amount END), 0) AS BIGINT) AS gifted_subs,
-		COUNT(CASE WHEN event_type = @gift THEN 1 END) AS gifts
-		FROM user_events
-		WHERE platform = @platform AND platform_user_id = @user
-			AND event_type IN @types AND %s`, windowClause(window))
+		CAST(COALESCE(SUM(bits), 0) AS BIGINT) AS bits,
+		CAST(COALESCE(SUM(cheers), 0) AS BIGINT) AS cheers,
+		CAST(COALESCE(SUM(gifted_subs), 0) AS BIGINT) AS gifted_subs,
+		CAST(COALESCE(SUM(gifts), 0) AS BIGINT) AS gifts
+		FROM (%s %s) t`, raw, compacted)
 
 	args := eventTypeArgs()
 	args["platform"] = platform
@@ -255,27 +261,43 @@ func (r *UserEventRepository) ViewerTotals(platform, platformUserID string, wind
 	if err := r.db.Raw(query, args).Scan(&totals).Error; err != nil {
 		return nil, err
 	}
-	names, err := r.latestUserNames([]viewerKey{{Platform: platform, PlatformUserID: platformUserID}})
-	if err != nil {
+	if err := r.nameViewer(platform, platformUserID, &totals); err != nil {
 		return nil, err
 	}
-	totals.UserName = names[viewerKey{Platform: platform, PlatformUserID: platformUserID}]
 	return &totals, nil
 }
 
 // Leaderboard ranks viewers by the summed amount of `eventType` events in the
-// window (every event when nil), keeping those whose total is at least
-// minTotal. Anonymous events have no platform_user_id and so rank nobody.
+// window, keeping those whose total is at least minTotal. Anonymous events
+// have no platform_user_id and so rank nobody. A window covers the raw events
+// in it and must not be a compacted session's (see CompactedLeaderboard); a
+// nil window ranks every event recorded, read from the compact rows where a
+// compaction covers it and from the raw log elsewhere.
 func (r *UserEventRepository) Leaderboard(eventType string, window *EventWindow, minTotal int64, limit int) ([]*LeaderboardEntry, error) {
-	query := fmt.Sprintf(`SELECT platform, platform_user_id,
-		CAST(COALESCE(SUM(amount), 0) AS BIGINT) AS total,
+	columns, err := leaderboardColumnsFor(eventType)
+	if err != nil {
+		return nil, err
+	}
+	raw := fmt.Sprintf(`SELECT e.platform, e.platform_user_id,
+		COALESCE(SUM(e.amount), 0) AS total,
 		COUNT(*) AS events
-		FROM user_events
-		WHERE event_type = @type AND platform_user_id IS NOT NULL AND %s
+		FROM user_events e
+		WHERE e.event_type = @type AND e.platform_user_id IS NOT NULL AND %s`, windowClause(window))
+	compacted := ""
+	if window == nil {
+		raw += " AND " + uncoveredByCompaction
+		compacted = fmt.Sprintf(`UNION ALL
+			SELECT platform, platform_user_id, %[1]s, %[2]s FROM viewer_session_totals WHERE %[2]s > 0`,
+			columns.total, columns.events)
+	}
+	query := fmt.Sprintf(`SELECT platform, platform_user_id,
+		CAST(SUM(total) AS BIGINT) AS total,
+		CAST(SUM(events) AS BIGINT) AS events
+		FROM (%s GROUP BY e.platform, e.platform_user_id %s) t
 		GROUP BY platform, platform_user_id
-		HAVING COALESCE(SUM(amount), 0) >= @min
+		HAVING SUM(total) >= @min
 		ORDER BY total DESC, platform ASC, platform_user_id ASC
-		LIMIT @limit`, windowClause(window))
+		LIMIT @limit`, raw, compacted)
 
 	args := map[string]interface{}{
 		"type":  eventType,
@@ -288,16 +310,8 @@ func (r *UserEventRepository) Leaderboard(eventType string, window *EventWindow,
 	if err := r.db.Raw(query, args).Scan(&entries).Error; err != nil {
 		return nil, err
 	}
-	keys := make([]viewerKey, 0, len(entries))
-	for _, entry := range entries {
-		keys = append(keys, viewerKey{Platform: entry.Platform, PlatformUserID: entry.PlatformUserID})
-	}
-	names, err := r.latestUserNames(keys)
-	if err != nil {
+	if err := r.nameEntries(entries); err != nil {
 		return nil, err
-	}
-	for _, entry := range entries {
-		entry.UserName = names[viewerKey{Platform: entry.Platform, PlatformUserID: entry.PlatformUserID}]
 	}
 	return entries, nil
 }
@@ -307,9 +321,36 @@ type viewerKey struct {
 	PlatformUserID string
 }
 
+func (r *UserEventRepository) nameViewer(platform, platformUserID string, totals *ViewerEventTotals) error {
+	key := viewerKey{Platform: platform, PlatformUserID: platformUserID}
+	names, err := r.latestUserNames([]viewerKey{key})
+	if err != nil {
+		return err
+	}
+	totals.UserName = names[key]
+	return nil
+}
+
+func (r *UserEventRepository) nameEntries(entries []*LeaderboardEntry) error {
+	keys := make([]viewerKey, 0, len(entries))
+	for _, entry := range entries {
+		keys = append(keys, viewerKey{Platform: entry.Platform, PlatformUserID: entry.PlatformUserID})
+	}
+	names, err := r.latestUserNames(keys)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		entry.UserName = names[viewerKey{Platform: entry.Platform, PlatformUserID: entry.PlatformUserID}]
+	}
+	return nil
+}
+
 // latestUserNames returns the name each viewer's most recent named event
-// carried. Names change, so the newest one is the one to show; viewers whose
-// events carried no name are absent from the map.
+// carried, whatever its type and whenever it happened. Names change, so the
+// newest one is the one to show; viewers whose events carried no name are
+// absent from the map. A compacted session contributes the latest name it
+// saw, so the answer is the same whether its raw rows are pruned or not.
 func (r *UserEventRepository) latestUserNames(viewers []viewerKey) (map[viewerKey]*string, error) {
 	names := map[viewerKey]*string{}
 	if len(viewers) == 0 {
@@ -325,18 +366,25 @@ func (r *UserEventRepository) latestUserNames(viewers []viewerKey) (map[viewerKe
 		PlatformUserID string
 		UserName       string
 	}
-	err := r.db.Raw(`SELECT e.platform, e.platform_user_id, e.user_name
-		FROM user_events e
-		JOIN (
-			SELECT platform, platform_user_id, MAX(occurred_at) AS latest
-			FROM user_events
+	err := r.db.Raw(`WITH named AS (
+			SELECT e.platform, e.platform_user_id, e.user_name, e.occurred_at AS named_at
+			FROM user_events e
+			WHERE e.platform_user_id IN @ids AND e.user_name IS NOT NULL AND `+uncoveredByCompaction+`
+			UNION ALL
+			SELECT platform, platform_user_id, user_name, last_named_at
+			FROM viewer_session_totals
 			WHERE platform_user_id IN @ids AND user_name IS NOT NULL
+		)
+		SELECT n.platform, n.platform_user_id, n.user_name
+		FROM named n
+		JOIN (
+			SELECT platform, platform_user_id, MAX(named_at) AS latest
+			FROM named
 			GROUP BY platform, platform_user_id
-		) l ON l.platform = e.platform
-			AND l.platform_user_id = e.platform_user_id
-			AND l.latest = e.occurred_at
-		WHERE e.user_name IS NOT NULL
-		ORDER BY e.platform, e.platform_user_id, e.user_name`,
+		) l ON l.platform = n.platform
+			AND l.platform_user_id = n.platform_user_id
+			AND l.latest = n.named_at
+		ORDER BY n.platform, n.platform_user_id, n.user_name`,
 		map[string]interface{}{"ids": ids}).Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -348,7 +396,8 @@ func (r *UserEventRepository) latestUserNames(viewers []viewerKey) (map[viewerKe
 	for _, row := range rows {
 		key := viewerKey{Platform: row.Platform, PlatformUserID: row.PlatformUserID}
 		// Two named events at the same instant tie on MAX; the ORDER BY makes
-		// the pick the same on every read.
+		// the pick the same on every read, and matches the pick Compact makes
+		// within a session.
 		if !wanted[key] || names[key] != nil {
 			continue
 		}
@@ -367,6 +416,18 @@ func (r *UserEventRepository) isGiftedSub() string {
 		return `(event_value->>'isGift') = 'true'`
 	}
 	return `json_extract(event_value, '$.isGift') = 1`
+}
+
+// sessionEventTypes are the types the session totals and timeline count.
+func sessionEventTypes() []string {
+	return []string{
+		models.UserEventTypeCheer,
+		models.UserEventTypeResub,
+		models.UserEventTypeSubscribe,
+		models.UserEventTypeSubscriptionGift,
+		models.UserEventTypeFollow,
+		models.UserEventTypeRaid,
+	}
 }
 
 func eventTypeArgs() map[string]interface{} {

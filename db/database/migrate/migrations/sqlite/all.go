@@ -67,5 +67,6 @@ func All() []*gormigrate.Migration {
 		AddViewerSegments(),
 		AddWidgetBehaviors(),
 		AddSceneCompositions(),
+		AddSessionCompaction(),
 	}
 }

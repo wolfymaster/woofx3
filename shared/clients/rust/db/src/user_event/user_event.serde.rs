@@ -1,4 +1,248 @@
 // @generated
+impl serde::Serialize for CompactStreamSessionRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.stream_session_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("user_event.CompactStreamSessionRequest", len)?;
+        if !self.stream_session_id.is_empty() {
+            struct_ser.serialize_field("streamSessionId", &self.stream_session_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompactStreamSessionRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "stream_session_id",
+            "streamSessionId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            StreamSessionId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "streamSessionId" | "stream_session_id" => Ok(GeneratedField::StreamSessionId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompactStreamSessionRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct user_event.CompactStreamSessionRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompactStreamSessionRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut stream_session_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::StreamSessionId => {
+                            if stream_session_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("streamSessionId"));
+                            }
+                            stream_session_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(CompactStreamSessionRequest {
+                    stream_session_id: stream_session_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("user_event.CompactStreamSessionRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for CompactStreamSessionResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if self.viewers != 0 {
+            len += 1;
+        }
+        if self.timeline_events != 0 {
+            len += 1;
+        }
+        if self.compacted_at.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("user_event.CompactStreamSessionResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if self.viewers != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("viewers", ToString::to_string(&self.viewers).as_str())?;
+        }
+        if self.timeline_events != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("timelineEvents", ToString::to_string(&self.timeline_events).as_str())?;
+        }
+        if let Some(v) = self.compacted_at.as_ref() {
+            struct_ser.serialize_field("compactedAt", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CompactStreamSessionResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "viewers",
+            "timeline_events",
+            "timelineEvents",
+            "compacted_at",
+            "compactedAt",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Viewers,
+            TimelineEvents,
+            CompactedAt,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "viewers" => Ok(GeneratedField::Viewers),
+                            "timelineEvents" | "timeline_events" => Ok(GeneratedField::TimelineEvents),
+                            "compactedAt" | "compacted_at" => Ok(GeneratedField::CompactedAt),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CompactStreamSessionResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct user_event.CompactStreamSessionResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CompactStreamSessionResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut viewers__ = None;
+                let mut timeline_events__ = None;
+                let mut compacted_at__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Viewers => {
+                            if viewers__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("viewers"));
+                            }
+                            viewers__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::TimelineEvents => {
+                            if timeline_events__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("timelineEvents"));
+                            }
+                            timeline_events__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::CompactedAt => {
+                            if compacted_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compactedAt"));
+                            }
+                            compacted_at__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(CompactStreamSessionResponse {
+                    status: status__,
+                    viewers: viewers__.unwrap_or_default(),
+                    timeline_events: timeline_events__.unwrap_or_default(),
+                    compacted_at: compacted_at__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("user_event.CompactStreamSessionResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for GetStreamSessionEventTotalsRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -697,6 +941,9 @@ impl serde::Serialize for ListRecentUserEventsRequest {
         if self.before.is_some() {
             len += 1;
         }
+        if self.skip_total {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("user_event.ListRecentUserEventsRequest", len)?;
         if let Some(v) = self.since.as_ref() {
             struct_ser.serialize_field("since", v)?;
@@ -709,6 +956,9 @@ impl serde::Serialize for ListRecentUserEventsRequest {
         }
         if let Some(v) = self.before.as_ref() {
             struct_ser.serialize_field("before", v)?;
+        }
+        if self.skip_total {
+            struct_ser.serialize_field("skipTotal", &self.skip_total)?;
         }
         struct_ser.end()
     }
@@ -725,6 +975,8 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
             "event_types",
             "eventTypes",
             "before",
+            "skip_total",
+            "skipTotal",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -733,6 +985,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
             Limit,
             EventTypes,
             Before,
+            SkipTotal,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -758,6 +1011,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
                             "limit" => Ok(GeneratedField::Limit),
                             "eventTypes" | "event_types" => Ok(GeneratedField::EventTypes),
                             "before" => Ok(GeneratedField::Before),
+                            "skipTotal" | "skip_total" => Ok(GeneratedField::SkipTotal),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -781,6 +1035,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
                 let mut limit__ = None;
                 let mut event_types__ = None;
                 let mut before__ = None;
+                let mut skip_total__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Since => {
@@ -809,6 +1064,12 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
                             }
                             before__ = map_.next_value()?;
                         }
+                        GeneratedField::SkipTotal => {
+                            if skip_total__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("skipTotal"));
+                            }
+                            skip_total__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ListRecentUserEventsRequest {
@@ -816,6 +1077,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
                     limit: limit__,
                     event_types: event_types__.unwrap_or_default(),
                     before: before__,
+                    skip_total: skip_total__.unwrap_or_default(),
                 })
             }
         }
