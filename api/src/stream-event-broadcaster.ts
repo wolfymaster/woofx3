@@ -1,22 +1,48 @@
 import type { StreamEventFrame, StreamEventSubscriber } from "@woofx3/api";
+import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { type EventCatalog, SubjectSubscriptions } from "./event-catalog";
 
+/**
+ * What a subscriber that names no types receives: the events clients relied
+ * on before a subscriber could choose. Pushed whether or not a trigger offers
+ * them, as they always were.
+ */
+export const LEGACY_STREAM_EVENT_TYPES: readonly string[] = [
+  EventType.Follow,
+  EventType.Cheer,
+  EventType.Subscribe,
+  EventType.SubscriptionGift,
+  EventType.Raid,
+  EventType.StreamOnline,
+  EventType.StreamOffline,
+  EventType.AdBreakUpcoming,
+  EventType.AdBreakBegin,
+  EventType.AdBreakEnd,
+];
+
 /** capnweb stubs carry this; the contract types the argument as a plain object. */
 type MaybeStub = Partial<{ onRpcBroken(callback: (error: unknown) => void): void }>;
 
+interface Registration {
+  subscriber: StreamEventSubscriber;
+  /** The types asked for, or null for `LEGACY_STREAM_EVENT_TYPES`. */
+  requested: ReadonlySet<string> | null;
+}
+
 /**
  * Fans stream events out to browser clients over their existing capnweb
- * session: every subject of the `EventCatalog`, the same set the event log
- * records, so a client can merge `listEvents` history with live frames.
+ * session. Each subscriber names the event types it wants, any the
+ * `EventCatalog` offers; the bus subscriptions are the union of what every
+ * subscriber wants, so a type nobody watches costs nothing.
  *
  * Nothing on this path applies backpressure: the WebSocket adapter ignores
  * `bufferedAmount`, and capnweb serializes pushes per session, so a firehose
- * would queue unbounded in the engine's memory. The catalog leaves out chat,
- * the engine's one high-volume subject, so what remains fires at human pace,
- * which this fan-out can carry as-is.
+ * would queue unbounded in the engine's memory. The catalog never offers chat,
+ * the engine's one high-volume subject, so what a subscriber can ask for fires
+ * at human pace, which this fan-out can carry as-is.
  *
  * A second consumer of these subjects alongside AlertEmitter rather than a hook
  * into it: core NATS delivers to every subscriber, so the extra subscription is
@@ -24,7 +50,8 @@ type MaybeStub = Partial<{ onRpcBroken(callback: (error: unknown) => void): void
  * discards the CloudEvent envelope this needs.
  */
 export class StreamEventBroadcaster {
-  private subscribers = new Set<StreamEventSubscriber>();
+  /** Keyed by the session that registered, so a session holds one registration. */
+  private registrations = new Map<object, Registration>();
   private subscriptions: SubjectSubscriptions;
 
   constructor(
@@ -42,39 +69,84 @@ export class StreamEventBroadcaster {
     );
   }
 
-  /** Pushes the catalog's subjects from now on, following it as it changes. */
+  /** Follows the catalog, so a type a subscriber asked for is pushed once a module offers it. */
   async start(): Promise<void> {
-    this.catalog.onChange((events) => this.subscriptions.sync(events.keys()));
-    await this.subscriptions.sync(this.catalog.events.keys());
-    this.logger.info("StreamEventBroadcaster started", { subjects: this.catalog.events.size });
+    this.catalog.onChange(() => this.resync());
+    await this.resync();
+    this.logger.info("StreamEventBroadcaster started", { subjects: this.subscriptions.subjects.length });
   }
 
   /**
-   * Register a client callback for the life of its session.
+   * Register a client callback for the life of its session, pushing `types`
+   * (those the catalog offers; others are ignored) or, without `types`, the
+   * `LEGACY_STREAM_EVENT_TYPES`. A second call with the same `session`
+   * replaces the first: a client re-registers when what it wants changes, and
+   * the callback it passes is a new stub each time.
    *
    * Eviction is driven by `onRpcBroken`, the signal capnweb raises when the
    * peer goes away. The older triggerSubscribers set has no disconnect path at
    * all -- it only drops a subscriber whose call happens to reject, so a closed
    * tab lingers until the next event, and forever if none arrives.
    */
-  subscribe(subscriber: StreamEventSubscriber): void {
-    this.subscribers.add(subscriber);
+  async subscribe(
+    subscriber: StreamEventSubscriber,
+    types: readonly string[] | undefined,
+    session: object
+  ): Promise<void> {
+    const registration: Registration = { subscriber, requested: types === undefined ? null : new Set(types) };
+    this.registrations.set(session, registration);
     const stub = subscriber as MaybeStub;
     stub.onRpcBroken?.(() => {
-      this.subscribers.delete(subscriber);
+      // A replaced registration's stub may break after its replacement exists.
+      if (this.registrations.get(session) !== registration) {
+        return;
+      }
+      this.registrations.delete(session);
       this.logger.debug("StreamEventBroadcaster: subscriber disconnected", {
-        remaining: this.subscribers.size,
+        remaining: this.registrations.size,
       });
+      void this.resync();
     });
+    await this.resync();
   }
 
   /** Exposed for tests and diagnostics. */
   get subscriberCount(): number {
-    return this.subscribers.size;
+    return this.registrations.size;
+  }
+
+  /** The subjects bound on the bus. Exposed for tests and diagnostics. */
+  get subjects(): string[] {
+    return this.subscriptions.subjects;
+  }
+
+  private pushed(registration: Registration): Iterable<string> {
+    if (registration.requested === null) {
+      return LEGACY_STREAM_EVENT_TYPES;
+    }
+    return [...registration.requested].filter((type) => this.catalog.events.has(type));
+  }
+
+  private wants(registration: Registration, subject: string): boolean {
+    if (registration.requested === null) {
+      return LEGACY_STREAM_EVENT_TYPES.includes(subject);
+    }
+    return registration.requested.has(subject) && this.catalog.events.has(subject);
+  }
+
+  private resync(): Promise<void> {
+    const wanted = new Set<string>();
+    for (const registration of this.registrations.values()) {
+      for (const subject of this.pushed(registration)) {
+        wanted.add(subject);
+      }
+    }
+    return this.subscriptions.sync(wanted);
   }
 
   private handle(subject: string, msg: Msg): void {
-    if (this.subscribers.size === 0) {
+    const recipients = [...this.registrations.values()].filter((registration) => this.wants(registration, subject));
+    if (recipients.length === 0) {
       return;
     }
 
@@ -94,7 +166,7 @@ export class StreamEventBroadcaster {
     // everyone behind it. A failed push is logged rather than evicted --
     // onRpcBroken is the authoritative signal that a client is gone, and a
     // handler that threw once is not necessarily dead.
-    for (const subscriber of this.subscribers) {
+    for (const { subscriber } of recipients) {
       void Promise.resolve()
         .then(() => subscriber.onStreamEvent(frame))
         .catch((err) => {

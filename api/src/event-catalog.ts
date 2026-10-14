@@ -16,11 +16,13 @@ export interface ViewerIdentity {
   displayName?: string;
 }
 
-/** One subject of the event log, and what its registered triggers say about it. */
+/** One subject the event log may record, and what its registered triggers say about it. */
 export interface LoggedEvent {
   subject: string;
   /** The module that registered it, the `created_by_ref` of its trigger. */
   moduleId: string;
+  /** True when any of its triggers is alert-worthy; see `isDefaultTaxonomy`. */
+  onByDefault: boolean;
   /** Absent when its triggers mark no single viewer, or disagree on where it is. */
   identity?: ViewerIdentity;
 }
@@ -35,29 +37,50 @@ const TRIGGER_CHANGE_SUBJECT = "db.module.trigger.>";
 
 const EVENTBUS_TRANSPORT = "eventbus";
 
+const SHARED_CHAT_PREFIX = "channel.shared";
+
 /**
- * Subjects never logged or pushed, whatever their triggers say. Chat is the
- * engine's one high-volume subject and has its own channel. The shared-chat
- * events happened in another channel during a shared chat session, and would
- * read as this channel's subs and raids.
+ * Subjects never offered, whatever their triggers say. Chat is the engine's
+ * one high-volume subject and has its own channel. The shared-chat events
+ * happened in another channel during a shared chat session, and would read as
+ * this channel's subs and raids. Must match `EventLogSettings.offered` in
+ * shared/clients/typescript/api/stream-events.ts.
  */
-const EXCLUDED_SUBJECTS: ReadonlySet<string> = new Set<string>([
-  EventType.ChatMessage,
-  ...Object.entries(EventType)
-    .filter(([name]) => name.startsWith("Shared"))
-    .map(([, subject]) => subject),
-]);
+function isExcludedSubject(subject: string): boolean {
+  return subject === EventType.ChatMessage || subject.startsWith(SHARED_CHAT_PREFIX);
+}
+
+/**
+ * Taxonomy roots under `alert` that are not on by default: chat alerts fire
+ * per message, and shared-chat alerts are about another channel.
+ */
+const NOT_DEFAULT_ALERT_ROOTS: readonly string[] = ["alert.chat", "alert.shared"];
+
+/**
+ * Whether a trigger taxonomy entry makes its event on by default: an `alert.*`
+ * entry, the same set the dashboard's Alerts menu offers, except the
+ * `NOT_DEFAULT_ALERT_ROOTS` and anything under them.
+ */
+export function isDefaultTaxonomy(entry: string): boolean {
+  if (!entry.startsWith("alert.")) {
+    return false;
+  }
+  return !NOT_DEFAULT_ALERT_ROOTS.some((root) => entry === root || entry.startsWith(`${root}.`));
+}
 
 /** NATS wildcard tokens. */
 const WILDCARD = /(^|\.)(\*|>)(\.|$)/;
 
 /**
- * The events the engine logs and pushes to browsers: every subject an active
+ * The events the engine may log and push to browsers: every subject an active
  * `eventbus` trigger fires on, except
  *
  * - a wildcard pattern, which names a family of subjects (`chat.command.*`)
  *   rather than one event, and could reach subjects no module declared;
- * - `EXCLUDED_SUBJECTS`.
+ * - an `isExcludedSubject`.
+ *
+ * These are the types the streamer may select (`EventLogSettings.offered`);
+ * `EventLogSelectionSource` narrows them to what is logged and shown.
  *
  * Exported for tests.
  */
@@ -68,7 +91,7 @@ export function buildEventCatalog(triggers: readonly Trigger[]): Map<string, Log
     if (transport !== EVENTBUS_TRANSPORT || trigger.event === "") {
       continue;
     }
-    if (WILDCARD.test(trigger.event) || EXCLUDED_SUBJECTS.has(trigger.event)) {
+    if (WILDCARD.test(trigger.event) || isExcludedSubject(trigger.event)) {
       continue;
     }
     const declared = bySubject.get(trigger.event);
@@ -85,7 +108,8 @@ export function buildEventCatalog(triggers: readonly Trigger[]): Map<string, Log
     // order the db returned them in.
     const moduleId = declared.map((trigger) => trigger.createdByRef).sort()[0] ?? "";
     const identity = agreedIdentity(declared);
-    catalog.set(subject, { subject, moduleId, ...(identity ? { identity } : {}) });
+    const onByDefault = declared.some((trigger) => trigger.taxonomy.some(isDefaultTaxonomy));
+    catalog.set(subject, { subject, moduleId, onByDefault, ...(identity ? { identity } : {}) });
   }
   return catalog;
 }
@@ -133,9 +157,10 @@ export interface EventCatalogOptions {
 }
 
 /**
- * The set of events the engine logs and pushes to browsers, kept current with
- * the installed triggers: `UserEventRecorder` and `StreamEventBroadcaster` both
- * subscribe to exactly these subjects.
+ * The set of events the engine may log and push to browsers, kept current with
+ * the installed triggers. `EventLogSelectionSource` narrows it to the
+ * streamer's selection for the log, and `StreamEventBroadcaster` to each
+ * subscriber's types.
  *
  * It re-reads the triggers on every trigger change on the bus, and on an
  * interval as the safety net against a change event that never arrived. Until

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { EventLogPage, EventLogQuery } from "@woofx3/api";
+import type {
+  EventLogPage,
+  EventLogQuery,
+  EventLogSelection,
+  EventLogSettings,
+  StreamEventSubscriber,
+} from "@woofx3/api";
 import type * as user_event from "@woofx3/db/user_event.pb";
 import { decodeCursor, streamEventsRoutes } from "../src/routes/stream-events";
 
@@ -90,5 +96,87 @@ describe("listEvents", () => {
     await expect(listEvents({ types: [""] })).rejects.toThrow("types");
     await expect(listEvents({ cursor: "not-a-cursor" })).rejects.toThrow("cursor");
     expect(() => decodeCursor(Buffer.from("1:2:not-a-uuid").toString("base64url"))).toThrow("cursor");
+  });
+});
+
+describe("subscribeStreamEvents", () => {
+  type Subscribe = (callback: StreamEventSubscriber, types?: string[], context?: { session: object }) => Promise<void>;
+  const route = streamEventsRoutes.subscribeStreamEvents as unknown as Subscribe;
+
+  function host() {
+    const calls: unknown[][] = [];
+    const ctx = {
+      streamEventBroadcaster: {
+        async subscribe(...args: unknown[]) {
+          calls.push(args);
+        },
+      },
+    };
+    return { calls, subscribe: (...args: Parameters<Subscribe>) => route.call(ctx, ...args) };
+  }
+
+  test("registers under the caller's session, or under the callback when there is none", async () => {
+    const { calls, subscribe } = host();
+    const callback = { onStreamEvent: async () => {} };
+    const session = {};
+
+    await subscribe(callback, ["goal.reached"], { session });
+    await subscribe(callback);
+
+    expect(calls).toEqual([
+      [callback, ["goal.reached"], session],
+      [callback, undefined, callback],
+    ]);
+  });
+
+  test("rejects a type list that is not one", async () => {
+    const { subscribe } = host();
+    const callback = { onStreamEvent: async () => {} };
+
+    await expect(subscribe(callback, "goal.reached" as unknown as string[])).rejects.toThrow("types");
+    await expect(subscribe(callback, [""])).rejects.toThrow("types");
+  });
+
+  test("refuses when the engine has no bus", async () => {
+    await expect(route.call({ streamEventBroadcaster: null }, { onStreamEvent: async () => {} })).rejects.toThrow(
+      "no NATS connection"
+    );
+  });
+});
+
+describe("event log settings", () => {
+  const settings: EventLogSettings = {
+    selection: { shown: [], hidden: [] },
+    defaults: ["channel.follow"],
+    offered: ["channel.follow"],
+    enabled: ["channel.follow"],
+  };
+  const get = streamEventsRoutes.getEventLogSettings as unknown as () => Promise<EventLogSettings>;
+  const set = streamEventsRoutes.setEventLogSelection as unknown as (
+    selection: EventLogSelection
+  ) => Promise<EventLogSettings>;
+
+  test("reads and saves through the engine's selection", async () => {
+    const saved: unknown[] = [];
+    const ctx = {
+      eventLogSelection: {
+        settings,
+        async setSelection(selection: unknown) {
+          saved.push(selection);
+          return settings;
+        },
+      },
+    };
+
+    expect(await get.call(ctx)).toBe(settings);
+    expect(await set.call(ctx, { shown: ["wheel.landed"], hidden: [] })).toBe(settings);
+    expect(saved).toEqual([{ shown: ["wheel.landed"], hidden: [] }]);
+  });
+
+  test("refuses when the engine has no bus", async () => {
+    await expect(get.call({ eventLogSelection: null })).rejects.toThrow("no NATS connection");
+    await expect(set.call({ eventLogSelection: null }, { shown: [], hidden: [] })).rejects.toThrow(
+      "no NATS connection"
+    );
   });
 });

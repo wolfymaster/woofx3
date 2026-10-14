@@ -2,8 +2,10 @@ import { describe, expect, mock, test } from "bun:test";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
 import { DbError } from "../src/db-client";
+import type { EventLogSettings } from "@woofx3/api";
 import type { EventCatalog, LoggedEvent } from "../src/event-catalog";
-import { toRequest, UserEventRecorder } from "../src/user-event-recorder";
+import type { EventLogSelectionSource } from "../src/event-log-selection";
+import { ANALYTICS_EVENT_TYPES, toRequest, UserEventRecorder } from "../src/user-event-recorder";
 
 const SESSION_ID = "7f0c5a1e-0000-4000-8000-000000000001";
 const TIME = "2026-09-27T20:00:00.000Z";
@@ -44,28 +46,49 @@ function makeMsg(subject: string, body: unknown): Msg {
 
 /** A Twitch subject as the catalog lists it, with no identity: the fixed map attributes these. */
 function twitch(subject: string): LoggedEvent {
-  return { subject, moduleId: "woofx3_twitch" };
+  return { subject, moduleId: "woofx3_twitch", onByDefault: true };
 }
 
-/** A catalog whose set the test changes by hand. */
-function fakeCatalog(events: LoggedEvent[]) {
-  let listener: ((events: ReadonlyMap<string, LoggedEvent>) => Promise<void> | void) | undefined;
+/**
+ * A catalog and a selection the test changes by hand. `enabled` is what the
+ * selection says is logged; the catalog holds every offered event.
+ */
+function fakeSources(events: LoggedEvent[], enabled: string[] = events.map((event) => event.subject)) {
+  let listener: ((settings: EventLogSettings) => Promise<void> | void) | undefined;
   const catalog = {
     events: new Map(events.map((event) => [event.subject, event])) as ReadonlyMap<string, LoggedEvent>,
+  };
+  const settingsFor = (next: string[]): EventLogSettings => ({
+    selection: { shown: [], hidden: [] },
+    defaults: [],
+    offered: [...catalog.events.keys()],
+    enabled: next,
+  });
+  const selection = {
+    settings: settingsFor(enabled),
     onChange(fn: typeof listener) {
       listener = fn;
     },
   };
-  const change = async (next: LoggedEvent[]) => {
-    catalog.events = new Map(next.map((event) => [event.subject, event]));
-    await listener?.(catalog.events);
+  const change = async (
+    nextEvents: LoggedEvent[],
+    nextEnabled: string[] = nextEvents.map((event) => event.subject)
+  ) => {
+    catalog.events = new Map(nextEvents.map((event) => [event.subject, event]));
+    selection.settings = settingsFor(nextEnabled);
+    await listener?.(selection.settings);
   };
-  return { catalog: catalog as unknown as EventCatalog, change };
+  return {
+    catalog: catalog as unknown as EventCatalog,
+    selection: selection as unknown as EventLogSelectionSource,
+    change,
+  };
 }
 
 function setup(
   recordUserEvent: (req: unknown) => Promise<unknown>,
-  events: LoggedEvent[] = [twitch(EventType.Follow)]
+  events: LoggedEvent[] = [twitch(EventType.Follow)],
+  enabled?: string[]
 ) {
   const unsubscribed: string[] = [];
   const nats = {
@@ -78,8 +101,8 @@ function setup(
   const db = { recordUserEvent: mock(recordUserEvent) } as any;
   const logger = fakeLogger();
   const sleep = mock(async () => {});
-  const { catalog, change } = fakeCatalog(events);
-  const recorder = new UserEventRecorder(nats, db, logger, catalog, [10, 20], sleep);
+  const { catalog, selection, change } = fakeSources(events, enabled);
+  const recorder = new UserEventRecorder(nats, db, logger, catalog, selection, [10, 20], sleep);
   return { recorder, nats, db, logger, sleep, change, unsubscribed };
 }
 
@@ -205,6 +228,7 @@ describe("toRequest", () => {
     const logged: LoggedEvent = {
       subject: "kofi.donation",
       moduleId: "woofx3_kofi",
+      onByDefault: true,
       identity: { path: "from.id", displayName: "from.name", anonymousWhen: "isPrivate" },
     };
     const data = { from: { id: "k-1", name: "Supporter" }, isPrivate: false, amount: 5 };
@@ -227,6 +251,7 @@ describe("toRequest", () => {
     const logged: LoggedEvent = {
       subject: "kofi.donation",
       moduleId: "woofx3_kofi",
+      onByDefault: true,
       identity: { path: "from.id", anonymousWhen: "isPrivate" },
     };
     const req = toRequest(logged, envelope("kofi.donation", { from: { id: "k-1" }, isPrivate: true }));
@@ -237,7 +262,7 @@ describe("toRequest", () => {
 
   test("a module event whose trigger marks no viewer is recorded unattributed, under its own platform", () => {
     const req = toRequest(
-      { subject: "goal.reached", moduleId: "woofx3" },
+      { subject: "goal.reached", moduleId: "woofx3", onByDefault: false },
       envelope("goal.reached", { target: "woofx3:counter:deaths" }, { platform: "system" })
     );
 
@@ -250,6 +275,7 @@ describe("toRequest", () => {
     const logged: LoggedEvent = {
       subject: "kofi.donation",
       moduleId: "woofx3_kofi",
+      onByDefault: true,
       identity: { path: "id", displayName: "name" },
     };
 
@@ -265,29 +291,48 @@ describe("toRequest", () => {
 });
 
 describe("UserEventRecorder", () => {
-  test("subscribes to the catalog's subjects and follows it as it changes", async () => {
-    const { recorder, nats, change, unsubscribed } = setup(
-      async () => ({}),
-      [twitch(EventType.Follow), twitch(EventType.Cheer)]
-    );
+  test("subscribes to the enabled types and the analytics types, and follows the selection", async () => {
+    const goal: LoggedEvent = { subject: "goal.reached", moduleId: "woofx3", onByDefault: false };
+    const wheel: LoggedEvent = { subject: "wheel.landed", moduleId: "woofx3", onByDefault: false };
+    const { recorder, nats, change, unsubscribed } = setup(async () => ({}), [goal, wheel], ["goal.reached"]);
     await recorder.start();
 
     const subjects = () => nats.subscribe.mock.calls.map(([subject]: [string]) => subject);
-    expect(subjects()).toEqual([EventType.Follow, EventType.Cheer]);
+    expect(subjects()).toEqual(["goal.reached", ...ANALYTICS_EVENT_TYPES]);
 
-    await change([twitch(EventType.Cheer), { subject: "goal.reached", moduleId: "woofx3" }]);
-    expect(subjects()).toEqual([EventType.Follow, EventType.Cheer, "goal.reached"]);
-    expect(unsubscribed).toEqual([EventType.Follow]);
+    await change([goal, wheel], ["wheel.landed"]);
+    expect(subjects()).toEqual(["goal.reached", ...ANALYTICS_EVENT_TYPES, "wheel.landed"]);
+    expect(unsubscribed).toEqual(["goal.reached"]);
   });
 
-  test("does not record a subject that has left the catalog", async () => {
-    const { recorder, db, change } = setup(async () => ({}));
+  test("records an analytics type whatever the selection, even with no trigger for it", async () => {
+    const { recorder, db } = setup(async () => ({}), [], []);
     await recorder.start();
+
+    await recorder.handle(
+      EventType.Follow,
+      makeMsg(EventType.Follow, envelope(EventType.Follow, { userId: "1", userName: "One" }))
+    );
+
+    expect(db.recordUserEvent).toHaveBeenCalledTimes(1);
+    expect(db.recordUserEvent.mock.calls[0]?.[0]).toMatchObject({ platform: "twitch", platformUserId: "1" });
+  });
+
+  test("does not record a type once it is turned off or its triggers are gone", async () => {
+    const goal: LoggedEvent = { subject: "goal.reached", moduleId: "woofx3", onByDefault: true };
+    const { recorder, db, change } = setup(async () => ({}), [goal]);
+    await recorder.start();
+    const msg = () => makeMsg("goal.reached", envelope("goal.reached", {}, { platform: undefined }));
+
+    await change([goal], []);
+    await recorder.handle("goal.reached", msg());
     await change([]);
-
-    await recorder.handle(EventType.Follow, makeMsg(EventType.Follow, envelope(EventType.Follow, { userId: "1" })));
-
+    await recorder.handle("goal.reached", msg());
     expect(db.recordUserEvent).not.toHaveBeenCalled();
+
+    await change([goal]);
+    await recorder.handle("goal.reached", msg());
+    expect(db.recordUserEvent.mock.calls[0]?.[0]).toMatchObject({ eventType: "goal.reached", platform: "woofx3" });
   });
 
   test("retries a failed write with the same event id", async () => {
@@ -299,6 +344,7 @@ describe("UserEventRecorder", () => {
       }
       return {};
     });
+    await recorder.start();
 
     await recorder.handle(EventType.Follow, makeMsg(EventType.Follow, envelope(EventType.Follow, { userId: "1" })));
 
@@ -312,6 +358,7 @@ describe("UserEventRecorder", () => {
     const { recorder, db, logger } = setup(async () => {
       throw new DbError("recordUserEvent", "unavailable", "db-proxy down");
     });
+    await recorder.start();
 
     await recorder.handle(EventType.Follow, makeMsg(EventType.Follow, envelope(EventType.Follow, { userId: "1" })));
 
@@ -323,6 +370,7 @@ describe("UserEventRecorder", () => {
     const { recorder, db, logger, sleep } = setup(async () => {
       throw new DbError("recordUserEvent", "invalid_argument", "amount must not be negative");
     });
+    await recorder.start();
 
     await recorder.handle(EventType.Follow, makeMsg(EventType.Follow, envelope(EventType.Follow, { userId: "1" })));
 

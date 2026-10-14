@@ -5,6 +5,7 @@ import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { type DbClient, DbError } from "./db-client";
 import { type EventCatalog, type LoggedEvent, SubjectSubscriptions, type ViewerIdentity } from "./event-catalog";
+import type { EventLogSelectionSource } from "./event-log-selection";
 import { timestampFromDate } from "./routes/helpers";
 
 /** Who an event is attributed to, and the quantity it carries. */
@@ -54,11 +55,12 @@ const ATTRIBUTIONS: Readonly<Record<string, (data: Payload) => Attribution>> = {
 };
 
 /**
- * The Twitch event types attributed above: the viewer activity the
- * dashboard's recent figures count. The log holds every installed trigger's
- * events, and a wheel landing or a counter changing is not that activity.
- * The recorder stores a Twitch event under the subject it subscribed to,
- * which is the CloudEvent type.
+ * The Twitch event types attributed above: the viewer activity Analytics
+ * totals and the dashboard's recent figures count. They are recorded whatever
+ * the streamer's selection, so a recap never depends on it. The log holds
+ * other selected events too, and a wheel landing or a counter changing is not
+ * that activity. The recorder stores a Twitch event under the subject it
+ * subscribed to, which is the CloudEvent type.
  */
 export const ANALYTICS_EVENT_TYPES: readonly string[] = Object.keys(ATTRIBUTIONS);
 
@@ -94,8 +96,9 @@ interface CloudEventEnvelope {
 }
 
 /**
- * Writes every event the `EventCatalog` names to the `user_events` log: the
- * history the dashboard's event feed reads, and what Analytics aggregates
+ * Writes the event types the streamer selected (`EventLogSelectionSource`)
+ * and the `ANALYTICS_EVENT_TYPES` to the `user_events` log: the history the
+ * dashboard's event feed reads, and what Analytics aggregates
  * (docs/services/analytics.md).
  *
  * It sits on the bus rather than in each platform integration so there is one
@@ -105,12 +108,14 @@ interface CloudEventEnvelope {
  */
 export class UserEventRecorder {
   private subscriptions: SubjectSubscriptions;
+  private recorded: ReadonlySet<string> = new Set();
 
   constructor(
     nats: NATSClient,
     private db: Pick<DbClient, "recordUserEvent">,
     private logger: SharedLogger,
     private catalog: EventCatalog,
+    private selection: EventLogSelectionSource,
     private retryDelaysMs: readonly number[] = DEFAULT_RETRY_DELAYS_MS,
     private sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   ) {
@@ -124,20 +129,30 @@ export class UserEventRecorder {
     );
   }
 
-  /** Records the catalog's subjects from now on, following it as it changes. */
+  /**
+   * Records the enabled types and the analytics types from now on, following
+   * the selection and the installed triggers as they change.
+   */
   async start(): Promise<void> {
-    this.catalog.onChange((events) => this.subscriptions.sync(events.keys()));
-    await this.subscriptions.sync(this.catalog.events.keys());
-    this.logger.info("UserEventRecorder started", { subjects: this.catalog.events.size });
+    this.selection.onChange((settings) => this.follow(settings.enabled));
+    await this.follow(this.selection.settings.enabled);
+    this.logger.info("UserEventRecorder started", { subjects: this.recorded.size });
+  }
+
+  private follow(enabled: readonly string[]): Promise<void> {
+    this.recorded = new Set([...enabled, ...ANALYTICS_EVENT_TYPES]);
+    return this.subscriptions.sync(this.recorded);
   }
 
   /** Exposed for tests; resolves once the event is recorded or given up on. */
   async handle(subject: string, msg: Msg): Promise<void> {
-    const logged = this.catalog.events.get(subject);
-    if (logged === undefined) {
-      // Delivered just after its triggers were removed.
+    if (!this.recorded.has(subject)) {
+      // Delivered just after its type was turned off or its triggers removed.
       return;
     }
+    // An analytics type is recorded even with no installed trigger for it;
+    // its attribution is the fixed map's, and its platform is stamped.
+    const logged = this.catalog.events.get(subject) ?? { subject, moduleId: "", onByDefault: false };
     let request: RecordUserEventRequest | null;
     try {
       request = toRequest(logged, msg.json() as CloudEventEnvelope);

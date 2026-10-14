@@ -203,7 +203,7 @@ engine only carries the resulting events.
 | Heads-up scheduler | twitch service (`twitch/src/lib/adBreakScheduler.ts`) | Polls the Helix ad schedule while the stream is live and publishes `channel.ad_break.upcoming` |
 | Begin / end events | twitch service (`twitch/src/lib/subscriptions/onChannelAdBreakBegin.ts`) | Publishes `channel.ad_break.begin` from EventSub and synthesizes `channel.ad_break.end` |
 | `getAdSchedule` / `snoozeNextAd` | twitch service, `twitchapi` commands (`twitch/src/lib/twitch.ts`) | Helix reads and snoozes on request over NATS |
-| Browser delivery | api (`StreamEventBroadcaster`) | Forwards the three `channel.ad_break.*` events to `subscribeStreamEvents` clients, as it does every event of an installed `eventbus` trigger except chat: they are triggers of the Twitch module's manifest |
+| Browser delivery | api (`StreamEventBroadcaster`) | Forwards the three `channel.ad_break.*` events to `subscribeStreamEvents` clients that ask for them, and to every client that names no types |
 | Triggers | `woofx3_twitch` platform module (woofx3-modules) | Declares the three events as workflow triggers |
 | Dashboard widget | woofx3-ui | Reads the schedule and snoozes through Helix from Convex actions, like its other Twitch widgets |
 
@@ -275,7 +275,8 @@ holds it decides how the token is renewed:
 ### Events
 
 All three carry `platform: "twitch"`, and all three are forwarded to browser
-clients by `subscribeStreamEvents`.
+clients by `subscribeStreamEvents`, to clients that ask for them or name no
+types.
 
 #### `channel.ad_break.upcoming`
 

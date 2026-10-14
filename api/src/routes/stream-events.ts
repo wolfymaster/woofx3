@@ -1,4 +1,11 @@
-import type { EventLogPage, EventLogQuery, StreamEventFrame, StreamEventSubscriber } from "@woofx3/api";
+import type {
+  EventLogPage,
+  EventLogQuery,
+  EventLogSelection,
+  EventLogSettings,
+  StreamEventFrame,
+  StreamEventSubscriber,
+} from "@woofx3/api";
 import type * as user_event from "@woofx3/db/user_event.pb";
 import { timestampToEpochMs } from "../stream-session-resolver";
 import { routeModule } from "./context";
@@ -8,17 +15,40 @@ const MAX_EVENT_LOG_LIMIT = 100;
 
 export const streamEventsRoutes = routeModule({
   /**
-   * Subscribe to live stream events for the session's lifetime.
+   * Subscribe to live stream events for the session's lifetime. `ApiSession`
+   * passes itself as `context.session`, so a client's later call replaces its
+   * earlier one; without it each call is a registration of its own.
    *
    * Throws rather than accepting a subscription it cannot serve: without NATS
    * the engine receives no events at all, and silently registering a callback
    * that never fires looks identical to a quiet stream.
    */
-  async subscribeStreamEvents(callback: StreamEventSubscriber): Promise<void> {
+  async subscribeStreamEvents(
+    callback: StreamEventSubscriber,
+    types?: string[],
+    context?: { session: object }
+  ): Promise<void> {
     if (!this.streamEventBroadcaster) {
       throw new Error("Stream events are unavailable: the engine has no NATS connection");
     }
-    this.streamEventBroadcaster.subscribe(callback);
+    if (types !== undefined && !isEventTypeList(types)) {
+      throw new Error("types must be a list of non-empty strings");
+    }
+    await this.streamEventBroadcaster.subscribe(callback, types, context?.session ?? callback);
+  },
+
+  async getEventLogSettings(): Promise<EventLogSettings> {
+    if (!this.eventLogSelection) {
+      throw new Error("Event log settings are unavailable: the engine has no NATS connection");
+    }
+    return this.eventLogSelection.settings;
+  },
+
+  async setEventLogSelection(selection: EventLogSelection): Promise<EventLogSettings> {
+    if (!this.eventLogSelection) {
+      throw new Error("Event log settings are unavailable: the engine has no NATS connection");
+    }
+    return this.eventLogSelection.setSelection(selection);
   },
 
   async listEvents(query?: EventLogQuery): Promise<EventLogPage> {
@@ -46,11 +76,15 @@ function readEventLogQuery(query: EventLogQuery | undefined): {
     throw new Error(`limit must be an integer from 1 to ${MAX_EVENT_LOG_LIMIT}`);
   }
   const types = query?.types ?? [];
-  if (!Array.isArray(types) || !types.every((type) => typeof type === "string" && type.length > 0)) {
+  if (!isEventTypeList(types)) {
     throw new Error("types must be a list of non-empty strings");
   }
   const before = query?.cursor === undefined ? undefined : decodeCursor(query.cursor);
   return { types, before, limit };
+}
+
+function isEventTypeList(types: unknown): types is string[] {
+  return Array.isArray(types) && types.every((type) => typeof type === "string" && type.length > 0);
 }
 
 /**

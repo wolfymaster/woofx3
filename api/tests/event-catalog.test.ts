@@ -3,7 +3,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type { Trigger } from "@woofx3/db/module_trigger.pb";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
-import { buildEventCatalog, EventCatalog } from "../src/event-catalog";
+import { buildEventCatalog, EventCatalog, isDefaultTaxonomy } from "../src/event-catalog";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as SharedLogger;
 
@@ -82,7 +82,45 @@ describe("buildEventCatalog", () => {
       trigger("shared.event", { createdByRef: "a", emits: emits({ path: "b", type: "string", identity: "viewer" }) }),
     ]);
 
-    expect(catalog.get("shared.event")).toEqual({ subject: "shared.event", moduleId: "a" });
+    expect(catalog.get("shared.event")).toEqual({ subject: "shared.event", moduleId: "a", onByDefault: false });
+  });
+
+  test("leaves out every channel.shared event, including ones the Twitch event list does not name", () => {
+    const catalog = buildEventCatalog([trigger("channel.sharedSomethingNew"), trigger("channel.share")]);
+
+    expect([...catalog.keys()]).toEqual(["channel.share"]);
+  });
+
+  test("an event is on by default when any of its triggers has an alert taxonomy other than chat or shared", () => {
+    const catalog = buildEventCatalog([
+      trigger("channel.follow", { taxonomy: ["alert.follow"] }),
+      trigger("channel.cheer", { taxonomy: ["bits", "alert.cheer.bits"] }),
+      trigger("chat.highlighted", { taxonomy: ["alert.chat"] }),
+      trigger("chat.first", { taxonomy: ["alert.chat.first"] }),
+      trigger("raid.shared", { taxonomy: ["alert.shared.raid"] }),
+      trigger("alert.chatter", { taxonomy: ["alert.chatter"] }),
+      trigger("wheel.landed", { taxonomy: ["wheel"] }),
+      trigger("bare.alert", { taxonomy: ["alert"] }),
+      trigger("two.declarations", { createdByRef: "a" }),
+      trigger("two.declarations", { createdByRef: "b", taxonomy: ["alert.custom"] }),
+    ]);
+
+    const onByDefault = [...catalog.values()].filter((event) => event.onByDefault).map((event) => event.subject);
+    expect(onByDefault).toEqual(["alert.chatter", "channel.cheer", "channel.follow", "two.declarations"]);
+  });
+});
+
+describe("isDefaultTaxonomy", () => {
+  test("takes alert entries except alert.chat and alert.shared and what is under them", () => {
+    expect(isDefaultTaxonomy("alert.follow")).toBe(true);
+    expect(isDefaultTaxonomy("alert.chatter")).toBe(true);
+    expect(isDefaultTaxonomy("alert.sharedRaid")).toBe(true);
+    expect(isDefaultTaxonomy("alert")).toBe(false);
+    expect(isDefaultTaxonomy("alerts.follow")).toBe(false);
+    expect(isDefaultTaxonomy("alert.chat")).toBe(false);
+    expect(isDefaultTaxonomy("alert.chat.first")).toBe(false);
+    expect(isDefaultTaxonomy("alert.shared")).toBe(false);
+    expect(isDefaultTaxonomy("alert.shared.raid")).toBe(false);
   });
 });
 
