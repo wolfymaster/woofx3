@@ -66,14 +66,25 @@ interface Fake {
   session?: { session: stream_session.StreamSession; segments: stream_session.StreamSessionSegment[] } | null;
   totals?: user_event.StreamSessionEventTotals | null;
   samples?: stream_gauge.StreamGaugeSample[] | null;
+  compactFails?: boolean;
+  /** Every call the fake served, in order. */
+  calls?: string[];
 }
 
 function fakeDb(fake: Fake) {
   return {
+    async compactStreamSession(sessionId: string) {
+      fake.calls?.push(`compact ${sessionId}`);
+      if (fake.compactFails === true) {
+        throw new Error("db-proxy unreachable");
+      }
+      return {};
+    },
     async findStreamSession() {
       return fake.session === undefined ? { session: CLOSED, segments: [SEGMENT] } : fake.session;
     },
     async findStreamSessionEventTotals() {
+      fake.calls?.push("totals");
       return fake.totals === undefined ? TOTALS : fake.totals;
     },
     async findStreamGaugeSamples() {
@@ -210,6 +221,21 @@ describe("SessionSummaryEmitter", () => {
     expect(sent[0]?.sessionId).toBe(sent[1]?.sessionId);
     expect(sent[1]?.totals).toEqual(sent[0]?.totals);
     expect(Date.parse(sent[1]?.generatedAt ?? "")).toBeGreaterThan(Date.parse(sent[0]?.generatedAt ?? ""));
+  });
+
+  it("compacts the session before reading its totals", async () => {
+    const calls: string[] = [];
+    const { emitter, sent } = setup({ calls });
+    await emitter.summarise(SESSION);
+    expect(calls).toEqual([`compact ${SESSION}`, "totals"]);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("still sends the summary when compacting fails", async () => {
+    const { emitter, sent, logger } = setup({ compactFails: true });
+    expect(await emitter.summarise(SESSION)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect((logger as unknown as { warn: { mock: { calls: unknown[] } } }).warn.mock.calls).toHaveLength(1);
   });
 
   it("sends nothing for a session a merge removed", async () => {
