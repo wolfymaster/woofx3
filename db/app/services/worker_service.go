@@ -73,8 +73,13 @@ func (s *WorkerService) initializeWorkers() error {
 
 	s.publisherWorker = workers.NewPublisherWorker(workersRepo, s.natsConn, eventCache, s.logger, workersConfig)
 	s.ackWorker = workers.NewAckWorker(workersRepo, s.natsConn, eventCache, s.logger)
-	s.cleanupWorker = workers.NewCleanupWorker(workersRepo, repository.NewViewerFactRepository(s.db), s.logger, workersConfig.CleanupInterval, workersConfig.RetentionPeriod,
-		workersConfig.FactDedupeRetention, workersConfig.FactDedupePruneBatch)
+	s.cleanupWorker = workers.NewCleanupWorker(workers.CleanupRepositories{
+		Outbox:     workersRepo,
+		Facts:      repository.NewViewerFactRepository(s.db),
+		UserEvents: repository.NewUserEventRepository(s.db),
+		Alerts:     repository.NewAlertRepository(s.db),
+		Workflows:  repository.NewWorkflowRepository(s.db),
+	}, s.logger, workersConfig)
 	s.metricsWorker = workers.NewMetricsWorker(eventCache, s.logger, 30*time.Second)
 	s.eventCache = eventCache
 	s.eventPublisher = eventPublisher
@@ -86,6 +91,7 @@ func (s *WorkerService) initializeWorkers() error {
 		"batch_size", workersConfig.BatchSize,
 		"cleanup_interval", workersConfig.CleanupInterval,
 		"retention_period", workersConfig.RetentionPeriod,
+		"event_detail_retention", workersConfig.EventDetailRetention,
 	)
 
 	return nil
