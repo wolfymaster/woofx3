@@ -40,7 +40,7 @@ describe("listEvents", () => {
 
     const page = await listEvents();
 
-    expect(requests).toEqual([{ limit: 50 }]);
+    expect(requests).toEqual([{ limit: 50, skipTotal: true }]);
     expect(page).toEqual({
       events: [
         {
@@ -67,6 +67,7 @@ describe("listEvents", () => {
     expect(second.requests).toEqual([
       {
         limit: 50,
+        skipTotal: true,
         eventTypes: ["channel.cheer"],
         before: { occurredAt: { seconds: 1_790_000_000n, nanos: 123_456_789 }, id: ROW_ID },
       },
@@ -79,7 +80,7 @@ describe("listEvents", () => {
 
     await listEvents({ types: [] });
 
-    expect(requests).toEqual([{ limit: 50 }]);
+    expect(requests).toEqual([{ limit: 50, skipTotal: true }]);
   });
 
   test("rejects a bad limit, type or cursor", async () => {

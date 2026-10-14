@@ -23,8 +23,11 @@ export const streamEventsRoutes = routeModule({
 
   async listEvents(query?: EventLogQuery): Promise<EventLogPage> {
     const { types, before, limit } = readEventLogQuery(query);
+    // A page needs no count of the whole span, which is a scan of every
+    // matching row on each request.
     const page = await this.db.listRecentUserEvents({
       limit,
+      skipTotal: true,
       ...(types.length > 0 ? { eventTypes: types } : {}),
       ...(before !== undefined ? { before } : {}),
     });
