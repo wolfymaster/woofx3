@@ -52,6 +52,15 @@ service UserEventService {
   // the totals leave it out, so each gift appears once. `not_found` for an
   // unknown session.
   rpc ListStreamSessionUserEvents(ListStreamSessionUserEventsRequest) returns (ListStreamSessionUserEventsResponse);
+
+  // Copies what the reads above need of one closed session out of the raw log
+  // into permanent tables: each viewer's totals and the session's timeline.
+  // From then on the reads take that session from the copy, so its raw rows
+  // can be pruned without changing any answer. Idempotent: compacting again
+  // rebuilds the copy from the raw log as it stands, in one transaction.
+  // `not_found` for an unknown session, `failed_precondition` for the open
+  // one, whose time is still running.
+  rpc CompactStreamSession(CompactStreamSessionRequest) returns (CompactStreamSessionResponse);
 }
 
 message UserEvent {
@@ -77,7 +86,8 @@ message UserEvent {
   // The quantity the event carries: bits for a cheer, subs for a gift, raiders
   // for a raid, points for a redemption. Absent when the event carries none.
   optional int64 amount = 9;
-  // The CloudEvent `data`, as JSON.
+  // The CloudEvent `data`, as JSON. `{}` for an event of a compacted
+  // session's timeline, which keeps everything about an event but its payload.
   string event_value = 10;
   // When the event happened (the CloudEvent `time`).
   google.protobuf.Timestamp occurred_at = 11;
@@ -204,6 +214,9 @@ message ListRecentUserEventsRequest {
   // Return only events after this one in newest-first order: the last event
   // of the previous page. Absent for the newest page.
   UserEventPosition before = 4;
+  // Leave `total` zero rather than counting the span, for a caller that only
+  // pages.
+  bool skip_total = 5;
 }
 
 // Where an event sits in the log's newest-first order: by occurred_at, then
@@ -219,7 +232,7 @@ message ListRecentUserEventsResponse {
   // Newest first by occurred_at, then by id, at most `limit` of them.
   repeated UserEvent events = 2;
   // Every event in the span of the requested types, not only those returned,
-  // and whatever `before` is.
+  // and whatever `before` is. Zero when the request set `skip_total`.
   int64 total = 3;
   // True when the span holds older events of the requested types than those
   // returned, so a request with `before` set to the last of them returns more.
@@ -238,4 +251,17 @@ message ListStreamSessionUserEventsResponse {
   repeated UserEvent events = 2;
   // Every counted event in the session, not only those returned.
   int64 total = 3;
+}
+
+message CompactStreamSessionRequest {
+  string stream_session_id = 1;
+}
+
+message CompactStreamSessionResponse {
+  common.ResponseStatus status = 1;
+  // Viewers with any event in the session, each holding one totals row.
+  int64 viewers = 2;
+  // Events on the session's timeline.
+  int64 timeline_events = 3;
+  google.protobuf.Timestamp compacted_at = 4;
 }

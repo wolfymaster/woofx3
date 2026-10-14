@@ -109,11 +109,16 @@ func (s *userEventService) RecordUserEvent(ctx context.Context, req *client.Reco
 }
 
 func (s *userEventService) GetStreamSessionEventTotals(ctx context.Context, req *client.GetStreamSessionEventTotalsRequest) (*client.GetStreamSessionEventTotalsResponse, error) {
-	window, err := s.sessionWindow("stream_session_id", req.StreamSessionId)
+	scope, err := s.sessionScope("stream_session_id", req.StreamSessionId)
 	if err != nil {
 		return nil, err
 	}
-	totals, err := s.repo.Totals(*window)
+	var totals *repo.SessionEventTotals
+	if scope.compacted {
+		totals, err = s.repo.CompactedTotals(scope.id)
+	} else {
+		totals, err = s.repo.Totals(scope.window)
+	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to total user events: %w", err))
 	}
@@ -141,11 +146,19 @@ func (s *userEventService) GetViewerEventTotals(ctx context.Context, req *client
 	if req.PlatformUserId == "" {
 		return nil, twirp.RequiredArgumentError("platform_user_id")
 	}
-	window, err := s.optionalSessionWindow(req.StreamSessionId)
+	scope, err := s.optionalSessionScope(req.StreamSessionId)
 	if err != nil {
 		return nil, err
 	}
-	totals, err := s.repo.ViewerTotals(req.Platform, req.PlatformUserId, window)
+	var totals *repo.ViewerEventTotals
+	switch {
+	case scope == nil:
+		totals, err = s.repo.ViewerTotals(req.Platform, req.PlatformUserId, nil)
+	case scope.compacted:
+		totals, err = s.repo.CompactedViewerTotals(scope.id, req.Platform, req.PlatformUserId)
+	default:
+		totals, err = s.repo.ViewerTotals(req.Platform, req.PlatformUserId, &scope.window)
+	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to total viewer events: %w", err))
 	}
@@ -191,12 +204,20 @@ func (s *userEventService) ListViewerLeaderboard(ctx context.Context, req *clien
 		}
 		limit = int(*req.Limit)
 	}
-	window, err := s.optionalSessionWindow(req.StreamSessionId)
+	scope, err := s.optionalSessionScope(req.StreamSessionId)
 	if err != nil {
 		return nil, err
 	}
 
-	entries, err := s.repo.Leaderboard(eventType, window, minTotal, limit)
+	var entries []*repo.LeaderboardEntry
+	switch {
+	case scope == nil:
+		entries, err = s.repo.Leaderboard(eventType, nil, minTotal, limit)
+	case scope.compacted:
+		entries, err = s.repo.CompactedLeaderboard(scope.id, eventType, minTotal, limit)
+	default:
+		entries, err = s.repo.Leaderboard(eventType, &scope.window, minTotal, limit)
+	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to rank viewers: %w", err))
 	}
@@ -220,7 +241,7 @@ func (s *userEventService) ListViewerLeaderboard(ctx context.Context, req *clien
 }
 
 func (s *userEventService) ListRecentUserEvents(ctx context.Context, req *client.ListRecentUserEventsRequest) (*client.ListRecentUserEventsResponse, error) {
-	query := repo.RecentQuery{Limit: recentDefaultLimit, EventTypes: req.EventTypes}
+	query := repo.RecentQuery{Limit: recentDefaultLimit, EventTypes: req.EventTypes, SkipTotal: req.SkipTotal}
 	if req.Since != nil {
 		if err := req.Since.CheckValid(); err != nil {
 			return nil, twirp.InvalidArgumentError("since", err.Error())
@@ -293,12 +314,18 @@ func (s *userEventService) ListStreamSessionUserEvents(ctx context.Context, req 
 		}
 		limit = int(*req.Limit)
 	}
-	window, err := s.sessionWindow("stream_session_id", req.StreamSessionId)
+	scope, err := s.sessionScope("stream_session_id", req.StreamSessionId)
 	if err != nil {
 		return nil, err
 	}
 
-	events, total, err := s.repo.SessionEvents(*window, limit)
+	var events []*models.UserEvent
+	var total int64
+	if scope.compacted {
+		events, total, err = s.repo.CompactedSessionEvents(scope.id, limit)
+	} else {
+		events, total, err = s.repo.SessionEvents(scope.window, limit)
+	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list session user events: %w", err))
 	}
@@ -316,23 +343,62 @@ func (s *userEventService) ListStreamSessionUserEvents(ctx context.Context, req 
 	}, nil
 }
 
-// sessionWindow resolves a session id to the span of time the session owns:
-// from its start until the session that replaced it began, or to the present
-// while it is open. Splits close one session and open the next at the same
-// instant, so sessions tile time and every event falls in exactly one window.
+func (s *userEventService) CompactStreamSession(ctx context.Context, req *client.CompactStreamSessionRequest) (*client.CompactStreamSessionResponse, error) {
+	sessionID, err := parseSessionID("stream_session_id", req.StreamSessionId)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.repo.Compact(sessionID, time.Now())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError("stream session not found")
+		}
+		if errors.Is(err, repo.ErrStreamSessionOpen) {
+			return nil, twirp.NewError(twirp.FailedPrecondition, "the open stream session cannot be compacted")
+		}
+		if errors.Is(err, repo.ErrCompactionPruned) {
+			return nil, twirp.NewError(twirp.FailedPrecondition, "the stream session's raw events are already pruned; its compaction stands")
+		}
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to compact stream session: %w", err))
+	}
+	return &client.CompactStreamSessionResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Stream session compacted successfully",
+		},
+		Viewers:        result.Viewers,
+		TimelineEvents: result.TimelineEvents,
+		CompactedAt:    timestamppb.New(result.Compaction.CompactedAt),
+	}, nil
+}
+
+// sessionScope is where a read finds one session's events.
+type sessionScope struct {
+	id uuid.UUID
+	// window is the span of time the session owns: from its start until the
+	// session that replaced it began, or to the present while it is open.
+	window repo.EventWindow
+	// compacted is true when the session's compact rows describe it as it
+	// stands, and the read takes them instead of the raw events in window.
+	compacted bool
+}
+
+// sessionScope resolves a session id to the span of time the session owns.
+// Splits close one session and open the next at the same instant, so sessions
+// tile time and every event falls in exactly one window.
 //
 // This is how an event is attributed to its canonical session. The stamp on
 // the event is not consulted: it names the session that owned the time when
 // the event was published, and the session's bounds are the answer now. One
 // lookup per read replaces resolving every row, and the window is a range
 // scan on user_events' occurred_at index.
-func (s *userEventService) sessionWindow(field, id string) (*repo.EventWindow, error) {
-	if id == "" {
-		return nil, twirp.RequiredArgumentError(field)
-	}
-	sessionID, err := uuid.Parse(id)
+//
+// A closed session whose compaction still matches its bounds is read from
+// its compact rows instead, which survive the raw rows being pruned.
+func (s *userEventService) sessionScope(field, id string) (*sessionScope, error) {
+	sessionID, err := parseSessionID(field, id)
 	if err != nil {
-		return nil, twirp.InvalidArgumentError(field, "invalid UUID format")
+		return nil, err
 	}
 	session, err := s.sessions.GetSessionByID(sessionID)
 	if err != nil {
@@ -341,16 +407,35 @@ func (s *userEventService) sessionWindow(field, id string) (*repo.EventWindow, e
 		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to load stream session: %w", err))
 	}
-	return &repo.EventWindow{From: session.StartedAt, To: session.EndedAt}, nil
+	compaction, err := s.repo.Compaction(sessionID)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to load stream session compaction: %w", err))
+	}
+	return &sessionScope{
+		id:        sessionID,
+		window:    repo.EventWindow{From: session.StartedAt, To: session.EndedAt},
+		compacted: compaction != nil && compaction.Covers(session),
+	}, nil
 }
 
-// optionalSessionWindow is sessionWindow for reads where no session means
-// lifetime, which is a nil window.
-func (s *userEventService) optionalSessionWindow(id *string) (*repo.EventWindow, error) {
+// optionalSessionScope is sessionScope for reads where no session means
+// lifetime, which is a nil scope.
+func (s *userEventService) optionalSessionScope(id *string) (*sessionScope, error) {
 	if id == nil {
 		return nil, nil
 	}
-	return s.sessionWindow("stream_session_id", *id)
+	return s.sessionScope("stream_session_id", *id)
+}
+
+func parseSessionID(field, id string) (uuid.UUID, error) {
+	if id == "" {
+		return uuid.Nil, twirp.RequiredArgumentError(field)
+	}
+	sessionID, err := uuid.Parse(id)
+	if err != nil {
+		return uuid.Nil, twirp.InvalidArgumentError(field, "invalid UUID format")
+	}
+	return sessionID, nil
 }
 
 // validateRecordUserEvent rejects anything the log would store wrongly rather
