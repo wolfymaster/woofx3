@@ -39,9 +39,9 @@ export const ENGINE_CAPABILITIES = {
   analyticsSessionEvents: "analytics.sessionEvents",
   /**
    * The engine's event log, the history behind `subscribeStreamEvents`:
-   * `listEvents`. The log and the push carry the same events, every one an
-   * installed `eventbus` trigger fires except chat messages and shared-chat
-   * events.
+   * `listEvents`, the event-type selection that decides what it logs
+   * (`getEventLogSettings`, `setEventLogSelection`), and `subscribeStreamEvents`
+   * taking the event types to push.
    */
   eventsLog: "events.log",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */

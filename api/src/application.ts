@@ -4,6 +4,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
 import type { EventCatalog } from "./event-catalog";
+import type { EventLogSelectionSource } from "./event-log-selection";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
 
 export type ApiServices = {
@@ -37,6 +38,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   private server: ReturnType<typeof Bun.serve> | null = null;
   private gaugeSampler: StreamGaugeSampler | null = null;
   private eventCatalog: EventCatalog | null = null;
+  private eventLogSelection: EventLogSelectionSource | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -51,6 +53,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { ClientAuth },
       { ConvexWebhookClient },
       { EventCatalog },
+      { EventLogSelectionSource },
       { ApiGateway },
       { createHttpServer },
       { initModuleHandlers },
@@ -85,6 +88,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./auth"),
       import("./convex-webhook-client"),
       import("./event-catalog"),
+      import("./event-log-selection"),
       import("./gateway"),
       import("./http"),
       import("./module-event-handlers"),
@@ -212,10 +216,20 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
       await streamSessionResolver.start();
 
-      // The recorder and the broadcaster follow one set of subjects. Both
-      // listen before the first read below, so neither misses it.
+      // The recorder follows the streamer's selection of the catalog's
+      // subjects, the broadcaster each subscriber's. Both listen before the
+      // catalog's first read below, so neither misses it.
       this.eventCatalog = new EventCatalog(natsClient, db, logger);
-      const userEventRecorder = new UserEventRecorder(natsClient, db, logger, this.eventCatalog);
+      this.eventLogSelection = new EventLogSelectionSource(this.eventCatalog, db, logger);
+      await this.eventLogSelection.start();
+      api.setEventLogSelectionSource(this.eventLogSelection);
+      const userEventRecorder = new UserEventRecorder(
+        natsClient,
+        db,
+        logger,
+        this.eventCatalog,
+        this.eventLogSelection
+      );
       await userEventRecorder.start();
 
       // Inside the bus block because segments open and close only through the
@@ -300,6 +314,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     this.gaugeSampler = null;
     this.eventCatalog?.stop();
     this.eventCatalog = null;
+    this.eventLogSelection?.stop();
+    this.eventLogSelection = null;
     this.server?.stop();
     this.server = null;
   }

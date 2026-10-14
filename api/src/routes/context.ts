@@ -27,6 +27,7 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
 import { RelayCredentialSource } from "../relay-credential-source";
+import type { EventLogSelectionSource } from "../event-log-selection";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
@@ -78,6 +79,7 @@ export class ApiRouteHost extends RpcTarget {
   }>();
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
+  protected eventLogSelection: EventLogSelectionSource | null = null;
   protected authInvalidate: (() => void) | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,

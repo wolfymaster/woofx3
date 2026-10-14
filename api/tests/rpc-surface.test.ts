@@ -82,6 +82,24 @@ describe("the RPC surface a client sees", () => {
     expect(received).toMatchObject({ clientId: "client-42" });
   });
 
+  test("keys a stream-event subscription on the session, so a second call replaces the first", async () => {
+    const received: unknown[][] = [];
+    const api = new Proxy({} as Api, {
+      get() {
+        return (...args: unknown[]) => {
+          received.push(args);
+          return Promise.resolve(undefined);
+        };
+      },
+    });
+    const session = new ApiSession(api, "client-42");
+    const callback = { onStreamEvent: async () => {} };
+
+    await session.subscribeStreamEvents(callback, ["goal.reached"]);
+
+    expect(received).toEqual([[callback, ["goal.reached"], { session }]]);
+  });
+
   test("every method on Api is either published or a known internal", () => {
     // The compile-time assertions stop an undeclared method being *served*,
     // but they cannot see a route method that was added and never declared:
@@ -91,6 +109,7 @@ describe("the RPC surface a client sees", () => {
       "setWebhookClient",
       "setAuthInvalidate",
       "setStreamEventBroadcaster",
+      "setEventLogSelectionSource",
       "initSubscriptions",
       "handleProcessingCallback",
     ].sort();

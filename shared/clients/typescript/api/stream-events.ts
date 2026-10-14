@@ -41,10 +41,12 @@ export interface StreamEventSubscriber {
 /**
  * A page of the engine's event log, for `listEvents`.
  *
- * The log holds every event an installed `eventbus` trigger fires, except
- * chat messages, shared-chat events and events the api published itself
- * (dashboard tests, `source: "api"`). Detail is kept for the engine's retention window
- * (7 days by default), so a page never reaches further back than that.
+ * The log holds the event types the streamer selected (`EventLogSettings`)
+ * plus the analytics types, recorded whatever the selection, minus events the
+ * api published itself (dashboard tests, `source: "api"`). A type is logged
+ * from the moment it is selected, never retroactively. Detail is kept for the
+ * engine's retention window (7 days by default), so a page never reaches
+ * further back than that.
  */
 export interface EventLogQuery {
   /** Event types (CloudEvent `type`) to return. Absent or empty returns every type. */
@@ -64,4 +66,37 @@ export interface EventLogPage {
   events: StreamEventFrame[];
   /** Opaque; pass back as `cursor` for the next older page. Null on the last page. */
   nextCursor: string | null;
+}
+
+/**
+ * Which event types the engine logs and the Events widget shows: one
+ * selection per engine, edited from the widget's filter. Event types are
+ * CloudEvent `type`s (a trigger's `event`).
+ *
+ * Stored as overrides on the defaults rather than as a full list, so a newly
+ * installed module's default-on types appear without anyone re-selecting.
+ */
+export interface EventLogSelection {
+  /** Types turned on beyond the defaults. */
+  shown: string[];
+  /** Types turned off, defaults included. */
+  hidden: string[];
+}
+
+export interface EventLogSettings {
+  selection: EventLogSelection;
+  /**
+   * The types on by default: installed `eventbus` triggers with an `alert.*`
+   * taxonomy entry, except `alert.chat` and `alert.shared` and anything under
+   * them.
+   */
+  defaults: string[];
+  /**
+   * Every type the streamer may select: the subjects of installed `eventbus`
+   * triggers, without wildcards, without chat messages (`user.message`, which
+   * has its own channel) and without the `channel.shared*` events.
+   */
+  offered: string[];
+  /** `(defaults ∪ shown) − hidden`, within `offered`. What the widget shows. */
+  enabled: string[];
 }
