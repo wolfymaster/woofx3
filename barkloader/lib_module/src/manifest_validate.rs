@@ -31,12 +31,12 @@ use super::canonical_id::{
 use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
-    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, DATA_SHAPE_IDENTITIES,
-    DATA_SHAPE_IDENTITY_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP, HOST_EFFECT_KINDS,
-    HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES, ManifestAction, ManifestActionImpl,
-    ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestDataShapeField,
-    ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme, ManifestTrigger,
-    ManifestWidgetBehaviorKind, ManifestWorkflow, ModuleManifest, ModuleWidget,
+    COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_DETAILS_MAX, DATA_SHAPE_FIELD_TYPES,
+    DATA_SHAPE_IDENTITIES, DATA_SHAPE_IDENTITY_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
+    HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES, ManifestAction,
+    ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape,
+    ManifestDataShapeField, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
+    ManifestTrigger, ManifestWidgetBehaviorKind, ManifestWorkflow, ModuleManifest, ModuleWidget,
     SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
     WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
@@ -2196,6 +2196,9 @@ fn reject_theme_field(field_type: &str, context: &str) -> Result<()> {
 ///   - paths must be unique within one shape
 ///   - `identity`, `anonymousWhen` and `displayName` must be well-formed (see
 ///     `validate_identity_annotation`), and appear only on a trigger's `emits`
+///   - `summary` and `details` must be well-formed templates over the shape's
+///     paths (see `validate_alert_templates`), and appear only on a trigger's
+///     `emits`
 ///
 /// A duplicate path is rejected rather than deduplicated. A path is a
 /// variable's identity, so two entries under one path are either redundant or
@@ -2212,7 +2215,7 @@ fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]
         if let Some(shape) = &t.emits {
             validate_data_shape(
                 shape,
-                IdentityAnnotations::Allowed,
+                DataShapeOwner::TriggerEmits,
                 &format!("trigger #{i} ({}): `emits`", t.id),
             )?;
         }
@@ -2221,7 +2224,7 @@ fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]
         if let Some(shape) = &a.returns {
             validate_data_shape(
                 shape,
-                IdentityAnnotations::Forbidden,
+                DataShapeOwner::ActionReturns,
                 &format!("action #{i} ({}): `returns`", a.id),
             )?;
         }
@@ -2264,18 +2267,19 @@ fn validate_taxonomy(entries: &[String], context: &str) -> Result<()> {
     Ok(())
 }
 
-/// Whether a shape may mark fields with `identity`. Only an event payload says
-/// who an event is about; a function result never attributes anything, so an
-/// annotation on `returns` would be a promise nothing reads.
+/// Which side of the contract a shape describes. Only an event payload says
+/// who an event is about and how it reads as an alert; a function result is
+/// never attributed or shown as an alert, so `identity`, `summary` or
+/// `details` on `returns` would be a promise nothing reads.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum IdentityAnnotations {
-    Allowed,
-    Forbidden,
+enum DataShapeOwner {
+    TriggerEmits,
+    ActionReturns,
 }
 
 fn validate_data_shape(
     shape: &ManifestDataShape,
-    identity_annotations: IdentityAnnotations,
+    owner: DataShapeOwner,
     context: &str,
 ) -> Result<()> {
     let mut types_by_path: HashMap<&str, &str> = HashMap::with_capacity(shape.fields.len());
@@ -2303,7 +2307,76 @@ fn validate_data_shape(
     for (i, field) in shape.fields.iter().enumerate() {
         let path = field.path.trim();
         let field_context = format!("{context} field #{i} ({path})");
-        validate_identity_annotation(field, &types_by_path, identity_annotations, &field_context)?;
+        validate_identity_annotation(field, &types_by_path, owner, &field_context)?;
+    }
+    validate_alert_templates(shape, &types_by_path, owner, context)?;
+    Ok(())
+}
+
+/// Check a shape's `summary` and `details` templates.
+///
+/// Both use the trigger `sentence` brace grammar, but their placeholders name
+/// `fields` paths rather than `schema` ids, since they are filled from the
+/// event's data. Each template must hold at least one placeholder: a summary
+/// with none says nothing the trigger's name does not, and the UI drops a
+/// detail only when its values are missing, so a constant detail would show
+/// on every alert.
+fn validate_alert_templates(
+    shape: &ManifestDataShape,
+    types_by_path: &HashMap<&str, &str>,
+    owner: DataShapeOwner,
+    context: &str,
+) -> Result<()> {
+    if owner == DataShapeOwner::ActionReturns {
+        if shape.summary.is_some() {
+            return Err(anyhow!(
+                "{context}: `summary` is only allowed on a trigger's `emits`"
+            ));
+        }
+        if shape.details.is_some() {
+            return Err(anyhow!(
+                "{context}: `details` is only allowed on a trigger's `emits`"
+            ));
+        }
+        return Ok(());
+    }
+    if let Some(summary) = &shape.summary {
+        validate_alert_template(summary, types_by_path, &format!("{context}: `summary`"))?;
+    }
+    if let Some(details) = &shape.details {
+        if details.len() > DATA_SHAPE_DETAILS_MAX {
+            return Err(anyhow!(
+                "{context}: `details` has {} entries; at most {DATA_SHAPE_DETAILS_MAX} are allowed",
+                details.len()
+            ));
+        }
+        for (i, detail) in details.iter().enumerate() {
+            validate_alert_template(detail, types_by_path, &format!("{context}: `details` #{i}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_alert_template(
+    template: &str,
+    types_by_path: &HashMap<&str, &str>,
+    label: &str,
+) -> Result<()> {
+    if template.trim().is_empty() {
+        return Err(anyhow!("{label} must be non-empty"));
+    }
+    let placeholders = sentence_placeholders(template).map_err(|e| anyhow!("{label}: {e}"))?;
+    if placeholders.is_empty() {
+        return Err(anyhow!(
+            "{label} must name at least one field as a `{{path}}` placeholder"
+        ));
+    }
+    for placeholder in placeholders {
+        if !types_by_path.contains_key(placeholder) {
+            return Err(anyhow!(
+                "{label}: placeholder {{{placeholder}}} is not a `path` declared in this shape's `fields`"
+            ));
+        }
     }
     Ok(())
 }
@@ -2321,7 +2394,7 @@ fn validate_data_shape(
 fn validate_identity_annotation(
     field: &ManifestDataShapeField,
     types_by_path: &HashMap<&str, &str>,
-    identity_annotations: IdentityAnnotations,
+    owner: DataShapeOwner,
     context: &str,
 ) -> Result<()> {
     let Some(identity) = field.identity.as_deref() else {
@@ -2337,7 +2410,7 @@ fn validate_identity_annotation(
         }
         return Ok(());
     };
-    if identity_annotations == IdentityAnnotations::Forbidden {
+    if owner == DataShapeOwner::ActionReturns {
         return Err(anyhow!(
             "{context}: `identity` is only allowed on a trigger's `emits`"
         ));
@@ -4302,6 +4375,121 @@ mod tests {
             .expect_err("an unknown shape key must not be dropped silently")
             .to_string();
         assert!(err.contains("required"), "{err}");
+    }
+
+    fn trigger_emitting_templates(templates: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": {{ {templates},
+                    "fields": [
+                        {{ "path": "userName", "type": "string" }},
+                        {{ "path": "reward.title", "type": "string" }},
+                        {{ "path": "message", "type": "string" }}
+                    ] }} }}]"#
+        ))
+    }
+
+    fn templates_rejection(templates: &str) -> String {
+        let msg = bad_err(&trigger_emitting_templates(templates));
+        assert!(msg.contains("trigger #0 (t1)"), "names the trigger: {msg}");
+        assert!(msg.contains("`emits`"), "names the shape: {msg}");
+        msg
+    }
+
+    #[test]
+    fn accepts_a_summary_and_details_over_declared_paths() {
+        validate(&trigger_emitting_templates(
+            r#""summary": "{userName} redeemed {reward.title}",
+               "details": ["“{message}”", "by {userName}"]"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_a_summary_or_details_on_returns() {
+        for (key, value) in [("summary", r#""{next}""#), ("details", r#"["{next}"]"#)] {
+            let m = minimal(&format!(
+                r#",
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }}],
+                "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                    "returns": {{ "{key}": {value},
+                        "fields": [{{ "path": "next", "type": "number" }}] }} }}]"#
+            ));
+            let msg = bad_err(&m);
+            assert!(msg.contains("action #0 (a1)"), "{msg}");
+            assert!(
+                msg.contains(&format!("`{key}` is only allowed on a trigger's `emits`")),
+                "{msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_an_empty_summary() {
+        let msg = templates_rejection(r#""summary": "   ""#);
+        assert!(msg.contains("`summary` must be non-empty"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_summary_without_a_placeholder() {
+        let msg = templates_rejection(r#""summary": "Someone redeemed a reward""#);
+        assert!(
+            msg.contains("`summary` must name at least one field"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_summary_placeholder_naming_no_declared_path() {
+        let msg = templates_rejection(r#""summary": "{userName} redeemed {rewardTitle}""#);
+        assert!(msg.contains("{rewardTitle}"), "{msg}");
+        assert!(msg.contains("not a `path` declared"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_malformed_braces_in_a_summary_or_detail() {
+        for (template, expected) in [
+            (r#""summary": "{userName redeemed""#, "unclosed `{`"),
+            (r#""summary": "userName} redeemed""#, "unmatched `}`"),
+            (r#""summary": "{user{Name}}""#, "nested `{`"),
+            (r#""summary": "{} redeemed""#, "empty placeholder"),
+            (r#""details": ["{message"]"#, "unclosed `{`"),
+        ] {
+            let msg = templates_rejection(template);
+            assert!(msg.contains(expected), "{template}: {msg}");
+        }
+    }
+
+    #[test]
+    fn rejects_more_than_the_maximum_details() {
+        let msg = templates_rejection(
+            r#""details": ["{userName}", "{message}", "{reward.title}", "{userName}", "{message}"]"#,
+        );
+        assert!(msg.contains("`details` has 5 entries; at most 4"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_empty_detail() {
+        let msg = templates_rejection(r#""details": ["{message}", " "]"#);
+        assert!(msg.contains("`details` #1 must be non-empty"), "{msg}");
+    }
+
+    // The UI drops a detail only when its values are missing, so one with no
+    // placeholder would show the same text under every alert.
+    #[test]
+    fn rejects_a_constant_detail() {
+        let msg = templates_rejection(r#""details": ["Thanks!"]"#);
+        assert!(
+            msg.contains("`details` #0 must name at least one field"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_detail_placeholder_naming_no_declared_path() {
+        let msg = templates_rejection(r#""details": ["{tier}"]"#);
+        assert!(msg.contains("`details` #0: placeholder {tier}"), "{msg}");
     }
 
     // Structure is serde's job; this pins that a malformed shape fails at

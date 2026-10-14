@@ -580,6 +580,44 @@ The annotations are kept verbatim in the `emits` registered for the trigger; a f
 | `displayName` only on a `string` identity | One name cannot name each viewer of an array. |
 | `displayName` names a field other than the identity | An id is not a name; pointing at itself would show ids where names were promised. |
 
+#### Alert summaries
+
+A trigger's `emits` can say how one event reads in an alert feed. Without it the feed can only show the trigger's name ("Channel point redemption"), and the streamer has to open the run to see who redeemed what.
+
+```json
+{
+  "id": "channel_points_redeem",
+  "name": "Channel point redemption",
+  "type": "eventbus",
+  "event": "channel.channel_points_custom_reward_redemption.add",
+  "emits": {
+    "summary": "{userName} redeemed {rewardTitle}",
+    "details": ["“{userInput}”"],
+    "fields": [
+      { "path": "userName", "type": "string" },
+      { "path": "rewardTitle", "type": "string" },
+      { "path": "userInput", "type": "string" }
+    ]
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `summary` | Optional. One line naming what happened and who it was, e.g. `"{chatterName} resubscribed for {cumulativeMonths} months"`. |
+| `details` | Optional. Up to 4 short secondary lines shown under the summary, e.g. `"{tier}"`, `"{streakMonths}-month streak"`. The UI drops a detail whose placeholder values are missing or empty, so a detail can name an optional field. |
+
+Each `{path}` placeholder names a `path` declared in the same shape's `fields`, and is filled from the event's data. The brace grammar is the one [trigger sentences](#trigger-sentences) use: no escapes, no nesting, no empty `{}`. Both keys are kept verbatim in the `emits` registered for the trigger; a shape without them is registered without the keys. They are validated at install with the rest of the shape, each error naming the trigger:
+
+| Rule | Why |
+|---|---|
+| only in a trigger's `emits` | A function result is never shown as an alert; on `returns` they are rejected. |
+| `summary` and each detail non-empty | An empty template renders as nothing; omit the key instead. |
+| braces well-formed | There is no escape syntax, so a stray brace would reach the streamer verbatim. |
+| every placeholder a declared `path` | Nothing could be substituted for it. Matching is exact: `{ userName }` does not name `userName`. |
+| at least one placeholder in `summary` and in each detail | A constant summary says nothing the trigger's name does not; a detail is dropped only when its values are missing, so a constant one would show under every alert. |
+| at most 4 `details` | An alert row has room for a few short lines, not a payload dump. |
+
 #### Trigger sentences
 
 A trigger's `sentence` is how the UI describes one configured instance of it in plain English. Each `{fieldId}` placeholder names a field in the trigger's `schema`, and the UI substitutes, in order of preference: the value the user configured, the field's `anyText` when it is set to "any", or the field's `missingText` (rendered as a warning) while a required field has no value yet.

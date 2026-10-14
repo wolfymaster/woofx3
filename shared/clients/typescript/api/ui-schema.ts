@@ -307,9 +307,26 @@ export interface DataShapeField {
   type: DataShapeFieldType;
   description?: string;
   example?: unknown;
+  /** Marks the field as naming who the event is about. Only `"viewer"` exists. */
+  identity?: string;
+  /** Path of a boolean field that is true when the identity is withheld. */
+  anonymousWhen?: string;
+  /** Path of a string field holding the identity's human-readable name. */
+  displayName?: string;
 }
 
 export interface DataShape {
+  /**
+   * How one event reads as an alert: a template of `{path}` placeholders
+   * naming paths in `fields`. Only on a trigger's `emits`.
+   */
+  summary?: string;
+  /**
+   * Secondary templates shown under `summary`, same grammar. A consumer drops
+   * a detail whose placeholder values are missing, so one may name an
+   * optional field.
+   */
+  details?: string[];
   fields: DataShapeField[];
 }
 
@@ -350,5 +367,19 @@ export function parseDataShape(raw: string | undefined | null): DataShape | unde
       typeof (field as DataShapeField).path === "string" &&
       (field as DataShapeField).path.length > 0
   );
-  return valid.length > 0 ? { fields: valid } : undefined;
+  if (valid.length === 0) {
+    return undefined;
+  }
+  const shape: DataShape = { fields: valid };
+  const { summary, details } = parsed as { summary?: unknown; details?: unknown };
+  if (typeof summary === "string" && summary.length > 0) {
+    shape.summary = summary;
+  }
+  if (Array.isArray(details)) {
+    const kept = details.filter((detail): detail is string => typeof detail === "string" && detail.length > 0);
+    if (kept.length > 0) {
+      shape.details = kept;
+    }
+  }
+  return shape;
 }
