@@ -37,3 +37,31 @@ export interface StreamEventFrame {
 export interface StreamEventSubscriber {
   onStreamEvent(frame: StreamEventFrame): Promise<void>;
 }
+
+/**
+ * A page of the engine's event log, for `listEvents`.
+ *
+ * The log holds every event an installed `eventbus` trigger fires, except
+ * chat messages, shared-chat events and events the api published itself
+ * (dashboard tests, `source: "api"`). Detail is kept for the engine's retention window
+ * (7 days by default), so a page never reaches further back than that.
+ */
+export interface EventLogQuery {
+  /** Event types (CloudEvent `type`) to return. Absent or empty returns every type. */
+  types?: string[];
+  /** The `nextCursor` of the previous page; absent for the newest page. */
+  cursor?: string;
+  /** 1-100. Defaults to 50. */
+  limit?: number;
+}
+
+export interface EventLogPage {
+  /**
+   * Newest first. The same frame shape `subscribeStreamEvents` pushes, so a
+   * client can merge history and live events by `id`. `id` is always set on
+   * a logged event.
+   */
+  events: StreamEventFrame[];
+  /** Opaque; pass back as `cursor` for the next older page. Null on the last page. */
+  nextCursor: string | null;
+}

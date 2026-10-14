@@ -9,7 +9,7 @@ import type {
   ConfigImportResult,
 } from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
-import type { StreamEventSubscriber } from "./stream-events";
+import type { EventLogPage, EventLogQuery, StreamEventSubscriber } from "./stream-events";
 import type {
   ActionDefinition,
   ModuleResourceUsage,
@@ -2111,15 +2111,21 @@ export interface Woofx3EngineApi {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void>;
 
-  /** Push live stream events -- follows, subs, cheers, raids, stream on/off,
-   *  ad breaks (upcoming, begin, end) -- to the caller for the life of the
-   *  session. Chat is deliberately not on
-   *  this channel; see ./stream-events.
+  /** Push live events to the caller for the life of the session: every event
+   *  an installed `eventbus` trigger fires, except chat messages (which have
+   *  their own channel) and shared-chat events; see ./stream-events.
+   *  Events the api published itself (dashboard tests) are included and carry
+   *  `source: "api"`; a client that wants only real activity drops those.
    *
    *  Delivery is not gapless: nothing buffers events behind this, so a client
    *  that connects late or reconnects has missed the gap and should re-read
    *  point-in-time state rather than assume a continuous stream. */
   subscribeStreamEvents(callback: StreamEventSubscriber): Promise<void>;
+
+  /** Read the engine's event log, newest first; see `EventLogQuery`. The
+   *  history behind `subscribeStreamEvents`: a client reads a page on load and
+   *  on reconnect, then merges live frames by `id`. */
+  listEvents(query?: EventLogQuery): Promise<EventLogPage>;
 
   getUserProfile(userId: string): Promise<{
     id: string;

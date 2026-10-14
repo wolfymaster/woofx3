@@ -37,6 +37,13 @@ export const ENGINE_CAPABILITIES = {
   analyticsAggregates: "analytics.aggregates",
   /** A session's counted events in time order, for its timeline: `getStreamSessionEvents`. */
   analyticsSessionEvents: "analytics.sessionEvents",
+  /**
+   * The engine's event log, the history behind `subscribeStreamEvents`:
+   * `listEvents`. The log and the push carry the same events, every one an
+   * installed `eventbus` trigger fires except chat messages and shared-chat
+   * events.
+   */
+  eventsLog: "events.log",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
