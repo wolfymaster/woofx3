@@ -224,6 +224,7 @@ export const RPC_METHODS = [
   "cancelWorkflow",
   "subscribeTriggerChanges",
   "subscribeStreamEvents",
+  "listEvents",
   "getUserProfile",
   "awardTreatsToUser",
   "simulateTwitchEvent",
