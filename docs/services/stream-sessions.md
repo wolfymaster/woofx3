@@ -76,6 +76,13 @@ The consequence is a rule every consumer must respect:
 Merging two sessions is the same operation in the other direction, which is why
 "combine data across several streams" needs no separate mechanism.
 
+Once a session has ended, Analytics [compacts](/services/analytics#retention)
+it: its per-viewer totals and timeline are copied out of the raw event log,
+and a week later the raw events are pruned. A closed session's bounds do not
+move today. An operation that moves them (a merge, a late split) must compact
+the sessions it touches while their raw events are still there, which
+re-summarising them does.
+
 ## Identity
 
 The id is an opaque string. Nothing outside the resolver may parse it, derive
