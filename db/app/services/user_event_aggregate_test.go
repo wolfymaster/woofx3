@@ -62,6 +62,11 @@ func forEachDialect(t *testing.T, test func(t *testing.T, db *gorm.DB)) {
 		t.Cleanup(func() {
 			db.Exec(`DROP SCHEMA public CASCADE`)
 			db.Exec(`CREATE SCHEMA public`)
+			// Each test opens its own pool; leaving it open runs a full
+			// package run past the server's connection limit.
+			if sqlDB, err := db.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
 		})
 		if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 			t.Fatalf("enable uuid-ossp: %v", err)
