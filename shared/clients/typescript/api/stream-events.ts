@@ -44,7 +44,9 @@ export interface StreamEventSubscriber {
  * The log holds the event types the streamer selected (`EventLogSettings`)
  * plus the analytics types, recorded whatever the selection, minus events the
  * api published itself (dashboard tests, `source: "api"`). A type is logged
- * from the moment it is selected, never retroactively.
+ * from the moment it is selected, never retroactively. Detail is kept for the
+ * engine's retention window (7 days by default), so a page never reaches
+ * further back than that.
  */
 export interface EventLogQuery {
   /** Event types (CloudEvent `type`) to return. Absent or empty returns every type. */
