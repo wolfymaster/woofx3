@@ -3,6 +3,7 @@ import type { ApplicationContext, IApplication, Application as RuntimeApplicatio
 import type { Msg } from "@woofx3/nats/src/types";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { EventCatalog } from "./event-catalog";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
 
 export type ApiServices = {
@@ -35,6 +36,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private gaugeSampler: StreamGaugeSampler | null = null;
+  private eventCatalog: EventCatalog | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -48,6 +50,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { Api },
       { ClientAuth },
       { ConvexWebhookClient },
+      { EventCatalog },
       { ApiGateway },
       { createHttpServer },
       { initModuleHandlers },
@@ -81,6 +84,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./api"),
       import("./auth"),
       import("./convex-webhook-client"),
+      import("./event-catalog"),
       import("./gateway"),
       import("./http"),
       import("./module-event-handlers"),
@@ -208,7 +212,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
       await streamSessionResolver.start();
 
-      const userEventRecorder = new UserEventRecorder(natsClient, db, logger);
+      // The recorder and the broadcaster follow one set of subjects. Both
+      // listen before the first read below, so neither misses it.
+      this.eventCatalog = new EventCatalog(natsClient, db, logger);
+      const userEventRecorder = new UserEventRecorder(natsClient, db, logger, this.eventCatalog);
       await userEventRecorder.start();
 
       // Inside the bus block because segments open and close only through the
@@ -216,9 +223,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       this.gaugeSampler = new StreamGaugeSampler(db, new TwitchHelixGauges(api.twitchToken), logger);
       this.gaugeSampler.start();
 
-      const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
+      const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger, this.eventCatalog);
       await streamEventBroadcaster.start();
       api.setStreamEventBroadcaster(streamEventBroadcaster);
+      await this.eventCatalog.start();
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await serveTwitchToken(natsClient, api.twitchToken, logger);
@@ -290,6 +298,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   async terminate(): Promise<void> {
     this.gaugeSampler?.stop();
     this.gaugeSampler = null;
+    this.eventCatalog?.stop();
+    this.eventCatalog = null;
     this.server?.stop();
     this.server = null;
   }

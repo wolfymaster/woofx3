@@ -1,36 +1,22 @@
 import type { StreamEventFrame, StreamEventSubscriber } from "@woofx3/api";
-import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
-
-/**
- * Chat (`EventType.ChatMessage`) is deliberately absent. It is the only
- * high-volume subject, and nothing on this path applies backpressure: the
- * WebSocket adapter ignores `bufferedAmount`, and capnweb serializes pushes
- * per session, so a firehose would queue unbounded in the engine's memory. The
- * events below fire at human pace, which this fan-out can carry as-is. Chat
- * needs batching designed for it before it can join.
- */
-const BROADCAST_SUBJECTS: readonly EventType[] = [
-  EventType.Follow,
-  EventType.Cheer,
-  EventType.Subscribe,
-  EventType.SubscriptionGift,
-  EventType.Raid,
-  EventType.StreamOnline,
-  EventType.StreamOffline,
-  EventType.AdBreakUpcoming,
-  EventType.AdBreakBegin,
-  EventType.AdBreakEnd,
-];
+import { type EventCatalog, SubjectSubscriptions } from "./event-catalog";
 
 /** capnweb stubs carry this; the contract types the argument as a plain object. */
 type MaybeStub = Partial<{ onRpcBroken(callback: (error: unknown) => void): void }>;
 
 /**
  * Fans stream events out to browser clients over their existing capnweb
- * session.
+ * session: every subject of the `EventCatalog`, the same set the event log
+ * records, so a client can merge `listEvents` history with live frames.
+ *
+ * Nothing on this path applies backpressure: the WebSocket adapter ignores
+ * `bufferedAmount`, and capnweb serializes pushes per session, so a firehose
+ * would queue unbounded in the engine's memory. The catalog leaves out chat,
+ * the engine's one high-volume subject, so what remains fires at human pace,
+ * which this fan-out can carry as-is.
  *
  * A second consumer of these subjects alongside AlertEmitter rather than a hook
  * into it: core NATS delivers to every subscriber, so the extra subscription is
@@ -39,17 +25,28 @@ type MaybeStub = Partial<{ onRpcBroken(callback: (error: unknown) => void): void
  */
 export class StreamEventBroadcaster {
   private subscribers = new Set<StreamEventSubscriber>();
+  private subscriptions: SubjectSubscriptions;
 
   constructor(
-    private nats: NATSClient,
-    private logger: SharedLogger
-  ) {}
+    nats: NATSClient,
+    private logger: SharedLogger,
+    private catalog: EventCatalog
+  ) {
+    this.subscriptions = new SubjectSubscriptions(
+      nats,
+      (subject, msg) => {
+        this.handle(subject, msg);
+      },
+      logger,
+      "StreamEventBroadcaster"
+    );
+  }
 
+  /** Pushes the catalog's subjects from now on, following it as it changes. */
   async start(): Promise<void> {
-    for (const subject of BROADCAST_SUBJECTS) {
-      await this.bind(subject);
-    }
-    this.logger.info("StreamEventBroadcaster started", { subjects: BROADCAST_SUBJECTS.length });
+    this.catalog.onChange((events) => this.subscriptions.sync(events.keys()));
+    await this.subscriptions.sync(this.catalog.events.keys());
+    this.logger.info("StreamEventBroadcaster started", { subjects: this.catalog.events.size });
   }
 
   /**
@@ -76,12 +73,6 @@ export class StreamEventBroadcaster {
     return this.subscribers.size;
   }
 
-  private async bind(subject: string): Promise<void> {
-    await this.nats.subscribe(subject, (msg: Msg) => {
-      this.handle(subject, msg);
-    });
-  }
-
   private handle(subject: string, msg: Msg): void {
     if (this.subscribers.size === 0) {
       return;
@@ -89,7 +80,7 @@ export class StreamEventBroadcaster {
 
     let frame: StreamEventFrame;
     try {
-      frame = toFrame(subject, msg.json() as Record<string, unknown>);
+      frame = toFrame(subject, msg.json() as Record<string, unknown>, this.catalog.events.get(subject)?.moduleId);
     } catch (err) {
       this.logger.error("StreamEventBroadcaster: failed to decode CloudEvent", {
         subject,
@@ -119,15 +110,17 @@ export class StreamEventBroadcaster {
 /**
  * The publisher wraps payloads in a CloudEvent, but `ce.data ?? ce` mirrors
  * AlertEmitter: some producers publish the payload bare. The subject is the
- * fallback for `type` because the EventType value is both.
+ * fallback for `type` because the EventType value is both. A module event
+ * that names no platform gets its module's id, as the event log records it,
+ * so a live frame and its logged copy read the same.
  */
-function toFrame(subject: string, ce: Record<string, unknown>): StreamEventFrame {
+function toFrame(subject: string, ce: Record<string, unknown>, moduleId: string | undefined): StreamEventFrame {
   return {
     id: typeof ce.id === "string" ? ce.id : undefined,
     type: typeof ce.type === "string" ? ce.type : subject,
     source: typeof ce.source === "string" ? ce.source : "engine",
     time: typeof ce.time === "string" ? ce.time : new Date().toISOString(),
-    platform: typeof ce.platform === "string" ? ce.platform : undefined,
+    platform: typeof ce.platform === "string" ? ce.platform : moduleId || undefined,
     data: ce.data ?? ce,
   };
 }
