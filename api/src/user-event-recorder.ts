@@ -54,6 +54,15 @@ const ATTRIBUTIONS: Readonly<Record<string, (data: Payload) => Attribution>> = {
 };
 
 /**
+ * The Twitch event types attributed above: the viewer activity the
+ * dashboard's recent figures count. The log holds every installed trigger's
+ * events, and a wheel landing or a counter changing is not that activity.
+ * The recorder stores a Twitch event under the subject it subscribed to,
+ * which is the CloudEvent type.
+ */
+export const ANALYTICS_EVENT_TYPES: readonly string[] = Object.keys(ATTRIBUTIONS);
+
+/**
  * The api republishes dashboard simulations under this source with the real
  * platform stamped, byte-identical to a platform event otherwise. A simulated
  * cheer is not a fact, so nothing it publishes is recorded.
