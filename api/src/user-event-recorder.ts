@@ -4,6 +4,7 @@ import type { RecordUserEventRequest } from "@woofx3/db/user_event.pb";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { type DbClient, DbError } from "./db-client";
+import { type EventCatalog, type LoggedEvent, SubjectSubscriptions, type ViewerIdentity } from "./event-catalog";
 import { timestampFromDate } from "./routes/helpers";
 
 /** Who an event is attributed to, and the quantity it carries. */
@@ -18,12 +19,10 @@ export interface Attribution {
 type Payload = Record<string, unknown>;
 
 /**
- * The subjects recorded, and how each one names its viewer and quantity.
- *
- * Chat is absent: it is the one high-volume subject and not a fact any total
- * is built from. The shared* events are absent too, because they happened in
- * another channel during a shared chat session and would read as this
- * channel's subs and raids.
+ * How the Twitch events Analytics totals name their viewer and quantity. Every
+ * other logged event is attributed from its trigger's `emits` identity
+ * annotations and carries no quantity: `amount` is what the totals add up, so
+ * it is set only where a total knows what it means.
  *
  * A community gift arrives as one `SubscriptionGift` for the gifter plus one
  * gifted `Subscribe` per recipient. Both are recorded, as Twitch sent them; a
@@ -54,14 +53,19 @@ const ATTRIBUTIONS: Readonly<Record<string, (data: Payload) => Attribution>> = {
   [EventType.PayItForward]: chatter,
 };
 
-export const RECORDED_SUBJECTS: readonly string[] = Object.keys(ATTRIBUTIONS);
-
 /**
  * The api republishes dashboard simulations under this source with the real
  * platform stamped, byte-identical to a platform event otherwise. A simulated
  * cheer is not a fact, so nothing it publishes is recorded.
  */
 const API_SOURCE = "api";
+
+/**
+ * Column widths of `user_events`. Must match userEventUserIDMaxLen and
+ * userEventUserNameMaxLen in db/app/services/user_event_service.go.
+ */
+const USER_ID_MAX_LENGTH = 100;
+const USER_NAME_MAX_LENGTH = 100;
 
 /**
  * Waits between attempts after a failed write. Retrying is safe only because
@@ -81,36 +85,53 @@ interface CloudEventEnvelope {
 }
 
 /**
- * Writes every platform event the engine receives to the `user_events` log,
- * which Analytics aggregates (docs/services/analytics.md).
+ * Writes every event the `EventCatalog` names to the `user_events` log: the
+ * history the dashboard's event feed reads, and what Analytics aggregates
+ * (docs/services/analytics.md).
  *
  * It sits on the bus rather than in each platform integration so there is one
- * writer for every platform, in the process that already holds the db-proxy
- * client, and so a fact is recorded whether or not any workflow reacts to it.
+ * writer for every platform and module, in the process that already holds the
+ * db-proxy client, and so an event is recorded whether or not any workflow
+ * reacts to it.
  */
 export class UserEventRecorder {
+  private subscriptions: SubjectSubscriptions;
+
   constructor(
-    private nats: NATSClient,
-    private db: DbClient,
+    nats: NATSClient,
+    private db: Pick<DbClient, "recordUserEvent">,
     private logger: SharedLogger,
+    private catalog: EventCatalog,
     private retryDelaysMs: readonly number[] = DEFAULT_RETRY_DELAYS_MS,
     private sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-  ) {}
-
-  async start(): Promise<void> {
-    for (const subject of RECORDED_SUBJECTS) {
-      await this.nats.subscribe(subject, (msg: Msg) => {
+  ) {
+    this.subscriptions = new SubjectSubscriptions(
+      nats,
+      (subject, msg) => {
         void this.handle(subject, msg);
-      });
-    }
-    this.logger.info("UserEventRecorder started", { subjects: RECORDED_SUBJECTS.length });
+      },
+      logger,
+      "UserEventRecorder"
+    );
+  }
+
+  /** Records the catalog's subjects from now on, following it as it changes. */
+  async start(): Promise<void> {
+    this.catalog.onChange((events) => this.subscriptions.sync(events.keys()));
+    await this.subscriptions.sync(this.catalog.events.keys());
+    this.logger.info("UserEventRecorder started", { subjects: this.catalog.events.size });
   }
 
   /** Exposed for tests; resolves once the event is recorded or given up on. */
   async handle(subject: string, msg: Msg): Promise<void> {
+    const logged = this.catalog.events.get(subject);
+    if (logged === undefined) {
+      // Delivered just after its triggers were removed.
+      return;
+    }
     let request: RecordUserEventRequest | null;
     try {
-      request = toRequest(subject, msg.json() as CloudEventEnvelope);
+      request = toRequest(logged, msg.json() as CloudEventEnvelope);
     } catch (err) {
       this.logger.error("UserEventRecorder: failed to decode CloudEvent", {
         subject,
@@ -148,24 +169,29 @@ export class UserEventRecorder {
 }
 
 /**
- * The write for one bus message, or null when it is not a platform event to
- * record. Exported for tests.
+ * The write for one bus message, or null when it is not an event to record.
+ * Exported for tests.
+ *
+ * `platform` is the CloudEvent's `platform` extension, which every platform
+ * integration stamps. A module's own events (a goal reached, a Ko-fi tip
+ * relayed by its webhook handler) often carry none, and the log requires one,
+ * so they are recorded under the id of the module that registered the
+ * trigger: the event is the module's, and the module id is what the UI groups
+ * events by.
  */
-export function toRequest(subject: string, ce: CloudEventEnvelope): RecordUserEventRequest | null {
-  const attribute = ATTRIBUTIONS[subject];
-  if (attribute === undefined) {
-    return null;
-  }
+export function toRequest(logged: LoggedEvent, ce: CloudEventEnvelope): RecordUserEventRequest | null {
+  const subject = logged.subject;
   const eventId = text(ce.id);
   const source = text(ce.source);
-  const platform = text(ce.platform);
-  // An event without an identity cannot be deduplicated, and one without a
-  // platform is not a platform event; neither is published by an integration.
+  const platform = text(ce.platform) ?? text(logged.moduleId);
+  // An event without an identity cannot be deduplicated.
   if (eventId === undefined || source === undefined || platform === undefined || source === API_SOURCE) {
     return null;
   }
   const data = isPayload(ce.data) ? ce.data : {};
-  const { platformUserId, userName, amount } = attribute(data);
+  const attribute = ATTRIBUTIONS[subject];
+  const { platformUserId, userName, amount } =
+    attribute !== undefined ? attribute(data) : identityAttribution(logged.identity, data);
   const sessionId = text(ce.sessionId);
 
   return {
@@ -189,6 +215,41 @@ function occurredAt(time: unknown): Date {
     return new Date();
   }
   return parsed;
+}
+
+/**
+ * The viewer an event's trigger declares in its `emits`, read from the event's
+ * data. An id or name too long for the log is dropped rather than failing the
+ * write, so a module's oversized value costs the attribution, not the event.
+ */
+function identityAttribution(identity: ViewerIdentity | undefined, data: Payload): Attribution {
+  if (identity === undefined) {
+    return {};
+  }
+  if (identity.anonymousWhen !== undefined && valueAt(data, identity.anonymousWhen) === true) {
+    return {};
+  }
+  const platformUserId = text(valueAt(data, identity.path));
+  if (platformUserId === undefined || platformUserId.length > USER_ID_MAX_LENGTH) {
+    return {};
+  }
+  const userName = identity.displayName !== undefined ? text(valueAt(data, identity.displayName)) : undefined;
+  return {
+    platformUserId,
+    ...(userName !== undefined && userName.length <= USER_NAME_MAX_LENGTH ? { userName } : {}),
+  };
+}
+
+/** The value at a dot path of `emits`, e.g. `user.id`. */
+function valueAt(data: Payload, path: string): unknown {
+  let value: unknown = data;
+  for (const key of path.split(".")) {
+    if (!isPayload(value)) {
+      return undefined;
+    }
+    value = value[key];
+  }
+  return value;
 }
 
 function chatter(data: Payload): Attribution {

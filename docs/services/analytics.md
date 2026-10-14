@@ -188,32 +188,58 @@ attribution to a session, and the time axis.
 
 ## The fact log
 
-`user_events` is the log, one row per platform event, never updated
+`user_events` is the log, one row per event, never updated
 (`db/database/migrate/migrations/*/0048_user_events_fact_log.go`).
 
 | Column | Meaning |
 |---|---|
 | `event_id`, `source` | The CloudEvent identity. Unique together, so a redelivery is a conflict, not a second row. |
-| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. |
+| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. A module's own event that names no platform is recorded under the id of the module that registered its trigger. |
 | `platform_user_id`, `user_name` | The viewer, as the platform names them. Null when the event is attributable to nobody. |
 | `session_id` | The session the event was stamped with. Not a foreign key and not a stable key; resolve it. |
-| `amount` | Bits, gifted subs, raiders or channel points. Null when the event carries no quantity. |
+| `amount` | Bits, gifted subs, raiders or channel points, for the Twitch events the totals read. Null for every other event, and when the event carries no quantity. |
 | `event_value` | The CloudEvent `data`, whole. |
 | `occurred_at` | The CloudEvent `time`. The time axis every reader groups on. |
 
 **One writer, on the bus.** `UserEventRecorder` (`api/src/user-event-recorder.ts`)
-subscribes to the platform subjects and calls `UserEventService.RecordUserEvent`.
+subscribes to the subjects of the event catalog and calls `UserEventService.RecordUserEvent`.
 It sits in the api rather than in each platform integration because the api
 already holds the db-proxy client and one subscriber serves every platform; it
 is on the ingestion path in the sense that matters — nothing has to react to an
 event for it to be recorded. A failed write is retried a few times, which is
 safe only because the write is idempotent.
 
-**What is recorded.** Cheer, follow, raid, redemption, sub, gift, resub, and
-the gift-paid, prime-paid and pay-it-forward upgrades. Chat is not: it is the
-one high-volume subject and no total is built from it. Neither are the
-`shared*` events, which happened in another channel during shared chat.
+**What is recorded.** Every event an installed `eventbus` trigger fires, so
+installing a module adds its events to the log. The set is the event catalog
+(`api/src/event-catalog.ts`), which re-reads the triggers on every trigger
+registration or deregistration on the bus, every five minutes as a safety
+net, and with backoff until its first read succeeds, so an api that starts
+before the modules have registered converges once they do. It leaves out:
+
+- chat (`user.message`): it fires at chat rate, no total is built from it,
+  and it has its own channel;
+- the `shared*` events, which happened in another channel during shared chat;
+- wildcard trigger patterns (`chat.command.*`), which name a family of
+  subjects rather than one event.
+
 Events the api publishes itself are dashboard simulations and are skipped.
+`StreamEventBroadcaster` pushes the same catalog live to
+`subscribeStreamEvents` clients, and `listEvents` reads the log back a page at
+a time, so a dashboard feed merges history and live events by CloudEvent id.
+
+**Attribution.** The Twitch events the totals read (cheer, follow, raid,
+redemption, sub, gift, resub, and the gift-paid, prime-paid and
+pay-it-forward upgrades) name their viewer and quantity through a fixed map
+in the recorder. Every other event is attributed through its trigger's
+`emits` [identity annotations](../barkloader/modules.md#identity-fields): the
+one `string` field marked `identity: "viewer"`, its `displayName`, and
+`anonymousWhen`. A trigger that marks none, marks several, or disagrees with
+another trigger of the same subject attributes its events to nobody. Such
+events carry no `amount`.
+
+**The totals read only the types they name.** Every aggregate filters by
+`event_type`, so the wider log changes no total, leaderboard or session
+timeline.
 
 **Anonymous events count, but not for anybody.** An anonymous cheer or gift is
 stored with a null viewer, so channel totals include it and no per-viewer total
