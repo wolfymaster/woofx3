@@ -211,25 +211,52 @@ export interface ListViewerLeaderboardResponse {
 
 export interface ListRecentUserEventsRequest {
   /**
-   * Start of the span, inclusive. Required.
+   * Start of the span, inclusive. Absent for the whole log.
    */
   since: protoscript.Timestamp;
   /**
    * 1-100. Defaults to 20.
    */
   limit?: number | null | undefined;
+  /**
+   * The CloudEvent types to return. Empty returns every type.
+   */
+  eventTypes: string[];
+  /**
+   * Return only events after this one in newest-first order: the last event
+   * of the previous page. Absent for the newest page.
+   */
+  before: UserEventPosition;
+}
+
+/**
+ * Where an event sits in the log's newest-first order: by occurred_at, then
+ * by id among events at the same instant.
+ */
+export interface UserEventPosition {
+  occurredAt: protoscript.Timestamp;
+  /**
+   * UserEvent.id.
+   */
+  id: string;
 }
 
 export interface ListRecentUserEventsResponse {
   status: common.ResponseStatus;
   /**
-   * Newest first by occurred_at, at most `limit` of them.
+   * Newest first by occurred_at, then by id, at most `limit` of them.
    */
   events: UserEvent[];
   /**
-   * Every event in the span, not only those returned.
+   * Every event in the span of the requested types, not only those returned,
+   * and whatever `before` is.
    */
   total: bigint;
+  /**
+   * True when the span holds older events of the requested types than those
+   * returned, so a request with `before` set to the last of them returns more.
+   */
+  more: boolean;
 }
 
 export interface ListStreamSessionUserEventsRequest {
@@ -327,6 +354,8 @@ export async function ListViewerLeaderboard(
 /**
  * The latest events that occurred at or after `since`, newest first, and how
  * many occurred in that span. Reads the log by time alone, not by session.
+ * Pages back through the log with `before`, the last event of the previous
+ * page, and narrows it to some event types with `event_types`.
  */
 export async function ListRecentUserEvents(
   listRecentUserEventsRequest: ListRecentUserEventsRequest,
@@ -436,6 +465,8 @@ export async function ListViewerLeaderboardJSON(
 /**
  * The latest events that occurred at or after `since`, newest first, and how
  * many occurred in that span. Reads the log by time alone, not by session.
+ * Pages back through the log with `before`, the last event of the previous
+ * page, and narrows it to some event types with `event_types`.
  */
 export async function ListRecentUserEventsJSON(
   listRecentUserEventsRequest: ListRecentUserEventsRequest,
@@ -522,6 +553,8 @@ export interface UserEventService<Context = unknown> {
   /**
    * The latest events that occurred at or after `since`, newest first, and how
    * many occurred in that span. Reads the log by time alone, not by session.
+   * Pages back through the log with `before`, the last event of the previous
+   * page, and narrows it to some event types with `event_types`.
    */
   ListRecentUserEvents: (
     listRecentUserEventsRequest: ListRecentUserEventsRequest,
@@ -1950,6 +1983,8 @@ export const ListRecentUserEventsRequest = {
     return {
       since: protoscript.Timestamp.initialize(),
       limit: undefined,
+      eventTypes: [],
+      before: UserEventPosition.initialize(),
       ...msg,
     };
   },
@@ -1966,6 +2001,12 @@ export const ListRecentUserEventsRequest = {
     }
     if (msg.limit != undefined) {
       writer.writeInt32(2, msg.limit);
+    }
+    if (msg.eventTypes?.length) {
+      writer.writeRepeatedString(3, msg.eventTypes);
+    }
+    if (msg.before) {
+      writer.writeMessage(4, msg.before, UserEventPosition._writeMessage);
     }
     return writer;
   },
@@ -1986,6 +2027,97 @@ export const ListRecentUserEventsRequest = {
         }
         case 2: {
           msg.limit = reader.readInt32();
+          break;
+        }
+        case 3: {
+          msg.eventTypes.push(reader.readString());
+          break;
+        }
+        case 4: {
+          reader.readMessage(msg.before, UserEventPosition._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UserEventPosition = {
+  /**
+   * Serializes UserEventPosition to protobuf.
+   */
+  encode: function (msg: PartialDeep<UserEventPosition>): Uint8Array {
+    return UserEventPosition._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UserEventPosition from protobuf.
+   */
+  decode: function (bytes: ByteSource): UserEventPosition {
+    return UserEventPosition._readMessage(
+      UserEventPosition.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UserEventPosition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<UserEventPosition>): UserEventPosition {
+    return {
+      occurredAt: protoscript.Timestamp.initialize(),
+      id: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UserEventPosition>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.occurredAt) {
+      writer.writeMessage(
+        1,
+        msg.occurredAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.id) {
+      writer.writeString(2, msg.id);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UserEventPosition,
+    reader: protoscript.BinaryReader,
+  ): UserEventPosition {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(
+            msg.occurredAt,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        case 2: {
+          msg.id = reader.readString();
           break;
         }
         default: {
@@ -2031,6 +2163,7 @@ export const ListRecentUserEventsResponse = {
       status: common.ResponseStatus.initialize(),
       events: [],
       total: 0n,
+      more: false,
       ...msg,
     };
   },
@@ -2054,6 +2187,9 @@ export const ListRecentUserEventsResponse = {
     }
     if (msg.total) {
       writer.writeInt64String(3, msg.total.toString() as any);
+    }
+    if (msg.more) {
+      writer.writeBool(4, msg.more);
     }
     return writer;
   },
@@ -2080,6 +2216,10 @@ export const ListRecentUserEventsResponse = {
         }
         case 3: {
           msg.total = BigInt(reader.readInt64String());
+          break;
+        }
+        case 4: {
+          msg.more = reader.readBool();
           break;
         }
         default: {
@@ -3437,6 +3577,8 @@ export const ListRecentUserEventsRequestJSON = {
     return {
       since: protoscript.TimestampJSON.initialize(),
       limit: undefined,
+      eventTypes: [],
+      before: UserEventPositionJSON.initialize(),
       ...msg,
     };
   },
@@ -3453,6 +3595,15 @@ export const ListRecentUserEventsRequestJSON = {
     }
     if (msg.limit != undefined) {
       json["limit"] = msg.limit;
+    }
+    if (msg.eventTypes?.length) {
+      json["eventTypes"] = msg.eventTypes;
+    }
+    if (msg.before) {
+      const _before_ = UserEventPositionJSON._writeMessage(msg.before);
+      if (Object.keys(_before_).length > 0) {
+        json["before"] = _before_;
+      }
     }
     return json;
   },
@@ -3471,6 +3622,78 @@ export const ListRecentUserEventsRequestJSON = {
     const _limit_ = json["limit"];
     if (_limit_) {
       msg.limit = protoscript.parseNumber(_limit_);
+    }
+    const _eventTypes_ = json["eventTypes"] ?? json["event_types"];
+    if (_eventTypes_) {
+      msg.eventTypes = _eventTypes_;
+    }
+    const _before_ = json["before"];
+    if (_before_) {
+      UserEventPositionJSON._readMessage(msg.before, _before_);
+    }
+    return msg;
+  },
+};
+
+export const UserEventPositionJSON = {
+  /**
+   * Serializes UserEventPosition to JSON.
+   */
+  encode: function (msg: PartialDeep<UserEventPosition>): string {
+    return JSON.stringify(UserEventPositionJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes UserEventPosition from JSON.
+   */
+  decode: function (json: string): UserEventPosition {
+    return UserEventPositionJSON._readMessage(
+      UserEventPositionJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UserEventPosition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<UserEventPosition>): UserEventPosition {
+    return {
+      occurredAt: protoscript.TimestampJSON.initialize(),
+      id: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UserEventPosition>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.occurredAt && (msg.occurredAt.seconds || msg.occurredAt.nanos)) {
+      json["occurredAt"] = protoscript.serializeTimestamp(msg.occurredAt);
+    }
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UserEventPosition,
+    json: any,
+  ): UserEventPosition {
+    const _occurredAt_ = json["occurredAt"] ?? json["occurred_at"];
+    if (_occurredAt_) {
+      msg.occurredAt = protoscript.parseTimestamp(_occurredAt_);
+    }
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
     }
     return msg;
   },
@@ -3504,6 +3727,7 @@ export const ListRecentUserEventsResponseJSON = {
       status: common.ResponseStatusJSON.initialize(),
       events: [],
       total: 0n,
+      more: false,
       ...msg,
     };
   },
@@ -3526,6 +3750,9 @@ export const ListRecentUserEventsResponseJSON = {
     }
     if (msg.total) {
       json["total"] = String(msg.total);
+    }
+    if (msg.more) {
+      json["more"] = msg.more;
     }
     return json;
   },
@@ -3552,6 +3779,10 @@ export const ListRecentUserEventsResponseJSON = {
     const _total_ = json["total"];
     if (_total_) {
       msg.total = BigInt(_total_);
+    }
+    const _more_ = json["more"];
+    if (_more_) {
+      msg.more = _more_;
     }
     return msg;
   },

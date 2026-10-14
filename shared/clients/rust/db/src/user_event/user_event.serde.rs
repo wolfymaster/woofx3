@@ -691,12 +691,24 @@ impl serde::Serialize for ListRecentUserEventsRequest {
         if self.limit.is_some() {
             len += 1;
         }
+        if !self.event_types.is_empty() {
+            len += 1;
+        }
+        if self.before.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("user_event.ListRecentUserEventsRequest", len)?;
         if let Some(v) = self.since.as_ref() {
             struct_ser.serialize_field("since", v)?;
         }
         if let Some(v) = self.limit.as_ref() {
             struct_ser.serialize_field("limit", v)?;
+        }
+        if !self.event_types.is_empty() {
+            struct_ser.serialize_field("eventTypes", &self.event_types)?;
+        }
+        if let Some(v) = self.before.as_ref() {
+            struct_ser.serialize_field("before", v)?;
         }
         struct_ser.end()
     }
@@ -710,12 +722,17 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
         const FIELDS: &[&str] = &[
             "since",
             "limit",
+            "event_types",
+            "eventTypes",
+            "before",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Since,
             Limit,
+            EventTypes,
+            Before,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -739,6 +756,8 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
                         match value {
                             "since" => Ok(GeneratedField::Since),
                             "limit" => Ok(GeneratedField::Limit),
+                            "eventTypes" | "event_types" => Ok(GeneratedField::EventTypes),
+                            "before" => Ok(GeneratedField::Before),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -760,6 +779,8 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
             {
                 let mut since__ = None;
                 let mut limit__ = None;
+                let mut event_types__ = None;
+                let mut before__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Since => {
@@ -776,11 +797,25 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsRequest {
                                 map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
                             ;
                         }
+                        GeneratedField::EventTypes => {
+                            if event_types__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventTypes"));
+                            }
+                            event_types__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Before => {
+                            if before__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("before"));
+                            }
+                            before__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(ListRecentUserEventsRequest {
                     since: since__,
                     limit: limit__,
+                    event_types: event_types__.unwrap_or_default(),
+                    before: before__,
                 })
             }
         }
@@ -804,6 +839,9 @@ impl serde::Serialize for ListRecentUserEventsResponse {
         if self.total != 0 {
             len += 1;
         }
+        if self.more {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("user_event.ListRecentUserEventsResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
@@ -815,6 +853,9 @@ impl serde::Serialize for ListRecentUserEventsResponse {
             #[allow(clippy::needless_borrow)]
             #[allow(clippy::needless_borrows_for_generic_args)]
             struct_ser.serialize_field("total", ToString::to_string(&self.total).as_str())?;
+        }
+        if self.more {
+            struct_ser.serialize_field("more", &self.more)?;
         }
         struct_ser.end()
     }
@@ -829,6 +870,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsResponse {
             "status",
             "events",
             "total",
+            "more",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -836,6 +878,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsResponse {
             Status,
             Events,
             Total,
+            More,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -860,6 +903,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsResponse {
                             "status" => Ok(GeneratedField::Status),
                             "events" => Ok(GeneratedField::Events),
                             "total" => Ok(GeneratedField::Total),
+                            "more" => Ok(GeneratedField::More),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -882,6 +926,7 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsResponse {
                 let mut status__ = None;
                 let mut events__ = None;
                 let mut total__ = None;
+                let mut more__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -904,12 +949,19 @@ impl<'de> serde::Deserialize<'de> for ListRecentUserEventsResponse {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::More => {
+                            if more__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("more"));
+                            }
+                            more__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ListRecentUserEventsResponse {
                     status: status__,
                     events: events__.unwrap_or_default(),
                     total: total__.unwrap_or_default(),
+                    more: more__.unwrap_or_default(),
                 })
             }
         }
@@ -2306,6 +2358,115 @@ impl<'de> serde::Deserialize<'de> for UserEvent {
             }
         }
         deserializer.deserialize_struct("user_event.UserEvent", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for UserEventPosition {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.occurred_at.is_some() {
+            len += 1;
+        }
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("user_event.UserEventPosition", len)?;
+        if let Some(v) = self.occurred_at.as_ref() {
+            struct_ser.serialize_field("occurredAt", v)?;
+        }
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for UserEventPosition {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "occurred_at",
+            "occurredAt",
+            "id",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            OccurredAt,
+            Id,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "occurredAt" | "occurred_at" => Ok(GeneratedField::OccurredAt),
+                            "id" => Ok(GeneratedField::Id),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = UserEventPosition;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct user_event.UserEventPosition")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<UserEventPosition, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut occurred_at__ = None;
+                let mut id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::OccurredAt => {
+                            if occurred_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("occurredAt"));
+                            }
+                            occurred_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(UserEventPosition {
+                    occurred_at: occurred_at__,
+                    id: id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("user_event.UserEventPosition", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for ViewerEventTotals {
