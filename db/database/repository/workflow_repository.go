@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -101,4 +104,50 @@ func (r *WorkflowRepository) GetByName(name string) (*models.WorkflowDefinition,
 	var wf models.WorkflowDefinition
 	err := r.db.Where("name = ?", name).First(&wf).Error
 	return &wf, err
+}
+
+// PruneSettledRuns deletes workflow runs that settled (completed, failed or
+// cancelled) before `before`, with their recorded steps, `batchSize` runs per
+// transaction, and returns how many runs it deleted. A run still pending or
+// running is kept however old it is.
+//
+// The steps are deleted explicitly rather than left to the foreign key's
+// cascade, which SQLite applies only on a connection that enabled it.
+func (r *WorkflowRepository) PruneSettledRuns(before time.Time, batchSize int) (int64, error) {
+	if batchSize < 1 {
+		return 0, fmt.Errorf("prune batch size must be at least 1, got %d", batchSize)
+	}
+	settled := models.TerminalWorkflowStatuses()
+	var total int64
+	for {
+		var deleted int64
+		err := r.db.Transaction(func(tx *gorm.DB) error {
+			ids := []uuid.UUID{}
+			if err := tx.Model(&models.WorkflowExecution{}).
+				Where("status IN ? AND COALESCE(completed_at, updated_at) < ?", settled, before.UTC()).
+				Limit(batchSize).
+				Pluck("id", &ids).Error; err != nil {
+				return err
+			}
+			if len(ids) == 0 {
+				return nil
+			}
+			if err := tx.Exec(`DELETE FROM workflow_execution_steps WHERE execution_id IN ?`, ids).Error; err != nil {
+				return err
+			}
+			result := tx.Exec(`DELETE FROM workflow_executions WHERE id IN ? AND status IN ?`, ids, settled)
+			if result.Error != nil {
+				return result.Error
+			}
+			deleted = result.RowsAffected
+			return nil
+		})
+		if err != nil {
+			return total, err
+		}
+		total += deleted
+		if deleted < int64(batchSize) {
+			return total, nil
+		}
+	}
 }

@@ -506,6 +506,12 @@ Returns detailed execution status including per-step progress and a progress per
 
 Returns paginated execution history with optional filtering.
 
+The history reaches back as far as the engine's event detail retention:
+db-proxy's cleanup worker deletes runs that settled (`completed`, `failed`,
+`cancelled`) more than `EVENT_DETAIL_RETENTION_PERIOD` ago (default 7 days),
+with their steps. A pending or running run is never deleted. See
+[Analytics: retention](../services/analytics.md#retention).
+
 **Parameters:**
 
 | Name | Type | Required | Description |

@@ -69,7 +69,7 @@ Malformed messages (missing `kind`, `moduleId`, `instanceId`, or `key`) are drop
 
 The two tables answer different questions and so are kept separate:
 
-- **`alerts`** is the durable record of every dispatched alert envelope, with a full lifecycle (`sent` → `dispatched` → `playing` → `completed` / `failed` / `timed_out` / `skipped` / `replayed`). See `db/database/migrate/migrations/0008_alerts.go` and `0010_alert_lifecycle.go`.
+- **`alerts`** is the durable record of every dispatched alert envelope, with a full lifecycle (`sent` → `dispatched` → `playing` → `completed` / `failed` / `timed_out` / `skipped` / `replayed`). See `db/database/migrate/migrations/0008_alerts.go` and `0010_alert_lifecycle.go`. A settled row (any status from `completed` on) is deleted once it is older than `EVENT_DETAIL_RETENTION_PERIOD` (default 7 days); a row still `sent`, `dispatched` or `playing` is kept. See [Analytics: retention](./analytics.md#retention).
 - **`widget_status`** holds only the latest value per `(instanceId, key)`. See `db/database/migrate/migrations/0011_widget_status.go` and `db/proto/v1/widget_status.proto`.
 
 Alert lifecycle reports are intentionally not also written to `widget_status` — the alerts table is already the durable record and double-bookkeeping would create reconciliation work for no gain.

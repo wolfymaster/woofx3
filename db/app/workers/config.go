@@ -21,6 +21,14 @@ type Config struct {
 	// FactDedupePruneBatch is how many applied-event rows one delete
 	// statement removes.
 	FactDedupePruneBatch int
+	// EventDetailRetention is how long the detail of what happened is kept:
+	// the raw event log of sessions already compacted, settled alerts and
+	// settled workflow runs. What a session's analytics need outlives it in
+	// the compact tables, so this bounds only drilling into one old event.
+	EventDetailRetention time.Duration
+	// EventDetailPruneBatch is how many rows one delete removes, or for
+	// workflow runs, how many runs one transaction removes with their steps.
+	EventDetailPruneBatch int
 }
 
 func LoadConfig() Config {
@@ -38,6 +46,9 @@ func DefaultConfig() Config {
 
 		FactDedupeRetention:  parseDuration("FACT_DEDUPE_RETENTION_PERIOD", 6*time.Hour),
 		FactDedupePruneBatch: parseInt("FACT_DEDUPE_PRUNE_BATCH_SIZE", 1000),
+
+		EventDetailRetention:  parseDuration("EVENT_DETAIL_RETENTION_PERIOD", 7*24*time.Hour),
+		EventDetailPruneBatch: parseInt("EVENT_DETAIL_PRUNE_BATCH_SIZE", 1000),
 	}
 }
 

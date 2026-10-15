@@ -101,10 +101,11 @@ describe("getDashboard", () => {
     expect(dashboard.workflows).toEqual({ total: 2, enabled: 1, running: 1 });
     expect(recentRequests[0]?.limit).toBe(20);
     // The log holds every trigger's events; recent activity is the Twitch
-    // viewer activity Analytics attributes.
+    // viewer activity Analytics attributes, and it wants the span counted.
     expect(recentRequests[0]?.eventTypes).toEqual([...ANALYTICS_EVENT_TYPES]);
     expect(recentRequests[0]?.eventTypes).toContain("channel.cheer");
     expect(recentRequests[0]?.eventTypes).not.toContain("user.message");
+    expect(recentRequests[0]?.skipTotal).toBeUndefined();
     const windowStart = sinceMs(recentRequests[0]);
     expect(windowStart).toBeGreaterThanOrEqual(before - RECENT_ACTIVITY_WINDOW_MS - 1000);
     expect(windowStart).toBeLessThanOrEqual(Date.now() - RECENT_ACTIVITY_WINDOW_MS);

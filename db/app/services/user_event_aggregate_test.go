@@ -62,6 +62,11 @@ func forEachDialect(t *testing.T, test func(t *testing.T, db *gorm.DB)) {
 		t.Cleanup(func() {
 			db.Exec(`DROP SCHEMA public CASCADE`)
 			db.Exec(`CREATE SCHEMA public`)
+			// Each test opens its own pool; leaving it open runs a full
+			// package run past the server's connection limit.
+			if sqlDB, err := db.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
 		})
 		if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 			t.Fatalf("enable uuid-ossp: %v", err)
@@ -469,6 +474,31 @@ func TestRecentEventsPageThroughTheWholeLogByType(t *testing.T) {
 }
 
 var recentAll = int32(100)
+
+func TestRecentEventsSkipTheCountWhenAsked(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		f.seedTwoSessions(t)
+		ctx := context.Background()
+		limit := int32(2)
+
+		counted, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{Limit: &limit})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		skipped, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{Limit: &limit, SkipTotal: true})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		if counted.Total != 17 || skipped.Total != 0 {
+			t.Fatalf("total = %d counted, %d skipped; want 17 and 0", counted.Total, skipped.Total)
+		}
+		if !skipped.More || len(skipped.Events) != 2 || skipped.Events[0].Id != counted.Events[0].Id ||
+			skipped.Events[1].Id != counted.Events[1].Id {
+			t.Fatalf("skipping the count changed the page")
+		}
+	})
+}
 
 // The log records every event an installed trigger fires, so the totals must
 // keep counting only the types they name.
