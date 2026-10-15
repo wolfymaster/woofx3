@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.32.0](https://github.com/wolfymaster/woofx3/compare/v0.31.0...v0.32.0) (2026-10-15)
+
+### Features
+
+* **api:** compact each stream session as it is summarised ([be35d4f](https://github.com/wolfymaster/woofx3/commit/be35d4f7a5094a3984cac6073fbf4caaa718fb70))
+* **api:** let the streamer's selection decide which events are logged and pushed ([f063613](https://github.com/wolfymaster/woofx3/commit/f063613319a2c3106ed9ed1e8c2f2c27777d597f))
+* **api:** log and push every event an installed trigger fires ([0fd9a9d](https://github.com/wolfymaster/woofx3/commit/0fd9a9d37d166dd9c07f2bc1ca0474b6bfc807c6))
+* **api:** read the event log a page at a time with listEvents ([5e4485a](https://github.com/wolfymaster/woofx3/commit/5e4485a80c68a79310b50276dd428b11e50a31bc))
+* **db:** keep each ended stream's analytics in compact tables ([b56273a](https://github.com/wolfymaster/woofx3/commit/b56273a2bc374eb460f3afff4b6840e937f31ac5))
+* **db:** page the event log by type, back to its start ([e551007](https://github.com/wolfymaster/woofx3/commit/e55100799ba05617905bf25e49245804e4f9ce29))
+* **db:** prune event detail older than the retention window ([d178c77](https://github.com/wolfymaster/woofx3/commit/d178c774ad11c51d0bab31d48ed6c521caa3f920))
+
+### Bug Fixes
+
+* **api:** keep the dashboard's recent activity to viewer activity ([3c800d3](https://github.com/wolfymaster/woofx3/commit/3c800d3fe1684ac4a97ae32753cee3b3a5c64bc3))
+
+### Performance Improvements
+
+* **api:** skip counting the span when listEvents pages ([66d38a7](https://github.com/wolfymaster/woofx3/commit/66d38a786d934cdc63d8eb17b02bc052248a77ea))
+
 ## [0.31.0](https://github.com/wolfymaster/woofx3/compare/v0.30.0...v0.31.0) (2026-10-14)
 
 ### Features
