@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -127,25 +128,71 @@ func (r *UserEventRepository) Totals(window EventWindow) (*SessionEventTotals, e
 	return &totals, nil
 }
 
-// Recent returns the latest `limit` events that occurred at or after `since`,
-// newest first, and how many occurred in that span. Events at the same instant
-// are ordered by id, so a read is stable across calls.
-func (r *UserEventRepository) Recent(since time.Time, limit int) ([]*models.UserEvent, int64, error) {
-	span := r.db.Model(&models.UserEvent{}).Where("occurred_at >= ?", since.UTC())
+// RecentQuery selects a page of the log, newest first.
+type RecentQuery struct {
+	// Since bounds the span from below, inclusive. Nil spans the whole log.
+	Since *time.Time
+	// EventTypes keeps only these types. Empty keeps every type.
+	EventTypes []string
+	// Before keeps only events after it in newest-first order. Nil starts at
+	// the newest event.
+	Before *UserEventPosition
+	Limit  int
+}
+
+// UserEventPosition is an event's place in the newest-first order: by
+// occurred_at, then by id among events at the same instant.
+type UserEventPosition struct {
+	OccurredAt time.Time
+	ID         uuid.UUID
+}
+
+// RecentPage is one page of Recent.
+type RecentPage struct {
+	Events []*models.UserEvent
+	// Total counts every event in the span of the requested types, whatever
+	// Before is.
+	Total int64
+	// More is true when older events of the span follow the last one returned.
+	More bool
+}
+
+// Recent returns the latest `Limit` events of the span, newest first. Events
+// at the same instant are ordered by id, so a read is stable across calls and
+// a page that ends partway through an instant resumes where it left off.
+func (r *UserEventRepository) Recent(query RecentQuery) (*RecentPage, error) {
+	span := r.db.Model(&models.UserEvent{})
+	if query.Since != nil {
+		span = span.Where("occurred_at >= ?", query.Since.UTC())
+	}
+	if len(query.EventTypes) > 0 {
+		span = span.Where("event_type IN ?", query.EventTypes)
+	}
 
 	var total int64
 	if err := span.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	var events []*models.UserEvent
-	if err := span.Session(&gorm.Session{}).
+	page := span.Session(&gorm.Session{})
+	if query.Before != nil {
+		at := query.Before.OccurredAt.UTC()
+		page = page.Where("occurred_at < ? OR (occurred_at = ? AND id < ?)", at, at, query.Before.ID)
+	}
+	// One more than asked for says whether another page follows without a
+	// second query.
+	events := []*models.UserEvent{}
+	if err := page.
 		Order("occurred_at DESC").
 		Order("id DESC").
-		Limit(limit).
+		Limit(query.Limit + 1).
 		Find(&events).Error; err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	return events, total, nil
+	more := len(events) > query.Limit
+	if more {
+		events = events[:query.Limit]
+	}
+	return &RecentPage{Events: events, Total: total, More: more}, nil
 }
 
 // SessionEvents returns the first `limit` events of the window that Totals

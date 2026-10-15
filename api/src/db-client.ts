@@ -707,13 +707,20 @@ export class DbClient {
     return { events: response.events ?? [], total: response.total };
   }
 
-  /** The latest events at or after `since`, newest first, and how many fell in that span. */
+  /**
+   * A page of the event log, newest first: the latest events at or after
+   * `since` (the whole log without it) of `eventTypes` (every type without
+   * them), older than `before` when it is set. `total` counts the span, and
+   * `more` says whether an older page follows.
+   */
   async listRecentUserEvents(
-    req: user_event.ListRecentUserEventsRequest
-  ): Promise<{ events: user_event.UserEvent[]; total: bigint }> {
-    const response = await user_event.ListRecentUserEvents(req, this.config);
+    req: Partial<user_event.ListRecentUserEventsRequest>
+  ): Promise<{ events: user_event.UserEvent[]; total: bigint; more: boolean }> {
+    // The generated encoder writes only the fields present; its signature
+    // asks for every field only because protoscript types requests that way.
+    const response = await user_event.ListRecentUserEvents(req as user_event.ListRecentUserEventsRequest, this.config);
     unwrapVoid("listRecentUserEvents", response);
-    return { events: response.events ?? [], total: response.total };
+    return { events: response.events ?? [], total: response.total, more: response.more };
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {

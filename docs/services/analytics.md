@@ -188,32 +188,87 @@ attribution to a session, and the time axis.
 
 ## The fact log
 
-`user_events` is the log, one row per platform event, never updated
+`user_events` is the log, one row per event, never updated
 (`db/database/migrate/migrations/*/0048_user_events_fact_log.go`).
 
 | Column | Meaning |
 |---|---|
 | `event_id`, `source` | The CloudEvent identity. Unique together, so a redelivery is a conflict, not a second row. |
-| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. |
+| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. A module's own event that names no platform is recorded under the id of the module that registered its trigger. |
 | `platform_user_id`, `user_name` | The viewer, as the platform names them. Null when the event is attributable to nobody. |
 | `session_id` | The session the event was stamped with. Not a foreign key and not a stable key; resolve it. |
-| `amount` | Bits, gifted subs, raiders or channel points. Null when the event carries no quantity. |
+| `amount` | Bits, gifted subs, raiders or channel points, for the Twitch events the totals read. Null for every other event, and when the event carries no quantity. |
 | `event_value` | The CloudEvent `data`, whole. |
 | `occurred_at` | The CloudEvent `time`. The time axis every reader groups on. |
 
 **One writer, on the bus.** `UserEventRecorder` (`api/src/user-event-recorder.ts`)
-subscribes to the platform subjects and calls `UserEventService.RecordUserEvent`.
+subscribes to the event types it records (below) and calls `UserEventService.RecordUserEvent`.
 It sits in the api rather than in each platform integration because the api
 already holds the db-proxy client and one subscriber serves every platform; it
 is on the ingestion path in the sense that matters — nothing has to react to an
 event for it to be recorded. A failed write is retried a few times, which is
 safe only because the write is idempotent.
 
-**What is recorded.** Cheer, follow, raid, redemption, sub, gift, resub, and
-the gift-paid, prime-paid and pay-it-forward upgrades. Chat is not: it is the
-one high-volume subject and no total is built from it. Neither are the
-`shared*` events, which happened in another channel during shared chat.
-Events the api publishes itself are dashboard simulations and are skipped.
+**What is recorded.** The event types the streamer selected, plus the
+analytics types, which are recorded whatever the selection so a recap never
+depends on it. There is no rate measuring and no manifest flag: a type is
+either logged or not, and the streamer decides.
+
+- **Offered** (`EventLogSettings.offered`): the event catalog
+  (`api/src/event-catalog.ts`), every subject an installed `eventbus` trigger
+  fires, so installing a module offers its events. It leaves out chat
+  (`user.message`: it fires at chat rate, no total is built from it, and it
+  has its own channel), the `channel.shared*` events (they happened in another
+  channel during shared chat), and wildcard trigger patterns
+  (`chat.command.*`), which name a family of subjects rather than one event.
+  The catalog re-reads the triggers on every trigger registration or
+  deregistration on the bus, every five minutes as a safety net, and with
+  backoff until its first read succeeds.
+- **On by default** (`defaults`): offered types with a trigger whose taxonomy
+  has an `alert.*` entry, the set the Alerts menu offers, except `alert.chat`,
+  `alert.shared` and anything under them.
+- **The selection** (`EventLogSelection`): one per engine, stored in the
+  engine's settings under `eventLog.selection` as overrides on the defaults,
+  `{ shown, hidden }`, keyed by event type. `enabled` is
+  `(defaults ∪ shown) − hidden` within `offered`. Overrides naming a type no
+  installed module offers are kept, so reinstalling the module restores the
+  choice, and a newly installed module's alert-worthy types are on without
+  anyone re-selecting. Read and written with `getEventLogSettings` and
+  `setEventLogSelection`; a type turned on is recorded from the moment the
+  call resolves, never retroactively.
+- **Analytics types**: the Twitch types the totals read (the fixed map under
+  *Attribution*), recorded even when no installed trigger offers them.
+
+`EventLogSelectionSource` (`api/src/event-log-selection.ts`) recomputes the
+settings whenever the catalog or the selection changes, and the recorder
+rebinds its subjects to `enabled ∪ analytics types`. Events the api publishes
+itself are dashboard simulations and are skipped.
+
+`listEvents` reads the log back a page at a time, so a dashboard feed merges
+history and live events by CloudEvent id.
+
+**Live push.** `StreamEventBroadcaster` pushes each `subscribeStreamEvents`
+client exactly the types it asked for, within `offered`; a client that names
+no types gets the fixed set older clients relied on (follow, subscribe, gift,
+cheer, raid, stream online/offline, the three ad-break events). A session
+holds one registration, so a client re-registers when what it wants changes
+and the new types replace the old. The bus subscriptions are the union of
+every client's types, bound and unbound as that union changes. Chat is never
+pushed.
+
+**Attribution.** The Twitch events the totals read (cheer, follow, raid,
+redemption, sub, gift, resub, and the gift-paid, prime-paid and
+pay-it-forward upgrades) name their viewer and quantity through a fixed map
+in the recorder. Every other event is attributed through its trigger's
+`emits` [identity annotations](../barkloader/modules.md#identity-fields): the
+one `string` field marked `identity: "viewer"`, its `displayName`, and
+`anonymousWhen`. A trigger that marks none, marks several, or disagrees with
+another trigger of the same subject attributes its events to nobody. Such
+events carry no `amount`.
+
+**The totals read only the types they name.** Every aggregate filters by
+`event_type`, so the wider log changes no total, leaderboard or session
+timeline.
 
 **Anonymous events count, but not for anybody.** An anonymous cheer or gift is
 stored with a null viewer, so channel totals include it and no per-viewer total

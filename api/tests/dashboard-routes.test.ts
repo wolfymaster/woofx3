@@ -3,6 +3,7 @@ import type { DashboardStats, RecentActivity } from "@woofx3/api";
 import type * as user_event from "@woofx3/db/user_event.pb";
 import { dashboardRoutes, RECENT_ACTIVITY_WINDOW_MS } from "../src/routes/dashboard";
 import { dashboardStatsRoutes } from "../src/routes/dashboard-stats";
+import { ANALYTICS_EVENT_TYPES } from "../src/user-event-recorder";
 
 function at(iso: string): { seconds: bigint; nanos: number } {
   const ms = Date.parse(iso);
@@ -99,6 +100,11 @@ describe("getDashboard", () => {
     ]);
     expect(dashboard.workflows).toEqual({ total: 2, enabled: 1, running: 1 });
     expect(recentRequests[0]?.limit).toBe(20);
+    // The log holds every trigger's events; recent activity is the Twitch
+    // viewer activity Analytics attributes.
+    expect(recentRequests[0]?.eventTypes).toEqual([...ANALYTICS_EVENT_TYPES]);
+    expect(recentRequests[0]?.eventTypes).toContain("channel.cheer");
+    expect(recentRequests[0]?.eventTypes).not.toContain("user.message");
     const windowStart = sinceMs(recentRequests[0]);
     expect(windowStart).toBeGreaterThanOrEqual(before - RECENT_ACTIVITY_WINDOW_MS - 1000);
     expect(windowStart).toBeLessThanOrEqual(Date.now() - RECENT_ACTIVITY_WINDOW_MS);
@@ -122,6 +128,7 @@ describe("getDashboardStats", () => {
       recentEvents: 147_000,
     });
     expect(recentRequests[0]?.limit).toBe(1);
+    expect(recentRequests[0]?.eventTypes).toEqual([...ANALYTICS_EVENT_TYPES]);
   });
 
   test("reports zero recent events as zero", async () => {

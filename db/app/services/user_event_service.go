@@ -52,6 +52,9 @@ const (
 	leaderboardMaxLimit     = 100
 	recentDefaultLimit      = 20
 	recentMaxLimit          = 100
+	// A filter is a client's choice of event types to show, which is a
+	// handful; this bounds the IN list a request can make the database build.
+	recentMaxEventTypes = 100
 	// A session's events go to a timeline in one answer; past this many the
 	// caller reports the rest as a count rather than paging.
 	sessionEventsDefaultLimit = 500
@@ -217,26 +220,42 @@ func (s *userEventService) ListViewerLeaderboard(ctx context.Context, req *clien
 }
 
 func (s *userEventService) ListRecentUserEvents(ctx context.Context, req *client.ListRecentUserEventsRequest) (*client.ListRecentUserEventsResponse, error) {
-	if req.Since == nil {
-		return nil, twirp.RequiredArgumentError("since")
+	query := repo.RecentQuery{Limit: recentDefaultLimit, EventTypes: req.EventTypes}
+	if req.Since != nil {
+		if err := req.Since.CheckValid(); err != nil {
+			return nil, twirp.InvalidArgumentError("since", err.Error())
+		}
+		since := req.Since.AsTime()
+		query.Since = &since
 	}
-	if err := req.Since.CheckValid(); err != nil {
-		return nil, twirp.InvalidArgumentError("since", err.Error())
-	}
-	limit := recentDefaultLimit
 	if req.Limit != nil {
 		if *req.Limit < 1 || *req.Limit > recentMaxLimit {
 			return nil, twirp.InvalidArgumentError("limit", fmt.Sprintf("must be from 1 to %d", recentMaxLimit))
 		}
-		limit = int(*req.Limit)
+		query.Limit = int(*req.Limit)
+	}
+	for _, eventType := range req.EventTypes {
+		if eventType == "" || len(eventType) > userEventTypeMaxLen {
+			return nil, twirp.InvalidArgumentError("event_types", fmt.Sprintf("each must be 1 to %d bytes", userEventTypeMaxLen))
+		}
+	}
+	if len(req.EventTypes) > recentMaxEventTypes {
+		return nil, twirp.InvalidArgumentError("event_types", fmt.Sprintf("must name at most %d types", recentMaxEventTypes))
+	}
+	if req.Before != nil {
+		before, err := userEventPosition(req.Before)
+		if err != nil {
+			return nil, err
+		}
+		query.Before = before
 	}
 
-	events, total, err := s.repo.Recent(req.Since.AsTime(), limit)
+	page, err := s.repo.Recent(query)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list recent user events: %w", err))
 	}
-	out := make([]*client.UserEvent, 0, len(events))
-	for _, event := range events {
+	out := make([]*client.UserEvent, 0, len(page.Events))
+	for _, event := range page.Events {
 		out = append(out, userEventToProto(event))
 	}
 	return &client.ListRecentUserEventsResponse{
@@ -245,8 +264,25 @@ func (s *userEventService) ListRecentUserEvents(ctx context.Context, req *client
 			Message: "Recent user events retrieved successfully",
 		},
 		Events: out,
-		Total:  total,
+		Total:  page.Total,
+		More:   page.More,
 	}, nil
+}
+
+// userEventPosition reads a page boundary. Both halves are required: an
+// instant alone cannot say which of the events at it were already returned.
+func userEventPosition(position *client.UserEventPosition) (*repo.UserEventPosition, error) {
+	if position.OccurredAt == nil {
+		return nil, twirp.RequiredArgumentError("before.occurred_at")
+	}
+	if err := position.OccurredAt.CheckValid(); err != nil {
+		return nil, twirp.InvalidArgumentError("before.occurred_at", err.Error())
+	}
+	id, err := uuid.Parse(position.Id)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("before.id", "invalid UUID format")
+	}
+	return &repo.UserEventPosition{OccurredAt: position.OccurredAt.AsTime(), ID: id}, nil
 }
 
 func (s *userEventService) ListStreamSessionUserEvents(ctx context.Context, req *client.ListStreamSessionUserEventsRequest) (*client.ListStreamSessionUserEventsResponse, error) {

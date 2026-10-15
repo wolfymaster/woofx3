@@ -37,6 +37,13 @@ export const ENGINE_CAPABILITIES = {
   analyticsAggregates: "analytics.aggregates",
   /** A session's counted events in time order, for its timeline: `getStreamSessionEvents`. */
   analyticsSessionEvents: "analytics.sessionEvents",
+  /**
+   * The engine's event log, the history behind `subscribeStreamEvents`:
+   * `listEvents`, the event-type selection that decides what it logs
+   * (`getEventLogSettings`, `setEventLogSelection`), and `subscribeStreamEvents`
+   * taking the event types to push.
+   */
+  eventsLog: "events.log",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
