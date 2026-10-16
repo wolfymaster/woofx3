@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.32.1](https://github.com/wolfymaster/woofx3/compare/v0.32.0...v0.32.1) (2026-10-16)
+
+### Bug Fixes
+
+* **sceneManager:** give a scene stored without a canvas size the default canvas ([c94baf5](https://github.com/wolfymaster/woofx3/commit/c94baf514e4192d050c5581215b4a5baac715f1a))
+
 ## [0.32.0](https://github.com/wolfymaster/woofx3/compare/v0.31.0...v0.32.0) (2026-10-15)
 
 ### Features
