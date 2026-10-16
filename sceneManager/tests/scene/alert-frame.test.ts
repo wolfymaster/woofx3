@@ -58,6 +58,7 @@ describe("FrameAssembler.assembleAlertWidget", () => {
       surface: "alert",
       settings: { text: "hi" },
     });
+    expect(resp.headers.get("Content-Security-Policy")).toBe("connect-src 'none'");
   });
 
   it("frames a widget of a composition-shaped delivery", async () => {

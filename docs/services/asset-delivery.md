@@ -461,6 +461,11 @@ widget ─ host.assets.load(ref) ─> shim ─ asset.load {id, path} ─> overla
   mounted, while its frame loads; an alert's are read as soon as it is
   delivered, before its turn in the queue. The widget's ask then finds the
   bytes already on the page.
+- **No connections of its own.** Every widget frame is served with
+  `connect-src 'none'` (themeable frames add it to their theme policy), so
+  widget code cannot `fetch`, open a socket or send a beacon. What it needs
+  from the network it asks the host for; a file hosted outside the engine is
+  for elements to load by URL, not for a script to read.
 - **Failures** always reach the widget: `not_found`, `unavailable`,
   `out_of_scope`, `disposed`. There is no size limit; a large file is slow on
   its first read, never refused.
