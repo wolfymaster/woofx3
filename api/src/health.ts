@@ -18,6 +18,19 @@ export interface Health {
    */
   startedAt: string;
   uptimeSeconds: number;
+  /**
+   * The feature ids this build supports, the same list
+   * `getEngineCapabilities` returns, so a capability can be checked without a
+   * registered client.
+   */
+  capabilities: HealthCapabilities;
+}
+
+export interface HealthCapabilities {
+  /** `ENGINE_CAPABILITIES_SCHEMA`: the version of this block's shape. */
+  schema: number;
+  /** Sorted and unique. */
+  enabled: string[];
 }
 
 export interface HealthFacts {
@@ -25,6 +38,7 @@ export interface HealthFacts {
   version: string;
   /** Wall-clock start of this process, epoch milliseconds. */
   startedAt: number;
+  capabilities: HealthCapabilities;
 }
 
 /**
@@ -39,5 +53,6 @@ export function describeHealth(facts: HealthFacts, uptimeSeconds: number): Healt
     version: facts.version,
     startedAt: new Date(facts.startedAt).toISOString(),
     uptimeSeconds: Math.floor(uptimeSeconds),
+    capabilities: { schema: facts.capabilities.schema, enabled: [...facts.capabilities.enabled] },
   };
 }
