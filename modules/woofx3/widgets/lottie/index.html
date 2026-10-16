@@ -37,7 +37,7 @@
       const container = document.getElementById("animation");
 
       function start(onDone) {
-        loadAnimationData(mediaUrl(settings.src))
+        loadAnimationData(host, settings.src)
           .then((animationData) => {
             const layerName = typeof settings.textLayer === "string" ? settings.textLayer.trim() : "";
             if (layerName) {
@@ -75,13 +75,27 @@
       }, { autoComplete: false });
     })();
 
-    function loadAnimationData(url) {
-      return fetch(url).then((response) => {
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-        return response.json();
-      });
+    // An engine file is read by the host: the frame's sandbox keeps its own
+    // script from reading storage. A file hosted elsewhere is fetched here,
+    // and loads only when its host allows any origin to read it. Started
+    // inside a promise so an empty setting fails the load, not the script.
+    function loadAnimationData(host, src) {
+      return Promise.resolve()
+        .then(() => host.assets.load(src))
+        .then(
+          (asset) => asset.json(),
+          (err) => {
+            if (!err || err.code !== "not_engine_asset") {
+              throw err;
+            }
+            return fetch(mediaUrl(src)).then((response) => {
+              if (!response.ok) {
+                throw new Error("HTTP " + response.status);
+              }
+              return response.json();
+            });
+          }
+        );
     }
 
     // Set the text of every text layer named `layerName`, in the main

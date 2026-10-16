@@ -13,15 +13,27 @@ export type {
   DeliveredWidgetEvent,
   StorageChangeStream,
   StorageChangedFrame,
+  WidgetAsset,
   WidgetEvent,
   WidgetEventHandler,
   WidgetEventSource,
   WidgetHost,
+  WidgetHostAssets,
   WidgetHostStorage,
   WidgetStatusReport,
   WidgetSurface,
   WidgetTheme,
 } from "./widget-host";
+
+export type { WidgetAssetErrorCode } from "./widget-assets";
+export {
+  ENGINE_ASSET_PREFIXES,
+  WidgetAssetError,
+  assetRefUrl,
+  createWidgetAsset,
+  engineAssetPath,
+  isWidgetAssetErrorCode,
+} from "./widget-assets";
 
 export type {
   MockHostController,
@@ -35,6 +47,9 @@ export { createMockHost } from "./preview/widget-preview";
 export type {
   EventQueueConfig,
   HostToWidgetMessage,
+  WidgetAssetErrorMessage,
+  WidgetAssetLoadMessage,
+  WidgetAssetValueMessage,
   WidgetBootPayload,
   WidgetDisposeMessage,
   WidgetEventCompleteMessage,

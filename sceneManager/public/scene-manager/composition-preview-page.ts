@@ -18,6 +18,7 @@ import {
   type PreviewFrameMeta,
   type PreviewFrameSpec,
 } from "./composition-preview";
+import { AssetCache, moduleIdOfWidget, readAheadAssetPaths } from "./asset-loader";
 import { replaceMediaUrls } from "./media-url";
 import { PAGE_CLOCK } from "./page-clock";
 import { createFrameLoadHandler, WidgetBridge } from "./widget-bridge";
@@ -101,11 +102,13 @@ async function resolveFrames(doc: CompositionDocument): Promise<FrameResolution>
 
 function mountFrame(
   bridges: Set<WidgetBridge>,
+  assets: AssetCache,
   slot: HTMLElement,
   spec: PreviewFrameSpec,
   facts: PreviewFrameFacts
 ): PreviewFrame {
   const instanceId = `preview.${spec.widgetId}`;
+  const moduleId = moduleIdOfWidget(spec.widgetCanonicalId) ?? "";
   const nonce = generateNonce();
   const iframe = document.createElement("iframe");
   iframe.className = "widget-frame";
@@ -130,6 +133,7 @@ function mountFrame(
     onStorageSubscribe: () => {},
     onStorageUnsubscribe: () => {},
     onStatusReport: () => {},
+    onAssetLoad: assets.scopedTo(moduleId),
     onEventsSubscribe: (subId, queue) => {
       facts.subscribed(queue?.autoComplete === false);
       if (spec.event === null) {
@@ -161,6 +165,7 @@ function mountFrame(
     ...(spec.entrance === null ? {} : { behavior: spec.entrance }),
   });
   iframe.src = `${spec.meta.frameUrl}#${boot}`;
+  assets.readAhead(readAheadAssetPaths(spec.settings, location.origin), moduleId);
 
   bridges.add(bridge);
   slot.appendChild(iframe);
@@ -198,6 +203,7 @@ function main(): void {
     return;
   }
   const bridges = new Set<WidgetBridge>();
+  const assets = new AssetCache();
   // Reports go to the origin the editor's messages come from, once it has
   // sent one; the first report (`ready`) says only that the page is here.
   let parentOrigin: string | null = null;
@@ -222,7 +228,7 @@ function main(): void {
     },
     baseClock: PAGE_CLOCK,
     resolveFrames,
-    mountFrame: (slot, spec, facts) => mountFrame(bridges, slot, spec, facts),
+    mountFrame: (slot, spec, facts) => mountFrame(bridges, assets, slot, spec, facts),
     post: (report: PreviewReport) => window.parent.postMessage(report, parentOrigin ?? "*"),
   });
 

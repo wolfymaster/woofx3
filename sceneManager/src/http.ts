@@ -22,6 +22,7 @@ import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/compo
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleAssetReadRoute, isAssetReadPath } from "./routes/asset-read";
 import { handleFontRoute, isFontPath } from "./routes/fonts";
 import { handleMediaProxyRoute, isMediaProxyPath } from "./routes/media";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
@@ -84,9 +85,10 @@ const UPLOAD_CORS_HEADERS: Record<string, string> = {
 };
 
 /** CORS headers for a path: its preflight answer and its responses. The
- *  media proxy grants none (see routes/media.ts). */
+ *  media proxy and the asset read route grant none (see routes/media.ts and
+ *  routes/asset-read.ts). */
 export function corsHeadersFor(pathname: string): Record<string, string> {
-  if (isMediaProxyPath(pathname)) {
+  if (isMediaProxyPath(pathname) || isAssetReadPath(pathname)) {
     return {};
   }
   return isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS;
@@ -151,6 +153,10 @@ export function createHttpServer(deps: HttpDeps) {
               await handleUploadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger),
               UPLOAD_CORS_HEADERS
             );
+          }
+
+          if (isAssetReadPath(url.pathname)) {
+            return handleAssetReadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger);
           }
 
           if (isStorageAssetPath(url.pathname)) {

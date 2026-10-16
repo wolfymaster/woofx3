@@ -42,7 +42,7 @@ browser
 ```
 
 sceneManager claims only `/assets/modules/` and `/assets/user/` here (and
-`/assets/upload/` and `/assets/media/`, below); its own static files under `/assets/` (such as `widget-host-shim.js`) are served
+`/assets/upload/`, `/assets/media/` and `/assets/read/`, below); its own static files under `/assets/` (such as `widget-host-shim.js`) are served
 from its public directory. It forwards the path still percent-encoded,
 relays `Location`, `Content-Type` and `Cache-Control`, and never follows a
 redirect, so presigned bytes go straight from the bucket to the browser.
@@ -421,6 +421,49 @@ own, so the relay budget is what bounds the fetching instead.
 Browsers cache by the URL, which stays the same for a day. sceneManager adds no CORS headers: frames load the file through
 `img`, `video` and `audio` elements, which need none, and no other origin
 has a reason to read the bytes.
+
+## Widgets reading a file's bytes
+
+An `<img>`, `<audio>` or `<video>` follows the redirect to presigned storage
+without asking anyone. A script that reads the bytes (a Lottie animation, a
+data file) cannot: a widget frame is sandboxed with an opaque origin, so its
+`fetch` reaches the bucket as `Origin: null`, and the bucket sends no CORS
+headers. Widgets read such files through the host instead:
+
+```
+widget ─ host.assets.load(ref) ─> shim ─ asset.load {id, path} ─> overlay page
+  overlay page: in scope for this frame's module?  no ─> asset.error out_of_scope
+  overlay page ─> GET {sceneManagerUrl}/assets/read/{key}     sceneManager
+                    └─> GET {barkloaderUrl}/assets/{key}, following the redirect here
+  overlay page ─ asset.value {id, contentType, bytes} ─> shim ─> WidgetAsset
+```
+
+- **Reference.** `ref` is a media setting's value (`{ url, ... }`), an engine
+  asset URL, or a path relative to the widget's own resources. The shim keeps
+  only the path, since the engine answers under more than one origin; a
+  reference outside `/assets/user/` and `/assets/modules/` is refused in the
+  frame as `not_engine_asset`, and the widget may fetch it itself.
+- **Scope.** A widget reads any file in the asset library and its own
+  module's files (`/assets/modules/{its module}/...`), nothing else. The page
+  decides, from the module the scene record (or the alert layout) names for
+  the frame, never from what the widget claims. Each path segment is judged
+  decoded, so an encoded separator or dot segment cannot step out.
+- **`/assets/read/{key}`** serves what `/assets/{key}` serves, so it needs no
+  session. It sends no CORS headers (only the page reads it), relays
+  `Content-Type`, `Content-Length`, `ETag` and `Last-Modified`, passes
+  `If-None-Match` and `If-Modified-Since` through to storage, and answers as a
+  sandboxed, non-sniffed document, so an uploaded HTML file opened there never
+  runs on the origin holding overlay sessions. `modules/` responses are cached
+  for good; `user/` responses are revalidated on every use.
+- **Read ahead.** One cache serves the page, so each file is read once. The
+  library files a placement's settings name that a script will read (any
+  type but image, video, audio or font) are read as soon as the placement is
+  mounted, while its frame loads; an alert's are read as soon as it is
+  delivered, before its turn in the queue. The widget's ask then finds the
+  bytes already on the page.
+- **Failures** always reach the widget: `not_found`, `unavailable`,
+  `out_of_scope`, `disposed`. There is no size limit; a large file is slow on
+  its first read, never refused.
 
 ## Why asset URLs are public, not token-scoped
 

@@ -184,7 +184,7 @@ describe("installWidgetHostShim — boot + handshake", () => {
     expect(hello.nonce).toBe(NONCE);
     expect(hello.instanceId).toBe("inst-1");
     expect(hello.sdkVersion).toBe(SDK_VERSION);
-    expect(hello.wants).toEqual(["storage", "events", "status"]);
+    expect(hello.wants).toEqual(["storage", "events", "status", "assets"]);
   });
 
   it("re-posts hello every 250ms until init arrives, then stops", async () => {
@@ -311,6 +311,61 @@ describe("installWidgetHostShim — storage", () => {
     // Unsubscribe is idempotent: a second call posts nothing new.
     unsubscribe();
     expect(h.sent("storage.unsubscribe").length).toBe(1);
+  });
+});
+
+describe("installWidgetHostShim — assets", () => {
+  it("resolves a relative path against the widget's resources and correlates the answer by id", async () => {
+    const h = makeHarness(makeBoot({ resourceBaseUrl: "https://engine.test/assets/modules/mod-1/abc123/widgets/w1/" }));
+    const host = install(h)!;
+    h.deliver(initMsg());
+    const pending = host.assets.load("data/anim.json");
+    const [load] = h.sent("asset.load");
+    expect(load!.path).toBe("/assets/modules/mod-1/abc123/widgets/w1/data/anim.json");
+    const bytes = new TextEncoder().encode('{"v":"5.7"}').buffer;
+    h.deliver(fromParent({ type: "asset.value", id: load!.id, contentType: "application/json", bytes }));
+    const asset = await pending;
+    expect(asset.path).toBe("/assets/modules/mod-1/abc123/widgets/w1/data/anim.json");
+    expect(asset.contentType).toBe("application/json");
+    expect(asset.json()).toEqual({ v: "5.7" });
+    expect(asset.text()).toBe('{"v":"5.7"}');
+  });
+
+  it("reads a media setting's value by the path of its url, whatever origin it names", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    void host.assets.load({ url: "https://other-name.test/assets/user/res-1/anim.json" });
+    expect(h.sent("asset.load")[0]!.path).toBe("/assets/user/res-1/anim.json");
+  });
+
+  it("rejects a reference to a file the engine does not store without asking the host", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    await expect(host.assets.load("https://cdn.example.org/anim.json")).rejects.toMatchObject({
+      code: "not_engine_asset",
+    });
+    expect(h.sent("asset.load")).toHaveLength(0);
+  });
+
+  it("rejects with the host's reason", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    const pending = host.assets.load("/assets/modules/other/v1/secret.json");
+    const [load] = h.sent("asset.load");
+    h.deliver(fromParent({ type: "asset.error", id: load!.id, code: "out_of_scope" }));
+    await expect(pending).rejects.toMatchObject({ name: "WidgetAssetError", code: "out_of_scope" });
+  });
+
+  it("rejects pending loads when disposed", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    const pending = host.assets.load("/assets/user/res-1/anim.json");
+    h.deliver(fromParent({ type: "dispose", reason: "test" }));
+    await expect(pending).rejects.toMatchObject({ code: "disposed" });
   });
 });
 
