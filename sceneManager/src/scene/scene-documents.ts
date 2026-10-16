@@ -135,9 +135,23 @@ function numberOr(value: unknown, fallback: number): number {
 }
 
 /**
+ * The canvas a scene stored without a usable size is drawn on. The dashboard
+ * already shows such a scene at this size; the editor refuses every move,
+ * resize and add on a canvas with no size, so the document must carry the
+ * size the user is looking at.
+ */
+const DEFAULT_CANVAS = { width: 1920, height: 1080 } as const;
+
+function canvasDimensionOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
  * A scene state as a document: placements keyed by id, stacked as saved,
  * with the version's behaviors as stored. `inputs` is present only when the
  * composition declares some, so a scene's document has no such key.
+ *
+ * A layout without a usable width or height gets the default canvas.
  *
  * Entries stored in an older shape are brought to the current one by the
  * registry's migrations (a placement's `transitionIn` / `transitionOut` in
@@ -171,7 +185,12 @@ export function documentOf(state: OverlaySceneState): SceneDocument {
       extra,
     };
   });
-  const doc: SceneDocument = { layout: { ...state.layout }, widgets, behaviors: structuredClone(state.behaviors) };
+  const layout = {
+    ...state.layout,
+    width: canvasDimensionOr(state.layout.width, DEFAULT_CANVAS.width),
+    height: canvasDimensionOr(state.layout.height, DEFAULT_CANVAS.height),
+  };
+  const doc: SceneDocument = { layout, widgets, behaviors: structuredClone(state.behaviors) };
   if (state.inputs.length > 0) {
     doc.inputs = structuredClone(state.inputs);
   }
