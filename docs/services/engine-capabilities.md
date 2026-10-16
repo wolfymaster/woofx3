@@ -16,6 +16,8 @@ getEngineCapabilities(): Promise<{ schema: 1; capabilities: string[] }>
 - `schema` versions the response shape, not the engine. It changes only if the response stops being a flat list of ids.
 - An id's presence means the engine supports that feature. There is no negative form: a missing id means unsupported.
 
+The public `GET /health` body carries the same list as `capabilities.enabled` (see [deployment.md](deployment.md)), for checking an engine's features from outside without a registered client. The UI gates on `getEngineCapabilities`, not on `/health`.
+
 The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/typescript/api/capabilities.ts` (exported from `@woofx3/api`). The engine route returns exactly those values, less the ids in `UNADVERTISED_ENGINE_CAPABILITIES`, so the list cannot drift from the build that serves it. An id is declared but not advertised when clients need to name it while this build does not support it: a shared contract that lands before the engine implements it, or an older protocol the engine no longer serves.
 
 ## Rules
