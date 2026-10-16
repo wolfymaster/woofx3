@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.33.0](https://github.com/wolfymaster/woofx3/compare/v0.32.1...v0.33.0) (2026-10-16)
+
+### Features
+
+* **api:** list the build's capabilities in GET /health ([48dd47a](https://github.com/wolfymaster/woofx3/commit/48dd47ab2ba9428d1bd3772f269c15bd1879458a))
+
 ## [0.32.1](https://github.com/wolfymaster/woofx3/compare/v0.32.0...v0.32.1) (2026-10-16)
 
 ### Bug Fixes
