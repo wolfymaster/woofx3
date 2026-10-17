@@ -202,6 +202,42 @@ Each line is one event, with an RFC 3339 `time`:
 
 Consumers must ignore event types and fields they do not know.
 
+### Windows
+
+Windows has no SIGTERM, so the orchestrator stops services differently there.
+The two phases and the 25 seconds are the same.
+
+- **Stopping a service.** Each service starts in a console process group of its
+  own. To ask one to stop, the orchestrator sends it `CTRL_BREAK_EVENT`, and
+  kills it if it has not exited when the grace period is up. Go services and
+  Caddy receive the event as `os.Interrupt`, Bun services as `SIGBREAK`, and
+  barkloader through its ctrl-break handler. All of them treat it as a graceful
+  shutdown.
+- **The orchestrator needs a console.** A console control event can only be
+  sent through a console that the sender shares with the target. A parent that
+  starts the orchestrator without a visible window should use
+  `CREATE_NO_WINDOW`, which gives it a hidden console. It should not use
+  `DETACHED_PROCESS`, which gives it none. Without a console, every stop
+  request fails, and each service is killed straight away (with a warning in
+  the log). db-proxy then gets no final flush.
+- **Services never outlive the orchestrator.** The orchestrator puts itself in
+  a job object that kills every process in it when the orchestrator exits, and
+  the services inherit that job. Ending the orchestrator from Task Manager, or
+  with `TerminateProcess`, therefore ends the services too, but with no graceful
+  stop. For a graceful stop, a parent should use `--exit-on-stdin-eof` and close
+  the pipe.
+- **Stopping the orchestrator.** Ctrl+C or Ctrl+Break in its console stops it as
+  SIGTERM does on Linux. Ctrl+C reaches only the orchestrator, which then stops
+  the services in order. Closing the console window, logging off or shutting
+  down also stops it. However, Windows ends the process about 5 seconds after
+  those events, which is well short of the grace period. The job then kills
+  whatever is still running.
+
+On Linux and macOS, nothing of this applies: services are stopped with SIGTERM,
+and there is no job. Services outlive an orchestrator killed with SIGKILL.
+(`--exit-on-stdin-eof` covers the death of the orchestrator's parent, not of the
+orchestrator itself.)
+
 ## Readiness and version
 
 `GET /ready` (served by the api, reachable through the edge) answers `200`

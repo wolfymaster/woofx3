@@ -179,7 +179,7 @@ type fakeProcess struct {
 
 func (p *fakeProcess) Pid() int { return p.pid }
 
-func (p *fakeProcess) Signal(os.Signal) error {
+func (p *fakeProcess) RequestStop() error {
 	p.exit()
 	return nil
 }

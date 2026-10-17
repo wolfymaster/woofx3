@@ -347,7 +347,7 @@ async fn main() -> std::io::Result<()> {
 
     // Start HTTP server
     info!("Starting server on {}", bind_addr);
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(Data::new(ctx.clone()))
             .app_data(media_proxy.clone())
@@ -370,6 +370,32 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(bind_addr)?
     .shutdown_timeout(5)
-    .run()
-    .await
+    .run();
+    #[cfg(windows)]
+    stop_on_ctrl_break(server.handle());
+    server.await
+}
+
+/// Stops the server gracefully on CTRL_BREAK_EVENT, the orchestrator's stop
+/// request on Windows. actix-web stops on SIGINT, SIGTERM and SIGQUIT on unix,
+/// but on Windows only on Ctrl+C, which a process in its own console process
+/// group never receives.
+#[cfg(windows)]
+fn stop_on_ctrl_break(server: actix_web::dev::ServerHandle) {
+    actix_web::rt::spawn(async move {
+        let mut ctrl_break = match tokio::signal::windows::ctrl_break() {
+            Ok(ctrl_break) => ctrl_break,
+            Err(e) => {
+                warn!(
+                    "Cannot listen for CTRL_BREAK, the orchestrator can only kill this process: {}",
+                    e
+                );
+                return;
+            }
+        };
+        if ctrl_break.recv().await.is_some() {
+            info!("Received CTRL_BREAK, shutting down");
+            server.stop(true).await;
+        }
+    });
 }

@@ -200,7 +200,9 @@ func (systemClock) Sleep(d time.Duration) { time.Sleep(d) }
 // serviceHandle is a started service process.
 type serviceHandle interface {
 	Pid() int
-	Signal(signal os.Signal) error
+	// RequestStop asks the process to shut down gracefully. It returns once
+	// the request is delivered, not once the process has exited.
+	RequestStop() error
 	Kill() error
 	// Wait blocks until the process exits and describes how it did.
 	Wait() (string, error)
@@ -209,21 +211,15 @@ type serviceHandle interface {
 // processStarter starts a service process.
 type processStarter func(path string, argv []string, attr *os.ProcAttr) (serviceHandle, error)
 
+// osProcess is a service process started by startOSProcess. How it is started
+// and asked to stop depends on the platform: see process_windows.go and
+// process_other.go.
 type osProcess struct {
 	process *os.Process
 }
 
-func startOSProcess(path string, argv []string, attr *os.ProcAttr) (serviceHandle, error) {
-	process, err := os.StartProcess(path, argv, attr)
-	if err != nil {
-		return nil, err
-	}
-	return osProcess{process: process}, nil
-}
-
-func (p osProcess) Pid() int                      { return p.process.Pid }
-func (p osProcess) Signal(signal os.Signal) error { return p.process.Signal(signal) }
-func (p osProcess) Kill() error                   { return p.process.Kill() }
+func (p osProcess) Pid() int    { return p.process.Pid }
+func (p osProcess) Kill() error { return p.process.Kill() }
 
 func (p osProcess) Wait() (string, error) {
 	state, err := p.process.Wait()
