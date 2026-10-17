@@ -5,6 +5,7 @@
       "entry": "src/server.ts",
       "name": "api",
       "dependencies": ["message-bus", "db-proxy", "barkloader"],
+      "health_endpoint": "http://127.0.0.1:${WOOFX3_API_PORT:-5050}/ready",
       "output": "api",
       "path": "../api",
       "type": "bun"

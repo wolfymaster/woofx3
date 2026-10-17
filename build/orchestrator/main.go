@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -259,14 +260,29 @@ func (status ServiceStatus) String() string {
 	}
 }
 
+// satisfiesDependents reports whether the services that depend on one in this
+// status may start. A healthy service does. So does an unhealthy one: it is
+// running, and its health check either timed out while it started or failed
+// later. Holding its dependents back for good would stop the engine on a
+// check that may be wrong (a port mismatch, a slow dependency) rather than
+// on the service itself, so the check gates them for healthCheckTimeout at
+// most.
+func (status ServiceStatus) satisfiesDependents() bool {
+	return status == StatusHealthy || status == StatusUnhealthy
+}
+
 // healthCheckTimeout is how long a starting service with a health endpoint
-// has to pass its check before it is reported unhealthy.
+// has to pass its check before it is reported unhealthy and its dependents
+// start anyway.
 const healthCheckTimeout = 30 * time.Second
 
 // ServiceProcess is one supervised service. Cmd, Status and LastHealth are
 // shared between the service's goroutines and guarded by the supervisor's mu.
 type ServiceProcess struct {
-	Service    Service
+	Service Service
+	// healthURL is the service's health endpoint with its variables expanded,
+	// or empty when it has none.
+	healthURL  string
 	Cmd        serviceHandle
 	Restart    chan bool
 	Status     ServiceStatus
@@ -312,10 +328,11 @@ func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 
 func (s *Supervisor) AddService(service Service) {
 	s.services[service.Name] = &ServiceProcess{
-		Service:  service,
-		Restart:  make(chan bool),
-		Status:   StatusStopped,
-		CanStart: make(chan bool, 1),
+		Service:   service,
+		healthURL: expandEndpoint(service.HealthEndpoint, os.Getenv),
+		Restart:   make(chan bool),
+		Status:    StatusStopped,
+		CanStart:  make(chan bool, 1),
 	}
 }
 
@@ -391,15 +408,15 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 
 		s.mu.Lock()
 		stopping := s.stopping
-		allHealthy := true
+		allStarted := true
 		for _, depName := range serviceProcess.Service.Dependencies {
 			if depService, exists := s.services[depName]; exists {
-				if depService.Status != StatusHealthy {
-					allHealthy = false
+				if !depService.Status.satisfiesDependents() {
+					allStarted = false
 					break
 				}
 			} else {
-				allHealthy = false
+				allStarted = false
 				break
 			}
 		}
@@ -409,7 +426,7 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 		if stopping {
 			return
 		}
-		if allHealthy && stopped {
+		if allStarted && stopped {
 			select {
 			case serviceProcess.CanStart <- true:
 			default:
@@ -546,9 +563,11 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 
 // updateHealth moves a running service between starting, healthy and
 // unhealthy by its health check, or straight to healthy once started when it
-// has none.
+// has none. An unhealthy service is still checked, and becomes healthy again
+// when its check passes.
 func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 	service := serviceProcess.Service
+	healthURL := serviceProcess.healthURL
 
 	s.mu.Lock()
 	process := serviceProcess.Cmd
@@ -560,22 +579,22 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 	}
 
 	switch {
-	case status == StatusStarting && service.HealthEndpoint == "":
+	case status == StatusStarting && healthURL == "":
 		if s.transition(serviceProcess, process, StatusStarting, StatusHealthy) {
 			s.logger.Info("Service started (no health check)", "service", service.Name)
 		}
 	case status == StatusStarting:
-		if s.checkHealth(service.HealthEndpoint) {
+		if s.checkHealth(healthURL) {
 			if s.transition(serviceProcess, process, StatusStarting, StatusHealthy) {
 				s.logger.Info("Service is healthy", "service", service.Name)
 			}
 		} else if s.clock.Now().Sub(lastHealth) > healthCheckTimeout {
 			if s.transition(serviceProcess, process, StatusStarting, StatusUnhealthy) {
-				s.logger.Warn("Service health check timeout", "service", service.Name)
+				s.logger.Warn("Service health check timeout, starting its dependents anyway", "service", service.Name, "endpoint", healthURL)
 			}
 		}
-	case status == StatusHealthy && service.HealthEndpoint != "":
-		if !s.checkHealth(service.HealthEndpoint) {
+	case status == StatusHealthy && healthURL != "":
+		if !s.checkHealth(healthURL) {
 			if s.transition(serviceProcess, process, StatusHealthy, StatusUnhealthy) {
 				s.logger.Warn("Service became unhealthy", "service", service.Name)
 			}
@@ -583,6 +602,12 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 			s.mu.Lock()
 			serviceProcess.LastHealth = s.clock.Now()
 			s.mu.Unlock()
+		}
+	case status == StatusUnhealthy && healthURL != "":
+		if s.checkHealth(healthURL) {
+			if s.transition(serviceProcess, process, StatusUnhealthy, StatusHealthy) {
+				s.logger.Info("Service is healthy", "service", service.Name)
+			}
 		}
 	}
 }
@@ -699,6 +724,20 @@ func (s *Supervisor) childFiles(serviceName string) ([]*os.File, func(), error) 
 		return nil, nil, fmt.Errorf("open service output file: %w", err)
 	}
 	return []*os.File{stdin, output, output}, func() { output.Close() }, nil
+}
+
+// expandEndpoint fills ${NAME} and ${NAME:-default} in a health endpoint from
+// the environment, so services.json can follow a port the deployment
+// configures. A variable that is unset or empty takes its default, or
+// expands to nothing without one.
+func expandEndpoint(endpoint string, getenv func(string) string) string {
+	return os.Expand(endpoint, func(reference string) string {
+		name, fallback, _ := strings.Cut(reference, ":-")
+		if value := getenv(name); value != "" {
+			return value
+		}
+		return fallback
+	})
 }
 
 func checkHealthOverHTTP(endpoint string) bool {

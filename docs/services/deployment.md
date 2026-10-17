@@ -75,6 +75,13 @@ mounts a root-owned volume there must start the container as root (Railway:
 `RAILWAY_RUN_UID=0`); the entrypoint then hands `/app/data` to 65532 and drops
 privileges before migrating or starting anything.
 
+The orchestrator starts each service once the services it depends on are up.
+The api declares `GET /ready` as its health endpoint in `services.json`, so the
+edge starts once the api reports ready, or after 30 seconds if it has not by
+then; a timeout is logged as a warning and never stops the engine. The probe
+goes to `127.0.0.1` on `WOOFX3_API_PORT`, or `5050` (the baked `apiPort`) when
+that is unset.
+
 ## Module storage
 
 Module storage (`ctx.storage`) is an embedded SQLite file owned by db-proxy,
@@ -195,7 +202,9 @@ Each line is one event, with an RFC 3339 `time`:
   prebuilt binary is not installed.
 - `ready` — every service is healthy at once, sent once per run. A service with
   a `health_endpoint` in `services.json` is healthy when that answers `200`; one
-  without is healthy once started.
+  without is healthy once started. The api's is `GET /ready`, so `ready` means
+  the api has reported ready. A service whose check times out is `unhealthy`
+  but is still checked, and turns `healthy` when its check passes.
 - `error` — a service could not be started (`name` set), or the orchestrator
   could not start at all (no `name`; it exits non-zero after this line).
 - `stopped` — every service has been stopped and the orchestrator is exiting.
