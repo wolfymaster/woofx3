@@ -4642,6 +4642,28 @@ class AckBatcher {
   }
 }
 
+// public/scene-manager/session-refresh.ts
+function startSessionRefresh(options) {
+  const every = options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
+  every(() => {
+    renewSession(options);
+  }, options.intervalMs);
+}
+async function renewSession(options) {
+  let response;
+  try {
+    response = await options.refresh();
+  } catch {
+    options.onHealth(false);
+    return;
+  }
+  if (response.status === 401) {
+    options.onExpired();
+    return;
+  }
+  options.onHealth(response.ok);
+}
+
 // public/scene-manager/reconnect-coordinator.ts
 var ALWAYS_PROBE = {
   shouldProbe: () => true,
@@ -6012,15 +6034,11 @@ function main() {
       reloadOverlay();
     }
   });
-  setInterval(() => {
-    fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" }).then((resp) => {
-      if (!resp.ok) {
-        throw new Error(`refresh failed: ${resp.status}`);
-      }
-      status.set("session", true);
-    }).catch(() => {
-      status.set("session", false);
-    });
-  }, REFRESH_INTERVAL_MS);
+  startSessionRefresh({
+    refresh: () => fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" }),
+    onHealth: (healthy) => status.set("session", healthy),
+    onExpired: () => location.reload(),
+    intervalMs: REFRESH_INTERVAL_MS
+  });
 }
 main();

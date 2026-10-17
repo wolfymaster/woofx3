@@ -18,6 +18,7 @@ import {
 } from "./widget-bridge";
 import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "./event-queue";
 import { AckBatcher, postAck } from "./ack-batcher";
+import { startSessionRefresh } from "./session-refresh";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
@@ -843,22 +844,14 @@ function main(): void {
     },
   });
 
-  setInterval(() => {
-    fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" })
-      .then((resp) => {
-        if (!resp.ok) {
-          throw new Error(`refresh failed: ${resp.status}`);
-        }
-        status.set("session", true);
-      })
-      .catch(() => {
-        // Pre-emptive refresh failed -- surface the same disconnected
-        // state the SSE loss path uses until a refresh finally
-        // succeeds (design: "an overlay should be shown displaying
-        // the error until it is able to succeed").
-        status.set("session", false);
-      });
-  }, REFRESH_INTERVAL_MS);
+  startSessionRefresh({
+    refresh: () => fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" }),
+    onHealth: (healthy) => status.set("session", healthy),
+    // Each page of the scene holds the same cookie and finds it expired on
+    // its own next renewal, so this page reloads alone.
+    onExpired: () => location.reload(),
+    intervalMs: REFRESH_INTERVAL_MS,
+  });
 }
 
 main();
