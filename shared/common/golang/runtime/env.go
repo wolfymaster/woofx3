@@ -101,38 +101,82 @@ func loadWoofx3Config(path string) (map[string]any, error) {
 
 // LoadRuntimeEnvOptions configures where to load from. The loader never writes to the process environment.
 type LoadRuntimeEnvOptions struct {
-	// RootDir, if set, is the directory for .env and .woofx3.config. If empty, WOOFX3_ROOT then findProjectRoot are used.
+	// RootDir, if set, is the directory for .env and .woofx3.json, and WOOFX3_ROOT and WOOFX3_CONFIG are
+	// ignored. If empty, see resolveConfigLocation.
 	RootDir string
 }
 
-// resolveRootDir returns the config root directory: options.RootDir if set, else WOOFX3_ROOT from the environment
-// if set, else findProjectRoot("."). Paths from options or env are made absolute when possible.
-func resolveRootDir(options *LoadRuntimeEnvOptions) string {
+// ConfigFileEnv names an explicit config file. It must exist: a deployment that names its config
+// file and gets an empty config instead would start with defaults it never asked for.
+// Must match CONFIG_FILE_ENV in shared/common/typescript/runtime/config.ts and
+// shared/common/rust/runtime/src/lib.rs.
+const ConfigFileEnv = "WOOFX3_CONFIG"
+
+// RootDirEnv names the config root directory, holding .env and, unless WOOFX3_CONFIG is set,
+// .woofx3.json.
+const RootDirEnv = "WOOFX3_ROOT"
+
+// configLocation is where configuration is read from.
+type configLocation struct {
+	// rootDir holds .env, and .woofx3.json unless configPath says otherwise.
+	rootDir string
+	// configPath is the JSON config file.
+	configPath string
+	// configRequired is true when configPath was named explicitly, so a missing file is an error.
+	configRequired bool
+}
+
+// resolveConfigLocation picks the config root and file, first match wins:
+//   - options.RootDir: that directory's .env and .woofx3.json.
+//   - WOOFX3_CONFIG: that file; .env from WOOFX3_ROOT if set, else the file's directory.
+//   - WOOFX3_ROOT: that directory's .env and .woofx3.json.
+//   - otherwise the nearest directory at or above the working directory holding a config file.
+//
+// Paths are made absolute when possible.
+func resolveConfigLocation(options *LoadRuntimeEnvOptions) configLocation {
 	if options != nil && options.RootDir != "" {
-		if abs, err := filepath.Abs(options.RootDir); err == nil {
-			return abs
-		}
-		return options.RootDir
+		root := absOrSelf(options.RootDir)
+		return configLocation{rootDir: root, configPath: filepath.Join(root, ".woofx3.json")}
 	}
-	if v := os.Getenv("WOOFX3_ROOT"); v != "" {
-		if abs, err := filepath.Abs(v); err == nil {
-			return abs
-		}
-		return v
+	root := ""
+	if v := os.Getenv(RootDirEnv); v != "" {
+		root = absOrSelf(v)
 	}
-	return findProjectRoot(".")
+	if v := os.Getenv(ConfigFileEnv); v != "" {
+		configPath := absOrSelf(v)
+		if root == "" {
+			root = filepath.Dir(configPath)
+		}
+		return configLocation{rootDir: root, configPath: configPath, configRequired: true}
+	}
+	if root == "" {
+		root = findProjectRoot(".")
+	}
+	return configLocation{rootDir: root, configPath: filepath.Join(root, ".woofx3.json")}
+}
+
+func absOrSelf(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 // LoadRuntimeEnv resolves configuration from .woofx3.json, .env and the process environment, keyed
 // as WOOFX3_* variables. Precedence, highest first: the process environment, then .env, then
 // .woofx3.json -- a deployment configures by variables, so a value baked into the file must never
 // beat one the host set. A blank value never masks a non-blank one from a lower source; a key blank
-// everywhere still resolves, to blank.
+// everywhere still resolves, to blank. See resolveConfigLocation for where the files are found.
 func LoadRuntimeEnv(options *LoadRuntimeEnvOptions) (map[string]string, error) {
-	rootDir := resolveRootDir(options)
+	location := resolveConfigLocation(options)
+	rootDir := location.rootDir
 
-	configPath := filepath.Join(rootDir, ".woofx3.json")
-	woofx3, err := loadWoofx3Config(configPath)
+	if location.configRequired {
+		if _, err := os.Stat(location.configPath); err != nil {
+			return nil, fmt.Errorf("%s names a config file that cannot be read: %w", ConfigFileEnv, err)
+		}
+	}
+	woofx3, err := loadWoofx3Config(location.configPath)
 	if err != nil {
 		return nil, err
 	}
