@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/wolfymaster/woofx3/compare/v0.33.0...v0.34.0) (2026-10-17)
+
+### Features
+
+* **widgets:** close widget frames to connections of their own ([5a587d4](https://github.com/wolfymaster/woofx3/commit/5a587d423e73728fbcd12fa83802f517ebb48ea7))
+* **widgets:** let widgets read asset bytes through the host ([bdcad9c](https://github.com/wolfymaster/woofx3/commit/bdcad9c2e849d149949a12e617a0bb5ebb44e2bb))
+
 ## [0.33.0](https://github.com/wolfymaster/woofx3/compare/v0.32.1...v0.33.0) (2026-10-16)
 
 ### Features
