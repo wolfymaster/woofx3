@@ -455,12 +455,15 @@ widget ─ host.assets.load(ref) ─> shim ─ asset.load {id, path} ─> overla
   sandboxed, non-sniffed document, so an uploaded HTML file opened there never
   runs on the origin holding overlay sessions. `modules/` responses are cached
   for good; `user/` responses are revalidated on every use.
-- **Read ahead.** One cache serves the page, so each file is read once. The
-  library files a placement's settings name that a script will read (any
-  type but image, video, audio or font) are read as soon as the placement is
-  mounted, while its frame loads; an alert's are read as soon as it is
-  delivered, before its turn in the queue. The widget's ask then finds the
-  bytes already on the page.
+- **Read ahead.** One cache serves the page, so a file asked for by several
+  frames at once is read once. The library files a placement's settings name
+  that a script will read (any type but image, video, audio or font) are read
+  as soon as the placement is mounted, while its frame loads; an alert's are
+  read as soon as it is delivered, before its turn in the queue. The widget's
+  ask then finds the bytes already on the page. The page holds a file for a
+  minute after it arrives; later asks go to the browser's cache, which
+  revalidates an upload (so a replaced one is picked up) at the cost of a
+  round trip and no download.
 - **No connections of its own.** Every widget frame is served with
   `connect-src 'none'` (themeable frames add it to their theme policy), so
   widget code cannot `fetch`, open a socket or send a beacon. What it needs

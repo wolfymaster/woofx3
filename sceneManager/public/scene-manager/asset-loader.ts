@@ -10,14 +10,24 @@
 // any file in the asset library, and its own module's files.
 //
 // One cache serves the whole page, so a file several placements or alerts use
-// is read once. Files a placement's settings name are read as soon as the
-// placement is known, while its frame is still loading, so the widget's ask
-// usually finds them already here.
+// at once is read once. Files a placement's settings name are read as soon as
+// the placement is known, while its frame is still loading, so the widget's
+// ask usually finds them already here.
 
 import { type WidgetAssetErrorCode, engineAssetPath } from "@woofx3/module-sdk";
 
 /** Must match `ASSET_READ_PREFIX` in src/routes/asset-read.ts. */
 export const ASSET_READ_PREFIX = "/assets/read/";
+
+/**
+ * How long a file read stays here after it arrives: long enough for the ask a
+ * read-ahead was for, and for the placements and alerts that use one file at
+ * once. After that the browser's own cache answers, which revalidates an
+ * upload (it can be replaced under the same path) and costs no download while
+ * it is unchanged; holding files for the life of an overlay that runs for
+ * days would grow without bound and keep serving a replaced upload.
+ */
+export const ASSET_RETAIN_MS = 60_000;
 
 /** Nesting deeper than any settings form produces; deeper values are not searched. */
 const MAX_DEPTH = 32;
@@ -133,22 +143,25 @@ function collect(value: unknown, pageOrigin: string, paths: Set<string>, depth: 
 }
 
 /**
- * Every file the page has read or is reading, by engine path. A read that
- * fails is forgotten, so the next ask tries again; one that succeeds is kept
- * for the life of the page; the browser's own cache is what spans reloads.
+ * The files the page is reading, and has read in the last `retainMs`, by
+ * engine path. A read that fails is forgotten at once, so the next ask tries
+ * again.
  */
 export class AssetCache {
   private readonly entries = new Map<string, Promise<LoadedAsset>>();
   private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response>;
 
-  constructor(fetchFn?: (url: string, init: RequestInit) => Promise<Response>) {
+  constructor(
+    fetchFn?: (url: string, init: RequestInit) => Promise<Response>,
+    private readonly retainMs: number = ASSET_RETAIN_MS
+  ) {
     // Bound to the global for the same reason SceneEventSource binds it: a
     // bare `fetch` called as `this.fetchFn(...)` throws "Illegal invocation"
     // in the browser, before any request is sent.
     this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
   }
 
-  /** The file at `path`, read once however many times it is asked for. */
+  /** The file at `path`, read once for every ask while it is held. */
   load(path: string): Promise<LoadedAsset> {
     const held = this.entries.get(path);
     if (held !== undefined) {
@@ -156,12 +169,18 @@ export class AssetCache {
     }
     const reading = this.read(path);
     this.entries.set(path, reading);
-    reading.catch(() => {
+    const forget = (): void => {
       if (this.entries.get(path) === reading) {
         this.entries.delete(path);
       }
-    });
+    };
+    reading.then(() => setTimeout(forget, this.retainMs), forget);
     return reading;
+  }
+
+  /** How many files are held or being read; diagnostic and test use. */
+  size(): number {
+    return this.entries.size;
   }
 
   /**

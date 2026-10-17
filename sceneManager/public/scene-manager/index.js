@@ -3261,6 +3261,7 @@ function sameJson(a, b) {
 }
 // public/scene-manager/asset-loader.ts
 var ASSET_READ_PREFIX = "/assets/read/";
+var ASSET_RETAIN_MS = 60000;
 var MAX_DEPTH = 32;
 var ELEMENT_LOADED_TYPE = /^(image|video|audio|font)(\/|$)/;
 
@@ -3335,9 +3336,11 @@ function collect(value, pageOrigin, paths, depth) {
 }
 
 class AssetCache {
+  retainMs;
   entries = new Map;
   fetchFn;
-  constructor(fetchFn) {
+  constructor(fetchFn, retainMs = ASSET_RETAIN_MS) {
+    this.retainMs = retainMs;
     this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
   }
   load(path) {
@@ -3347,12 +3350,16 @@ class AssetCache {
     }
     const reading = this.read(path);
     this.entries.set(path, reading);
-    reading.catch(() => {
+    const forget = () => {
       if (this.entries.get(path) === reading) {
         this.entries.delete(path);
       }
-    });
+    };
+    reading.then(() => setTimeout(forget, this.retainMs), forget);
     return reading;
+  }
+  size() {
+    return this.entries.size;
   }
   readAhead(paths, moduleId) {
     for (const path of paths) {
