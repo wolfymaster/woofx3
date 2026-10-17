@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.34.1](https://github.com/wolfymaster/woofx3/compare/v0.34.0...v0.34.1) (2026-10-17)
+
+### Bug Fixes
+
+* **sceneManager:** stop failing every asset revalidation with a 502 ([67cc50a](https://github.com/wolfymaster/woofx3/commit/67cc50a672424e30461ff25d7e5e053af6a3a174))
+
 ## [0.34.0](https://github.com/wolfymaster/woofx3/compare/v0.33.0...v0.34.0) (2026-10-17)
 
 ### Features
