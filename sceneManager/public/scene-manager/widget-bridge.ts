@@ -366,6 +366,9 @@ export class WidgetBridge {
         }
       },
       (err: unknown) => {
+        if (!(err instanceof AssetLoadError)) {
+          console.warn("[scene-manager] asset load failed unexpectedly", { path }, err);
+        }
         if (generation === this.documentGeneration) {
           this.post({ type: "asset.error", id, code: err instanceof AssetLoadError ? err.code : "unavailable" });
         }
