@@ -10,7 +10,12 @@ import {
   type ResourceInstanceDefinition,
   type WidgetThemes,
 } from "@woofx3/api";
-import { type EngineModule, listEngineModules } from "../engine-modules";
+import {
+  type EngineModule,
+  listEngineModules,
+  type MarketplaceProvenance,
+  marketplaceProvenance,
+} from "../engine-modules";
 import {
   fetchModuleArchive,
   handArchiveToBarkloader,
@@ -302,16 +307,19 @@ export const modulesRoutes = routeModule({
     };
   },
 
-  async getModule(id: string): Promise<{
-    id: string;
-    name: string;
-    description: string;
-    taxonomy: string[];
-    version: string;
-    author: string;
-    isInstalled: boolean;
-    iconUrl: string;
-  } | null> {
+  async getModule(id: string): Promise<
+    | ({
+        id: string;
+        name: string;
+        description: string;
+        taxonomy: string[];
+        version: string;
+        author: string;
+        isInstalled: boolean;
+        iconUrl: string;
+      } & MarketplaceProvenance)
+    | null
+  > {
     const found = await this.db.getModuleByName(id);
     if (!found) return null;
     const { author, taxonomy } = readModuleCatalogFields(found.manifest);
@@ -324,6 +332,7 @@ export const modulesRoutes = routeModule({
       author,
       isInstalled: true,
       iconUrl: "",
+      ...marketplaceProvenance(found),
     };
   },
 
