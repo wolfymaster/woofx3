@@ -206,6 +206,12 @@ holds only descriptive facts that are safe for anyone to read:
   [engine-capabilities.md](engine-capabilities.md)), readable without a
   registered client. `schema` is `ENGINE_CAPABILITIES_SCHEMA`. The example
   above is shortened; a real engine lists every id it supports.
+  It includes the hosting ids for `WOOFX3_HOSTING`, as below.
+
+`WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
+`getEngineInfo()` reports it as `hosting`, and `local` adds the
+`engine.localMode` capability. Unset, `getEngineInfo()` has no `hosting` field
+and no hosting capability is listed; any other value stops the api at startup.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
