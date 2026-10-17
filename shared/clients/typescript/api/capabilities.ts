@@ -73,6 +73,12 @@ export const ENGINE_CAPABILITIES = {
    */
   modulesMarketplaceInstall: "modules.marketplaceInstall",
   /**
+   * Marketplace catalog reads through the engine, answered with the
+   * marketplace's JSON unchanged: `marketplaceSearch`, `marketplaceCounts`,
+   * `marketplaceGetListing`, `marketplaceGetAuthor`, `marketplaceQuote`.
+   */
+  marketplaceCatalog: "marketplace.catalog",
+  /**
    * A Twitch token that carries the app's `clientId` is renewed by asking the
    * dashboard that sent it (`twitch.token.requested`), not with a refresh
    * token, so the dashboard need not send one.
