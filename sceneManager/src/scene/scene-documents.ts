@@ -43,7 +43,14 @@ import { STRICT_REGISTRY } from "@woofx3/scene/model";
 import { externalMediaUrls } from "../../public/scene-manager/media-url";
 import { themeOf } from "../../public/scene-manager/scene-update";
 import type { MediaProxy } from "./media-proxy";
-import type { EditableScene, OverlaySceneState, OverlayWidgetInstance, SceneVersion } from "./scene-host";
+import type {
+  EditableScene,
+  OverlaySceneState,
+  OverlayWidgetInstance,
+  SceneVersion,
+  StoredColumn,
+  StoredUnread,
+} from "./scene-host";
 
 /** SSE event carrying a `SceneOpsEvent` to every overlay open on the scene. */
 export const SCENE_OPS_EVENT = "scene-ops";
@@ -206,15 +213,22 @@ export interface PublishedComposition {
 }
 
 /**
- * A document in the shapes the database stores and the editor reads:
+ * A document in the shapes the database stores and the editor reads, with
+ * the placements a load could not read (`StoredUnread`) kept as stored:
  * `widgets_json` is the placements in stacking order, each as the editor
  * writes one, `layout_json` the layout and `behaviors_json` the behaviors.
  * Inputs are not among them: the editor never changes them, so they are
  * written only where they are set (the api), and a write from here never
  * races one there.
  */
-export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string; behaviorsJson: string } {
-  const widgets = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
+export function storedSceneOf(
+  doc: SceneDocument,
+  unreadPlacements: readonly unknown[] = []
+): { widgetsJson: string; layoutJson: string; behaviorsJson: string } {
+  const widgets: unknown[] = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
+  // After the placements the document holds, so a placement the loader could
+  // not read stays in the row instead of being deleted by this write.
+  widgets.push(...unreadPlacements);
   return {
     widgetsJson: JSON.stringify(widgets),
     layoutJson: JSON.stringify(doc.layout),
@@ -356,6 +370,8 @@ interface HeldScene {
   /** The scene's editors by clientId: one socket per client. */
   editors: Map<string, EditorRecord>;
   save: SaveState;
+  /** Each version's stored data that the load could not read (see `StoredUnread`). */
+  unread: Record<Version, StoredUnread>;
 }
 
 interface MetaPlan {
@@ -534,6 +550,12 @@ export class SceneDocuments {
         conn.close(CLOSE_CODES.notFound, "scene not found");
         return;
       }
+      const unreadable = unreadableColumns(held);
+      if (unreadable.length > 0) {
+        safeSend(conn, { type: "error", code: "not_found", detail: unreadableDetail(unreadable) });
+        conn.close(CLOSE_CODES.notFound, "scene could not be read");
+        return;
+      }
       const existing = held.editors.get(hello.clientId);
       if (existing !== undefined && existing.conn !== conn) {
         held.editors.delete(hello.clientId);
@@ -686,6 +708,10 @@ export class SceneDocuments {
       if (!held) {
         return { ok: false as const, error: "not_found" };
       }
+      const unreadable = unreadableColumns(held);
+      if (unreadable.length > 0) {
+        return { ok: false as const, error: unreadableDetail(unreadable) };
+      }
       const ops = change(snapshotOf(held, version));
       if (!Array.isArray(ops)) {
         return { ok: false as const, error: ops.error };
@@ -734,6 +760,7 @@ export class SceneDocuments {
         return;
       }
       held.name = loaded.name;
+      held.unread.published = unreadOf(loaded);
       const saved = documentOf(loaded);
       const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
@@ -1149,6 +1176,7 @@ export class SceneDocuments {
         writing: null,
         storedHeadId: restored.stored ? restored.state.headId : null,
       },
+      unread: { published: unreadOf(published), draft: unreadOf(draft) },
     };
     this.scenes.set(sceneId, held);
     this.scheduleReframe(held);
@@ -1208,6 +1236,11 @@ export class SceneDocuments {
     if (this.persister === null || held.save.timer !== null || held.save.writing !== null || this.closed) {
       return;
     }
+    // A whole column the load could not read would be replaced by what the
+    // document holds in its place (nothing); the row stays as it is.
+    if (unreadableColumns(held).length > 0) {
+      return;
+    }
     held.save.timer = this.clock.setTimeout(() => {
       held.save.timer = null;
       void this.write(held);
@@ -1259,16 +1292,48 @@ function noMeta(held: HeldScene): MetaPlan {
   return { next: held.meta, unframed: held.unframed, changes: {} };
 }
 
+function unreadOf(state: OverlaySceneState): StoredUnread {
+  return state.unread ?? { placements: [], columns: [] };
+}
+
+/** The stored columns of either version that the load could not read at all. */
+function unreadableColumns(held: HeldScene): StoredColumn[] {
+  return [...new Set([...held.unread.published.columns, ...held.unread.draft.columns])];
+}
+
+/** `placements` without repeats, compared as stored JSON, first occurrence kept. */
+function distinctPlacements(placements: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  return placements.filter((placement) => {
+    const key = JSON.stringify(placement);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function unreadableDetail(columns: StoredColumn[]): string {
+  return `the scene's stored ${columns.join(", ")} could not be read, so it cannot be changed without losing them`;
+}
+
 function savePending(held: HeldScene): boolean {
   return held.save.dirty || held.save.timer !== null || held.save.writing !== null;
 }
 
 function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
   const { docs, hasDraft } = held.state;
-  const published = storedSceneOf(docs.published);
+  // With no draft the draft column is cleared, so the draft's unread
+  // placements (the same as the published ones unless a draft was just
+  // published) go into the published column rather than with it.
+  const publishedUnread = hasDraft
+    ? held.unread.published.placements
+    : distinctPlacements([...held.unread.published.placements, ...held.unread.draft.placements]);
+  const published = storedSceneOf(docs.published, publishedUnread);
   const draft = hasDraft
     ? (() => {
-        const stored = storedSceneOf(docs.draft);
+        const stored = storedSceneOf(docs.draft, held.unread.draft.placements);
         return {
           draftWidgetsJson: stored.widgetsJson,
           draftLayoutJson: stored.layoutJson,

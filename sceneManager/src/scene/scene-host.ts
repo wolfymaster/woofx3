@@ -104,6 +104,25 @@ export interface OverlaySceneState {
   inputs: NonNullable<SceneDocument["inputs"]>;
   /** Whether the scene has an unpublished draft (see `loadSceneById`). */
   hasDraft?: boolean;
+  /** What of the stored version could not be read; absent when all of it was. */
+  unread?: StoredUnread;
+}
+
+/** A column of a stored scene version that `StoredUnread` can name. */
+export type StoredColumn = "widgets" | "layout" | "behaviors";
+
+/**
+ * Stored data a load could not read. A scene is written back whole, so
+ * anything left out of the document on the way in would be deleted on the
+ * way out: unreadable placements are kept as stored and written back after
+ * the readable ones, and a column whose text could not be read at all means
+ * the scene must not be written back.
+ */
+export interface StoredUnread {
+  /** Placements that did not parse, exactly as stored, in stored order. */
+  placements: unknown[];
+  /** Columns whose whole text was not what it must be (JSON of the right shape). */
+  columns: StoredColumn[];
 }
 
 /**
@@ -389,26 +408,46 @@ export class OverlayHost {
     const widgetsJson = draft ? s.draftWidgetsJson : s.widgetsJson;
     const layoutJson = draft ? s.draftLayoutJson : s.layoutJson;
     const behaviorsJson = draft ? s.draftBehaviorsJson : s.behaviorsJson;
-    return {
+    const widgets = this.readInstances(widgetsJson, s.id);
+    const layout = readLayout(layoutJson);
+    const behaviors = this.readBehaviors(behaviorsJson, s.id);
+    const columns: StoredColumn[] = [];
+    if (!widgets.readable) {
+      columns.push("widgets");
+    }
+    if (!layout.readable) {
+      columns.push("layout");
+    }
+    if (!behaviors.readable) {
+      columns.push("behaviors");
+    }
+    const state: OverlaySceneState = {
       sceneId: s.id,
       name: s.name,
       kind,
-      layout: parseLayout(layoutJson),
-      instances: await this.resolveInstances(this.parseInstances(widgetsJson, s.id), s.id),
-      behaviors: this.parseBehaviors(behaviorsJson, s.id),
+      layout: layout.layout,
+      instances: await this.resolveInstances(widgets.instances, s.id),
+      behaviors: behaviors.behaviors,
       inputs: this.parseInputs(s.inputsJson, s.id),
       hasDraft: s.hasDraft,
     };
+    if (widgets.unread.length > 0 || columns.length > 0) {
+      state.unread = { placements: widgets.unread, columns };
+    }
+    return state;
   }
 
   /** Stored behaviors; `{}` (said once in the log) when the text is not a JSON object. */
-  private parseBehaviors(behaviorsJson: string, sceneId: string): SceneDocument["behaviors"] {
+  private readBehaviors(
+    behaviorsJson: string,
+    sceneId: string
+  ): { behaviors: SceneDocument["behaviors"]; readable: boolean } {
     const parsed = parseJson(behaviorsJson || "{}");
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       this.logger.warn("scene behaviors are not a JSON object; loading none", { sceneId });
-      return {};
+      return { behaviors: {}, readable: false };
     }
-    return parsed as SceneDocument["behaviors"];
+    return { behaviors: parsed as SceneDocument["behaviors"], readable: true };
   }
 
   /** Stored inputs; none (said in the log) when the text is not a JSON array. */
@@ -575,24 +614,45 @@ export class OverlayHost {
   }
 
   private parseInstances(widgetsJson: string, sceneId: string): OverlayWidgetInstance[] {
+    return this.readInstances(widgetsJson, sceneId).instances;
+  }
+
+  /**
+   * The placements stored in `widgetsJson` that parse, the entries that do
+   * not (as stored), and whether the text was a JSON array at all.
+   */
+  private readInstances(
+    widgetsJson: string,
+    sceneId: string
+  ): { instances: OverlayWidgetInstance[]; unread: unknown[]; readable: boolean } {
     let raw: unknown;
     try {
       raw = JSON.parse(widgetsJson || "[]");
     } catch {
-      this.logger.warn("scene widgetsJson is not valid JSON; rendering empty scene");
-      return [];
+      this.logger.warn("scene widgetsJson is not valid JSON; rendering empty scene", { sceneId });
+      return { instances: [], unread: [], readable: false };
     }
     if (!Array.isArray(raw)) {
-      return [];
+      this.logger.warn("scene widgetsJson is not a JSON array; rendering empty scene", { sceneId });
+      return { instances: [], unread: [], readable: false };
     }
     const instances: OverlayWidgetInstance[] = [];
+    const unread: unknown[] = [];
     for (const entry of raw) {
       const instance = this.normalizeInstance(entry, sceneId);
       if (instance) {
         instances.push(instance);
+      } else {
+        unread.push(entry);
       }
     }
-    return instances;
+    if (unread.length > 0) {
+      this.logger.warn("scene placements could not be read; not shown, kept as stored", {
+        sceneId,
+        count: unread.length,
+      });
+    }
+    return { instances, unread, readable: true };
   }
 
   private normalizeInstance(raw: unknown, sceneId: string): OverlayWidgetInstance | null {
@@ -737,11 +797,14 @@ function parseJson(text: string): unknown {
   }
 }
 
-function parseLayout(layoutJson: string): OverlaySceneLayout {
+function readLayout(layoutJson: string): { layout: OverlaySceneLayout; readable: boolean } {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(layoutJson || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as OverlaySceneLayout) : {};
+    parsed = JSON.parse(layoutJson || "{}");
   } catch {
-    return {};
+    return { layout: {}, readable: false };
   }
+  return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+    ? { layout: parsed as OverlaySceneLayout, readable: true }
+    : { layout: {}, readable: false };
 }
