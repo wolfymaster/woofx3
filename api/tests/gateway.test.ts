@@ -3,6 +3,8 @@ import { ApiGateway } from "../src/gateway";
 import { Api } from "../src/api";
 import { WebhookClient } from "../src/webhook-client";
 
+const OPEN = { mode: "open", token: null } as const;
+
 function fakeLogger() {
   return {
     debug: mock(() => {}),
@@ -39,7 +41,7 @@ describe("ApiGateway.registerClient", () => {
     const webhook = new WebhookClient(db, logger);
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ valid: true })) } as any;
-    const gateway = new ApiGateway(api, auth, db, logger, null);
+    const gateway = new ApiGateway(api, auth, db, logger, OPEN);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
@@ -67,7 +69,7 @@ describe("ApiGateway.registerClient", () => {
     const api = newApi(db, logger);
     const webhook = new WebhookClient(db, logger);
     api.setWebhookClient(webhook);
-    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, null);
+    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, OPEN);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test", {});
@@ -84,7 +86,7 @@ describe("ApiGateway.registerClient", () => {
       { validate: mock(async () => ({ valid: true })) } as any,
       db,
       logger,
-      null
+      OPEN
     );
 
     await expect(gateway.registerClient("test", {})).rejects.toThrow("Failed to create client");
