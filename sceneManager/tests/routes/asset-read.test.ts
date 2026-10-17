@@ -121,6 +121,50 @@ describe("handleAssetReadRoute", () => {
     expect((await handleAssetReadRoute(b.req, b.url, BARKLOADER_URL, logger, down as never)).status).toBe(502);
   });
 
+  it("refuses a redirect from storage instead of following it", async () => {
+    const fetchFn = upstream(
+      new Response(null, { status: 302, headers: { Location: SIGNED } }),
+      new Response(null, { status: 302, headers: { Location: "https://elsewhere.test/" } })
+    );
+    const { req, url } = get("/assets/read/user/res-1/anim.json");
+
+    const resp = await handleAssetReadRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
+
+    expect(resp.status).toBe(502);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates through real fetch, whose redirect handling the mocks above do not model", async () => {
+    const storage = Bun.serve({
+      port: 0,
+      fetch: (req) =>
+        req.headers.get("If-None-Match") === '"e1"'
+          ? new Response(null, { status: 304, headers: { ETag: '"e1"' } })
+          : new Response("{}", { headers: { "Content-Type": "application/json", ETag: '"e1"' } }),
+    });
+    const barkloader = Bun.serve({
+      port: 0,
+      fetch: (req) =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: `http://localhost:${storage.port}${new URL(req.url).pathname}?sig=1` },
+        }),
+    });
+    try {
+      const fresh = get("/assets/read/user/res-1/anim.json");
+      const first = await handleAssetReadRoute(fresh.req, fresh.url, `http://localhost:${barkloader.port}`, logger);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toBe("{}");
+
+      const again = get("/assets/read/user/res-1/anim.json", { "If-None-Match": '"e1"' });
+      const second = await handleAssetReadRoute(again.req, again.url, `http://localhost:${barkloader.port}`, logger);
+      expect(second.status).toBe(304);
+    } finally {
+      barkloader.stop(true);
+      storage.stop(true);
+    }
+  });
+
   it("refuses anything but GET", async () => {
     const url = new URL("http://scene.test/assets/read/user/res-1/anim.json");
     const resp = await handleAssetReadRoute(
