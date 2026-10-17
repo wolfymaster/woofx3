@@ -233,6 +233,34 @@ interface StatusReportBody {
   ts?: unknown;
 }
 
+/**
+ * The module a status report is filed under. For a scene placement it is the
+ * placement's, from the scene's documents. An alert's widget is addressed as
+ * `{eventId}.{widgetId}`, which is no scene placement: its module is the one
+ * the page read from the alert layout it was delivered. Neither comes from
+ * the widget, whose `hello` claim nothing checks.
+ */
+async function statusModuleOf(
+  deps: HttpDeps,
+  sceneId: string,
+  instanceId: string,
+  body: StatusReportBody
+): Promise<string> {
+  try {
+    const placed = await deps.sceneDocuments.placementMeta(sceneId, instanceId);
+    if (placed !== null) {
+      return placed.moduleId;
+    }
+  } catch (err) {
+    deps.ctx.logger.warn("widget status: scene unavailable; filing under the page's module", {
+      sceneId,
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return typeof body.moduleId === "string" ? body.moduleId : "";
+}
+
 /** `POST /scene/{sceneId}/widget/{instanceId}/status` — widget
  *  `status.report` (both `reportStatus` calls and `event.complete()`'s
  *  optional accompanying status). */
@@ -253,7 +281,7 @@ export async function handleWidgetStatusRoute(
   }
 
   await handleStatusReport(deps.ctx.services.db.client, deps.ctx.logger, {
-    moduleId: typeof body.moduleId === "string" ? body.moduleId : "",
+    moduleId: await statusModuleOf(deps, sceneId, instanceId, body),
     instanceId,
     widgetCanonicalId: typeof body.widgetCanonicalId === "string" ? body.widgetCanonicalId : undefined,
     key: body.key,

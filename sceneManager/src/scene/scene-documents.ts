@@ -452,6 +452,26 @@ export class SceneDocuments {
     this.mediaProxy = options.mediaProxy ?? null;
   }
 
+  /**
+   * The meta of a placement on either version of the scene (published first),
+   * or null when it is on neither or the scene does not exist. Searched in the
+   * held documents rather than the stored row: pages mount a placement the
+   * moment an editor's change reaches them, while the row is written back only
+   * after the autosave delay and holds a draft placement only under its draft.
+   */
+  async placementMeta(sceneId: string, instanceId: string): Promise<PlacementMeta | null> {
+    for (const version of ["published", "draft"] as const) {
+      const snapshot = await this.snapshot(sceneId, version);
+      if (!snapshot) {
+        return null;
+      }
+      if (Object.hasOwn(snapshot.meta, instanceId)) {
+        return snapshot.meta[instanceId]!;
+      }
+    }
+    return null;
+  }
+
   /** A version of the scene with its values as entered, loading the scene when it is not held. */
   async snapshot(sceneId: string, version: SceneVersion = "published"): Promise<SceneSnapshot | null> {
     await this.queues.get(sceneId);

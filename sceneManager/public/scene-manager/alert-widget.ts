@@ -155,7 +155,8 @@ export interface AlertWidgetOptions {
   /** Every live bridge on the page; inbound messages are routed through it. */
   bridges: Set<WidgetBridge>;
   generateNonce(): string;
-  postStatus(instanceId: string, report: WidgetStatusReportPayload): void;
+  /** `moduleId` is the alert layout placement's, never the widget's claim. */
+  postStatus(instanceId: string, moduleId: string, report: WidgetStatusReportPayload): void;
   /** The page's file cache, which the alert's widgets read through. */
   assets: AssetCache;
   /** The alert delivered as `eventId` is over; the queue may start the next. */
@@ -278,7 +279,7 @@ export class AlertWidget {
       onStorageGet: () => null,
       onStorageSubscribe: () => {},
       onStorageUnsubscribe: () => {},
-      onStatusReport: (report) => this.opts.postStatus(instanceId, report),
+      onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
       onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
       onEventsSubscribe: (subId, queue) => {
         facts.subscribed(queue?.autoComplete === false);
