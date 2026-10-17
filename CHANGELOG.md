@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.34.2](https://github.com/wolfymaster/woofx3/compare/v0.34.1...v0.34.2) (2026-10-17)
+
+### Bug Fixes
+
+* **sceneManager:** bind the overlay's asset reads to the global fetch ([2d5c590](https://github.com/wolfymaster/woofx3/commit/2d5c5909a9d06c1bca4e24771390af54e90032d3))
+
 ## [0.34.1](https://github.com/wolfymaster/woofx3/compare/v0.34.0...v0.34.1) (2026-10-17)
 
 ### Bug Fixes
