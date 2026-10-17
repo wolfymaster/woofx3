@@ -67,6 +67,12 @@ export const ENGINE_CAPABILITIES = {
   /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
   modulesFiles: "modules.files",
   /**
+   * Installing from the marketplace by listing id, with the engine fetching
+   * and verifying the archive itself: `installMarketplaceListing`,
+   * `inspectMarketplaceListing`, `installMarketplaceBundle`.
+   */
+  modulesMarketplaceInstall: "modules.marketplaceInstall",
+  /**
    * A Twitch token that carries the app's `clientId` is renewed by asking the
    * dashboard that sent it (`twitch.token.requested`), not with a refresh
    * token, so the dashboard need not send one.

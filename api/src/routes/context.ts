@@ -28,6 +28,7 @@ import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { EventLogSelectionSource } from "../event-log-selection";
+import type { MarketplaceClient } from "../marketplace-client";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
@@ -63,6 +64,8 @@ export interface ApiOptions {
   logger: SharedLogger;
   /** The running release (`WOOFX3_VERSION`); "dev" for an unversioned build. */
   version?: string;
+  /** The marketplace to install from; null or absent when marketplace installs are turned off. */
+  marketplace?: MarketplaceClient | null;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -98,6 +101,7 @@ export class ApiRouteHost extends RpcTarget {
   protected apiUrl: string;
   protected logger: SharedLogger;
   protected version: string;
+  protected marketplace: MarketplaceClient | null;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -381,6 +385,7 @@ export class ApiRouteHost extends RpcTarget {
     this.apiUrl = opts.apiUrl;
     this.logger = opts.logger;
     this.version = opts.version ?? UNVERSIONED;
+    this.marketplace = opts.marketplace ?? null;
   }
 }
 

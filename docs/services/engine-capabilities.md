@@ -47,6 +47,7 @@ The ids are defined in one place, `ENGINE_CAPABILITIES` in `shared/clients/types
 | `config.bundles` | Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig` |
 | `modules.localEndpoints` | A manifest's `local[]` endpoints, `setRelayConfig`, the `relay.credential.requested` callback, and sceneManager's endpoint dialer reaching OBS through the companion's bridge. See [Local endpoints](./local-endpoints.md) |
 | `modules.files` | Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile` |
+| `modules.marketplaceInstall` | Installing from the marketplace by listing id, with the engine fetching and verifying the archive itself: `installMarketplaceListing`, `inspectMarketplaceListing`, `installMarketplaceBundle`. See [Marketplace installs](./marketplace-install.md) |
 | `modules.oauth` | A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a connect with `completeModuleOAuth` |
 | `obs.control` | The `ctx.obs` host extension and the `obs.control` manifest permission, which a module that changes OBS or lists its names needs to install and run |
 | `obs.status` | The OBS connection's state and last failure: `getObsStatus` |
