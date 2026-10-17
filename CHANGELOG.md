@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.34.2](https://github.com/wolfymaster/woofx3/compare/v0.34.1...v0.34.2) (2026-10-17)
+
+### Bug Fixes
+
+* **sceneManager:** bind the overlay's asset reads to the global fetch ([2d5c590](https://github.com/wolfymaster/woofx3/commit/2d5c5909a9d06c1bca4e24771390af54e90032d3))
+
+## [0.34.1](https://github.com/wolfymaster/woofx3/compare/v0.34.0...v0.34.1) (2026-10-17)
+
+### Bug Fixes
+
+* **sceneManager:** stop failing every asset revalidation with a 502 ([67cc50a](https://github.com/wolfymaster/woofx3/commit/67cc50a672424e30461ff25d7e5e053af6a3a174))
+
+## [0.34.0](https://github.com/wolfymaster/woofx3/compare/v0.33.0...v0.34.0) (2026-10-17)
+
+### Features
+
+* **widgets:** close widget frames to connections of their own ([5a587d4](https://github.com/wolfymaster/woofx3/commit/5a587d423e73728fbcd12fa83802f517ebb48ea7))
+* **widgets:** let widgets read asset bytes through the host ([bdcad9c](https://github.com/wolfymaster/woofx3/commit/bdcad9c2e849d149949a12e617a0bb5ebb44e2bb))
+
+## [0.33.0](https://github.com/wolfymaster/woofx3/compare/v0.32.1...v0.33.0) (2026-10-16)
+
+### Features
+
+* **api:** list the build's capabilities in GET /health ([48dd47a](https://github.com/wolfymaster/woofx3/commit/48dd47ab2ba9428d1bd3772f269c15bd1879458a))
+
+## [0.32.1](https://github.com/wolfymaster/woofx3/compare/v0.32.0...v0.32.1) (2026-10-16)
+
+### Bug Fixes
+
+* **sceneManager:** give a scene stored without a canvas size the default canvas ([c94baf5](https://github.com/wolfymaster/woofx3/commit/c94baf514e4192d050c5581215b4a5baac715f1a))
+
 ## [0.32.0](https://github.com/wolfymaster/woofx3/compare/v0.31.0...v0.32.0) (2026-10-15)
 
 ### Features

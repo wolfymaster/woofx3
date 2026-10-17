@@ -181,7 +181,11 @@ holds only descriptive facts that are safe for anyone to read:
   "name": "eng-0a1b2c3d",
   "version": "v0.1.0",
   "startedAt": "2026-10-01T12:00:00.000Z",
-  "uptimeSeconds": 3725
+  "uptimeSeconds": 3725,
+  "capabilities": {
+    "schema": 1,
+    "enabled": ["alerts.queueControls", "analytics.aggregates", "analytics.gauges"]
+  }
 }
 ```
 
@@ -191,6 +195,11 @@ holds only descriptive facts that are safe for anyone to read:
 - `startedAt` — when the api process started. A deploy starts a new process,
   so this is the last deploy or the last restart, whichever came later.
 - `uptimeSeconds` — whole seconds since then, from a monotonic clock.
+- `capabilities` — the feature ids this build supports, sorted: the same list
+  `getEngineCapabilities` returns (see
+  [engine-capabilities.md](engine-capabilities.md)), readable without a
+  registered client. `schema` is `ENGINE_CAPABILITIES_SCHEMA`. The example
+  above is shortened; a real engine lists every id it supports.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything

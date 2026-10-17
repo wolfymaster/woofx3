@@ -80,6 +80,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
       { describeHealth },
+      { ENGINE_CAPABILITIES_SCHEMA, supportedEngineCapabilities },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -115,6 +116,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./readiness"),
       import("./message-bus"),
       import("./health"),
+      import("@woofx3/api"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -287,7 +289,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       // startedAt plus uptimeSeconds always lands on the current time.
       health: () =>
         describeHealth(
-          { name: config.engineName, version: config.version, startedAt: performance.timeOrigin },
+          {
+            name: config.engineName,
+            version: config.version,
+            startedAt: performance.timeOrigin,
+            capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled: supportedEngineCapabilities() },
+          },
           process.uptime()
         ),
       logger,

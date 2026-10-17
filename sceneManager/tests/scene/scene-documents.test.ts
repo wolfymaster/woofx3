@@ -819,6 +819,16 @@ describe("documentOf + storedSceneOf", () => {
     expect(Object.keys(JSON.parse(written.behaviorsJson)).sort()).toEqual(["a:transition-in", "a:transition-out"]);
   });
 
+  it("gives a scene stored without a canvas size the default canvas, keeping the rest of its layout", () => {
+    const doc = documentOf({ ...scene([]), layout: { width: 0, theme: "dark" } });
+    expect(doc.layout).toEqual({ width: 1920, height: 1080, theme: "dark" });
+  });
+
+  it("keeps a scene's stored canvas size", () => {
+    const doc = documentOf({ ...scene([]), layout: { width: 1280, height: 720 } });
+    expect(doc.layout).toEqual({ width: 1280, height: 720 });
+  });
+
   it("gives a placement stored before the editor tracked these fields their defaults", () => {
     const doc = documentOf(scene([instance("a", { stored: { id: "a", widgetCanonicalId: "woofx3:widget:text" } })]));
     expect(doc.widgets.a).toMatchObject({ name: "", rotation: 0, opacity: 1, locked: false, extra: {} });

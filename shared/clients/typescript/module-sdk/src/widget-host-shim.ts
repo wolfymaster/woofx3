@@ -17,12 +17,21 @@
 
 import type {
   DeliveredWidgetEvent,
+  WidgetAsset,
   WidgetEvent,
   WidgetEventHandler,
   WidgetHost,
+  WidgetHostAssets,
   WidgetHostStorage,
   WidgetTheme,
 } from "./widget-host";
+import {
+  WidgetAssetError,
+  assetRefUrl,
+  createWidgetAsset,
+  engineAssetPath,
+  isWidgetAssetErrorCode,
+} from "./widget-assets";
 import { type BindingDocument, applySettingBindings } from "./widget-bindings";
 import { applyWidgetBehavior, isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
 import { type FontDocument, type FontLoader, createFontLoader } from "./widget-fonts";
@@ -45,7 +54,7 @@ export const SDK_VERSION = "0.1.0";
 export const HELLO_RETRY_INTERVAL_MS = 250;
 
 /** Capabilities this shim implementation uses — `hello.wants`. */
-const SHIM_WANTS = ["storage", "events", "status"];
+const SHIM_WANTS = ["storage", "events", "status", "assets"];
 
 // ---------------------------------------------------------------------------
 // Injectable environment (testability without jsdom)
@@ -148,6 +157,10 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   const outQueue: WidgetToHostMessage[] = [];
 
   const pendingGets = new Map<string, (value: unknown) => void>();
+  const pendingAssets = new Map<
+    string,
+    { ref: string; path: string; resolve: (asset: WidgetAsset) => void; reject: (err: WidgetAssetError) => void }
+  >();
   const storageSubs = new Map<string, { key: string; cb: (value: unknown) => void }>();
   const eventSubs = new Map<string, { handler: WidgetEventHandler; queue?: EventQueueConfig }>();
   // Delivery ids the shim has already posted `event.complete` for —
@@ -325,6 +338,10 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
       resolve(null);
     }
     pendingGets.clear();
+    for (const pending of pendingAssets.values()) {
+      pending.reject(new WidgetAssetError("disposed", pending.ref));
+    }
+    pendingAssets.clear();
     storageSubs.clear();
     eventSubs.clear();
     completedEventIds.clear();
@@ -381,6 +398,35 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
           pendingGets.delete(m.id);
           resolve(m.value === undefined ? null : m.value);
         }
+        return;
+      }
+      case "asset.value": {
+        if (typeof m.id !== "string") {
+          return;
+        }
+        const pending = pendingAssets.get(m.id);
+        if (pending === undefined) {
+          return;
+        }
+        pendingAssets.delete(m.id);
+        if (!(m.bytes instanceof ArrayBuffer)) {
+          pending.reject(new WidgetAssetError("unavailable", pending.ref, "host answered without the file's bytes"));
+          return;
+        }
+        const contentType = typeof m.contentType === "string" ? m.contentType : "";
+        pending.resolve(createWidgetAsset(pending.path, contentType, m.bytes));
+        return;
+      }
+      case "asset.error": {
+        if (typeof m.id !== "string") {
+          return;
+        }
+        const pending = pendingAssets.get(m.id);
+        if (pending === undefined) {
+          return;
+        }
+        pendingAssets.delete(m.id);
+        pending.reject(new WidgetAssetError(isWidgetAssetErrorCode(m.code) ? m.code : "unavailable", pending.ref));
         return;
       }
       case "storage.changed": {
@@ -490,6 +536,29 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     },
   };
 
+  const assets: WidgetHostAssets = {
+    load(ref: string | { url: string }): Promise<WidgetAsset> {
+      const refUrl = assetRefUrl(ref);
+      if (refUrl === null) {
+        throw new Error("[widget-host-shim] assets.load requires a URL, a path or a media setting's value");
+      }
+      return new Promise<WidgetAsset>((resolve, reject) => {
+        if (disposed || rejected) {
+          reject(new WidgetAssetError("disposed", refUrl));
+          return;
+        }
+        const path = engineAssetPath(refUrl, boot.resourceBaseUrl);
+        if (path === null) {
+          reject(new WidgetAssetError("not_engine_asset", refUrl));
+          return;
+        }
+        const id = allocId("asset");
+        pendingAssets.set(id, { ref: refUrl, path, resolve, reject });
+        send(envelope({ type: "asset.load" as const, id, path }));
+      });
+    },
+  };
+
   const host: WidgetHost = {
     get settings() {
       return settingsForScript;
@@ -500,6 +569,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     moduleId: boot.moduleId,
     instanceId: boot.instanceId,
     storage,
+    assets,
     getResourceUrl(path: string): string {
       return boot.resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
     },

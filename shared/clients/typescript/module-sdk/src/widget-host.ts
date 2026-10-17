@@ -50,6 +50,42 @@ export interface WidgetHostStorage {
 }
 
 /**
+ * A file the host read for the widget. `bytes` is the file as stored;
+ * `text()` and `json()` decode it as UTF-8 on every call.
+ */
+export interface WidgetAsset {
+  /** The engine path the file was read from, e.g. `/assets/user/{id}/anim.json`. */
+  readonly path: string;
+  /** The type the engine served it as, `""` when it named none. */
+  readonly contentType: string;
+  readonly bytes: ArrayBuffer;
+  text(): string;
+  /** Throws a `SyntaxError` when the file is not JSON. */
+  json(): unknown;
+}
+
+/**
+ * Reads files a widget needs the contents of: a Lottie animation, a data
+ * file. An `<img>`, `<audio>` or `<video>` loads its file by URL and needs
+ * none of this; use it for what a script has to read.
+ *
+ * The host does the read. A widget may read files from the asset library
+ * (`/assets/user/...`) and its own module's files (`/assets/modules/{its
+ * module}/...`), nothing else.
+ */
+export interface WidgetHostAssets {
+  /**
+   * Read one file. `ref` is a media setting's value (`{ url, ... }`), an
+   * engine asset URL, or a path relative to the widget's own resources
+   * (`"data/anim.json"`). Rejects with a `WidgetAssetError` saying why the
+   * file could not be read; it never resolves empty. The host may already
+   * hold a file a setting names, read ahead while the frame loaded, and
+   * reads each file once however many times it is asked for.
+   */
+  load(ref: string | { url: string }): Promise<WidgetAsset>;
+}
+
+/**
  * A resource instance as a widget reads it at `resource:<canonicalId>`. What
  * `value` and `settings` mean is the kind's, which the engine never learns.
  */
@@ -198,6 +234,9 @@ export interface WidgetHost {
 
   /** Persistent module-storage surface. */
   readonly storage: WidgetHostStorage;
+
+  /** Reads the files the widget's script needs the contents of. */
+  readonly assets: WidgetHostAssets;
 
   /**
    * Resolve a path against this widget's public resource base URL —
