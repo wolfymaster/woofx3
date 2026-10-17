@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
 
@@ -171,7 +171,8 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     tokenSecret,
     rootDir,
     publicDir: resolvePublicDir(import.meta.dir),
-    fontCacheDir: join(rootDir, "cache", "fonts"),
+    // The cache is written at runtime, so it follows the data directory when there is one.
+    fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
     barkloaderUrl,
     mediaProxySecret,

@@ -282,6 +282,33 @@ either variable set it does not.
 
 Rust services read no `.env` file; for them only the config file column applies.
 
+### The data directory
+
+`WOOFX3_DATA_DIR` names one directory for everything the engine writes. It is
+read from the process environment only, never from `.woofx3.json`, so the
+orchestrator and every service it starts agree on it. Unset or blank, nothing
+changes: every path below resolves exactly as it does without the variable.
+
+When it is set:
+
+| What | Setting | Resolves to |
+|---|---|---|
+| System database (SQLite) | `databaseUrl` / `WOOFX3_DATABASE_URL` | a relative `sqlite://` path under the data dir; its directory is created |
+| Module storage | `storagePath` / `WOOFX3_STORAGE_PATH` | a relative path under the data dir |
+| Installed modules (file provider) | `storage.file.destination`, `MODULES_DIR`, default `./modules` | a relative path under the data dir |
+| Module uploads in progress | `./uploads` | `<data dir>/uploads` |
+| sceneManager font cache | `<rootPath>/cache/fonts` | `<data dir>/cache/fonts` |
+| Logs (every service, `migrate` and the orchestrator) | `<rootPath>/logs`, `<exe dir>/logs`, `./logs` | `WOOFX3_LOG_DIR` if set (relative under the data dir), else `<data dir>/logs` |
+
+Absolute paths are always used as given, and Postgres URLs are untouched. A
+relative `WOOFX3_DATA_DIR` is resolved against the working directory. Rust
+services also accept `logDir` from `.woofx3.json` in place of `WOOFX3_LOG_DIR`,
+as they do without a data directory.
+
+The helpers are `ResolveDataPath` (Go, `common/runtime`), `resolveDataPath`
+(TypeScript, `@woofx3/common/runtime`) and `resolve_data_path` (Rust,
+`woofx3_runtime`); the shared loggers apply the log rule themselves.
+
 The runtime validates configuration against a Zod schema (TypeScript) or schema (Go):
 
 ::: code-group

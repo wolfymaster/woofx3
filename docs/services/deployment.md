@@ -57,6 +57,12 @@ parents, set `WOOFX3_ROOT` (the directory holding `.woofx3.json` and `.env`) or
 from its working directory as before. See
 [Finding the config](./runtime.md#finding-the-config).
 
+To keep the engine's state out of its install directory (a release unpacked
+under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR`. The
+relative database, module storage, module and upload paths, caches and every
+log file then live under it. Unset, paths resolve as before. See
+[The data directory](./runtime.md#the-data-directory).
+
 ## Startup
 
 The entrypoint (`build/entrypoint.sh`) runs the database migrations with the

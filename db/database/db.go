@@ -3,11 +3,14 @@ package database
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/libtnb/sqlite"
+	"github.com/wolfymaster/woofx3/common/runtime"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -99,6 +102,14 @@ func openPostgres(dsn string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm
 
 func openSQLite(path string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm.DB, error) {
 	slogger.Info("Opening system database", "dialect", DialectSQLite, "path", path)
+
+	// A data directory may be brand new, so the database's directory is made
+	// for it. Without one, a missing directory stays the operator's to create.
+	if path != ":memory:" && runtime.DataDir() != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			return nil, fmt.Errorf("create sqlite database directory: %w", err)
+		}
+	}
 
 	db, err := gorm.Open(sqlite.Open(path), gormCfg)
 	if err != nil {
