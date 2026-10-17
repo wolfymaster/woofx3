@@ -67,8 +67,11 @@ export async function handleAssetReadRoute(
     });
     const location = upstream.headers.get("Location");
     if (upstream.status >= 300 && upstream.status < 400 && location !== null) {
-      // Barkloader names the signed storage URL; nothing else chooses it.
-      upstream = await fetchFn(location, { method: "GET", headers: conditional, redirect: "error" });
+      // Barkloader names the signed storage URL; nothing else chooses it. A
+      // redirect from storage is not followed, and is refused below as not ok.
+      // Not `redirect: "error"`: Bun counts a 304 as a redirect and throws,
+      // which would fail every revalidation.
+      upstream = await fetchFn(location, { method: "GET", headers: conditional, redirect: "manual" });
     }
   } catch (err) {
     logger.warn("asset read failed", {
