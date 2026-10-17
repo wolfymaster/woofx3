@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -275,7 +275,7 @@
       "type": "native",
       "handler": "function",
       "taxonomy": [
-        "system.workflow"
+        "workflow"
       ]
     },
     {
@@ -295,7 +295,7 @@
         }
       ],
       "taxonomy": [
-        "system.chat"
+        "chat"
       ]
     },
     {
@@ -325,7 +325,7 @@
         }
       ],
       "taxonomy": [
-        "system.alerts",
+        "overlay.alerts",
         "alert.renderer"
       ]
     },
@@ -365,7 +365,7 @@
         }
       ],
       "taxonomy": [
-        "system.scenes"
+        "overlay.scenes"
       ]
     },
     {
@@ -375,7 +375,7 @@
       "type": "native",
       "handler": "print",
       "taxonomy": [
-        "system.workflow"
+        "workflow"
       ]
     },
     {
@@ -426,7 +426,7 @@
         ]
       },
       "taxonomy": [
-        "system.counter"
+        "tools.counter"
       ]
     },
     {
@@ -477,7 +477,7 @@
         ]
       },
       "taxonomy": [
-        "system.counter"
+        "tools.counter"
       ]
     },
     {
@@ -528,7 +528,7 @@
         ]
       },
       "taxonomy": [
-        "system.counter"
+        "tools.counter"
       ]
     },
     {
@@ -572,7 +572,7 @@
         ]
       },
       "taxonomy": [
-        "system.counter"
+        "tools.counter"
       ]
     },
     {
@@ -621,7 +621,7 @@
         ]
       },
       "taxonomy": [
-        "system.timer"
+        "tools.timer"
       ]
     },
     {
@@ -670,7 +670,7 @@
         ]
       },
       "taxonomy": [
-        "system.timer"
+        "tools.timer"
       ]
     },
     {
@@ -719,7 +719,7 @@
         ]
       },
       "taxonomy": [
-        "system.timer"
+        "tools.timer"
       ]
     },
     {
@@ -776,7 +776,7 @@
         ]
       },
       "taxonomy": [
-        "system.timer"
+        "tools.timer"
       ]
     },
     {
@@ -833,7 +833,7 @@
         ]
       },
       "taxonomy": [
-        "system.timer"
+        "tools.timer"
       ]
     },
     {
@@ -877,7 +877,7 @@
         ]
       },
       "taxonomy": [
-        "system.timer"
+        "tools.timer"
       ]
     },
     {
@@ -938,7 +938,7 @@
         ]
       },
       "taxonomy": [
-        "system.queue"
+        "tools.queue"
       ]
     },
     {
@@ -982,7 +982,7 @@
         ]
       },
       "taxonomy": [
-        "system.queue"
+        "tools.queue"
       ]
     },
     {
@@ -1038,7 +1038,7 @@
         ]
       },
       "taxonomy": [
-        "system.queue"
+        "tools.queue"
       ]
     },
     {
@@ -1077,7 +1077,7 @@
         ]
       },
       "taxonomy": [
-        "system.queue"
+        "tools.queue"
       ]
     }
   ],
