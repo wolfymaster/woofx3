@@ -1,8 +1,4 @@
-import {
-  formatMarketplaceCatalogError,
-  type MarketplaceAuthorQuery,
-  type MarketplaceCatalogQuery,
-} from "@woofx3/api";
+import { formatMarketplaceCatalogError, type MarketplaceAuthorQuery, type MarketplaceCatalogQuery } from "@woofx3/api";
 import {
   authorSearchParams,
   catalogSearchParams,
