@@ -51,6 +51,12 @@ baked `/app/.woofx3.json`, and a blank value never overrides a non-blank one, so
 the file only supplies defaults. See [Runtime](./runtime.md) for how keys map to
 variable names.
 
+To read the config from somewhere other than the working directory and its
+parents, set `WOOFX3_ROOT` (the directory holding `.woofx3.json` and `.env`) or
+`WOOFX3_CONFIG` (the config file itself). Unset, every service searches upward
+from its working directory as before. See
+[Finding the config](./runtime.md#finding-the-config).
+
 ## Startup
 
 The entrypoint (`build/entrypoint.sh`) runs the database migrations with the
