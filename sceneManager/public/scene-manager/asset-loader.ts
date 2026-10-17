@@ -139,8 +139,14 @@ function collect(value: unknown, pageOrigin: string, paths: Set<string>, depth: 
  */
 export class AssetCache {
   private readonly entries = new Map<string, Promise<LoadedAsset>>();
+  private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response>;
 
-  constructor(private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response> = fetch) {}
+  constructor(fetchFn?: (url: string, init: RequestInit) => Promise<Response>) {
+    // Bound to the global for the same reason SceneEventSource binds it: a
+    // bare `fetch` called as `this.fetchFn(...)` throws "Illegal invocation"
+    // in the browser, before any request is sent.
+    this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
+  }
 
   /** The file at `path`, read once however many times it is asked for. */
   load(path: string): Promise<LoadedAsset> {
@@ -189,15 +195,24 @@ export class AssetCache {
       response = await this.fetchFn(`${ASSET_READ_PREFIX}${path.slice("/assets/".length)}`, {
         credentials: "same-origin",
       });
-    } catch {
+    } catch (err) {
+      console.warn("[scene-manager] asset read failed", { path }, err);
       throw new AssetLoadError("unavailable", path);
     }
     if (response.status === 404) {
       throw new AssetLoadError("not_found", path);
     }
     if (!response.ok) {
+      console.warn("[scene-manager] asset read refused", { path, status: response.status });
       throw new AssetLoadError("unavailable", path);
     }
-    return { contentType: response.headers.get("Content-Type") ?? "", bytes: await response.arrayBuffer() };
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (err) {
+      console.warn("[scene-manager] asset read cut short", { path }, err);
+      throw new AssetLoadError("unavailable", path);
+    }
+    return { contentType: response.headers.get("Content-Type") ?? "", bytes };
   }
 }

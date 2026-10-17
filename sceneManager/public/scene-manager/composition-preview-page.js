@@ -3776,10 +3776,10 @@ function collect2(value, pageOrigin, paths, depth) {
 }
 
 class AssetCache {
-  fetchFn;
   entries = new Map;
-  constructor(fetchFn = fetch) {
-    this.fetchFn = fetchFn;
+  fetchFn;
+  constructor(fetchFn) {
+    this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
   }
   load(path) {
     const held = this.entries.get(path);
@@ -3816,16 +3816,25 @@ class AssetCache {
       response = await this.fetchFn(`${ASSET_READ_PREFIX}${path.slice("/assets/".length)}`, {
         credentials: "same-origin"
       });
-    } catch {
+    } catch (err) {
+      console.warn("[scene-manager] asset read failed", { path }, err);
       throw new AssetLoadError("unavailable", path);
     }
     if (response.status === 404) {
       throw new AssetLoadError("not_found", path);
     }
     if (!response.ok) {
+      console.warn("[scene-manager] asset read refused", { path, status: response.status });
       throw new AssetLoadError("unavailable", path);
     }
-    return { contentType: response.headers.get("Content-Type") ?? "", bytes: await response.arrayBuffer() };
+    let bytes;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (err) {
+      console.warn("[scene-manager] asset read cut short", { path }, err);
+      throw new AssetLoadError("unavailable", path);
+    }
+    return { contentType: response.headers.get("Content-Type") ?? "", bytes };
   }
 }
 
@@ -4170,6 +4179,9 @@ class WidgetBridge {
         this.post({ type: "asset.value", id, contentType: asset.contentType, bytes: asset.bytes });
       }
     }, (err) => {
+      if (!(err instanceof AssetLoadError)) {
+        console.warn("[scene-manager] asset load failed unexpectedly", { path }, err);
+      }
       if (generation === this.documentGeneration) {
         this.post({ type: "asset.error", id, code: err instanceof AssetLoadError ? err.code : "unavailable" });
       }

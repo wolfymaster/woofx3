@@ -84,6 +84,29 @@ describe("readAheadAssetPaths", () => {
 });
 
 describe("AssetCache", () => {
+  it("calls the default fetch with a global receiver (browser Illegal-invocation regression)", async () => {
+    // The browser rejects `fetch` invoked with any `this` other than the
+    // global, which the read would report as "unavailable" with no request
+    // sent. Bun's fetch has no such check, so the guard is modeled here.
+    const original = globalThis.fetch;
+    const receivers: unknown[] = [];
+    globalThis.fetch = function (this: unknown) {
+      receivers.push(this);
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("'fetch' called on an object that does not implement interface Window.");
+      }
+      return Promise.resolve(new Response("{}", { headers: { "Content-Type": "application/json" } }));
+    } as unknown as typeof fetch;
+
+    try {
+      const asset = await new AssetCache().load("/assets/user/res-1/anim.json");
+      expect(receivers).toEqual([globalThis]);
+      expect(new TextDecoder().decode(asset.bytes)).toBe("{}");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("reads through the engine's read route", async () => {
     const fetchFn = respond(new Response("{}", { headers: { "Content-Type": "application/json" } }));
     const cache = new AssetCache(fetchFn);
