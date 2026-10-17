@@ -9,6 +9,7 @@
 // Disconnected banner from the SSE connection state.
 
 import { AlertWidget } from "./alert-widget";
+import { AssetCache, readAheadAssetPaths } from "./asset-loader";
 import {
   createFrameLoadHandler,
   WidgetBridge,
@@ -155,6 +156,8 @@ function main(): void {
     return body.value ?? null;
   });
 
+  const assets = new AssetCache();
+
   function postStatus(instanceId: string, report: WidgetStatusReportPayload): void {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -213,6 +216,10 @@ function main(): void {
 
   const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state));
 
+  // Each alert area on the page, by placement id, so a delivered alert's
+  // files start loading before its turn in the queue.
+  const alertAreas = new Map<string, AlertWidget>();
+
   const mountAlertArea = (instance: WidgetPlacementConfig, slot: HTMLElement): (() => void) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -227,11 +234,13 @@ function main(): void {
       bridges,
       generateNonce,
       postStatus,
+      assets,
       onFinished: (eventId) => {
         queueManager.complete(subId, eventId);
         postAlertAck("completed", eventId, instance.id);
       },
     });
+    alertAreas.set(instance.id, alertWidget);
     queueManager.register(
       subId,
       instance.id,
@@ -250,6 +259,7 @@ function main(): void {
     return () => {
       // Finishes what is playing while the queue is still there to hear it.
       alertWidget.dispose();
+      alertAreas.delete(instance.id);
       queueManager.unregister(subId);
       element.remove();
     };
@@ -292,6 +302,7 @@ function main(): void {
       onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
       onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
       onStatusReport: (report) => postStatus(instance.id, report),
+      onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;
         playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
@@ -337,6 +348,7 @@ function main(): void {
       ? null
       : entranceOf(composition, instance.id, (type, kind) => declaresKind(declared, type, kind));
     iframe.src = frameSrc(instance, nonce, entrance);
+    assets.readAhead(readAheadAssetPaths(instance.settings, location.origin), instance.moduleId);
 
     bridges.add(bridge);
     slot.appendChild(iframe);
@@ -779,6 +791,7 @@ function main(): void {
   eventSource.start({
     onFrame: (frame: DeliveryFrame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
+      alertAreas.get(frame.instanceId)?.readAhead(frame.value);
       queueManager.enqueue(frame.instanceId, {
         eventId: frame.eventId,
         type: frame.type,

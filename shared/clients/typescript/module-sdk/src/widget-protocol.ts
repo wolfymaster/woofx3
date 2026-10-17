@@ -14,6 +14,7 @@
 // ignored by both sides (forward compatibility).
 
 import { isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
+import type { WidgetAssetErrorCode } from "./widget-assets";
 import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
@@ -197,6 +198,18 @@ export interface WidgetStorageUnsubscribeMessage extends WidgetProtocolEnvelope 
 }
 
 /**
+ * Correlated file read (`widgetHost.assets.load`), answered by `asset.value`
+ * or `asset.error` with the same `id`. `path` is an engine asset path the
+ * shim resolved the widget's reference to (see `engineAssetPath`); the host
+ * decides whether this widget may read it.
+ */
+export interface WidgetAssetLoadMessage extends WidgetProtocolEnvelope {
+  type: "asset.load";
+  id: string;
+  path: string;
+}
+
+/**
  * Per-subscription client-side dispatch policy — enforced entirely by
  * the host-side (browser scene-manager) queue, never by the backend.
  * The shim only ever carries this up from the widget's `onEvent` call;
@@ -317,6 +330,21 @@ export interface WidgetStorageValueMessage extends WidgetProtocolEnvelope {
   value: unknown;
 }
 
+/** Answer to `asset.load`: the file's bytes, copied into the frame. */
+export interface WidgetAssetValueMessage extends WidgetProtocolEnvelope {
+  type: "asset.value";
+  id: string;
+  contentType: string;
+  bytes: ArrayBuffer;
+}
+
+/** Answer to `asset.load` when the file cannot be read, and why. */
+export interface WidgetAssetErrorMessage extends WidgetProtocolEnvelope {
+  type: "asset.error";
+  id: string;
+  code: WidgetAssetErrorCode;
+}
+
 /** One change delivery on an open storage subscription. The host fires
  *  this immediately after `storage.subscribe` when it holds a cached
  *  value for the key, then on every subsequent change. */
@@ -392,6 +420,7 @@ export type WidgetToHostMessage =
   | WidgetStorageGetMessage
   | WidgetStorageSubscribeMessage
   | WidgetStorageUnsubscribeMessage
+  | WidgetAssetLoadMessage
   | WidgetEventsSubscribeMessage
   | WidgetEventsUnsubscribeMessage
   | WidgetEventCompleteMessage
@@ -407,6 +436,8 @@ export type HostToWidgetMessage =
   | WidgetInitRejectMessage
   | WidgetStorageValueMessage
   | WidgetStorageChangedMessage
+  | WidgetAssetValueMessage
+  | WidgetAssetErrorMessage
   | WidgetEventDeliverMessage
   | WidgetSettingsChangedMessage
   | WidgetBehaviorMessage

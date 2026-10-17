@@ -19,6 +19,7 @@ import {
   type Scheduler,
   type SchedulerClock,
 } from "@woofx3/scene/runtime";
+import { type AssetCache, moduleIdOfWidget, readAheadAssetPaths } from "./asset-loader";
 import type { QueuedEvent } from "./event-queue";
 import { PAGE_CLOCK } from "./page-clock";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
@@ -155,6 +156,8 @@ export interface AlertWidgetOptions {
   bridges: Set<WidgetBridge>;
   generateNonce(): string;
   postStatus(instanceId: string, report: WidgetStatusReportPayload): void;
+  /** The page's file cache, which the alert's widgets read through. */
+  assets: AssetCache;
   /** The alert delivered as `eventId` is over; the queue may start the next. */
   onFinished(eventId: string): void;
 }
@@ -200,6 +203,17 @@ export class AlertWidget {
     return true;
   }
 
+  /**
+   * Start reading the files an alert's widgets will ask for, as soon as the
+   * alert is delivered rather than when its turn comes.
+   */
+  readAhead(value: unknown): void {
+    const delivery = parseDelivery(value);
+    if (delivery) {
+      readAheadAlertAssets(this.opts.assets, delivery.layout);
+    }
+  }
+
   private run(eventId: string, delivery: AlertDelivery): void {
     const { element } = this.opts;
     const canvas = canvasOf(delivery.layout);
@@ -220,6 +234,7 @@ export class AlertWidget {
       eventId,
     };
 
+    readAheadAlertAssets(this.opts.assets, delivery.layout);
     let player: AlertPlayer | null = null;
     const tearDown = (): void => {
       this.playing.delete(eventId);
@@ -233,7 +248,7 @@ export class AlertWidget {
       doc: delivery.layout,
       clock: PAGE_CLOCK,
       mountFrame: (slot, widgetId, entrance, facts) =>
-        this.mountFrame(eventId, alertEvent, slot, widgetId, entrance, facts),
+        this.mountFrame(eventId, alertEvent, delivery.layout, slot, widgetId, entrance, facts),
       onFinished: () => {
         tearDown();
         this.opts.onFinished(eventId);
@@ -244,6 +259,7 @@ export class AlertWidget {
   private mountFrame(
     eventId: string,
     alertEvent: WidgetEvent,
+    layout: CompositionDocument,
     slot: HTMLElement,
     widgetId: NodeId,
     entrance: WidgetBehaviorState | null,
@@ -251,6 +267,8 @@ export class AlertWidget {
   ): AlertFrame {
     const { sceneBase, bridges } = this.opts;
     const instanceId = `${eventId}.${widgetId}`;
+    const placement = layout.widgets[widgetId];
+    const moduleId = placement ? moduleIdOfWidget(placement.widget) : null;
     const nonce = this.opts.generateNonce();
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
@@ -261,6 +279,7 @@ export class AlertWidget {
       onStorageSubscribe: () => {},
       onStorageUnsubscribe: () => {},
       onStatusReport: (report) => this.opts.postStatus(instanceId, report),
+      onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
       onEventsSubscribe: (subId, queue) => {
         facts.subscribed(queue?.autoComplete === false);
         bridge.sendEvent(subId, alertEvent);
@@ -290,6 +309,15 @@ export class AlertWidget {
         iframe.remove();
       },
     };
+  }
+}
+
+function readAheadAlertAssets(assets: AssetCache, layout: CompositionDocument): void {
+  for (const placement of Object.values(layout.widgets)) {
+    const moduleId = moduleIdOfWidget(placement.widget);
+    if (moduleId !== null) {
+      assets.readAhead(readAheadAssetPaths(placement.settings, location.origin), moduleId);
+    }
   }
 }
 

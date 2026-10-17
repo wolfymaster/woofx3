@@ -732,6 +732,20 @@ var require_lib = __commonJS((exports, module) => {
   };
 });
 
+// ../shared/clients/typescript/module-sdk/dist/widget-assets.js
+var ENGINE_ASSET_PREFIXES = ["/assets/user/", "/assets/modules/"];
+function engineAssetPath(ref, resourceBaseUrl) {
+  let url;
+  try {
+    url = new URL(ref, resourceBaseUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return null;
+  }
+  return ENGINE_ASSET_PREFIXES.some((prefix) => url.pathname.startsWith(prefix)) ? url.pathname : null;
+}
 // ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
 var URL_ATTRIBUTES = ["src", "href", "poster"];
 var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
@@ -3245,6 +3259,135 @@ function createScheduler(options) {
 function sameJson(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+// public/scene-manager/asset-loader.ts
+var ASSET_READ_PREFIX = "/assets/read/";
+var MAX_DEPTH = 32;
+var ELEMENT_LOADED_TYPE = /^(image|video|audio|font)(\/|$)/;
+
+class AssetLoadError extends Error {
+  code;
+  constructor(code, path) {
+    super(`asset ${path}: ${code}`);
+    this.code = code;
+    this.name = "AssetLoadError";
+  }
+}
+function moduleIdOfWidget(canonicalId) {
+  const marker = canonicalId.lastIndexOf(":widget:");
+  if (marker <= 0) {
+    return null;
+  }
+  const moduleId = canonicalId.slice(0, marker).split(":")[0] ?? "";
+  return moduleId === "" ? null : moduleId;
+}
+function assetInScope(path, moduleId) {
+  if (moduleId === "") {
+    return false;
+  }
+  const segments = path.split("/");
+  if (segments[0] !== "" || segments[1] !== "assets" || segments.length < 5) {
+    return false;
+  }
+  const decoded = [];
+  for (const segment of segments.slice(2)) {
+    let value;
+    try {
+      value = decodeURIComponent(segment);
+    } catch {
+      return false;
+    }
+    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
+      return false;
+    }
+    decoded.push(value);
+  }
+  if (decoded[0] === "user") {
+    return true;
+  }
+  return decoded[0] === "modules" && decoded[1] === moduleId;
+}
+function readAheadAssetPaths(settings, pageOrigin) {
+  const paths = new Set;
+  collect(settings, pageOrigin, paths, 0);
+  return [...paths];
+}
+function collect(value, pageOrigin, paths, depth) {
+  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collect(item, pageOrigin, paths, depth + 1);
+    }
+    return;
+  }
+  const record = value;
+  if (typeof record.id === "string" && record.id !== "" && record.source !== "url" && typeof record.url === "string" && !(typeof record.type === "string" && ELEMENT_LOADED_TYPE.test(record.type))) {
+    const path = engineAssetPath(record.url, pageOrigin);
+    if (path !== null) {
+      paths.add(path);
+    }
+    return;
+  }
+  for (const item of Object.values(record)) {
+    collect(item, pageOrigin, paths, depth + 1);
+  }
+}
+
+class AssetCache {
+  fetchFn;
+  entries = new Map;
+  constructor(fetchFn = fetch) {
+    this.fetchFn = fetchFn;
+  }
+  load(path) {
+    const held = this.entries.get(path);
+    if (held !== undefined) {
+      return held;
+    }
+    const reading = this.read(path);
+    this.entries.set(path, reading);
+    reading.catch(() => {
+      if (this.entries.get(path) === reading) {
+        this.entries.delete(path);
+      }
+    });
+    return reading;
+  }
+  readAhead(paths, moduleId) {
+    for (const path of paths) {
+      if (assetInScope(path, moduleId)) {
+        this.load(path).catch(() => {});
+      }
+    }
+  }
+  scopedTo(moduleId) {
+    return (path) => {
+      if (!assetInScope(path, moduleId)) {
+        return Promise.reject(new AssetLoadError("out_of_scope", path));
+      }
+      return this.load(path);
+    };
+  }
+  async read(path) {
+    let response;
+    try {
+      response = await this.fetchFn(`${ASSET_READ_PREFIX}${path.slice("/assets/".length)}`, {
+        credentials: "same-origin"
+      });
+    } catch {
+      throw new AssetLoadError("unavailable", path);
+    }
+    if (response.status === 404) {
+      throw new AssetLoadError("not_found", path);
+    }
+    if (!response.ok) {
+      throw new AssetLoadError("unavailable", path);
+    }
+    return { contentType: response.headers.get("Content-Type") ?? "", bytes: await response.arrayBuffer() };
+  }
+}
+
 // public/scene-manager/page-clock.ts
 var PAGE_CLOCK = {
   now: () => performance.now(),
@@ -3447,6 +3590,7 @@ class WidgetBridge {
   shimEventSubs = new Set;
   readKeys = new Set;
   readAll = false;
+  documentGeneration = 0;
   constructor(instanceId, nonce, callbacks) {
     this.instanceId = instanceId;
     this.nonce = nonce;
@@ -3456,6 +3600,7 @@ class WidgetBridge {
     this.iframe = iframe;
   }
   onFrameLoad() {
+    this.documentGeneration += 1;
     this.initialized = false;
     this.moduleId = null;
     this.readKeys.clear();
@@ -3507,6 +3652,18 @@ class WidgetBridge {
         const key = typeof msg.key === "string" ? msg.key : "";
         const value = this.callbacks.onStorageGet(this.moduleId, key);
         this.post({ type: "storage.value", id, key, value });
+        return;
+      }
+      case "asset.load": {
+        if (!this.initialized) {
+          return;
+        }
+        const id = typeof msg.id === "string" ? msg.id : "";
+        const path = typeof msg.path === "string" ? msg.path : "";
+        if (!id) {
+          return;
+        }
+        this.answerAssetLoad(id, path);
         return;
       }
       case "storage.subscribe": {
@@ -3623,7 +3780,7 @@ class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status", "settings"]
+      capabilities: ["storage", "events", "status", "settings", "assets"]
     });
   }
   sendReject(reason) {
@@ -3676,6 +3833,7 @@ class WidgetBridge {
     this.callbacks.onDispose();
   }
   detach() {
+    this.documentGeneration += 1;
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
@@ -3684,6 +3842,18 @@ class WidgetBridge {
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
+  }
+  answerAssetLoad(id, path) {
+    const generation = this.documentGeneration;
+    this.callbacks.onAssetLoad(path).then((asset) => {
+      if (generation === this.documentGeneration) {
+        this.post({ type: "asset.value", id, contentType: asset.contentType, bytes: asset.bytes });
+      }
+    }, (err) => {
+      if (generation === this.documentGeneration) {
+        this.post({ type: "asset.error", id, code: err instanceof AssetLoadError ? err.code : "unavailable" });
+      }
+    });
   }
   post(payload) {
     const win = this.iframe?.contentWindow;
@@ -3799,6 +3969,12 @@ class AlertWidget {
     this.run(item.eventId, delivery);
     return true;
   }
+  readAhead(value) {
+    const delivery = parseDelivery(value);
+    if (delivery) {
+      readAheadAlertAssets(this.opts.assets, delivery.layout);
+    }
+  }
   run(eventId, delivery) {
     const { element } = this.opts;
     const canvas = canvasOf(delivery.layout);
@@ -3816,6 +3992,7 @@ class AlertWidget {
       data: delivery.event,
       eventId
     };
+    readAheadAlertAssets(this.opts.assets, delivery.layout);
     let player = null;
     const tearDown = () => {
       this.playing.delete(eventId);
@@ -3828,16 +4005,18 @@ class AlertWidget {
       stage,
       doc: delivery.layout,
       clock: PAGE_CLOCK,
-      mountFrame: (slot, widgetId, entrance, facts) => this.mountFrame(eventId, alertEvent, slot, widgetId, entrance, facts),
+      mountFrame: (slot, widgetId, entrance, facts) => this.mountFrame(eventId, alertEvent, delivery.layout, slot, widgetId, entrance, facts),
       onFinished: () => {
         tearDown();
         this.opts.onFinished(eventId);
       }
     });
   }
-  mountFrame(eventId, alertEvent, slot, widgetId, entrance, facts) {
+  mountFrame(eventId, alertEvent, layout, slot, widgetId, entrance, facts) {
     const { sceneBase, bridges } = this.opts;
     const instanceId = `${eventId}.${widgetId}`;
+    const placement = layout.widgets[widgetId];
+    const moduleId = placement ? moduleIdOfWidget(placement.widget) : null;
     const nonce = this.opts.generateNonce();
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
@@ -3847,6 +4026,7 @@ class AlertWidget {
       onStorageSubscribe: () => {},
       onStorageUnsubscribe: () => {},
       onStatusReport: (report) => this.opts.postStatus(instanceId, report),
+      onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
       onEventsSubscribe: (subId, queue) => {
         facts.subscribed(queue?.autoComplete === false);
         bridge.sendEvent(subId, alertEvent);
@@ -3871,6 +4051,14 @@ class AlertWidget {
         iframe.remove();
       }
     };
+  }
+}
+function readAheadAlertAssets(assets, layout) {
+  for (const placement of Object.values(layout.widgets)) {
+    const moduleId = moduleIdOfWidget(placement.widget);
+    if (moduleId !== null) {
+      assets.readAhead(readAheadAssetPaths(placement.settings, location.origin), moduleId);
+    }
   }
 }
 function canvasOf(doc) {
@@ -5045,7 +5233,7 @@ function transientOfPreviewLayout(layout, ids) {
 }
 
 // public/scene-manager/media-url.ts
-var MAX_DEPTH = 32;
+var MAX_DEPTH2 = 32;
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -5068,7 +5256,7 @@ function rewriteExternalMedia(value, replace) {
   return rewrite(value, replace, 0);
 }
 function rewrite(value, replace, depth) {
-  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+  if (depth > MAX_DEPTH2 || typeof value !== "object" || value === null) {
     return value;
   }
   if (Array.isArray(value)) {
@@ -5261,6 +5449,7 @@ function main() {
     const body = await resp.json();
     return body.value ?? null;
   });
+  const assets = new AssetCache;
   function postStatus(instanceId, report) {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -5294,6 +5483,7 @@ function main() {
     return scheduler2;
   }
   const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state));
+  const alertAreas = new Map;
   const mountAlertArea = (instance, slot) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -5305,11 +5495,13 @@ function main() {
       bridges,
       generateNonce,
       postStatus,
+      assets,
       onFinished: (eventId) => {
         queueManager.complete(subId, eventId);
         postAlertAck("completed", eventId, instance.id);
       }
     });
+    alertAreas.set(instance.id, alertWidget);
     queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => {
       postAlertAck("started", item.eventId, instance.id);
       return alertWidget.play(item);
@@ -5317,6 +5509,7 @@ function main() {
     queueMicrotask(() => playing().widgetRendered(instance.id));
     return () => {
       alertWidget.dispose();
+      alertAreas.delete(instance.id);
       queueManager.unregister(subId);
       element.remove();
     };
@@ -5335,6 +5528,7 @@ function main() {
       onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
       onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
       onStatusReport: (report) => postStatus(instance.id, report),
+      onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;
         playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
@@ -5367,6 +5561,7 @@ function main() {
     const declared = instance.behaviorKinds ?? NO_DECLARED_KINDS;
     const entrance = swapping ? null : entranceOf(composition2, instance.id, (type, kind) => declaresKind(declared, type, kind));
     iframe.src = frameSrc(instance, nonce, entrance);
+    assets.readAhead(readAheadAssetPaths(instance.settings, location.origin), instance.moduleId);
     bridges.add(bridge);
     slot.appendChild(iframe);
     bridge.attach(iframe);
@@ -5698,6 +5893,7 @@ function main() {
   eventSource.start({
     onFrame: (frame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
+      alertAreas.get(frame.instanceId)?.readAhead(frame.value);
       queueManager.enqueue(frame.instanceId, {
         eventId: frame.eventId,
         type: frame.type,

@@ -1,3 +1,17 @@
+// ../shared/clients/typescript/module-sdk/dist/widget-assets.js
+var ENGINE_ASSET_PREFIXES = ["/assets/user/", "/assets/modules/"];
+function engineAssetPath(ref, resourceBaseUrl) {
+  let url;
+  try {
+    url = new URL(ref, resourceBaseUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return null;
+  }
+  return ENGINE_ASSET_PREFIXES.some((prefix) => url.pathname.startsWith(prefix)) ? url.pathname : null;
+}
 // ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
 var URL_ATTRIBUTES = ["src", "href", "poster"];
 var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
@@ -3334,6 +3348,7 @@ function createCompositionPreview(options) {
       let subscribed = false;
       const frame = options.mountFrame(slot, {
         widgetId,
+        widgetCanonicalId: placement.widget,
         meta,
         settings: placement.settings,
         surface: PROFILES[source.profile].surface,
@@ -3685,8 +3700,137 @@ function placementsOf(loaded) {
   });
 }
 
-// public/scene-manager/media-url.ts
+// public/scene-manager/asset-loader.ts
+var ASSET_READ_PREFIX = "/assets/read/";
 var MAX_DEPTH = 32;
+var ELEMENT_LOADED_TYPE = /^(image|video|audio|font)(\/|$)/;
+
+class AssetLoadError extends Error {
+  code;
+  constructor(code, path) {
+    super(`asset ${path}: ${code}`);
+    this.code = code;
+    this.name = "AssetLoadError";
+  }
+}
+function moduleIdOfWidget(canonicalId) {
+  const marker = canonicalId.lastIndexOf(":widget:");
+  if (marker <= 0) {
+    return null;
+  }
+  const moduleId = canonicalId.slice(0, marker).split(":")[0] ?? "";
+  return moduleId === "" ? null : moduleId;
+}
+function assetInScope(path, moduleId) {
+  if (moduleId === "") {
+    return false;
+  }
+  const segments = path.split("/");
+  if (segments[0] !== "" || segments[1] !== "assets" || segments.length < 5) {
+    return false;
+  }
+  const decoded = [];
+  for (const segment of segments.slice(2)) {
+    let value;
+    try {
+      value = decodeURIComponent(segment);
+    } catch {
+      return false;
+    }
+    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
+      return false;
+    }
+    decoded.push(value);
+  }
+  if (decoded[0] === "user") {
+    return true;
+  }
+  return decoded[0] === "modules" && decoded[1] === moduleId;
+}
+function readAheadAssetPaths(settings, pageOrigin) {
+  const paths = new Set;
+  collect2(settings, pageOrigin, paths, 0);
+  return [...paths];
+}
+function collect2(value, pageOrigin, paths, depth) {
+  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collect2(item, pageOrigin, paths, depth + 1);
+    }
+    return;
+  }
+  const record = value;
+  if (typeof record.id === "string" && record.id !== "" && record.source !== "url" && typeof record.url === "string" && !(typeof record.type === "string" && ELEMENT_LOADED_TYPE.test(record.type))) {
+    const path = engineAssetPath(record.url, pageOrigin);
+    if (path !== null) {
+      paths.add(path);
+    }
+    return;
+  }
+  for (const item of Object.values(record)) {
+    collect2(item, pageOrigin, paths, depth + 1);
+  }
+}
+
+class AssetCache {
+  fetchFn;
+  entries = new Map;
+  constructor(fetchFn = fetch) {
+    this.fetchFn = fetchFn;
+  }
+  load(path) {
+    const held = this.entries.get(path);
+    if (held !== undefined) {
+      return held;
+    }
+    const reading = this.read(path);
+    this.entries.set(path, reading);
+    reading.catch(() => {
+      if (this.entries.get(path) === reading) {
+        this.entries.delete(path);
+      }
+    });
+    return reading;
+  }
+  readAhead(paths, moduleId) {
+    for (const path of paths) {
+      if (assetInScope(path, moduleId)) {
+        this.load(path).catch(() => {});
+      }
+    }
+  }
+  scopedTo(moduleId) {
+    return (path) => {
+      if (!assetInScope(path, moduleId)) {
+        return Promise.reject(new AssetLoadError("out_of_scope", path));
+      }
+      return this.load(path);
+    };
+  }
+  async read(path) {
+    let response;
+    try {
+      response = await this.fetchFn(`${ASSET_READ_PREFIX}${path.slice("/assets/".length)}`, {
+        credentials: "same-origin"
+      });
+    } catch {
+      throw new AssetLoadError("unavailable", path);
+    }
+    if (response.status === 404) {
+      throw new AssetLoadError("not_found", path);
+    }
+    if (!response.ok) {
+      throw new AssetLoadError("unavailable", path);
+    }
+    return { contentType: response.headers.get("Content-Type") ?? "", bytes: await response.arrayBuffer() };
+  }
+}
+
+// public/scene-manager/media-url.ts
+var MAX_DEPTH2 = 32;
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -3709,7 +3853,7 @@ function rewriteExternalMedia(value, replace) {
   return rewrite(value, replace, 0);
 }
 function rewrite(value, replace, depth) {
-  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+  if (depth > MAX_DEPTH2 || typeof value !== "object" || value === null) {
     return value;
   }
   if (Array.isArray(value)) {
@@ -3766,6 +3910,7 @@ class WidgetBridge {
   shimEventSubs = new Set;
   readKeys = new Set;
   readAll = false;
+  documentGeneration = 0;
   constructor(instanceId, nonce, callbacks) {
     this.instanceId = instanceId;
     this.nonce = nonce;
@@ -3775,6 +3920,7 @@ class WidgetBridge {
     this.iframe = iframe;
   }
   onFrameLoad() {
+    this.documentGeneration += 1;
     this.initialized = false;
     this.moduleId = null;
     this.readKeys.clear();
@@ -3826,6 +3972,18 @@ class WidgetBridge {
         const key = typeof msg.key === "string" ? msg.key : "";
         const value = this.callbacks.onStorageGet(this.moduleId, key);
         this.post({ type: "storage.value", id, key, value });
+        return;
+      }
+      case "asset.load": {
+        if (!this.initialized) {
+          return;
+        }
+        const id = typeof msg.id === "string" ? msg.id : "";
+        const path = typeof msg.path === "string" ? msg.path : "";
+        if (!id) {
+          return;
+        }
+        this.answerAssetLoad(id, path);
         return;
       }
       case "storage.subscribe": {
@@ -3942,7 +4100,7 @@ class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status", "settings"]
+      capabilities: ["storage", "events", "status", "settings", "assets"]
     });
   }
   sendReject(reason) {
@@ -3995,6 +4153,7 @@ class WidgetBridge {
     this.callbacks.onDispose();
   }
   detach() {
+    this.documentGeneration += 1;
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
@@ -4003,6 +4162,18 @@ class WidgetBridge {
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
+  }
+  answerAssetLoad(id, path) {
+    const generation = this.documentGeneration;
+    this.callbacks.onAssetLoad(path).then((asset) => {
+      if (generation === this.documentGeneration) {
+        this.post({ type: "asset.value", id, contentType: asset.contentType, bytes: asset.bytes });
+      }
+    }, (err) => {
+      if (generation === this.documentGeneration) {
+        this.post({ type: "asset.error", id, code: err instanceof AssetLoadError ? err.code : "unavailable" });
+      }
+    });
   }
   post(payload) {
     const win = this.iframe?.contentWindow;
@@ -4089,8 +4260,9 @@ async function resolveFrames(doc) {
   }
   return parseFrameResolution(await response.json());
 }
-function mountFrame(bridges, slot, spec, facts) {
+function mountFrame(bridges, assets, slot, spec, facts) {
   const instanceId = `preview.${spec.widgetId}`;
+  const moduleId = moduleIdOfWidget(spec.widgetCanonicalId) ?? "";
   const nonce = generateNonce();
   const iframe = document.createElement("iframe");
   iframe.className = "widget-frame";
@@ -4112,6 +4284,7 @@ function mountFrame(bridges, slot, spec, facts) {
     onStorageSubscribe: () => {},
     onStorageUnsubscribe: () => {},
     onStatusReport: () => {},
+    onAssetLoad: assets.scopedTo(moduleId),
     onEventsSubscribe: (subId, queue) => {
       facts.subscribed(queue?.autoComplete === false);
       if (spec.event === null) {
@@ -4143,6 +4316,7 @@ function mountFrame(bridges, slot, spec, facts) {
     ...spec.entrance === null ? {} : { behavior: spec.entrance }
   });
   iframe.src = `${spec.meta.frameUrl}#${boot}`;
+  assets.readAhead(readAheadAssetPaths(spec.settings, location.origin), moduleId);
   bridges.add(bridge);
   slot.appendChild(iframe);
   bridge.attach(iframe);
@@ -4177,6 +4351,7 @@ function main() {
     return;
   }
   const bridges = new Set;
+  const assets = new AssetCache;
   let parentOrigin = null;
   let canvas = null;
   const fitStage = () => {
@@ -4197,7 +4372,7 @@ function main() {
     },
     baseClock: PAGE_CLOCK,
     resolveFrames,
-    mountFrame: (slot, spec, facts) => mountFrame(bridges, slot, spec, facts),
+    mountFrame: (slot, spec, facts) => mountFrame(bridges, assets, slot, spec, facts),
     post: (report) => window.parent.postMessage(report, parentOrigin ?? "*")
   });
   window.addEventListener("message", (event) => {

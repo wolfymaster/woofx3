@@ -37,6 +37,15 @@ export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
  *  here). */
 export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
 
+/**
+ * Every widget frame's policy on connections: none. Widget code is end-user
+ * code, and a frame that could `fetch`, open a socket or beacon could send
+ * whatever it is shown anywhere. What a widget needs from the network it asks
+ * the host for over the bridge (storage, events, `assets.load`), and elements
+ * still load media by URL under their own directives.
+ */
+export const FRAME_CONNECT_POLICY = "connect-src 'none'";
+
 const FRAME_HEADERS: Record<string, string> = {
   "Content-Type": "text/html; charset=utf-8",
   "Referrer-Policy": "no-referrer",
@@ -428,17 +437,21 @@ export class FrameAssembler {
     const theme = frameInfo.theme;
     const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
     let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
-    const headers: Record<string, string> = { ...FRAME_HEADERS, "Cache-Control": cacheControl };
+    const headers: Record<string, string> = {
+      ...FRAME_HEADERS,
+      "Cache-Control": cacheControl,
+      "Content-Security-Policy": FRAME_CONNECT_POLICY,
+    };
     if (theme) {
       if (theme.stylesheetUrl) {
         assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
       }
       // Every widget that opted into themes runs under the policy, themed or
       // not, so a theme can never be the thing that changes what loads.
-      headers["Content-Security-Policy"] = themeContentSecurityPolicy([
+      headers["Content-Security-Policy"] = `${themeContentSecurityPolicy([
         originOf(frameInfo.resourceBaseUrl),
         ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
-      ]);
+      ])}; ${FRAME_CONNECT_POLICY}`;
     }
     return new Response(assembled, { status: 200, headers });
   }

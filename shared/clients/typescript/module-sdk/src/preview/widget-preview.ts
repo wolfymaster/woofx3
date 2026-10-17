@@ -14,12 +14,15 @@
 
 import type {
   DeliveredWidgetEvent,
+  WidgetAsset,
   WidgetEvent,
   WidgetEventHandler,
   WidgetHost,
+  WidgetHostAssets,
   WidgetHostStorage,
   WidgetStatusReport,
 } from "../widget-host";
+import { WidgetAssetError, assetRefUrl, createWidgetAsset } from "../widget-assets";
 import type { EventQueueConfig } from "../widget-protocol";
 
 /** Re-exported so the preview harness can apply a widget's setting bindings
@@ -46,6 +49,12 @@ export interface MockHostOptions {
   storage?: Record<string, unknown>;
   /** Base URL `getResourceUrl` resolves paths against. */
   resourceBaseUrl?: string;
+  /**
+   * Files `assets.load` answers with, by the reference the widget passes
+   * (a path relative to `resourceBaseUrl`, or a URL): text, or raw bytes.
+   * A reference not listed here is fetched from where it resolves to.
+   */
+  assets?: Record<string, string | ArrayBuffer>;
 }
 
 /** `fireEvent` input — `eventId` is optional; the mock assigns one
@@ -146,6 +155,31 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     },
   };
 
+  const assets: WidgetHostAssets = {
+    async load(ref: string | { url: string }): Promise<WidgetAsset> {
+      const refUrl = assetRefUrl(ref);
+      if (refUrl === null) {
+        throw new Error("[mock-host] assets.load requires a URL, a path or a media setting's value");
+      }
+      const given = opts.assets?.[refUrl];
+      if (given !== undefined) {
+        const bytes = typeof given === "string" ? new TextEncoder().encode(given).buffer : given;
+        return createWidgetAsset(refUrl, "", bytes as ArrayBuffer);
+      }
+      const url = new URL(refUrl, resourceBaseUrl.replace(/\/*$/, "/"));
+      let response: Response;
+      try {
+        response = await fetch(url);
+      } catch (err) {
+        throw new WidgetAssetError("unavailable", refUrl, err instanceof Error ? err.message : String(err));
+      }
+      if (!response.ok) {
+        throw new WidgetAssetError(response.status === 404 ? "not_found" : "unavailable", refUrl);
+      }
+      return createWidgetAsset(url.pathname, response.headers.get("Content-Type") ?? "", await response.arrayBuffer());
+    },
+  };
+
   function emitReport(key: string, value: unknown): void {
     const report: WidgetStatusReport = {
       kind: "widget.event",
@@ -174,6 +208,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       return settings;
     },
     storage,
+    assets,
     getResourceUrl(path: string): string {
       return resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
     },
