@@ -17,6 +17,7 @@ import {
   parseCommandVariables,
 } from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
+import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import { isPermissionDenied } from "../db-client";
 import { routeModule } from "./context";
 import { commandToSnapshot, parseActions } from "./helpers";
@@ -294,7 +295,7 @@ export const commandsRoutes = routeModule({
       const engineUser = await this.db.findOrCreateByWoofx3UIUserId(convexUserId);
       engineUserId = engineUser.id;
     }
-    const fromDashboard = token.clientId !== undefined && token.clientId !== "";
+    const fromDashboard = selectStrategy(token) === "dashboard";
     if (fromDashboard && !context?.clientId) {
       throw new Error("A Twitch token from a dashboard needs the session's client id to renew it");
     }
