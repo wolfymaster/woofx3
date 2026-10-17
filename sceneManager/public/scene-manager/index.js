@@ -4387,16 +4387,33 @@ function evaluateExpression(src, ctx) {
 var DEFAULT_MAX_IN_FLIGHT = 1;
 var REMEMBERED_FINISHED_EVENTS = 256;
 
+class FinishedEvents {
+  ids = new Set;
+  has(eventId) {
+    return this.ids.has(eventId);
+  }
+  add(eventId) {
+    this.ids.add(eventId);
+    if (this.ids.size > REMEMBERED_FINISHED_EVENTS) {
+      const oldest = this.ids.values().next().value;
+      if (oldest !== undefined) {
+        this.ids.delete(oldest);
+      }
+    }
+  }
+}
+
 class InstanceQueue {
   config;
+  finished;
   deliver;
   onTimeout;
   onCancel;
   pending = [];
   inFlight = new Map;
-  finished = new Set;
-  constructor(config, deliver, onTimeout, onCancel) {
+  constructor(config, finished, deliver, onTimeout, onCancel) {
     this.config = config;
+    this.finished = finished;
     this.deliver = deliver;
     this.onTimeout = onTimeout;
     this.onCancel = onCancel;
@@ -4405,8 +4422,29 @@ class InstanceQueue {
     if (this.inFlight.has(item.eventId) || this.finished.has(item.eventId) || this.pending.some((pending) => pending.eventId === item.eventId)) {
       return;
     }
-    const priority = this.priorityOf(item);
-    const entry = { ...item, priority };
+    this.insert({ ...item, priority: this.priorityOf(item) });
+    this.pump();
+  }
+  adoptPending(previous) {
+    for (const item of previous.pending.splice(0)) {
+      this.enqueue(item);
+    }
+  }
+  adoptUnfinished(previous) {
+    for (const { item } of previous.inFlight.values()) {
+      this.enqueue(item);
+    }
+  }
+  dispose() {
+    for (const { timer } of this.inFlight.values()) {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+    this.pending.length = 0;
+  }
+  insert(entry) {
+    const priority = entry.priority;
     if (!this.config.priorityExpr) {
       this.pending.push(entry);
     } else {
@@ -4416,15 +4454,14 @@ class InstanceQueue {
       }
       this.pending.splice(i, 0, entry);
     }
-    this.pump();
   }
   complete(eventId) {
-    const timer = this.inFlight.get(eventId);
+    const timer = this.inFlight.get(eventId)?.timer;
     if (timer) {
       clearTimeout(timer);
     }
     if (this.inFlight.delete(eventId)) {
-      this.rememberFinished(eventId);
+      this.finished.add(eventId);
       this.pump();
     }
   }
@@ -4436,15 +4473,15 @@ class InstanceQueue {
       }
     }
     for (const eventId of cancelled) {
-      if (this.inFlight.has(eventId)) {
-        const timer = this.inFlight.get(eventId);
-        if (timer) {
-          clearTimeout(timer);
+      const flying = this.inFlight.get(eventId);
+      if (flying) {
+        if (flying.timer) {
+          clearTimeout(flying.timer);
         }
         this.inFlight.delete(eventId);
         this.onCancel(eventId);
       }
-      this.rememberFinished(eventId);
+      this.finished.add(eventId);
     }
     this.pump();
   }
@@ -4474,56 +4511,57 @@ class InstanceQueue {
       if (this.config.retryTimeoutMs) {
         timer = setTimeout(() => {
           this.inFlight.delete(item.eventId);
-          this.rememberFinished(item.eventId);
+          this.finished.add(item.eventId);
           this.onTimeout(item.eventId);
           this.pump();
         }, this.config.retryTimeoutMs);
       }
-      this.inFlight.set(item.eventId, timer);
-    }
-  }
-  rememberFinished(eventId) {
-    this.finished.add(eventId);
-    if (this.finished.size > REMEMBERED_FINISHED_EVENTS) {
-      const oldest = this.finished.values().next().value;
-      if (oldest !== undefined) {
-        this.finished.delete(oldest);
-      }
+      this.inFlight.set(item.eventId, { item, timer });
     }
   }
 }
 
 class EventQueueManager {
-  queues = new Map;
-  subToInstance = new Map;
-  register(subId, instanceId, config, deliver, onTimeout, onCancel = () => {}) {
-    this.subToInstance.set(subId, instanceId);
-    this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout, onCancel));
-  }
-  unregister(subId) {
-    const instanceId = this.subToInstance.get(subId);
-    this.subToInstance.delete(subId);
-    if (instanceId) {
-      this.queues.delete(instanceId);
+  current = new Map;
+  finished = new Map;
+  register(instanceId, config, deliver, onTimeout, onCancel = () => {}) {
+    let finished = this.finished.get(instanceId);
+    if (finished === undefined) {
+      finished = new FinishedEvents;
+      this.finished.set(instanceId, finished);
     }
+    const queue = new InstanceQueue(config ?? {}, finished, deliver, onTimeout, onCancel);
+    const registration = { instanceId, queue };
+    const previous = this.current.get(instanceId);
+    this.current.set(instanceId, registration);
+    if (previous !== undefined) {
+      queue.adoptPending(previous.queue);
+    }
+    return registration;
+  }
+  unregister(registration) {
+    const { instanceId, queue } = registration;
+    const current = this.current.get(instanceId);
+    if (current === registration) {
+      this.current.delete(instanceId);
+    } else if (current !== undefined) {
+      current.queue.adoptUnfinished(queue);
+    }
+    queue.dispose();
   }
   enqueue(instanceId, item) {
-    const queue = this.queues.get(instanceId);
-    if (!queue) {
+    const registration = this.current.get(instanceId);
+    if (!registration) {
       return false;
     }
-    queue.enqueue(item);
+    registration.queue.enqueue(item);
     return true;
   }
   cancel(instanceId, eventIds) {
-    this.queues.get(instanceId)?.cancel(eventIds);
+    this.current.get(instanceId)?.queue.cancel(eventIds);
   }
-  complete(subId, eventId) {
-    const instanceId = this.subToInstance.get(subId);
-    if (!instanceId) {
-      return;
-    }
-    this.queues.get(instanceId)?.complete(eventId);
+  complete(registration, eventId) {
+    registration.queue.complete(eventId);
   }
 }
 function toWidgetEvent(item) {
@@ -4538,6 +4576,30 @@ function toWidgetEvent(item) {
 
 // public/scene-manager/ack-batcher.ts
 var ACK_BATCH_WINDOW_MS = 250;
+var DEFAULT_ACK_RETRY = { initialMs: 1000, maxMs: 30000, attempts: 12 };
+function retryable(status) {
+  return status === 401 || status === 408 || status === 429 || status >= 500;
+}
+function postAck(fetchFn, url, instanceIds, retry = DEFAULT_ACK_RETRY, attempt = 1) {
+  const again = () => {
+    if (attempt >= retry.attempts) {
+      console.warn("[scene-manager] gave up acknowledging", { url, attempts: attempt });
+      return;
+    }
+    const delay = Math.min(retry.maxMs, retry.initialMs * 2 ** (attempt - 1));
+    setTimeout(() => postAck(fetchFn, url, instanceIds, retry, attempt + 1), delay);
+  };
+  fetchFn(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instanceIds })
+  }).then((response) => {
+    if (!response.ok && retryable(response.status)) {
+      again();
+    }
+  }, () => again());
+}
 
 class AckBatcher {
   endpoint;
@@ -4545,10 +4607,12 @@ class AckBatcher {
   timer = null;
   windowMs;
   fetchFn;
+  retry;
   constructor(endpoint, options = {}) {
     this.endpoint = endpoint;
     this.windowMs = options.windowMs ?? ACK_BATCH_WINDOW_MS;
     this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.retry = options.retry ?? DEFAULT_ACK_RETRY;
   }
   add(eventId, instanceId) {
     let set = this.pending.get(eventId);
@@ -4566,12 +4630,7 @@ class AckBatcher {
     const batch = [...this.pending];
     this.pending.clear();
     for (const [eventId, instanceIds] of batch) {
-      this.fetchFn(this.endpoint(eventId), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceIds: [...instanceIds] })
-      }).catch(() => {});
+      postAck(this.fetchFn, this.endpoint(eventId), [...instanceIds], this.retry);
     }
   }
 }
@@ -5476,12 +5535,9 @@ function main() {
     }).catch(() => {});
   }
   function postAlertAck(kind, eventId, instanceId) {
-    fetch(`${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ instanceIds: [instanceId] })
-    }).catch(() => {});
+    postAck(globalThis.fetch.bind(globalThis), `${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, [
+      instanceId
+    ]);
   }
   let configs = new Map(sceneData.widgets.map((instance) => [instance.id, instance]));
   const contents = new Map;
@@ -5499,7 +5555,7 @@ function main() {
     const element = document.createElement("div");
     element.className = "alert-widget";
     slot.appendChild(element);
-    const subId = `alert:${instance.id}`;
+    let registration = null;
     const alertWidget = new AlertWidget({
       element,
       sceneBase,
@@ -5508,12 +5564,14 @@ function main() {
       postStatus,
       assets,
       onFinished: (eventId) => {
-        queueManager.complete(subId, eventId);
+        if (registration !== null) {
+          queueManager.complete(registration, eventId);
+        }
         postAlertAck("completed", eventId, instance.id);
       }
     });
     alertAreas.set(instance.id, alertWidget);
-    queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => {
+    registration = queueManager.register(instance.id, { maxInFlight: 1 }, (item) => {
       postAlertAck("started", item.eventId, instance.id);
       return alertWidget.play(item);
     }, () => {}, (eventId) => alertWidget.stop(eventId));
@@ -5521,7 +5579,10 @@ function main() {
     return () => {
       alertWidget.dispose();
       alertAreas.delete(instance.id);
-      queueManager.unregister(subId);
+      if (registration !== null) {
+        queueManager.unregister(registration);
+        registration = null;
+      }
       element.remove();
     };
   };
@@ -5533,7 +5594,7 @@ function main() {
     }
     iframe.setAttribute("sandbox", "allow-scripts");
     const nonce = generateNonce();
-    let currentSubId = null;
+    let subscription = null;
     const callbacks = {
       onStorageGet: (_moduleId, key) => moduleState.peek(instance.moduleId, key),
       onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
@@ -5541,24 +5602,32 @@ function main() {
       onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
       onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {
-        currentSubId = subId;
         playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
-        queueManager.register(subId, instance.id, queue, (item) => bridge.sendEvent(subId, toWidgetEvent(item)), () => {});
+        const previous = subscription;
+        subscription = {
+          subId,
+          queue: queueManager.register(instance.id, queue, (item) => bridge.sendEvent(subId, toWidgetEvent(item)), (eventId) => completedBatcher.add(eventId, instance.id))
+        };
+        if (previous !== null) {
+          queueManager.unregister(previous.queue);
+        }
       },
       onEventsUnsubscribe: (subId) => {
-        queueManager.unregister(subId);
-        if (currentSubId === subId) {
-          currentSubId = null;
+        if (subscription?.subId === subId) {
+          queueManager.unregister(subscription.queue);
+          subscription = null;
         }
       },
       onEventComplete: (subId, eventId) => {
-        queueManager.complete(subId, eventId);
+        if (subscription?.subId === subId) {
+          queueManager.complete(subscription.queue, eventId);
+        }
         completedBatcher.add(eventId, instance.id);
       },
       onDispose: () => {
-        if (currentSubId) {
-          queueManager.unregister(currentSubId);
-          currentSubId = null;
+        if (subscription !== null) {
+          queueManager.unregister(subscription.queue);
+          subscription = null;
         }
       },
       onRendered
@@ -5903,14 +5972,16 @@ function main() {
   });
   eventSource.start({
     onFrame: (frame) => {
-      deliveredBatcher.add(frame.eventId, frame.instanceId);
       alertAreas.get(frame.instanceId)?.readAhead(frame.value);
-      queueManager.enqueue(frame.instanceId, {
+      const queued = queueManager.enqueue(frame.instanceId, {
         eventId: frame.eventId,
         type: frame.type,
         key: frame.key,
         value: frame.value
       });
+      if (queued) {
+        deliveredBatcher.add(frame.eventId, frame.instanceId);
+      }
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),

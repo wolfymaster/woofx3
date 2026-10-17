@@ -40,11 +40,11 @@ export type CancelFn = (eventId: string) => void;
 const DEFAULT_MAX_IN_FLIGHT = 1;
 
 /**
- * How many finished event ids an instance remembers. The server re-pushes an
- * open delivery every few seconds until its completion ack lands (see
- * delivery-store.ts), so a delivery that is still queued, still playing, or
- * whose ack is in flight arrives again. Remembering it is what keeps one
- * alert from playing twice.
+ * How many finished event ids an instance remembers. The server sends every
+ * open delivery again when the stream reconnects, and an undelivered one
+ * again every few seconds (see delivery-store.ts), so a delivery that is
+ * still queued, still playing, or whose ack is in flight can arrive twice.
+ * Remembering it is what keeps one alert from playing twice.
  */
 const REMEMBERED_FINISHED_EVENTS = 256;
 
@@ -52,13 +52,37 @@ interface PendingItem extends QueuedEvent {
   priority: number;
 }
 
+/**
+ * The event ids an instance has finished, oldest first, capped at
+ * `REMEMBERED_FINISHED_EVENTS`. One per instance, shared by each queue the
+ * instance registers, so a frame swapped in knows what its predecessor
+ * finished.
+ */
+class FinishedEvents {
+  private readonly ids = new Set<string>();
+
+  has(eventId: string): boolean {
+    return this.ids.has(eventId);
+  }
+
+  add(eventId: string): void {
+    this.ids.add(eventId);
+    if (this.ids.size > REMEMBERED_FINISHED_EVENTS) {
+      const oldest = this.ids.values().next().value;
+      if (oldest !== undefined) {
+        this.ids.delete(oldest);
+      }
+    }
+  }
+}
+
 class InstanceQueue {
   private readonly pending: PendingItem[] = [];
-  private readonly inFlight = new Map<string, ReturnType<typeof setTimeout> | null>();
-  private readonly finished = new Set<string>();
+  private readonly inFlight = new Map<string, { item: PendingItem; timer: ReturnType<typeof setTimeout> | null }>();
 
   constructor(
     private readonly config: EventQueueConfig,
+    private readonly finished: FinishedEvents,
     private readonly deliver: DeliverFn,
     private readonly onTimeout: TimeoutFn,
     private readonly onCancel: CancelFn
@@ -72,8 +96,39 @@ class InstanceQueue {
     ) {
       return;
     }
-    const priority = this.priorityOf(item);
-    const entry: PendingItem = { ...item, priority };
+    this.insert({ ...item, priority: this.priorityOf(item) });
+    this.pump();
+  }
+
+  /** Take over what `previous` had not dispatched; it keeps what is in flight. */
+  adoptPending(previous: InstanceQueue): void {
+    for (const item of previous.pending.splice(0)) {
+      this.enqueue(item);
+    }
+  }
+
+  /**
+   * Take over what `previous` dispatched and never finished: its frame is
+   * gone, so the event is handed to this one instead of being lost.
+   */
+  adoptUnfinished(previous: InstanceQueue): void {
+    for (const { item } of previous.inFlight.values()) {
+      this.enqueue(item);
+    }
+  }
+
+  /** Stop every timer; the queue is no longer used. */
+  dispose(): void {
+    for (const { timer } of this.inFlight.values()) {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+    this.pending.length = 0;
+  }
+
+  private insert(entry: PendingItem): void {
+    const priority = entry.priority;
     if (!this.config.priorityExpr) {
       this.pending.push(entry);
     } else {
@@ -84,19 +139,18 @@ class InstanceQueue {
       }
       this.pending.splice(i, 0, entry);
     }
-    this.pump();
   }
 
   /** Widget acked completion (or the shim auto-completed). Idempotent
    *  — a duplicate/late ack for an item no longer in flight is a
    *  no-op. */
   complete(eventId: string): void {
-    const timer = this.inFlight.get(eventId);
+    const timer = this.inFlight.get(eventId)?.timer;
     if (timer) {
       clearTimeout(timer);
     }
     if (this.inFlight.delete(eventId)) {
-      this.rememberFinished(eventId);
+      this.finished.add(eventId);
       this.pump();
     }
   }
@@ -114,15 +168,15 @@ class InstanceQueue {
       }
     }
     for (const eventId of cancelled) {
-      if (this.inFlight.has(eventId)) {
-        const timer = this.inFlight.get(eventId);
-        if (timer) {
-          clearTimeout(timer);
+      const flying = this.inFlight.get(eventId);
+      if (flying) {
+        if (flying.timer) {
+          clearTimeout(flying.timer);
         }
         this.inFlight.delete(eventId);
         this.onCancel(eventId);
       }
-      this.rememberFinished(eventId);
+      this.finished.add(eventId);
     }
     this.pump();
   }
@@ -157,79 +211,97 @@ class InstanceQueue {
       if (this.config.retryTimeoutMs) {
         timer = setTimeout(() => {
           this.inFlight.delete(item.eventId);
-          this.rememberFinished(item.eventId);
+          this.finished.add(item.eventId);
           this.onTimeout(item.eventId);
           this.pump();
         }, this.config.retryTimeoutMs);
       }
-      this.inFlight.set(item.eventId, timer);
-    }
-  }
-
-  private rememberFinished(eventId: string): void {
-    this.finished.add(eventId);
-    if (this.finished.size > REMEMBERED_FINISHED_EVENTS) {
-      const oldest = this.finished.values().next().value;
-      if (oldest !== undefined) {
-        this.finished.delete(oldest);
-      }
+      this.inFlight.set(item.eventId, { item, timer });
     }
   }
 }
 
+/** One queue registration: what its owner unregisters and completes through. */
+export interface QueueRegistration {
+  readonly instanceId: string;
+}
+
+interface Registration extends QueueRegistration {
+  readonly queue: InstanceQueue;
+}
+
 /**
- * Owns one `InstanceQueue` per registered widget instance. `subId` is
- * the P1 subscription id the shim assigned — kept distinct from
- * `instanceId` because a widget could (in principle) open more than
- * one event subscription; today's callers use exactly one per
- * instance, but the manager doesn't assume that.
+ * Owns the queue of each widget instance on the page. An instance has one
+ * current queue; registering again (a frame swapped in for the placement's
+ * old one) replaces it, and the new queue takes over everything not yet
+ * dispatched. The replaced queue keeps what it has in flight until its owner
+ * unregisters it, so a frame being retired finishes what it is showing, and
+ * whatever it never finished is handed to the current queue then.
  */
 export class EventQueueManager {
-  private readonly queues = new Map<string, InstanceQueue>();
-  private readonly subToInstance = new Map<string, string>();
+  private readonly current = new Map<string, Registration>();
+  private readonly finished = new Map<string, FinishedEvents>();
 
   register(
-    subId: string,
     instanceId: string,
     config: EventQueueConfig | undefined,
     deliver: DeliverFn,
     onTimeout: TimeoutFn,
     onCancel: CancelFn = () => {}
-  ): void {
-    this.subToInstance.set(subId, instanceId);
-    this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout, onCancel));
-  }
-
-  unregister(subId: string): void {
-    const instanceId = this.subToInstance.get(subId);
-    this.subToInstance.delete(subId);
-    if (instanceId) {
-      this.queues.delete(instanceId);
+  ): QueueRegistration {
+    let finished = this.finished.get(instanceId);
+    if (finished === undefined) {
+      finished = new FinishedEvents();
+      this.finished.set(instanceId, finished);
     }
+    const queue = new InstanceQueue(config ?? {}, finished, deliver, onTimeout, onCancel);
+    const registration: Registration = { instanceId, queue };
+    const previous = this.current.get(instanceId);
+    this.current.set(instanceId, registration);
+    if (previous !== undefined) {
+      queue.adoptPending(previous.queue);
+    }
+    return registration;
   }
 
-  /** Route an SSE delivery to the target instance's queue, if one is registered. */
+  /**
+   * The owner is done with `registration`. When it is still the instance's
+   * current queue the instance has no queue until one registers again; when
+   * it was replaced, the current queue takes over what it never finished.
+   */
+  unregister(registration: QueueRegistration): void {
+    const { instanceId, queue } = registration as Registration;
+    const current = this.current.get(instanceId);
+    if (current === registration) {
+      this.current.delete(instanceId);
+    } else if (current !== undefined) {
+      current.queue.adoptUnfinished(queue);
+    }
+    queue.dispose();
+  }
+
+  /**
+   * Route an SSE delivery to the target instance's queue. False when the
+   * instance has no queue yet, so the caller does not acknowledge it as
+   * delivered and the server sends it again.
+   */
   enqueue(instanceId: string, item: QueuedEvent): boolean {
-    const queue = this.queues.get(instanceId);
-    if (!queue) {
+    const registration = this.current.get(instanceId);
+    if (!registration) {
       return false;
     }
-    queue.enqueue(item);
+    registration.queue.enqueue(item);
     return true;
   }
 
   /** Server-side cancellation of deliveries to one instance. */
   cancel(instanceId: string, eventIds: string[]): void {
-    this.queues.get(instanceId)?.cancel(eventIds);
+    this.current.get(instanceId)?.queue.cancel(eventIds);
   }
 
-  /** Widget completion, routed by the P1 subId the shim echoed back. */
-  complete(subId: string, eventId: string): void {
-    const instanceId = this.subToInstance.get(subId);
-    if (!instanceId) {
-      return;
-    }
-    this.queues.get(instanceId)?.complete(eventId);
+  /** The widget behind `registration` finished `eventId`. */
+  complete(registration: QueueRegistration, eventId: string): void {
+    (registration as Registration).queue.complete(eventId);
   }
 }
 

@@ -127,8 +127,8 @@ export async function handleEventDeliveredRoute(
   if (!instanceIds) {
     return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
   }
-  await deps.deliveryStore.ackDelivered(sceneId, eventId, instanceIds);
-  return Response.json({ status: "ok" });
+  const failed = await deps.deliveryStore.ackDelivered(sceneId, eventId, instanceIds);
+  return ackAnswer(failed);
 }
 
 /**
@@ -193,8 +193,20 @@ export async function handleEventCompletedRoute(
   if (!instanceIds) {
     return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
   }
-  const closed = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
+  const { closed, failed } = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
   await reportAlertsCompleted(deps.ctx.services.db.client, deps.ctx.logger, closed);
+  return ackAnswer(failed);
+}
+
+/**
+ * 503 when some of an ack could not be recorded, so the page sends it again
+ * (see ack-batcher.ts); acks are idempotent, so resending what did land is
+ * harmless.
+ */
+function ackAnswer(failed: string[]): Response {
+  if (failed.length > 0) {
+    return Response.json({ error: "unavailable", instanceIds: failed }, { status: 503 });
+  }
   return Response.json({ status: "ok" });
 }
 

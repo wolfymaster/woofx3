@@ -16,8 +16,8 @@ import {
   type WidgetBridgeCallbacks,
   type WidgetStatusReportPayload,
 } from "./widget-bridge";
-import { EventQueueManager, toWidgetEvent } from "./event-queue";
-import { AckBatcher } from "./ack-batcher";
+import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "./event-queue";
+import { AckBatcher, postAck } from "./ack-batcher";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
@@ -179,12 +179,9 @@ function main(): void {
   // from these, and a quarter-second batch is long enough for an operator's
   // Skip to land on the alert that just ended.
   function postAlertAck(kind: "started" | "completed", eventId: string, instanceId: string): void {
-    fetch(`${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ instanceIds: [instanceId] }),
-    }).catch(() => {});
+    postAck(globalThis.fetch.bind(globalThis), `${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, [
+      instanceId,
+    ]);
   }
 
   // What each placement on the page was last configured with, by id. The
@@ -228,7 +225,7 @@ function main(): void {
 
     // The page plays alerts itself, so it registers the queue a framed
     // widget would register on subscribe: one alert at a time.
-    const subId = `alert:${instance.id}`;
+    let registration: QueueRegistration | null = null;
     const alertWidget = new AlertWidget({
       element,
       sceneBase,
@@ -237,13 +234,14 @@ function main(): void {
       postStatus,
       assets,
       onFinished: (eventId) => {
-        queueManager.complete(subId, eventId);
+        if (registration !== null) {
+          queueManager.complete(registration, eventId);
+        }
         postAlertAck("completed", eventId, instance.id);
       },
     });
     alertAreas.set(instance.id, alertWidget);
-    queueManager.register(
-      subId,
+    registration = queueManager.register(
       instance.id,
       { maxInFlight: 1 },
       (item) => {
@@ -261,7 +259,10 @@ function main(): void {
       // Finishes what is playing while the queue is still there to hear it.
       alertWidget.dispose();
       alertAreas.delete(instance.id);
-      queueManager.unregister(subId);
+      if (registration !== null) {
+        queueManager.unregister(registration);
+        registration = null;
+      }
       element.remove();
     };
   };
@@ -294,7 +295,9 @@ function main(): void {
     iframe.setAttribute("sandbox", "allow-scripts");
 
     const nonce = generateNonce();
-    let currentSubId: string | null = null;
+    // This frame's event subscription and the queue it registered. A frame
+    // swapped in registers its own; the placement's events follow the newest.
+    let subscription: { subId: string; queue: QueueRegistration } | null = null;
 
     const callbacks: WidgetBridgeCallbacks = {
       // The module comes from the scene record, not from the module the
@@ -305,34 +308,40 @@ function main(): void {
       onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
       onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {
-        currentSubId = subId;
         playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
-        queueManager.register(
+        const previous = subscription;
+        subscription = {
           subId,
-          instance.id,
-          queue,
-          (item) => bridge.sendEvent(subId, toWidgetEvent(item)),
-          () => {
-            // Timed out waiting for completion — drop and advance
-            // (see event-queue.ts's header comment on why this
-            // doesn't attempt a same-widget redelivery).
-          }
-        );
+          queue: queueManager.register(
+            instance.id,
+            queue,
+            (item) => bridge.sendEvent(subId, toWidgetEvent(item)),
+            // The widget never finished it. The page gives up on it, so the
+            // server must too: acknowledged as completed, or it would stay
+            // open and play again after the next reload.
+            (eventId) => completedBatcher.add(eventId, instance.id)
+          ),
+        };
+        if (previous !== null) {
+          queueManager.unregister(previous.queue);
+        }
       },
       onEventsUnsubscribe: (subId) => {
-        queueManager.unregister(subId);
-        if (currentSubId === subId) {
-          currentSubId = null;
+        if (subscription?.subId === subId) {
+          queueManager.unregister(subscription.queue);
+          subscription = null;
         }
       },
       onEventComplete: (subId, eventId) => {
-        queueManager.complete(subId, eventId);
+        if (subscription?.subId === subId) {
+          queueManager.complete(subscription.queue, eventId);
+        }
         completedBatcher.add(eventId, instance.id);
       },
       onDispose: () => {
-        if (currentSubId) {
-          queueManager.unregister(currentSubId);
-          currentSubId = null;
+        if (subscription !== null) {
+          queueManager.unregister(subscription.queue);
+          subscription = null;
         }
       },
       onRendered,
@@ -791,14 +800,18 @@ function main(): void {
   });
   eventSource.start({
     onFrame: (frame: DeliveryFrame) => {
-      deliveredBatcher.add(frame.eventId, frame.instanceId);
       alertAreas.get(frame.instanceId)?.readAhead(frame.value);
-      queueManager.enqueue(frame.instanceId, {
+      const queued = queueManager.enqueue(frame.instanceId, {
         eventId: frame.eventId,
         type: frame.type,
         key: frame.key,
         value: frame.value,
       });
+      // Only what reached a queue is delivered. A placement whose widget has
+      // not subscribed yet gets the event when the server sends it again.
+      if (queued) {
+        deliveredBatcher.add(frame.eventId, frame.instanceId);
+      }
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
