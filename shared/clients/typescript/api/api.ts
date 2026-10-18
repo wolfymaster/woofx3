@@ -8,6 +8,7 @@ import type {
   ConfigImportPlan,
   ConfigImportResult,
 } from "./config-bundle";
+import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
 import type { RegisterClientOptions } from "./rpc";
 import type {
   EventLogPage,
@@ -1594,6 +1595,29 @@ export interface Woofx3EngineApi {
    * given a `buyerToken`. Capability `modules.marketplaceInstall`.
    */
   installMarketplaceBundle(listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult>;
+
+  // Marketplace catalog reads. Each answers with the marketplace's JSON
+  // unchanged, to be parsed as the marketplace's own answer would be. An
+  // optional `buyerToken` is forwarded as the buyer's bearer: with the dev
+  // claim it reveals dev-tier listings, without it the read is the same as
+  // an anonymous one. A marketplace failure throws a message that
+  // `parseMarketplaceCatalogError` reads (`marketplace-catalog.ts`).
+  // Capability `marketplace.catalog`.
+
+  /** `GET /catalog`: search and browse every listing type. Unknown query keys are refused. */
+  marketplaceSearch(query: MarketplaceCatalogQuery, buyerToken?: string): Promise<unknown>;
+
+  /** `GET /catalog/counts`: `{counts{module, theme, emote, overlay, alert}, total}`. */
+  marketplaceCounts(buyerToken?: string): Promise<unknown>;
+
+  /** `GET /catalog/{id}`: `{listing}` with everything a listing page shows. */
+  marketplaceGetListing(listingId: string, buyerToken?: string): Promise<unknown>;
+
+  /** `GET /authors/{slug}`: `{author, listings[], total, limit, offset}`. */
+  marketplaceGetAuthor(slug: string, query?: MarketplaceAuthorQuery, buyerToken?: string): Promise<unknown>;
+
+  /** `GET /catalog/{id}/quote`: `{quote}` for the token's buyer. The token is required. */
+  marketplaceQuote(listingId: string, buyerToken: string): Promise<unknown>;
 
   /** Lightweight summary of every module currently installed on the engine. */
   listEngineModules(): Promise<EngineModuleSummary[]>;
