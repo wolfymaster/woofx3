@@ -95,9 +95,11 @@ func TestAServiceStartedByTheOrchestratorExitsCleanlyWhenAskedToStop(t *testing.
 // scriptedProcess records what the supervisor asks of it, and exits when
 // asked to stop only if it is polite.
 type scriptedProcess struct {
-	name       string
-	polite     bool
-	stopErr    error
+	name    string
+	polite  bool
+	stopErr error
+	// reapDelay is how long Wait takes to return after the process exits.
+	reapDelay  time.Duration
 	clock      clock
 	calls      *callLog
 	exited     chan struct{}
@@ -151,6 +153,7 @@ func (p *scriptedProcess) Kill() error {
 
 func (p *scriptedProcess) Wait() (string, error) {
 	<-p.exited
+	time.Sleep(p.reapDelay)
 	return "exit status 0", nil
 }
 
@@ -159,13 +162,19 @@ func (p *scriptedProcess) exit() {
 }
 
 // startScripted starts one scripted process per service on a fake clock and
-// returns the supervisor with them running.
-func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Supervisor, *fakeClock, *callLog) {
+// returns the supervisor with them running, and where its status goes.
+func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Supervisor, *fakeClock, *callLog, *syncBuffer) {
 	t.Helper()
 	clock := newFakeClock()
 	calls := &callLog{}
+	output := &syncBuffer{}
+	reporter, err := newStatusReporter(supervisionOptions{statusToStdout: true}, output, clock, discardLogger())
+	if err != nil {
+		t.Fatalf("reporter: %v", err)
+	}
 	supervisor := NewSupervisor(t.TempDir(), discardLogger())
 	supervisor.clock = clock
+	supervisor.reporter = reporter
 	supervisor.startProcess = func(path string, argv []string, attr *os.ProcAttr) (serviceHandle, error) {
 		process := processes[filepath.Base(path)]
 		process.clock = clock
@@ -184,11 +193,11 @@ func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Superv
 			t.Fatalf("start %s: %v", name, err)
 		}
 	}
-	return supervisor, clock, calls
+	return supervisor, clock, calls, output
 }
 
 func TestStopAllAsksEveryServiceToStopAndKillsOnlyThoseStillRunningAfterTheGracePeriod(t *testing.T) {
-	supervisor, clock, calls := startScripted(t, map[string]*scriptedProcess{
+	supervisor, clock, calls, _ := startScripted(t, map[string]*scriptedProcess{
 		"polite":   {polite: true},
 		"stubborn": {polite: false},
 	})
@@ -214,7 +223,7 @@ func TestStopAllAsksEveryServiceToStopAndKillsOnlyThoseStillRunningAfterTheGrace
 }
 
 func TestAServiceThatCannotBeAskedToStopIsKilledAtOnce(t *testing.T) {
-	supervisor, _, calls := startScripted(t, map[string]*scriptedProcess{
+	supervisor, _, calls, _ := startScripted(t, map[string]*scriptedProcess{
 		"unreachable": {stopErr: errors.New("no console to send the event through")},
 	})
 
@@ -226,5 +235,27 @@ func TestAServiceThatCannotBeAskedToStopIsKilledAtOnce(t *testing.T) {
 	}
 	if !times["unreachable:kill"].Equal(times["unreachable:stop"]) {
 		t.Fatalf("the kill came %s after the failed stop request, want no wait", times["unreachable:kill"].Sub(times["unreachable:stop"]))
+	}
+}
+
+// The orchestrator reports stopped once StopAll returns, and closes its status
+// output: a service's own stopped event must already be out by then, including
+// that of a service that had to be killed.
+func TestStopAllReturnsOnceEveryServicesExitIsReported(t *testing.T) {
+	supervisor, _, _, output := startScripted(t, map[string]*scriptedProcess{
+		"stubborn":    {polite: false, reapDelay: 20 * time.Millisecond},
+		"unreachable": {stopErr: errors.New("no console"), reapDelay: 20 * time.Millisecond},
+	})
+
+	supervisor.StopAll()
+
+	stopped := map[string]bool{}
+	for _, event := range output.events(t) {
+		if event.Event == eventService && event.Status == StatusStopped.String() {
+			stopped[event.Name] = true
+		}
+	}
+	if !stopped["stubborn"] || !stopped["unreachable"] {
+		t.Fatalf("stopped reported for %v when StopAll returned, want both killed services", stopped)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -135,11 +136,14 @@ func (r *statusReporter) failure(name string, message string) {
 }
 
 func (r *statusReporter) emit(event statusEvent) {
-	if r == nil || len(r.writers) == 0 {
+	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(r.writers) == 0 {
+		return
+	}
 
 	event.Time = r.clock.Now().UTC().Format(time.RFC3339Nano)
 	line, err := json.Marshal(event)
@@ -189,13 +193,25 @@ func childOutputFileName(serviceName string) string {
 // loops without waiting on the wall clock.
 type clock interface {
 	Now() time.Time
-	Sleep(d time.Duration)
+	// Sleep waits for d, or until ctx is done, and returns ctx's error in
+	// that case.
+	Sleep(ctx context.Context, d time.Duration) error
 }
 
 type systemClock struct{}
 
-func (systemClock) Now() time.Time        { return time.Now() }
-func (systemClock) Sleep(d time.Duration) { time.Sleep(d) }
+func (systemClock) Now() time.Time { return time.Now() }
+
+func (systemClock) Sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 // serviceHandle is a started service process.
 type serviceHandle interface {

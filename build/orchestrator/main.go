@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -293,7 +294,6 @@ type ServiceProcess struct {
 	// or empty when it has none.
 	healthURL  string
 	Cmd        serviceHandle
-	Restart    chan bool
 	Status     ServiceStatus
 	LastHealth time.Time
 	CanStart   chan bool
@@ -303,6 +303,14 @@ type Supervisor struct {
 	baseDir  string
 	services map[string]*ServiceProcess
 	logger   *slog.Logger
+
+	// ctx is cancelled when StopAll begins. The polling loops and in-flight
+	// health checks end with it; stopping the processes does not use it.
+	ctx    context.Context
+	cancel context.CancelFunc
+	// goroutines counts every goroutine the supervisor starts, so StopAll can
+	// return only once each service's exit has been recorded and reported.
+	goroutines sync.WaitGroup
 
 	// mu guards stopping, readyReported and every ServiceProcess's Cmd,
 	// Status and LastHealth.
@@ -324,11 +332,14 @@ type Supervisor struct {
 }
 
 func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Supervisor{
 		baseDir:      baseDir,
 		services:     make(map[string]*ServiceProcess),
 		stopping:     false,
 		logger:       logger,
+		ctx:          ctx,
+		cancel:       cancel,
 		clock:        systemClock{},
 		startProcess: startOSProcess,
 		checkHealth:  checkHealthOverHTTP,
@@ -339,7 +350,6 @@ func (s *Supervisor) AddService(service Service) {
 	s.services[service.Name] = &ServiceProcess{
 		Service:   service,
 		healthURL: expandEndpoint(service.HealthEndpoint, os.Getenv),
-		Restart:   make(chan bool),
 		Status:    StatusStopped,
 		CanStart:  make(chan bool, 1),
 	}
@@ -398,7 +408,7 @@ func (s *Supervisor) StartInOrder(orderedServices []string) {
 	for _, name := range orderedServices {
 		serviceProcess := s.services[name]
 		s.logger.Info("Starting service", "service", name)
-		go s.manageService(serviceProcess)
+		s.spawn(func() { s.manageService(serviceProcess) })
 
 		if len(serviceProcess.Service.Dependencies) == 0 {
 			select {
@@ -406,17 +416,27 @@ func (s *Supervisor) StartInOrder(orderedServices []string) {
 			default:
 			}
 		} else {
-			go s.monitorDependencies(serviceProcess)
+			s.spawn(func() { s.monitorDependencies(serviceProcess) })
 		}
 	}
 }
 
+// spawn runs f on a goroutine that StopAll waits for.
+func (s *Supervisor) spawn(f func()) {
+	s.goroutines.Add(1)
+	go func() {
+		defer s.goroutines.Done()
+		f()
+	}()
+}
+
 func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 	for {
-		s.clock.Sleep(1 * time.Second)
+		if err := s.clock.Sleep(s.ctx, 1*time.Second); err != nil {
+			return
+		}
 
 		s.mu.Lock()
-		stopping := s.stopping
 		allStarted := true
 		for _, depName := range serviceProcess.Service.Dependencies {
 			if depService, exists := s.services[depName]; exists {
@@ -432,9 +452,6 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 		stopped := serviceProcess.Status == StatusStopped
 		s.mu.Unlock()
 
-		if stopping {
-			return
-		}
 		if allStarted && stopped {
 			select {
 			case serviceProcess.CanStart <- true:
@@ -461,8 +478,15 @@ const stopGracePeriod = 25 * time.Second
 // mid-flush loses the writes since the last sync.
 const dependentStopPeriod = 8 * time.Second
 
+// exitRecordPeriod bounds how long StopAll waits, once it has killed what was
+// left, for the supervisor's goroutines to record and report each exit. A
+// killed process exits at once unless the OS cannot reap it; the bound keeps
+// such a process from holding the orchestrator open.
+const exitRecordPeriod = 5 * time.Second
+
 // StopAll stops the services in two phases and kills whatever is still running
-// once the grace period is over.
+// once the grace period is over. It returns once every service's exit has been
+// reported, so the caller's own final status comes after them.
 //
 // Services that depend on others are stopped first, and the services with no
 // dependencies (db-proxy and the message bus) only once those have exited or
@@ -473,6 +497,7 @@ func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	s.stopping = true
 	s.mu.Unlock()
+	s.cancel()
 	deadline := s.clock.Now().Add(stopGracePeriod)
 
 	var dependents, foundations []string
@@ -494,6 +519,26 @@ func (s *Supervisor) StopAll() {
 			s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
 			process.Kill()
 		}
+	}
+
+	s.waitForGoroutines()
+}
+
+// waitForGoroutines waits up to exitRecordPeriod for the supervisor's
+// goroutines to end. It uses the wall clock rather than s.clock: what it waits
+// for is the OS reaping killed processes.
+func (s *Supervisor) waitForGoroutines() {
+	done := make(chan struct{})
+	go func() {
+		s.goroutines.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(exitRecordPeriod)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		s.logger.Warn("Services were killed but their exits were not recorded in time", "waited", exitRecordPeriod)
 	}
 }
 
@@ -522,8 +567,9 @@ func (s *Supervisor) signalStop(names []string) {
 // waitForExit returns once none of the named services is running, or at the
 // deadline.
 func (s *Supervisor) waitForExit(names []string, deadline time.Time) {
+	// s.ctx is already cancelled while stopping.
 	for s.anyRunning(names) && s.clock.Now().Before(deadline) {
-		s.clock.Sleep(100 * time.Millisecond)
+		s.clock.Sleep(context.Background(), 100*time.Millisecond)
 	}
 }
 
@@ -542,15 +588,6 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 
 	for {
 		select {
-		case <-serviceProcess.Restart:
-			s.mu.Lock()
-			if serviceProcess.Cmd != nil {
-				s.logger.Info("Restarting service", "service", service.Name)
-				serviceProcess.Cmd.Kill()
-				serviceProcess.Cmd = nil
-			}
-			serviceProcess.Status = StatusStopped
-			s.mu.Unlock()
 		case <-serviceProcess.CanStart:
 			s.mu.Lock()
 			startable := serviceProcess.Cmd == nil && !s.stopping && serviceProcess.Status == StatusStopped
@@ -559,13 +596,17 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 				if err := s.startServiceProcess(serviceProcess, binaryPath); err != nil {
 					s.logger.Error("Failed to start service", "service", service.Name, "error", err)
 					s.reporter.failure(service.Name, fmt.Sprintf("failed to start: %v", err))
-					s.clock.Sleep(5 * time.Second)
+					if err := s.clock.Sleep(s.ctx, 5*time.Second); err != nil {
+						return
+					}
 				}
 			}
 		default:
 			s.updateHealth(serviceProcess)
 		}
-		s.clock.Sleep(1 * time.Second)
+		if err := s.clock.Sleep(s.ctx, 1*time.Second); err != nil {
+			return
+		}
 	}
 }
 
@@ -689,7 +730,7 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	s.logger.Info("Started service", "service", service.Name, "pid", process.Pid())
 	s.reporter.service(service.Name, StatusStarting, process.Pid(), "")
 
-	go func() {
+	s.spawn(func() {
 		exit, err := process.Wait()
 		if err != nil {
 			s.logger.Error("Service process error", "service", service.Name, "error", err)
@@ -705,9 +746,9 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 		s.reporter.service(service.Name, StatusStopped, process.Pid(), exit)
 
 		if !stopping {
-			go s.monitorDependencies(serviceProcess)
+			s.spawn(func() { s.monitorDependencies(serviceProcess) })
 		}
-	}()
+	})
 
 	return nil
 }

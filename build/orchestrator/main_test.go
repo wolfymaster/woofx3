@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -164,11 +165,15 @@ func (c *fakeClock) Now() time.Time {
 	return c.now
 }
 
-func (c *fakeClock) Sleep(d time.Duration) {
+func (c *fakeClock) Sleep(ctx context.Context, d time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	c.now = c.now.Add(d)
 	c.mu.Unlock()
 	time.Sleep(time.Millisecond)
+	return ctx.Err()
 }
 
 // fakeProcess runs until it is signalled or killed.
@@ -735,5 +740,50 @@ func TestBinaryFileNameFollowsTheBuildTarget(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("binaryFileName = %q, want %q on %s", got, want, runtime.GOOS)
+	}
+}
+
+// Status is written by the supervisor's goroutines while main closes the
+// reporter on its way out; neither may see the other half done.
+func TestTheStatusReporterCanBeClosedWhileEventsAreEmitted(t *testing.T) {
+	reporter, err := newStatusReporter(supervisionOptions{statusToStdout: true}, &syncBuffer{}, newFakeClock(), discardLogger())
+	if err != nil {
+		t.Fatalf("reporter: %v", err)
+	}
+
+	var emitters sync.WaitGroup
+	for range 4 {
+		emitters.Add(1)
+		go func() {
+			defer emitters.Done()
+			for range 100 {
+				reporter.ready()
+			}
+		}()
+	}
+	reporter.Close()
+	emitters.Wait()
+}
+
+// The service loops and dependency waits poll forever while the engine runs;
+// none of them may outlive StopAll.
+func TestNoSupervisorGoroutineOutlivesStopAll(t *testing.T) {
+	supervisor, _, _ := newFakeSupervisor(t, []Service{
+		{Name: "api", Output: "api", HealthEndpoint: "http://127.0.0.1:5050/ready"},
+		{Name: "edge", Output: "edge", Dependencies: []string{"api"}},
+	}, func(string) bool { return false })
+
+	supervisor.StartInOrder([]string{"api", "edge"})
+	supervisor.StopAll()
+
+	done := make(chan struct{})
+	go func() {
+		supervisor.goroutines.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("supervisor goroutines still running after StopAll returned")
 	}
 }
