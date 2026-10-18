@@ -322,16 +322,15 @@ function wholeSeconds(raw: number | string | undefined): number {
 
 export default class TwitchApi {
   /**
-   * `enqueueShoutout` hands shoutouts to the dashboard's queue; without it,
-   * every shoutout is sent directly. `helixAuth` is the auth provider behind
-   * `apiClient`, which `helix` sends with directly; without it `helix`
-   * refuses.
+   * `helixAuth` is the auth provider behind `apiClient`, which `helix` sends
+   * with directly. `enqueueShoutout` hands shoutouts to the dashboard's
+   * queue; without it, every shoutout is sent directly.
    */
   constructor(
     private apiClient: ApiClient,
     private broadcaster: HelixUser,
-    private enqueueShoutout?: EnqueueShoutout,
-    private helixAuth?: HelixAuth
+    private helixAuth: HelixAuth,
+    private enqueueShoutout?: EnqueueShoutout
   ) {}
 
   async clip(_args: unknown): Promise<ClipResult> {
@@ -649,9 +648,6 @@ export default class TwitchApi {
    * than reshaping them as the other commands do.
    */
   async helix(args: unknown): Promise<HelixCommandResult> {
-    if (!this.helixAuth) {
-      throw new Error("helix: this twitch service has no auth provider to send Helix requests with");
-    }
     return runHelixOperation(this.helixAuth, this.broadcaster.id, args);
   }
 

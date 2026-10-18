@@ -239,8 +239,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const twitchApi = new TwitchApiClientImpl(
       apiClient,
       broadcaster,
-      enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts)),
-      authProvider
+      authProvider,
+      enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts))
     );
     const events = new EventFactory({ source: "twitch" });
     const messageBus = ctx.services.messageBus.client;
