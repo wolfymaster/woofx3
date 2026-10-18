@@ -300,6 +300,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         ),
       logger,
       gateway,
+      requestGuard: config.requestGuard,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
     });
 

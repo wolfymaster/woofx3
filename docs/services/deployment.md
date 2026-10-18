@@ -57,6 +57,66 @@ parents, set `WOOFX3_ROOT` (the directory holding `.woofx3.json` and `.env`) or
 from its working directory as before. See
 [Finding the config](./runtime.md#finding-the-config).
 
+## Host and Origin checks
+
+The api and sceneManager can refuse requests by their `Host` and `Origin`
+headers. Both checks are off unless configured: the hosted dashboard reaches
+engines directly from several origins (the app domain, PR previews, local dev),
+so an engine that sets neither accepts every request and answers CORS with
+`Access-Control-Allow-Origin: *`.
+
+| Setting | When set |
+|---|---|
+| `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
+| `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
+
+Each is a comma-separated list, read by both services, and each works without
+the other. A malformed entry stops the service at startup.
+
+Matching rules:
+
+- **Hosts** are `name` or `name:port`, case-insensitive; IPv6 literals are
+  bracketed (`[::1]`, `[::1]:8080`). A bare name matches on any port; with a
+  port, only that port. List every name the services are reached by, internal
+  ones included: barkloader posts job results to the api at `WOOFX3_API_URL`,
+  and health checks usually use `127.0.0.1`. Behind the edge, the Host is the
+  public one, since Caddy passes it through.
+- **Origins** are `scheme://host[:port]`, compared as web origins, so
+  `https://app.example` and `https://app.example:443` are the same entry.
+  `scheme://host:*` matches that scheme and host on any port (for example
+  `http://localhost:*` for local dev servers). The literal `null` matches the
+  opaque origin sandboxed frames send, and nothing else matches it. There is
+  no subdomain wildcard.
+
+A browser sends no `Origin` on a top-level navigation or a same-origin `GET`,
+which is why an absent Origin is allowed; OBS, the CLI and peer services send
+none either. What an overlay sends when `WOOFX3_ALLOWED_ORIGINS` is set on
+sceneManager:
+
+- An **OBS browser source** loads `/scene/{id}` as a navigation (no Origin), and
+  its same-origin `GET`s, the `/events` SSE stream included, send none. Its
+  `POST`s (delivery acknowledgements, widget status, session refresh) send the
+  page's own origin, so list sceneManager's public origin, as OBS reaches it.
+- **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
+  from sceneManager (web fonts, module scripts) send `Origin: null`, so list
+  `null` when widgets load anything from sceneManager. A listed `null` cannot
+  tell one sandboxed page from another; the Host check and the session tokens
+  remain the protection there. The api has no such caller, so give `null` to
+  sceneManager alone, through its own environment rather than the shared
+  `.woofx3.json`.
+- The **scene editor** WebSocket sends the dashboard's origin.
+
+For a desktop engine on loopback, for example:
+
+```bash
+# both services
+WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
+# api
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*
+# sceneManager
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,null
+```
+
 ## Startup
 
 The entrypoint (`build/entrypoint.sh`) runs the database migrations with the

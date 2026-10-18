@@ -1,4 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { UNVERSIONED } from "./version";
@@ -45,6 +46,12 @@ export interface ApiConfig {
   streamwareUrl: string;
   sceneManagerUrl: string;
   apiUrl: string;
+  /**
+   * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
+   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. See
+   * shared/common/typescript/http/request-guard.ts.
+   */
+  requestGuard: RequestGuardPolicy;
   nats: {
     url: string;
     name: string;
@@ -84,6 +91,8 @@ export const ApiEnvSchema = z
     woofx3MessagebusNkey: z.string().optional(),
     messagebusNkey: z.string().optional(),
     woofx3RootPath: z.string().optional(),
+    woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
   })
   .passthrough();
 
@@ -164,6 +173,11 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
+  const requestGuard = parseRequestGuardPolicy({
+    allowedHosts: config.woofx3AllowedHosts,
+    allowedOrigins: config.woofx3AllowedOrigins,
+  });
+
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
   const messageBusJwt =
     config.woofx3MessagebusJwt != null
@@ -193,6 +207,7 @@ export function loadConfig(): ApiConfig {
     sceneManagerUrl,
     apiUrl,
     rootDir,
+    requestGuard,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",
