@@ -138,20 +138,25 @@ so an engine that sets neither accepts every request and answers CORS with
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
 
 Each is a comma-separated list, read by both services, and each works without
-the other. A malformed entry stops the service at startup.
+the other. A malformed entry stops the service at startup, and so does a value
+that is not a list at all, such as `true`.
 
 Matching rules:
 
 - **Hosts** are `name` or `name:port`, case-insensitive; IPv6 literals are
   bracketed (`[::1]`, `[::1]:8080`). A bare name matches on any port; with a
-  port, only that port. List every name the services are reached by, internal
+  port, only that port. A browser leaves the default port out of `Host`, so
+  `name:80` and `name:443` also match a `Host` with no port. List every name the services are reached by, internal
   ones included: barkloader posts job results to the api at `WOOFX3_API_URL`,
   and health checks usually use `127.0.0.1`. Behind the edge, the Host is the
   public one, since Caddy passes it through.
 - **Origins** are `scheme://host[:port]`, compared as web origins, so
   `https://app.example` and `https://app.example:443` are the same entry.
   `scheme://host:*` matches that scheme and host on any port (for example
-  `http://localhost:*` for local dev servers). The literal `null` matches the
+  `http://localhost:*` for local dev servers). A scheme the URL standard gives
+  no origin to, such as `tauri://localhost` from the desktop app's webview on
+  macOS and Linux, is compared as `scheme://host[:port]`, case-insensitively;
+  on Windows the webview sends `http://tauri.localhost`. The literal `null` matches the
   opaque origin sandboxed frames send, and nothing else matches it. There is
   no subdomain wildcard.
 
@@ -178,10 +183,10 @@ For a desktop engine on loopback, for example:
 ```bash
 # both services
 WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
-# api
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*
+# api (the tauri origins admit the desktop app's webview)
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost
 # sceneManager
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,null
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
 ```
 
 ## Client registration
