@@ -83,12 +83,14 @@ describe("SceneSync ops", () => {
     expect(h.applied).toHaveLength(1);
   });
 
-  it("asks the server for the draft instead while the editor previews one", async () => {
+  it("applies the next ops locally while the editor previews, as its draft, without asking the server", async () => {
     const h = harness({ draftPlacements: () => [{ id: "a" }] });
     h.sync.applyOps({ seq: 4, ops: [], meta: {} } as never);
     await Bun.sleep(0);
-    expect(h.requests[0]!.url).toBe("/scene/s1/draft-config");
+    expect(h.requests).toHaveLength(0);
+    expect(h.applied).toHaveLength(1);
     expect(h.applied[0]!.fromDraft).toBe(true);
+    expect(h.sync.document()?.seq).toBe(4);
   });
 
   it("resyncs when the stream opens at a sequence it does not have", async () => {
