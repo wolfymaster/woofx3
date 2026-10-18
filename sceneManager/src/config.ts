@@ -83,6 +83,20 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
   }
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
+    throw new Error(
+      `sceneManager: port must be a whole number from 0 to 65535 (WOOFX3_SCENE_MANAGER_PORT), got ${config.port}`
+    );
+  }
+  // Every scene, token and delivery is read through the db proxy: without it
+  // the service would start and then fail every request.
+  try {
+    new URL(config.databaseProxyUrl);
+  } catch {
+    throw new Error(
+      `sceneManager: databaseProxyUrl must be a valid URL (WOOFX3_DATABASE_PROXY_URL), got "${config.databaseProxyUrl}"`
+    );
+  }
   // The shim is a build output (`bun run build:shim`), not a tracked file, so
   // a checkout or release that skipped that step would serve widget frames
   // that 404 on it.
