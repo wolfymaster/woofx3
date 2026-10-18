@@ -103,8 +103,7 @@ up to half. OBS can be started in any order. It logs only the changes
 reconnecting in the background`, `Connected to OBS`, `Reconnected to OBS`), so
 an evening with OBS closed is one line, not one per retry.
 
-Each new session reloads the scene list the legacy `slobs` bridge uses. OBS
-browser sources pointing at the scene manager are refreshed on the first
+OBS browser sources pointing at the scene manager are refreshed on the first
 session after the scene manager starts, to recover overlays after a restart
 of the scene manager itself. They are not refreshed after a reconnect, because
 their event streams are still open and a refresh would cut off whatever is
@@ -222,9 +221,3 @@ immediate whether OBS is up or not:
 A scene manager that does not answer within 3 seconds comes back from the api
 as `{ "state": "unanswered", "failure": null, "address": null }`. That says
 nothing about OBS itself.
-
-## The legacy `slobs` subject
-
-The chatbot's `scene_change` and `source_change` commands still arrive on
-`slobs` and are handled as before, fire-and-forget. They share the connection
-but not the contract: nothing reports whether they worked.

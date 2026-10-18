@@ -29,8 +29,8 @@ describe("reserved subjects", () => {
     expect(publishedEventTypeProblem("custom.*")).toContain("wildcard");
     expect(publishedEventTypeProblem("custom.\u00a0event")).toContain("whitespace");
     expect(publishedEventTypeProblem("custom.\u0007event")).toContain("control character");
-    expect(publishedEventTypeProblem("reward")).not.toBeNull();
-    expect(publishedEventTypeProblem("rewards.granted")).toBeNull();
+    expect(publishedEventTypeProblem("message.send")).not.toBeNull();
+    expect(publishedEventTypeProblem("message.sent")).toBeNull();
     expect(publishedEventTypeProblem("badge.awarded")).toBeNull();
     expect(publishedEventTypeProblem("stream.started.notification")).toBeNull();
   });
