@@ -253,7 +253,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowCommandRun), func(msg natsclient.Msg) {
 		a.handleCommandRunEvent(msg)
 	}); err != nil {
-		a.logger.Error("Failed to subscribe to command run events", "error", err)
+		return fmt.Errorf("subscribe to %s: %w", cloudevents.SubjectWorkflowCommandRun, err)
 	}
 
 	// "Run these actions now", from a caller that has actions and no workflow.
