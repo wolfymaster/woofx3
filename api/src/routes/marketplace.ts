@@ -7,9 +7,9 @@ import type {
 } from "@woofx3/api";
 import type { MarketplaceClient, MarketplaceDownload, MarketplaceListing } from "../marketplace-client";
 import {
+  type ModuleArchiveContents,
   manifestLocalEndpoints,
   manifestPermissions,
-  type ModuleArchiveContents,
   readModuleArchive,
   unapprovedIds,
 } from "../module-archive";

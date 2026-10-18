@@ -1,3 +1,5 @@
+import type { EngineHosting } from "./api";
+
 /**
  * Engine capability ids: the features this engine build supports that a
  * client may need to detect before using. `getEngineCapabilities()` returns
@@ -44,6 +46,12 @@ export const ENGINE_CAPABILITIES = {
    * taking the event types to push.
    */
   eventsLog: "events.log",
+  /**
+   * This engine runs on the streamer's own machine under the desktop app
+   * (`getEngineInfo().hosting` is `local`). Advertised only by such an engine;
+   * see HOSTING_ENGINE_CAPABILITIES.
+   */
+  engineLocalMode: "engine.localMode",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
@@ -155,9 +163,26 @@ export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = n
   ENGINE_CAPABILITIES.scenesEditorSessions,
 ]);
 
-/** The capability ids this build supports, sorted and unique. */
-export function supportedEngineCapabilities(): EngineCapability[] {
+/**
+ * Ids that describe how an engine is run rather than what its build can do,
+ * each advertised only by an engine whose deployment declares that hosting
+ * (`EngineInfo.hosting`).
+ */
+export const HOSTING_ENGINE_CAPABILITIES: ReadonlyMap<EngineCapability, EngineHosting> = new Map<
+  EngineCapability,
+  EngineHosting
+>([[ENGINE_CAPABILITIES.engineLocalMode, "local"]]);
+
+/**
+ * The capability ids this engine advertises, sorted and unique: every id its
+ * build supports, plus the ids for `hosting` when the deployment declares one.
+ */
+export function supportedEngineCapabilities(hosting: EngineHosting | null = null): EngineCapability[] {
   return [...new Set(Object.values(ENGINE_CAPABILITIES))]
     .filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id))
+    .filter((id) => {
+      const required = HOSTING_ENGINE_CAPABILITIES.get(id);
+      return required === undefined || required === hosting;
+    })
     .sort();
 }
