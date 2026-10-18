@@ -16,7 +16,7 @@ The types are in `shared/clients/typescript/api/api.ts`. The routes are in `api/
 
 | Key (`.woofx3.json` / variable) | Default | Meaning |
 |---|---|---|
-| `marketplaceUrl` / `WOOFX3_MARKETPLACE_URL` | `https://marketplace.woofx3.tv` | The marketplace API. Blank turns the marketplace off: these three methods and the [catalog reads](./marketplace-catalog.md) then refuse every call. |
+| `marketplaceUrl` / `WOOFX3_MARKETPLACE_URL` | `https://marketplace.woofx3.tv` | The marketplace API. Blank turns marketplace installs off, and the three methods then refuse every call. |
 | `marketplaceDownloadHosts` / `WOOFX3_MARKETPLACE_DOWNLOAD_HOSTS` | `f35f44146e8730089a795954e32183e8.r2.cloudflarestorage.com` | Comma-separated hosts that archive downloads may come from. A bare host means HTTPS on the default port. An entry with a scheme (`http://127.0.0.1:9000`) is an exact origin, for a local marketplace. |
 
 The default host is the Cloudflare R2 account endpoint where the public marketplace presigns its downloads. A marketplace with a different `R2_ACCOUNT_ID` needs its own host here. Both values are checked at startup, so a malformed one stops the api from starting instead of failing the first install.
@@ -25,7 +25,7 @@ A blank value never overrides a non-blank one from a lower source (see [Runtime]
 
 ## Buyer tokens
 
-The engine has no marketplace credential of its own. A caller acting for a buyer passes the buyer token that the dashboard minted. An install sends it as a bearer token on `POST /catalog/{id}/acquire`, `GET /modules/{id}/download` and `GET /catalog/{id}/bundle`, and reads the listing itself (`GET /catalog/{id}`) anonymously. The [catalog reads](./marketplace-catalog.md) forward it on the browse routes and the quote. The engine never sends the token on any other route, because the marketplace answers a buyer token there with 401, and it never parses, logs or stores the token.
+The engine has no marketplace credential of its own. A caller acting for a buyer passes the buyer token that the dashboard minted. The engine sends it as a bearer token on the three routes that accept one: `POST /catalog/{id}/acquire`, `GET /modules/{id}/download` and `GET /catalog/{id}/bundle`. It never sends the token on any other route, because the marketplace answers a buyer token there with 401. The engine never parses, logs or stores the token.
 
 Without a token, the engine reads the listing and downloads anonymously. That only works for a free, public listing, and the engine does not claim the listing for anyone. A paid listing's download then fails with the marketplace's 401 or 403.
 

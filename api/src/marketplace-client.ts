@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "@woofx3/api";
 import { fetchModuleArchive, MODULE_ARCHIVE_FETCH_TIMEOUT_MS, MODULE_ARCHIVE_MAX_BYTES } from "./module-install";
 
 /**
@@ -8,12 +7,10 @@ import { fetchModuleArchive, MODULE_ARCHIVE_FETCH_TIMEOUT_MS, MODULE_ARCHIVE_MAX
  *
  * The engine holds no marketplace credential of its own. A caller acting for
  * a buyer passes that buyer's token, which this client forwards as an opaque
- * bearer. The marketplace accepts one on the install routes (acquire, quote,
- * module download, bundle) and on the catalog browse reads (search, counts,
- * a listing, an author), where a token with the dev claim reveals dev-tier
- * listings. On any other route it answers a buyer token with 401, so the
- * client never sends one there. Without a token every request is anonymous,
- * which is enough for a free, public listing.
+ * bearer on the routes the marketplace accepts one on (acquire, module
+ * download, bundle) and never on any other: the marketplace answers a buyer
+ * token on any other route with 401. Without a token every request is
+ * anonymous, which is enough for a free, public listing.
  */
 
 /** The public marketplace the engine uses unless `marketplaceUrl` says otherwise. */
@@ -72,144 +69,18 @@ export type MarketplaceAcquireResult = { status: "entitled"; source: string } | 
 /**
  * A marketplace API answer that was not a 2xx. `code` is the marketplace's
  * error envelope code (`{"error": {"code", "message"}}`), or empty when the
- * body was not one, and `detail` is the envelope's message, which the
- * marketplace writes for people, or empty.
+ * body was not one.
  */
 export class MarketplaceError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly detail: string;
 
-  constructor(message: string, status: number, code: string, detail = "") {
+  constructor(message: string, status: number, code: string) {
     super(message);
     this.name = "MarketplaceError";
     this.status = status;
     this.code = code;
-    this.detail = detail;
   }
-}
-
-/** The marketplace did not answer within the request timeout. */
-export class MarketplaceTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "MarketplaceTimeoutError";
-  }
-}
-
-/** The request never reached the marketplace: DNS, a refused connection, TLS, or a redirect. */
-export class MarketplaceUnreachableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "MarketplaceUnreachableError";
-  }
-}
-
-const CATALOG_QUERY_KEYS: ReadonlySet<string> = new Set<keyof MarketplaceCatalogQuery>([
-  "q",
-  "type",
-  "category",
-  "author",
-  "featured",
-  "sort",
-  "limit",
-  "offset",
-]);
-
-const AUTHOR_QUERY_KEYS: ReadonlySet<string> = new Set<keyof MarketplaceAuthorQuery>(["limit", "offset"]);
-
-/**
- * Checks a query's keys against `allowed` and each value's shape, so that a
- * caller can only ever send the marketplace the parameters it reads. An
- * unknown key is refused rather than dropped, for the reason the marketplace
- * refuses an unknown `type`: a misspelt filter silently ignored returns the
- * whole catalog and looks like working software.
- */
-function queryObject(caller: string, query: unknown, allowed: ReadonlySet<string>): Record<string, unknown> {
-  if (query === undefined || query === null) {
-    return {};
-  }
-  if (typeof query !== "object" || Array.isArray(query)) {
-    throw new Error(`${caller}: query must be an object`);
-  }
-  const unknown = Object.keys(query).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    throw new Error(
-      `${caller}: unknown query parameter ${unknown.map((key) => JSON.stringify(key)).join(", ")}; expected ${[...allowed].join(", ")}`
-    );
-  }
-  return query as Record<string, unknown>;
-}
-
-function optionalString(caller: string, field: string, value: unknown): string | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    throw new Error(`${caller}: ${field} must be a string`);
-  }
-  return value === "" ? undefined : value;
-}
-
-function optionalInteger(caller: string, field: string, value: unknown): number | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new Error(`${caller}: ${field} must be an integer`);
-  }
-  return value;
-}
-
-function setParam(params: URLSearchParams, key: string, value: string | number | undefined): void {
-  if (value !== undefined) {
-    params.set(key, String(value));
-  }
-}
-
-/**
- * `GET /catalog`'s query string for `query`. Values are checked for shape
- * only; whether a `type`, `sort` or page size is acceptable is the
- * marketplace's call, and it refuses one that is not with 400.
- */
-export function catalogSearchParams(caller: string, query: unknown): URLSearchParams {
-  const raw = queryObject(caller, query, CATALOG_QUERY_KEYS);
-  const params = new URLSearchParams();
-  setParam(params, "q", optionalString(caller, "q", raw.q));
-  if (raw.type !== undefined && raw.type !== null) {
-    if (!Array.isArray(raw.type) || !raw.type.every((entry) => typeof entry === "string" && entry !== "")) {
-      throw new Error(`${caller}: type must be an array of listing types`);
-    }
-    setParam(params, "type", raw.type.length > 0 ? raw.type.join(",") : undefined);
-  }
-  setParam(params, "category", optionalString(caller, "category", raw.category));
-  setParam(params, "author", optionalString(caller, "author", raw.author));
-  if (raw.featured !== undefined && raw.featured !== null) {
-    if (typeof raw.featured !== "boolean") {
-      throw new Error(`${caller}: featured must be a boolean`);
-    }
-    // The marketplace reads `featured` as a filter switch, so false is sent
-    // as no parameter at all: that is what not filtering means.
-    setParam(params, "featured", raw.featured ? "true" : undefined);
-  }
-  setParam(params, "sort", optionalString(caller, "sort", raw.sort));
-  setParam(params, "limit", optionalInteger(caller, "limit", raw.limit));
-  setParam(params, "offset", optionalInteger(caller, "offset", raw.offset));
-  return params;
-}
-
-/** `GET /authors/{slug}`'s query string for `query`: a page, nothing else. */
-export function authorSearchParams(caller: string, query: unknown): URLSearchParams {
-  const raw = queryObject(caller, query, AUTHOR_QUERY_KEYS);
-  const params = new URLSearchParams();
-  setParam(params, "limit", optionalInteger(caller, "limit", raw.limit));
-  setParam(params, "offset", optionalInteger(caller, "offset", raw.offset));
-  return params;
-}
-
-function withQuery(path: string, params: URLSearchParams): string {
-  const encoded = params.toString();
-  return encoded === "" ? path : `${path}?${encoded}`;
 }
 
 export interface MarketplaceClientOptions {
@@ -276,47 +147,7 @@ export class MarketplaceClient {
     this.maxArchiveBytes = options.maxArchiveBytes ?? MODULE_ARCHIVE_MAX_BYTES;
   }
 
-  // ---------- catalog reads, passed through unchanged ----------
-  //
-  // These return the marketplace's JSON exactly as it arrived. A caller that
-  // already parses the marketplace's answers parses these the same way, so
-  // moving its reads behind the engine changes where they come from and
-  // nothing else.
-
-  /** `GET /catalog`: one page of a search across every listing type. */
-  async searchCatalog(params: URLSearchParams, buyerToken?: string): Promise<unknown> {
-    return await this.request("GET", withQuery("/catalog", params), { bearer: buyerToken });
-  }
-
-  /** `GET /catalog/counts`: how many listings of each type there are. */
-  async catalogCounts(buyerToken?: string): Promise<unknown> {
-    return await this.request("GET", "/catalog/counts", { bearer: buyerToken });
-  }
-
-  /** `GET /catalog/{id}`: one listing with everything its page shows. */
-  async catalogListing(listingId: string, buyerToken?: string): Promise<unknown> {
-    return await this.request("GET", `/catalog/${encodeURIComponent(listingId)}`, { bearer: buyerToken });
-  }
-
-  /** `GET /authors/{slug}`: an author's profile and one page of their listings. */
-  async author(slug: string, params: URLSearchParams, buyerToken?: string): Promise<unknown> {
-    return await this.request("GET", withQuery(`/authors/${encodeURIComponent(slug)}`, params), {
-      bearer: buyerToken,
-    });
-  }
-
-  /**
-   * `GET /catalog/{id}/quote`: what the token's buyer must do to hold the
-   * listing. No `buyerRef` is sent: the token names the buyer, and the
-   * marketplace refuses a `buyerRef` that names anyone else.
-   */
-  async quote(listingId: string, buyerToken: string): Promise<unknown> {
-    return await this.request("GET", `/catalog/${encodeURIComponent(listingId)}/quote`, { bearer: buyerToken });
-  }
-
-  // ---------- install ----------
-
-  /** One listing, read anonymously, with the fields an install needs. */
+  /** One listing. Read anonymously: the marketplace accepts no buyer token here. */
   async getListing(listingId: string): Promise<MarketplaceListing> {
     const payload = await this.request("GET", `/catalog/${encodeURIComponent(listingId)}`);
     const raw = asObject(asObject(payload).listing);
@@ -450,36 +281,15 @@ export class MarketplaceClient {
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
-    const timedOut = () =>
-      new MarketplaceTimeoutError(`Marketplace ${method} ${path} timed out after ${this.requestTimeoutMs}ms`);
     try {
-      let res: Response;
-      try {
-        res = await fetch(`${this.baseUrl}${path}`, {
-          method,
-          headers,
-          body: options.body === undefined ? undefined : JSON.stringify(options.body),
-          signal: controller.signal,
-          redirect: "error",
-        });
-      } catch (err) {
-        // A rejection before any response is a transport failure, whatever
-        // the runtime names it: Node throws a TypeError, Bun its own errors.
-        if (controller.signal.aborted) {
-          throw timedOut();
-        }
-        const reason = err instanceof Error ? err.message : String(err);
-        throw new MarketplaceUnreachableError(`Marketplace ${method} ${path} could not be reached: ${reason}`);
-      }
-      let text: string;
-      try {
-        text = await res.text();
-      } catch (err) {
-        if (controller.signal.aborted) {
-          throw timedOut();
-        }
-        throw err;
-      }
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: controller.signal,
+        redirect: "error",
+      });
+      const text = await res.text();
       if (!res.ok) {
         throw marketplaceError(method, path, res.status, text);
       }
@@ -488,6 +298,11 @@ export class MarketplaceClient {
       } catch {
         throw new Error(`Marketplace ${method} ${path} answered with a body that is not JSON`);
       }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error(`Marketplace ${method} ${path} timed out after ${this.requestTimeoutMs}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -509,7 +324,6 @@ function marketplaceError(method: string, path: string, status: number, body: st
   return new MarketplaceError(
     `Marketplace ${method} ${path} failed with ${status}${reason ? ` (${reason})` : ""}`,
     status,
-    code,
-    detail
+    code
   );
 }
