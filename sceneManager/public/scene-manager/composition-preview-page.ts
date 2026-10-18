@@ -26,6 +26,7 @@ import {
 import { AssetCache } from "./asset-loader";
 import { replaceMediaUrls } from "../../contract/media-url";
 import { PAGE_CLOCK } from "./page-clock";
+import { startSessionRefresh } from "./session-refresh";
 import type { WidgetBridge } from "./widget-bridge";
 import { mountWidgetFrame } from "./widget-frame";
 
@@ -33,8 +34,17 @@ import { mountWidgetFrame } from "./widget-frame";
 const FRAMES_PATH = "/preview/composition/frames";
 const REFRESH_PATH = "/preview/composition/session/refresh";
 
-/** The session cookie lives 60 s; refreshed well before. */
+/** The session cookie lives 60 s (`SESSION_TOKEN_TTL_SECONDS`); renewed well before. */
 const REFRESH_INTERVAL_MS = 50_000;
+/** A renewal that has not answered in this long counts as failed; the next tick tries again. */
+const REFRESH_TIMEOUT_MS = 10_000;
+
+/**
+ * What a load reports once the page's session has lapsed: the page cannot
+ * mint another itself (the token it was opened with is single-use and
+ * short-lived), so the editor has to open the preview again.
+ */
+export const SESSION_EXPIRED_DETAIL = "the preview session has expired; reopen the alert editor to start a new one";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -79,22 +89,38 @@ export function parseFrameResolution(body: unknown): FrameResolution {
   return { widgets, problems };
 }
 
-async function resolveFrames(doc: CompositionDocument): Promise<FrameResolution> {
-  const widgets = Object.entries(doc.widgets).map(([id, placement]) => ({
-    id,
-    widget: placement.widget,
-    settings: placement.settings,
-  }));
-  const response = await fetch(FRAMES_PATH, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ widgets }),
-  });
-  if (!response.ok) {
-    throw new Error(`the engine refused to frame the widgets (${response.status})`);
-  }
-  return parseFrameResolution(await response.json());
+/**
+ * How a load asks the engine to frame its widgets. A refusal of the session
+ * (401), or a renewal already refused, is reported as the session having
+ * expired: the one thing the editor can act on.
+ */
+export function createFrameResolver(
+  fetchFn: (url: string, init: RequestInit) => Promise<Response>,
+  sessionLapsed: () => boolean
+): (doc: CompositionDocument) => Promise<FrameResolution> {
+  return async (doc) => {
+    if (sessionLapsed()) {
+      throw new Error(SESSION_EXPIRED_DETAIL);
+    }
+    const widgets = Object.entries(doc.widgets).map(([id, placement]) => ({
+      id,
+      widget: placement.widget,
+      settings: placement.settings,
+    }));
+    const response = await fetchFn(FRAMES_PATH, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ widgets }),
+    });
+    if (response.status === 401) {
+      throw new Error(SESSION_EXPIRED_DETAIL);
+    }
+    if (!response.ok) {
+      throw new Error(`the engine refused to frame the widgets (${response.status})`);
+    }
+    return parseFrameResolution(await response.json());
+  };
 }
 
 function mountFrame(
@@ -194,6 +220,7 @@ function main(): void {
   // sent one; the first report (`ready`) says only that the page is here.
   let parentOrigin: string | null = null;
   let canvas: { width: number; height: number } | null = null;
+  let sessionLapsed = false;
 
   const fitStage = (): void => {
     if (canvas === null) {
@@ -213,7 +240,10 @@ function main(): void {
       fitStage();
     },
     baseClock: PAGE_CLOCK,
-    resolveFrames,
+    resolveFrames: createFrameResolver(
+      (url, init) => fetch(url, init),
+      () => sessionLapsed
+    ),
     mountFrame: (slot, spec, facts) => mountFrame(bridges, assets, slot, spec, facts),
     post: (report: PreviewReport) => window.parent.postMessage(report, parentOrigin ?? "*"),
   });
@@ -233,12 +263,22 @@ function main(): void {
   });
   window.addEventListener("resize", fitStage);
 
-  setInterval(() => {
-    void fetch(REFRESH_PATH, { method: "POST", credentials: "same-origin" }).catch(() => {
-      // The next load reports the engine as unreachable; the frames already
-      // mounted keep playing without the session.
-    });
-  }, REFRESH_INTERVAL_MS);
+  // Renewed as an overlay's session is. A renewal that fails for any other
+  // reason is tried again on the next tick; the frames already mounted keep
+  // playing either way, and only the next load needs the session.
+  startSessionRefresh({
+    refresh: () =>
+      fetch(REFRESH_PATH, {
+        method: "POST",
+        credentials: "same-origin",
+        signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
+      }),
+    onHealth: () => {},
+    onExpired: () => {
+      sessionLapsed = true;
+    },
+    intervalMs: REFRESH_INTERVAL_MS,
+  });
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {

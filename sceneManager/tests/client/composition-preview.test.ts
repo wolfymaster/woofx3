@@ -20,7 +20,11 @@ import {
   type PreviewFrameFacts,
   type PreviewFrameSpec,
 } from "../../public/scene-manager/composition-preview";
-import { parseFrameResolution } from "../../public/scene-manager/composition-preview-page";
+import {
+  createFrameResolver,
+  parseFrameResolution,
+  SESSION_EXPIRED_DETAIL,
+} from "../../public/scene-manager/composition-preview-page";
 import { SWAP_TIMEOUT_MS } from "../../public/scene-manager/frame-swap";
 import type { SettingsReads } from "../../public/scene-manager/scene-update";
 
@@ -665,5 +669,38 @@ describe("parseFrameResolution", () => {
       problems: [{ kind: "unknown-widget", id: "d" }],
     });
     expect(() => parseFrameResolution({})).toThrow();
+  });
+});
+
+describe("createFrameResolver", () => {
+  const doc = {
+    layout: { width: 100, height: 100 },
+    widgets: { a: { widget: "woofx3:widget:text", settings: {} } },
+    behaviors: {},
+  } as never;
+  const answering = (response: Response) => {
+    const calls: string[] = [];
+    return { calls, fetchFn: async (url: string) => (calls.push(url), response) };
+  };
+
+  it("reads the engine's framing answer", async () => {
+    const { fetchFn } = answering(
+      Response.json({ widgets: { a: { frameUrl: "/frames/woofx3/text?v=1" } }, problems: [] })
+    );
+    const resolution = await createFrameResolver(fetchFn, () => false)(doc);
+    expect(Object.keys(resolution.widgets)).toEqual(["a"]);
+  });
+
+  it("says the session expired when the engine refuses it, or when a renewal already was", async () => {
+    const refused = answering(new Response(null, { status: 401 }));
+    await expect(createFrameResolver(refused.fetchFn, () => false)(doc)).rejects.toThrow(SESSION_EXPIRED_DETAIL);
+    const lapsed = answering(Response.json({ widgets: {}, problems: [] }));
+    await expect(createFrameResolver(lapsed.fetchFn, () => true)(doc)).rejects.toThrow(SESSION_EXPIRED_DETAIL);
+    expect(lapsed.calls).toEqual([]);
+  });
+
+  it("names any other refusal by its status", async () => {
+    const { fetchFn } = answering(new Response(null, { status: 503 }));
+    await expect(createFrameResolver(fetchFn, () => false)(doc)).rejects.toThrow("(503)");
   });
 });
