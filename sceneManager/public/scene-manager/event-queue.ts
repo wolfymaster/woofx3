@@ -179,6 +179,11 @@ class InstanceQueue {
     this.pump();
   }
 
+  /** The event ids this queue holds: waiting, or dispatched and not yet completed. */
+  held(): string[] {
+    return [...this.pending.map((item) => item.eventId), ...this.inFlight.keys()];
+  }
+
   /** Number of items neither dispatched nor completed — diagnostic use. */
   size(): number {
     return this.pending.length + this.inFlight.size;
@@ -295,6 +300,21 @@ export class EventQueueManager {
   /** Server-side cancellation of deliveries to one instance. */
   cancel(instanceId: string, eventIds: string[]): void {
     this.current.get(instanceId)?.queue.cancel(eventIds);
+  }
+
+  /**
+   * A new stream's open deliveries, by instance: every event a queue holds
+   * that is not among its instance's is cancelled, as a cancel frame would
+   * have, since the server closed it while this page could not hear.
+   */
+  retainOpen(open: Readonly<Record<string, readonly string[]>>): void {
+    for (const [instanceId, { queue }] of this.current) {
+      const keep = new Set(open[instanceId] ?? []);
+      const closed = queue.held().filter((eventId) => !keep.has(eventId));
+      if (closed.length > 0) {
+        queue.cancel(closed);
+      }
+    }
   }
 
   /** The widget behind `registration` finished `eventId`. */

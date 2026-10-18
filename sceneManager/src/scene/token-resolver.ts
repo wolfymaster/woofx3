@@ -48,6 +48,13 @@ export function maskToken(token: string): string {
  * The NATS subscription on `db.overlay_token.updated.*` calls
  * `invalidateAll()` to poison the cache ahead of TTL expiry.
  */
+/**
+ * The most tokens the cache holds. Every distinct token presented is cached,
+ * the unknown ones included, so without a bound a stream of made-up tokens
+ * would grow it for as long as the process runs.
+ */
+export const OVERLAY_TOKEN_CACHE_MAX = 1024;
+
 export class OverlayTokenResolver {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly ttlMs: number;
@@ -91,8 +98,33 @@ export class OverlayTokenResolver {
 
     const ok = response.status?.code === "OK" && !!response.sceneId;
     const value: ResolvedOverlayToken | null = ok ? { sceneId: response.sceneId } : null;
-    this.cache.set(token, { value, expiresAt: this.now() + this.ttlMs });
+    this.remember(token, { value, expiresAt: this.now() + this.ttlMs });
     return value;
+  }
+
+  /**
+   * Cache `entry`, newest last. Over the bound, expired entries go first and
+   * then the oldest, so the tokens of open overlays, looked up again every
+   * time their sessions re-verify, are the ones kept.
+   */
+  private remember(token: string, entry: CacheEntry): void {
+    this.cache.delete(token);
+    this.cache.set(token, entry);
+    if (this.cache.size <= OVERLAY_TOKEN_CACHE_MAX) {
+      return;
+    }
+    const now = this.now();
+    for (const [key, cached] of this.cache) {
+      if (cached.expiresAt <= now) {
+        this.cache.delete(key);
+      }
+    }
+    for (const key of this.cache.keys()) {
+      if (this.cache.size <= OVERLAY_TOKEN_CACHE_MAX) {
+        break;
+      }
+      this.cache.delete(key);
+    }
   }
 
   /**

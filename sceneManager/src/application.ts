@@ -8,6 +8,7 @@ import { createMessageBus } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { SceneManagerRuntimeConfig } from "./config";
 import { DeliveryStore } from "./events/delivery-store";
+import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { GoogleFontCache } from "./fonts/google-font-cache";
 import { createHttpServer } from "./http";
 import { initSubscriptions } from "./nats-subscriptions";
@@ -146,6 +147,12 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     logger.info("sceneManager listening", { port: this.server.port, bindHost: runtimeConfig.bindHost, bootId });
 
     obs.start();
+
+    // Placements removed while this process was down left deliveries no page
+    // will queue; checked once the server is up, so it never holds serving back.
+    for (const sceneId of deliveryStore.scenesWithOpenDeliveries()) {
+      void closeDeliveriesToRemovedPlacements(sceneId, { host, deliveryStore, logger });
+    }
   }
 
   /** The port the server is listening on, once it is; the one the OS chose when configured with 0. */

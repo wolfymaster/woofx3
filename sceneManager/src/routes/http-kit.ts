@@ -2,7 +2,7 @@
 // the scene session check, and request bodies read under a size limit.
 
 import { readSessionCookie } from "../scene/session-cookie";
-import type { SessionClaims, SessionTokenService } from "../scene/session-token";
+import type { OverlaySession, SessionTokenService } from "../scene/session-token";
 
 /** Responses carrying session-scoped or live state are never cached. */
 export const NO_STORE: Readonly<Record<string, string>> = Object.freeze({ "Cache-Control": "no-store" });
@@ -26,7 +26,7 @@ export async function requireSceneSession(
   req: Request,
   sceneId: string,
   tokens: Pick<SessionTokenService, "verify">
-): Promise<SessionClaims | null> {
+): Promise<OverlaySession | null> {
   const cookie = readSessionCookie(req, sceneId);
   const claims = cookie ? await tokens.verify(cookie) : null;
   return claims !== null && claims.sceneId === sceneId ? claims : null;
@@ -49,6 +49,8 @@ export const BODY_LIMITS = {
   status: 64 * 1024,
   /** A scene's placements: a few kilobytes in practice. */
   placements: 1024 * 1024,
+  /** A session refresh's `{ token }`. */
+  refresh: 4 * 1024,
 } as const;
 
 export type BodyRead<T> = { ok: true; value: T } | { ok: false; response: Response };

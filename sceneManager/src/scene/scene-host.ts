@@ -218,6 +218,11 @@ export class OverlayHost {
    * Resolve a token to its scene state, or null for invalid/revoked/
    * unknown tokens and for any load failure (uniform — no oracle).
    */
+  /** The scene an overlay token opens, or null when it opens none (unknown, revoked, or the db unreachable). */
+  async sceneIdOfToken(token: string): Promise<string | null> {
+    return (await this.resolver.resolve(token))?.sceneId ?? null;
+  }
+
   async loadScene(token: string): Promise<OverlaySceneState | null> {
     const resolved = await this.resolver.resolve(token);
     if (!resolved) {
@@ -285,6 +290,38 @@ export class OverlayHost {
       draft: await framed(draft),
       editorStateJson: s.editorStateJson === "" ? null : s.editorStateJson,
     };
+  }
+
+  /**
+   * The id of every placement stored in either version of a scene, whether
+   * or not it parses; null when there is no such scene, or a version's
+   * placements are not a list to read ids from. Throws when the scene cannot
+   * be read.
+   */
+  async placementIds(sceneId: string): Promise<Set<string> | null> {
+    const s = await this.fetchRow(sceneId);
+    if (s === null) {
+      return null;
+    }
+    const ids = new Set<string>();
+    for (const json of [s.widgetsJson, s.hasDraft ? s.draftWidgetsJson : ""]) {
+      let stored: unknown;
+      try {
+        stored = JSON.parse(json || "[]");
+      } catch {
+        return null;
+      }
+      if (!Array.isArray(stored)) {
+        return null;
+      }
+      for (const placement of stored) {
+        const id = (placement as { id?: unknown } | null)?.id;
+        if (typeof id === "string") {
+          ids.add(id);
+        }
+      }
+    }
+    return ids;
   }
 
   /** A scene's row, or null when there is none; throws when it cannot be read. */

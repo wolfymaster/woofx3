@@ -29,19 +29,29 @@ export interface CancelFrame {
   eventIds: string[];
 }
 
+/** Every delivery still open for the scene when a stream opened, as event ids by placement. */
+export interface OpenSetFrame {
+  deliveries: Record<string, string[]>;
+}
+
 /**
  * Every frame the stream carries:
  * - `hello` opens every stream: the server process's boot id, so a page can
  *   tell a restart from a resumed stream, and the sequence each version of
  *   the scene is at, so a page that missed ops resyncs.
  * - `delivery`, `module-state`, `scene-ops` and `cancel` as their types say.
+ * - `open-set` follows the replay of open deliveries on a new stream. A
+ *   cancel is not recorded for a page to ask for again, so one sent while
+ *   a page's stream was down is lost; the page drops whatever it holds that
+ *   is not in this set instead.
  */
 export type StreamFrame =
   | { kind: "hello"; bootId: string; seq: number; draftSeq: number }
   | { kind: "delivery"; frame: DeliveryFrame }
   | { kind: "module-state"; frame: ModuleStateFrame }
   | { kind: "scene-ops"; event: SceneOpsEvent }
-  | { kind: "cancel"; frame: CancelFrame };
+  | { kind: "cancel"; frame: CancelFrame }
+  | { kind: "open-set"; frame: OpenSetFrame };
 
 /** A comment line: keeps an idle stream from being reaped, and is read as nothing. */
 export const KEEPALIVE_FRAME = ": keepalive\n\n";
@@ -107,6 +117,20 @@ export function parseStreamFrame(rawEvent: string): StreamFrame | null {
         eventIds.every((id): id is string => typeof id === "string")
         ? { kind: "cancel", frame: { instanceId, eventIds } }
         : null;
+    }
+    case "open-set": {
+      const deliveries = parsed.deliveries;
+      if (typeof deliveries !== "object" || deliveries === null || Array.isArray(deliveries)) {
+        return null;
+      }
+      const byInstance: Record<string, string[]> = {};
+      for (const [instanceId, eventIds] of Object.entries(deliveries)) {
+        if (!Array.isArray(eventIds) || !eventIds.every((id): id is string => typeof id === "string")) {
+          return null;
+        }
+        byInstance[instanceId] = eventIds;
+      }
+      return { kind: "open-set", frame: { deliveries: byInstance } };
     }
     case "module-state":
       return typeof parsed.moduleId === "string" && typeof parsed.key === "string"

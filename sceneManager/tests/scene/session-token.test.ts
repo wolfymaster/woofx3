@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { SignJWT } from "jose";
 import {
   EDITOR_TOKEN_TTL_SECONDS,
   PREVIEW_TOKEN_TTL_SECONDS,
@@ -9,15 +10,25 @@ import {
 describe("SessionTokenService", () => {
   it("mints a token that verifies back to the same claims", async () => {
     const svc = new SessionTokenService("test-secret");
-    const token = await svc.mint({ sceneId: "scene-1" });
+    const token = await svc.mint({ sceneId: "scene-1", authAt: 1_700_000_000 });
     const claims = await svc.verify(token);
-    expect(claims).toEqual({ sceneId: "scene-1" });
+    expect(claims).toEqual({ sceneId: "scene-1", authAt: 1_700_000_000 });
+  });
+
+  it("reads a session minted before authAt existed as verified when it was issued", async () => {
+    const secret = "test-secret";
+    const legacy = await new SignJWT({ sceneId: "scene-1" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(1_700_000_123)
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(secret));
+    expect(await new SessionTokenService(secret).verify(legacy)).toEqual({ sceneId: "scene-1", authAt: 1_700_000_123 });
   });
 
   it("rejects a token signed with a different secret", async () => {
     const a = new SessionTokenService("secret-a");
     const b = new SessionTokenService("secret-b");
-    const token = await a.mint({ sceneId: "scene-1" });
+    const token = await a.mint({ sceneId: "scene-1", authAt: 0 });
     expect(await b.verify(token)).toBeNull();
   });
 
@@ -50,13 +61,13 @@ describe("SessionTokenService — editor tokens", () => {
 
   it("lets an editor token open the editor, and nothing else", async () => {
     const editor = await tokens.mintEditor({ sceneId: "s1" });
-    expect(await tokens.verifyEditor(editor)).toEqual({ sceneId: "s1" });
+    expect(await tokens.verifyEditor(editor)).toMatchObject({ sceneId: "s1" });
     expect(await tokens.verify(editor)).toBeNull();
   });
 
   it("never lets an overlay's session edit the scene", async () => {
-    const session = await tokens.mint({ sceneId: "s1" });
-    expect(await tokens.verify(session)).toEqual({ sceneId: "s1" });
+    const session = await tokens.mint({ sceneId: "s1", authAt: 5 });
+    expect(await tokens.verify(session)).toEqual({ sceneId: "s1", authAt: 5 });
     expect(await tokens.verifyEditor(session)).toBeNull();
   });
 });
@@ -80,7 +91,7 @@ describe("SessionTokenService — composition preview tokens", () => {
       expect(await tokens.verify(preview)).toBeNull();
       expect(await tokens.verifyEditor(preview)).toBeNull();
     }
-    for (const other of [await tokens.mint({ sceneId: "s1" }), await tokens.mintEditor({ sceneId: "s1" })]) {
+    for (const other of [await tokens.mint({ sceneId: "s1", authAt: 0 }), await tokens.mintEditor({ sceneId: "s1" })]) {
       expect(await tokens.verifyPreview(other)).toBe(false);
       expect(await tokens.verifyPreviewSession(other)).toBe(false);
     }

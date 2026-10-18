@@ -538,6 +538,7 @@ export function createOverlay(env: OverlayEnv): void {
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
+    onOpenSet: (frame) => queueManager.retainOpen(frame.deliveries),
     onConnectionChange: (connected) => status.set("stream", connected),
     // The scene changed. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.
@@ -561,8 +562,17 @@ export function createOverlay(env: OverlayEnv): void {
     },
   });
 
+  // The overlay token the page was opened with: a refresh carries it so the
+  // session can be verified again without reloading (routes/session.ts).
+  const overlayToken = new URLSearchParams(env.location.search).get("token") ?? "";
   startSessionRefresh({
-    refresh: () => fetchFn(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" }),
+    refresh: () =>
+      fetchFn(`${sceneBase}/session/refresh`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: overlayToken }),
+      }),
     onHealth: (healthy) => status.set("session", healthy),
     // Each page of the scene holds the same cookie and finds it expired on
     // its own next renewal, so this page reloads alone.
