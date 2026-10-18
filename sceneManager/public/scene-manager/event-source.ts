@@ -64,6 +64,9 @@ export interface SceneEventSourceOptions {
   reconnectMaxMs?: number;
   coordinator?: ReconnectCoordinator;
   random?: () => number;
+  /** Timers for the reconnect delay; the page's own by default, injectable so tests read the delays. */
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
 }
 
 export class SceneEventSource {
@@ -73,12 +76,14 @@ export class SceneEventSource {
   private readonly reconnectMaxMs: number;
   private readonly coordinator: ReconnectCoordinator;
   private readonly random: () => number;
+  private readonly setTimer: (fn: () => void, ms: number) => unknown;
+  private readonly cancelTimer: (handle: unknown) => void;
 
   private sink: SceneEventSink | null = null;
   private stopped = true;
   private everConnected = false;
   private reconnectAttempt = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: unknown = null;
   private abortController: AbortController | null = null;
 
   constructor(options: SceneEventSourceOptions) {
@@ -95,6 +100,8 @@ export class SceneEventSource {
     this.reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
     this.coordinator = options.coordinator ?? ALWAYS_PROBE;
     this.random = options.random ?? Math.random;
+    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    this.cancelTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
 
   start(sink: SceneEventSink): void {
@@ -223,7 +230,7 @@ export class SceneEventSource {
 
   private clearTimer(): void {
     if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
+      this.cancelTimer(this.reconnectTimer);
       this.reconnectTimer = null;
     }
   }
@@ -242,7 +249,7 @@ export class SceneEventSource {
     }
     const delay = this.nextDelayMs();
     this.reconnectAttempt += 1;
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = this.setTimer(() => {
       this.reconnectTimer = null;
       // Another overlay is the elected prober this round. Don't probe;
       // re-arm and re-check. Its success reaches us via onPeerConnected

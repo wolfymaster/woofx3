@@ -38,6 +38,21 @@ function startServer(state: { bootId: string; sessionValid: boolean; down: boole
   });
 }
 
+/**
+ * Wait until `condition` holds, failing after `timeoutMs`. The reconnect loop
+ * runs on real timers against a real server, so how long a step takes depends
+ * on how busy the machine is; a fixed sleep fails a correct run on a slow one.
+ */
+async function until(condition: () => boolean, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error("timed out waiting for the overlay to get there");
+    }
+    await Bun.sleep(2);
+  }
+}
+
 describe("overlay recovery across a sceneManager restart", () => {
   it("reloads when the server comes back with a new boot id", async () => {
     const state = { bootId: "boot-old", sessionValid: true, down: false };
@@ -63,13 +78,11 @@ describe("overlay recovery across a sceneManager restart", () => {
       },
     });
 
-    await Bun.sleep(30);
-    expect(bootIds).toContain("boot-old");
+    await until(() => bootIds.includes("boot-old"));
 
     // Restart with new code: same session still valid, different boot id.
     state.bootId = "boot-new";
-    await Bun.sleep(60);
-
+    await until(() => reloads === 1);
     expect(reloads).toBe(1);
     source.stop();
     server.stop(true);
@@ -102,8 +115,7 @@ describe("overlay recovery across a sceneManager restart", () => {
       },
     });
 
-    await Bun.sleep(30);
-    expect(connectedAtLeastOnce).toBe(true);
+    await until(() => connectedAtLeastOnce);
 
     // Outage longer than the 60s TTL, then a restart. The cookie the
     // client still holds is now expired.
@@ -113,7 +125,7 @@ describe("overlay recovery across a sceneManager restart", () => {
     state.sessionValid = false;
     state.bootId = "boot-new";
 
-    await Bun.sleep(60);
+    await until(() => sessionExpired === 1);
     expect(sessionExpired).toBe(1);
     source.stop();
     server.stop(true);

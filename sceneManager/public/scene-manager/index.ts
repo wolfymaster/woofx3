@@ -9,13 +9,9 @@
 // Disconnected banner from the SSE connection state.
 
 import { AlertWidget } from "./alert-widget";
-import { AssetCache, readAheadAssetPaths } from "./asset-loader";
-import {
-  createFrameLoadHandler,
-  WidgetBridge,
-  type WidgetBridgeCallbacks,
-  type WidgetStatusReportPayload,
-} from "./widget-bridge";
+import { AssetCache } from "./asset-loader";
+import type { WidgetBridge, WidgetBridgeCallbacks, WidgetStatusReportPayload } from "./widget-bridge";
+import { mountWidgetFrame } from "./widget-frame";
 import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "./event-queue";
 import { ackPath } from "../../contract/overlay-stream";
 import { AckBatcher, postAck } from "./ack-batcher";
@@ -74,15 +70,6 @@ const REFRESH_INTERVAL_MS = 50_000;
 // Adding a widget or changing a theme in the editor needs the server to
 // resolve the new frame; waiting for a pause asks it once.
 const DRAFT_SETTLE_MS = 400;
-
-function generateNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
 
 /**
  * A frame's URL with its placement in the fragment (see `WidgetPlacementBoot`):
@@ -157,7 +144,7 @@ function main(): void {
     return body.value ?? null;
   });
 
-  const assets = new AssetCache();
+  const assets = new AssetCache({ pageOrigin: location.origin });
 
   /** `moduleId` is the placement's, from the scene record, never the widget's claim. */
   function postStatus(instanceId: string, moduleId: string, report: WidgetStatusReportPayload): void {
@@ -229,7 +216,6 @@ function main(): void {
       element,
       sceneBase,
       bridges,
-      generateNonce,
       postStatus,
       assets,
       onFinished: (eventId) => {
@@ -283,96 +269,85 @@ function main(): void {
     swapping: boolean,
     onRendered: () => void
   ): Frame => {
-    const iframe = document.createElement("iframe");
-    iframe.className = "widget-frame";
-    if (swapping) {
-      iframe.style.opacity = "0";
-    }
-    // No allow-same-origin: the frame runs with an opaque origin, and
-    // trust is established entirely by postMessage source identity +
-    // the per-frame nonce, never by same-origin access.
-    iframe.setAttribute("sandbox", "allow-scripts");
-
-    const nonce = generateNonce();
     // This frame's event subscription and the queue it registered. A frame
     // swapped in registers its own; the placement's events follow the newest.
     let subscription: { subId: string; queue: QueueRegistration } | null = null;
-
-    const callbacks: WidgetBridgeCallbacks = {
-      // The module comes from the scene record, not from the module the
-      // widget names in its hello (see module-state.ts).
-      storage: {
-        get: (key) => moduleState.peek(instance.moduleId, key),
-        subscribe: (key) => moduleState.watch(instance.moduleId, key, storageTarget),
-        unsubscribe: (key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
-      },
-      onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
-      onAssetLoad: assets.scopedTo(instance.moduleId),
-      onEventsSubscribe: (subId, queue) => {
-        playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
-        const previous = subscription;
-        subscription = {
-          subId,
-          queue: queueManager.register(
-            instance.id,
-            queue,
-            (item) => bridge.sendEvent(subId, toWidgetEvent(item)),
-            // The widget never finished it. The page gives up on it, so the
-            // server must too: acknowledged as completed, or it would stay
-            // open and play again after the next reload.
-            (eventId) => completedBatcher.add(eventId, instance.id)
-          ),
-        };
-        if (previous !== null) {
-          queueManager.unregister(previous.queue);
-        }
-      },
-      onEventsUnsubscribe: (subId) => {
-        if (subscription?.subId === subId) {
-          queueManager.unregister(subscription.queue);
-          subscription = null;
-        }
-      },
-      onEventComplete: (subId, eventId) => {
-        if (subscription?.subId === subId) {
-          queueManager.complete(subscription.queue, eventId);
-        }
-        completedBatcher.add(eventId, instance.id);
-      },
-      onDispose: () => {
-        if (subscription !== null) {
-          queueManager.unregister(subscription.queue);
-          subscription = null;
-        }
-      },
-      onRendered,
-    };
-
-    const bridge = new WidgetBridge(instance.id, nonce, callbacks);
-    const storageTarget = {
-      instanceId: instance.id,
-      sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
-    };
-    iframe.addEventListener("load", createFrameLoadHandler(bridge));
     const declared = instance.behaviorKinds ?? NO_DECLARED_KINDS;
     const entrance = swapping
       ? null
       : entranceOf(composition, instance.id, (type, kind) => declaresKind(declared, type, kind));
-    iframe.src = frameSrc(instance, nonce, entrance);
-    assets.readAhead(readAheadAssetPaths(instance.settings, location.origin), instance.moduleId);
+    let storageTarget: { instanceId: string; sendStorageValue(key: string, value: unknown): void } | null = null;
 
-    bridges.add(bridge);
-    slot.appendChild(iframe);
-    bridge.attach(iframe);
-
-    const unmount = (): void => {
-      bridge.dispose();
-      bridge.detach();
-      bridges.delete(bridge);
-      moduleState.unwatchAll(storageTarget);
-      iframe.remove();
-    };
-    return { element: iframe, bridge, unmount };
+    const frame = mountWidgetFrame({
+      slot,
+      instanceId: instance.id,
+      bridges,
+      hidden: swapping,
+      src: (nonce) => frameSrc(instance, nonce, entrance),
+      callbacks: ({ bridge }): WidgetBridgeCallbacks => {
+        const target = {
+          instanceId: instance.id,
+          sendStorageValue: (key: string, value: unknown) => bridge().sendStorageValue(key, value),
+        };
+        storageTarget = target;
+        return {
+          // The module comes from the scene record, not from the module the
+          // widget names in its hello (see module-state.ts).
+          storage: {
+            get: (key) => moduleState.peek(instance.moduleId, key),
+            subscribe: (key) => moduleState.watch(instance.moduleId, key, target),
+            unsubscribe: (key) => moduleState.unwatch(instance.moduleId, key, target),
+          },
+          onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
+          onAssetLoad: assets.loaderFor(instance.moduleId),
+          onEventsSubscribe: (subId, queue) => {
+            playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
+            const previous = subscription;
+            subscription = {
+              subId,
+              queue: queueManager.register(
+                instance.id,
+                queue,
+                (item) => bridge().sendEvent(subId, toWidgetEvent(item)),
+                // The widget never finished it. The page gives up on it, so the
+                // server must too: acknowledged as completed, or it would stay
+                // open and play again after the next reload.
+                (eventId) => completedBatcher.add(eventId, instance.id)
+              ),
+            };
+            if (previous !== null) {
+              queueManager.unregister(previous.queue);
+            }
+          },
+          onEventsUnsubscribe: (subId) => {
+            if (subscription?.subId === subId) {
+              queueManager.unregister(subscription.queue);
+              subscription = null;
+            }
+          },
+          onEventComplete: (subId, eventId) => {
+            if (subscription?.subId === subId) {
+              queueManager.complete(subscription.queue, eventId);
+            }
+            completedBatcher.add(eventId, instance.id);
+          },
+          onDispose: () => {
+            if (subscription !== null) {
+              queueManager.unregister(subscription.queue);
+              subscription = null;
+            }
+          },
+          onRendered,
+        };
+      },
+      onUnmount: () => {
+        if (storageTarget !== null) {
+          moduleState.unwatchAll(storageTarget);
+        }
+      },
+    });
+    assets.warm(instance.moduleId, instance.settings);
+    return { element: frame.element, bridge: frame.bridge, unmount: frame.unmount };
   };
 
   /** Put a placement's content in its slot, from its current config. */

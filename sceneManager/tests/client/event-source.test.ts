@@ -158,64 +158,56 @@ describe("SceneEventSource", () => {
     // Disconnected banner. Delays must plateau at reconnectMaxMs no
     // matter how many attempts have failed.
     const delays: number[] = [];
-    const realSetTimeout = globalThis.setTimeout;
-    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
-      delays.push(ms ?? 0);
-      return realSetTimeout(fn, 0);
-    }) as unknown as typeof globalThis.setTimeout;
-
-    try {
-      const fetchFn = (async () => {
-        throw new Error("connection refused");
-      }) as unknown as typeof fetch;
-      const source = new SceneEventSource({
-        url: "https://example.test/events",
-        fetchFn,
-        reconnectBaseMs: 500,
-        reconnectMaxMs: 5_000,
-        random: () => 1,
-      });
-      source.start({ onFrame: () => {}, onConnectionChange: () => {} });
-      await new Promise((resolve) => realSetTimeout(resolve, 30));
-      source.stop();
-      expect(delays.length).toBeGreaterThan(5);
-      for (const delay of delays) {
-        expect(delay).toBeLessThanOrEqual(5_000);
-      }
-      expect(delays[delays.length - 1]).toBe(5_000);
-    } finally {
-      globalThis.setTimeout = realSetTimeout;
+    const fetchFn = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    const source = new SceneEventSource({
+      url: "https://example.test/events",
+      fetchFn,
+      reconnectBaseMs: 500,
+      reconnectMaxMs: 5_000,
+      random: () => 1,
+      // Each reconnect runs at once; only the delay it asked for is kept.
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        return setTimeout(fn, 0);
+      },
+    });
+    source.start({ onFrame: () => {}, onConnectionChange: () => {} });
+    while (delays.length < 10) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
     }
+    source.stop();
+    for (const delay of delays) {
+      expect(delay).toBeLessThanOrEqual(5_000);
+    }
+    expect(delays.at(-1)).toBe(5_000);
   });
 
   it("jitters the delay so overlays that dropped together do not retry in lockstep", async () => {
     const delays: number[] = [];
-    const realSetTimeout = globalThis.setTimeout;
-    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
-      delays.push(ms ?? 0);
-      return realSetTimeout(fn, 0);
-    }) as unknown as typeof globalThis.setTimeout;
-
-    try {
-      const fetchFn = (async () => {
-        throw new Error("connection refused");
-      }) as unknown as typeof fetch;
-      // Equal jitter: never below half the capped delay (so it can't
-      // degenerate into a tight loop), never above it.
-      const source = new SceneEventSource({
-        url: "https://example.test/events",
-        fetchFn,
-        reconnectBaseMs: 1_000,
-        reconnectMaxMs: 1_000,
-        random: () => 0,
-      });
-      source.start({ onFrame: () => {}, onConnectionChange: () => {} });
-      await new Promise((resolve) => realSetTimeout(resolve, 20));
-      source.stop();
-      expect(delays.every((d) => d === 500)).toBe(true);
-    } finally {
-      globalThis.setTimeout = realSetTimeout;
+    const fetchFn = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    // Equal jitter: never below half the capped delay (so it can't
+    // degenerate into a tight loop), never above it.
+    const source = new SceneEventSource({
+      url: "https://example.test/events",
+      fetchFn,
+      reconnectBaseMs: 1_000,
+      reconnectMaxMs: 1_000,
+      random: () => 0,
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        return setTimeout(fn, 0);
+      },
+    });
+    source.start({ onFrame: () => {}, onConnectionChange: () => {} });
+    while (delays.length < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
     }
+    source.stop();
+    expect(delays.every((d) => d === 500)).toBe(true);
   });
 
   it("skips its own probe when the coordinator elected another overlay", async () => {
