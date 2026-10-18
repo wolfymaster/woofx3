@@ -2,6 +2,7 @@ import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
+import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
 export interface ApiConfig {
@@ -16,10 +17,11 @@ export interface ApiConfig {
   /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
   hosting: EngineHosting | null;
   /**
-   * Secret a caller must present to register (`WOOFX3_REGISTRATION_TOKEN`),
-   * or null when registration is open.
+   * Who may register a client (`WOOFX3_REGISTRATION_MODE`), and the secret a
+   * caller presents (`WOOFX3_REGISTRATION_TOKEN` or
+   * `WOOFX3_REGISTRATION_TOKEN_FILE`). See registration.ts.
    */
-  registrationToken: string | null;
+  registration: RegistrationPolicy;
   port: number;
   /**
    * Interface the HTTP server binds. Loopback unless configured otherwise:
@@ -70,6 +72,8 @@ export const ApiEnvSchema = z
     woofx3EngineName: z.string().optional(),
     woofx3Hosting: z.string().optional(),
     woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
+    woofx3RegistrationTokenFile: z.string().optional(),
+    woofx3RegistrationMode: z.string().optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
@@ -140,10 +144,12 @@ export function loadConfig(): ApiConfig {
   const version = String(config.woofx3Version || UNVERSIONED);
   const engineName = String(config.woofx3EngineName ?? "").trim() || null;
   const hosting = resolveHosting(config.woofx3Hosting);
-  const registrationToken =
-    config.woofx3RegistrationToken === undefined || String(config.woofx3RegistrationToken).trim() === ""
-      ? null
-      : String(config.woofx3RegistrationToken);
+  const optionalString = (value: unknown): string | undefined => (value === undefined ? undefined : String(value));
+  const registration = resolveRegistrationPolicy({
+    mode: optionalString(config.woofx3RegistrationMode),
+    token: optionalString(config.woofx3RegistrationToken),
+    tokenFile: optionalString(config.woofx3RegistrationTokenFile),
+  });
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
@@ -196,7 +202,7 @@ export function loadConfig(): ApiConfig {
     version,
     engineName,
     hosting,
-    registrationToken,
+    registration,
     port,
     host,
     databaseProxyUrl,

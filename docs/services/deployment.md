@@ -117,6 +117,45 @@ WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*
 WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,null
 ```
 
+## Client registration
+
+A dashboard or desktop shell becomes a client of the engine by calling
+`registerClient` over `/api`, which returns the client id and secret it
+authenticates with from then on. Who may register is set by
+`WOOFX3_REGISTRATION_MODE`:
+
+| Mode | Who may register |
+|---|---|
+| `open` | Anyone who reaches the engine. |
+| `token` | Only a caller presenting the registration token. |
+| `first` | Anyone while the engine has no registered client (trust on first use). After that, only a caller presenting the token, or nobody when there is none. |
+
+Unset, the mode follows from the token: `token` when one is configured, `open`
+when not. Managed engines are given `WOOFX3_REGISTRATION_TOKEN` by maintenance
+and no mode, so they require it; a bring-your-own engine given neither stays
+open.
+
+The token comes from one of:
+
+- `WOOFX3_REGISTRATION_TOKEN`, the token itself.
+- `WOOFX3_REGISTRATION_TOKEN_FILE`, a path. If the file exists its trimmed
+  contents are the token (an empty file stops the api). If not, the api
+  generates a 256-bit token, writes it there with mode `0600` (creating the
+  directory `0700`), and uses it. The file is written under a temporary name
+  and hard-linked into place, so a reader never sees it half-written. A parent
+  process such as a desktop shell reads the same file to register. On Windows
+  the mode bits do not apply and the file takes its directory's permissions, so
+  put it in a directory only the user can read, such as one under
+  `%LOCALAPPDATA%`.
+
+Setting both is a startup error, as are `open` with a token and `token`
+without one.
+
+`first` decides by asking the db proxy whether any client exists, on every
+registration, so the lock survives restarts; removing every client opens
+registration again. Registrations are handled one at a time in this mode, so two
+callers racing on a new engine cannot both be first.
+
 ## Startup
 
 The entrypoint (`build/entrypoint.sh`) runs the database migrations with the
