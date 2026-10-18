@@ -17,6 +17,7 @@ pub mod registry_loader;
 pub mod resource_kind_ref;
 pub mod theme;
 
+pub use db_proxy::MarketplaceOrigin;
 pub use manifest_validate::{InstallProvenance, SystemOnlyActions};
 pub use module_file::ModuleFileKind;
 pub use module_service::{ModuleService, ModuleServiceConfig, manifest_file_rank};

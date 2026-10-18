@@ -21,8 +21,9 @@ use super::manifest_validate::InstallProvenance;
 
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    ModuleCommandRow, ModuleRecord, ModuleSettingJson, RequestContext, ResolvedActionRef,
-    ResourceInstanceJson, ResourceUsage, SettingInputJson, TriggerInputJson, WidgetInputJson,
+    MarketplaceOrigin, ModuleCommandRow, ModuleRecord, ModuleSettingJson, RequestContext,
+    ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson, TriggerInputJson,
+    WidgetInputJson,
 };
 
 // async-trait marks each method it rewrites `#[must_use]`, and its boxed
@@ -43,6 +44,7 @@ pub trait ModuleDbProxy: Send + Sync {
         module_key: &str,
         client_id: &str,
         provenance: InstallProvenance,
+        marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<String>;
     async fn delete_module(&self, module_name: &str) -> Result<()>;
     async fn get_module_by_module_id(&self, module_id: &str) -> Result<Option<String>>;
@@ -238,6 +240,7 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_key: &str,
         client_id: &str,
         provenance: InstallProvenance,
+        marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<String> {
         db_proxy::create_module(
             &self.base_url,
@@ -250,6 +253,7 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_key,
             client_id,
             provenance,
+            marketplace,
         )
         .await
     }
@@ -624,6 +628,8 @@ mod test_support {
         /// Provenance the last `create_module` was called with, so tests can
         /// assert what the module row would be stamped with.
         provenance: Mutex<Option<InstallProvenance>>,
+        /// The marketplace origin the last `create_module` was called with.
+        marketplace: Mutex<Option<MarketplaceOrigin>>,
         /// The manifest JSON the last `create_module` stored.
         stored_manifest: Mutex<Option<String>>,
         /// The module's commands as the db would hold them.
@@ -653,6 +659,7 @@ mod test_support {
                 calls: Mutex::new(Vec::new()),
                 fail_on: methods.into_iter().collect(),
                 provenance: Mutex::new(None),
+                marketplace: Mutex::new(None),
                 stored_manifest: Mutex::new(None),
                 commands: Mutex::new(Vec::new()),
                 failing_command: None,
@@ -763,6 +770,13 @@ mod test_support {
             *self.provenance.lock().expect("provenance mutex poisoned")
         }
 
+        pub fn create_module_marketplace(&self) -> Option<MarketplaceOrigin> {
+            self.marketplace
+                .lock()
+                .expect("marketplace mutex poisoned")
+                .clone()
+        }
+
         fn record(&self, method: &'static str) -> Result<()> {
             self.calls
                 .lock()
@@ -788,8 +802,10 @@ mod test_support {
             _module_key: &str,
             _client_id: &str,
             provenance: InstallProvenance,
+            marketplace: Option<&MarketplaceOrigin>,
         ) -> Result<String> {
             self.record("create_module")?;
+            *self.marketplace.lock().expect("marketplace mutex poisoned") = marketplace.cloned();
             self.stored_manifest
                 .lock()
                 .expect("stored_manifest mutex poisoned")
@@ -1205,6 +1221,7 @@ mod test_support {
                 "mod:1.0.0:abc",
                 "",
                 InstallProvenance::User,
+                None,
             )
             .await
             .expect("create_module");
