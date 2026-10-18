@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow};
 use lib_repository::Repository;
 
+use super::db_proxy::MarketplaceOrigin;
 use super::db_proxy_client::HttpDbProxyClient;
 use super::manifest_validate::{InstallProvenance, SystemOnlyActions};
 use super::module_file::ModuleFile;
@@ -107,7 +108,8 @@ where
     }
 
     /// The provenance-free entry point, because every caller but the
-    /// bundled-module reconciler is a user upload.
+    /// bundled-module reconciler is a user upload. `marketplace` names the
+    /// listing the upload came from, when it came from the marketplace.
     #[allow(clippy::too_many_arguments)]
     pub async fn execute_plan(
         &self,
@@ -117,6 +119,7 @@ where
         force: bool,
         composite_module_key: &str,
         client_id: &str,
+        marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<()> {
         self.execute_plan_with_provenance(
             plan,
@@ -126,6 +129,7 @@ where
             composite_module_key,
             client_id,
             InstallProvenance::User,
+            marketplace,
         )
         .await
     }
@@ -141,6 +145,7 @@ where
         composite_module_key: &str,
         client_id: &str,
         provenance: InstallProvenance,
+        marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<()> {
         let cleanup_old = force;
         let manifest = self
@@ -160,6 +165,7 @@ where
             composite_module_key,
             client_id,
             provenance,
+            marketplace,
             &self.system_only_actions,
         )
         .await

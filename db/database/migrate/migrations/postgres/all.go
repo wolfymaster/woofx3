@@ -73,5 +73,6 @@ func All() []*gormigrate.Migration {
 		AddViewerSegments(),
 		AddWidgetBehaviors(),
 		AddSceneCompositions(),
+		AddModuleMarketplaceProvenance(),
 	}
 }

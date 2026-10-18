@@ -133,16 +133,32 @@ export async function sendInstallFailed(
   );
 }
 
+/** The marketplace listing an archive came from, recorded on the module row. */
+export interface MarketplaceOrigin {
+  listingId: string;
+  edition: number;
+}
+
 /**
  * Gives barkloader an archive to install under `moduleKey`. Barkloader
  * installs it asynchronously and reports the outcome as `module.installed` or
  * `module.install_failed`; the message returned here only says it accepted
  * the upload.
+ *
+ * `marketplace` travels with the archive because barkloader writes the module
+ * row only once the asynchronous install gets that far, so nothing here could
+ * update the row afterwards without racing the install.
  */
 export async function handArchiveToBarkloader(
   barkloaderRequest: (path: string, init?: RequestInit) => Promise<Response>,
   logger: SharedLogger,
-  archive: { bytes: Uint8Array; fileName: string; clientId: string; moduleKey: string }
+  archive: {
+    bytes: Uint8Array;
+    fileName: string;
+    clientId: string;
+    moduleKey: string;
+    marketplace?: MarketplaceOrigin;
+  }
 ): Promise<string> {
   const formData = new FormData();
   formData.append(
@@ -151,6 +167,10 @@ export async function handArchiveToBarkloader(
   );
   formData.append("client_id", archive.clientId);
   formData.append("module_key", archive.moduleKey);
+  if (archive.marketplace) {
+    formData.append("marketplace_listing_id", archive.marketplace.listingId);
+    formData.append("marketplace_edition", String(archive.marketplace.edition));
+  }
 
   const response = await barkloaderRequest("/functions", { method: "POST", body: formData });
   const json = (await response.json()) as { message?: string };
@@ -158,6 +178,7 @@ export async function handArchiveToBarkloader(
     clientId: archive.clientId,
     moduleKey: archive.moduleKey,
     fileName: archive.fileName,
+    marketplace: archive.marketplace,
     message: json.message,
   });
   return json.message ?? "Module uploaded";

@@ -3168,6 +3168,12 @@ impl serde::Serialize for CreateModuleRequest {
         if !self.module_id.is_empty() {
             len += 1;
         }
+        if self.marketplace_listing_id.is_some() {
+            len += 1;
+        }
+        if self.marketplace_edition.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.CreateModuleRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -3196,6 +3202,12 @@ impl serde::Serialize for CreateModuleRequest {
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
         }
+        if let Some(v) = self.marketplace_listing_id.as_ref() {
+            struct_ser.serialize_field("marketplaceListingId", v)?;
+        }
+        if let Some(v) = self.marketplace_edition.as_ref() {
+            struct_ser.serialize_field("marketplaceEdition", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -3220,6 +3232,10 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
             "moduleKey",
             "module_id",
             "moduleId",
+            "marketplace_listing_id",
+            "marketplaceListingId",
+            "marketplace_edition",
+            "marketplaceEdition",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3233,6 +3249,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
             CreatedByRef,
             ModuleKey,
             ModuleId,
+            MarketplaceListingId,
+            MarketplaceEdition,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3263,6 +3281,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
+                            "marketplaceListingId" | "marketplace_listing_id" => Ok(GeneratedField::MarketplaceListingId),
+                            "marketplaceEdition" | "marketplace_edition" => Ok(GeneratedField::MarketplaceEdition),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3291,6 +3311,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                 let mut created_by_ref__ = None;
                 let mut module_key__ = None;
                 let mut module_id__ = None;
+                let mut marketplace_listing_id__ = None;
+                let mut marketplace_edition__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -3347,6 +3369,20 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                             }
                             module_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::MarketplaceListingId => {
+                            if marketplace_listing_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("marketplaceListingId"));
+                            }
+                            marketplace_listing_id__ = map_.next_value()?;
+                        }
+                        GeneratedField::MarketplaceEdition => {
+                            if marketplace_edition__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("marketplaceEdition"));
+                            }
+                            marketplace_edition__ = 
+                                map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
+                            ;
+                        }
                     }
                 }
                 Ok(CreateModuleRequest {
@@ -3359,6 +3395,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     module_key: module_key__.unwrap_or_default(),
                     module_id: module_id__.unwrap_or_default(),
+                    marketplace_listing_id: marketplace_listing_id__,
+                    marketplace_edition: marketplace_edition__,
                 })
             }
         }
@@ -6888,6 +6926,12 @@ impl serde::Serialize for Module {
         if !self.module_key.is_empty() {
             len += 1;
         }
+        if self.marketplace_listing_id.is_some() {
+            len += 1;
+        }
+        if self.marketplace_edition.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Module", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -6928,6 +6972,12 @@ impl serde::Serialize for Module {
         if !self.module_key.is_empty() {
             struct_ser.serialize_field("moduleKey", &self.module_key)?;
         }
+        if let Some(v) = self.marketplace_listing_id.as_ref() {
+            struct_ser.serialize_field("marketplaceListingId", v)?;
+        }
+        if let Some(v) = self.marketplace_edition.as_ref() {
+            struct_ser.serialize_field("marketplaceEdition", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -6958,6 +7008,10 @@ impl<'de> serde::Deserialize<'de> for Module {
             "createdByRef",
             "module_key",
             "moduleKey",
+            "marketplace_listing_id",
+            "marketplaceListingId",
+            "marketplace_edition",
+            "marketplaceEdition",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -6975,6 +7029,8 @@ impl<'de> serde::Deserialize<'de> for Module {
             CreatedByType,
             CreatedByRef,
             ModuleKey,
+            MarketplaceListingId,
+            MarketplaceEdition,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -7009,6 +7065,8 @@ impl<'de> serde::Deserialize<'de> for Module {
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
+                            "marketplaceListingId" | "marketplace_listing_id" => Ok(GeneratedField::MarketplaceListingId),
+                            "marketplaceEdition" | "marketplace_edition" => Ok(GeneratedField::MarketplaceEdition),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -7041,6 +7099,8 @@ impl<'de> serde::Deserialize<'de> for Module {
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
                 let mut module_key__ = None;
+                let mut marketplace_listing_id__ = None;
+                let mut marketplace_edition__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -7121,6 +7181,20 @@ impl<'de> serde::Deserialize<'de> for Module {
                             }
                             module_key__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::MarketplaceListingId => {
+                            if marketplace_listing_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("marketplaceListingId"));
+                            }
+                            marketplace_listing_id__ = map_.next_value()?;
+                        }
+                        GeneratedField::MarketplaceEdition => {
+                            if marketplace_edition__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("marketplaceEdition"));
+                            }
+                            marketplace_edition__ = 
+                                map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
+                            ;
+                        }
                     }
                 }
                 Ok(Module {
@@ -7137,6 +7211,8 @@ impl<'de> serde::Deserialize<'de> for Module {
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     module_key: module_key__.unwrap_or_default(),
+                    marketplace_listing_id: marketplace_listing_id__,
+                    marketplace_edition: marketplace_edition__,
                 })
             }
         }
