@@ -129,8 +129,13 @@ lines.forEach((line, index) => {
 });
 
 const missingRows = current.declared.filter((id) => !rows.has(id));
-for (const id of missingRows) {
-  console.error(`${DOC} has no row for ${id}; add one to the capability table.`);
+// A release must not ship an id without recording its Since, so a missing row
+// fails every mode, the release's prepare step included.
+if (missingRows.length > 0) {
+  for (const id of missingRows) {
+    console.error(`${DOC} has no row for ${id}; add one to the capability table.`);
+  }
+  process.exit(1);
 }
 
 const unfilled = current.declared.filter((id) => rows.has(id) && ["", UNRELEASED].includes(rows.get(id).since));
@@ -146,7 +151,7 @@ for (const id of unfilled) {
 
 const updated = lines.join("\n");
 if (check) {
-  if (updated !== doc || missingRows.length > 0) {
+  if (updated !== doc) {
     console.error(`${DOC} is missing Since values; run node .github/scripts/capability-since.mjs`);
     process.exit(1);
   }
