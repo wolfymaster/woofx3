@@ -64,6 +64,13 @@ func ValidateWaitConfig(cfg *types.WaitConfig) error {
 	if cfg.Type == WaitTypeAggregation && cfg.Aggregation == nil {
 		return fmt.Errorf("aggregation wait requires an aggregation config")
 	}
+	if cfg.Aggregation != nil {
+		switch cfg.Aggregation.Strategy {
+		case AggregateCount, AggregateSum, AggregateThreshold:
+		default:
+			return fmt.Errorf("unknown aggregation strategy %q (expected %q, %q or %q)", cfg.Aggregation.Strategy, AggregateCount, AggregateSum, AggregateThreshold)
+		}
+	}
 	if cfg.DurationMs != 0 {
 		return fmt.Errorf("durationMs only applies to a delay wait")
 	}
@@ -125,8 +132,8 @@ func NewWaitTask() TaskFactory {
 	}
 }
 
-func (t *WaitTask) Type() string {
-	return "wait"
+func (t *WaitTask) Type() types.TaskType {
+	return types.TaskTypeWait
 }
 
 func (t *WaitTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {
@@ -200,9 +207,8 @@ func (t *WaitTask) ProcessEvent(event *types.Event, waitState *types.WaitState, 
 		return false, nil
 	}
 
-	waitState.ReceivedEvents = append(waitState.ReceivedEvents, event)
-
 	if waitState.Aggregation == nil {
+		waitState.ReceivedEvents = append(waitState.ReceivedEvents, event)
 		waitState.Satisfied = true
 		return true, nil
 	}
@@ -249,12 +255,14 @@ func (t *WaitTask) processAggregation(event *types.Event, waitState *types.WaitS
 
 	// Every strategy keeps both count and sum current, since a wait exports
 	// both whatever decides it. Only sum and threshold are decided by a number,
-	// so only they refuse an event without one, which then adds to neither; any
-	// other strategy still counts it and adds nothing to the sum.
+	// so only they refuse an event without one, which then adds to neither and
+	// is not received: it is not in the wait's events, and never becomes its
+	// lastEvent or data. Count still counts it and adds nothing to the sum.
 	value, err := t.extractNumericValue(event, waitState)
 	if err != nil && (agg.Strategy == AggregateSum || agg.Strategy == AggregateThreshold) {
 		return false, err
 	}
+	waitState.ReceivedEvents = append(waitState.ReceivedEvents, event)
 	agg.Count++
 	if err == nil {
 		agg.Sum += value

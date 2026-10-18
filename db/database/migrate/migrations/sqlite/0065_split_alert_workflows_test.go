@@ -152,3 +152,55 @@ func TestSplitAlertWorkflowsIsIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// A run that fails part way leaves every workflow it reached split and every
+// other one as it was, and running it again finishes the job: the end state is
+// the one a run that never failed leaves.
+func TestSplitAlertWorkflowsResumesARunThatFailedPartWay(t *testing.T) {
+	const secondCheerID = "00000000-0000-0000-0000-0000000000c4"
+	dialect := alertworkflows.Dialect{Workflows: "workflow_definitions", References: "resource_references", JSON: "?"}
+
+	db := seedAlertWorkflows(t)
+	mustExec(t, db, `INSERT INTO workflow_definitions (id, name, steps, trigger, enabled) VALUES (?, 'More cheers', ?, ?, 1)`,
+		secondCheerID, cheerTriggers, `{"type":"event","event":"channel.cheer"}`)
+	// Fails the rewrite of the second workflow, after the first has committed.
+	mustExec(t, db, `CREATE TRIGGER fail_second_split BEFORE INSERT ON resource_references
+		WHEN NEW.source_id = '`+secondCheerID+`' BEGIN SELECT RAISE(ABORT, 'disk full'); END`)
+
+	if _, err := alertworkflows.Apply(db, dialect); err == nil {
+		t.Fatal("Apply succeeded through a failing insert")
+	}
+	rows := workflowRows(t, db)
+	if _, ok := rows["Cheer triggers (2)"]; !ok {
+		t.Fatalf("the workflow before the failure was not split: %v", rows)
+	}
+	if more := rows["More cheers"]; more.Steps != cheerTriggers {
+		t.Fatalf("the failed workflow was left half rewritten: %s", more.Steps)
+	}
+	if _, ok := rows["More cheers (2)"]; ok {
+		t.Fatal("the failed workflow's second trigger was created")
+	}
+
+	mustExec(t, db, `DROP TRIGGER fail_second_split`)
+	summary, err := alertworkflows.Apply(db, dialect)
+	if err != nil {
+		t.Fatalf("Apply again: %v", err)
+	}
+	if summary.Split != 1 || summary.Created != 1 {
+		t.Errorf("second run = %+v, want only the failed workflow split", summary)
+	}
+
+	rows = workflowRows(t, db)
+	if len(rows) != 6 {
+		t.Fatalf("got %d workflows, want 6: %v", len(rows), rows)
+	}
+	for _, name := range []string{"Cheer triggers", "More cheers"} {
+		first, second := rows[name], rows[name+" (2)"]
+		if triggerOrder(t, first) != 0 || triggerOrder(t, second) != 1 {
+			t.Errorf("%s orders = %v, %v; want 0, 1", name, triggerOrder(t, first), triggerOrder(t, second))
+		}
+		if n := count(t, db, `SELECT COUNT(*) FROM resource_references WHERE source_type = 'workflow' AND source_id = ? AND target_name = 'obs:function:flash'`, first.ID); n != 1 {
+			t.Errorf("%s has %d edges to the function it calls, want 1", name, n)
+		}
+	}
+}

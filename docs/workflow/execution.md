@@ -377,6 +377,14 @@ create/update lifecycle event, and the reconciler.
 | Trigger could not be registered | `{ status: "error", reason }` | yes: it can be run manually by id, but never fires on its own |
 | Disabled or deleted (including ones the reconciler finds gone) | entry removed | no |
 
+Registration validation includes the step graph every run is built from, disabled steps
+included: a task id used twice, a `dependsOn`, `onTrue` or `onFalse` naming a step that is
+not in the workflow, a condition listing itself in its own branch, and a cycle (including one
+made by a condition depending on one of its own branch steps) are refused. A workflow stored
+before the engine checked this, for example with a branch still naming a step that was since
+deleted, loads as `{ status: "error", reason }` naming the problem, the rest of the start-up
+load carries on, and it fires again once it is saved with a graph the engine can build.
+
 `reason` is the engine's error verbatim; trigger refusals use the registrar's own wording,
 for example `schedule "* * *" is not a valid cron expression: ...`. Each entry carries
 `since`, when its current status and reason began.
@@ -440,6 +448,12 @@ Wait task timeouts follow `onTimeout`:
 
 ## Ordered workflows
 
-A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerconfig)) waits its turn behind the other ordered workflows the same event starts. Every matching workflow's trigger conditions are checked when the event arrives; the ordered ones that match then run one at a time on one goroutine, lowest `order` first and by workflow id among equals. Each starts once the run before it settles (completes, fails or is cancelled) or pauses at a wait or sub-workflow, so a wait holds back only its own run. Workflows that set no `order` start straight away, as before, alongside the ordered ones.
+A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerconfig)) waits its turn behind the other ordered workflows the same event starts. Every matching workflow's trigger conditions are checked when the event arrives; the ordered ones that match then run one at a time, lowest `order` first and by workflow id among equals. Each starts once the run before it settles (completes, fails or is cancelled) or pauses at a wait or sub-workflow, so a wait holds back only its own run. Workflows that set no `order` start straight away, alongside the ordered ones.
 
-For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list. A stopping engine starts no further ordered run.
+For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list.
+
+Every ordered run is begun when the event matches, so each is in the run history, recorded and announced as running, while it waits its turn; only executing its steps is sequential. As a result:
+
+- A queued run can be cancelled before its turn. It settles as cancelled at once, never starts, and the queue moves past it.
+- A stopping engine starts no further ordered run. Each run it never reached settles as failed with `engine stopped`, as any run the engine abandons does, so it can be resumed later like one.
+- A run gets one turn's worth of time, 30 seconds by default (`WOOFX3_WORKFLOW_ORDERED_TURN_TIMEOUT_SECONDS`). A run still going when it passes is left to finish, the overrun is logged (`Ordered workflow overran its turn`), and the next run starts, so a step that never returns cannot hold back every later workflow on the event.

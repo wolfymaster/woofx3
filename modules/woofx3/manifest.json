@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -315,6 +315,7 @@
             "kind": "alertWidgets"
           },
           "defaultValue": "default",
+          "missingText": "default",
           "description": "Plays on every alert widget with this name. Give alert widgets on several scenes the same name to show the same alerts on each."
         },
         {
@@ -402,6 +403,7 @@
           "label": "Amount",
           "type": "number",
           "min": 1,
+          "missingText": "the counter's step",
           "description": "How much to increase it by. Leave blank to use the counter's own step."
         }
       ],
@@ -454,6 +456,7 @@
           "label": "Amount",
           "type": "number",
           "min": 1,
+          "missingText": "the counter's step",
           "description": "How much to decrease it by. Leave blank to use the counter's own step."
         }
       ],

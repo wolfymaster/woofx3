@@ -1818,7 +1818,9 @@ fn validate_field_lists(manifest: &ModuleManifest) -> Result<()> {
         }
     }
     for (i, a) in manifest.actions.iter().enumerate() {
-        validate_field_list(&a.schema, &format!("action #{i} ({}): `schema`", a.id))?;
+        let context = format!("action #{i} ({}): `schema`", a.id);
+        validate_field_list(&a.schema, &context)?;
+        refuse_any_text(&a.schema, &context)?;
     }
     for (i, w) in manifest.widgets.iter().enumerate() {
         if let Some(fields) = &w.settings_schema {
@@ -1829,6 +1831,21 @@ fn validate_field_lists(manifest: &ModuleManifest) -> Result<()> {
         validate_field_list(&r.schema, &format!("resource #{i} ({}): `schema`", r.kind))?;
     }
     validate_settings(&manifest.settings)
+}
+
+/// `anyText` words a trigger field set to "any". A step's setting is never
+/// "any" - left empty it is unset, which `missingText` words - so on an action
+/// field it would be a promise the UI never keeps.
+fn refuse_any_text(fields: &[ManifestConfigField], context: &str) -> Result<()> {
+    for (i, field) in fields.iter().enumerate() {
+        if field.any_text.is_some() {
+            return Err(anyhow!(
+                "{context} field #{i} ({}): `anyText` applies only to trigger fields; an action field left empty is worded by `missingText`",
+                field.id.trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
@@ -2535,7 +2552,10 @@ fn validate_field_options(field: &ManifestDataShapeField, context: &str) -> Resu
                 option.value
             ));
         }
-        if seen.contains(&&option.value) {
+        if seen
+            .iter()
+            .any(|earlier| same_option_value(earlier, &option.value))
+        {
             return Err(anyhow!(
                 "{context}: option value {} is listed twice",
                 option.value
@@ -2544,6 +2564,16 @@ fn validate_field_options(field: &ManifestDataShapeField, context: &str) -> Resu
         seen.push(&option.value);
     }
     Ok(())
+}
+
+/// Whether two option values are the same value to a comparison. Numbers are
+/// compared by value, so `1` and `1.0`, or `1e3` and `1000`, are one option
+/// however the manifest spells them.
+fn same_option_value(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 fn validate_sibling_reference(
@@ -4381,6 +4411,18 @@ mod tests {
         assert!(msg.contains("listed twice"), "{msg}");
     }
 
+    // A number is one option however it is spelled.
+    #[test]
+    fn rejects_a_number_option_repeated_in_another_spelling() {
+        for (first, second) in [("1", "1.0"), ("1e3", "1000"), ("-0", "0")] {
+            let msg = emits_rejection(&format!(
+                r#"{{ "path": "level", "type": "number", "options": [
+                    {{ "value": {first}, "label": "One" }}, {{ "value": {second}, "label": "Also one" }}] }}"#
+            ));
+            assert!(msg.contains("listed twice"), "{first} and {second}: {msg}");
+        }
+    }
+
     #[test]
     fn rejects_an_unknown_key_on_an_option() {
         let json = r#"{
@@ -4787,6 +4829,35 @@ mod tests {
     #[test]
     fn accepts_an_action_sentence_naming_declared_fields() {
         validate(&action_with_sentence(r#""Add {amount} to {counter}""#)).expect("validate ok");
+    }
+
+    fn action_field(extra: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f",
+                "sentence": "Add {{amount}}",
+                "schema": [{{ "id": "amount", "label": "Amount", "type": "number"{extra} }}] }}]"#
+        ))
+    }
+
+    // An optional field's missingText is what the sentence says when the step
+    // leaves it empty.
+    #[test]
+    fn accepts_missing_text_on_an_optional_action_field() {
+        validate(&action_field(r#", "missingText": "the counter's step""#)).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_any_text_on_an_action_field() {
+        for any_text in [r#""any amount""#, r#""""#] {
+            let msg = bad_err(&action_field(&format!(r#", "anyText": {any_text}"#)));
+            assert!(msg.contains("action #0 (a1)"), "names the action: {msg}");
+            assert!(
+                msg.contains("`anyText` applies only to trigger fields"),
+                "{msg}"
+            );
+        }
     }
 
     #[test]

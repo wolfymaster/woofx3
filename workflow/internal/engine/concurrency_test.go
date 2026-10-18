@@ -10,7 +10,7 @@ func action(id string, dependsOn ...string) *types.TaskDefinition {
 	return &types.TaskDefinition{ID: id, Type: "action", Action: "print", DependsOn: dependsOn}
 }
 
-func typed(id, taskType string) *types.TaskDefinition {
+func typed(id string, taskType types.TaskType) *types.TaskDefinition {
 	return &types.TaskDefinition{ID: id, Type: taskType}
 }
 
@@ -79,7 +79,7 @@ func TestAConditionReferenceEndsTheRun(t *testing.T) {
 // condition tasks decide which later tasks are skipped. None can sit inside a
 // set of tasks with no defined order between them.
 func TestSuspendingAndBranchingTasksNeverRunConcurrently(t *testing.T) {
-	for _, taskType := range []string{"wait", "workflow", "condition"} {
+	for _, taskType := range []types.TaskType{types.TaskTypeWait, types.TaskTypeWorkflow, types.TaskTypeCondition} {
 		order := []*types.TaskDefinition{typed("a", taskType), action("b")}
 		if run := planConcurrentRun(order, 0, nil, DefaultMaxConcurrentTasks); run.Len() != 1 {
 			t.Errorf("%s: run length = %d, want 1", taskType, run.Len())

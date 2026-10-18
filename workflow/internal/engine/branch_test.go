@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -540,6 +541,70 @@ func TestBranchListingUnknownTaskIsRefused(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("a condition listing an unknown task was accepted")
+	}
+}
+
+func TestDuplicateTaskIDIsRefused(t *testing.T) {
+	_, err := NewDependencyGraph([]types.TaskDefinition{
+		{ID: "a", Type: "action"},
+		{ID: "a", Type: "log"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "task id a is used by more than one task") {
+		t.Fatalf("err = %v, want the duplicate id refused", err)
+	}
+}
+
+// A step graph no run could build is refused when the workflow registers,
+// rather than registering and failing every run.
+func TestRegisteringAWorkflowWithAnUnbuildableGraphIsRefused(t *testing.T) {
+	tests := []struct {
+		name  string
+		tasks []types.TaskDefinition
+		want  string
+	}{
+		{
+			name:  "duplicate task id",
+			tasks: []types.TaskDefinition{{ID: "a", Type: "log"}, {ID: "a", Type: "log"}},
+			want:  "task id a is used by more than one task",
+		},
+		{
+			name:  "branch lists an unknown task",
+			tasks: []types.TaskDefinition{{ID: "c1", Type: "condition", OnTrue: []string{"gone"}}},
+			want:  "condition c1 lists unknown task gone",
+		},
+		{
+			name: "condition waits on its own branch",
+			tasks: []types.TaskDefinition{
+				{ID: "c1", Type: "condition", DependsOn: []string{"a"}, OnTrue: []string{"a"}},
+				{ID: "a", Type: "log"},
+			},
+			want: "circular dependency detected",
+		},
+		{
+			name: "a disabled step still has to fit the graph",
+			tasks: []types.TaskDefinition{
+				{ID: "a", Type: "log"},
+				{ID: "b", Type: "log", Disabled: true, DependsOn: []string{"gone"}},
+			},
+			want: "task b depends on unknown task gone",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newExecEngine(t)
+			err := e.RegisterWorkflow(&types.WorkflowDefinition{
+				ID:      "wf-bad",
+				Name:    "wf-bad",
+				Trigger: &types.TriggerConfig{Type: "event", Event: "channel.cheer"},
+				Tasks:   tc.tasks,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+			if _, err := e.GetWorkflow("wf-bad"); err == nil {
+				t.Fatal("the refused workflow was registered")
+			}
+		})
 	}
 }
 

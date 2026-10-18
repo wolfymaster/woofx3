@@ -165,8 +165,8 @@ pub struct ManifestAction {
     /// A one-line English template the UI renders for a configured step that
     /// runs this action, e.g. `"Add {amount} to {counter}"`. Each `{fieldId}`
     /// names a field in `schema`; the UI substitutes the configured value or
-    /// that field's `missingText`. Absent means the UI builds a sentence from
-    /// the setting labels.
+    /// that field's `missingText` while it has none. Absent means the UI
+    /// builds a sentence from the setting labels.
     #[serde(default)]
     pub sentence: Option<String>,
     /// Only a system module may use this action in a workflow or command.
@@ -264,11 +264,14 @@ pub struct ManifestConfigField {
     /// Trigger config only - the words a trigger `sentence` shows in place of
     /// this field when it is set to "any". An empty string drops that part of
     /// the sentence, which is distinct from absent: absent leaves the wording
-    /// to the UI.
+    /// to the UI. Refused on an action field, which is never "any".
     #[serde(default)]
     pub any_text: Option<String>,
-    /// The words a trigger or action `sentence` shows in place of this field
-    /// while it is required and has no value yet.
+    /// The words a `sentence` shows in place of this field while it has no
+    /// value: for a required field, until one is set; for an optional action
+    /// field, whenever the step leaves it empty, so the words say what the
+    /// action does then (`"the counter's step"`). Absent leaves the wording
+    /// to the UI.
     #[serde(default)]
     pub missing_text: Option<String>,
 }

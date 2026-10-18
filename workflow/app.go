@@ -174,8 +174,8 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	})
 	a.scheduleReg.Start()
 	composite := triggers.NewCompositeRegistrar()
-	composite.Set("event", eventReg)
-	composite.Set("schedule", a.scheduleReg)
+	composite.Set(types.TriggerTypeEvent, eventReg)
+	composite.Set(types.TriggerTypeSchedule, a.scheduleReg)
 	// Nothing to subscribe: a command's commander runs its workflow by id
 	// (handleCommandExecuteEvent).
 	composite.Set(types.TriggerTypeCommand, triggers.NoopRegistrar{})

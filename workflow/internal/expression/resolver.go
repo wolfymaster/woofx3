@@ -3,6 +3,7 @@ package expression
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"strconv"
@@ -145,7 +146,18 @@ func (r *Resolver) evaluateExpression(expr string) (any, error) {
 	if isCompound(expr) {
 		return r.evaluateCompound(expr)
 	}
-	return r.evaluateReference(expr)
+	return closeRecord(r.evaluateReference(expr))
+}
+
+// closeRecord hands a reference that resolved to a whole OpenRecord back as a
+// plain map. The openness only matters for paths into it, which the resolver
+// has already followed; a value leaving the resolver as the named type would
+// fail a caller's `.(map[string]any)` assertion.
+func closeRecord(value any, err error) (any, error) {
+	if record, open := value.(OpenRecord); open {
+		return maps.Clone(map[string]any(record)), err
+	}
+	return value, err
 }
 
 // evaluateReference resolves a plain `source.path` reference.

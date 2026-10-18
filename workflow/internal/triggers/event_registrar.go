@@ -71,7 +71,7 @@ func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.Trigg
 		}
 		return nil
 	}
-	if trigger.Type != "event" {
+	if trigger.Type != types.TriggerTypeEvent {
 		if r.logger != nil {
 			r.logger.Warn("triggers: skipping register, trigger.type != \"event\"",
 				"workflow_id", workflowID,

@@ -113,7 +113,7 @@ func sampleTriggerEvent(def *types.WorkflowDefinition, req ManualRun) (*types.Ev
 	}
 
 	eventType := req.Request.Type
-	if def.Trigger != nil && (def.Trigger.Type == "event" || def.Trigger.Type == types.TriggerTypeCommand) && def.Trigger.Event != "" {
+	if def.Trigger != nil && (def.Trigger.Type == types.TriggerTypeEvent || def.Trigger.Type == types.TriggerTypeCommand) && def.Trigger.Event != "" {
 		eventType = def.Trigger.Event
 	}
 	eventTime := req.Request.Time
