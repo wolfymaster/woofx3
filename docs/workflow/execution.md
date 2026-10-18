@@ -330,10 +330,10 @@ The refused run is recorded as failed, with an error naming the loop:
 Counter changed), 8 runs deep`, or the whole chain when it does not close on the
 refused workflow. See `workflow/internal/engine/loopguard.go`.
 
-The rule is a length, not "this workflow is already in the chain". The dashboard
-stores one workflow per event with a condition per instance, so "when counter A
-changes, add to counter B" and "when counter B changes, say so in chat" are branches
-of the same workflow, and that chain visits it twice on purpose. What every loop
+The rule is a length, not "this workflow is already in the chain". One workflow on
+"counter changed" can hold a branch per counter, so "when counter A changes, add to
+counter B" and "when counter B changes, say so in chat" are branches of the same
+workflow, and that chain visits it twice on purpose. What every loop
 does, and no chain that means to end does, is keep growing.
 
 Nor is it a check on the workflow graph when a workflow is saved. Which events a
@@ -434,6 +434,12 @@ Wait task timeouts follow `onTimeout`:
 ## Concurrency
 
 - Each workflow execution runs in its own goroutine
-- Multiple workflows can be triggered by the same event simultaneously
+- Multiple workflows can be triggered by the same event simultaneously, except the [ordered](#ordered-workflows) ones, which take turns
 - Wait task resumptions run on new goroutines (the event handler's, or the wait's timer)
 - Internal state is protected by `sync.RWMutex` on executions, waiting executions, and sub-workflow waiters
+
+## Ordered workflows
+
+A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerconfig)) waits its turn behind the other ordered workflows the same event starts. Every matching workflow's trigger conditions are checked when the event arrives; the ordered ones that match then run one at a time on one goroutine, lowest `order` first and by workflow id among equals. Each starts once the run before it settles (completes, fails or is cancelled) or pauses at a wait or sub-workflow, so a wait holds back only its own run. Workflows that set no `order` start straight away, as before, alongside the ordered ones.
+
+For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list. A stopping engine starts no further ordered run.

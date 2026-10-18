@@ -32,7 +32,19 @@ export interface ConditionConfig {
 // Schedule cron grammar follows robfig/cron/v3 (5-field, no seconds).
 // Examples: "0 * * * *" (top of every hour), "*/15 * * * *" (every 15 min).
 export type TriggerConfig =
-  | { type: "event"; event: string; conditions?: ConditionConfig[] }
+  | {
+      type: "event";
+      event: string;
+      conditions?: ConditionConfig[];
+      /**
+       * Puts the workflow in line with the other ordered workflows on the same
+       * event: they run one at a time, lowest first (by id among equals), each
+       * starting once the one before it settles or pauses at a wait. Unset runs
+       * it alongside everything else. Must match TriggerConfig.Order in
+       * workflow/internal/types/types.go.
+       */
+      order?: number;
+    }
   | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] };
 
 export interface AggregationConfig {
