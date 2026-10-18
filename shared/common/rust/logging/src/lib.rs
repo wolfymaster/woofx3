@@ -110,7 +110,7 @@ pub fn init(service_name: &str) -> Result<LoggingGuard, LoggingError> {
 
     let config = load_config()?;
     let otel = config.otel()?;
-    let log_directory = resolve_log_directory(&config);
+    let log_directory = resolve_log_directory(&config, woofx3_runtime::data_dir().as_deref());
 
     std::fs::create_dir_all(&log_directory).map_err(|source| LoggingError::LogDirectory {
         path: log_directory.display().to_string(),
@@ -238,14 +238,18 @@ fn resolve_filter() -> Result<EnvFilter, LoggingError> {
     EnvFilter::try_new(&directive).map_err(|source| LoggingError::LogFilter { directive, source })
 }
 
-fn resolve_log_directory(config: &Config) -> PathBuf {
-    std::env::var(LOG_DIRECTORY_ENV)
+/// `WOOFX3_LOG_DIR`, else `logDir` from the config, else `logs`; a relative
+/// result is anchored in the data directory when there is one, so the logs
+/// default to `<data dir>/logs` there, as for the Go and TypeScript services.
+fn resolve_log_directory(config: &Config, data_dir: Option<&Path>) -> PathBuf {
+    let configured = std::env::var(LOG_DIRECTORY_ENV)
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .or_else(|| config.get_non_empty("logDir"))
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_LOG_DIRECTORY))
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_LOG_DIRECTORY));
+    woofx3_runtime::resolve_data_path_in(data_dir, &configured)
 }
 
 /// Matches the Go and TypeScript shared loggers: `<service>_YYYYMMDD_HHMM.log`.
@@ -287,8 +291,18 @@ mod tests {
     fn log_directory_defaults_to_logs() {
         let config = Config::default();
         assert_eq!(
-            resolve_log_directory(&config),
+            resolve_log_directory(&config, None),
             PathBuf::from(DEFAULT_LOG_DIRECTORY)
+        );
+    }
+
+    #[test]
+    fn log_directory_defaults_to_logs_in_the_data_dir() {
+        let config = Config::default();
+        let data_dir = std::env::temp_dir().join("woofx3-data");
+        assert_eq!(
+            resolve_log_directory(&config, Some(&data_dir)),
+            data_dir.join(DEFAULT_LOG_DIRECTORY)
         );
     }
 

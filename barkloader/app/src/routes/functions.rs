@@ -16,7 +16,7 @@ use lib_module::db_proxy;
 use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use lib_module::module_delete::{DeleteError, notify_delete, resolve_module, run_delete_resolved};
 use lib_module::registry_loader;
-use lib_module::{ModuleFileKind, ModuleService, ModuleServiceConfig};
+use lib_module::{MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig};
 
 #[derive(Serialize)]
 struct UploadResponse {
@@ -47,6 +47,49 @@ struct DeleteQuery {
     module_key: Option<String>,
 }
 
+/// Where an uploaded archive is unpacked before it is installed, relative to
+/// the working directory or, when set, the data directory.
+const UPLOAD_DIR: &str = "./uploads";
+
+fn upload_dir() -> PathBuf {
+    woofx3_runtime::resolve_data_path(UPLOAD_DIR)
+}
+
+/// The marketplace listing an upload says it came from, from the
+/// `marketplace_listing_id` and `marketplace_edition` form fields. A blank
+/// field counts as absent, and a listing without an edition is edition 1.
+/// An edition without a listing, or one that is not a whole number of 1 or
+/// more, is refused rather than dropped, so an install never records half
+/// of where it came from.
+fn marketplace_origin(
+    listing_id: Option<&str>,
+    edition: Option<&str>,
+) -> Result<Option<MarketplaceOrigin>, String> {
+    let listing_id = listing_id.map(str::trim).filter(|s| !s.is_empty());
+    let edition = edition.map(str::trim).filter(|s| !s.is_empty());
+    let Some(listing_id) = listing_id else {
+        if edition.is_some() {
+            return Err("marketplace_edition was sent without marketplace_listing_id".to_string());
+        }
+        return Ok(None);
+    };
+    let edition = match edition {
+        None => 1,
+        Some(raw) => match raw.parse::<i32>() {
+            Ok(n) if n >= 1 => n,
+            _ => {
+                return Err(format!(
+                    "marketplace_edition must be a whole number of 1 or more, got '{raw}'"
+                ));
+            }
+        },
+    };
+    Ok(Some(MarketplaceOrigin {
+        listing_id: listing_id.to_string(),
+        edition,
+    }))
+}
+
 #[post("/functions")]
 #[tracing::instrument(name = "POST /functions", skip_all, fields(force = query.force.unwrap_or(false)))]
 async fn upload_handler(
@@ -57,7 +100,7 @@ async fn upload_handler(
 ) -> Result<HttpResponse, Error> {
     let force = query.force.unwrap_or(false);
 
-    let file_service = FileService::new("./uploads");
+    let file_service = FileService::new(&upload_dir().to_string_lossy());
 
     // upload the file to temporary location for processing;
     // multipart fields client_id and module_key are extracted alongside the file
@@ -65,12 +108,17 @@ async fn upload_handler(
         file_service.process_upload(multipart).await?;
 
     let expected_module_key = metadata.module_key.clone().unwrap_or_default();
+    let marketplace = marketplace_origin(
+        metadata.marketplace_listing_id.as_deref(),
+        metadata.marketplace_edition.as_deref(),
+    )
+    .map_err(actix_web::error::ErrorBadRequest)?;
 
     let mut request_context = {
         let client_id = metadata.client_id.clone().unwrap_or_default();
         info!(
-            "Upload form fields: client_id={:?} module_key={:?}",
-            metadata.client_id, metadata.module_key
+            "Upload form fields: client_id={:?} module_key={:?} marketplace={:?}",
+            metadata.client_id, metadata.module_key, marketplace
         );
         Some(db_proxy::RequestContext {
             client_id,
@@ -94,10 +142,8 @@ async fn upload_handler(
         let db_proxy_ref = db_proxy_client.as_ref().map(|c| c as &dyn ModuleDbProxy);
 
         // SafeTempDir with automatic cleanup on drop
-        let _upload_cleanup = SafeTempDir::new(
-            PathBuf::from(&metadata.temp_dir_path),
-            PathBuf::from("./uploads"),
-        );
+        let _upload_cleanup =
+            SafeTempDir::new(PathBuf::from(&metadata.temp_dir_path), upload_dir());
 
         // save original zip path before processing extracts files
         let original_zip_path = PathBuf::from(&metadata.temp_dir_path).join(&metadata.file_name);
@@ -369,6 +415,7 @@ async fn upload_handler(
                 force,
                 &computed_module_key,
                 &upload_client_id,
+                marketplace.as_ref(),
             )
             .await
         {
@@ -926,6 +973,8 @@ async fn rollback_handler(
             false, // not force — go through the diff-aware upgrade path, same as any install
             &composite_module_key,
             "",
+            // The archive names no listing; the row keeps the one it has.
+            None,
         )
         .await
         .map_err(|e| {
@@ -960,4 +1009,42 @@ pub fn configure(cfg: &mut ServiceConfig) {
         .service(rollback_handler)
         .service(list_handler)
         .service(get_handler);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn origin(listing_id: &str, edition: i32) -> Option<MarketplaceOrigin> {
+        Some(MarketplaceOrigin {
+            listing_id: listing_id.to_string(),
+            edition,
+        })
+    }
+
+    #[test]
+    fn an_upload_without_marketplace_fields_has_no_origin() {
+        assert_eq!(marketplace_origin(None, None), Ok(None));
+        assert_eq!(marketplace_origin(Some(" "), Some("")), Ok(None));
+    }
+
+    #[test]
+    fn a_listing_carries_its_edition_or_edition_one() {
+        assert_eq!(
+            marketplace_origin(Some("cozy-v2"), Some("2")),
+            Ok(origin("cozy-v2", 2))
+        );
+        assert_eq!(
+            marketplace_origin(Some("cozy"), None),
+            Ok(origin("cozy", 1))
+        );
+    }
+
+    #[test]
+    fn an_incomplete_or_malformed_origin_is_refused() {
+        assert!(marketplace_origin(None, Some("2")).is_err());
+        assert!(marketplace_origin(Some("cozy"), Some("0")).is_err());
+        assert!(marketplace_origin(Some("cozy"), Some("two")).is_err());
+        assert!(marketplace_origin(Some("cozy"), Some("1.5")).is_err());
+    }
 }

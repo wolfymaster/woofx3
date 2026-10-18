@@ -7,9 +7,9 @@ import type {
 } from "@woofx3/api";
 import type { MarketplaceClient, MarketplaceDownload, MarketplaceListing } from "../marketplace-client";
 import {
+  type ModuleArchiveContents,
   manifestLocalEndpoints,
   manifestPermissions,
-  type ModuleArchiveContents,
   readModuleArchive,
   unapprovedIds,
 } from "../module-archive";
@@ -147,6 +147,7 @@ export const marketplaceRoutes = routeModule({
       fileName: `${name}-${version}.zip`,
       clientId,
       moduleKey,
+      marketplace: { listingId, edition: listing.edition },
     });
     return { status: "installed", moduleKey };
   },

@@ -7,6 +7,7 @@ import pino, {
   multistream,
   type StreamEntry,
 } from "pino";
+import { dataDir, resolveDataPath } from "../runtime/data-dir";
 import { makeLogFileName } from "./naming";
 import { currentTraceContext, initTelemetry, type Telemetry } from "./otel";
 import { createOtelLogStream } from "./otel-log-stream";
@@ -65,12 +66,26 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
     singleLineFile: toBool(process.env.WOOFX3_LOG_FILE_ENABLED, defaults.singleLineFile),
   };
 
-  return {
+  return withDataDirLogs({
     ...defaults,
     ...fromEnv,
     ...(configOverride ?? {}),
     redactPaths: configOverride?.redactPaths ?? fromEnv.redactPaths ?? defaults.redactPaths,
-  };
+  });
+}
+
+/**
+ * With a data directory the logs are part of the engine's data and live in it: WOOFX3_LOG_DIR,
+ * anchored in the data directory when relative, else `<data dir>/logs`. A `logDir` from the caller
+ * is then ignored, because callers name a directory under the install root, which may not be
+ * writable (Program Files on Windows). Without a data directory the config is returned as is.
+ */
+function withDataDirLogs(config: LoggingConfig): LoggingConfig {
+  if (dataDir() === undefined) {
+    return config;
+  }
+  const fromEnv = process.env.WOOFX3_LOG_DIR?.trim();
+  return { ...config, logDir: resolveDataPath(fromEnv ? fromEnv : "logs") };
 }
 
 function createPrettyConsoleStream() {

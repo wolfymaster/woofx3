@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { EngineRequestType } from "@woofx3/api/webhooks";
 import { Api } from "../src/api";
 import { ApiGateway } from "../src/gateway";
+import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
 import { WebhookClient } from "../src/webhook-client";
 
@@ -76,7 +77,7 @@ async function registerShell(callbackUrl: string) {
     apiUrl: "http://api.test",
     logger,
   });
-  const gateway = new ApiGateway(api, {} as never, db as never, logger, null);
+  const gateway = new ApiGateway(api, {} as never, db as never, logger, resolveRegistrationPolicy({}));
   const webhooks = new WebhookClient(db as never, logger);
   gateway.setWebhookClient(webhooks);
   const registered = await gateway.registerClient("desktop shell", { callbackUrl, callbackToken: "shell-token" });

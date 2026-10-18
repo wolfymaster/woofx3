@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/wolfymaster/woofx3/common/runtime"
 )
 
 // Dialect is the system-DB backend selected from the connection URL scheme.
@@ -32,6 +34,10 @@ type ParsedDSN struct {
 //   - sqlite:///absolute/path.db     → DialectSQLite, path "/absolute/path.db"
 //   - sqlite:///:memory:             → DialectSQLite, path ":memory:"
 //   - :memory:                       → DialectSQLite (bare, no scheme)
+//
+// A relative SQLite path is anchored in WOOFX3_DATA_DIR when that is set (see
+// runtime.ResolveDataPath). This is the one place both the db proxy and the
+// migrate tool turn the URL into a file, so they always open the same one.
 func ParseDatabaseURL(raw string) (ParsedDSN, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -99,5 +105,5 @@ func sqlitePathFromURL(u *url.URL) (string, error) {
 		return ":memory:", nil
 	}
 
-	return path, nil
+	return runtime.ResolveDataPath(path), nil
 }

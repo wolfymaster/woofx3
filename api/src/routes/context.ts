@@ -1,3 +1,4 @@
+import type { EngineHosting } from "@woofx3/api";
 import type {
   CommandCreatedEvent,
   CommandDeletedEvent,
@@ -26,9 +27,9 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
-import { RelayCredentialSource } from "../relay-credential-source";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import type { MarketplaceClient } from "../marketplace-client";
+import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
@@ -66,6 +67,8 @@ export interface ApiOptions {
   version?: string;
   /** The marketplace to install and read the catalog from; null or absent when it is turned off. */
   marketplace?: MarketplaceClient | null;
+  /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
+  hosting?: EngineHosting | null;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -102,6 +105,7 @@ export class ApiRouteHost extends RpcTarget {
   protected logger: SharedLogger;
   protected version: string;
   protected marketplace: MarketplaceClient | null;
+  protected hosting: EngineHosting | null;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -386,6 +390,7 @@ export class ApiRouteHost extends RpcTarget {
     this.logger = opts.logger;
     this.version = opts.version ?? UNVERSIONED;
     this.marketplace = opts.marketplace ?? null;
+    this.hosting = opts.hosting ?? null;
   }
 }
 

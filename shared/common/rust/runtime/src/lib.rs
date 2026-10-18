@@ -192,6 +192,47 @@ impl Config {
     }
 }
 
+/// Names the directory that holds everything an engine writes: databases,
+/// module storage, uploaded modules, caches and logs. Read from the process
+/// environment only, never from `.woofx3.json`, so every service and the
+/// orchestrator that starts them agree on it. Must match `DataDirEnv` in
+/// `shared/common/golang/runtime/datadir.go` and `DATA_DIR_ENV` in
+/// `shared/common/typescript/runtime/data-dir.ts`.
+pub const DATA_DIR_ENV: &str = "WOOFX3_DATA_DIR";
+
+/// The data directory, made absolute, or `None` when `WOOFX3_DATA_DIR` is
+/// unset or blank.
+pub fn data_dir() -> Option<PathBuf> {
+    let value = std::env::var(DATA_DIR_ENV).ok()?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let dir = PathBuf::from(trimmed);
+    Some(std::path::absolute(&dir).unwrap_or(dir))
+}
+
+/// Anchor a relative path in the data directory. Without a data directory, or
+/// for an absolute path, the path comes back unchanged and is resolved as it
+/// always was, against the working directory.
+pub fn resolve_data_path(path: impl AsRef<Path>) -> PathBuf {
+    resolve_data_path_in(data_dir().as_deref(), path.as_ref())
+}
+
+/// `resolve_data_path` against an explicit data directory.
+pub fn resolve_data_path_in(data_dir: Option<&Path>, path: &Path) -> PathBuf {
+    match data_dir {
+        // `.` components are dropped so the result reads like Go's and
+        // TypeScript's, which clean the joined path.
+        Some(dir) if !path.as_os_str().is_empty() && !path.is_absolute() => dir.join(
+            path.components()
+                .filter(|component| *component != std::path::Component::CurDir)
+                .collect::<PathBuf>(),
+        ),
+        _ => path.to_path_buf(),
+    }
+}
+
 pub fn find_config_root(start_dir: &str) -> String {
     let dir = match std::fs::canonicalize(start_dir) {
         Ok(p) => p.to_string_lossy().to_string(),
@@ -406,5 +447,30 @@ mod tests {
 
         assert!(config.values.is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_data_path_without_a_data_dir_leaves_paths_alone() {
+        for path in ["./modules", "uploads", "/var/lib/woofx3/modules", ""] {
+            assert_eq!(
+                resolve_data_path_in(None, Path::new(path)),
+                PathBuf::from(path)
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_data_path_anchors_relative_paths_in_the_data_dir() {
+        let data_dir = std::env::temp_dir().join("woofx3-data");
+        assert_eq!(
+            resolve_data_path_in(Some(&data_dir), Path::new("./modules")),
+            data_dir.join("modules")
+        );
+        assert_eq!(
+            resolve_data_path_in(Some(&data_dir), Path::new("logs")),
+            data_dir.join("logs")
+        );
+        let absolute = std::env::temp_dir().join("elsewhere");
+        assert_eq!(resolve_data_path_in(Some(&data_dir), &absolute), absolute);
     }
 }

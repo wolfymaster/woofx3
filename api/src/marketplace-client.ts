@@ -50,6 +50,11 @@ export interface MarketplaceListing {
   name: string;
   description: string;
   version: string;
+  /**
+   * Which edition of its module the listing is. A new edition is a new
+   * listing id; a listing that predates editions is edition 1.
+   */
+  edition: number;
 }
 
 /** `GET /modules/{id}/download`, with its integrity fields checked. */
@@ -319,12 +324,17 @@ export class MarketplaceClient {
     if (id === "" || !LISTING_TYPES.has(asString(raw.type))) {
       throw new Error(`Marketplace listing ${listingId} response was malformed`);
     }
+    const edition = raw.edition ?? 1;
+    if (typeof edition !== "number" || !Number.isSafeInteger(edition) || edition < 1) {
+      throw new Error(`Marketplace listing ${listingId} has an invalid edition`);
+    }
     return {
       id,
       type: raw.type as MarketplaceListingType,
       name: asString(raw.name, id),
       description: asString(raw.description),
       version: asString(raw.version, "0.0.0"),
+      edition,
     };
   }
 

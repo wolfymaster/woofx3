@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -16,13 +17,20 @@ const (
 	envOTelTracingEnabled   = "WOOFX3_OTEL_TRACING_ENABLED"
 	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
 	envPrettyTerminal       = "WOOFX3_LOG_PRETTY"
+	envLogDirectory         = "WOOFX3_LOG_DIR"
+
+	// dataDirEnv must match DataDirEnv in shared/common/golang/runtime/datadir.go.
+	dataDirEnv = "WOOFX3_DATA_DIR"
 )
 
 type Fields map[string]any
 
 type Config struct {
-	ServiceName             string
-	Level                   slog.Level
+	ServiceName string
+	Level       slog.Level
+	// LogDirectory is where the log files go, falling back to WOOFX3_LOG_DIR
+	// and then ./logs. It is ignored when WOOFX3_DATA_DIR is set: see
+	// ResolveLogDirectory.
 	LogDirectory            string
 	EnableTerminalTransport bool
 	EnableFileTransport     bool
@@ -76,13 +84,7 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		}
 	}
 
-	logDirectory := strings.TrimSpace(cfg.LogDirectory)
-	if logDirectory == "" {
-		logDirectory = strings.TrimSpace(os.Getenv("WOOFX3_LOG_DIR"))
-	}
-	if logDirectory == "" {
-		logDirectory = defaultLogDirectory
-	}
+	logDirectory := ResolveLogDirectory(cfg.LogDirectory)
 
 	enableTerminal := cfg.EnableTerminalTransport
 	enableFile := cfg.EnableFileTransport
@@ -189,4 +191,38 @@ func defaultRedactKeys() map[string]struct{} {
 
 func normalizeKey(key string) string {
 	return strings.ToLower(strings.TrimSpace(key))
+}
+
+// ResolveLogDirectory is the directory New writes to for a configured
+// LogDirectory, exported for callers that keep other files beside the logs.
+//
+// With a data directory the logs are part of the engine's data and live in it:
+// WOOFX3_LOG_DIR, anchored in the data directory when relative, else
+// <data dir>/logs. The configured directory is then ignored, because callers
+// name one under the install root, which may not be writable (Program Files on
+// Windows). Without a data directory: the configured directory, else
+// WOOFX3_LOG_DIR, else ./logs.
+func ResolveLogDirectory(configured string) string {
+	fromEnv := strings.TrimSpace(os.Getenv(envLogDirectory))
+	if dataDir := strings.TrimSpace(os.Getenv(dataDirEnv)); dataDir != "" {
+		if abs, err := filepath.Abs(dataDir); err == nil {
+			dataDir = abs
+		}
+		logDirectory := fromEnv
+		if logDirectory == "" {
+			logDirectory = defaultLogDirectory
+		}
+		if filepath.IsAbs(logDirectory) {
+			return logDirectory
+		}
+		return filepath.Join(dataDir, logDirectory)
+	}
+
+	if logDirectory := strings.TrimSpace(configured); logDirectory != "" {
+		return logDirectory
+	}
+	if fromEnv != "" {
+		return fromEnv
+	}
+	return defaultLogDirectory
 }

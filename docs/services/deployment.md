@@ -57,6 +57,125 @@ parents, set `WOOFX3_ROOT` (the directory holding `.woofx3.json` and `.env`) or
 from its working directory as before. See
 [Finding the config](./runtime.md#finding-the-config).
 
+To keep the engine's state out of its install directory (a release unpacked
+under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR`. The
+relative database, module storage, module and upload paths, caches and every
+log file then live under it. Unset, paths resolve as before. See
+[The data directory](./runtime.md#the-data-directory).
+
+## Host and Origin checks
+
+The api and sceneManager can refuse requests by their `Host` and `Origin`
+headers. Both checks are off unless configured: the hosted dashboard reaches
+engines directly from several origins (the app domain, PR previews, local dev),
+so an engine that sets neither accepts every request and answers CORS with
+`Access-Control-Allow-Origin: *`.
+
+| Setting | When set |
+|---|---|
+| `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
+| `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
+
+Each is a comma-separated list, read by both services, and each works without
+the other. A malformed entry stops the service at startup.
+
+Matching rules:
+
+- **Hosts** are `name` or `name:port`, case-insensitive; IPv6 literals are
+  bracketed (`[::1]`, `[::1]:8080`). A bare name matches on any port; with a
+  port, only that port. List every name the services are reached by, internal
+  ones included: barkloader posts job results to the api at `WOOFX3_API_URL`,
+  and health checks usually use `127.0.0.1`. Behind the edge, the Host is the
+  public one, since Caddy passes it through.
+- **Origins** are `scheme://host[:port]`, compared as web origins, so
+  `https://app.example` and `https://app.example:443` are the same entry.
+  `scheme://host:*` matches that scheme and host on any port (for example
+  `http://localhost:*` for local dev servers). The literal `null` matches the
+  opaque origin sandboxed frames send, and nothing else matches it. There is
+  no subdomain wildcard.
+
+A browser sends no `Origin` on a top-level navigation or a same-origin `GET`,
+which is why an absent Origin is allowed; OBS, the CLI and peer services send
+none either. What an overlay sends when `WOOFX3_ALLOWED_ORIGINS` is set on
+sceneManager:
+
+- An **OBS browser source** loads `/scene/{id}` as a navigation (no Origin), and
+  its same-origin `GET`s, the `/events` SSE stream included, send none. Its
+  `POST`s (delivery acknowledgements, widget status, session refresh) send the
+  page's own origin, so list sceneManager's public origin, as OBS reaches it.
+- **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
+  from sceneManager (web fonts, module scripts) send `Origin: null`, so list
+  `null` when widgets load anything from sceneManager. A listed `null` cannot
+  tell one sandboxed page from another; the Host check and the session tokens
+  remain the protection there. The api has no such caller, so give `null` to
+  sceneManager alone, through its own environment rather than the shared
+  `.woofx3.json`.
+- The **scene editor** WebSocket sends the dashboard's origin.
+
+For a desktop engine on loopback, for example:
+
+```bash
+# both services
+WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
+# api
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*
+# sceneManager
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,null
+```
+
+## Client registration
+
+A dashboard or desktop shell becomes a client of the engine by calling
+`registerClient` over `/api`, which returns the client id and secret it
+authenticates with from then on. Who may register is set by
+`WOOFX3_REGISTRATION_MODE`:
+
+| Mode | Who may register |
+|---|---|
+| `open` | Anyone who reaches the engine. |
+| `token` | Only a caller presenting the registration token. |
+| `first` | Anyone while the engine has no registered client (trust on first use). After that, only a caller presenting the token, or nobody when there is none. |
+
+Unset, the mode follows from the token: `token` when one is configured, `open`
+when not. Managed engines are given `WOOFX3_REGISTRATION_TOKEN` by maintenance
+and no mode, so they require it; a bring-your-own engine given neither stays
+open.
+
+The token comes from one of:
+
+- `WOOFX3_REGISTRATION_TOKEN`, the token itself.
+- `WOOFX3_REGISTRATION_TOKEN_FILE`, a path. If the file exists its trimmed
+  contents are the token (an empty file stops the api). If not, the api
+  generates a 256-bit token, writes it there with mode `0600` (creating the
+  directory `0700`), and uses it. The file is written under a temporary name
+  and hard-linked into place, so a reader never sees it half-written. A parent
+  process such as a desktop shell reads the same file to register. On Windows
+  the mode bits do not apply and the file takes its directory's permissions, so
+  put it in a directory only the user can read, such as one under
+  `%LOCALAPPDATA%`.
+
+Setting both is a startup error, as are `open` with a token and `token`
+without one.
+
+`first` decides by asking the db proxy whether any client exists, on every
+registration, so the lock survives restarts; removing every client opens
+registration again. Registrations are handled one at a time in this mode, so two
+callers racing on a new engine cannot both be first.
+
+## Barkloader processing callbacks
+
+barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's
+`/webhooks/barkloader/processing`. It sends the engine secret
+(`WOOFX3_BARKLOADER_KEY`) as `Authorization: Bearer <key>`, but only to a
+loopback host or the host of `WOOFX3_API_URL`, since the callback URL arrives in
+the processing request.
+
+The api checks that header only when `WOOFX3_BARKLOADER_WEBHOOK_AUTH=required`;
+unset (or `off`) it accepts every callback, as it always has. A callback
+without the right token is then answered `401` and not recorded. Because the
+check is opt-in, barkloader and the api can be updated in either order: turn it
+on once the running barkloader sends the header.
+
 ## Startup
 
 The entrypoint (`build/entrypoint.sh`) runs the database migrations with the
@@ -68,6 +187,13 @@ The image runs as UID 65532 and keeps its state in `/app/data`. A host that
 mounts a root-owned volume there must start the container as root (Railway:
 `RAILWAY_RUN_UID=0`); the entrypoint then hands `/app/data` to 65532 and drops
 privileges before migrating or starting anything.
+
+The orchestrator starts each service once the services it depends on are up.
+The api declares `GET /ready` as its health endpoint in `services.json`, so the
+edge starts once the api reports ready, or after 30 seconds if it has not by
+then; a timeout is logged as a warning and never stops the engine. The probe
+goes to `127.0.0.1` on `WOOFX3_API_PORT`, or `5050` (the baked `apiPort`) when
+that is unset.
 
 ## Module storage
 
@@ -154,6 +280,50 @@ is still running after 25 seconds.
 The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
 Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
 
+### Supervision by a parent process
+
+A program that starts the orchestrator itself, such as a desktop shell, can ask
+it for machine-readable status. Both switches are off by default, and then the
+orchestrator behaves exactly as above: services share its stdout and stderr, and
+only a signal stops it.
+
+- `WOOFX3_SUPERVISOR_STATUS=stdout-jsonl` writes status as JSON lines on stdout.
+  Stdout then carries nothing else: the orchestrator logs to its log file only,
+  and each service's stdout and stderr are appended to `<service>.output.log`
+  in the log directory (`<data dir>/logs` under
+  [`WOOFX3_DATA_DIR`](./runtime.md#the-data-directory), else `logs/` next to the
+  orchestrator).
+- `--status-file <path>` writes the same lines to a file, truncated at start.
+  Alone, it changes nothing else.
+- `--exit-on-stdin-eof` stops the services and exits, as on SIGTERM, when the
+  orchestrator's stdin closes. A parent that keeps the write end of a pipe open
+  is then covered even when it is killed outright. The services get the null
+  device as stdin.
+
+Each line is one event, with an RFC 3339 `time`:
+
+```json
+{"event":"service","time":"2026-10-17T12:00:00.1Z","name":"api","status":"starting","pid":4242}
+{"event":"service","time":"2026-10-17T12:00:03.2Z","name":"api","status":"healthy","pid":4242}
+{"event":"ready","time":"2026-10-17T12:00:04.0Z"}
+{"event":"service","time":"2026-10-17T12:05:00.0Z","name":"api","status":"stopped","pid":4242,"message":"exit status 0"}
+{"event":"stopped","time":"2026-10-17T12:05:01.0Z"}
+```
+
+- `service` — a service moved to `starting`, `healthy`, `unhealthy` or
+  `stopped` (with how it exited in `message`), or was `skipped` because its
+  prebuilt binary is not installed.
+- `ready` — every service is healthy at once, sent once per run. A service with
+  a `health_endpoint` in `services.json` is healthy when that answers `200`; one
+  without is healthy once started. The api's is `GET /ready`, so `ready` means
+  the api has reported ready. A service whose check times out is `unhealthy`
+  but is still checked, and turns `healthy` when its check passes.
+- `error` — a service could not be started (`name` set), or the orchestrator
+  could not start at all (no `name`; it exits non-zero after this line).
+- `stopped` — every service has been stopped and the orchestrator is exiting.
+
+Consumers must ignore event types and fields they do not know.
+
 ## Readiness and version
 
 `GET /ready` (served by the api, reachable through the edge) answers `200`
@@ -206,6 +376,12 @@ holds only descriptive facts that are safe for anyone to read:
   [engine-capabilities.md](engine-capabilities.md)), readable without a
   registered client. `schema` is `ENGINE_CAPABILITIES_SCHEMA`. The example
   above is shortened; a real engine lists every id it supports.
+  It includes the hosting ids for `WOOFX3_HOSTING`, as below.
+
+`WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
+`getEngineInfo()` reports it as `hosting`, and `local` adds the
+`engine.localMode` capability. Unset, `getEngineInfo()` has no `hosting` field
+and no hosting capability is listed; any other value stops the api at startup.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
