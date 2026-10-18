@@ -17,7 +17,7 @@ export function dataDir(env: Record<string, string | undefined> = process.env): 
 
 /**
  * Anchor a relative path in the data directory. Without a data directory, or for an absolute path,
- * the path comes back unchanged and is resolved as it always was, against the working directory.
+ * the path comes back unchanged, and a relative one is then resolved against the working directory.
  */
 export function resolveDataPath(target: string, env: Record<string, string | undefined> = process.env): string {
   const dir = dataDir(env);

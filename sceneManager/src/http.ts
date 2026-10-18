@@ -69,8 +69,8 @@ export interface HttpDeps {
 }
 
 // CORS for iframe-embedded widgets and cross-origin OBS browser
-// sources — same rationale as streamware's CORS_HEADERS. The allowed
-// origin is per request (see RequestGuard.corsOriginHeaders).
+// sources. The allowed origin is per request (see
+// RequestGuard.corsOriginHeaders).
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",

@@ -26,8 +26,8 @@ func DataDir() string {
 }
 
 // ResolveDataPath anchors a relative path in the data directory. Without a
-// data directory, or for an absolute path, the path comes back unchanged and
-// is resolved by the caller as it always was, against the working directory.
+// data directory, or for an absolute path, the path comes back unchanged, and
+// a relative one is then resolved against the working directory.
 func ResolveDataPath(path string) string {
 	return resolveDataPathIn(DataDir(), path)
 }

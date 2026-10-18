@@ -213,8 +213,8 @@ pub fn data_dir() -> Option<PathBuf> {
 }
 
 /// Anchor a relative path in the data directory. Without a data directory, or
-/// for an absolute path, the path comes back unchanged and is resolved as it
-/// always was, against the working directory.
+/// for an absolute path, the path comes back unchanged, and a relative one is
+/// then resolved against the working directory.
 pub fn resolve_data_path(path: impl AsRef<Path>) -> PathBuf {
     resolve_data_path_in(data_dir().as_deref(), path.as_ref())
 }
