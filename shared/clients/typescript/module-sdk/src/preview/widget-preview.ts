@@ -203,10 +203,19 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
   }
 
   const storage: WidgetHostStorage = {
-    async get(key: string): Promise<unknown> {
-      return seen.get(scope(moduleId, key)) ?? null;
+    get(key: string): Promise<unknown> {
+      if (typeof key !== "string" || key.length === 0) {
+        throw new Error("[mock-host] storage.get requires a non-empty key");
+      }
+      return Promise.resolve(seen.get(scope(moduleId, key)) ?? null);
     },
     subscribe(key: string, cb: (value: unknown) => void): () => void {
+      if (typeof key !== "string" || key.length === 0) {
+        throw new Error("[mock-host] storage.subscribe requires a non-empty key");
+      }
+      if (typeof cb !== "function") {
+        throw new Error("[mock-host] storage.subscribe requires a callback");
+      }
       if (!hasStorage) {
         return () => {};
       }
@@ -348,6 +357,9 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       return resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
     },
     onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void {
+      if (typeof handler !== "function") {
+        throw new Error("[mock-host] onEvent requires a handler function");
+      }
       const sub: EventSubscription = { handler, queue: queue ?? {} };
       current = sub;
       pump();

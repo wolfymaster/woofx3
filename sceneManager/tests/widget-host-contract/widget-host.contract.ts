@@ -39,6 +39,16 @@ export function describeWidgetHostContract(name: string, make: HarnessFactory): 
       });
     });
 
+    describe("arguments", () => {
+      it("throws at once for a storage key that is empty, a missing callback, or a handler that is not a function", async () => {
+        const h = await start({ storage: {} });
+        expect(() => h.host.storage.get("")).toThrow();
+        expect(() => h.host.storage.subscribe("", () => {})).toThrow();
+        expect(() => h.host.storage.subscribe("count", undefined as never)).toThrow();
+        expect(() => h.host.onEvent(undefined as never)).toThrow();
+      });
+    });
+
     describe("settings", () => {
       it("reads the streamer's new settings once they change", async () => {
         const h = await start({ settings: { label: "a" } });
