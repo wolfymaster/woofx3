@@ -254,6 +254,61 @@ describe("Config location", () => {
     }
   });
 
+  const unreadableConfigs = [
+    { name: "malformed JSON", content: "{not json" },
+    { name: "a JSON array", content: "[1, 2]" },
+    { name: "a JSON scalar", content: "42" },
+    { name: "JSON null", content: "null" },
+  ];
+
+  for (const { name, content } of unreadableConfigs) {
+    test(`loadRuntimeEnv refuses a WOOFX3_CONFIG file holding ${name}`, () => {
+      const dir = tempDir({ "engine.json": content });
+      const configPath = path.join(dir, "engine.json");
+      try {
+        withLocationEnv({ config: configPath }, () => {
+          expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(configPath);
+        });
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test(`loadRuntimeEnv refuses a discovered .woofx3.json holding ${name}`, () => {
+      const root = tempDir({ ".woofx3.json": content });
+      try {
+        withLocationEnv({ root }, () => {
+          expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(path.join(root, ".woofx3.json"));
+        });
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("loadRuntimeEnv refuses a WOOFX3_CONFIG naming a directory", () => {
+    const dir = tempDir({});
+    try {
+      withLocationEnv({ config: dir }, () => {
+        expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(dir);
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("loadRuntimeEnv reads .woofx3.config when there is no .woofx3.json", () => {
+    const root = tempDir({ ".woofx3.config": JSON.stringify({ locationFallbackFile: "from-config" }) });
+    try {
+      withLocationEnv({ root }, () => {
+        const { config } = loadRuntimeEnv({ schema: passthrough });
+        expect(config.woofx3LocationFallbackFile).toBe("from-config");
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("loadRuntimeEnv refuses a WOOFX3_CONFIG naming a missing file", () => {
     withLocationEnv({ config: path.join(process.cwd(), "tmp-runtime-location-missing", "engine.json") }, () => {
       expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(CONFIG_FILE_ENV);

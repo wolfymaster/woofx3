@@ -280,6 +280,10 @@ then configured by variables alone. When neither variable is set, NATS falls
 back to the config files next to its executable if the search finds none; with
 either variable set it does not.
 
+A config file that exists but cannot be read, is not valid JSON, or does not hold
+a JSON object stops the service at startup with the file's path in the error,
+whether it was named or found by the search.
+
 Rust services read no `.env` file; for them only the config file column applies.
 
 ### The data directory

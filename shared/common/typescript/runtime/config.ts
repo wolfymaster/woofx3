@@ -20,16 +20,18 @@ export function screamingSnakeToCamel(s: string): string {
     .join("");
 }
 
-const PROJECT_ROOT_MARKERS = [".woofx3.json", ".woofx3.config"] as const;
+/** Config file names read from a config root, in order of preference. */
+const CONFIG_FILE_NAMES = [".woofx3.json", ".woofx3.config"] as const;
 
 /**
- * Find project root by walking up from startDir until we find .woofx3.json, .woofx3.config, .env, or package.json.
+ * Find the project root by walking up from startDir until a directory holds .woofx3.json or
+ * .woofx3.config. Without one, startDir (default: the working directory) is the root.
  */
 export function findProjectRoot(startDir?: string): string {
   let dir = startDir ?? process.cwd();
   const root = path.parse(dir).root;
   while (dir !== root) {
-    if (PROJECT_ROOT_MARKERS.some((name) => fs.existsSync(path.join(dir, name)))) {
+    if (CONFIG_FILE_NAMES.some((name) => fs.existsSync(path.join(dir, name)))) {
       return dir;
     }
     dir = path.dirname(dir);
@@ -70,26 +72,33 @@ function loadDotenvFile(rootDir: string): Record<string, string> {
 }
 
 /**
- * Read a JSON config file with camelCase keys. A file that cannot be parsed reads as no config.
+ * Read a JSON config file with camelCase keys. A file that exists but cannot be read, does not
+ * parse, or does not hold a JSON object is an error: starting on defaults instead would hide a
+ * typo in the deployment's config until something misbehaves.
  */
-function readWoofx3ConfigFile(configPath: string): Record<string, string | number | boolean> | null {
+function readWoofx3ConfigFile(configPath: string): Record<string, string | number | boolean> {
+  let parsed: unknown;
   try {
-    const content = fs.readFileSync(configPath, "utf8");
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    return coerceConfigValues(parsed);
-  } catch {
-    return null;
+    parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch (error) {
+    throw new Error(`${configPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${configPath}: the config file must hold a JSON object`);
+  }
+  return coerceConfigValues(parsed as Record<string, unknown>);
 }
 
 /**
- * Load .woofx3.json or .woofx3.config from rootDir if present (prefers .woofx3.json). Expects JSON with camelCase keys.
+ * Load .woofx3.json or .woofx3.config from rootDir, preferring .woofx3.json. Neither existing is
+ * not an error: a service can be configured entirely through WOOFX3_* variables.
  */
 function loadWoofx3ConfigFile(rootDir: string): Record<string, string | number | boolean> | null {
-  for (const name of [".woofx3.json", ".woofx3.config"]) {
+  for (const name of CONFIG_FILE_NAMES) {
     const configPath = path.join(rootDir, name);
-    if (!fs.existsSync(configPath)) continue;
-    return readWoofx3ConfigFile(configPath);
+    if (fs.existsSync(configPath)) {
+      return readWoofx3ConfigFile(configPath);
+    }
   }
   return null;
 }

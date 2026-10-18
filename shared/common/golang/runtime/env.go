@@ -84,17 +84,23 @@ func parseDotenv(path string) (map[string]string, error) {
 	return out, scanner.Err()
 }
 
+// loadWoofx3Config reads a JSON config file. A missing file reads as no config; one that exists but
+// cannot be read, does not parse, or does not hold a JSON object is an error, so a typo in a
+// deployment's config stops the service instead of starting it on defaults.
 func loadWoofx3Config(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("read config file %s: %w", path, err)
 	}
 	var out map[string]any
 	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse config file %s: %w", path, err)
+	}
+	if out == nil {
+		return nil, fmt.Errorf("parse config file %s: the config file must hold a JSON object", path)
 	}
 	return out, nil
 }
