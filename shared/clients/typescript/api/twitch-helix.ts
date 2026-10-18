@@ -99,6 +99,8 @@ export interface TwitchUnbanUserParams {
 /** `POST /helix/chat/messages`: a message in the broadcaster's chat, sent as the broadcaster. */
 export interface TwitchSendChatMessageParams {
   message: string;
+  /** Pin the message as it is sent (Twitch beta). Requires the `twitch.pins` capability. */
+  pin?: boolean;
 }
 
 /** `POST /helix/chat/announcements`. */
@@ -118,6 +120,11 @@ export interface TwitchGetChattersParams {
   first?: number;
   /** The previous page's `pagination.cursor`. */
   after?: string;
+}
+
+/** `PUT` or `DELETE /helix/chat/pins` (Twitch beta): the message to pin or unpin. */
+export interface TwitchChatPinParams {
+  message_id: string;
 }
 
 /** `PATCH /helix/chat/settings`: the modes to change, by Helix's names. */

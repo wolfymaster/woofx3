@@ -1,6 +1,7 @@
 import type {
   TwitchAddBlockedTermParams,
   TwitchBanUserParams,
+  TwitchChatPinParams,
   TwitchCreateStreamMarkerParams,
   TwitchGetBlockedTermsParams,
   TwitchGetChattersParams,
@@ -214,5 +215,21 @@ export const twitchRoutes = routeModule({
 
   async twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult> {
     return requestHelix(this.nats, this.logger, "getChatters", params);
+  },
+
+  async twitchGetChatPins(): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "getChatPins", undefined);
+  },
+
+  async twitchPinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "pinChatMessage", params);
+  },
+
+  async twitchUnpinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "unpinChatMessage", params);
+  },
+
+  async twitchCreateClip(): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "createClip", undefined);
   },
 });

@@ -177,7 +177,7 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
   sendChatMessage: {
     method: "POST",
     path: "chat/messages",
-    params: { message: { type: "string", required: true } },
+    params: { message: { type: "string", required: true }, pin: { type: "boolean" } },
     paramsIn: "body",
     broadcasterQuery: [],
     broadcasterBody: ["broadcaster_id", "sender_id"],
@@ -204,6 +204,39 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     params: { first: { type: "integer" }, after: { type: "string" } },
     paramsIn: "query",
     broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  // The chat pin endpoints are in Twitch's open beta and may change.
+  getChatPins: {
+    method: "GET",
+    path: "chat/pins",
+    params: {},
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  pinChatMessage: {
+    method: "PUT",
+    path: "chat/pins",
+    params: { message_id: { type: "string", required: true } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  unpinChatMessage: {
+    method: "DELETE",
+    path: "chat/pins",
+    params: { message_id: { type: "string", required: true } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  createClip: {
+    method: "POST",
+    path: "clips",
+    params: {},
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id"],
     broadcasterBody: [],
   },
 };

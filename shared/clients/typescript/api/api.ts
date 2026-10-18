@@ -12,6 +12,7 @@ import type { RegisterClientOptions } from "./rpc";
 import type {
   TwitchAddBlockedTermParams,
   TwitchBanUserParams,
+  TwitchChatPinParams,
   TwitchCreateStreamMarkerParams,
   TwitchGetBlockedTermsParams,
   TwitchGetChattersParams,
@@ -1767,6 +1768,14 @@ export interface Woofx3EngineApi {
   twitchSendShoutout(params: TwitchSendShoutoutParams): Promise<TwitchHelixResult>;
   /** `GET /helix/chat/chatters` for the broadcaster. Requires the `twitch.chat` capability. */
   twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchGetChatPins(): Promise<TwitchHelixResult>;
+  /** `PUT /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchPinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchUnpinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/clips` on the broadcaster's stream. Requires the `twitch.clips` capability. */
+  twitchCreateClip(): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires

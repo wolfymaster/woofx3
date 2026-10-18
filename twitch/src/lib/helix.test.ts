@@ -184,6 +184,40 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
       query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, first: "1000" },
     },
   ],
+  [
+    "sendChatMessage",
+    { message: "pin me", pin: true },
+    {
+      method: "POST",
+      url: "chat/messages",
+      query: {},
+      jsonBody: { broadcaster_id: BROADCASTER_ID, sender_id: BROADCASTER_ID, message: "pin me", pin: true },
+    },
+  ],
+  [
+    "getChatPins",
+    {},
+    { method: "GET", url: "chat/pins", query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID } },
+  ],
+  [
+    "pinChatMessage",
+    { message_id: "m-1" },
+    {
+      method: "PUT",
+      url: "chat/pins",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, message_id: "m-1" },
+    },
+  ],
+  [
+    "unpinChatMessage",
+    { message_id: "m-1" },
+    {
+      method: "DELETE",
+      url: "chat/pins",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, message_id: "m-1" },
+    },
+  ],
+  ["createClip", {}, { method: "POST", url: "clips", query: { broadcaster_id: BROADCASTER_ID } }],
 ];
 
 describe("buildHelixRequest", () => {

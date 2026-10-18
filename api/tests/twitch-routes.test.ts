@@ -96,6 +96,15 @@ const FORWARDS: [RouteName, unknown[], { operation: string; params?: unknown }][
     { operation: "sendShoutout", params: { to_broadcaster_id: "42" } },
   ],
   ["twitchGetChatters", [{ first: 1000 }], { operation: "getChatters", params: { first: 1000 } }],
+  ["twitchGetChatPins", [], { operation: "getChatPins" }],
+  ["twitchPinChatMessage", [{ message_id: "m1" }], { operation: "pinChatMessage", params: { message_id: "m1" } }],
+  ["twitchUnpinChatMessage", [{ message_id: "m1" }], { operation: "unpinChatMessage", params: { message_id: "m1" } }],
+  ["twitchCreateClip", [], { operation: "createClip" }],
+  [
+    "twitchSendChatMessage",
+    [{ message: "hi", pin: true }],
+    { operation: "sendChatMessage", params: { message: "hi", pin: true } },
+  ],
 ];
 
 describe("twitch routes", () => {
@@ -112,7 +121,8 @@ describe("twitch routes", () => {
   }
 
   test("covers every route", () => {
-    expect(FORWARDS.map(([name]): string => name).sort()).toEqual(Object.keys(twitchRoutes).sort());
+    const covered = new Set<string>(FORWARDS.map(([name]) => name));
+    expect([...covered].sort()).toEqual(Object.keys(twitchRoutes).sort());
   });
 
   test("waits 10 seconds for the twitch service", () => {
@@ -238,6 +248,8 @@ describe("twitch capabilities", () => {
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchAds);
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchModeration);
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchChat);
+    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchPins);
+    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchClips);
     const reachable: readonly string[] = RPC_METHODS;
     for (const name of Object.keys(twitchRoutes)) {
       expect(reachable).toContain(name);
