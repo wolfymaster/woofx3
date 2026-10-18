@@ -29,7 +29,13 @@ impl NatsService {
 /// `WOOFX3_MESSAGEBUS_TOKEN` or `messagebusToken` in `.woofx3.json`. None when
 /// the bus takes anyone.
 pub fn configured_token() -> Option<String> {
-    let token = get_env_or_default_with_key("MESSAGEBUS_TOKEN", Some("messagebusToken"), "");
+    token_from(|env_var, config_key| get_env_or_default_with_key(env_var, Some(config_key), ""))
+}
+
+/// `configured_token` over an injected `lookup(env_var, config_key)`, so the
+/// resolution is testable without touching the process environment.
+fn token_from(lookup: impl FnOnce(&str, &str) -> String) -> Option<String> {
+    let token = lookup("MESSAGEBUS_TOKEN", "messagebusToken");
     Some(token.trim().to_string()).filter(|token| !token.is_empty())
 }
 
@@ -156,13 +162,23 @@ mod tests {
     }
 
     #[test]
-    fn the_token_is_read_from_the_environment() {
-        // SAFETY: test-only, and no other test reads or writes this name.
-        unsafe {
-            std::env::set_var("WOOFX3_MESSAGEBUS_TOKEN", " s3cret ");
-        }
+    fn the_token_is_looked_up_by_its_variable_and_config_key() {
+        let token = token_from(|env_var, config_key| {
+            assert_eq!(
+                (env_var, config_key),
+                ("MESSAGEBUS_TOKEN", "messagebusToken")
+            );
+            " s3cret ".to_string()
+        });
 
-        assert_eq!(configured_token().as_deref(), Some("s3cret"));
+        assert_eq!(token.as_deref(), Some("s3cret"));
+    }
+
+    #[test]
+    fn a_blank_token_is_none() {
+        for value in ["", "   "] {
+            assert_eq!(token_from(|_, _| value.to_string()), None, "{value:?}");
+        }
     }
 
     /// The headers of the WebSocket upgrade the client sends. The listener
