@@ -137,6 +137,7 @@ async fn install<R: Repository + Clone>(
             &composite_module_key,
             "",
             InstallProvenance::System,
+            None,
         )
         .await
         .map_err(|e| anyhow!("install failed: {}", e))?;
