@@ -165,14 +165,18 @@ function checkWorkflow(item: Record<string, unknown>, path: string, errors: Shap
       errors.add(`${path}.definition.name`, "must equal the workflow's name");
     }
   }
-  if (!isPlainObject(item.workflowRefs)) {
-    errors.add(`${path}.workflowRefs`, "must be an object");
-  } else {
-    for (const [taskId, name] of Object.entries(item.workflowRefs)) {
-      checkString(name, `${path}.workflowRefs.${taskId}`, errors, { nonEmpty: true });
-    }
+  checkWorkflowRefs(item.workflowRefs, `${path}.workflowRefs`, errors);
+  checkSubWorkflowIds(isPlainObject(item.definition) ? item.definition.tasks : undefined, `${path}.definition.tasks`, errors);
+}
+
+function checkWorkflowRefs(refs: unknown, path: string, errors: ShapeErrors): void {
+  if (!isPlainObject(refs)) {
+    errors.add(path, "must be an object");
+    return;
   }
-  checkSubWorkflowIds(item, path, errors);
+  for (const [taskId, name] of Object.entries(refs)) {
+    checkString(name, `${path}.${taskId}`, errors, { nonEmpty: true });
+  }
 }
 
 /**
@@ -180,8 +184,7 @@ function checkWorkflow(item: Record<string, unknown>, path: string, errors: Shap
  * id: an id from another engine would point at whatever happens to hold it
  * here, or at nothing.
  */
-function checkSubWorkflowIds(item: Record<string, unknown>, path: string, errors: ShapeErrors): void {
-  const tasks = isPlainObject(item.definition) ? item.definition.tasks : undefined;
+function checkSubWorkflowIds(tasks: unknown, path: string, errors: ShapeErrors): void {
   if (!Array.isArray(tasks)) {
     return;
   }
@@ -192,7 +195,7 @@ function checkSubWorkflowIds(item: Record<string, unknown>, path: string, errors
     const workflowId = task.workflow.workflowId;
     if (typeof workflowId === "string" && workflowId !== "") {
       errors.add(
-        `${path}.definition.tasks[${index}].workflow.workflowId`,
+        `${path}[${index}].workflow.workflowId`,
         "must be empty; name the target workflow in workflowRefs"
       );
     }
@@ -211,6 +214,7 @@ function checkCommand(item: Record<string, unknown>, path: string, errors: Shape
       "argumentPattern",
       "actions",
       "steps",
+      "workflowRefs",
       "groups",
       "usernames",
       "requires",
@@ -244,7 +248,11 @@ function checkCommand(item: Record<string, unknown>, path: string, errors: Shape
           errors.add(`${path}.steps[${index}]`, "must be an object");
         }
       });
+      checkSubWorkflowIds(item.steps, `${path}.steps`, errors);
     }
+  }
+  if (item.workflowRefs !== undefined) {
+    checkWorkflowRefs(item.workflowRefs, `${path}.workflowRefs`, errors);
   }
   checkStringArray(item.groups, `${path}.groups`, errors);
   if (item.usernames !== undefined) {

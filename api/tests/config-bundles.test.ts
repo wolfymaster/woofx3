@@ -503,6 +503,66 @@ describe("a command with a workflow", () => {
   });
 });
 
+describe("a command whose step starts a workflow", () => {
+  function engineWithSubWorkflowCommand(): FakeEngineDb {
+    const db = new FakeEngineDb();
+    const thank = workflowRow(db, { name: "Thank follower" });
+    const steps = [{ id: "thank", type: "workflow", workflow: { workflowId: thank.id } }];
+    const own = workflowRow(db, {
+      name: "!hype",
+      triggerJson: JSON.stringify({ type: "command", event: "chat.command.hype" }),
+      stepsJson: JSON.stringify(steps),
+    });
+    db.commands.push({
+      id: "src-cmd-hype",
+      command: "hype",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      visibility: "public",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
+      actionsJson: "[]",
+      workflowId: own.id,
+      stepsJson: JSON.stringify(steps),
+      createdByType: "USER",
+    });
+    return db;
+  }
+
+  it("exports the target by name, not by this engine's id", async () => {
+    const bundle = await makeApi(engineWithSubWorkflowCommand()).api.exportConfig();
+
+    expect(bundle.commands[0].steps?.[0].workflow?.workflowId).toBe("");
+    expect(bundle.commands[0].workflowRefs).toEqual({ thank: "Thank follower" });
+  });
+
+  it("imports the step pointed at the target's id on the new engine", async () => {
+    const bundle = await makeApi(engineWithSubWorkflowCommand()).api.exportConfig();
+    const target = emptyEngine();
+
+    const result = await makeApi(target).session.importConfig(bundle);
+
+    expect(result.summary.failed).toBe(0);
+    const thank = target.workflows.find((w) => w.name === "Thank follower");
+    expect(thank).toBeDefined();
+    expect(JSON.parse(target.commands[0].stepsJson)[0].workflow.workflowId).toBe(thank.id);
+
+    const again = await makeApi(target).session.importConfig(bundle);
+    expect(again.summary.skipped).toBe(2);
+  });
+
+  it("is blocked when the target is neither in the bundle nor on the engine", async () => {
+    const bundle = await makeApi(engineWithSubWorkflowCommand()).api.exportConfig({ include: ["commands"] });
+
+    const plan = await makeApi(emptyEngine()).session.previewImport(bundle);
+
+    expect(plan.items[0].action).toBe("conflict");
+    expect(plan.items[0].reasons.map((r) => r.code)).toContain("unknown_workflow");
+  });
+});
+
 describe("conflicts", () => {
   async function bundleWith(mutate: (db: FakeEngineDb) => void = () => {}) {
     const db = populatedEngine();
