@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createMessageBus } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import { parseStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
-import { type BootedSceneManager, bootSceneManager } from "./boot";
+import { BootFailure, type BootedSceneManager, bootSceneManager } from "./boot";
 import { ALERT_AREA_ID, OVERLAY_TOKEN, SCENE_ID, TEXT_ID } from "./fake-db";
 import { type MessageBus, startMessageBus } from "./message-bus";
 
@@ -273,6 +273,15 @@ describe.skipIf(!started.ok)("scene manager smoke", () => {
     } finally {
       stream.close();
     }
+  }, 20_000);
+
+  it("releases its bus connection when a start fails part way, as on a port already taken", async () => {
+    const port = Number(new URL(sm.baseUrl).port);
+    const failure = await bootSceneManager(bus.url, { port }).catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(BootFailure);
+    const messages = (failure as BootFailure).logs.map((l) => l.message);
+    expect(messages).toContain("Connected to NATS");
+    expect(messages).toContain("NATS connection closed");
   }, 20_000);
 
   it("asks the database for nothing it was not expected to", () => {

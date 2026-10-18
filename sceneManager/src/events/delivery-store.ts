@@ -36,6 +36,9 @@ type SseController = ReadableStreamDefaultController<Uint8Array>;
 
 const REDELIVER_AFTER_MS = 5_000;
 const SWEEP_INTERVAL_MS = 3_000;
+/** The wait before trying a failed hydration again, doubling up to the cap. */
+const HYDRATE_RETRY_MIN_MS = 1_000;
+const HYDRATE_RETRY_MAX_MS = 30_000;
 
 function safeParseJson(value: string): unknown {
   try {
@@ -64,6 +67,7 @@ export class DeliveryStore {
   private readonly open = new Map<string, Map<string, Map<string, OpenDelivery>>>();
   private readonly connections = new Map<string, Set<SseController>>();
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  private hydrationTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly db: DbClient,
@@ -76,7 +80,7 @@ export class DeliveryStore {
    * cheap, bounded scan regardless of total event history. Call
    * before accepting any HTTP traffic.
    */
-  async hydrate(): Promise<void> {
+  async hydrate(): Promise<boolean> {
     let deliveries: Array<{ sceneEventId: string; sceneId: string; instanceId: string }>;
     try {
       const resp = await this.db.listOpenSceneEventDeliveries({ sceneId: "" });
@@ -85,19 +89,23 @@ export class DeliveryStore {
       this.logger.warn("delivery-store: hydration failed to list open deliveries", {
         error: err instanceof Error ? err.message : String(err),
       });
-      return;
+      return false;
     }
 
     const eventCache = new Map<string, { type: string; key: string; value: unknown } | null>();
+    let hydrated = 0;
     for (const d of deliveries) {
       let event = eventCache.get(d.sceneEventId);
       if (event === undefined) {
         event = await this.fetchEventPayload(d.sceneEventId);
         eventCache.set(d.sceneEventId, event);
       }
-      if (!event) {
+      // One recorded since this process started is already held, and more
+      // current than the row.
+      if (!event || this.open.get(d.sceneId)?.get(d.sceneEventId)?.has(d.instanceId)) {
         continue;
       }
+      hydrated += 1;
       this.setOpen({
         eventId: d.sceneEventId,
         sceneId: d.sceneId,
@@ -110,7 +118,29 @@ export class DeliveryStore {
         delivered: false,
       });
     }
-    this.logger.info("delivery-store: hydrated open deliveries", { count: deliveries.length });
+    this.logger.info("delivery-store: hydrated open deliveries", { count: hydrated });
+    return true;
+  }
+
+  /**
+   * Hydrate, and when the database cannot be read, keep trying in the
+   * background until it can: a delivery left out would never be sent again,
+   * so a restart would drop it. Resolves after the first attempt, so a
+   * database that is down does not hold the service back.
+   */
+  async startHydration(): Promise<void> {
+    if (!(await this.hydrate())) {
+      this.retryHydration(HYDRATE_RETRY_MIN_MS);
+    }
+  }
+
+  private retryHydration(delayMs: number): void {
+    this.hydrationTimer = setTimeout(async () => {
+      this.hydrationTimer = null;
+      if (!(await this.hydrate())) {
+        this.retryHydration(Math.min(delayMs * 2, HYDRATE_RETRY_MAX_MS));
+      }
+    }, delayMs);
   }
 
   private async fetchEventPayload(sceneEventId: string): Promise<{ type: string; key: string; value: unknown } | null> {
@@ -284,16 +314,20 @@ export class DeliveryStore {
         });
         continue;
       }
-      this.deleteOpen(sceneId, eventId, instanceId);
-      if (delivery) {
-        closed.push({
-          eventId,
-          type: delivery.type,
-          key: delivery.key,
-          value: delivery.value,
-          startedAt: delivery.startedAt,
-        });
+      // Closed only if it is still the delivery this ack found: a skip, or
+      // another page's ack, may have closed it during the write and recorded
+      // its end already.
+      if (!delivery || this.open.get(sceneId)?.get(eventId)?.get(instanceId) !== delivery) {
+        continue;
       }
+      this.deleteOpen(sceneId, eventId, instanceId);
+      closed.push({
+        eventId,
+        type: delivery.type,
+        key: delivery.key,
+        value: delivery.value,
+        startedAt: delivery.startedAt,
+      });
     }
     return { closed, failed };
   }
@@ -316,8 +350,10 @@ export class DeliveryStore {
     for (const delivery of this.openDeliveriesFor(sceneId)) {
       (openSet[delivery.instanceId] ??= []).push(delivery.eventId);
       // The page may be one that just reloaded, holding none of it: until it
-      // says it queued the delivery again, the sweep keeps sending it.
+      // says it queued the delivery again, the sweep keeps sending it, from
+      // a full interval after this replay.
       delivery.delivered = false;
+      delivery.lastAttemptAt = Date.now();
       this.sendTo(controller, {
         eventId: delivery.eventId,
         instanceId: delivery.instanceId,
@@ -523,6 +559,10 @@ export class DeliveryStore {
     if (this.sweepTimer) {
       clearInterval(this.sweepTimer);
       this.sweepTimer = null;
+    }
+    if (this.hydrationTimer) {
+      clearTimeout(this.hydrationTimer);
+      this.hydrationTimer = null;
     }
   }
 

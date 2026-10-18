@@ -211,6 +211,35 @@ describe("DeliveryStore.hydrate", () => {
     expect(parseFrame(frames[0]!)).toMatchObject({ eventId: "evt-4", instanceId: "inst-a", value: 42 });
   });
 
+  it("tries again in the background when the DB cannot be read at startup, until it can", async () => {
+    let attempts = 0;
+    const db = {
+      listOpenSceneEventDeliveries: mock(async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("db proxy down");
+        }
+        return {
+          status: { code: "OK" as const, message: "" },
+          deliveries: [{ sceneEventId: "evt-4", sceneId: "scene-1", instanceId: "inst-a" }],
+        };
+      }),
+      getSceneEvent: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        sceneEvent: { id: "evt-4", sceneId: "scene-1", type: "widget.event", key: "count", value: "42" },
+      })),
+    } as any;
+    const store = new DeliveryStore(db, fakeLogger());
+    await store.startHydration();
+    expect(store.scenesWithOpenDeliveries()).toEqual([]);
+    for (let i = 0; i < 40 && store.scenesWithOpenDeliveries().length === 0; i++) {
+      await Bun.sleep(50);
+    }
+    store.stopSweep();
+    expect(attempts).toBe(2);
+    expect(store.scenesWithOpenDeliveries()).toEqual(["scene-1"]);
+  });
+
   it("skips deliveries whose parent event can't be fetched, without throwing", async () => {
     const db = {
       listOpenSceneEventDeliveries: mock(async () => ({
@@ -234,7 +263,7 @@ describe("DeliveryStore.hydrate", () => {
       }),
     } as any;
     const store = new DeliveryStore(db, fakeLogger());
-    await expect(store.hydrate()).resolves.toBeUndefined();
+    await expect(store.hydrate()).resolves.toBe(false);
   });
 });
 

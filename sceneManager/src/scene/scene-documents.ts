@@ -461,6 +461,11 @@ export class SceneDocuments {
     change: (snapshot: SceneSnapshot) => SceneDocumentOps | { error: string }
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     return this.serial(sceneId, async () => {
+      // Past close the scenes have been written back for the last time, so a
+      // change committed now would be reported made and then lost.
+      if (this.closed) {
+        return { ok: false as const, error: "unavailable" };
+      }
       const held = await this.hold(sceneId);
       if (!held) {
         return { ok: false as const, error: "not_found" };
@@ -493,6 +498,9 @@ export class SceneDocuments {
    */
   refresh(sceneId: string): Promise<void> {
     return this.serial(sceneId, async () => {
+      if (this.closed) {
+        return;
+      }
       const held = this.scenes.get(sceneId);
       if (!held) {
         // Nobody has it open; the next overlay or editor loads the save.
@@ -518,6 +526,9 @@ export class SceneDocuments {
       }
       held.name = loaded.name;
       held.unread.published = unreadOf(loaded);
+      if (!held.state.hasDraft) {
+        held.unread.draft = held.unread.published;
+      }
       const saved = documentOf(loaded);
       const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
@@ -600,6 +611,17 @@ export class SceneDocuments {
   private afterCommit(held: HeldScene, entry: Entry | null, meta: MetaPlan, before: ScenesView): void {
     held.meta = meta.next;
     held.unframed = meta.unframed;
+    if (!held.state.hasDraft) {
+      // With no draft the two versions are one, and so are the placements the
+      // load could not read: a publish carries the draft's over, and anything
+      // else (a discard, a live edit) leaves the published ones. Told apart by
+      // the entry, since the documents of a publish and a discard can match.
+      if (entry?.kind === "publish") {
+        held.unread.published = held.unread.draft;
+      } else {
+        held.unread.draft = held.unread.published;
+      }
+    }
     if (entry !== null) {
       this.publishEntry(held, entry, before);
     }

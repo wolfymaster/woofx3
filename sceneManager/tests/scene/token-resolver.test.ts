@@ -179,3 +179,29 @@ describe("OverlayTokenResolver cache bound", () => {
     expect(await resolver.resolve("real")).toEqual({ sceneId: "s1" });
   });
 });
+
+describe("OverlayTokenResolver and a revocation during a lookup", () => {
+  it("does not cache an answer asked for before the cache was poisoned", async () => {
+    let answer: (() => void) | null = null;
+    let calls = 0;
+    const db: OverlayTokenDb = {
+      resolveOverlayToken: async () => {
+        calls += 1;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+          });
+          return okResponse("s1");
+        }
+        return notFoundResponse();
+      },
+    };
+    const resolver = new OverlayTokenResolver(db, fakeLogger());
+    const first = resolver.resolve("tok");
+    await Promise.resolve();
+    resolver.invalidateAll();
+    answer!();
+    expect(await first).toEqual({ sceneId: "s1" });
+    expect(await resolver.resolve("tok")).toBeNull();
+  });
+});

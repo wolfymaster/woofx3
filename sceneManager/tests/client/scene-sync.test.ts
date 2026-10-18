@@ -165,3 +165,23 @@ describe("SceneSync updates", () => {
     expect([...h.timers.pending.values()][0]!.at).toBeLessThanOrEqual(first);
   });
 });
+
+describe("SceneSync and a fetch overtaken by the stream", () => {
+  it("never rolls the document back to a snapshot older than the ops it applied", async () => {
+    const h = harness();
+    let release: (() => void) | null = null;
+    h.responses.push(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(Response.json(sceneBody({ document: snapshot(3) })));
+        })
+    );
+    h.responses.push(async () => Response.json(sceneBody({ document: snapshot(4) })));
+    const updating = h.sync.update();
+    h.sync.applyOps({ seq: 4, ops: [], meta: {} } as never);
+    release!();
+    await updating;
+    expect(h.sync.document()?.seq).toBe(4);
+    expect(h.requests).toHaveLength(2);
+  });
+});

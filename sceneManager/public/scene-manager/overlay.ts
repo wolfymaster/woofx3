@@ -158,6 +158,7 @@ export function createOverlay(env: OverlayEnv): void {
   const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state));
 
   const alertAreas = new AlertAreas({
+    document: env.document,
     sceneBase,
     bridges,
     queues: queueManager,
@@ -372,8 +373,12 @@ export function createOverlay(env: OverlayEnv): void {
       return;
     }
     if (next.hostsSurface !== "" || entry.bridge === null) {
-      unmountContent(next.id);
+      // The new content first: an alert area registers its queue as it
+      // mounts, taking over the alerts still waiting in the old one's, which
+      // is then retired with only what it was playing.
+      entry.swap?.cancel();
       mountContent(entry.slot, next.id);
+      entry.unmount();
       return;
     }
     entry.swap?.cancel();
@@ -557,8 +562,10 @@ export function createOverlay(env: OverlayEnv): void {
     onSessionExpired: () => {
       // Our 60s session JWT lapsed while the server was away, so every
       // reconnect would 401 forever and we'd never see the hello frame that
-      // reveals a restart. Only a page load mints a new session.
-      reloadOverlay();
+      // reveals a restart. Only a page load mints a new session. Alone, as on
+      // a refused renewal: the cookie is this scene's, and a sibling's own
+      // renewal decides for it.
+      env.location.reload();
     },
   });
 

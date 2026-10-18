@@ -97,11 +97,14 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       linkedResources: (moduleId) => linkedResources(db, moduleId),
       mediaProxy,
     });
-    // Hydrate from the DB before accepting any traffic — a restart
-    // must never silently drop in-flight events.
-    await deliveryStore.hydrate();
-    deliveryStore.startSweep();
+    // Held before hydrating, so a start that fails after this still stops
+    // the store's timers.
     this.deliveryStore = deliveryStore;
+    // Hydrate from the DB before accepting any traffic — a restart must
+    // never silently drop in-flight events; one that cannot read the DB
+    // keeps trying in the background.
+    await deliveryStore.startHydration();
+    deliveryStore.startSweep();
     const moduleState = new ModuleStateWatch(db, deliveryStore, logger);
 
     // NATS and OBS are both best-effort, non-blocking dependencies: scenes
@@ -172,7 +175,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
-    this.server?.stop();
+    // Forced: open event streams would otherwise hold the server, and their
+    // heartbeats, past shutdown.
+    await this.server?.stop(true);
     this.server = null;
     await this.obs?.stop();
     this.obs = null;

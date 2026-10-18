@@ -40,7 +40,11 @@ export interface SceneSyncDeps {
   warn(message: string, detail?: unknown): void;
 }
 
-type Target = { kind: "apply"; config: SceneConfig; fromDraft: boolean } | { kind: "reload" } | { kind: "keep" };
+type Target =
+  | { kind: "apply"; config: SceneConfig; fromDraft: boolean }
+  | { kind: "reload" }
+  | { kind: "keep" }
+  | { kind: "stale" };
 
 export class SceneSync {
   private doc: SceneSnapshot | null;
@@ -121,12 +125,23 @@ export class SceneSync {
     }
     this.updating = true;
     try {
+      let staleRetries = 0;
       while (this.updateRequested) {
         this.updateRequested = false;
         const target = await this.fetchTarget();
         if (target.kind === "reload") {
           this.deps.reload();
           return;
+        }
+        if (target.kind === "stale") {
+          // The stream applied ops after the server built this answer; one
+          // fetched now is at least as new, since both come from the same
+          // sequence. Asked once: never a loop on a server out of step.
+          if (staleRetries < 1) {
+            staleRetries += 1;
+            this.updateRequested = true;
+          }
+          continue;
         }
         if (target.kind === "apply") {
           this.mediaRefreshFailures = 0;
@@ -197,6 +212,9 @@ export class SceneSync {
       // The saved scene comes with its document; later ops apply to it.
       const snapshot = draft ? null : parseSnapshot(asRecord(body).document);
       if (snapshot) {
+        if (this.doc && snapshot.seq < this.doc.seq) {
+          return { kind: "stale" };
+        }
         this.doc = snapshot;
       }
       return { kind: "apply", config, fromDraft: draft !== null };

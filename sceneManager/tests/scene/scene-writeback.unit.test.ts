@@ -121,6 +121,17 @@ describe("SceneWriteback", () => {
     expect(scene.save.dirty).toBe(true);
   });
 
+  it("leaves a scene with a column the load could not read unwritten at shutdown too", async () => {
+    const clock = new Clock();
+    const store = persister();
+    const writeback = new SceneWriteback(store, clock, 2000, silent);
+    const scene = held();
+    scene.unread.published.columns = ["layout"];
+    writeback.markDirty(scene);
+    await writeback.flush([scene]);
+    expect(store.writes).toHaveLength(0);
+  });
+
   it("never writes a scene with a column the load could not read", async () => {
     const clock = new Clock();
     const store = persister();

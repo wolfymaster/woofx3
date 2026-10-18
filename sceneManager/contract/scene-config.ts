@@ -81,10 +81,37 @@ export function parseSceneConfig(body: unknown): SceneConfig | null {
   if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
     return null;
   }
+  // Every placement is checked here, at the edge: one the page cannot place
+  // would otherwise fail deep inside an update, after the scene was taken.
+  if (!s.widgets.every(isPlacementConfig)) {
+    return null;
+  }
   return {
     id: s.id,
     name: typeof s.name === "string" ? s.name : "",
     layout: s.layout as Record<string, unknown>,
-    widgets: s.widgets as WidgetPlacementConfig[],
+    widgets: s.widgets,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** What the page needs of a placement to place it and fill its slot. */
+function isPlacementConfig(value: unknown): value is WidgetPlacementConfig {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { position } = value;
+  return (
+    typeof value.id === "string" &&
+    typeof value.widgetCanonicalId === "string" &&
+    typeof value.moduleId === "string" &&
+    typeof value.hostsSurface === "string" &&
+    typeof value.frameUrl === "string" &&
+    isRecord(value.settings) &&
+    isRecord(position) &&
+    ["x", "y", "width", "height"].every((k) => typeof position[k] === "number")
+  );
 }

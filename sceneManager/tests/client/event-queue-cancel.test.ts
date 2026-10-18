@@ -115,3 +115,37 @@ describe("EventQueueManager.retainOpen", () => {
     expect(delivered).toEqual(["evt-1"]);
   });
 });
+
+describe("EventQueueManager.retainOpen during a frame swap", () => {
+  it("cancels a closed event the replaced queue is still playing, so the new frame never gets it", () => {
+    const mgr = new EventQueueManager();
+    const oldPlayed: string[] = [];
+    const newPlayed: string[] = [];
+    const old = mgr.register(
+      "inst-1",
+      { maxInFlight: 1, autoComplete: false },
+      (i) => {
+        oldPlayed.push(i.eventId);
+        return true;
+      },
+      () => {}
+    );
+    mgr.enqueue("inst-1", item("evt-1"));
+    const fresh = mgr.register(
+      "inst-1",
+      { maxInFlight: 1, autoComplete: false },
+      (i) => {
+        newPlayed.push(i.eventId);
+        return true;
+      },
+      () => {}
+    );
+
+    mgr.retainOpen({});
+    mgr.unregister(old);
+
+    expect(oldPlayed).toEqual(["evt-1"]);
+    expect(newPlayed).toEqual([]);
+    mgr.unregister(fresh);
+  });
+});

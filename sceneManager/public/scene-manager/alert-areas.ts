@@ -2,12 +2,17 @@
 // each playing the alerts delivered to it one at a time through its queue,
 // and acknowledging each as it starts and finishes.
 
-import { AlertWidget } from "./alert-widget";
+import { AlertWidget, type AlertWidgetOptions } from "./alert-widget";
 import type { AssetCache } from "./asset-loader";
 import type { EventQueueManager, QueueRegistration } from "./event-queue";
 import type { WidgetBridge, WidgetStatusReportPayload } from "./widget-bridge";
 
+/** What the page plays an area's alerts with: an `AlertWidget`. */
+export type AlertArea = Pick<AlertWidget, "play" | "stop" | "dispose" | "readAhead">;
+
 export interface AlertAreasDeps {
+  /** Where an area's element is made. */
+  document: Pick<Document, "createElement">;
   /** `/scene/{sceneId}`. */
   sceneBase: string;
   bridges: Set<WidgetBridge>;
@@ -23,24 +28,29 @@ export interface AlertAreasDeps {
   ackAlert(kind: "started" | "completed", eventId: string, instanceId: string): void;
   /** The area is in the page and drawn. */
   rendered(instanceId: string): void;
+  /** Builds an area's player; an `AlertWidget` unless a test stands one in. */
+  createArea?(options: AlertWidgetOptions): AlertArea;
 }
 
 export class AlertAreas {
-  private readonly areas = new Map<string, AlertWidget>();
+  private readonly areas = new Map<string, AlertArea>();
 
   constructor(private readonly deps: AlertAreasDeps) {}
 
   /** Draw the alert area for placement `instanceId` in `slot`; the result removes it. */
   mount(instanceId: string, slot: HTMLElement): () => void {
     const { deps } = this;
-    const element = document.createElement("div");
+    const element = deps.document.createElement("div");
     element.className = "alert-widget";
     slot.appendChild(element);
 
     // The page plays alerts itself, so it registers the queue a framed
     // widget would register on subscribe: one alert at a time.
     let registration: QueueRegistration | null = null;
-    const area = new AlertWidget({
+    // Set as the area is torn down: finishing what it plays must not start
+    // the next alert on an area that is going away.
+    let disposing = false;
+    const area = (deps.createArea ?? ((options) => new AlertWidget(options)))({
       element,
       sceneBase: deps.sceneBase,
       bridges: deps.bridges,
@@ -58,6 +68,9 @@ export class AlertAreas {
       instanceId,
       { maxInFlight: 1 },
       (item) => {
+        if (disposing) {
+          return false;
+        }
         deps.ackAlert("started", item.eventId, instanceId);
         return area.play(item);
       },
@@ -69,9 +82,12 @@ export class AlertAreas {
     queueMicrotask(() => deps.rendered(instanceId));
 
     return () => {
+      disposing = true;
       // Finishes what is playing while the queue is still there to hear it.
       area.dispose();
-      this.areas.delete(instanceId);
+      if (this.areas.get(instanceId) === area) {
+        this.areas.delete(instanceId);
+      }
       if (registration !== null) {
         deps.queues.unregister(registration);
         registration = null;
