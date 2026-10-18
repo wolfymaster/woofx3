@@ -69,6 +69,7 @@ func Apply(tx *gorm.DB, dialect Dialect) (Summary, error) {
 			continue
 		}
 		if len(plan.Parts) == 0 {
+			log.Printf("Leaving workflow %s as it is: %s", row.ID, plan.Reason)
 			summary.Untouched++
 			continue
 		}
