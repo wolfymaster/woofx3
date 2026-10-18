@@ -267,11 +267,11 @@ The vocabulary is intentionally open — there is no fixed enum and the engine d
 
 #### How the action picker reads an action's taxonomy
 
-An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `system.counter` under **Built-in › Counters**.
+An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `tools.counter` under **Stream tools › Counters**.
 
 An action with no `taxonomy` is listed under the module that provides it, as one section named after the module. Because of that fallback, a taxonomy is optional for an action that should simply sit with the rest of its module; declare one when the action belongs with similar actions from other modules (every `platform.obs` action reads as one OBS group regardless of which module ships it).
 
-The bundled `woofx3` module files its actions under the `system` family: `system.workflow` (Function, Print), `system.alerts`, `system.scenes`, `system.chat`, `system.counter`, `system.timer` and `system.queue`. The picker lists `system` first, labelled **Built-in**.
+Sections are by purpose, not by the module shipping the action, so file an action by what it does. The bundled `woofx3` module uses: `workflow` (Function, Print), `chat`, `overlay.alerts` and `overlay.scenes` (**Overlays**), and `tools.counter`, `tools.timer` and `tools.queue` (**Stream tools**). The picker lists `workflow` first; an older engine's `system` family is labelled **Built-in** and also listed first.
 
 On install, every action `taxonomy` entry must be a dotted path of names, each of `[A-Za-z0-9_-]` (`platform.obs`, not `platform.`, `platform..obs` or `platform obs`), and no entry may appear twice on one action. The vocabulary itself is not checked.
 
