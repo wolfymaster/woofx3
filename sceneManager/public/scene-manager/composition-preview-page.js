@@ -3245,11 +3245,11 @@ function planSceneUpdate(current, next) {
   return plan2;
 }
 function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue3(a.settings, b.settings));
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
 }
 function settingsUpdate(current, next, reads) {
   const keys2 = new Set([...Object.keys(current), ...Object.keys(next)]);
-  const changed = [...keys2].filter((key) => !sameValue3(current[key], next[key]));
+  const changed = [...keys2].filter((key) => !sameValue(current[key], next[key]));
   if (changed.length === 0) {
     return "none";
   }
@@ -3257,24 +3257,6 @@ function settingsUpdate(current, next, reads) {
     return "reload";
   }
   return "patch";
-}
-function sameValue3(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue3(item, b[i]));
-  }
-  const aRecord = a;
-  const bRecord = b;
-  const aKeys = Object.keys(aRecord);
-  if (aKeys.length !== Object.keys(bRecord).length) {
-    return false;
-  }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue3(aRecord[key], bRecord[key]));
 }
 
 // public/scene-manager/widget-behaviors.ts
@@ -3370,7 +3352,7 @@ class BehaviorRelay {
   }
 }
 function sameExceptDuration(a, b) {
-  return a.type === b.type && a.kind === b.kind && a.phase === b.phase && a.easing === b.easing && sameValue3(a.params, b.params);
+  return a.type === b.type && a.kind === b.kind && a.phase === b.phase && a.easing === b.easing && sameValue(a.params, b.params);
 }
 function compareText3(a, b) {
   if (a === b) {
@@ -3979,7 +3961,7 @@ function readable(path, moduleId) {
   return asset !== null && widgetMayRead(asset, moduleId);
 }
 
-// public/scene-manager/media-url.ts
+// contract/media-url.ts
 var MAX_DEPTH2 = 32;
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);

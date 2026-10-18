@@ -16,7 +16,7 @@ import { isHostKind } from "@woofx3/scene/model";
 import type { BehaviorId, CompositionDocument, NodeId } from "@woofx3/scene/model";
 import type { DelegatedBehavior, DelegateRequest } from "@woofx3/scene/runtime";
 import type { WidgetBehaviorState } from "@woofx3/module-sdk";
-import { sameValue } from "./scene-update";
+import { sameValue } from "@woofx3/scene/model";
 
 /**
  * What the widget is told for a delegation, or null for one the protocol

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { type SceneSnapshot, configOfSnapshot } from "../../public/scene-manager/scene-document";
+import type { SceneSnapshot } from "@woofx3/api/scene-editor/document";
+import { configOfSnapshot } from "../../contract/scene-config";
 import type { HttpDeps } from "../../src/http";
 import { handleSceneConfigRoute } from "../../src/routes/scene";
 

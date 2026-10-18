@@ -88,7 +88,8 @@ import {
 } from "@woofx3/scene/runtime";
 import { type FrameSwap, swapFrameIn } from "./frame-swap";
 import { createPreviewClock, type PreviewClock } from "./preview-clock";
-import { planSceneUpdate, type SettingsReads, settingsUpdate, type WidgetPlacementConfig } from "./scene-update";
+import type { WidgetPlacementConfig } from "../../contract/scene-config";
+import { planSceneUpdate, type SettingsReads, settingsUpdate } from "./scene-update";
 import { BehaviorRelay, behaviorStateOf, entranceOf } from "./widget-behaviors";
 
 /** How often the playhead is reported while playing. */

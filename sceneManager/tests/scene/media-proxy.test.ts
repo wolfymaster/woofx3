@@ -13,7 +13,7 @@ import {
   parseMediaUrls,
   replaceMediaUrls,
   rewriteExternalMedia,
-} from "../../public/scene-manager/media-url";
+} from "../../contract/media-url";
 import { applyOps, type PlacementMeta } from "../../public/scene-manager/scene-document";
 import { corsHeadersFor, type HttpDeps } from "../../src/http";
 import { handleMediaProxyRoute, isMediaProxyPath } from "../../src/routes/media";

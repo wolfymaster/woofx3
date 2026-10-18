@@ -38,17 +38,17 @@ import {
   mediaRefreshDelay,
   parseMediaUrls,
   replaceMediaUrls,
-} from "./media-url";
+} from "../../contract/media-url";
 import { swapFrameIn } from "./frame-swap";
 import { applySceneBackground } from "./scene-background";
+import { planSceneUpdate, settingsUpdate } from "./scene-update";
 import {
+  configOfSnapshot,
   parseSceneConfig,
-  planSceneUpdate,
-  settingsUpdate,
-  themeOf,
   type SceneConfig,
+  themeOf,
   type WidgetPlacementConfig,
-} from "./scene-update";
+} from "../../contract/scene-config";
 import { encodePlacementBoot, type WidgetBehaviorState } from "@woofx3/module-sdk";
 import { declaresKind, NO_DECLARED_KINDS, PROFILES } from "@woofx3/scene/model";
 import { createDomRenderer, createScheduler, type Scheduler } from "@woofx3/scene/runtime";
@@ -57,7 +57,6 @@ import {
   type SceneSnapshot,
   applyOps,
   compositionOfConfig,
-  configOfSnapshot,
   mergeMeta,
   parseSnapshot,
 } from "./scene-document";

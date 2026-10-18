@@ -24,7 +24,7 @@ import {
   type PreviewFrameSpec,
 } from "./composition-preview";
 import { AssetCache, readAheadAssetPaths } from "./asset-loader";
-import { replaceMediaUrls } from "./media-url";
+import { replaceMediaUrls } from "../../contract/media-url";
 import { PAGE_CLOCK } from "./page-clock";
 import { createFrameLoadHandler, WidgetBridge } from "./widget-bridge";
 
