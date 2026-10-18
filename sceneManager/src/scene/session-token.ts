@@ -1,4 +1,9 @@
 import { jwtVerify, SignJWT } from "jose";
+import {
+  COMPOSITION_PREVIEW_PATH,
+  type CompositionPreviewTokenReply,
+} from "@woofx3/common/cloudevents/Scene/composition-preview";
+import { sceneEditorPath, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
 
 /**
  * Short-lived session credential minted at `GET /scene/{sceneId}?token=`
@@ -146,4 +151,37 @@ export class SessionTokenService {
       return null;
     }
   }
+}
+
+/**
+ * The replies to the api's requests for an editor token and a preview token
+ * (`engine.scene.editor.token`, `engine.composition.preview.token`): the
+ * token, how long it lives, and the path it opens.
+ */
+export function sceneTokenIssuer(
+  tokens: SessionTokenService,
+  sceneExists: (sceneId: string) => Promise<boolean>
+): {
+  editorToken(sceneId: string): Promise<SceneEditorTokenReply>;
+  previewToken(): Promise<CompositionPreviewTokenReply>;
+} {
+  return {
+    editorToken: async (sceneId) => {
+      if (!(await sceneExists(sceneId))) {
+        return { ok: false, reason: "scene not found" };
+      }
+      return {
+        ok: true,
+        token: await tokens.mintEditor({ sceneId }),
+        expiresInSeconds: EDITOR_TOKEN_TTL_SECONDS,
+        path: sceneEditorPath(sceneId),
+      };
+    },
+    previewToken: async () => ({
+      ok: true,
+      token: await tokens.mintPreview(),
+      expiresInSeconds: PREVIEW_TOKEN_TTL_SECONDS,
+      path: COMPOSITION_PREVIEW_PATH,
+    }),
+  };
 }
