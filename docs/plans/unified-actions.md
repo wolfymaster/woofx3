@@ -12,9 +12,10 @@ The dashboard is moving to one step editor for chat commands, alerts, workflows 
 
 ## Spec additions the editor needs
 
+- **Decided:** an optional `sentence` on actions, mirroring the trigger `sentence`. Its `{fieldId}` placeholders name the action's own settings and are checked at install; it is stored on the action row, returned by `getActions` and sent to the dashboard with the action. Clients fall back to a sentence built from the setting labels. The bundled actions get sentences in the same change, with a module version bump.
+
 Pending the decisions in the plan:
 
-- An optional `summary` template on actions, like a trigger's `sentence`, so a collapsed step reads as a sentence.
 - `options` on `DataShape` fields, so a condition on an emitted field can offer its known values.
 - A way to list the viewer facts `${viewer.*}` resolves, with their types.
 
