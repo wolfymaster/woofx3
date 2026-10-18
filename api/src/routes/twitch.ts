@@ -21,13 +21,11 @@ import {
   HELIX_COMMAND,
   type HelixCommandArgs,
   type HelixOperationName,
+  TWITCHAPI_SUBJECT,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { routeModule } from "./context";
-
-/** The `twitchapi` subject the twitch service answers on. */
-const TWITCHAPI_SUBJECT = "twitchapi";
 
 /** Long enough for a token renewal and the resend after a 401; the same wait `ctx.twitch` gives. */
 export const TWITCH_HELIX_TIMEOUT_MS = 10_000;

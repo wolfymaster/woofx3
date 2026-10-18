@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import { parseTokenResponse, TwitchTokenSource } from "../src/twitch-token-source";
 
 const NOW = 1_000_000_000_000;
@@ -105,6 +106,34 @@ describe("a token from a dashboard", () => {
   });
 });
 
+describe("a token from a dashboard that cannot be renewed", () => {
+  test.each([
+    ["without the dashboard's client id", { ...GRANT }, "does not say which one"],
+    [
+      "with an incomplete grant",
+      { ...GRANT, scope: undefined, dashboardClientId: "dash-client" },
+      "grant is incomplete",
+    ],
+  ])("%s is refused, not sent to Helix as the engine's own", async (_, stored, reason) => {
+    // The Twitch client picks the dashboard strategy for this token too, so
+    // neither side treats it as one the engine refreshes.
+    expect(selectStrategy(stored)).toBe("dashboard");
+    const { db } = store(stored);
+    const source = new TwitchTokenSource(
+      db,
+      () => null,
+      () => "own-app",
+      () => NOW + 1_000
+    );
+
+    const helix = await source.helix();
+    expect(typeof helix).toBe("string");
+    expect(helix).toContain(reason);
+    await expect(source.dashboardToken(false)).rejects.toThrow(reason);
+    expect(await source.linkedDashboardClientId()).toBeNull();
+  });
+});
+
 describe("a token the engine refreshes itself", () => {
   test("is read with the engine's own Twitch app client id", async () => {
     const { db } = store({
@@ -158,7 +187,8 @@ describe("linkedDashboardClientId", () => {
     const fromDashboard = new TwitchTokenSource(store({ ...GRANT, dashboardClientId: "dash-client" }).db, () => null);
     expect(await fromDashboard.linkedDashboardClientId()).toBe("dash-client");
 
-    const own = new TwitchTokenSource(store({ ...GRANT }).db, () => null);
+    const { clientId: _, ...ownGrant } = GRANT;
+    const own = new TwitchTokenSource(store(ownGrant).db, () => null);
     expect(await own.linkedDashboardClientId()).toBeNull();
 
     const none = new TwitchTokenSource(store(null).db, () => null);

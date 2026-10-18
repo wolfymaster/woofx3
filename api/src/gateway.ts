@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { type ApiGatewayContract, REGISTRATION_REFUSED, type RegisterClientOptions } from "@woofx3/api/rpc";
+import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
@@ -126,9 +126,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
 
   /**
    * Refuse unless the caller presented this engine's registration token,
-   * when `tokenRequired`. Both sides are hashed first so the comparison takes
-   * the same time whatever the presented token's length, and never
-   * short-circuits.
+   * when `tokenRequired`.
    */
   private admit(presented: string | undefined, tokenRequired: boolean): void {
     if (!tokenRequired) {
@@ -141,9 +139,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     if (!presented) {
       throw new RegistrationRefused("This engine requires a registration token to register.");
     }
-    const expectedDigest = createHash("sha256").update(expected).digest();
-    const actualDigest = createHash("sha256").update(presented).digest();
-    if (!timingSafeEqual(expectedDigest, actualDigest)) {
+    if (!secretsMatch(expected, presented)) {
       throw new RegistrationRefused("The registration token does not match this engine's.");
     }
   }

@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { secretsMatch } from "@woofx3/common/http/secrets";
 
 /**
  * Whether the api checks that barkloader's processing callbacks carry the
@@ -21,9 +21,7 @@ export function parseBarkloaderWebhookAuth(value: string | undefined): Barkloade
 }
 
 /**
- * Whether `req` carries `Authorization: Bearer <secret>`. Both sides are
- * hashed first so the comparison takes the same time whatever the presented
- * value's length, and never short-circuits.
+ * Whether `req` carries `Authorization: Bearer <secret>`.
  */
 export function hasBarkloaderBearer(req: Request, secret: string): boolean {
   if (secret === "") {
@@ -34,7 +32,5 @@ export function hasBarkloaderBearer(req: Request, secret: string): boolean {
   if (!match) {
     return false;
   }
-  const expected = createHash("sha256").update(secret).digest();
-  const actual = createHash("sha256").update(match[1]!).digest();
-  return timingSafeEqual(expected, actual);
+  return secretsMatch(secret, match[1]!);
 }
