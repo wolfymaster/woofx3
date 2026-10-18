@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"syscall"
@@ -217,8 +218,10 @@ func servicesToRun(baseDir string, config *Config, logger *slog.Logger, reporter
 }
 
 // binaryFileName is the file a service runs from, relative to the base dir.
+// The release packages every service for the orchestrator's own target, so the
+// orchestrator's build OS is the services' OS.
 func binaryFileName(service Service) string {
-	if isWindows() {
+	if runtime.GOOS == "windows" {
 		return service.Output + ".exe"
 	}
 	return service.Output
@@ -713,9 +716,4 @@ func checkHealthOverHTTP(endpoint string) bool {
 	defer resp.Body.Close()
 
 	return resp.StatusCode == 200
-}
-
-func isWindows() bool {
-	return os.Getenv("OS") == "Windows_NT" ||
-		filepath.Ext(os.Args[0]) == ".exe"
 }

@@ -7,6 +7,7 @@ import {
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
+import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import type { DbClient } from "./db-client";
 
 export const TWITCH_TOKEN_SETTING = "twitch_token";
@@ -75,13 +76,22 @@ export class TwitchTokenSource implements TwitchCredentials {
       return "no twitch_token setting";
     }
     if (asDashboardToken(stored)) {
-      try {
-        const token = await this.dashboardToken(false);
-        return { clientId: token.clientId, accessToken: token.accessToken, broadcasterId: token.userId };
-      } catch (err) {
-        return `could not get a Twitch token from the dashboard: ${errorMessage(err)}`;
-      }
+      return this.dashboardHelix();
     }
+    return this.engineRefreshHelix(stored);
+  }
+
+  private async dashboardHelix(): Promise<HelixCredentials | string> {
+    try {
+      const token = await this.dashboardToken(false);
+      return { clientId: token.clientId, accessToken: token.accessToken, broadcasterId: token.userId };
+    } catch (err) {
+      return `could not get a Twitch token from the dashboard: ${errorMessage(err)}`;
+    }
+  }
+
+  /** The engine's own token, which the twitch service refreshes; this only reads it. */
+  private engineRefreshHelix(stored: Record<string, unknown>): HelixCredentials | string {
     const clientId = this.ownClientId();
     if (!clientId) {
       return "WOOFX3_TWITCH_CLIENT_ID is not set";
@@ -156,7 +166,15 @@ export class TwitchTokenSource implements TwitchCredentials {
   }
 }
 
+/**
+ * The stored token as a dashboard's, or null when it is to be treated as the
+ * engine's own: its strategy is not `dashboard`, or it lacks the dashboard
+ * client id or a complete grant needed to ask that dashboard for the next one.
+ */
 function asDashboardToken(stored: Record<string, unknown>): StoredDashboardToken | null {
+  if (selectStrategy(stored) !== "dashboard") {
+    return null;
+  }
   if (typeof stored.dashboardClientId !== "string" || !stored.dashboardClientId) {
     return null;
   }

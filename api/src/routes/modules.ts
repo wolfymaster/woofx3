@@ -1,25 +1,28 @@
-import type { SharedLogger } from "@woofx3/common/logging";
 import {
   MODULE_FILE_TEXT_LIMIT_BYTES,
   type ModuleFileContent,
   type ModuleFileEntry,
   type ModuleFileList,
+  type ModuleResourceUsage,
   type ModuleSetting,
   type ModuleSettingsResponse,
-  type ModuleResourceUsage,
   type ResourceInstanceDefinition,
   type WidgetThemes,
 } from "@woofx3/api";
-import { type EngineModule, listEngineModules } from "../engine-modules";
+import type { SharedLogger } from "@woofx3/common/logging";
+import {
+  type EngineModule,
+  listEngineModules,
+  type MarketplaceProvenance,
+  marketplaceProvenance,
+} from "../engine-modules";
+import {
+  fetchModuleArchive,
+  handArchiveToBarkloader,
+  sendAlreadyInstalled,
+  sendInstallFailed,
+} from "../module-install";
 import { routeModule } from "./context";
-
-/**
- * Limits on fetching a module archive from a marketplace URL. Module-level
- * rather than on the host: only this module reads them, and reaching them
- * through the class meant reaching past `protected`.
- */
-const MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
-const MARKETPLACE_MAX_BYTES = 50 * 1024 * 1024;
 
 /**
  * Ask barkloader to uninstall a module.
@@ -159,19 +162,7 @@ export const modulesRoutes = routeModule({
           moduleKey,
           moduleName: existing.name,
         });
-        if (this.webhookClient) {
-          await this.webhookClient.send(
-            {
-              type: "module.installed",
-              modulePrefix: existing.moduleId,
-              moduleName: existing.name,
-              version: existing.version,
-              moduleKey,
-              alreadyInstalled: true,
-            },
-            clientId || undefined
-          );
-        }
+        await sendAlreadyInstalled(this.webhookClient, existing, moduleKey, clientId);
         return { success: true, message: "Module already installed", alreadyInstalled: true };
       }
     }
@@ -229,78 +220,31 @@ export const modulesRoutes = routeModule({
         moduleKey,
         moduleName: existing.name,
       });
-      if (this.webhookClient) {
-        await this.webhookClient.send(
-          {
-            type: "module.installed",
-            modulePrefix: existing.moduleId,
-            moduleName: existing.name,
-            version: existing.version,
-            moduleKey,
-            alreadyInstalled: true,
-          },
-          clientId || undefined
-        );
-      }
+      await sendAlreadyInstalled(this.webhookClient, existing, moduleKey, clientId);
       return { success: true, message: "Module already installed", alreadyInstalled: true };
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), MARKETPLACE_FETCH_TIMEOUT_MS);
     let archiveBytes: Uint8Array;
     try {
-      const res = await fetch(downloadUrl, { signal: controller.signal });
-      if (!res.ok) {
-        throw new Error(`Marketplace fetch failed: ${res.status} ${res.statusText}`);
-      }
-      const contentLength = Number(res.headers.get("content-length") ?? "0");
-      if (contentLength > MARKETPLACE_MAX_BYTES) {
-        throw new Error(`Marketplace archive exceeds size cap (${contentLength} > ${MARKETPLACE_MAX_BYTES})`);
-      }
-      const buf = new Uint8Array((await res.arrayBuffer()) as ArrayBuffer);
-      if (buf.byteLength > MARKETPLACE_MAX_BYTES) {
-        throw new Error(`Marketplace archive exceeds size cap (${buf.byteLength} > ${MARKETPLACE_MAX_BYTES})`);
-      }
-      archiveBytes = buf;
+      archiveBytes = await fetchModuleArchive(downloadUrl);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error("Marketplace fetch failed", { clientId, moduleKey, message });
-      if (this.webhookClient) {
-        await this.webhookClient.send(
-          {
-            type: "module.install_failed",
-            modulePrefix: moduleKey.split(":")[0] ?? "",
-            moduleName: name,
-            version,
-            moduleKey,
-            error: `Failed to fetch marketplace archive: ${message}`,
-          },
-          clientId || undefined
-        );
-      }
+      await sendInstallFailed(
+        this.webhookClient,
+        { moduleKey, name, version, error: `Failed to fetch marketplace archive: ${message}` },
+        clientId
+      );
       throw err;
-    } finally {
-      clearTimeout(timer);
     }
 
-    const fileName = `${name}-${version}.zip`;
-    const formData = new FormData();
-    formData.append("file", new File([archiveBytes as Uint8Array<ArrayBuffer>], fileName, { type: "application/zip" }));
-    formData.append("client_id", clientId);
-    formData.append("module_key", moduleKey);
-
-    const response = await this.barkloaderRequest("/functions", {
-      method: "POST",
-      body: formData,
-    });
-    const json = (await response.json()) as { message?: string };
-    this.logger.info("Module from URL handed to barkloader", {
+    const message = await handArchiveToBarkloader((path, init) => this.barkloaderRequest(path, init), this.logger, {
+      bytes: archiveBytes,
+      fileName: `${name}-${version}.zip`,
       clientId,
       moduleKey,
-      fileName,
-      message: json.message,
     });
-    return { success: true, message: json.message ?? "Module uploaded" };
+    return { success: true, message };
   },
 
   async listEngineModules(): Promise<EngineModule[]> {
@@ -363,16 +307,19 @@ export const modulesRoutes = routeModule({
     };
   },
 
-  async getModule(id: string): Promise<{
-    id: string;
-    name: string;
-    description: string;
-    taxonomy: string[];
-    version: string;
-    author: string;
-    isInstalled: boolean;
-    iconUrl: string;
-  } | null> {
+  async getModule(id: string): Promise<
+    | ({
+        id: string;
+        name: string;
+        description: string;
+        taxonomy: string[];
+        version: string;
+        author: string;
+        isInstalled: boolean;
+        iconUrl: string;
+      } & MarketplaceProvenance)
+    | null
+  > {
     const found = await this.db.getModuleByName(id);
     if (!found) return null;
     const { author, taxonomy } = readModuleCatalogFields(found.manifest);
@@ -385,6 +332,7 @@ export const modulesRoutes = routeModule({
       author,
       isInstalled: true,
       iconUrl: "",
+      ...marketplaceProvenance(found),
     };
   },
 

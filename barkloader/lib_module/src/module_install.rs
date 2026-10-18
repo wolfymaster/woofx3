@@ -5,7 +5,7 @@ use std::path::Path;
 use tracing::{info, warn};
 
 use super::canonical_id::CanonicalId;
-use super::db_proxy::CreateModuleFunctionJson;
+use super::db_proxy::{CreateModuleFunctionJson, MarketplaceOrigin};
 use super::db_proxy_client::ModuleDbProxy;
 use super::manifest_validate::{
     self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest, SystemOnlyActions,
@@ -331,6 +331,7 @@ struct SagaState<'a, R: Repository> {
     client_id: &'a str,
     archive_key: &'a str,
     provenance: InstallProvenance,
+    marketplace: Option<&'a MarketplaceOrigin>,
     fn_rows: Vec<CreateModuleFunctionJson>,
     asset_keys: Vec<String>,
     asset_repo_keys: HashMap<String, String>,
@@ -466,6 +467,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 self.composite_module_key,
                 self.client_id,
                 self.provenance,
+                self.marketplace,
             )
             .await?;
 
@@ -1175,6 +1177,7 @@ pub async fn run_install<R: Repository>(
         composite_module_key,
         client_id,
         InstallProvenance::User,
+        None,
         &SystemOnlyActions::default(),
     )
     .await
@@ -1187,6 +1190,9 @@ pub async fn run_install<R: Repository>(
 /// refuses it. Child resource rows keep the ordinary (MODULE, module_key)
 /// pairing every install uses — bundled modules are ordinary modules, and
 /// forking how their resources are keyed would defeat the point.
+///
+/// `marketplace` is the listing the archive came from, recorded on the module
+/// row; `None` for any other install.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_install_with_provenance<R: Repository>(
     manifest: &ModuleManifest,
@@ -1198,6 +1204,7 @@ pub async fn run_install_with_provenance<R: Repository>(
     composite_module_key: &str,
     client_id: &str,
     provenance: InstallProvenance,
+    marketplace: Option<&MarketplaceOrigin>,
     system_only: &SystemOnlyActions,
 ) -> Result<()> {
     // `module_key` here is the manifest id (used for file paths and as the
@@ -1290,6 +1297,7 @@ pub async fn run_install_with_provenance<R: Repository>(
         client_id,
         archive_key,
         provenance,
+        marketplace,
         fn_rows: Vec::with_capacity(manifest.functions.len()),
         asset_keys: Vec::with_capacity(manifest.assets.len()),
         asset_repo_keys: HashMap::new(),
@@ -1409,6 +1417,7 @@ mod tests {
             &mid,
             "",
             InstallProvenance::System,
+            None,
             &SystemOnlyActions::default(),
         )
         .await
@@ -1418,6 +1427,46 @@ mod tests {
             db_proxy.create_module_provenance(),
             Some(InstallProvenance::System)
         );
+    }
+
+    #[tokio::test]
+    async fn the_marketplace_origin_reaches_the_module_row() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = system_manifest("cozy");
+        let files = vec![ModuleFile::new(
+            "manifest.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
+            manifest_json.clone(),
+        )];
+        let mid = manifest.compute_module_key(&manifest_json);
+        let origin = MarketplaceOrigin {
+            listing_id: "cozy-v2".to_string(),
+            edition: 2,
+        };
+
+        let db_proxy = FakeDbProxyClient::new();
+        run_install_with_provenance(
+            &manifest,
+            &files,
+            &repo,
+            "archives/cozy.zip",
+            Some(&db_proxy),
+            false,
+            &mid,
+            "client-1",
+            InstallProvenance::User,
+            Some(&origin),
+            &SystemOnlyActions::default(),
+        )
+        .await
+        .expect("marketplace install succeeds");
+
+        assert_eq!(db_proxy.create_module_marketplace(), Some(origin));
     }
 
     #[tokio::test]
