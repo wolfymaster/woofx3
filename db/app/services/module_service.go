@@ -66,6 +66,9 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 	if manifestModuleID == "" {
 		return nil, fmt.Errorf("module_id is required (manifest.json id or module_key prefix)")
 	}
+	if err := validateMarketplaceProvenance(req); err != nil {
+		return nil, err
+	}
 
 	// Idempotency layer 1: same composite module_key already installed → return as-is.
 	if req.ModuleKey != "" {
@@ -105,6 +108,10 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 			}
 			if req.CreatedByRef != "" {
 				existing.CreatedByRef = req.CreatedByRef
+			}
+			if req.MarketplaceListingId != nil {
+				existing.MarketplaceListingID = req.MarketplaceListingId
+				existing.MarketplaceEdition = req.MarketplaceEdition
 			}
 
 			if err := s.repo.Update(existing); err != nil {
@@ -167,7 +174,10 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		}
 	}
 
+	// Ids are assigned here rather than left to the column defaults, which
+	// are Postgres-only (uuid_generate_v4()) and absent on SQLite.
 	m := models.Module{
+		ID:            uuid.New(),
 		ModuleKey:     req.ModuleKey,
 		ModuleID:      manifestModuleID,
 		Name:          req.Name,
@@ -177,10 +187,14 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		State:         "active",
 		CreatedByType: req.CreatedByType,
 		CreatedByRef:  req.CreatedByRef,
+
+		MarketplaceListingID: req.MarketplaceListingId,
+		MarketplaceEdition:   req.MarketplaceEdition,
 	}
 
 	for _, f := range req.Functions {
 		m.Functions = append(m.Functions, models.ModuleFunction{
+			ID:         uuid.New(),
 			ManifestID: f.ManifestId,
 			Name:       f.Name,
 			FileName:   f.FileName,
@@ -793,6 +807,25 @@ func moduleRegistrationRef(moduleID, moduleKey string) string {
 	return moduleKey
 }
 
+// validateMarketplaceProvenance refuses a listing id without an edition, an
+// edition without a listing id, a blank listing id and an edition below 1: a
+// row records where it came from completely or not at all.
+func validateMarketplaceProvenance(req *client.CreateModuleRequest) error {
+	if req.MarketplaceListingId == nil && req.MarketplaceEdition == nil {
+		return nil
+	}
+	if req.MarketplaceListingId == nil || req.MarketplaceEdition == nil {
+		return twirp.InvalidArgumentError("marketplace_listing_id", "marketplace_listing_id and marketplace_edition are set together")
+	}
+	if *req.MarketplaceListingId == "" {
+		return twirp.InvalidArgumentError("marketplace_listing_id", "must not be blank")
+	}
+	if *req.MarketplaceEdition < 1 {
+		return twirp.InvalidArgumentError("marketplace_edition", "must be 1 or more")
+	}
+	return nil
+}
+
 func resolveManifestModuleID(req *client.CreateModuleRequest) string {
 	if req.ModuleId != "" {
 		return req.ModuleId
@@ -834,6 +867,9 @@ func moduleToProto(m *models.Module) *client.Module {
 		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 		CreatedByType: m.CreatedByType,
 		CreatedByRef:  m.CreatedByRef,
+
+		MarketplaceListingId: m.MarketplaceListingID,
+		MarketplaceEdition:   m.MarketplaceEdition,
 	}
 }
 
