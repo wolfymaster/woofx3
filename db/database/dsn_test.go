@@ -3,7 +3,11 @@ package database
 import (
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/wolfymaster/woofx3/common/runtime"
 )
 
 func discardLogger() *slog.Logger {
@@ -30,6 +34,7 @@ func TestParseDatabaseURL_Postgres(t *testing.T) {
 }
 
 func TestParseDatabaseURL_SQLite(t *testing.T) {
+	t.Setenv(runtime.DataDirEnv, "")
 	cases := []struct {
 		raw  string
 		path string
@@ -51,6 +56,53 @@ func TestParseDatabaseURL_SQLite(t *testing.T) {
 		if got.DriverDSN != tc.path {
 			t.Fatalf("%q: path = %q, want %q", tc.raw, got.DriverDSN, tc.path)
 		}
+	}
+}
+
+func TestParseDatabaseURL_SQLiteUnderDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv(runtime.DataDirEnv, dataDir)
+
+	cases := []struct {
+		raw  string
+		path string
+	}{
+		{"sqlite://./data/woofx3.db", filepath.Join(dataDir, "data", "woofx3.db")},
+		{"sqlite://db.sqlite", filepath.Join(dataDir, "db.sqlite")},
+		{"sqlite:///tmp/woofx3.db", "/tmp/woofx3.db"},
+		{"sqlite:///:memory:", ":memory:"},
+		{":memory:", ":memory:"},
+	}
+	for _, tc := range cases {
+		got, err := ParseDatabaseURL(tc.raw)
+		if err != nil {
+			t.Fatalf("%q: %v", tc.raw, err)
+		}
+		if got.DriverDSN != tc.path {
+			t.Errorf("%q: path = %q, want %q", tc.raw, got.DriverDSN, tc.path)
+		}
+	}
+}
+
+func TestInitializeDB_SQLiteCreatesItsDirectoryUnderDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv(runtime.DataDirEnv, dataDir)
+
+	db, err := InitializeDB("sqlite://./data/woofx3.db", discardLogger())
+	if err != nil {
+		t.Fatalf("InitializeDB: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db.DB: %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+	_ = sqlDB.Close()
+
+	if _, err := os.Stat(filepath.Join(dataDir, "data", "woofx3.db")); err != nil {
+		t.Errorf("database file not created under the data dir: %v", err)
 	}
 }
 

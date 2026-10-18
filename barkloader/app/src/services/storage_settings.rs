@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
 use lib_repository::{FileRepositoryConfig, RepositoryConfig, S3RepositoryConfig};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -179,7 +178,8 @@ fn env_or_setting(setting: Option<String>, env_var: &str) -> Option<String> {
 /// settings first (when available); falls back to environment
 /// variables for any value not set there. Returns the legacy
 /// File repo using `MODULES_DIR` (or `./modules`) when nothing else
-/// is configured — the existing dev-mode default.
+/// is configured — the existing dev-mode default. A relative file
+/// destination is anchored in `WOOFX3_DATA_DIR` when that is set.
 pub async fn resolve_repository_config(
     db_proxy_url: Option<&str>,
     default_modules_dir: &str,
@@ -208,10 +208,12 @@ pub async fn resolve_repository_config(
             };
             let destination = env_or_setting(destination_str, "MODULES_DIR")
                 .unwrap_or_else(|| default_modules_dir.to_string());
-            info!("Storage provider: file (destination: {})", destination);
-            Ok(RepositoryConfig::File(FileRepositoryConfig {
-                destination: PathBuf::from(destination),
-            }))
+            let destination = woofx3_runtime::resolve_data_path(destination);
+            info!(
+                "Storage provider: file (destination: {})",
+                destination.display()
+            );
+            Ok(RepositoryConfig::File(FileRepositoryConfig { destination }))
         }
         "s3" => {
             let cfg = resolve_s3_config(db_proxy_url).await?;

@@ -47,6 +47,14 @@ struct DeleteQuery {
     module_key: Option<String>,
 }
 
+/// Where an uploaded archive is unpacked before it is installed, relative to
+/// the working directory or, when set, the data directory.
+const UPLOAD_DIR: &str = "./uploads";
+
+fn upload_dir() -> PathBuf {
+    woofx3_runtime::resolve_data_path(UPLOAD_DIR)
+}
+
 /// The marketplace listing an upload says it came from, from the
 /// `marketplace_listing_id` and `marketplace_edition` form fields. A blank
 /// field counts as absent, and a listing without an edition is edition 1.
@@ -92,7 +100,7 @@ async fn upload_handler(
 ) -> Result<HttpResponse, Error> {
     let force = query.force.unwrap_or(false);
 
-    let file_service = FileService::new("./uploads");
+    let file_service = FileService::new(&upload_dir().to_string_lossy());
 
     // upload the file to temporary location for processing;
     // multipart fields client_id and module_key are extracted alongside the file
@@ -134,10 +142,8 @@ async fn upload_handler(
         let db_proxy_ref = db_proxy_client.as_ref().map(|c| c as &dyn ModuleDbProxy);
 
         // SafeTempDir with automatic cleanup on drop
-        let _upload_cleanup = SafeTempDir::new(
-            PathBuf::from(&metadata.temp_dir_path),
-            PathBuf::from("./uploads"),
-        );
+        let _upload_cleanup =
+            SafeTempDir::new(PathBuf::from(&metadata.temp_dir_path), upload_dir());
 
         // save original zip path before processing extracts files
         let original_zip_path = PathBuf::from(&metadata.temp_dir_path).join(&metadata.file_name);
