@@ -1,6 +1,7 @@
 import type {
   ConfigBundle,
   ConfigImportOptions,
+  MarketplaceInstallRequest,
   RelayConfig,
   StreamEventSubscriber,
   TwitchAccessToken,
@@ -50,6 +51,10 @@ export class ApiSession extends RpcTarget {
       moduleKey,
       ...ctx,
     });
+  }
+
+  async installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest) {
+    return this.api.installMarketplaceListing(listingId, request, { clientId: this.clientId });
   }
 
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
@@ -137,6 +142,9 @@ export const RPC_METHODS = [
   "getModule",
   "installModuleZip",
   "installModuleFromUrl",
+  "installMarketplaceListing",
+  "inspectMarketplaceListing",
+  "installMarketplaceBundle",
   "listEngineModules",
   "uninstallModule",
   "uninstallEngineModule",

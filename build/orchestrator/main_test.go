@@ -614,3 +614,19 @@ func TestWaitForEOFReturnsWhenTheParentClosesStdin(t *testing.T) {
 		t.Fatal("did not return after stdin closed")
 	}
 }
+
+func TestBinaryFileNameFollowsTheBuildTarget(t *testing.T) {
+	// A Windows process without OS=Windows_NT in its environment, started by
+	// a parent that cleared it, still runs the .exe services.
+	t.Setenv("OS", "")
+
+	got := binaryFileName(Service{Output: "api"})
+
+	want := "api"
+	if runtime.GOOS == "windows" {
+		want = "api.exe"
+	}
+	if got != want {
+		t.Errorf("binaryFileName = %q, want %q on %s", got, want, runtime.GOOS)
+	}
+}

@@ -1,4 +1,3 @@
-import type { SharedLogger } from "@woofx3/common/logging";
 import type { AlertContext } from "@woofx3/common/cloudevents/Alert/events";
 import {
   type Cheer,
@@ -10,6 +9,7 @@ import {
   type Subscribe,
   type SubscriptionGift,
 } from "@woofx3/common/cloudevents/Twitch/events";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { ConvexWebhookClient } from "./convex-webhook-client";

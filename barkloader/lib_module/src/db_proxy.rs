@@ -529,6 +529,15 @@ pub struct CreateCommandJson {
     pub created_by_ref: String,
 }
 
+/// The marketplace listing an install came from, and that listing's
+/// edition. Stored on the module row because its key cannot say: the key's
+/// first segment is the manifest id, which every edition of a listing shares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarketplaceOrigin {
+    pub listing_id: String,
+    pub edition: i32,
+}
+
 /// Twirp JSON for `module.ModuleService/CreateModule`.
 /// Returns the module ID from the created record.
 ///
@@ -540,6 +549,9 @@ pub struct CreateCommandJson {
 /// is persisted as `created_by_ref` with `created_by_type = "CLIENT"` so we
 /// can always trace a module back to the caller that installed it. A module
 /// is owned by the client that installed it, not by another module.
+///
+/// `marketplace` is sent only when the install came from the marketplace;
+/// without it the db keeps whatever an existing row of the same name holds.
 #[allow(clippy::too_many_arguments)]
 pub async fn create_module(
     db_proxy_url: &str,
@@ -552,6 +564,7 @@ pub async fn create_module(
     module_key: &str,
     client_id: &str,
     provenance: InstallProvenance,
+    marketplace: Option<&MarketplaceOrigin>,
 ) -> Result<String> {
     let url = format!("{}/twirp/module.ModuleService/CreateModule", db_proxy_url);
     // A bundled module has no installing client to attribute to, and the
@@ -561,7 +574,7 @@ pub async fn create_module(
         InstallProvenance::System => ("SYSTEM", module_id),
         InstallProvenance::User => ("CLIENT", client_id),
     };
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "name": display_name,
         "module_id": module_id,
         "version": version,
@@ -572,6 +585,10 @@ pub async fn create_module(
         "created_by_ref": created_by_ref,
         "module_key": module_key,
     });
+    if let Some(origin) = marketplace {
+        body["marketplace_listing_id"] = serde_json::json!(origin.listing_id);
+        body["marketplace_edition"] = serde_json::json!(origin.edition);
+    }
 
     let client = HTTP_CLIENT.clone();
     let response = client
