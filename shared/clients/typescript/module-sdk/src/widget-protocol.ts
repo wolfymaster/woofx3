@@ -280,11 +280,17 @@ export interface WidgetStatusReportMessage extends WidgetProtocolEnvelope {
  * change to any other setting is applied in place through its bindings
  * (`settings.changed`). `all` means the script read every setting at once
  * (spread them, listed their keys), so every change reloads it.
+ *
+ * `handles` means the widget redraws itself on every change
+ * (`widgetHost.onSettingsChange`): whatever it has read, every change is
+ * applied in place, and later reads are not reported. A host that does not
+ * know the field reloads as the reads say, which is always safe.
  */
 export interface WidgetSettingsReadsMessage extends WidgetProtocolEnvelope {
   type: "settings.reads";
   keys: string[];
   all: boolean;
+  handles?: boolean;
 }
 
 /**
@@ -679,7 +685,13 @@ export function parseWidgetToHostMessage(value: unknown, nonce: string): WidgetT
           }
         : null;
     case "settings.reads":
-      return { ...envelope, type: "settings.reads", keys: stringList(m.keys), all: m.all === true };
+      return {
+        ...envelope,
+        type: "settings.reads",
+        keys: stringList(m.keys),
+        all: m.all === true,
+        ...(m.handles === true ? { handles: true } : {}),
+      };
     case "rendered":
       return { ...envelope, type: "rendered" };
     case "ping":

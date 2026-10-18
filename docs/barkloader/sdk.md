@@ -229,6 +229,14 @@ comes back through its subscription). Spreading or listing the settings counts
 as reading all of them. Draw from settings in script when you must, and move
 what you can into bindings to make it update in place.
 
+**Or redraw from script yourself.** For a setting no binding can show (a text
+template filled with a live value), call `host.onSettingsChange(handler)`. From
+then on no change reloads the widget: `host.settings` is updated, the bindings
+are applied, and `handler` runs with the new settings, so the widget redraws
+what it draws from them. Hosts older than this call don't have it; check
+`typeof host.onSettingsChange === "function"`, and without it the widget
+reloads as above. The built-in counter, timer and text widgets work this way.
+
 A change of theme always swaps the widget, because the theme is applied
 before it runs. In the preview harness, **Send to running widget** applies a
 settings change through the bindings the same way.

@@ -441,6 +441,25 @@ describe("installWidgetHostShim — settings", () => {
     expect(h.sent("settings.reads").at(-1)).toMatchObject({ all: true });
   });
 
+  it("tells the host once that the widget redraws itself, and reports no reads after", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    void host.settings.label;
+    const seen: unknown[] = [];
+    host.onSettingsChange((settings) => seen.push(settings.label));
+    host.onSettingsChange(() => {});
+    void host.settings.accent;
+    await Promise.resolve();
+    expect(h.sent("settings.reads")).toEqual([expect.objectContaining({ keys: [], all: false, handles: true })]);
+
+    h.deliver(fromParent({ type: "settings.changed", settings: { label: "followers" } }));
+    expect(seen).toEqual(["followers"]);
+    expect(host.settings.label).toBe("followers");
+    await Promise.resolve();
+    expect(h.sent("settings.reads")).toHaveLength(1);
+  });
+
   it("holds the report until init, like every other message", async () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;

@@ -46,10 +46,20 @@ export function describeWidgetHostContract(name: string, make: HarnessFactory): 
         expect(() => h.host.storage.subscribe("", () => {})).toThrow();
         expect(() => h.host.storage.subscribe("count", undefined as never)).toThrow();
         expect(() => h.host.onEvent(undefined as never)).toThrow();
+        expect(() => h.host.onSettingsChange(undefined as never)).toThrow();
       });
     });
 
     describe("settings", () => {
+      it("runs a settings handler with the new settings, after host.settings has them", async () => {
+        const h = await start({ settings: { text: "a" } });
+        const seen: Array<{ handed: unknown; host: unknown }> = [];
+        h.host.onSettingsChange((settings) => seen.push({ handed: settings.text, host: h.host.settings.text }));
+        h.setSettings({ text: "b" });
+        await h.settle();
+        expect(seen).toEqual([{ handed: "b", host: "b" }]);
+      });
+
       it("reads the streamer's new settings once they change", async () => {
         const h = await start({ settings: { label: "a" } });
         h.setSettings({ label: "b", accent: "#000" });

@@ -83,6 +83,9 @@ export class WidgetBridge {
   // to one of these needs a fresh frame; any other is patched in.
   private readonly readKeys = new Set<string>();
   private readAll = false;
+  // The widget redraws itself on every change (`onSettingsChange`): whatever
+  // it read, every change is patched in.
+  private handlesChanges = false;
   // Bumped whenever the frame's document goes away, so a file read for the
   // old document is never answered into its successor, whose request ids
   // start over.
@@ -103,6 +106,7 @@ export class WidgetBridge {
     this.initialized = false;
     this.readKeys.clear();
     this.readAll = false;
+    this.handlesChanges = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
@@ -185,6 +189,15 @@ export class WidgetBridge {
         return;
       }
       case "settings.reads": {
+        if (msg.handles) {
+          this.handlesChanges = true;
+          this.readAll = false;
+          this.readKeys.clear();
+          return;
+        }
+        if (this.handlesChanges) {
+          return;
+        }
         if (msg.all) {
           this.readAll = true;
         }
@@ -283,6 +296,7 @@ export class WidgetBridge {
     this.initialized = false;
     this.readKeys.clear();
     this.readAll = false;
+    this.handlesChanges = false;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();

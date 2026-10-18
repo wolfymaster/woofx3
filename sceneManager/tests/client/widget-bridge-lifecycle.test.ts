@@ -100,6 +100,16 @@ describe("WidgetBridge settings", () => {
     expect(bridge.settingsReads()!.all).toBe(true);
   });
 
+  it("counts nothing as read once the widget redraws itself on every change", () => {
+    const { bridge, fromWidget } = setup();
+    fromWidget("hello");
+    fromWidget("settings.reads", { keys: ["text"], all: false });
+    fromWidget("settings.reads", { keys: [], all: false, handles: true });
+    fromWidget("settings.reads", { keys: ["counter"], all: true });
+    expect([...bridge.settingsReads()!.keys]).toEqual([]);
+    expect(bridge.settingsReads()!.all).toBe(false);
+  });
+
   it("sends settings once the widget is connected", () => {
     const { bridge, posted, fromWidget } = setup();
     bridge.sendSettings({ text: "early" });
