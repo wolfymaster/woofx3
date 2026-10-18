@@ -5,8 +5,12 @@ import type { EngineHosting } from "./api";
  * client may need to detect before using. `getEngineCapabilities()` returns
  * exactly these values, so an id listed here is a promise the engine keeps.
  *
- * Engine images are tagged rather than semver-versioned, so a client cannot
- * infer features from `getEngineInfo().version`. It asks for the list instead.
+ * A client asks for this list rather than comparing `getEngineInfo().version`
+ * against the release that shipped a feature: a build from source reports
+ * `dev`, and a list keeps clients from tracking which release shipped what.
+ * The capability table in docs/services/engine-capabilities.md records each
+ * id's first release (its Since column) only so a client knows when every
+ * supported engine has the id and its check can be removed.
  *
  * An id is `<area>.<feature>` in camelCase and never changes meaning once
  * shipped: a behavior change that clients must tell apart gets a new id.

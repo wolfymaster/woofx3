@@ -7,7 +7,10 @@ name: Release
 #   - woofx3-<tag>-windows-amd64.zip, cross-compiled by build/main.sh
 #   - a GitHub release of the tag, carrying both archives and the image digest
 #   - the release's entry in CHANGELOG.md, committed to master; the tag points
-#     at that commit, whose parent is the commit the artifacts were built from
+#     at that commit, whose parent is the commit the artifacts were built from.
+#     The same commit records the release as the Since of each engine
+#     capability id it ships, in docs/services/engine-capabilities.md
+#     (.github/scripts/capability-since.mts, run by .releaserc.json)
 #
 # The version is settled before anything is built, since the image reports it
 # (WOOFX3_VERSION), and nothing is tagged until every artifact exists: the
@@ -269,7 +272,8 @@ jobs:
       # run ends without tagging rather than failing. Its image stays in the
       # registry by digest alone. The tag is on the CHANGELOG.md commit, which
       # must sit directly on the commit the artifacts were built from and
-      # change nothing else.
+      # change no file but CHANGELOG.md and the capability table
+      # (docs/services/engine-capabilities.md), whose Since values it records.
       - name: Check the release exists
         id: check
         env:
@@ -289,7 +293,14 @@ jobs:
           fi
           released="$(git rev-parse "${TAG}^{commit}")"
           test "$(git rev-parse "${released}^")" = "${GITHUB_SHA}"
-          test "$(git diff --name-only "${GITHUB_SHA}" "$released")" = "CHANGELOG.md"
+          git diff --name-only "${GITHUB_SHA}" "$released" > changed
+          # The capability table's path must match .releaserc.json's git
+          # assets and DOC in .github/scripts/capability-since.mts.
+          grep -qx CHANGELOG.md changed
+          if grep -vx -e CHANGELOG.md -e docs/services/engine-capabilities.md changed; then
+            echo "::error::The release commit changes more than CHANGELOG.md and the capability table."
+            exit 1
+          fi
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > published
           printf '%s\n' "woofx3-${TAG}-linux-amd64.zip" "woofx3-${TAG}-windows-amd64.zip" | sort > expected
           diff expected published

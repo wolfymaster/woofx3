@@ -10,6 +10,7 @@ import {
   supportedEngineCapabilities,
   UNADVERTISED_ENGINE_CAPABILITIES,
 } from "@woofx3/api";
+import { SINCE } from "../../.github/scripts/capability-since.mjs";
 import { RPC_METHODS } from "../src/api-session";
 import { engineRoutes } from "../src/routes/engine";
 
@@ -123,10 +124,12 @@ describe("ENGINE_CAPABILITIES", () => {
     }
   });
 
-  test("documents every id in docs/services/engine-capabilities.md", () => {
+  test("documents every id in docs/services/engine-capabilities.md, with its first release", () => {
     const doc = readFileSync(DOC_PATH, "utf8");
     for (const id of Object.values(ENGINE_CAPABILITIES)) {
-      expect(doc).toContain(`| \`${id}\` |`);
+      const row = doc.split("\n").find((line) => line.startsWith(`| \`${id}\` |`));
+      expect(row, `no row for ${id}`).toBeDefined();
+      expect(row?.split(" | ")[1]).toMatch(SINCE);
     }
   });
 });
