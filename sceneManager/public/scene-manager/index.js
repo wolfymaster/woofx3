@@ -3769,11 +3769,10 @@ class WidgetBridge {
         return;
       }
       case "status.report": {
-        if (!this.initialized || !this.moduleId) {
+        if (!this.initialized) {
           return;
         }
         this.callbacks.onStatusReport({
-          moduleId: this.moduleId,
           instanceId: this.instanceId,
           key: typeof msg.key === "string" ? msg.key : "",
           value: msg.value,
@@ -4037,7 +4036,7 @@ class AlertWidget {
       onStorageGet: () => null,
       onStorageSubscribe: () => {},
       onStorageUnsubscribe: () => {},
-      onStatusReport: (report) => this.opts.postStatus(instanceId, report),
+      onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
       onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
       onEventsSubscribe: (subId, queue) => {
         facts.subscribed(queue?.autoComplete === false);
@@ -5462,13 +5461,13 @@ function main() {
     return body.value ?? null;
   });
   const assets = new AssetCache;
-  function postStatus(instanceId, report) {
+  function postStatus(instanceId, moduleId, report) {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        moduleId: report.moduleId,
+        moduleId,
         widgetCanonicalId: report.widgetCanonicalId,
         key: report.key,
         value: report.value,
@@ -5539,7 +5538,7 @@ function main() {
       onStorageGet: (_moduleId, key) => moduleState.peek(instance.moduleId, key),
       onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
       onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
-      onStatusReport: (report) => postStatus(instance.id, report),
+      onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
       onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;

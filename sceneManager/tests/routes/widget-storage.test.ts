@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { HttpDeps } from "../../src/http";
 import { handleWidgetStorageRoute } from "../../src/routes/widget-storage";
+import { SceneDocuments } from "../../src/scene/scene-documents";
 
 const KEY = "state:woofx3:counter:deaths";
 
@@ -47,6 +48,10 @@ function deps(
         opts.snapshot ??
         (async (sceneId: string, version: string) =>
           sceneId === "scene-1" ? { sceneId, meta: version === "draft" ? draft : published } : null),
+      // The real lookup, over the fake snapshots above.
+      placementMeta(sceneId: string, instanceId: string) {
+        return SceneDocuments.prototype.placementMeta.call(this as never, sceneId, instanceId);
+      },
     },
     moduleState: { read },
     settingsDb: { listModuleSettings: async (moduleId: string) => opts.settings?.[moduleId] ?? [] },

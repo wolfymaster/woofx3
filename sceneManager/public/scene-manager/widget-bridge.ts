@@ -27,8 +27,12 @@ import {
   type WidgetEvent,
 } from "@woofx3/module-sdk";
 
+/**
+ * A widget's `status.report`. It names no module: a widget claims one in its
+ * `hello`, and nothing checks that claim, so whoever posts the report adds
+ * the module from the scene record it mounted the frame from.
+ */
 export interface WidgetStatusReportPayload {
-  moduleId: string;
   instanceId: string;
   widgetCanonicalId?: string;
   key: string;
@@ -246,11 +250,10 @@ export class WidgetBridge {
         return;
       }
       case "status.report": {
-        if (!this.initialized || !this.moduleId) {
+        if (!this.initialized) {
           return;
         }
         this.callbacks.onStatusReport({
-          moduleId: this.moduleId,
           instanceId: this.instanceId,
           key: typeof msg.key === "string" ? msg.key : "",
           value: msg.value,

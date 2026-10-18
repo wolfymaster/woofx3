@@ -218,3 +218,35 @@ describe("WidgetBridge assets", () => {
     expect(posted.some((m) => m.type === "asset.value")).toBe(false);
   });
 });
+
+describe("WidgetBridge status reports", () => {
+  const NONCE = "n-1";
+  const noop = () => {};
+
+  it("never carries the module the widget claimed in its hello", () => {
+    const reports: Record<string, unknown>[] = [];
+    const contentWindow = { postMessage: noop };
+    const bridge = new WidgetBridge("inst-1", NONCE, {
+      onStorageGet: () => null,
+      onStorageSubscribe: noop,
+      onStorageUnsubscribe: noop,
+      onStatusReport: (report) => reports.push({ ...report }),
+      onAssetLoad: () => Promise.reject(new AssetLoadError("not_found", "")),
+      onEventsSubscribe: noop,
+      onEventsUnsubscribe: noop,
+      onEventComplete: noop,
+      onDispose: noop,
+    });
+    bridge.attach({ contentWindow } as unknown as HTMLIFrameElement);
+    const fromWidget = (type: string, extra: Record<string, unknown> = {}) =>
+      bridge.handleMessage({
+        source: contentWindow,
+        data: { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: NONCE, type, ...extra },
+      } as unknown as MessageEvent);
+
+    fromWidget("hello", { moduleId: "someone-else" });
+    fromWidget("status.report", { key: "count", value: 3, ts: "2026-10-17T00:00:00Z" });
+
+    expect(reports).toEqual([{ instanceId: "inst-1", key: "count", value: 3, ts: "2026-10-17T00:00:00Z" }]);
+  });
+});

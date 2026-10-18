@@ -158,13 +158,14 @@ function main(): void {
 
   const assets = new AssetCache();
 
-  function postStatus(instanceId: string, report: WidgetStatusReportPayload): void {
+  /** `moduleId` is the placement's, from the scene record, never the widget's claim. */
+  function postStatus(instanceId: string, moduleId: string, report: WidgetStatusReportPayload): void {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        moduleId: report.moduleId,
+        moduleId,
         widgetCanonicalId: report.widgetCanonicalId,
         key: report.key,
         value: report.value,
@@ -301,7 +302,7 @@ function main(): void {
       onStorageGet: (_moduleId, key) => moduleState.peek(instance.moduleId, key),
       onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
       onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
-      onStatusReport: (report) => postStatus(instance.id, report),
+      onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
       onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;

@@ -4089,11 +4089,10 @@ class WidgetBridge {
         return;
       }
       case "status.report": {
-        if (!this.initialized || !this.moduleId) {
+        if (!this.initialized) {
           return;
         }
         this.callbacks.onStatusReport({
-          moduleId: this.moduleId,
           instanceId: this.instanceId,
           key: typeof msg.key === "string" ? msg.key : "",
           value: msg.value,
