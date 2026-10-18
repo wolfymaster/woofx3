@@ -633,6 +633,7 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			Type:          in.Type,
 			Taxonomy:      string(taxonomyJSON),
 			Returns:       in.Returns,
+			Sentence:      in.Sentence,
 		}
 		if err := s.repo.UpsertAction(a); err != nil {
 			return nil, fmt.Errorf("upsert action %q: %w", in.Name, err)
@@ -769,6 +770,7 @@ func actionToProto(a *models.Action) *client.Action {
 		Type:          a.Type,
 		Taxonomy:      taxonomy,
 		Returns:       a.Returns,
+		Sentence:      a.Sentence,
 	}
 }
 
