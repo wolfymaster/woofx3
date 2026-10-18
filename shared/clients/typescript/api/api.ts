@@ -947,10 +947,13 @@ export interface MarketplaceInstallRequest {
  * The outcome of `installMarketplaceListing`.
  *
  * - `installed`: barkloader accepted the archive under `moduleKey`
- *   (`{listingId}:{version}:{first 7 hex of sha256}`); the install finishes
- *   asynchronously with `module.installed` or `module.install_failed`.
- *   `alreadyInstalled` when that key was installed before, in which case
- *   `module.installed` has already been sent.
+ *   (`{moduleId}:{version}:{first 7 hex of sha256}`, where `moduleId` is the
+ *   manifest id every edition of the module shares, the catalog's
+ *   `moduleKey`); the install finishes asynchronously with
+ *   `module.installed` or `module.install_failed`. A later edition of an
+ *   installed module replaces it in place. `alreadyInstalled` when that key
+ *   was installed before, in which case `module.installed` has already been
+ *   sent.
  * - `needs_approval`: the archive declares permissions or local endpoints
  *   outside the approval, e.g. because the listing was republished after the
  *   streamer reviewed it. Nothing was installed.
@@ -982,10 +985,17 @@ export interface MarketplaceLocalEndpoint {
  */
 export interface MarketplaceListingInspection {
   listingId: string;
+  /**
+   * The module the listing installs as: the manifest id every edition
+   * shares (the catalog's `moduleKey`). Equals `listingId` for edition 1.
+   */
+  moduleId: string;
+  /** Which edition of the module the listing is. */
+  edition: number;
   type: "module" | "theme";
   name: string;
   version: string;
-  /** The key an install of this build would use. */
+  /** The key an install of this build would use: `{moduleId}:{version}:{first 7 hex of sha256}`. */
   moduleKey: string;
   sha256: string;
   sizeBytes: number;

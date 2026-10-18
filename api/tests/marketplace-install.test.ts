@@ -116,7 +116,7 @@ function moduleZip(manifest: Record<string, unknown>, extra: Record<string, stri
 function addModuleListing(
   id: string,
   manifest: Record<string, unknown>,
-  options: Partial<FakeListing> & { version?: string; type?: string; edition?: unknown } = {}
+  options: Partial<FakeListing> & { version?: string; type?: string; edition?: unknown; moduleKey?: unknown } = {}
 ): Uint8Array {
   const archive = options.archive ?? moduleZip(manifest, { "main.js": "export default 1;" });
   archives.set(id, archive);
@@ -127,6 +127,7 @@ function addModuleListing(
       name: `${id} name`,
       version: options.version ?? "1.2.0",
       ...(options.edition === undefined ? {} : { edition: options.edition }),
+      ...(options.moduleKey === undefined ? {} : { moduleKey: options.moduleKey }),
     },
     archive,
     acquireStatus: options.acquireStatus,
@@ -236,9 +237,26 @@ beforeEach(() => {
 // ---------- tests ----------
 
 describe("marketplaceModuleKey", () => {
-  test("is listing id, version and the first 7 hex of the archive's sha256", () => {
-    const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+  test("is module id, version and the first 7 hex of the archive's sha256", () => {
     expect(marketplaceModuleKey("obs_scenes", "1.2.0", hash)).toBe("obs_scenes:1.2.0:0123456");
+  });
+
+  test("an edition 1 listing installs under the key it always had: its listing id is its module id", async () => {
+    const archive = addModuleListing("obs_scenes", OBS_MANIFEST, { moduleKey: "obs_scenes", edition: 1 });
+    const result = await install(host(), "obs_scenes", APPROVED);
+    expect(result).toEqual({ status: "installed", moduleKey: `obs_scenes:1.2.0:${sha256(archive).slice(0, 7)}` });
+  });
+
+  test("a later edition installs under its module id, not its listing id", async () => {
+    const archive = addModuleListing(
+      "obs_scenes-v2",
+      { ...OBS_MANIFEST, version: "2.0.0" },
+      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
+    );
+    const result = await install(host(), "obs_scenes-v2", APPROVED);
+    expect(result).toEqual({ status: "installed", moduleKey: `obs_scenes:2.0.0:${sha256(archive).slice(0, 7)}` });
   });
 });
 
@@ -274,25 +292,91 @@ describe("installMarketplaceListing", () => {
     expect(upload.get("marketplace_edition")).toBe("1");
   });
 
-  test("records a later edition's own listing id and edition, under the unchanged key format", async () => {
+  test("installs a later edition under the manifest id key, recording its own listing id and edition", async () => {
     const archive = addModuleListing(
       "obs_scenes-v2",
       { ...OBS_MANIFEST, version: "2.0.0" },
-      {
-        version: "2.0.0",
-        edition: 2,
-      }
+      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
     );
     const h = host();
 
     const result = await install(h, "obs_scenes-v2", APPROVED);
 
-    const moduleKey = `obs_scenes-v2:2.0.0:${sha256(archive).slice(0, 7)}`;
+    const moduleKey = `obs_scenes:2.0.0:${sha256(archive).slice(0, 7)}`;
     expect(result).toEqual({ status: "installed", moduleKey });
     const upload = h.barkloaderUploads[0];
     expect(upload.get("module_key")).toBe(moduleKey);
     expect(upload.get("marketplace_listing_id")).toBe("obs_scenes-v2");
     expect(upload.get("marketplace_edition")).toBe("2");
+  });
+
+  test("installs a later edition over an installed earlier one as an upgrade", async () => {
+    const edition1 = addModuleListing("obs_scenes", OBS_MANIFEST, { moduleKey: "obs_scenes", edition: 1 });
+    const edition1Key = `obs_scenes:1.2.0:${sha256(edition1).slice(0, 7)}`;
+    const edition2 = addModuleListing(
+      "obs_scenes-v2",
+      { ...OBS_MANIFEST, version: "2.0.0" },
+      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
+    );
+    const h = host({ installed: { [edition1Key]: { moduleId: "obs_scenes", name: "OBS Scenes", version: "1.2.0" } } });
+
+    const result = await install(h, "obs_scenes-v2", APPROVED);
+
+    const moduleKey = `obs_scenes:2.0.0:${sha256(edition2).slice(0, 7)}`;
+    expect(result).toEqual({ status: "installed", moduleKey });
+    expect(h.barkloaderUploads).toHaveLength(1);
+    expect(h.barkloaderUploads[0].get("marketplace_listing_id")).toBe("obs_scenes-v2");
+    expect(h.webhooks).toEqual([]);
+  });
+
+  test("answers a later edition that is already installed as installed", async () => {
+    const archive = addModuleListing(
+      "obs_scenes-v2",
+      { ...OBS_MANIFEST, version: "2.0.0" },
+      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
+    );
+    const moduleKey = `obs_scenes:2.0.0:${sha256(archive).slice(0, 7)}`;
+    const h = host({ installed: { [moduleKey]: { moduleId: "obs_scenes", name: "OBS Scenes", version: "2.0.0" } } });
+
+    const result = await install(h, "obs_scenes-v2", APPROVED);
+
+    expect(result).toEqual({ status: "installed", moduleKey, alreadyInstalled: true });
+    expect(h.barkloaderUploads).toEqual([]);
+  });
+
+  test("refuses an archive whose manifest id is not the listing's module id, and reports the failure", async () => {
+    const archive = addModuleListing(
+      "obs_scenes-v2",
+      { ...OBS_MANIFEST, id: "obs_scenes_two", version: "2.0.0" },
+      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
+    );
+    const h = host();
+
+    await expect(install(h, "obs_scenes-v2", APPROVED)).rejects.toThrow(
+      'Marketplace listing obs_scenes-v2 is module "obs_scenes", but its archive\'s manifest id is "obs_scenes_two"'
+    );
+
+    expect(h.barkloaderUploads).toEqual([]);
+    expect(h.webhooks).toHaveLength(1);
+    expect(h.webhooks[0].event).toMatchObject({
+      type: "module.install_failed",
+      moduleKey: `obs_scenes:2.0.0:${sha256(archive).slice(0, 7)}`,
+      source: "marketplace",
+    });
+  });
+
+  test("checks a listing without a moduleKey against its listing id", async () => {
+    addModuleListing("obs_scenes", { ...OBS_MANIFEST, id: "something_else" });
+    await expect(install(host(), "obs_scenes", APPROVED)).rejects.toThrow(
+      'is module "obs_scenes", but its archive\'s manifest id is "something_else"'
+    );
+  });
+
+  test("refuses a listing whose moduleKey is not a non-blank string", async () => {
+    for (const moduleKey of ["", 7]) {
+      addModuleListing("obs_scenes", OBS_MANIFEST, { moduleKey });
+      await expect(install(host(), "obs_scenes", APPROVED)).rejects.toThrow("has an invalid moduleKey");
+    }
   });
 
   test("refuses a listing whose edition is not a whole number of 1 or more", async () => {
@@ -476,6 +560,8 @@ describe("inspectMarketplaceListing", () => {
 
     expect(result).toEqual({
       listingId: "obs_scenes",
+      moduleId: "obs_scenes",
+      edition: 1,
       type: "module",
       name: "obs_scenes name",
       version: "1.2.0",
@@ -492,6 +578,28 @@ describe("inspectMarketplaceListing", () => {
       ],
     });
     expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([]);
+  });
+
+  test("reports a later edition's listing id, module id and the key it installs under", async () => {
+    const archive = addModuleListing(
+      "obs_scenes-v2",
+      { ...OBS_MANIFEST, version: "2.0.0" },
+      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
+    );
+
+    const result = await inspect(host(), "obs_scenes-v2");
+
+    expect(result).toMatchObject({
+      listingId: "obs_scenes-v2",
+      moduleId: "obs_scenes",
+      edition: 2,
+      moduleKey: `obs_scenes:2.0.0:${sha256(archive).slice(0, 7)}`,
+    });
+  });
+
+  test("refuses a build whose manifest id is not the listing's module id", async () => {
+    addModuleListing("obs_scenes-v2", OBS_MANIFEST, { edition: 2, moduleKey: "obs" });
+    await expect(inspect(host(), "obs_scenes-v2")).rejects.toThrow('is module "obs"');
   });
 });
 

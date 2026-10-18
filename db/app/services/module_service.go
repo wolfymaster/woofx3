@@ -84,94 +84,94 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		}
 	}
 
-	// Idempotency layer 2: a row with the same name already exists but under a
-	// different module_key. This happens when a prior install half-succeeded
-	// (module row persisted, downstream RPCs failed) or the user is upgrading
-	// to a new version/hash without an explicit update call. Rewriting the
-	// row in place keeps the `modules_name_key` constraint happy and lets
-	// install retries converge. Functions are diffed against the manifest,
-	// not replaced wholesale: kept ids update in place, new ids insert,
-	// and ids the new manifest drops are archived (not deleted) — a
-	// workflow step that invokes a dropped function by canonical id keeps
-	// resolving instead of failing at execution time. See migration 0029.
-	if req.Name != "" {
-		existing, err := s.repo.GetByName(req.Name)
-		if err == nil && existing != nil {
-			existing.ModuleKey = req.ModuleKey
-			existing.ModuleID = manifestModuleID
-			existing.Version = req.Version
-			existing.Manifest = req.Manifest
-			existing.ArchiveKey = req.ArchiveKey
-			existing.State = "active"
-			if req.CreatedByType != "" {
-				existing.CreatedByType = req.CreatedByType
-			}
-			if req.CreatedByRef != "" {
-				existing.CreatedByRef = req.CreatedByRef
-			}
-			if req.MarketplaceListingId != nil {
-				existing.MarketplaceListingID = req.MarketplaceListingId
-				existing.MarketplaceEdition = req.MarketplaceEdition
-			}
+	// Idempotency layer 2: the module is already installed under a different
+	// module_key. This happens when a prior install half-succeeded (module
+	// row persisted, downstream RPCs failed) or the user is upgrading to a
+	// new version/hash without an explicit update call. Rewriting the row in
+	// place keeps the `modules_name_key` constraint happy and lets install
+	// retries converge. Functions are diffed against the manifest, not
+	// replaced wholesale: kept ids update in place, new ids insert, and ids
+	// the new manifest drops are archived (not deleted) — a workflow step
+	// that invokes a dropped function by canonical id keeps resolving
+	// instead of failing at execution time. See migration 0029.
+	if existing := s.installedModule(manifestModuleID, req.Name); existing != nil {
+		existing.ModuleKey = req.ModuleKey
+		existing.ModuleID = manifestModuleID
+		if req.Name != "" {
+			existing.Name = req.Name
+		}
+		existing.Version = req.Version
+		existing.Manifest = req.Manifest
+		existing.ArchiveKey = req.ArchiveKey
+		existing.State = "active"
+		if req.CreatedByType != "" {
+			existing.CreatedByType = req.CreatedByType
+		}
+		if req.CreatedByRef != "" {
+			existing.CreatedByRef = req.CreatedByRef
+		}
+		if req.MarketplaceListingId != nil {
+			existing.MarketplaceListingID = req.MarketplaceListingId
+			existing.MarketplaceEdition = req.MarketplaceEdition
+		}
 
-			if err := s.repo.Update(existing); err != nil {
-				return nil, err
-			}
+		if err := s.repo.Update(existing); err != nil {
+			return nil, err
+		}
 
-			priorFunctions, err := s.repo.ListActiveFunctionsByModuleID(existing.ID)
-			if err != nil {
-				return nil, err
+		priorFunctions, err := s.repo.ListActiveFunctionsByModuleID(existing.ID)
+		if err != nil {
+			return nil, err
+		}
+		newManifestIDs := make(map[string]bool, len(req.Functions))
+		for _, f := range req.Functions {
+			if f.ManifestId != "" {
+				newManifestIDs[f.ManifestId] = true
 			}
-			newManifestIDs := make(map[string]bool, len(req.Functions))
-			for _, f := range req.Functions {
-				if f.ManifestId != "" {
-					newManifestIDs[f.ManifestId] = true
-				}
-			}
-			for _, prior := range priorFunctions {
-				if prior.ManifestID != "" && !newManifestIDs[prior.ManifestID] {
-					if err := s.repo.ArchiveFunctionByManifestID(existing.ID, prior.ManifestID); err != nil {
-						return nil, err
-					}
-				}
-			}
-
-			functions := make([]models.ModuleFunction, 0, len(req.Functions))
-			for _, f := range req.Functions {
-				fn := models.ModuleFunction{
-					ID:         uuid.New(),
-					ModuleID:   existing.ID,
-					ManifestID: f.ManifestId,
-					Name:       f.Name,
-					FileName:   f.FileName,
-					FileKey:    f.FileKey,
-					EntryPoint: f.EntryPoint,
-					Runtime:    f.Runtime,
-				}
-				if err := s.repo.UpsertFunction(&fn); err != nil {
+		}
+		for _, prior := range priorFunctions {
+			if prior.ManifestID != "" && !newManifestIDs[prior.ManifestID] {
+				if err := s.repo.ArchiveFunctionByManifestID(existing.ID, prior.ManifestID); err != nil {
 					return nil, err
 				}
-				functions = append(functions, fn)
 			}
-			existing.Functions = functions
-
-			if s.publisher != nil && len(functions) > 0 {
-				s.publisher.Publish(workers.PublishOptions{
-					EntityType:      "module.function",
-					Operation:       "registered",
-					Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleID, existing.ModuleKey, existing.Name, existing.Version, functions),
-					AutoAcknowledge: true,
-				})
-			}
-
-			return &client.ModuleResponse{
-				Status: &client.ResponseStatus{
-					Code:    client.ResponseStatus_OK,
-					Message: "Module replaced",
-				},
-				Module: moduleToProto(existing),
-			}, nil
 		}
+
+		functions := make([]models.ModuleFunction, 0, len(req.Functions))
+		for _, f := range req.Functions {
+			fn := models.ModuleFunction{
+				ID:         uuid.New(),
+				ModuleID:   existing.ID,
+				ManifestID: f.ManifestId,
+				Name:       f.Name,
+				FileName:   f.FileName,
+				FileKey:    f.FileKey,
+				EntryPoint: f.EntryPoint,
+				Runtime:    f.Runtime,
+			}
+			if err := s.repo.UpsertFunction(&fn); err != nil {
+				return nil, err
+			}
+			functions = append(functions, fn)
+		}
+		existing.Functions = functions
+
+		if s.publisher != nil && len(functions) > 0 {
+			s.publisher.Publish(workers.PublishOptions{
+				EntityType:      "module.function",
+				Operation:       "registered",
+				Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleID, existing.ModuleKey, existing.Name, existing.Version, functions),
+				AutoAcknowledge: true,
+			})
+		}
+
+		return &client.ModuleResponse{
+			Status: &client.ResponseStatus{
+				Code:    client.ResponseStatus_OK,
+				Message: "Module replaced",
+			},
+			Module: moduleToProto(existing),
+		}, nil
 	}
 
 	// Ids are assigned here rather than left to the column defaults, which
@@ -822,6 +822,23 @@ func validateMarketplaceProvenance(req *client.CreateModuleRequest) error {
 	}
 	if *req.MarketplaceEdition < 1 {
 		return twirp.InvalidArgumentError("marketplace_edition", "must be 1 or more")
+	}
+	return nil
+}
+
+// installedModule finds the row an install replaces: the one with the same
+// manifest id, which is what identifies a module across versions and
+// marketplace editions (a later edition may rename the module), or else the
+// one with the same name, for rows written before module_id was recorded.
+func (s *moduleService) installedModule(manifestModuleID, name string) *models.Module {
+	if existing, err := s.repo.GetByModuleID(manifestModuleID); err == nil && existing != nil {
+		return existing
+	}
+	if name == "" {
+		return nil
+	}
+	if existing, err := s.repo.GetByName(name); err == nil && existing != nil {
+		return existing
 	}
 	return nil
 }

@@ -55,6 +55,14 @@ export interface MarketplaceListing {
    * listing id; a listing that predates editions is edition 1.
    */
   edition: number;
+  /**
+   * The catalog's `moduleKey`: the manifest id every edition of the module
+   * shares, and the id the module installs under, so a newer edition
+   * replaces the installed one in place. For an edition 1 listing it equals
+   * the listing id, which is also what a listing that predates the field
+   * falls back to.
+   */
+  moduleId: string;
 }
 
 /** `GET /modules/{id}/download`, with its integrity fields checked. */
@@ -328,6 +336,10 @@ export class MarketplaceClient {
     if (typeof edition !== "number" || !Number.isSafeInteger(edition) || edition < 1) {
       throw new Error(`Marketplace listing ${listingId} has an invalid edition`);
     }
+    const moduleId = raw.moduleKey ?? id;
+    if (typeof moduleId !== "string" || moduleId === "") {
+      throw new Error(`Marketplace listing ${listingId} has an invalid moduleKey`);
+    }
     return {
       id,
       type: raw.type as MarketplaceListingType,
@@ -335,6 +347,7 @@ export class MarketplaceClient {
       description: asString(raw.description),
       version: asString(raw.version, "0.0.0"),
       edition,
+      moduleId,
     };
   }
 
