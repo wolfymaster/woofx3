@@ -38,8 +38,5 @@ export async function handleMediaProxyRoute(
   logger: Logger,
   fetchFn: typeof fetch = fetch
 ): Promise<Response> {
-  if (req.method !== "GET") {
-    return new Response(null, { status: 405, headers: { Allow: "GET" } });
-  }
   return relayToBarkloader(req, url, barkloaderUrl, logger, MEDIA_RELAY, fetchFn);
 }

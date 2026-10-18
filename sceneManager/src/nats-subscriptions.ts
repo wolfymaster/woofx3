@@ -285,7 +285,12 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // companion. OBS's open session is replaced only when the change moves it to
   // another route; one that cannot be read is assumed to.
   await nats.subscribe(RELAY_CONFIG_UPDATED_SUBJECT, async () => {
-    const moves = await relayConfigMovesObs().catch(() => true);
+    const moves = await relayConfigMovesObs().catch((err: unknown) => {
+      logger.warn("relay config change: could not read where OBS is reached; reconnecting to be sure", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return true;
+    });
     if (moves) {
       obs.reconnectNow("Relay configuration changed");
     }

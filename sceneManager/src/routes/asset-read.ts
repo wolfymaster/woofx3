@@ -45,9 +45,6 @@ export async function handleAssetReadRoute(
   logger: Logger,
   fetchFn: typeof fetch = fetch
 ): Promise<Response> {
-  if (req.method !== "GET") {
-    return new Response(null, { status: 405, headers: { Allow: "GET" } });
-  }
   // The same judgement of the path the page made before asking.
   const asset = assetOfReadPath(url.pathname);
   if (asset === null) {

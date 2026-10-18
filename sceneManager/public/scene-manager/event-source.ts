@@ -26,15 +26,6 @@ import {
 } from "../../contract/overlay-stream";
 import type { SceneOpsEvent } from "./scene-document";
 
-/** The stream's frames, as the scene manager writes them (see contract/overlay-stream.ts). */
-export type {
-  CancelFrame,
-  DeliveryFrame,
-  ModuleStateFrame,
-  OpenSetFrame,
-  StreamFrame,
-} from "../../contract/overlay-stream";
-
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
   onModuleState?(frame: ModuleStateFrame): void;

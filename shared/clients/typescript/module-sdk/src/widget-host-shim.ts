@@ -8,7 +8,7 @@
 // so this module installs the host synchronously: settings come from
 // the inlined boot payload, not from the async `init` handshake.
 //
-// Trust model (design §2.3, §5.2.10): the frame runs with an opaque
+// Trust model: the frame runs with an opaque
 // origin (`sandbox="allow-scripts"`), so `targetOrigin` is "*" on the
 // way out and origin checks are useless on the way in. Instead every
 // inbound message must (1) come from `window.parent` (`event.source`

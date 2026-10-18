@@ -70,10 +70,9 @@ export interface OverlayWidgetInstance {
    * scene still points at the old id.
    *
    * Placements are canonical-id references with no integrity check behind
-   * them: nothing rewrites a scene when a module renames a widget. An
-   * unresolvable one used to render as a blank area, which is exactly what a
-   * widget with nothing to show looks like, so it went unnoticed until
-   * someone wondered why their alerts stopped.
+   * them: nothing rewrites a scene when a module renames a widget. Flagged
+   * here because an unresolvable one would otherwise render as a blank area,
+   * which is exactly what a widget with nothing to show looks like.
    */
   resolved: boolean;
 }
@@ -196,7 +195,6 @@ export class OverlayHost {
     return this.catalog.rows();
   }
 
-  /** The page's scene config, each placement framed for this engine. */
   /** A scene with each placement framed for this engine (see `PlacementFraming`).
    *  Authorization is the caller's, as for `loadSceneById`. */
   async loadFramedSceneById(sceneId: string, version: SceneVersion = "published"): Promise<OverlaySceneState | null> {
@@ -207,6 +205,7 @@ export class OverlayHost {
     return { ...state, instances: await this.framing.frame(state.instances) };
   }
 
+  /** The page's scene config, each placement framed for this engine. */
   private async configOf(state: OverlaySceneState | null): Promise<Record<string, unknown>> {
     if (!state || !this.framing) {
       return sceneConfigOf(state);
@@ -214,15 +213,15 @@ export class OverlayHost {
     return sceneConfigOf({ ...state, instances: await this.framing.frame(state.instances) });
   }
 
-  /**
-   * Resolve a token to its scene state, or null for invalid/revoked/
-   * unknown tokens and for any load failure (uniform — no oracle).
-   */
   /** The scene an overlay token opens, or null when it opens none (unknown, revoked, or the db unreachable). */
   async sceneIdOfToken(token: string): Promise<string | null> {
     return (await this.resolver.resolve(token))?.sceneId ?? null;
   }
 
+  /**
+   * Resolve a token to its scene state, or null for invalid/revoked/
+   * unknown tokens and for any load failure (uniform — no oracle).
+   */
   async loadScene(token: string): Promise<OverlaySceneState | null> {
     const resolved = await this.resolver.resolve(token);
     if (!resolved) {
@@ -285,9 +284,11 @@ export class OverlayHost {
     }
     const framed = async (state: OverlaySceneState): Promise<OverlaySceneState> =>
       this.framing ? { ...state, instances: await this.framing.frame(state.instances) } : state;
+    const framedPublished = await framed(published);
     return {
-      published: await framed(published),
-      draft: await framed(draft),
+      published: framedPublished,
+      // With no draft the draft is the published scene: framed once.
+      draft: s.hasDraft ? await framed(draft) : framedPublished,
       editorStateJson: s.editorStateJson === "" ? null : s.editorStateJson,
     };
   }

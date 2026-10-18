@@ -63,18 +63,27 @@ export async function startMessageBus(): Promise<MessageBusStart> {
   const conf = join(scratch, ".woofx3.json");
   writeFileSync(conf, "{}");
   const wsPort = freePort();
-  const proc = Bun.spawn([bin, "-conf", conf], {
-    cwd: scratch,
-    env: {
-      ...process.env,
-      ROOT_PATH: scratch,
-      WOOFX3_MESSAGEBUS_HOST: "127.0.0.1",
-      WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT: "-1",
-      WOOFX3_MESSAGEBUS_WEBSOCKET_PORT: String(wsPort),
-    },
-    stdout: "ignore",
-    stderr: "pipe",
-  });
+  let proc: Bun.Subprocess<"ignore", "ignore", "pipe">;
+  try {
+    proc = Bun.spawn([bin, "-conf", conf], {
+      cwd: scratch,
+      env: {
+        ...process.env,
+        ROOT_PATH: scratch,
+        WOOFX3_MESSAGEBUS_HOST: "127.0.0.1",
+        WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT: "-1",
+        WOOFX3_MESSAGEBUS_WEBSOCKET_PORT: String(wsPort),
+      },
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+  } catch (err) {
+    rmSync(scratch, { recursive: true, force: true });
+    return {
+      ok: false,
+      reason: `the message bus could not be started: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
   const stop = async () => {
     proc.kill("SIGTERM");
     await proc.exited;
@@ -88,6 +97,12 @@ export async function startMessageBus(): Promise<MessageBusStart> {
       return { ok: false, reason: `the message bus did not start: ${stderr.slice(0, 500)}` };
     }
     await Bun.sleep(50);
+  }
+  // The port was free when chosen, not reserved: whatever answers must be
+  // the bus, which is still running.
+  if (proc.exitCode !== null) {
+    await stop();
+    return { ok: false, reason: `port ${wsPort} answered, but the message bus had exited` };
   }
   return { ok: true, bus: { url: `ws://127.0.0.1:${wsPort}`, stop } };
 }

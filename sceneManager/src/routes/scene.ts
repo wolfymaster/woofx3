@@ -1,5 +1,6 @@
 import type { HttpDeps } from "../http";
 import { nowSeconds, SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
+import { BLANK_FRAME_DOC } from "../scene/frame-assembler";
 import { serializeSessionCookie } from "../scene/session-cookie";
 import { BODY_LIMITS, invalidSession, jsonError, jsonOk, readJsonBody, requireSceneSession } from "./http-kit";
 import type { SceneVersion } from "../scene/scene-host";
@@ -10,8 +11,6 @@ import { configOfSnapshot } from "../../contract/scene-config";
 export function viewOf(url: URL): SceneVersion {
   return url.searchParams.get("view") === "draft" ? "draft" : "published";
 }
-
-const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
 
 /**
  * `GET /scene/{sceneId}?token=abc123` — verify the opaque overlay
@@ -26,7 +25,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   const token = url.searchParams.get("token") ?? "";
   const state = await deps.host.loadScene(token);
   if (!state || state.sceneId !== sceneId) {
-    return new Response(NOT_FOUND_HTML, {
+    return new Response(BLANK_FRAME_DOC, {
       status: 404,
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
     });

@@ -171,18 +171,6 @@ describe("handleAssetReadRoute", () => {
     }
   });
 
-  it("refuses anything but GET", async () => {
-    const url = new URL("http://scene.test/assets/read/user/res-1/anim.json");
-    const resp = await handleAssetReadRoute(
-      new Request(url, { method: "POST" }),
-      url,
-      BARKLOADER_URL,
-      logger,
-      upstream() as never
-    );
-    expect(resp.status).toBe(405);
-  });
-
   it("grants no CORS", () => {
     expect(corsHeadersFor("/assets/read/user/res-1/anim.json")).toEqual({});
   });

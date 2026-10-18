@@ -101,9 +101,9 @@ off the server's clock, so the two need not agree.
 
 ## Which module
 
-A widget declares its own `moduleId` in the `hello` handshake
-(`widget-bridge.ts`), and nothing checks that claim. It must not be what scopes
-a storage read, or a widget could name another module and read its values.
+A widget's frame names no module, and nothing a frame says could be trusted
+to scope a storage read: a widget could name another module and read its
+values.
 
 The page already has the truth from the server: the scene record carries each
 placement's module. So:

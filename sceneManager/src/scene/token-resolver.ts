@@ -12,7 +12,7 @@ export interface OverlayTokenDb {
 }
 
 export interface OverlayTokenResolverOptions {
-  /** Cache TTL in milliseconds. Fixed at 30s. */
+  /** Cache TTL in milliseconds; `OVERLAY_TOKEN_CACHE_TTL_MS` by default. */
   ttlMs?: number;
   /** Clock injection for tests. */
   now?: () => number;
@@ -37,6 +37,13 @@ export function maskToken(token: string): string {
 }
 
 /**
+ * The most tokens the cache holds. Every distinct token presented is cached,
+ * the unknown ones included, so without a bound a stream of made-up tokens
+ * would grow it for as long as the process runs.
+ */
+export const OVERLAY_TOKEN_CACHE_MAX = 1024;
+
+/**
  * Resolves overlay tokens via the db-proxy with a 30s TTL cache.
  *
  * Uniformity invariant (no enumeration oracle): revoked, unknown, and
@@ -48,13 +55,6 @@ export function maskToken(token: string): string {
  * The NATS subscription on `db.overlay_token.updated.*` calls
  * `invalidateAll()` to poison the cache ahead of TTL expiry.
  */
-/**
- * The most tokens the cache holds. Every distinct token presented is cached,
- * the unknown ones included, so without a bound a stream of made-up tokens
- * would grow it for as long as the process runs.
- */
-export const OVERLAY_TOKEN_CACHE_MAX = 1024;
-
 export class OverlayTokenResolver {
   private readonly cache = new Map<string, CacheEntry>();
   // Bumped by every `invalidateAll`: an answer asked for before one is not

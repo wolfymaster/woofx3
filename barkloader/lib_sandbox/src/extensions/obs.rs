@@ -320,25 +320,31 @@ fn set_source_visibility(name: &str, args: &Map<String, Value>) -> Result<Value,
 }
 
 /// `visibility` is "visible", "hidden" or "toggle", which the scene manager
-/// resolves against what OBS shows when the command runs. Module code written
-/// before it existed passes `visible` (true by default) instead, read as
-/// "visible" or "hidden"; `visibility` wins when both are given.
+/// resolves against what OBS shows when the command runs. Without it,
+/// `visible` (true by default) is read as "visible" or "hidden"; `visibility`
+/// wins when both are given.
 fn source_visibility(name: &str, args: &Map<String, Value>) -> Result<&'static str, HostError> {
+    let refused = |got: Option<&Value>| {
+        invalid(
+            name,
+            "visibility",
+            "\"visible\", \"hidden\" or \"toggle\"",
+            got,
+        )
+    };
     match args.get("visibility") {
         None | Some(Value::Null) => Ok(if optional_bool(name, args, "visible", true)? {
             "visible"
         } else {
             "hidden"
         }),
-        Some(Value::String(text)) if text == "visible" => Ok("visible"),
-        Some(Value::String(text)) if text == "hidden" => Ok("hidden"),
-        Some(Value::String(text)) if text == "toggle" => Ok("toggle"),
-        other => Err(invalid(
-            name,
-            "visibility",
-            "\"visible\", \"hidden\" or \"toggle\"",
-            other,
-        )),
+        Some(Value::String(text)) => match text.as_str() {
+            "visible" => Ok("visible"),
+            "hidden" => Ok("hidden"),
+            "toggle" => Ok("toggle"),
+            _ => Err(refused(args.get("visibility"))),
+        },
+        other => Err(refused(other)),
     }
 }
 

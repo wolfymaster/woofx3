@@ -11,7 +11,6 @@ import {
   normalizeComposition,
   type PlacementDocument,
   STRICT_REGISTRY,
-  parseWidgetCanonicalId,
   stableCanonicalId,
 } from "@woofx3/scene/model";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "./scene-host";
@@ -195,9 +194,8 @@ function admit(
       reject(invalid);
       continue;
     }
-    const parsed = parseWidgetCanonicalId(storedCanonicalId);
     const widgetCanonicalId = stableCanonicalId(storedCanonicalId);
-    if (!parsed || widgetCanonicalId === null) {
+    if (widgetCanonicalId === null) {
       reject("not a widget canonical id");
       continue;
     }

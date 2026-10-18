@@ -20,77 +20,75 @@ const SSE_HEARTBEAT_MS = 20_000;
  * relies on the client's own reconnect/backoff (event-source.ts) to
  * re-establish it after a drop.
  */
-export function handleEventsStreamRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  return (async () => {
-    if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
-      return invalidSession();
-    }
+export async function handleEventsStreamRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
+  }
 
-    let unsubscribe: (() => void) | null = null;
-    let heartbeat: ReturnType<typeof setInterval> | null = null;
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        unsubscribe = deps.deliveryStore.subscribe(sceneId, controller);
-        // Opening frame: nudges the connection open immediately in
-        // browsers/proxies that buffer until the first byte, and
-        // carries this process's boot identity so a reconnecting
-        // overlay can detect that it came back to a *restarted*
-        // sceneManager rather than resuming against the same one.
-        // It also says which scene ops the overlay should be up to, so one
-        // that missed some while its stream was down resyncs.
-        controller.enqueue(
-          encoder.encode(
-            encodeStreamFrame({
-              kind: "hello",
-              bootId: deps.bootId,
-              seq: deps.sceneDocuments.seqOf(sceneId, "published"),
-              draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
-            })
-          )
-        );
-        // A scene can sit idle far longer than any idle timeout on the
-        // path: Bun.serve reaps a silent connection (see `idleTimeout`
-        // in http.ts), and reverse proxies do the same. Without this
-        // the stream is torn down and rebuilt every few seconds, which
-        // flashes the Disconnected banner and re-runs the open-delivery
-        // replay on every cycle. The client parses comment frames as
-        // no-ops (parseSseChunk), so a heartbeat costs nothing there.
-        heartbeat = setInterval(() => {
-          try {
-            controller.enqueue(encoder.encode(KEEPALIVE_FRAME));
-          } catch {
-            // Already closed from the other end — stop pumping.
-            if (heartbeat !== null) {
-              clearInterval(heartbeat);
-              heartbeat = null;
-            }
+  let unsubscribe: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      unsubscribe = deps.deliveryStore.subscribe(sceneId, controller);
+      // Opening frame: nudges the connection open immediately in
+      // browsers/proxies that buffer until the first byte, and
+      // carries this process's boot identity so a reconnecting
+      // overlay can detect that it came back to a *restarted*
+      // sceneManager rather than resuming against the same one.
+      // It also says which scene ops the overlay should be up to, so one
+      // that missed some while its stream was down resyncs.
+      controller.enqueue(
+        encoder.encode(
+          encodeStreamFrame({
+            kind: "hello",
+            bootId: deps.bootId,
+            seq: deps.sceneDocuments.seqOf(sceneId, "published"),
+            draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
+          })
+        )
+      );
+      // A scene can sit idle far longer than any idle timeout on the
+      // path: Bun.serve reaps a silent connection (see `idleTimeout`
+      // in http.ts), and reverse proxies do the same. Without this
+      // the stream is torn down and rebuilt every few seconds, which
+      // flashes the Disconnected banner and re-runs the open-delivery
+      // replay on every cycle. The client parses comment frames as
+      // no-ops (parseSseChunk), so a heartbeat costs nothing there.
+      heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(KEEPALIVE_FRAME));
+        } catch {
+          // Already closed from the other end — stop pumping.
+          if (heartbeat !== null) {
+            clearInterval(heartbeat);
+            heartbeat = null;
           }
-        }, SSE_HEARTBEAT_MS);
-      },
-      cancel() {
-        if (heartbeat !== null) {
-          clearInterval(heartbeat);
-          heartbeat = null;
         }
-        unsubscribe?.();
-      },
-    });
+      }, SSE_HEARTBEAT_MS);
+    },
+    cancel() {
+      if (heartbeat !== null) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
+      unsubscribe?.();
+    },
+  });
 
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-store",
-        Connection: "keep-alive",
-      },
-    });
-  })();
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive",
+    },
+  });
 }
 
 /** `POST /scene/{sceneId}/events/{eventId}/delivered` — body
- *  `{ instanceIds: string[] }`, batched per the design note (a burst
- *  of events shouldn't mean a burst of single-item HTTP calls). */
+ *  `{ instanceIds: string[] }`, batched by the page (ack-batcher.ts) so a
+ *  burst of events is not a burst of single-item HTTP calls. */
 export async function handleEventDeliveredRoute(
   req: Request,
   sceneId: string,
@@ -146,22 +144,12 @@ export async function handleEventStartedRoute(
  * the rest, since the row has already moved there or past it, and publishes
  * nothing for them.
  */
-export async function reportAlertsPlaying(
+export function reportAlertsPlaying(
   db: AlertLifecycleWriter,
   logger: Logger,
   started: Array<{ type: string; key: string; value: unknown }>
 ): Promise<void> {
-  for (const target of alertReportTargets(started)) {
-    try {
-      await updateAlertLifecycle(db, target, "playing", "");
-    } catch (err) {
-      logger.debug("alert start not recorded", {
-        alertId: target.envelopeId,
-        rowId: target.rowId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  return reportAlerts(db, logger, started, "playing");
 }
 
 /** `POST /scene/{sceneId}/events/{eventId}/completed` — same body shape. */
@@ -209,16 +197,27 @@ function ackAnswer(failed: string[]): Response {
  * the db proxy refuses the others' reports of the same verdict and publishes
  * nothing for them.
  */
-export async function reportAlertsCompleted(
+export function reportAlertsCompleted(
   db: AlertLifecycleWriter,
   logger: Logger,
   closed: Array<{ type: string; key: string; value: unknown }>
 ): Promise<void> {
-  for (const target of alertReportTargets(closed)) {
+  return reportAlerts(db, logger, closed, "completed");
+}
+
+/** Move each alert among `deliveries` to `status`, best-effort: a refused or failed write is only logged. */
+async function reportAlerts(
+  db: AlertLifecycleWriter,
+  logger: Logger,
+  deliveries: Array<{ type: string; key: string; value: unknown }>,
+  status: "playing" | "completed"
+): Promise<void> {
+  for (const target of alertReportTargets(deliveries)) {
     try {
-      await updateAlertLifecycle(db, target, "completed", "");
+      await updateAlertLifecycle(db, target, status, "");
     } catch (err) {
-      logger.debug("alert completion not recorded", {
+      logger.debug("alert lifecycle not recorded", {
+        status,
         alertId: target.envelopeId,
         rowId: target.rowId,
         error: err instanceof Error ? err.message : String(err),

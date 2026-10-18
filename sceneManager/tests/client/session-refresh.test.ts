@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renewSession } from "../../public/scene-manager/session-refresh";
+import { renewSession, startSessionRefresh } from "../../public/scene-manager/session-refresh";
 
 function outcome(refresh: () => Promise<Response>) {
   const health: boolean[] = [];
@@ -30,5 +30,36 @@ describe("renewSession", () => {
       })
     ).toEqual({ health: [false], expired: 0 });
     expect(await outcome(async () => new Response(null, { status: 503 }))).toEqual({ health: [false], expired: 0 });
+  });
+});
+
+describe("startSessionRefresh", () => {
+  it("never starts a renewal while the last one has not answered", async () => {
+    let tick: () => void = () => {};
+    let answer: (response: Response) => void = () => {};
+    let calls = 0;
+    startSessionRefresh({
+      refresh: () => {
+        calls += 1;
+        return new Promise<Response>((resolve) => {
+          answer = resolve;
+        });
+      },
+      onHealth: () => {},
+      onExpired: () => {},
+      intervalMs: 50_000,
+      setInterval: (fn) => {
+        tick = fn;
+        return 0;
+      },
+    });
+    tick();
+    tick();
+    expect(calls).toBe(1);
+    answer(new Response(null, { status: 200 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    tick();
+    expect(calls).toBe(2);
   });
 });

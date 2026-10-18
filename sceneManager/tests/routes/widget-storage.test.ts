@@ -128,13 +128,13 @@ describe("handleWidgetStorageRoute", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it("answers 502 when the scene cannot be loaded", async () => {
+  it("answers 503 when the scene cannot be loaded", async () => {
     const { deps: d, read } = deps({
       snapshot: async () => {
         throw new Error("db down");
       },
     });
-    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(502);
+    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(503);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -150,12 +150,12 @@ describe("handleWidgetStorageRoute", () => {
     expect((await handleWidgetStorageRoute(request("counter-1", null), "scene-1", "counter-1", d)).status).toBe(400);
   });
 
-  it("answers 502 when storage cannot be read", async () => {
+  it("answers 503 when storage cannot be read", async () => {
     const { deps: d } = deps({
       read: async () => {
         throw new Error("db down");
       },
     });
-    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(502);
+    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(503);
   });
 });

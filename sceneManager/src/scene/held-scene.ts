@@ -37,7 +37,7 @@ export interface ScenePersister {
   updateScene(write: SceneWrite): Promise<unknown>;
 }
 
-/** The slice of `DeliveryStore` that pushes to a scene's open overlays. */
+/** One editor socket, as the documents talk to it. */
 export interface EditorConnection {
   send(message: ServerMessage): void;
   close(code: number, reason: string): void;

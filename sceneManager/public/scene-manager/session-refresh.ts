@@ -23,8 +23,16 @@ export interface SessionRefreshOptions {
 
 export function startSessionRefresh(options: SessionRefreshOptions): void {
   const every = options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
+  // One renewal at a time: a slow one is not joined by the next tick's.
+  let renewing = false;
   every(() => {
-    void renewSession(options);
+    if (renewing) {
+      return;
+    }
+    renewing = true;
+    void renewSession(options).finally(() => {
+      renewing = false;
+    });
   }, options.intervalMs);
 }
 

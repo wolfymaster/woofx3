@@ -78,9 +78,8 @@ export class WidgetCatalog {
       return instances;
     }
     const catalog = await this.rows();
-    // An empty catalog means the lookup failed, not that every widget is gone.
-    // Marking the whole scene broken on a transient db blip would be worse
-    // than the silence this replaces.
+    // An empty catalog means the lookup failed, not that every widget is gone:
+    // a transient db blip must not mark the whole scene broken.
     if (catalog.length === 0) {
       return instances.map((instance) => ({ ...instance, resolved: true }));
     }

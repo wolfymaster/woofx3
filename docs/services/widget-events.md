@@ -248,7 +248,18 @@ sends it again with backoff (about four minutes in all); acknowledgements are id
 When the frame of a placement is replaced (a settings or theme change swaps a fresh frame
 in), the fresh frame's queue takes over the events not yet dispatched, the old frame
 finishes what it is showing, and whatever it never finished is handed to the fresh frame
-when it is retired.
+when it is retired. An alert area is mounted afresh the same way: the new area takes over
+the waiting alerts, and the old one starts nothing more.
+
+A skip or clear closes deliveries and tells every open page at once, but that message is
+not kept for a page whose stream was down at the time. So after replaying the open
+deliveries to a new stream, the scene manager sends the whole open set (event ids by
+placement), and the page drops whatever it still holds beyond it, playing or waiting.
+
+A delivery addressed to a placement removed from the scene afterwards would never be
+queued by any page. Such deliveries are closed when the scene is saved, and when the
+scene manager starts. A placement still in the draft counts as present, since the editor's
+preview plays the draft.
 
 ## End-to-end flow
 

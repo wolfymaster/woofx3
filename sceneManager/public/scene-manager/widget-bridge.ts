@@ -31,9 +31,9 @@ import {
 } from "@woofx3/module-sdk";
 
 /**
- * A widget's `status.report`. It names no module: a widget claims one in its
- * `hello`, and nothing checks that claim, so whoever posts the report adds
- * the module from the scene record it mounted the frame from.
+ * A widget's `status.report`. It names no module, and nothing a frame says
+ * could be trusted to: whoever posts the report adds the module from the
+ * scene record it mounted the frame from.
  */
 export interface WidgetStatusReportPayload {
   instanceId: string;
