@@ -15,14 +15,14 @@ describe("SessionTokenService", () => {
     expect(claims).toEqual({ sceneId: "scene-1", authAt: 1_700_000_000 });
   });
 
-  it("reads a session minted before authAt existed as verified when it was issued", async () => {
+  it("refuses an overlay session that does not say when its token was verified", async () => {
     const secret = "test-secret";
-    const legacy = await new SignJWT({ sceneId: "scene-1" })
+    const bare = await new SignJWT({ sceneId: "scene-1" })
       .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt(1_700_000_123)
+      .setIssuedAt()
       .setExpirationTime("1h")
       .sign(new TextEncoder().encode(secret));
-    expect(await new SessionTokenService(secret).verify(legacy)).toEqual({ sceneId: "scene-1", authAt: 1_700_000_123 });
+    expect(await new SessionTokenService(secret).verify(bare)).toBeNull();
   });
 
   it("rejects a token signed with a different secret", async () => {
@@ -61,7 +61,7 @@ describe("SessionTokenService — editor tokens", () => {
 
   it("lets an editor token open the editor, and nothing else", async () => {
     const editor = await tokens.mintEditor({ sceneId: "s1" });
-    expect(await tokens.verifyEditor(editor)).toMatchObject({ sceneId: "s1" });
+    expect(await tokens.verifyEditor(editor)).toEqual({ sceneId: "s1" });
     expect(await tokens.verify(editor)).toBeNull();
   });
 

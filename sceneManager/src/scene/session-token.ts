@@ -105,13 +105,15 @@ export class SessionTokenService {
    *  any failure (expired, tampered, malformed) — uniform, no detail
    *  leaked to the caller. An editor token is not a session. */
   async verify(token: string): Promise<OverlaySession | null> {
-    return this.claims(token, false);
+    const claims = await this.claims(token, false);
+    return claims !== null && claims.authAt !== undefined ? { sceneId: claims.sceneId, authAt: claims.authAt } : null;
   }
 
   /** Verifies an editor token: as `verify`, and it must carry the edit scope.
    *  An overlay's session never lets its holder edit the scene. */
   async verifyEditor(token: string): Promise<SessionClaims | null> {
-    return this.claims(token, true);
+    const claims = await this.claims(token, true);
+    return claims !== null ? { sceneId: claims.sceneId } : null;
   }
 
   /** A token that opens the composition preview page, minted for the dashboard through the api. */
@@ -152,7 +154,7 @@ export class SessionTokenService {
     }
   }
 
-  private async claims(token: string, editor: boolean): Promise<OverlaySession | null> {
+  private async claims(token: string, editor: boolean): Promise<(SessionClaims & { authAt?: number }) | null> {
     if (!token) {
       return null;
     }
@@ -165,10 +167,7 @@ export class SessionTokenService {
       if ((payload.scope === EDIT_SCOPE) !== editor) {
         return null;
       }
-      // A session minted before `authAt` existed was verified when it was
-      // first issued at the latest, which its own iat bounds from above.
-      const authAt = typeof payload.authAt === "number" ? payload.authAt : (payload.iat ?? 0);
-      return { sceneId, authAt };
+      return typeof payload.authAt === "number" ? { sceneId, authAt: payload.authAt } : { sceneId };
     } catch {
       return null;
     }
