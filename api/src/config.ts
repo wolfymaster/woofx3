@@ -1,3 +1,5 @@
+import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
@@ -12,6 +14,8 @@ export interface ApiConfig {
    * Reported publicly by `GET /health`.
    */
   engineName: string | null;
+  /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
+  hosting: EngineHosting | null;
   /**
    * Who may register a client (`WOOFX3_REGISTRATION_MODE`), and the secret a
    * caller presents (`WOOFX3_REGISTRATION_TOKEN` or
@@ -44,6 +48,12 @@ export interface ApiConfig {
   streamwareUrl: string;
   sceneManagerUrl: string;
   apiUrl: string;
+  /**
+   * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
+   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. See
+   * shared/common/typescript/http/request-guard.ts.
+   */
+  requestGuard: RequestGuardPolicy;
   nats: {
     url: string;
     name: string;
@@ -60,6 +70,7 @@ export const ApiEnvSchema = z
     apiHost: z.string().optional(),
     woofx3Version: z.union([z.string(), z.number()]).optional(),
     woofx3EngineName: z.string().optional(),
+    woofx3Hosting: z.string().optional(),
     woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
     woofx3RegistrationTokenFile: z.string().optional(),
     woofx3RegistrationMode: z.string().optional(),
@@ -84,6 +95,8 @@ export const ApiEnvSchema = z
     woofx3MessagebusNkey: z.string().optional(),
     messagebusNkey: z.string().optional(),
     woofx3RootPath: z.string().optional(),
+    woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
   })
   .passthrough();
 
@@ -105,6 +118,23 @@ function assertValidHttpUrl(label: string, value: string): void {
   }
 }
 
+/**
+ * `WOOFX3_HOSTING` as an `EngineHosting`, or null when unset or blank. Any
+ * other value stops startup: a deployment that declares how it is run must
+ * not be reported as one that did not.
+ */
+export function resolveHosting(value: unknown): EngineHosting | null {
+  const raw = String(value ?? "").trim();
+  if (raw === "") {
+    return null;
+  }
+  const hosting = parseEngineHosting(raw);
+  if (hosting === null) {
+    throw new Error(`Config error: WOOFX3_HOSTING must be one of ${ENGINE_HOSTINGS.join(", ")}, got ${raw}`);
+  }
+  return hosting;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -113,6 +143,7 @@ export function loadConfig(): ApiConfig {
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
   const engineName = String(config.woofx3EngineName ?? "").trim() || null;
+  const hosting = resolveHosting(config.woofx3Hosting);
   const optionalString = (value: unknown): string | undefined => (value === undefined ? undefined : String(value));
   const registration = resolveRegistrationPolicy({
     mode: optionalString(config.woofx3RegistrationMode),
@@ -148,6 +179,11 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
+  const requestGuard = parseRequestGuardPolicy({
+    allowedHosts: config.woofx3AllowedHosts,
+    allowedOrigins: config.woofx3AllowedOrigins,
+  });
+
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
   const messageBusJwt =
     config.woofx3MessagebusJwt != null
@@ -165,6 +201,7 @@ export function loadConfig(): ApiConfig {
   return {
     version,
     engineName,
+    hosting,
     registration,
     port,
     host,
@@ -176,6 +213,7 @@ export function loadConfig(): ApiConfig {
     sceneManagerUrl,
     apiUrl,
     rootDir,
+    requestGuard,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",
