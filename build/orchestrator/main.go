@@ -312,10 +312,13 @@ type Supervisor struct {
 	// return only once each service's exit has been recorded and reported.
 	goroutines sync.WaitGroup
 
-	// mu guards stopping, readyReported and every ServiceProcess's Cmd,
-	// Status and LastHealth.
+	// mu guards stopping, stopDeadline, readyReported and every
+	// ServiceProcess's Cmd, Status and LastHealth.
 	mu       sync.Mutex
 	stopping bool
+	// stopDeadline is when StopAll kills what is still running; set with
+	// stopping.
+	stopDeadline time.Time
 	// readyReported is set once every service has been healthy at the same
 	// time; the ready event is sent once per run.
 	readyReported bool
@@ -499,11 +502,12 @@ const exitRecordPeriod = 5 * time.Second
 // write down and announce, and it can do neither after the database proxy and
 // the bus have gone.
 func (s *Supervisor) StopAll() {
+	deadline := s.clock.Now().Add(stopGracePeriod)
 	s.mu.Lock()
 	s.stopping = true
+	s.stopDeadline = deadline
 	s.mu.Unlock()
 	s.cancel()
-	deadline := s.clock.Now().Add(stopGracePeriod)
 
 	var dependents, foundations []string
 	for name, serviceProcess := range s.services {
@@ -561,11 +565,34 @@ func (s *Supervisor) signalStop(names []string) {
 		if process == nil {
 			continue
 		}
-		s.logger.Info("Stopping service", "service", name)
-		if err := process.RequestStop(); err != nil {
-			s.logger.Warn("Could not ask service to stop, killing it", "service", name, "error", err)
-			process.Kill()
-		}
+		s.requestStop(name, process)
+	}
+}
+
+// requestStop asks a service's process to stop, and kills it when it cannot
+// be asked.
+func (s *Supervisor) requestStop(name string, process serviceHandle) {
+	s.logger.Info("Stopping service", "service", name)
+	if err := process.RequestStop(); err != nil {
+		s.logger.Warn("Could not ask service to stop, killing it", "service", name, "error", err)
+		process.Kill()
+	}
+}
+
+// stopLateStart stops a process that was started while StopAll was already
+// under way, as StopAll does: a stop request, then a kill at the deadline. The
+// phase of StopAll that would have signalled it may have looked before it
+// existed, so it cannot be left to StopAll.
+func (s *Supervisor) stopLateStart(serviceProcess *ServiceProcess, process serviceHandle, deadline time.Time) {
+	name := serviceProcess.Service.Name
+	s.requestStop(name, process)
+	running := func() bool { return s.process(serviceProcess) == process }
+	for running() && s.clock.Now().Before(deadline) {
+		s.clock.Sleep(context.Background(), 100*time.Millisecond)
+	}
+	if running() {
+		s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
+		process.Kill()
 	}
 }
 
@@ -731,9 +758,14 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	serviceProcess.Cmd = process
 	serviceProcess.Status = StatusStarting
 	serviceProcess.LastHealth = s.clock.Now()
+	startedWhileStopping := s.stopping
+	stopDeadline := s.stopDeadline
 	s.mu.Unlock()
 	s.logger.Info("Started service", "service", service.Name, "pid", process.Pid())
 	s.reporter.service(service.Name, StatusStarting, process.Pid(), "")
+	if startedWhileStopping {
+		s.spawn(func() { s.stopLateStart(serviceProcess, process, stopDeadline) })
+	}
 
 	s.spawn(func() {
 		exit, err := process.Wait()

@@ -259,3 +259,51 @@ func TestStopAllReturnsOnceEveryServicesExitIsReported(t *testing.T) {
 		t.Fatalf("stopped reported for %v when StopAll returned, want both killed services", stopped)
 	}
 }
+
+// StopAll can begin while a service is being started, after the supervisor
+// decided to start it and before the process exists. That process must still
+// be asked to stop, not left for the kill at the end of the grace period.
+func TestAServiceStartedWhileStoppingIsAskedToStopAtOnce(t *testing.T) {
+	clock := newFakeClock()
+	calls := &callLog{}
+	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor.clock = clock
+	service := Service{Name: "late", Output: "late"}
+	supervisor.AddService(service)
+	binaryPath := filepath.Join(supervisor.baseDir, "late")
+	if err := os.WriteFile(binaryPath, []byte{}, 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	stopAllDone := make(chan struct{})
+	stopStarted := clock.Now()
+	supervisor.startProcess = func(string, []string, *os.ProcAttr) (serviceHandle, error) {
+		// StopAll begins, and has signalled the services it can see, while
+		// this one is being created.
+		go func() {
+			supervisor.StopAll()
+			close(stopAllDone)
+		}()
+		waitFor(t, "StopAll to begin", func() bool {
+			supervisor.mu.Lock()
+			defer supervisor.mu.Unlock()
+			return supervisor.stopping
+		})
+		return &scriptedProcess{name: "late", polite: true, clock: clock, calls: calls, exited: make(chan struct{})}, nil
+	}
+	// As from the service's loop, which StopAll waits for.
+	supervisor.spawn(func() {
+		if err := supervisor.startServiceProcess(supervisor.services["late"], binaryPath); err != nil {
+			t.Errorf("start: %v", err)
+		}
+	})
+	<-stopAllDone
+
+	got, times := calls.snapshot()
+	if !reflect.DeepEqual(got, []string{"late:stop"}) {
+		t.Fatalf("calls = %v, want one stop request and no kill", got)
+	}
+	if waited := times["late:stop"].Sub(stopStarted); waited >= stopGracePeriod {
+		t.Fatalf("asked to stop %s after StopAll began, want before the grace period was over", waited)
+	}
+}

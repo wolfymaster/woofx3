@@ -373,7 +373,9 @@ Each line is one event, with an RFC 3339 `time`:
   but is still checked, and turns `healthy` when its check passes.
 - `error` — a service could not be started (`name` set), or the orchestrator
   could not start at all (no `name`; it exits non-zero after this line).
-- `stopped` — every service has been stopped and the orchestrator is exiting.
+- `stopped` — every service has been stopped, and its own `stopped` event
+  written, and the orchestrator is exiting. A service that cannot be reaped
+  within 5 seconds of being killed may be missing its event.
 
 Consumers must ignore event types and fields they do not know.
 
