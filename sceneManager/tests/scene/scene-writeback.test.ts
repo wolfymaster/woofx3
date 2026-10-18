@@ -154,3 +154,39 @@ describe("writing a scene back", () => {
     expect(Object.keys(snapshot!.doc.widgets)).toEqual(["a"]);
   });
 });
+
+describe("writing back placements it could not read, across publish and discard", () => {
+  const draftOnly = { id: "c", name: "draft orphan", settings: { text: "only in the draft" } };
+  const draftRow = {
+    widgetsJson: JSON.stringify([readable]),
+    hasDraft: true,
+    draftWidgetsJson: JSON.stringify([readable, draftOnly]),
+    draftLayoutJson: "{}",
+    draftBehaviorsJson: "{}",
+  };
+
+  async function openAndSubmit(documents: SceneDocuments, kind: "publish" | "discard"): Promise<void> {
+    const socket = new Socket();
+    await documents.openEditor("s1", { clientId: "c1", have: null, name: "" }, socket);
+    const welcome = socket.sent.find((m) => m.type === "welcome") as { v?: number } | undefined;
+    await documents.submitItem("s1", "c1", 1, welcome?.v ?? 0, { kind }, () => {});
+  }
+
+  it("leaves a draft's unreadable placement out of the published scene when the draft is discarded", async () => {
+    const { documents, writes, clock } = setup(draftRow);
+    await openAndSubmit(documents, "discard");
+    await clock.advance(5_000);
+    const last = writes.at(-1)!;
+    expect(last.clearDraft).toBe(true);
+    expect((JSON.parse(last.widgetsJson!) as Array<{ id: string }>).map((p) => p.id)).toEqual(["a"]);
+  });
+
+  it("carries a draft's unreadable placement into the published scene when the draft is published", async () => {
+    const { documents, writes, clock } = setup(draftRow);
+    await openAndSubmit(documents, "publish");
+    await clock.advance(5_000);
+    const last = writes.at(-1)!;
+    expect(last.clearDraft).toBe(true);
+    expect((JSON.parse(last.widgetsJson!) as Array<{ id: string }>).map((p) => p.id).sort()).toEqual(["a", "c"]);
+  });
+});

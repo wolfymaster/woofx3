@@ -116,19 +116,6 @@ export function unreadableColumns(held: HeldScene): StoredColumn[] {
   return [...new Set([...held.unread.published.columns, ...held.unread.draft.columns])];
 }
 
-/** `placements` without repeats, compared as stored JSON, first occurrence kept. */
-export function distinctPlacements(placements: unknown[]): unknown[] {
-  const seen = new Set<string>();
-  return placements.filter((placement) => {
-    const key = JSON.stringify(placement);
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
 export function unreadableDetail(columns: StoredColumn[]): string {
   return `the scene's stored ${columns.join(", ")} could not be read, so it cannot be changed without losing them`;
 }
@@ -139,13 +126,9 @@ export function savePending(held: HeldScene): boolean {
 
 export function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
   const { docs, hasDraft } = held.state;
-  // With no draft the draft column is cleared, so the draft's unread
-  // placements (the same as the published ones unless a draft was just
-  // published) go into the published column rather than with it.
-  const publishedUnread = hasDraft
-    ? held.unread.published.placements
-    : distinctPlacements([...held.unread.published.placements, ...held.unread.draft.placements]);
-  const published = storedSceneOf(docs.published, publishedUnread);
+  // With no draft the draft column is cleared; the draft's unread placements
+  // are then the published ones (see `SceneDocuments.afterCommit`).
+  const published = storedSceneOf(docs.published, held.unread.published.placements);
   const draft = hasDraft
     ? (() => {
         const stored = storedSceneOf(docs.draft, held.unread.draft.placements);

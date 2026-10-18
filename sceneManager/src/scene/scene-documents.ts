@@ -518,6 +518,9 @@ export class SceneDocuments {
       }
       held.name = loaded.name;
       held.unread.published = unreadOf(loaded);
+      if (!held.state.hasDraft) {
+        held.unread.draft = held.unread.published;
+      }
       const saved = documentOf(loaded);
       const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
@@ -600,6 +603,17 @@ export class SceneDocuments {
   private afterCommit(held: HeldScene, entry: Entry | null, meta: MetaPlan, before: ScenesView): void {
     held.meta = meta.next;
     held.unframed = meta.unframed;
+    if (!held.state.hasDraft) {
+      // With no draft the two versions are one, and so are the placements the
+      // load could not read: a publish carries the draft's over, and anything
+      // else (a discard, a live edit) leaves the published ones. Told apart by
+      // the entry, since the documents of a publish and a discard can match.
+      if (entry?.kind === "publish") {
+        held.unread.published = held.unread.draft;
+      } else {
+        held.unread.draft = held.unread.published;
+      }
+    }
     if (entry !== null) {
       this.publishEntry(held, entry, before);
     }
