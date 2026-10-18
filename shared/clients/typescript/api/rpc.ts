@@ -26,7 +26,8 @@ export interface ApiContract {}
  * `registrationToken` is required when the engine was deployed with
  * `WOOFX3_REGISTRATION_TOKEN` set (every managed engine is): without it
  * anyone who reaches the engine first could register and claim it. An
- * engine deployed without one ignores it.
+ * engine deployed without one ignores it. `WOOFX3_REGISTRATION_MODE` can
+ * change that; see "Client registration" in docs/services/deployment.md.
  */
 export interface RegisterClientOptions {
   callbackUrl?: string;

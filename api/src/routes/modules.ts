@@ -1,15 +1,15 @@
-import type { SharedLogger } from "@woofx3/common/logging";
 import {
   MODULE_FILE_TEXT_LIMIT_BYTES,
   type ModuleFileContent,
   type ModuleFileEntry,
   type ModuleFileList,
+  type ModuleResourceUsage,
   type ModuleSetting,
   type ModuleSettingsResponse,
-  type ModuleResourceUsage,
   type ResourceInstanceDefinition,
   type WidgetThemes,
 } from "@woofx3/api";
+import type { SharedLogger } from "@woofx3/common/logging";
 import { type EngineModule, listEngineModules } from "../engine-modules";
 import {
   fetchModuleArchive,

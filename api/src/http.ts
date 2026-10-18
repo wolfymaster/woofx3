@@ -1,3 +1,4 @@
+import { RequestGuard, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
@@ -14,6 +15,8 @@ export interface HttpDeps {
   health: () => Health;
   logger: SharedLogger;
   gateway: ApiGateway;
+  /** Which Host and Origin headers are accepted; see request-guard.ts. */
+  requestGuard: RequestGuardPolicy;
   /**
    * Records the outcome of an async barkloader job. Passed in rather
    * than reached through the gateway so the transport keeps depending
@@ -21,6 +24,12 @@ export interface HttpDeps {
    */
   onProcessingCallback: (body: unknown) => Promise<void>;
 }
+
+/** CORS for `/api` batch RPC, beside the origin headers the request guard picks. */
+const BATCH_CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 /**
  * Adapter to make Bun's ServerWebSocket compatible with the standard WebSocket interface
@@ -144,6 +153,7 @@ class BunWebSocketAdapter {
  */
 export function createHttpServer(deps: HttpDeps) {
   const { port, hostname, readiness, health, logger, gateway, onProcessingCallback } = deps;
+  const requestGuard = new RequestGuard(deps.requestGuard);
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
   const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
@@ -153,6 +163,20 @@ export function createHttpServer(deps: HttpDeps) {
     hostname,
     async fetch(req, server) {
       const url = new URL(req.url);
+
+      // Before any route, the WebSocket upgrade included: a browser sends
+      // Origin on every upgrade and never preflights one, so this is the
+      // only place a cross-site socket can be refused.
+      const rejected = requestGuard.reject(req);
+      if (rejected) {
+        logger.warn("Request refused by host/origin guard", {
+          status: rejected.status,
+          host: req.headers.get("host"),
+          origin: req.headers.get("origin"),
+          path: url.pathname,
+        });
+        return rejected;
+      }
 
       // Handle WebSocket upgrade
       if (url.pathname === "/api" && req.headers.get("upgrade") === "websocket") {
@@ -175,11 +199,7 @@ export function createHttpServer(deps: HttpDeps) {
           logger.debug("CORS preflight request");
           return new Response(null, {
             status: 204,
-            headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "POST, OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type",
-            },
+            headers: { ...requestGuard.corsOriginHeaders(req), ...BATCH_CORS_HEADERS },
           });
         }
 
@@ -200,11 +220,7 @@ export function createHttpServer(deps: HttpDeps) {
               });
               return error;
             },
-            headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "POST, OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type",
-            },
+            headers: { ...requestGuard.corsOriginHeaders(req), ...BATCH_CORS_HEADERS },
           } as any);
           const duration = Date.now() - startTime;
           const responseBody = await response.clone().text();

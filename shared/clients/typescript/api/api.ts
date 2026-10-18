@@ -1392,6 +1392,27 @@ export interface EngineInfo {
   overlayPublicUrl: string;
   /** The release this engine runs (its image tag), or "dev" for an unversioned build. */
   version: string;
+  /**
+   * How this engine is run, as its deployment declares it (`WOOFX3_HOSTING`).
+   * Absent when the deployment does not say, which a client treats as
+   * unknown, not as any one of the values.
+   */
+  hosting?: EngineHosting;
+}
+
+/**
+ * How an engine is run:
+ * - `managed`: provisioned and operated by the woofx3 cloud.
+ * - `self`: run by its owner on infrastructure they operate.
+ * - `local`: run on the streamer's own machine by the desktop app.
+ */
+export type EngineHosting = (typeof ENGINE_HOSTINGS)[number];
+
+export const ENGINE_HOSTINGS = ["managed", "self", "local"] as const;
+
+/** `value` as an `EngineHosting`, or null when it is not one. */
+export function parseEngineHosting(value: string): EngineHosting | null {
+  return (ENGINE_HOSTINGS as readonly string[]).includes(value) ? (value as EngineHosting) : null;
 }
 
 /**

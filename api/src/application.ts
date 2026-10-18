@@ -172,6 +172,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       marketplace: config.marketplace
         ? new MarketplaceClient({ baseUrl: config.marketplace.url, downloadHosts: config.marketplace.downloadHosts })
         : null,
+      hosting: config.hosting,
     });
 
     // Barkloader readiness for GET /ready, from the heartbeats every service
@@ -277,7 +278,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
     const auth = new ClientAuth(db, logger);
     api.setAuthInvalidate(() => auth.invalidateCache());
-    const gateway = new ApiGateway(api, auth, db, logger, config.registrationToken);
+    const gateway = new ApiGateway(api, auth, db, logger, config.registration);
     gateway.setWebhookClient(webhookClient);
 
     this.server = createHttpServer({
@@ -298,12 +299,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
             name: config.engineName,
             version: config.version,
             startedAt: performance.timeOrigin,
-            capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled: supportedEngineCapabilities() },
+            capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled: supportedEngineCapabilities(config.hosting) },
           },
           process.uptime()
         ),
       logger,
       gateway,
+      requestGuard: config.requestGuard,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
     });
 

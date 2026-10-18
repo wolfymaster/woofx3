@@ -135,3 +135,19 @@ func TestStopAllStopsDependentsBeforeWhatTheyDependOn(t *testing.T) {
 		t.Errorf("StopAll took %s: it waited out the dependents' whole share although they exited in about 1s", elapsed)
 	}
 }
+
+func TestBinaryFileNameFollowsTheBuildTarget(t *testing.T) {
+	// A Windows process without OS=Windows_NT in its environment, started by
+	// a parent that cleared it, still runs the .exe services.
+	t.Setenv("OS", "")
+
+	got := binaryFileName(Service{Output: "api"})
+
+	want := "api"
+	if runtime.GOOS == "windows" {
+		want = "api.exe"
+	}
+	if got != want {
+		t.Errorf("binaryFileName = %q, want %q on %s", got, want, runtime.GOOS)
+	}
+}
