@@ -55,11 +55,19 @@ Each is a `.woofx3.json` key or its `WOOFX3_*` variable:
 |---|---|---|
 | `messagebusToken` | `WOOFX3_MESSAGEBUS_TOKEN` | Every client must present this token, on the TCP and the WebSocket listener. |
 | `messagebusTcpDisabled` | `WOOFX3_MESSAGEBUS_TCP_DISABLED` | `true` turns off the plain TCP listener (`messagebusServerListeningPort`, 4222 by default), leaving only the WebSocket one. |
-| `messagebusWebsocketSameOrigin` | `WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN` | `true` rejects a WebSocket upgrade whose `Origin` names a different host and port than the one it was sent to. |
-| `messagebusWebsocketAllowedOrigins` | `WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGINS` | A comma-separated list (`http://127.0.0.1:5173,https://app.example`): only upgrades from these origins are accepted. |
+| `messagebusWebSocketSameOrigin` | `WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN` | `true` rejects a WebSocket upgrade whose `Origin` names a different host and port than the one it was sent to. |
+| `messagebusWebSocketAllowedOrigins` | `WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGINS` | A comma-separated list (`http://127.0.0.1:5173,https://app.example`): only upgrades from these origins are accepted. |
 
-A boolean the server cannot parse stops it at startup instead of running it with
-less protection than was asked for.
+Keys are spelt `messagebusWebSocket…`, like `messagebusWebSocketPort`, and
+variables `WOOFX3_MESSAGEBUS_WEBSOCKET_…`, like `WOOFX3_MESSAGEBUS_WEBSOCKET_PORT`.
+The server also reads `messagebusWebsocket…` and `WOOFX3_MESSAGEBUS_WEB_SOCKET_…`
+as the same settings.
+
+A boolean or port the server cannot parse stops it at startup instead of running
+it with less protection, or on another port, than was asked for. So does a
+`messagebus…` key or `WOOFX3_MESSAGEBUS_…` variable the engine does not know,
+so a misspelt setting cannot leave its hardening silently off. Bound beyond
+loopback without a token, the server logs a warning at startup.
 
 **The token.** The same key and variable configure the server and every client,
 so one `WOOFX3_MESSAGEBUS_TOKEN` in the environment of the whole engine is
@@ -83,7 +91,7 @@ deployment turns it off.
 
 **Origins.** A web page can open a WebSocket to any address, including
 `ws://127.0.0.1:4225` on the machine running the browser, and the browser always
-sends the page's `Origin` with it. With `messagebusWebsocketSameOrigin` on, the
+sends the page's `Origin` with it. With `messagebusWebSocketSameOrigin` on, the
 server refuses those upgrades. An upgrade with no `Origin` header is always
 accepted, and that is what the engine's clients send: the Go client (nats.go),
 the TypeScript client under Bun (`wsconnect`) and the Rust client (async-nats)

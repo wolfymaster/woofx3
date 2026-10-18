@@ -26,7 +26,7 @@ func resolveConfigLocation(confPath string) config.Location {
 // are tried instead. Does not set the process environment.
 func LoadConfig(confPath string) (*Configuration, error) {
 	location := resolveConfigLocation(confPath)
-	env, err := config.Load(location)
+	env, err := loadEnv(location)
 	if err != nil {
 		return nil, err
 	}
@@ -45,4 +45,23 @@ func LoadConfig(confPath string) (*Configuration, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// loadEnv merges the config sources with every message bus key spelt
+// canonically (see canonicalKey), so a file key and the variable that
+// overrides it meet under one name and precedence holds between them.
+func loadEnv(location config.Location) (map[string]string, error) {
+	sources, err := config.LoadSources(location)
+	if err != nil {
+		return nil, err
+	}
+	merged := make([]map[string]string, 0, 3)
+	for _, source := range []map[string]string{sources.File, sources.Dotenv, sources.Process} {
+		canonical, err := canonicalSource(source)
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, canonical)
+	}
+	return config.MergeByPrecedence(merged...), nil
 }

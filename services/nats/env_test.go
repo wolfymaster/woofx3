@@ -157,8 +157,8 @@ func TestHardeningIsReadFromTheConfigFile(t *testing.T) {
 	config := `{
 		"messagebusToken": "s3cret",
 		"messagebusTcpDisabled": true,
-		"messagebusWebsocketSameOrigin": "true",
-		"messagebusWebsocketAllowedOrigins": "http://127.0.0.1:5173, https://app.example"
+		"messagebusWebSocketSameOrigin": "true",
+		"messagebusWebSocketAllowedOrigins": "http://127.0.0.1:5173, https://app.example"
 	}`
 	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -208,5 +208,110 @@ func TestAnUnreadableHardeningFlagFailsTheLoad(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("OverlayFromMap accepted a flag it cannot parse")
+	}
+}
+
+func TestBothSpellingsOfWebSocketKeysAreRead(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		env  map[string]string
+	}{
+		{name: "file key messagebusWebSocket", file: `{"messagebusWebSocketSameOrigin": true, "messagebusWebSocketPort": 4310}`},
+		{name: "file key messagebusWebsocket", file: `{"messagebusWebsocketSameOrigin": true, "messagebusWebsocketPort": 4310}`},
+		{name: "file key messageBusWebSocket", file: `{"messageBusWebSocketSameOrigin": true, "messageBusWebSocketPort": 4310}`},
+		{name: "variable WEBSOCKET", file: `{}`, env: map[string]string{"WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN": "true", "WOOFX3_MESSAGEBUS_WEBSOCKET_PORT": "4310"}},
+		{name: "variable WEB_SOCKET", file: `{}`, env: map[string]string{"WOOFX3_MESSAGEBUS_WEB_SOCKET_SAME_ORIGIN": "true", "WOOFX3_MESSAGEBUS_WEB_SOCKET_PORT": "4310"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateLocation(t)
+			path := writeFile(t, t.TempDir(), ".woofx3.json", tc.file)
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+
+			if !cfg.WebSocketSameOrigin || cfg.WebSocketPort != 4310 {
+				t.Errorf("same origin = %v, websocket port = %d, want true and 4310", cfg.WebSocketSameOrigin, cfg.WebSocketPort)
+			}
+		})
+	}
+}
+
+func TestTheEnvironmentOverridesAWebSocketKeyFromTheFile(t *testing.T) {
+	isolateLocation(t)
+	path := writeFile(t, t.TempDir(), ".woofx3.json", `{"messagebusWebSocketSameOrigin": false}`)
+	t.Setenv("WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN", "true")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if !cfg.WebSocketSameOrigin {
+		t.Error("same-origin check off, want the environment's true over the file's false")
+	}
+}
+
+func TestConflictingSpellingsInOneSourceFailTheLoad(t *testing.T) {
+	isolateLocation(t)
+	path := writeFile(t, t.TempDir(), ".woofx3.json",
+		`{"messagebusWebSocketSameOrigin": true, "messagebusWebsocketSameOrigin": false}`)
+
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("LoadConfig accepted two spellings of one key with different values")
+	}
+}
+
+func TestAnUnknownMessagebusKeyFailsTheLoad(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		env  map[string]string
+	}{
+		{name: "misspelt file key", file: `{"messagebusWebSocketSameOrign": true}`},
+		{name: "misspelt variable", file: `{}`, env: map[string]string{"WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGIN": "https://app.example"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateLocation(t)
+			path := writeFile(t, t.TempDir(), ".woofx3.json", tc.file)
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+
+			_, err := LoadConfig(path)
+			if err == nil || !strings.Contains(err.Error(), "unknown message bus setting") {
+				t.Fatalf("LoadConfig error = %v, want an unknown message bus setting", err)
+			}
+		})
+	}
+}
+
+func TestTheClientKeysInTheSharedConfigAreAccepted(t *testing.T) {
+	isolateLocation(t)
+	path := writeFile(t, t.TempDir(), ".woofx3.json",
+		`{"messagebusUrl": "ws://127.0.0.1:4225", "messagebusJwt": "", "messagebusNKey": "", "messagebusToken": "s3cret"}`)
+
+	if _, err := LoadConfig(path); err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+}
+
+func TestAPortThatIsNotANumberFailsTheLoad(t *testing.T) {
+	for _, key := range []string{"WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT", "WOOFX3_MESSAGEBUS_WEBSOCKET_PORT"} {
+		for _, value := range []string{"42x5", "-1", "70000"} {
+			t.Run(key+"="+value, func(t *testing.T) {
+				cfg := DefaultConfiguration()
+				if err := cfg.OverlayFromMap(map[string]string{key: value}); err == nil {
+					t.Fatalf("OverlayFromMap accepted %s=%q", key, value)
+				}
+			})
+		}
 	}
 }
