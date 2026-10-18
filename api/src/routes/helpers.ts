@@ -220,19 +220,28 @@ export function parseActions(actionsJson: string | undefined): ActionStep[] {
 }
 
 /**
- * A command's workflow tasks, decoded like its actions: unreadable JSON is no
- * steps rather than a failed listing.
+ * A command's workflow tasks, decoded from the JSON its workflow stores.
+ *
+ * Unlike its actions, unreadable steps throw rather than decode to none. A
+ * command's steps are written back whole, and an empty list deletes its
+ * workflow: a snapshot that showed none would let any caller that saves it
+ * unchanged delete steps it never saw. So a reader fails for that command,
+ * and says why, instead.
  */
 export function parseSteps(stepsJson: string | undefined): TaskDefinition[] {
   if (!stepsJson) {
     return [];
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(stepsJson);
-    return Array.isArray(parsed) ? (parsed as TaskDefinition[]) : [];
-  } catch {
-    return [];
+    parsed = JSON.parse(stepsJson);
+  } catch (err) {
+    throw new Error(`Command steps are not readable JSON: ${err instanceof Error ? err.message : String(err)}`);
   }
+  if (!Array.isArray(parsed)) {
+    throw new Error("Command steps are not a list");
+  }
+  return parsed as TaskDefinition[];
 }
 
 export function commandToSnapshot(c: command.Command): CommandSnapshot {
@@ -242,6 +251,7 @@ export function commandToSnapshot(c: command.Command): CommandSnapshot {
     actions: parseActions(c.actionsJson),
     workflowId: c.workflowId ?? "",
     steps: parseSteps(c.stepsJson),
+    workflowError: c.workflowError ?? "",
     cooldown: c.cooldown,
     priority: c.priority,
     enabled: c.enabled,

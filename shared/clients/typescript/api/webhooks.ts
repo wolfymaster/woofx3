@@ -13,6 +13,7 @@
 // adding or renaming event types.
 
 import type { RelayConfig, StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
+import type { CommandSnapshot } from "./command";
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -844,36 +845,8 @@ export interface SceneDeletedEvent {
 // Command events
 // ---------------------------------------------------------------------------
 
-/**
- * Snapshot of a chat command row at the point a webhook was emitted.
- * Mirrors `CommandSnapshot` in `./api` field-for-field (kept as a separate
- * local type, same precedent as `WorkflowSnapshot`/`SceneSnapshot`, to avoid
- * a circular import between this file and `./api`).
- */
-export interface CommandWebhookSnapshot {
-  id: string;
-  command: string;
-  /** The actions this command runs, in order -- `ActionStep` in api.ts. */
-  actions: Array<{
-    id?: string;
-    action: string;
-    function?: string;
-    parameters?: Record<string, unknown>;
-    $ref?: string;
-    dependsOn?: string[];
-  }>;
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: "public" | "restricted";
-  groupIds: string[];
-  usernames: string[];
-  argumentPattern: string;
-  /** The workflow this command runs, or "" when it has none. */
-  workflowId: string;
-  /** That workflow's tasks -- `TaskDefinition` in workflow-definition.ts. */
-  steps: object[];
-}
+/** A chat command at the point a webhook was emitted. */
+export type CommandWebhookSnapshot = CommandSnapshot;
 
 export interface CommandCreatedEvent {
   type: typeof EngineEventType.COMMAND_CREATED;

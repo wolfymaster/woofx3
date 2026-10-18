@@ -41,7 +41,18 @@ describe("parseCommandCreated", () => {
       argumentPattern: "{query}",
       workflowId: "",
       steps: [],
+      workflowError: "",
     });
+  });
+
+  it("carries why a command has no workflow", () => {
+    const event = parseCommandCreated(commandRow({ workflow_error: "invalid command name" }));
+    expect(event?.command.workflowError).toBe("invalid command name");
+  });
+
+  // Showing none would let a caller saving the snapshot back delete them.
+  it("refuses a row whose steps cannot be read rather than showing none", () => {
+    expect(() => parseCommandCreated(commandRow({ workflow_id: "wf-1", steps_json: "[{" }))).toThrow(/not readable/);
   });
 
   it("carries the workflow a linked command runs, and its steps", () => {

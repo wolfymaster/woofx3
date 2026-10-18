@@ -36,6 +36,7 @@ interface RawCommandRow {
   argument_pattern?: unknown;
   workflow_id?: unknown;
   steps_json?: unknown;
+  workflow_error?: unknown;
 }
 
 const asNumber = (value: unknown): number => (typeof value === "number" ? value : 0);
@@ -63,6 +64,7 @@ function buildSnapshot(ce: Record<string, unknown>): CommandWebhookSnapshot | nu
     argumentPattern: asString(row.argument_pattern),
     workflowId: asString(row.workflow_id),
     steps: parseSteps(asString(row.steps_json)),
+    workflowError: asString(row.workflow_error),
   };
 }
 

@@ -23,7 +23,10 @@ import type {
   TriggerDefinition,
   WidgetBehaviorKinds,
 } from "./webhooks";
+import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
+
+export type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 
 // ==================== Modules ====================
 
@@ -297,27 +300,6 @@ export interface TwitchAccessToken {
 // ==================== Actions ====================
 
 /**
- * One action to run: the same shape a workflow step has, because it is the
- * same thing. `action` names the engine handler (`function`, `alert`,
- * `print`, ...); `function` carries the canonical function id when the
- * handler is `function`; `$ref` records which module action this came from,
- * for the reference graph.
- *
- * Parameters may contain `${trigger.data...}` expressions, resolved against
- * the event the actions run for.
- */
-export interface ActionStep {
-  /** Defaults to the step's position ("action-1", ...) when omitted. */
-  id?: string;
-  action: string;
-  function?: string;
-  parameters?: Record<string, unknown>;
-  $ref?: string;
-  /** Omit to run after the previous action; `[]` to run alongside it. */
-  dependsOn?: string[];
-}
-
-/**
  * A request to run actions that belong to no workflow.
  *
  * The run is not recorded and reports no lifecycle: both are keyed by a
@@ -338,63 +320,6 @@ export interface RunActionsInput {
 }
 
 // ==================== Commands ====================
-
-/** "public" always allows any user; "restricted" requires the invoking user
- * to belong to one of groupIds or be listed in usernames. */
-export type CommandVisibility = "public" | "restricted";
-
-/**
- * Snapshot of a chat command as the engine stores it.
- *
- * A command with steps runs a stored workflow of its own, `workflowId`, whose
- * tasks are `steps`: actions, conditions, waits and pauses, exactly as any
- * workflow holds them. Its trigger has type "command", so only the command
- * starts it, once it has matched and passed its cooldown and permission
- * checks; the `chat.command.<slug>` event every invocation announces, for
- * other workflows to react to, does not.
- *
- * A command with no workflow runs `actions`, in order, without one. That is a
- * command the engine could not link to a workflow when it upgraded; it is
- * linked when its steps are next saved. A command with neither only
- * announces itself.
- */
-export interface CommandSnapshot {
-  id: string;
-  command: string;
-  /** Empty for a command with a workflow. */
-  actions: ActionStep[];
-  /** The workflow this command runs, or "" when it has none. */
-  workflowId: string;
-  /** That workflow's tasks; empty without one. */
-  steps: TaskDefinition[];
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: CommandVisibility;
-  groupIds: string[];
-  usernames: string[];
-  /**
-   * Optional "{variable}" placeholders declaring named arguments, e.g.
-   * "{songTitle}" or "{userA} {userB}" - `command` itself never contains
-   * braces, it's always the bare trigger word ("sr", "hug"). The extracted
-   * values reach the command's actions on the trigger event, as
-   * `${trigger.data.variables.songTitle}`.
-   *
-   * Extraction rule: exactly one variable captures the entire remainder of
-   * the message (not split on whitespace) - `!sr {songTitle}` against
-   * "!sr Life is a highway" yields `songTitle: "Life is a highway"`. More
-   * than one variable: every variable but the last consumes one
-   * whitespace-delimited token, and the last captures whatever remains -
-   * `!hug {userA} {userB}` against "!hug alice bob" yields
-   * `userA: "alice", userB: "bob"`.
-   *
-   * Each `{name}` must be a single word or dot-separated words
-   * (`^\w+(\.\w+)*$`) - no other characters are valid. The engine rejects
-   * `createCommand`/`updateCommand` calls with an invalid name in this
-   * pattern.
-   */
-  argumentPattern: string;
-}
 
 export interface CreateCommandInput {
   command: string;
@@ -2100,8 +2025,8 @@ export interface Woofx3EngineApi {
     commands: Array<{
       id: string;
       name: string;
-      /** How many actions it runs. The actions themselves are on listCommands. */
-      actions: number;
+      /** How many steps it runs. The steps themselves are on listCommands. */
+      stepCount: number;
       cooldown: number;
       enabled: boolean;
     }>;
