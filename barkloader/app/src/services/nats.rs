@@ -204,7 +204,7 @@ mod tests {
 
     /// The server's same-origin check only rejects an upgrade that carries an
     /// Origin naming another host, so a client that sends none is unaffected
-    /// by `messagebusWebsocketSameOrigin`.
+    /// by `messagebusWebSocketSameOrigin`.
     #[tokio::test]
     async fn the_websocket_upgrade_carries_no_origin() {
         let request = websocket_upgrade_request().await;
