@@ -2,13 +2,12 @@ import { describe, expect, it } from "bun:test";
 import type { EntryRef, ItemBody, ServerMessage, Version } from "@woofx3/api/scene-editor";
 import { applyOps } from "../../public/scene-manager/scene-document";
 import {
-  documentOf,
   type EditorConnection,
   type ItemReply,
   SceneDocuments,
   type SceneDocumentsClock,
-  storedSceneOf,
 } from "../../src/scene/scene-documents";
+import { documentOf, storedSceneOf } from "../../src/scene/scene-codec";
 import type { OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 import { FakeSceneStore, type SceneRow, type StoreHooks, sceneRow, storedPlacement } from "./fake-scene-store";
 import { eventAndData } from "../helpers/stream-frames";
