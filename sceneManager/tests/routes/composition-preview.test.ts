@@ -7,7 +7,7 @@ import {
   MAX_PREVIEW_WIDGETS,
   PREVIEW_SESSION_COOKIE,
 } from "../../src/routes/composition-preview";
-import { MAX_DRAFT_BODY_BYTES } from "../../src/routes/scene";
+import { BODY_LIMITS } from "../../src/routes/http-kit";
 import { MediaProxy } from "../../src/scene/media-proxy";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 import { SessionTokenService } from "../../src/scene/session-token";
@@ -191,7 +191,7 @@ describe("POST /preview/composition/frames", () => {
       expect(response.status).toBe(400);
     }
     const huge = await handleCompositionPreviewFramesRoute(
-      post("/preview/composition/frames", session, "x".repeat(MAX_DRAFT_BODY_BYTES + 1)),
+      post("/preview/composition/frames", session, "x".repeat(BODY_LIMITS.placements + 1)),
       d
     );
     expect(huge.status).toBe(413);

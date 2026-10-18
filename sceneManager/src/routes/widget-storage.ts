@@ -1,14 +1,7 @@
 import type { PlacementMeta } from "@woofx3/api/scene-editor";
 import type { HttpDeps } from "../http";
 import { storageModuleFor } from "../scene/module-state";
-import { readSessionCookie } from "../scene/session-cookie";
-
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
-}
+import { invalidSession, jsonError, jsonOk, requireSceneSession } from "./http-kit";
 
 /**
  * `GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}` — the current
@@ -36,14 +29,12 @@ export async function handleWidgetStorageRoute(
   instanceId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  if (!claims || claims.sceneId !== sceneId) {
-    return jsonResponse(401, { error: "invalid_session" });
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
   const key = new URL(req.url).searchParams.get("key") ?? "";
   if (key === "") {
-    return jsonResponse(400, { error: "missing_key" });
+    return jsonError(400, "missing_key");
   }
 
   let instance: PlacementMeta | null;
@@ -55,16 +46,16 @@ export async function handleWidgetStorageRoute(
       instanceId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return jsonResponse(502, { error: "unavailable" });
+    return jsonError(502, "unavailable");
   }
   if (!instance) {
-    return jsonResponse(404, { error: "not_found" });
+    return jsonError(404, "not_found");
   }
 
   try {
     const readFrom = await storageModuleFor(deps.settingsDb, instance.moduleId, key);
     const value = await deps.moduleState.read(sceneId, readFrom, key, instance.moduleId);
-    return jsonResponse(200, { value });
+    return jsonOk({ value });
   } catch (err) {
     deps.ctx.logger.warn("widget storage read failed", {
       sceneId,
@@ -73,7 +64,7 @@ export async function handleWidgetStorageRoute(
       key,
       error: err instanceof Error ? err.message : String(err),
     });
-    return jsonResponse(502, { error: "unavailable" });
+    return jsonError(502, "unavailable");
   }
 }
 

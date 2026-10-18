@@ -1,5 +1,6 @@
 import type { HttpDeps } from "../http";
-import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
+import { serializeSessionCookie } from "../scene/session-cookie";
+import { invalidSession, jsonOk, requireSceneSession } from "./http-kit";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
 
 /**
@@ -13,22 +14,10 @@ import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
  * retrying.
  */
 export async function handleSessionRefreshRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  if (!claims || claims.sceneId !== sceneId) {
-    return new Response(JSON.stringify({ error: "invalid_session" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
+  const claims = await requireSceneSession(req, sceneId, deps.sessionTokens);
+  if (claims === null) {
+    return invalidSession();
   }
-
   const fresh = await deps.sessionTokens.mint(claims);
-  return new Response(JSON.stringify({ status: "ok" }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      "Set-Cookie": serializeSessionCookie(sceneId, fresh, SESSION_TOKEN_TTL_SECONDS),
-    },
-  });
+  return jsonOk({ status: "ok" }, { "Set-Cookie": serializeSessionCookie(sceneId, fresh, SESSION_TOKEN_TTL_SECONDS) });
 }

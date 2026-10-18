@@ -3,7 +3,7 @@ import { type AckRefusal, encodeStreamFrame, KEEPALIVE_FRAME, parseAckBody } fro
 import { type AlertLifecycleWriter, alertReportTargets, updateAlertLifecycle } from "../events/alert-dispatch";
 import { handleStatusReport } from "../events/handlers";
 import type { HttpDeps } from "../http";
-import { readSessionCookie } from "../scene/session-cookie";
+import { BODY_LIMITS, invalidSession, jsonError, jsonOk, readJsonBody, requireSceneSession } from "./http-kit";
 
 /**
  * SSE comment-frame heartbeat interval. Must stay comfortably below
@@ -11,19 +11,6 @@ import { readSessionCookie } from "../scene/session-cookie";
  * path, so the stream is never the thing that goes quiet first.
  */
 const SSE_HEARTBEAT_MS = 20_000;
-
-function unauthorized(): Response {
-  return new Response(JSON.stringify({ error: "invalid_session" }), {
-    status: 401,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
-}
-
-async function verifySession(req: Request, sceneId: string, deps: HttpDeps): Promise<boolean> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  return !!claims && claims.sceneId === sceneId;
-}
 
 /**
  * `GET /scene/{sceneId}/events` — the SSE stream. Opening a connection
@@ -35,8 +22,8 @@ async function verifySession(req: Request, sceneId: string, deps: HttpDeps): Pro
  */
 export function handleEventsStreamRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
   return (async () => {
-    if (!(await verifySession(req, sceneId, deps))) {
-      return unauthorized();
+    if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+      return invalidSession();
     }
 
     let unsubscribe: (() => void) | null = null;
@@ -110,12 +97,16 @@ export async function handleEventDeliveredRoute(
   eventId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  if (!(await verifySession(req, sceneId, deps))) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const instanceIds = parseAckBody(await req.json().catch(() => null));
+  const body = await readJsonBody(req, BODY_LIMITS.ack);
+  if (!body.ok) {
+    return body.response;
+  }
+  const instanceIds = parseAckBody(body.value);
   if (!instanceIds) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return jsonError(400, "invalid_body");
   }
   const failed = await deps.deliveryStore.ackDelivered(sceneId, eventId, instanceIds);
   return ackAnswer(failed);
@@ -133,16 +124,20 @@ export async function handleEventStartedRoute(
   eventId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  if (!(await verifySession(req, sceneId, deps))) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const instanceIds = parseAckBody(await req.json().catch(() => null));
+  const body = await readJsonBody(req, BODY_LIMITS.ack);
+  if (!body.ok) {
+    return body.response;
+  }
+  const instanceIds = parseAckBody(body.value);
   if (!instanceIds) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return jsonError(400, "invalid_body");
   }
   const firsts = deps.deliveryStore.markStarted(sceneId, eventId, instanceIds);
   await reportAlertsPlaying(deps.ctx.services.db.client, deps.ctx.logger, firsts);
-  return Response.json({ status: "ok" });
+  return jsonOk({ status: "ok" });
 }
 
 /**
@@ -176,12 +171,16 @@ export async function handleEventCompletedRoute(
   eventId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  if (!(await verifySession(req, sceneId, deps))) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const instanceIds = parseAckBody(await req.json().catch(() => null));
+  const body = await readJsonBody(req, BODY_LIMITS.ack);
+  if (!body.ok) {
+    return body.response;
+  }
+  const instanceIds = parseAckBody(body.value);
   if (!instanceIds) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return jsonError(400, "invalid_body");
   }
   const { closed, failed } = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
   await reportAlertsCompleted(deps.ctx.services.db.client, deps.ctx.logger, closed);
@@ -196,9 +195,9 @@ export async function handleEventCompletedRoute(
 function ackAnswer(failed: string[]): Response {
   if (failed.length > 0) {
     const refusal: AckRefusal = { error: "unavailable", instanceIds: failed };
-    return Response.json(refusal, { status: 503 });
+    return jsonError(503, refusal.error, { instanceIds: refusal.instanceIds });
   }
-  return Response.json({ status: "ok" });
+  return jsonOk({ status: "ok" });
 }
 
 /**
@@ -273,14 +272,16 @@ export async function handleWidgetStatusRoute(
   instanceId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  if (!claims || claims.sceneId !== sceneId) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const body = (await req.json().catch(() => null)) as StatusReportBody | null;
-  if (!body || typeof body.key !== "string" || body.key.length === 0) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+  const read = await readJsonBody(req, BODY_LIMITS.status);
+  if (!read.ok) {
+    return read.response;
+  }
+  const body = read.value as StatusReportBody | null;
+  if (typeof body !== "object" || body === null || typeof body.key !== "string" || body.key.length === 0) {
+    return jsonError(400, "invalid_body");
   }
 
   await handleStatusReport(deps.ctx.services.db.client, deps.ctx.logger, {
@@ -291,5 +292,5 @@ export async function handleWidgetStatusRoute(
     value: body.value,
     occurredAt: typeof body.ts === "string" ? body.ts : undefined,
   });
-  return Response.json({ status: "ok" });
+  return jsonOk({ status: "ok" });
 }
