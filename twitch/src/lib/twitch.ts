@@ -5,7 +5,7 @@ import type {
   TimeoutArgs,
   UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
-import { runHelixOperation } from "./helix";
+import { type HelixAuth, runHelixOperation } from "./helix";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 
@@ -323,12 +323,15 @@ function wholeSeconds(raw: number | string | undefined): number {
 export default class TwitchApi {
   /**
    * `enqueueShoutout` hands shoutouts to the dashboard's queue; without it,
-   * every shoutout is sent directly.
+   * every shoutout is sent directly. `helixAuth` is the auth provider behind
+   * `apiClient`, which `helix` sends with directly; without it `helix`
+   * refuses.
    */
   constructor(
     private apiClient: ApiClient,
     private broadcaster: HelixUser,
-    private enqueueShoutout?: EnqueueShoutout
+    private enqueueShoutout?: EnqueueShoutout,
+    private helixAuth?: HelixAuth
   ) {}
 
   async clip(_args: unknown): Promise<ClipResult> {
@@ -646,7 +649,10 @@ export default class TwitchApi {
    * than reshaping them as the other commands do.
    */
   async helix(args: unknown): Promise<HelixCommandResult> {
-    return runHelixOperation(this.apiClient, this.broadcaster.id, args);
+    if (!this.helixAuth) {
+      throw new Error("helix: this twitch service has no auth provider to send Helix requests with");
+    }
+    return runHelixOperation(this.helixAuth, this.broadcaster.id, args);
   }
 
   /**
