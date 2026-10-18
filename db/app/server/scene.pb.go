@@ -793,6 +793,162 @@ func (x *ListScenesResponse) GetPageSize() int32 {
 	return 0
 }
 
+// Stored scene data a repair is about to replace, kept as it was. A scene
+// version whose stored text cannot be read (by this engine: a newer one may
+// have written it) is set aside here before the repair writes the readable
+// rest, so nothing is ever deleted for being unreadable. Nothing reads these
+// in normal operation; they exist to inspect or restore by hand.
+type SceneBackup struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SceneId string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	// "published" or "draft".
+	Version string `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	// "widgets", "layout" or "behaviors": the column the content came from.
+	Column string `protobuf:"bytes,4,opt,name=column,proto3" json:"column,omitempty"`
+	// "unreadable_column": `content` is the column's whole stored text.
+	// "unreadable_placements": `content` is a JSON array of the placements
+	// in the column that could not be read, exactly as stored.
+	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	Content       string                 `protobuf:"bytes,6,opt,name=content,proto3" json:"content,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SceneBackup) Reset() {
+	*x = SceneBackup{}
+	mi := &file_scene_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SceneBackup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SceneBackup) ProtoMessage() {}
+
+func (x *SceneBackup) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SceneBackup.ProtoReflect.Descriptor instead.
+func (*SceneBackup) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SceneBackup) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SceneBackup) GetSceneId() string {
+	if x != nil {
+		return x.SceneId
+	}
+	return ""
+}
+
+func (x *SceneBackup) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *SceneBackup) GetColumn() string {
+	if x != nil {
+		return x.Column
+	}
+	return ""
+}
+
+func (x *SceneBackup) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SceneBackup) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *SceneBackup) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+// Backups for one scene, written together or not at all.
+type CreateSceneBackupsRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	// Each entry's `id`, `scene_id` and `created_at` are ignored.
+	Backups       []*SceneBackup `protobuf:"bytes,2,rep,name=backups,proto3" json:"backups,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateSceneBackupsRequest) Reset() {
+	*x = CreateSceneBackupsRequest{}
+	mi := &file_scene_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateSceneBackupsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateSceneBackupsRequest) ProtoMessage() {}
+
+func (x *CreateSceneBackupsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scene_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateSceneBackupsRequest.ProtoReflect.Descriptor instead.
+func (*CreateSceneBackupsRequest) Descriptor() ([]byte, []int) {
+	return file_scene_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CreateSceneBackupsRequest) GetSceneId() string {
+	if x != nil {
+		return x.SceneId
+	}
+	return ""
+}
+
+func (x *CreateSceneBackupsRequest) GetBackups() []*SceneBackup {
+	if x != nil {
+		return x.Backups
+	}
+	return nil
+}
+
 var File_scene_proto protoreflect.FileDescriptor
 
 const file_scene_proto_rawDesc = "" +
@@ -871,14 +1027,27 @@ const file_scene_proto_rawDesc = "" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize2\xcd\x02\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xd7\x01\n" +
+	"\vSceneBackup\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x16\n" +
+	"\x06column\x18\x04 \x01(\tR\x06column\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x18\n" +
+	"\acontent\x18\x06 \x01(\tR\acontent\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"d\n" +
+	"\x19CreateSceneBackupsRequest\x12\x19\n" +
+	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12,\n" +
+	"\abackups\x18\x02 \x03(\v2\x12.scene.SceneBackupR\abackups2\x9d\x03\n" +
 	"\fSceneService\x12>\n" +
 	"\vCreateScene\x12\x19.scene.CreateSceneRequest\x1a\x14.scene.SceneResponse\x128\n" +
 	"\bGetScene\x12\x16.scene.GetSceneRequest\x1a\x14.scene.SceneResponse\x12>\n" +
 	"\vUpdateScene\x12\x19.scene.UpdateSceneRequest\x1a\x14.scene.SceneResponse\x12@\n" +
 	"\vDeleteScene\x12\x19.scene.DeleteSceneRequest\x1a\x16.common.ResponseStatus\x12A\n" +
 	"\n" +
-	"ListScenes\x12\x18.scene.ListScenesRequest\x1a\x19.scene.ListScenesResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"ListScenes\x12\x18.scene.ListScenesRequest\x1a\x19.scene.ListScenesResponse\x12N\n" +
+	"\x12CreateSceneBackups\x12 .scene.CreateSceneBackupsRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_scene_proto_rawDescOnce sync.Once
@@ -892,41 +1061,47 @@ func file_scene_proto_rawDescGZIP() []byte {
 	return file_scene_proto_rawDescData
 }
 
-var file_scene_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_scene_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_scene_proto_goTypes = []any{
-	(*Scene)(nil),                 // 0: scene.Scene
-	(*CreateSceneRequest)(nil),    // 1: scene.CreateSceneRequest
-	(*GetSceneRequest)(nil),       // 2: scene.GetSceneRequest
-	(*SceneResponse)(nil),         // 3: scene.SceneResponse
-	(*UpdateSceneRequest)(nil),    // 4: scene.UpdateSceneRequest
-	(*DeleteSceneRequest)(nil),    // 5: scene.DeleteSceneRequest
-	(*ListScenesRequest)(nil),     // 6: scene.ListScenesRequest
-	(*ListScenesResponse)(nil),    // 7: scene.ListScenesResponse
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),        // 9: common.ResponseStatus
+	(*Scene)(nil),                     // 0: scene.Scene
+	(*CreateSceneRequest)(nil),        // 1: scene.CreateSceneRequest
+	(*GetSceneRequest)(nil),           // 2: scene.GetSceneRequest
+	(*SceneResponse)(nil),             // 3: scene.SceneResponse
+	(*UpdateSceneRequest)(nil),        // 4: scene.UpdateSceneRequest
+	(*DeleteSceneRequest)(nil),        // 5: scene.DeleteSceneRequest
+	(*ListScenesRequest)(nil),         // 6: scene.ListScenesRequest
+	(*ListScenesResponse)(nil),        // 7: scene.ListScenesResponse
+	(*SceneBackup)(nil),               // 8: scene.SceneBackup
+	(*CreateSceneBackupsRequest)(nil), // 9: scene.CreateSceneBackupsRequest
+	(*timestamppb.Timestamp)(nil),     // 10: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),            // 11: common.ResponseStatus
 }
 var file_scene_proto_depIdxs = []int32{
-	8,  // 0: scene.Scene.created_at:type_name -> google.protobuf.Timestamp
-	8,  // 1: scene.Scene.updated_at:type_name -> google.protobuf.Timestamp
-	9,  // 2: scene.SceneResponse.status:type_name -> common.ResponseStatus
+	10, // 0: scene.Scene.created_at:type_name -> google.protobuf.Timestamp
+	10, // 1: scene.Scene.updated_at:type_name -> google.protobuf.Timestamp
+	11, // 2: scene.SceneResponse.status:type_name -> common.ResponseStatus
 	0,  // 3: scene.SceneResponse.scene:type_name -> scene.Scene
-	9,  // 4: scene.ListScenesResponse.status:type_name -> common.ResponseStatus
+	11, // 4: scene.ListScenesResponse.status:type_name -> common.ResponseStatus
 	0,  // 5: scene.ListScenesResponse.scenes:type_name -> scene.Scene
-	1,  // 6: scene.SceneService.CreateScene:input_type -> scene.CreateSceneRequest
-	2,  // 7: scene.SceneService.GetScene:input_type -> scene.GetSceneRequest
-	4,  // 8: scene.SceneService.UpdateScene:input_type -> scene.UpdateSceneRequest
-	5,  // 9: scene.SceneService.DeleteScene:input_type -> scene.DeleteSceneRequest
-	6,  // 10: scene.SceneService.ListScenes:input_type -> scene.ListScenesRequest
-	3,  // 11: scene.SceneService.CreateScene:output_type -> scene.SceneResponse
-	3,  // 12: scene.SceneService.GetScene:output_type -> scene.SceneResponse
-	3,  // 13: scene.SceneService.UpdateScene:output_type -> scene.SceneResponse
-	9,  // 14: scene.SceneService.DeleteScene:output_type -> common.ResponseStatus
-	7,  // 15: scene.SceneService.ListScenes:output_type -> scene.ListScenesResponse
-	11, // [11:16] is the sub-list for method output_type
-	6,  // [6:11] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	10, // 6: scene.SceneBackup.created_at:type_name -> google.protobuf.Timestamp
+	8,  // 7: scene.CreateSceneBackupsRequest.backups:type_name -> scene.SceneBackup
+	1,  // 8: scene.SceneService.CreateScene:input_type -> scene.CreateSceneRequest
+	2,  // 9: scene.SceneService.GetScene:input_type -> scene.GetSceneRequest
+	4,  // 10: scene.SceneService.UpdateScene:input_type -> scene.UpdateSceneRequest
+	5,  // 11: scene.SceneService.DeleteScene:input_type -> scene.DeleteSceneRequest
+	6,  // 12: scene.SceneService.ListScenes:input_type -> scene.ListScenesRequest
+	9,  // 13: scene.SceneService.CreateSceneBackups:input_type -> scene.CreateSceneBackupsRequest
+	3,  // 14: scene.SceneService.CreateScene:output_type -> scene.SceneResponse
+	3,  // 15: scene.SceneService.GetScene:output_type -> scene.SceneResponse
+	3,  // 16: scene.SceneService.UpdateScene:output_type -> scene.SceneResponse
+	11, // 17: scene.SceneService.DeleteScene:output_type -> common.ResponseStatus
+	7,  // 18: scene.SceneService.ListScenes:output_type -> scene.ListScenesResponse
+	11, // 19: scene.SceneService.CreateSceneBackups:output_type -> common.ResponseStatus
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_scene_proto_init() }
@@ -941,7 +1116,7 @@ func file_scene_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scene_proto_rawDesc), len(file_scene_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

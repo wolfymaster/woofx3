@@ -198,6 +198,45 @@ export interface ListScenesResponse {
   pageSize: number;
 }
 
+/**
+ * Stored scene data a repair is about to replace, kept as it was. A scene
+ * version whose stored text cannot be read (by this engine: a newer one may
+ * have written it) is set aside here before the repair writes the readable
+ * rest, so nothing is ever deleted for being unreadable. Nothing reads these
+ * in normal operation; they exist to inspect or restore by hand.
+ */
+export interface SceneBackup {
+  id: string;
+  sceneId: string;
+  /**
+   * "published" or "draft".
+   */
+  version: string;
+  /**
+   * "widgets", "layout" or "behaviors": the column the content came from.
+   */
+  column: string;
+  /**
+   * "unreadable_column": `content` is the column's whole stored text.
+   * "unreadable_placements": `content` is a JSON array of the placements
+   * in the column that could not be read, exactly as stored.
+   */
+  reason: string;
+  content: string;
+  createdAt: protoscript.Timestamp;
+}
+
+/**
+ * Backups for one scene, written together or not at all.
+ */
+export interface CreateSceneBackupsRequest {
+  sceneId: string;
+  /**
+   * Each entry's `id`, `scene_id` and `created_at` are ignored.
+   */
+  backups: SceneBackup[];
+}
+
 //========================================//
 //      SceneService Protobuf Client      //
 //========================================//
@@ -260,6 +299,18 @@ export async function ListScenes(
     config,
   );
   return ListScenesResponse.decode(response);
+}
+
+export async function CreateSceneBackups(
+  createSceneBackupsRequest: CreateSceneBackupsRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/scene.SceneService/CreateSceneBackups",
+    CreateSceneBackupsRequest.encode(createSceneBackupsRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
 }
 
 //========================================//
@@ -326,6 +377,18 @@ export async function ListScenesJSON(
   return ListScenesResponseJSON.decode(response);
 }
 
+export async function CreateSceneBackupsJSON(
+  createSceneBackupsRequest: CreateSceneBackupsRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/scene.SceneService/CreateSceneBackups",
+    CreateSceneBackupsRequestJSON.encode(createSceneBackupsRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 //========================================//
 //              SceneService              //
 //========================================//
@@ -368,6 +431,10 @@ export interface SceneService<Context = unknown> {
     listScenesRequest: ListScenesRequest,
     context: Context,
   ) => Promise<ListScenesResponse> | ListScenesResponse;
+  CreateSceneBackups: (
+    createSceneBackupsRequest: CreateSceneBackupsRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
 }
 
 export function createSceneService<Context>(service: SceneService<Context>) {
@@ -406,6 +473,18 @@ export function createSceneService<Context>(service: SceneService<Context>) {
         handler: service.ListScenes,
         input: { protobuf: ListScenesRequest, json: ListScenesRequestJSON },
         output: { protobuf: ListScenesResponse, json: ListScenesResponseJSON },
+      },
+      CreateSceneBackups: {
+        name: "CreateSceneBackups",
+        handler: service.CreateSceneBackups,
+        input: {
+          protobuf: CreateSceneBackupsRequest,
+          json: CreateSceneBackupsRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
       },
     },
   } as const;
@@ -1326,6 +1405,210 @@ export const ListScenesResponse = {
   },
 };
 
+export const SceneBackup = {
+  /**
+   * Serializes SceneBackup to protobuf.
+   */
+  encode: function (msg: PartialDeep<SceneBackup>): Uint8Array {
+    return SceneBackup._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SceneBackup from protobuf.
+   */
+  decode: function (bytes: ByteSource): SceneBackup {
+    return SceneBackup._readMessage(
+      SceneBackup.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SceneBackup with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<SceneBackup>): SceneBackup {
+    return {
+      id: "",
+      sceneId: "",
+      version: "",
+      column: "",
+      reason: "",
+      content: "",
+      createdAt: protoscript.Timestamp.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SceneBackup>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.sceneId) {
+      writer.writeString(2, msg.sceneId);
+    }
+    if (msg.version) {
+      writer.writeString(3, msg.version);
+    }
+    if (msg.column) {
+      writer.writeString(4, msg.column);
+    }
+    if (msg.reason) {
+      writer.writeString(5, msg.reason);
+    }
+    if (msg.content) {
+      writer.writeString(6, msg.content);
+    }
+    if (msg.createdAt) {
+      writer.writeMessage(
+        7,
+        msg.createdAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SceneBackup,
+    reader: protoscript.BinaryReader,
+  ): SceneBackup {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.sceneId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.version = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.column = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.reason = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.content = reader.readString();
+          break;
+        }
+        case 7: {
+          reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CreateSceneBackupsRequest = {
+  /**
+   * Serializes CreateSceneBackupsRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<CreateSceneBackupsRequest>): Uint8Array {
+    return CreateSceneBackupsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CreateSceneBackupsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CreateSceneBackupsRequest {
+    return CreateSceneBackupsRequest._readMessage(
+      CreateSceneBackupsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CreateSceneBackupsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CreateSceneBackupsRequest>,
+  ): CreateSceneBackupsRequest {
+    return {
+      sceneId: "",
+      backups: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CreateSceneBackupsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.sceneId) {
+      writer.writeString(1, msg.sceneId);
+    }
+    if (msg.backups?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.backups as any,
+        SceneBackup._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CreateSceneBackupsRequest,
+    reader: protoscript.BinaryReader,
+  ): CreateSceneBackupsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.sceneId = reader.readString();
+          break;
+        }
+        case 2: {
+          const m = SceneBackup.initialize();
+          reader.readMessage(m, SceneBackup._readMessage);
+          msg.backups.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -2141,6 +2424,177 @@ export const ListScenesResponseJSON = {
     const _pageSize_ = json["pageSize"] ?? json["page_size"];
     if (_pageSize_) {
       msg.pageSize = protoscript.parseNumber(_pageSize_);
+    }
+    return msg;
+  },
+};
+
+export const SceneBackupJSON = {
+  /**
+   * Serializes SceneBackup to JSON.
+   */
+  encode: function (msg: PartialDeep<SceneBackup>): string {
+    return JSON.stringify(SceneBackupJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes SceneBackup from JSON.
+   */
+  decode: function (json: string): SceneBackup {
+    return SceneBackupJSON._readMessage(
+      SceneBackupJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SceneBackup with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<SceneBackup>): SceneBackup {
+    return {
+      id: "",
+      sceneId: "",
+      version: "",
+      column: "",
+      reason: "",
+      content: "",
+      createdAt: protoscript.TimestampJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SceneBackup>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.sceneId) {
+      json["sceneId"] = msg.sceneId;
+    }
+    if (msg.version) {
+      json["version"] = msg.version;
+    }
+    if (msg.column) {
+      json["column"] = msg.column;
+    }
+    if (msg.reason) {
+      json["reason"] = msg.reason;
+    }
+    if (msg.content) {
+      json["content"] = msg.content;
+    }
+    if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
+      json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: SceneBackup, json: any): SceneBackup {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _sceneId_ = json["sceneId"] ?? json["scene_id"];
+    if (_sceneId_) {
+      msg.sceneId = _sceneId_;
+    }
+    const _version_ = json["version"];
+    if (_version_) {
+      msg.version = _version_;
+    }
+    const _column_ = json["column"];
+    if (_column_) {
+      msg.column = _column_;
+    }
+    const _reason_ = json["reason"];
+    if (_reason_) {
+      msg.reason = _reason_;
+    }
+    const _content_ = json["content"];
+    if (_content_) {
+      msg.content = _content_;
+    }
+    const _createdAt_ = json["createdAt"] ?? json["created_at"];
+    if (_createdAt_) {
+      msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    return msg;
+  },
+};
+
+export const CreateSceneBackupsRequestJSON = {
+  /**
+   * Serializes CreateSceneBackupsRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CreateSceneBackupsRequest>): string {
+    return JSON.stringify(CreateSceneBackupsRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CreateSceneBackupsRequest from JSON.
+   */
+  decode: function (json: string): CreateSceneBackupsRequest {
+    return CreateSceneBackupsRequestJSON._readMessage(
+      CreateSceneBackupsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CreateSceneBackupsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CreateSceneBackupsRequest>,
+  ): CreateSceneBackupsRequest {
+    return {
+      sceneId: "",
+      backups: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CreateSceneBackupsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.sceneId) {
+      json["sceneId"] = msg.sceneId;
+    }
+    if (msg.backups?.length) {
+      json["backups"] = msg.backups.map(SceneBackupJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CreateSceneBackupsRequest,
+    json: any,
+  ): CreateSceneBackupsRequest {
+    const _sceneId_ = json["sceneId"] ?? json["scene_id"];
+    if (_sceneId_) {
+      msg.sceneId = _sceneId_;
+    }
+    const _backups_ = json["backups"];
+    if (_backups_) {
+      for (const item of _backups_) {
+        const m = SceneBackupJSON.initialize();
+        SceneBackupJSON._readMessage(m, item);
+        msg.backups.push(m);
+      }
     }
     return msg;
   },

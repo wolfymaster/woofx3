@@ -17,6 +17,7 @@ import { FrameAssembler, HttpBarkloaderFrameClient } from "./scene/frame-assembl
 import { FrameCatalog } from "./scene/frame-catalog";
 import { MediaProxy } from "./scene/media-proxy";
 import { linkedResources, ModuleStateWatch } from "./scene/module-state";
+import { dbSceneBackupStore } from "./scene/scene-backups";
 import { SceneDocuments } from "./scene/scene-documents";
 import { OverlayHost } from "./scene/scene-host";
 import { SessionTokenService, sceneTokenIssuer } from "./scene/session-token";
@@ -90,6 +91,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const sceneDocuments = new SceneDocuments(host, deliveryStore, logger, {
       mediaProxy,
       persister: { updateScene: (write) => db.writeScene(write) },
+      backups: dbSceneBackupStore(db),
     });
     this.sceneDocuments = sceneDocuments;
     const frameAssembler = new FrameAssembler(host, logger, {

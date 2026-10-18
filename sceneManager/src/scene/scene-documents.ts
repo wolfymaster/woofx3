@@ -43,15 +43,18 @@ import {
   type HeldScene,
   type MetaPlan,
   noMeta,
+  type SceneBackupStore,
   type ScenePersister,
   type ScenesView,
   safeSend,
   savePending,
+  sceneBackupsOf,
   snapshotOf,
   storedDigestOf,
   unreadableColumns,
   unreadableDetail,
   unreadOf,
+  unreadReportOf,
   unref,
   type VersionView,
   viewOf,
@@ -123,8 +126,15 @@ export const AUTOSAVE_DELAY_MS = 2000;
 export const REFRAME_RETRY_MS = 10_000;
 export const REFRAME_RETRY_MAX_MS = 5 * 60_000;
 
+/** The answer to `SceneDocuments.repair`, as `repairScene` gives it (see `SceneRepairResult` in `@woofx3/api`). */
+export type SceneRepairOutcome =
+  | { ok: true; backups: number }
+  | { ok: false; reason: "not_found" | "unavailable" | "failed"; detail: string };
+
 export interface SceneDocumentsOptions {
   persister?: ScenePersister;
+  /** Where a repair sets aside what could not be read; without one, scenes cannot be repaired. */
+  backups?: SceneBackupStore;
   autosaveMs?: number;
   clock?: SceneDocumentsClock;
   /** A fresh epoch for each load of a scene; random by default. */
@@ -171,6 +181,7 @@ export class SceneDocuments {
   private readonly newEpoch: () => string;
   private readonly reframeRetryMs: number;
   private readonly mediaProxy: MediaProxy | null;
+  private readonly backups: SceneBackupStore | null;
   private closed = false;
 
   constructor(
@@ -190,6 +201,7 @@ export class SceneDocuments {
     this.newEpoch = options.newEpoch ?? (() => crypto.randomUUID());
     this.reframeRetryMs = options.reframeRetryMs ?? REFRAME_RETRY_MS;
     this.mediaProxy = options.mediaProxy ?? null;
+    this.backups = options.backups ?? null;
   }
 
   /**
@@ -312,7 +324,13 @@ export class SceneDocuments {
       }
       const unreadable = unreadableColumns(held);
       if (unreadable.length > 0) {
-        safeSend(conn, { type: "error", code: "not_found", detail: unreadableDetail(unreadable) });
+        const unread = unreadReportOf(held);
+        safeSend(conn, {
+          type: "error",
+          code: "not_found",
+          detail: unreadableDetail(unreadable),
+          ...(unread === null ? {} : { unread }),
+        });
         conn.close(CLOSE_CODES.notFound, "scene could not be read");
         return;
       }
@@ -322,12 +340,14 @@ export class SceneDocuments {
         existing.conn.close(CLOSE_CODES.replaced, "another socket opened for this editor");
       }
       const decision = decideWelcome(held.state, hello.have);
+      const unread = unreadReportOf(held);
       const base = {
         type: "welcome" as const,
         protocol: PROTOCOL_VERSION as typeof PROTOCOL_VERSION,
         features: [] as string[],
         clientId: hello.clientId,
         last: watermarkOf(held.state, hello.clientId),
+        ...(unread === null ? {} : { unread }),
       };
       held.editors.set(hello.clientId, { conn, name: hello.name, presence: null, away: false });
       safeSend(
@@ -555,6 +575,67 @@ export class SceneDocuments {
     }).catch((err) => {
       // Callers do not wait on a refresh; the next save or load picks the change up.
       this.logger.warn("scene documents: taking in a save made elsewhere failed", { sceneId, error: errorText(err) });
+    });
+  }
+
+  /**
+   * Make a scene whose stored data could not be read editable again. What
+   * could not be read is set aside first (`SceneBackupStore`), every backup
+   * or none; then the documents held in its place, which are the readable
+   * rest, are written back over it. An unreadable column was loaded as its
+   * empty value, so it is written back empty; unreadable placements are
+   * written back without. Nothing changes when the backups fail, and when the
+   * write fails the scene is left as unreadable as it was (the backups stay:
+   * a second copy of the same text does no harm). Open editors are closed so
+   * they reconnect to a welcome that no longer reports anything unread; the
+   * documents did not change, so overlays are not told anything.
+   */
+  repair(sceneId: string): Promise<SceneRepairOutcome> {
+    return this.serial(sceneId, async (): Promise<SceneRepairOutcome> => {
+      if (this.closed) {
+        return { ok: false, reason: "unavailable", detail: "the scene service is restarting" };
+      }
+      if (this.backups === null) {
+        return { ok: false, reason: "unavailable", detail: "this scene service cannot store backups" };
+      }
+      const held = await this.hold(sceneId);
+      if (!held) {
+        return { ok: false, reason: "not_found", detail: "the scene does not exist" };
+      }
+      if (unreadReportOf(held) === null) {
+        return { ok: true, backups: 0 };
+      }
+      const stored = await this.backups.storedColumns(sceneId);
+      if (stored === null) {
+        return { ok: false, reason: "not_found", detail: "the scene does not exist" };
+      }
+      const backups = sceneBackupsOf(held, stored);
+      try {
+        await this.backups.store(sceneId, backups);
+      } catch (err) {
+        this.logger.warn("scene documents: storing a repair's backups failed; the scene is unchanged", {
+          sceneId,
+          error: errorText(err),
+        });
+        return { ok: false, reason: "failed", detail: "the unreadable data could not be backed up" };
+      }
+      const unread = held.unread;
+      const nothing = { placements: [], columns: [] };
+      held.unread = { published: nothing, draft: nothing };
+      if (!(await this.writeback.writeNow(held))) {
+        held.unread = unread;
+        this.logger.warn("scene documents: writing a repaired scene failed; it is left unreadable", { sceneId });
+        return { ok: false, reason: "failed", detail: "the repaired scene could not be saved" };
+      }
+      this.logger.info("scene documents: repaired a scene, setting aside what could not be read", {
+        sceneId,
+        backups: backups.map(({ version, column, reason }) => `${version}.${column}: ${reason}`),
+      });
+      // Each close comes back through `closeEditor`, which forgets the editor.
+      for (const editor of [...held.editors.values()]) {
+        editor.conn.close(WS_SERVICE_RESTART, "the scene was repaired");
+      }
+      return { ok: true, backups: backups.length };
     });
   }
 

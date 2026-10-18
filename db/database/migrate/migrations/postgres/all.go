@@ -74,5 +74,6 @@ func All() []*gormigrate.Migration {
 		AddWidgetBehaviors(),
 		AddSceneCompositions(),
 		AddSessionCompaction(),
+		CreateSceneBackupsTable(),
 	}
 }

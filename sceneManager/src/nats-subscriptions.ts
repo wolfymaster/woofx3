@@ -5,7 +5,12 @@ import {
   COMPOSITION_PREVIEW_TOKEN_SUBJECT,
   type CompositionPreviewTokenReply,
 } from "@woofx3/common/cloudevents/Scene/composition-preview";
-import { SCENE_EDITOR_TOKEN_SUBJECT, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
+import {
+  SCENE_EDITOR_TOKEN_SUBJECT,
+  SCENE_REPAIR_SUBJECT,
+  type SceneEditorTokenReply,
+  type SceneRepairReply,
+} from "@woofx3/common/cloudevents/Scene/editor";
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -27,6 +32,7 @@ import type Manager from "./obs/manager";
 import { answerObsOptions } from "./obs/options";
 import { OBS_MODULE_ID } from "./obs/settings";
 import type { ObsStatusReply } from "./obs/status";
+import { errorText } from "./scene/held-scene";
 import type { ModuleStateWatch } from "./scene/module-state";
 import { answerSceneCommand, type SceneCommandDeps } from "./scene/scene-command";
 import type { OverlayHost } from "./scene/scene-host";
@@ -68,6 +74,7 @@ interface SceneUpdatedEnvelope {
 /** The slice of `SceneDocuments` saves and scene commands are handed to. */
 interface SavedScenes extends SceneCommandDeps {
   refresh(sceneId: string): Promise<void>;
+  repair(sceneId: string): Promise<SceneRepairReply>;
 }
 
 /**
@@ -251,6 +258,21 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     return sceneId ? editorToken(sceneId) : ({ ok: false, reason: "sceneId required" } satisfies SceneEditorTokenReply);
   });
   logger.info(`Answering ${SCENE_EDITOR_TOKEN_SUBJECT}`);
+
+  // A dashboard repairing a scene whose stored data could not be read.
+  await answer(SCENE_REPAIR_SUBJECT, async (body): Promise<SceneRepairReply> => {
+    const sceneId = typeof body.sceneId === "string" ? body.sceneId : "";
+    if (!sceneId) {
+      return { ok: false, reason: "not_found", detail: "sceneId required" };
+    }
+    try {
+      return await sceneDocuments.repair(sceneId);
+    } catch (err) {
+      logger.warn(`${SCENE_REPAIR_SUBJECT}: the repair failed`, { sceneId, error: errorText(err) });
+      return { ok: false, reason: "failed", detail: "the scene could not be loaded" };
+    }
+  });
+  logger.info(`Answering ${SCENE_REPAIR_SUBJECT}`);
 
   // The api asks for this when a dashboard opens the alert editor's preview.
   await answer(COMPOSITION_PREVIEW_TOKEN_SUBJECT, () => previewToken());

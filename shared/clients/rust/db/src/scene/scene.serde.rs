@@ -1,4 +1,113 @@
 // @generated
+impl serde::Serialize for CreateSceneBackupsRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.scene_id.is_empty() {
+            len += 1;
+        }
+        if !self.backups.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("scene.CreateSceneBackupsRequest", len)?;
+        if !self.scene_id.is_empty() {
+            struct_ser.serialize_field("sceneId", &self.scene_id)?;
+        }
+        if !self.backups.is_empty() {
+            struct_ser.serialize_field("backups", &self.backups)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CreateSceneBackupsRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "scene_id",
+            "sceneId",
+            "backups",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            SceneId,
+            Backups,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
+                            "backups" => Ok(GeneratedField::Backups),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CreateSceneBackupsRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct scene.CreateSceneBackupsRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CreateSceneBackupsRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut scene_id__ = None;
+                let mut backups__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::SceneId => {
+                            if scene_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sceneId"));
+                            }
+                            scene_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Backups => {
+                            if backups__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("backups"));
+                            }
+                            backups__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(CreateSceneBackupsRequest {
+                    scene_id: scene_id__.unwrap_or_default(),
+                    backups: backups__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("scene.CreateSceneBackupsRequest", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for CreateSceneRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -1121,6 +1230,201 @@ impl<'de> serde::Deserialize<'de> for Scene {
             }
         }
         deserializer.deserialize_struct("scene.Scene", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for SceneBackup {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.scene_id.is_empty() {
+            len += 1;
+        }
+        if !self.version.is_empty() {
+            len += 1;
+        }
+        if !self.column.is_empty() {
+            len += 1;
+        }
+        if !self.reason.is_empty() {
+            len += 1;
+        }
+        if !self.content.is_empty() {
+            len += 1;
+        }
+        if self.created_at.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("scene.SceneBackup", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.scene_id.is_empty() {
+            struct_ser.serialize_field("sceneId", &self.scene_id)?;
+        }
+        if !self.version.is_empty() {
+            struct_ser.serialize_field("version", &self.version)?;
+        }
+        if !self.column.is_empty() {
+            struct_ser.serialize_field("column", &self.column)?;
+        }
+        if !self.reason.is_empty() {
+            struct_ser.serialize_field("reason", &self.reason)?;
+        }
+        if !self.content.is_empty() {
+            struct_ser.serialize_field("content", &self.content)?;
+        }
+        if let Some(v) = self.created_at.as_ref() {
+            struct_ser.serialize_field("createdAt", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for SceneBackup {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "scene_id",
+            "sceneId",
+            "version",
+            "column",
+            "reason",
+            "content",
+            "created_at",
+            "createdAt",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            SceneId,
+            Version,
+            Column,
+            Reason,
+            Content,
+            CreatedAt,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "sceneId" | "scene_id" => Ok(GeneratedField::SceneId),
+                            "version" => Ok(GeneratedField::Version),
+                            "column" => Ok(GeneratedField::Column),
+                            "reason" => Ok(GeneratedField::Reason),
+                            "content" => Ok(GeneratedField::Content),
+                            "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = SceneBackup;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct scene.SceneBackup")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<SceneBackup, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut scene_id__ = None;
+                let mut version__ = None;
+                let mut column__ = None;
+                let mut reason__ = None;
+                let mut content__ = None;
+                let mut created_at__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::SceneId => {
+                            if scene_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sceneId"));
+                            }
+                            scene_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Version => {
+                            if version__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("version"));
+                            }
+                            version__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Column => {
+                            if column__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("column"));
+                            }
+                            column__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Reason => {
+                            if reason__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("reason"));
+                            }
+                            reason__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Content => {
+                            if content__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("content"));
+                            }
+                            content__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedAt => {
+                            if created_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdAt"));
+                            }
+                            created_at__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(SceneBackup {
+                    id: id__.unwrap_or_default(),
+                    scene_id: scene_id__.unwrap_or_default(),
+                    version: version__.unwrap_or_default(),
+                    column: column__.unwrap_or_default(),
+                    reason: reason__.unwrap_or_default(),
+                    content: content__.unwrap_or_default(),
+                    created_at: created_at__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("scene.SceneBackup", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for SceneResponse {

@@ -12,6 +12,7 @@ import {
   type SequencerState,
   type ServerMessage,
   sameValue,
+  type UnreadReport,
   type Version,
 } from "@woofx3/api/scene-editor";
 import { documentsDigest, storedSceneOf } from "./scene-codec";
@@ -35,6 +36,26 @@ export interface SceneWrite {
 /** The slice of the db client the documents write scenes through. */
 export interface ScenePersister {
   updateScene(write: SceneWrite): Promise<unknown>;
+}
+
+/** A scene row's stored text for each column a repair can set aside, by version; "" for a draft column of a scene with no draft. */
+export type StoredColumnsText = Record<Version, Record<StoredColumn, string>>;
+
+/** Stored data a repair sets aside (`SceneBackup` in the db's scene.proto). */
+export interface SceneBackupEntry {
+  version: Version;
+  column: StoredColumn;
+  reason: "unreadable_column" | "unreadable_placements";
+  /** The column's whole stored text, or a JSON array of the placements that could not be read. */
+  content: string;
+}
+
+/** Where a repair reads a scene's stored text and sets aside what could not be read (the db proxy). */
+export interface SceneBackupStore {
+  /** Null when the scene's row no longer exists. */
+  storedColumns(sceneId: string): Promise<StoredColumnsText | null>;
+  /** Stores every backup or none; rejects when they were not stored. */
+  store(sceneId: string, backups: SceneBackupEntry[]): Promise<void>;
 }
 
 /** One editor socket, as the documents talk to it. */
@@ -114,6 +135,49 @@ export function unreadOf(state: OverlaySceneState): StoredUnread {
 /** The stored columns of either version that the load could not read at all. */
 export function unreadableColumns(held: HeldScene): StoredColumn[] {
   return [...new Set([...held.unread.published.columns, ...held.unread.draft.columns])];
+}
+
+/** The versions whose stored data is the scene's own: a scene with no draft reads its published row as the draft. */
+function storedVersions(held: HeldScene): Version[] {
+  return held.state.hasDraft ? ["published", "draft"] : ["published"];
+}
+
+/** What of the scene's stored data could not be read, as editors are told it; null when all of it could. */
+export function unreadReportOf(held: HeldScene): UnreadReport | null {
+  const versions = storedVersions(held);
+  const columns = versions.flatMap((version) => held.unread[version].columns.map((column) => ({ version, column })));
+  const placements = {
+    published: held.unread.published.placements.length,
+    draft: held.state.hasDraft ? held.unread.draft.placements.length : 0,
+  };
+  if (columns.length === 0 && placements.published === 0 && placements.draft === 0) {
+    return null;
+  }
+  return { columns, placements };
+}
+
+/**
+ * What a repair sets aside: each unreadable column's whole stored text, and
+ * each version's unreadable placements as stored. A column that could not be
+ * read has no placements of its own to list, so the two never overlap.
+ */
+export function sceneBackupsOf(held: HeldScene, stored: StoredColumnsText): SceneBackupEntry[] {
+  const backups: SceneBackupEntry[] = [];
+  for (const version of storedVersions(held)) {
+    const unread = held.unread[version];
+    for (const column of unread.columns) {
+      backups.push({ version, column, reason: "unreadable_column", content: stored[version][column] });
+    }
+    if (unread.placements.length > 0) {
+      backups.push({
+        version,
+        column: "widgets",
+        reason: "unreadable_placements",
+        content: JSON.stringify(unread.placements),
+      });
+    }
+  }
+  return backups;
 }
 
 export function unreadableDetail(columns: StoredColumn[]): string {

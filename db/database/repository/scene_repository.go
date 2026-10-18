@@ -68,3 +68,15 @@ func (r *SceneRepository) NameTaken(kind, name string, excludeID *uuid.UUID) (bo
 	err := query.Count(&count).Error
 	return count > 0, err
 }
+
+// CreateBackups writes every backup in one transaction: all of them or none.
+func (r *SceneRepository) CreateBackups(backups []*models.SceneBackup) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, backup := range backups {
+			if err := tx.Create(backup).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

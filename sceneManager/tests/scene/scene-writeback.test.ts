@@ -5,6 +5,8 @@
 
 import { describe, expect, it } from "bun:test";
 import type { ServerMessage } from "@woofx3/api/scene-editor";
+import type { SceneBackupEntry } from "../../src/scene/held-scene";
+import { dbSceneBackupStore } from "../../src/scene/scene-backups";
 import {
   type EditorConnection,
   SceneDocuments,
@@ -77,12 +79,35 @@ const readable = { id: "a", widgetCanonicalId: "woofx3:widget:text", position: {
 // No canonical id: the parser cannot place it, so it is never shown.
 const unreadable = { id: "b", name: "orphan", settings: { text: "keep me" } };
 
-function setup(row: Record<string, unknown>) {
+interface SetupOptions {
+  /** Every backup store refuses. */
+  backupsFail?: boolean;
+  /** Every write back fails. */
+  writesFail?: boolean;
+}
+
+function setup(row: Record<string, unknown>, options: SetupOptions = {}) {
+  const stored = {
+    id: "s1",
+    name: "Main",
+    layoutJson: "{}",
+    behaviorsJson: "{}",
+    editorStateJson: "",
+    draftWidgetsJson: "",
+    draftLayoutJson: "",
+    draftBehaviorsJson: "",
+    ...row,
+  };
+  const backups: SceneBackupEntry[][] = [];
   const db = {
-    getScene: async () => ({
-      status: { code: "OK" as const, message: "" },
-      scene: { id: "s1", name: "Main", layoutJson: "{}", behaviorsJson: "{}", editorStateJson: "", ...row },
-    }),
+    getScene: async () => ({ status: { code: "OK" as const, message: "" }, scene: stored }),
+    createSceneBackups: async (req: { backups: SceneBackupEntry[] }) => {
+      if (options.backupsFail) {
+        throw new Error("db proxy unavailable");
+      }
+      backups.push(req.backups.map(({ version, column, reason, content }) => ({ version, column, reason, content })));
+      return { code: "OK" as const, message: "" };
+    },
     listWidgets: async () => ({ status: { code: "OK" as const, message: "" }, widgets: [] }),
     getSceneEvent: async () => ({}),
   };
@@ -93,13 +118,17 @@ function setup(row: Record<string, unknown>) {
   const documents = new SceneDocuments(host, { broadcast: () => {}, connectedSceneIds: () => [] }, silent, {
     persister: {
       updateScene: async (write: SceneWrite) => {
+        if (options.writesFail) {
+          throw new Error("db proxy unavailable");
+        }
         writes.push(write);
       },
     },
+    backups: dbSceneBackupStore(db as never),
     clock,
     newEpoch: () => "epoch",
   });
-  return { documents, writes, clock };
+  return { documents, writes, clock, backups };
 }
 
 const moveA = (snapshot: { doc: { widgets: Record<string, { x: number }> } }) => [
@@ -139,7 +168,14 @@ describe("writing a scene back", () => {
     const result = await documents.applyChange("s1", "published", moveA as never);
     await clock.advance(5_000);
 
-    expect(socket.sent).toEqual([{ type: "error", code: "not_found", detail: expect.stringContaining("layout") }]);
+    expect(socket.sent).toEqual([
+      {
+        type: "error",
+        code: "not_found",
+        detail: expect.stringContaining("layout"),
+        unread: { columns: [{ version: "published", column: "layout" }], placements: { published: 0, draft: 0 } },
+      },
+    ]);
     expect(socket.closed?.code).toBe(4404);
     expect(result.ok).toBe(false);
     expect(writes).toEqual([]);
@@ -199,5 +235,110 @@ describe("after close", () => {
     await documents.refresh("s1");
     await clock.advance(5_000);
     expect(writes).toEqual([]);
+  });
+});
+
+describe("repairing a scene it could not read", () => {
+  it("tells an editor how many placements it could not read", async () => {
+    const { documents } = setup({ widgetsJson: JSON.stringify([readable, unreadable]) });
+
+    const socket = new Socket();
+    await documents.openEditor("s1", { clientId: "c1", have: null, name: "" }, socket);
+
+    const welcome = socket.sent.find((m) => m.type === "welcome") as { unread?: unknown };
+    expect(welcome.unread).toEqual({ columns: [], placements: { published: 1, draft: 0 } });
+  });
+
+  it("sets an unreadable column aside as stored, then writes the readable rest and lets editors in", async () => {
+    const { documents, writes, backups } = setup({ widgetsJson: JSON.stringify([readable]), layoutJson: "{not json" });
+
+    const outcome = await documents.repair("s1");
+
+    expect(outcome).toEqual({ ok: true, backups: 1 });
+    expect(backups).toEqual([
+      [{ version: "published", column: "layout", reason: "unreadable_column", content: "{not json" }],
+    ]);
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(writes[0]!.widgetsJson!).map((p: { id: string }) => p.id)).toEqual(["a"]);
+    expect(() => JSON.parse(writes[0]!.layoutJson!)).not.toThrow();
+    const socket = new Socket();
+    await documents.openEditor("s1", { clientId: "c1", have: null, name: "" }, socket);
+    const welcome = socket.sent.find((m) => m.type === "welcome") as { unread?: unknown } | undefined;
+    expect(welcome).toBeDefined();
+    expect(welcome!.unread).toBeUndefined();
+  });
+
+  it("sets unreadable placements aside, writes the scene without them, and reconnects open editors", async () => {
+    const { documents, writes, backups } = setup({ widgetsJson: JSON.stringify([readable, unreadable]) });
+    const socket = new Socket();
+    await documents.openEditor("s1", { clientId: "c1", have: null, name: "" }, socket);
+
+    const outcome = await documents.repair("s1");
+
+    expect(outcome).toEqual({ ok: true, backups: 1 });
+    expect(backups[0]).toEqual([
+      {
+        version: "published",
+        column: "widgets",
+        reason: "unreadable_placements",
+        content: JSON.stringify([unreadable]),
+      },
+    ]);
+    expect(JSON.parse(writes.at(-1)!.widgetsJson!).map((p: { id: string }) => p.id)).toEqual(["a"]);
+    expect(socket.closed?.code).toBe(1012);
+  });
+
+  it("changes nothing when the backups cannot be stored", async () => {
+    const { documents, writes, clock } = setup(
+      { widgetsJson: JSON.stringify([readable]), layoutJson: "{not json" },
+      { backupsFail: true }
+    );
+
+    const outcome = await documents.repair("s1");
+    await clock.advance(5_000);
+
+    expect(outcome).toMatchObject({ ok: false, reason: "failed" });
+    expect(writes).toEqual([]);
+    const socket = new Socket();
+    await documents.openEditor("s1", { clientId: "c1", have: null, name: "" }, socket);
+    expect(socket.closed?.code).toBe(4404);
+  });
+
+  it("leaves the scene unreadable when the repaired scene cannot be written", async () => {
+    const { documents, backups } = setup(
+      { widgetsJson: JSON.stringify([readable]), layoutJson: "{not json" },
+      { writesFail: true }
+    );
+
+    const outcome = await documents.repair("s1");
+
+    expect(outcome).toMatchObject({ ok: false, reason: "failed" });
+    expect(backups).toHaveLength(1);
+    const socket = new Socket();
+    await documents.openEditor("s1", { clientId: "c1", have: null, name: "" }, socket);
+    expect(socket.closed?.code).toBe(4404);
+  });
+
+  it("stores nothing and writes nothing for a scene it could read", async () => {
+    const { documents, writes, backups } = setup({ widgetsJson: JSON.stringify([readable]) });
+
+    expect(await documents.repair("s1")).toEqual({ ok: true, backups: 0 });
+    expect(backups).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+
+  it("backs up an unreadable draft column as the draft's", async () => {
+    const { documents, backups } = setup({
+      widgetsJson: JSON.stringify([readable]),
+      hasDraft: true,
+      draftWidgetsJson: "[broken",
+      draftLayoutJson: "{}",
+      draftBehaviorsJson: "{}",
+    });
+
+    expect(await documents.repair("s1")).toEqual({ ok: true, backups: 1 });
+    expect(backups[0]).toEqual([
+      { version: "draft", column: "widgets", reason: "unreadable_column", content: "[broken" },
+    ]);
   });
 });
