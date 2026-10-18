@@ -1,5 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
 import { type BarkloaderRelay, relayToBarkloader } from "./barkloader-relay";
+import { jsonError } from "./http-kit";
 
 const STORAGE_ASSET_RELAY: BarkloaderRelay = {
   forwardedRequestHeaders: [],
@@ -20,9 +21,6 @@ export async function handleStorageAssetRoute(
   logger: Logger,
   fetchFn: typeof fetch = fetch
 ): Promise<Response> {
-  if (req.method !== "GET") {
-    return new Response(null, { status: 404 });
-  }
   return relayToBarkloader(req, url, barkloaderUrl, logger, STORAGE_ASSET_RELAY, fetchFn);
 }
 
@@ -33,9 +31,6 @@ export async function handleStorageAssetRoute(
  * of its bytes are streamed on.
  */
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
-
-/** The only method an upload grant is good for, plus its preflight. */
-export const UPLOAD_ALLOWED_METHODS = "PUT, OPTIONS";
 
 const UPLOAD_RELAY: BarkloaderRelay = {
   method: "PUT",
@@ -66,17 +61,13 @@ export async function handleUploadRoute(
   logger: Logger,
   fetchFn: typeof fetch = fetch
 ): Promise<Response> {
-  if (req.method !== "PUT") {
-    return new Response(null, { status: 405, headers: { Allow: UPLOAD_ALLOWED_METHODS } });
-  }
-
   const declaredLength = req.headers.get("Content-Length");
   if (declaredLength !== null) {
     if (!/^\d+$/.test(declaredLength)) {
-      return Response.json({ success: false, error: "invalid Content-Length" }, { status: 400 });
+      return jsonError(400, "invalid_content_length");
     }
     if (Number(declaredLength) > MAX_UPLOAD_BYTES) {
-      return Response.json({ success: false, error: "upload exceeds size limit" }, { status: 413 });
+      return jsonError(413, "too_large");
     }
   }
 

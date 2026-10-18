@@ -71,22 +71,6 @@ describe("handleStorageAssetRoute", () => {
     expect(fetchFn.mock.calls[0]![0]).toBe("http://barkloader.test/assets/user/res-1/my%20file.png");
   });
 
-  it("404s a non-GET request without reaching barkloader", async () => {
-    const fetchFn = upstream(new Response("unreachable"));
-    const url = new URL("http://scene.test/assets/user/res-1/photo.png");
-
-    const resp = await handleStorageAssetRoute(
-      new Request(url, { method: "POST" }),
-      url,
-      BARKLOADER_URL,
-      logger,
-      fetchFn as never
-    );
-
-    expect(resp.status).toBe(404);
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
   it("answers 502 when barkloader is unreachable", async () => {
     const fetchFn = mock(async (_input: string | URL | Request, _init?: RequestInit): Promise<Response> => {
       throw new Error("connection refused");
@@ -192,18 +176,6 @@ describe("handleUploadRoute", () => {
     const resp = await handleUploadRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
 
     expect(resp.status).toBe(413);
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("answers 405 for any method but PUT without reaching barkloader", async () => {
-    const fetchFn = upstream(new Response("unreachable"));
-    const url = new URL(`http://scene.test${UPLOAD_PATH}`);
-
-    for (const method of ["GET", "POST", "DELETE", "PATCH"]) {
-      const resp = await handleUploadRoute(new Request(url, { method }), url, BARKLOADER_URL, logger, fetchFn as never);
-      expect(resp.status).toBe(405);
-      expect(resp.headers.get("Allow")).toBe("PUT, OPTIONS");
-    }
     expect(fetchFn).not.toHaveBeenCalled();
   });
 

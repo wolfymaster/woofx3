@@ -46,7 +46,7 @@ export async function handleWidgetStorageRoute(
       instanceId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return jsonError(502, "unavailable");
+    return jsonError(503, "unavailable");
   }
   if (!instance) {
     return jsonError(404, "not_found");
@@ -64,7 +64,7 @@ export async function handleWidgetStorageRoute(
       key,
       error: err instanceof Error ? err.message : String(err),
     });
-    return jsonError(502, "unavailable");
+    return jsonError(503, "unavailable");
   }
 }
 

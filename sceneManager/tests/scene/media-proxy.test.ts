@@ -835,10 +835,4 @@ describe("handleMediaProxyRoute", () => {
     expect(resp.status).toBe(503);
     expect(resp.headers.get("Retry-After")).toBe("5");
   });
-
-  it("refuses methods other than GET", async () => {
-    const url = new URL(`http://scene.test${path}`);
-    const resp = await handleMediaProxyRoute(new Request(url, { method: "POST" }), url, "http://b", logger());
-    expect(resp.status).toBe(405);
-  });
 });

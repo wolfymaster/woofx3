@@ -12,6 +12,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createMessageBus } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
+import { MEDIA_PROXY_PATH } from "../../contract/media-url";
 import { parseStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
 import { BootFailure, type BootedSceneManager, bootSceneManager } from "./boot";
 import { ALERT_AREA_ID, OVERLAY_TOKEN, SCENE_ID, TEXT_ID } from "./fake-db";
@@ -126,6 +127,21 @@ describe.skipIf(!started.ok)("scene manager smoke", () => {
     const wrongMethod = await fetch(`${sm.baseUrl}/health`, { method: "DELETE" });
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.get("allow")).toContain("GET");
+  });
+
+  it("answers a wrong method on every kind of route with 405 and the methods it takes", async () => {
+    for (const [method, path, allow] of [
+      ["DELETE", "/assets/widget-host-shim.js", "GET"],
+      ["POST", "/assets/read/user/u1/clip.json", "GET"],
+      ["PUT", "/assets/user/u1/clip.json", "GET"],
+      ["GET", "/assets/upload/some-grant", "PUT"],
+      ["DELETE", "/fonts/css", "GET"],
+      ["POST", `${MEDIA_PROXY_PATH}some-token`, "GET"],
+    ] as const) {
+      const response = await fetch(`${sm.baseUrl}${path}`, { method });
+      expect(`${method} ${path} ${response.status}`).toBe(`${method} ${path} 405`);
+      expect(response.headers.get("allow")).toContain(allow);
+    }
   });
 
   it("refuses an overlay with a token that resolves to no scene", async () => {

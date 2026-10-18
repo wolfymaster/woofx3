@@ -58,12 +58,4 @@ describe("handleStaticAssetRoute", () => {
       }
     });
   });
-
-  it("404s a non-GET request", async () => {
-    await withPublicDir(async (dir) => {
-      const url = new URL("http://scene.test/assets/vendor/datastar.js");
-      const resp = await handleStaticAssetRoute(new Request(url, { method: "POST" }), url, dir);
-      expect(resp.status).toBe(404);
-    });
-  });
 });
