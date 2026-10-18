@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/google/uuid"
-	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"gorm.io/gorm"
 )
 
@@ -130,20 +129,21 @@ func replaceEdges(tx *gorm.DB, dialect Dialect, row storedWorkflow, id, name str
 	).Error; err != nil {
 		return err
 	}
-	sourceID, err := uuid.Parse(id)
-	if err != nil {
-		return fmt.Errorf("workflow id %q: %w", id, err)
+	createdByType := row.CreatedByType
+	if createdByType == "" {
+		createdByType = "USER"
 	}
-	edges := refsvc.ExtractWorkflowEdges(refsvc.WorkflowSource{
-		ID:                  sourceID,
-		Name:                name,
-		SourceCreatedByType: row.CreatedByType,
-		SourceCreatedByRef:  row.CreatedByRef,
-	}, part.Steps, part.Trigger)
-	if len(edges) == 0 {
-		return nil
+	for _, edge := range workflowEdges(part.Steps, part.Trigger) {
+		if err := tx.Exec(
+			fmt.Sprintf(`INSERT INTO %s
+				(id, source_type, source_id, source_name, source_created_by_type, source_created_by_ref, target_type, target_name, context)
+				VALUES (?, 'workflow', ?, ?, ?, ?, ?, ?, ?)`, dialect.References),
+			uuid.NewString(), id, name, createdByType, row.CreatedByRef, edge.TargetType, edge.TargetName, edge.Context,
+		).Error; err != nil {
+			return err
+		}
 	}
-	return tx.Table(dialect.References).Create(&edges).Error
+	return nil
 }
 
 // partName names the workflow of a split's position-th trigger (from 2) after
