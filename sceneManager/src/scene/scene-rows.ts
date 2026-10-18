@@ -6,7 +6,13 @@ import type { CompositionKind } from "@woofx3/api";
 import type { SceneDocument } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
 import type * as scene from "@woofx3/db/scene.pb";
-import { parseWidgetCanonicalId, placementOfStored, stableModuleKey, storedWidgetId } from "@woofx3/scene/model";
+import {
+  parseWidgetCanonicalId,
+  placementOfStored,
+  stableCanonicalId,
+  stableModuleKey,
+  storedWidgetId,
+} from "@woofx3/scene/model";
 import { frameDocumentUrl, UNAVAILABLE_VERSION } from "./frame-catalog";
 import type {
   OverlaySceneLayout,
@@ -159,22 +165,19 @@ export class SceneRowReader {
     // stable across module updates. A versioned key like "spotify:1.0.0:abc1234"
     // normalises to "spotify"; a simple key like "woofx3" is unchanged.
     const moduleId = stableModuleKey(parsed.moduleKey);
-    const stableCanonicalId = `${moduleId}:widget:${parsed.manifestId}`;
+    const widgetCanonicalId = stableCanonicalId(canonicalId) ?? canonicalId;
     if (moduleId !== parsed.moduleKey) {
-      this.logger.warn(
-        "normalizeInstance: stripping version from moduleKey — update the UI to store the stable projection key",
-        {
-          id,
-          stored: canonicalId,
-          normalized: stableCanonicalId,
-        }
-      );
+      this.logger.warn("scene placement stored with a versioned module key; read as the stable one", {
+        id,
+        stored: canonicalId,
+        normalized: widgetCanonicalId,
+      });
     }
 
-    if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(stableCanonicalId)) {
-      this.bundleUrlWarned.add(stableCanonicalId);
+    if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(widgetCanonicalId)) {
+      this.bundleUrlWarned.add(widgetCanonicalId);
       this.logger.warn("scene widget carries deprecated bundleUrl; ignored in favor of frameUrl", {
-        widgetCanonicalId: stableCanonicalId,
+        widgetCanonicalId,
       });
     }
 
@@ -183,7 +186,7 @@ export class SceneRowReader {
     const settings = placement.settings;
     return {
       id,
-      widgetCanonicalId: stableCanonicalId,
+      widgetCanonicalId,
       moduleId: moduleId,
       manifestId: parsed.manifestId,
       position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },

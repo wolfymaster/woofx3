@@ -284,9 +284,11 @@ export class OverlayHost {
     }
     const framed = async (state: OverlaySceneState): Promise<OverlaySceneState> =>
       this.framing ? { ...state, instances: await this.framing.frame(state.instances) } : state;
+    const framedPublished = await framed(published);
     return {
-      published: await framed(published),
-      draft: await framed(draft),
+      published: framedPublished,
+      // With no draft the draft is the published scene: framed once.
+      draft: s.hasDraft ? await framed(draft) : framedPublished,
       editorStateJson: s.editorStateJson === "" ? null : s.editorStateJson,
     };
   }

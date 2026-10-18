@@ -115,7 +115,7 @@ export interface PublishedComposition {
 
 /** How long after its first unwritten change a scene is written back, at most. */
 export const AUTOSAVE_DELAY_MS = 2000;
-export { CLOSE_RETRY_MS, CLOSE_WRITE_ATTEMPTS } from "./scene-writeback";
+
 /**
  * How long after a placement is framed without barkloader's answer it is
  * framed again, doubling on each failure up to `REFRAME_RETRY_MAX_MS`.
@@ -294,7 +294,7 @@ export class SceneDocuments {
   openEditor(sceneId: string, hello: EditorHello, conn: EditorConnection): Promise<void> {
     return this.serial(sceneId, async () => {
       if (this.closed) {
-        conn.close(1012, "the scene service is restarting");
+        conn.close(WS_SERVICE_RESTART, "the scene service is restarting");
         return;
       }
       let held: HeldScene | null;
@@ -302,7 +302,7 @@ export class SceneDocuments {
         held = await this.hold(sceneId);
       } catch (err) {
         this.logger.warn("scene documents: loading a scene for an editor failed", { sceneId, error: errorText(err) });
-        conn.close(1011, "the scene could not be loaded");
+        conn.close(WS_INTERNAL_ERROR, "the scene could not be loaded");
         return;
       }
       if (!held) {
