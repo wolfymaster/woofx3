@@ -156,8 +156,9 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 			repository.NewGroupRepository(a.db),
 			a.casbin,
 			a.eventPublisher,
+			a.logger,
 		)
-		linked, failed := commands.LinkCommandWorkflows(a.logger)
+		linked, failed := commands.LinkCommandWorkflows()
 		if linked > 0 || failed > 0 {
 			a.logger.Info("Linked commands to workflows", "linked", linked, "failed", failed)
 		}

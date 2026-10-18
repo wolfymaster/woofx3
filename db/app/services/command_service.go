@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 
@@ -34,6 +33,7 @@ type commandService struct {
 	groupRepo  *repo.GroupRepository
 	enforcer   *casbin.Enforcer
 	publisher  *workers.EventPublisher
+	logger     *slog.Logger
 }
 
 func NewCommandService(
@@ -44,6 +44,7 @@ func NewCommandService(
 	groupRepo *repo.GroupRepository,
 	enforcer *casbin.Enforcer,
 	publisher *workers.EventPublisher,
+	logger *slog.Logger,
 ) *commandService {
 	return &commandService{
 		repo:       cmdRepo,
@@ -53,82 +54,92 @@ func NewCommandService(
 		groupRepo:  groupRepo,
 		enforcer:   enforcer,
 		publisher:  publisher,
+		logger:     logger,
 	}
 }
 
-// syncCommandPermissions re-derives command_groups/command_users and the
-// Casbin p-rows for a command from scratch. Called after every
-// create/update so the DB join tables and Casbin's derived cache never
-// drift. Public commands never get Casbin rows - visibility is checked in
-// application code (woofwoofwoof) before Casbin is ever consulted.
-func (s *commandService) syncCommandPermissions(cmd *models.Command, groupIDStrs, usernames []string) error {
+// writeCommandPermissions re-derives command_groups/command_users and the
+// Casbin p-rows for a command from scratch, inside tx. Called on every
+// create/update so the join tables and the policy rows never drift; the
+// caller reloads the enforcer once tx commits, since the enforcer reads the
+// policy outside it. Public commands never get Casbin rows - visibility is
+// checked in application code (woofwoofwoof) before Casbin is ever consulted.
+func (s *commandService) writeCommandPermissions(tx *gorm.DB, cmd *models.Command, groupIDStrs, usernames []string) error {
 	groupIDs := make([]uuid.UUID, 0, len(groupIDStrs))
 	for _, idStr := range groupIDStrs {
 		id, err := uuid.Parse(idStr)
 		if err != nil {
-			return fmt.Errorf("invalid group id %q: %w", idStr, err)
+			return &invalidArgument{"group_ids", fmt.Errorf("invalid group id %q: %w", idStr, err)}
 		}
 		groupIDs = append(groupIDs, id)
 	}
 
-	if err := s.permRepo.ReplaceGroups(cmd.ID, groupIDs); err != nil {
+	permRepo := s.permRepo.WithDB(tx)
+	casbinRepo := s.casbinRepo.WithDB(tx)
+	if err := permRepo.ReplaceGroups(cmd.ID, groupIDs); err != nil {
 		return err
 	}
-	if err := s.permRepo.ReplaceUsers(cmd.ID, usernames); err != nil {
+	if err := permRepo.ReplaceUsers(cmd.ID, usernames); err != nil {
 		return err
 	}
 
 	object := "command/" + cmd.Command
-	if err := s.casbinRepo.RemoveAllPTypeForObject(object); err != nil {
+	if err := casbinRepo.RemoveAllPTypeForObject(object); err != nil {
 		return err
 	}
-	if cmd.Visibility == commandVisibilityRestricted {
-		// No group and no user grant means no restriction was configured, not
-		// "deny everyone". Say so positively in the policy data with the
-		// wildcard subject so every enforcement path agrees; leaving the object
-		// with zero rules would deny it everywhere instead.
-		if len(groupIDs) == 0 && len(usernames) == 0 {
-			if err := s.casbinRepo.AddPType(models.WildcardSubject, object, "read", "allow"); err != nil {
-				return err
-			}
-			return s.enforcer.LoadPolicy()
-		}
-
-		everyoneIDs, err := s.everyoneGroupIDs(groupIDs)
-		if err != nil {
-			return err
-		}
-		for _, groupID := range groupIDs {
-			subject := groupSubject(groupID)
-			if everyoneIDs[groupID] {
-				// The built-in "everyone" group has no membership rows by
-				// design, so a group: subject would never match. Collapse it to
-				// the wildcard the matcher understands.
-				subject = models.WildcardSubject
-			}
-			if err := s.casbinRepo.AddPType(subject, object, "read", "allow"); err != nil {
-				return err
-			}
-		}
-		for _, username := range usernames {
-			if err := s.casbinRepo.AddPType(username, object, "read", "allow"); err != nil {
-				return err
-			}
-		}
+	if cmd.Visibility != commandVisibilityRestricted {
+		return nil
+	}
+	// No group and no user grant means no restriction was configured, not
+	// "deny everyone". Say so positively in the policy data with the
+	// wildcard subject so every enforcement path agrees; leaving the object
+	// with zero rules would deny it everywhere instead.
+	if len(groupIDs) == 0 && len(usernames) == 0 {
+		return casbinRepo.AddPType(models.WildcardSubject, object, "read", "allow")
 	}
 
-	return s.enforcer.LoadPolicy()
+	everyoneIDs, err := s.everyoneGroupIDs(tx, groupIDs)
+	if err != nil {
+		return err
+	}
+	for _, groupID := range groupIDs {
+		subject := groupSubject(groupID)
+		if everyoneIDs[groupID] {
+			// The built-in "everyone" group has no membership rows by
+			// design, so a group: subject would never match. Collapse it to
+			// the wildcard the matcher understands.
+			subject = models.WildcardSubject
+		}
+		if err := casbinRepo.AddPType(subject, object, "read", "allow"); err != nil {
+			return err
+		}
+	}
+	for _, username := range usernames {
+		if err := casbinRepo.AddPType(username, object, "read", "allow"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reloadPolicy makes the enforcer see the policy rows a committed write
+// changed.
+func (s *commandService) reloadPolicy() error {
+	if err := s.enforcer.LoadPolicy(); err != nil {
+		return fmt.Errorf("reload command permissions: %w", err)
+	}
+	return nil
 }
 
 // everyoneGroupIDs reports which of the given ids are the built-in "everyone"
 // group. Returns an empty set when no group repository is wired, so callers
 // degrade to plain group subjects rather than failing.
-func (s *commandService) everyoneGroupIDs(groupIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+func (s *commandService) everyoneGroupIDs(tx *gorm.DB, groupIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
 	out := make(map[uuid.UUID]bool)
 	if s.groupRepo == nil || len(groupIDs) == 0 {
 		return out, nil
 	}
-	groups, err := s.groupRepo.GetByIDs(groupIDs)
+	groups, err := s.groupRepo.WithDB(tx).GetByIDs(groupIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -161,63 +172,104 @@ func (s *commandService) syncCommandEdges(cmd *models.Command, actionsJSON, crea
 	}
 	edges := refsvc.ExtractCommandEdges(src, actionsJSON)
 	if err := s.refRepo.ReplaceEdgesForSource("command", cmd.ID, edges); err != nil {
-		log.Printf("command_service: ReplaceEdgesForSource failed for command %s: %v", cmd.ID, err)
+		s.logger.Error("Replace the edges of a command", "id", cmd.ID, "error", err)
 	}
 }
 
-// toProtoCommand converts a persisted command plus its resolved group/user
-// grants into the wire shape. groupIDs/usernames are looked up separately
-// (permRepo) since they live in join tables, not on the commands row.
-func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, error) {
-	groupIDs, err := s.permRepo.ListGroupIDs(cmd.ID)
+// commandProto is commandProtos for one command.
+func (s *commandService) commandProto(db *gorm.DB, cmd *models.Command) (*client.Command, error) {
+	protos, err := s.commandProtos(db, []*models.Command{cmd})
 	if err != nil {
 		return nil, err
 	}
-	usernames, err := s.permRepo.ListUsernames(cmd.ID)
-	if err != nil {
-		return nil, err
-	}
-	groupIDStrs := make([]string, len(groupIDs))
-	for i, id := range groupIDs {
-		groupIDStrs[i] = id.String()
-	}
-	wf, err := linkedWorkflow(s.repo.DB(), cmd)
-	if err != nil {
-		return nil, err
-	}
-	workflowID, stepsJSON := "", "[]"
-	if wf != nil {
-		workflowID, stepsJSON = wf.ID.String(), wf.Steps
-	}
-
-	return &client.Command{
-		Id:              cmd.ID.String(),
-		Command:         cmd.Command,
-		ActionsJson:     defaultActionsJSON(cmd.Actions),
-		Cooldown:        int32(cmd.Cooldown),
-		CreatedByType:   cmd.CreatedByType,
-		CreatedByRef:    cmd.CreatedByRef,
-		Priority:        int32(cmd.Priority),
-		Enabled:         cmd.Enabled,
-		CreatedAt:       timestamppb.New(cmd.CreatedAt),
-		Visibility:      cmd.Visibility,
-		GroupIds:        groupIDStrs,
-		Usernames:       usernames,
-		ArgumentPattern: cmd.ArgumentPattern,
-		WorkflowId:      workflowID,
-		StepsJson:       stepsJSON,
-	}, nil
+	return protos[0], nil
 }
 
-// publishChange announces a command row change on the outbox. The api
-// projects it onto the UI's command webhooks, which is the only way the UI
-// hears about commands written by something other than the api's own command
-// routes -- barkloader registering a module's commands, for one.
-func (s *commandService) publishChange(cmd *client.Command, op string) {
+// commandProtos converts persisted commands into the wire shape, reading
+// through db (a transaction, when the caller is in one). Their group/user
+// grants live in join tables and their steps in their workflows, so each of
+// those is loaded once for all of cmds rather than once per command.
+func (s *commandService) commandProtos(db *gorm.DB, cmds []*models.Command) ([]*client.Command, error) {
+	ids := make([]uuid.UUID, len(cmds))
+	var workflowIDs []uuid.UUID
+	for i, cmd := range cmds {
+		ids[i] = cmd.ID
+		if cmd.WorkflowID != nil {
+			workflowIDs = append(workflowIDs, *cmd.WorkflowID)
+		}
+	}
+	permRepo := s.permRepo.WithDB(db)
+	groupIDs, err := permRepo.GroupIDsByCommand(ids)
+	if err != nil {
+		return nil, fmt.Errorf("list command groups: %w", err)
+	}
+	usernames, err := permRepo.UsernamesByCommand(ids)
+	if err != nil {
+		return nil, fmt.Errorf("list command users: %w", err)
+	}
+	workflows := make(map[uuid.UUID]*models.WorkflowDefinition, len(workflowIDs))
+	if len(workflowIDs) > 0 {
+		var rows []*models.WorkflowDefinition
+		if err := db.Where("id IN ?", workflowIDs).Find(&rows).Error; err != nil {
+			return nil, fmt.Errorf("list command workflows: %w", err)
+		}
+		for _, wf := range rows {
+			workflows[wf.ID] = wf
+		}
+	}
+
+	out := make([]*client.Command, len(cmds))
+	for i, cmd := range cmds {
+		workflowID, stepsJSON, workflowError := "", "[]", cmd.WorkflowError
+		if cmd.WorkflowID != nil {
+			if wf, ok := workflows[*cmd.WorkflowID]; ok {
+				workflowID, stepsJSON = wf.ID.String(), wf.Steps
+			} else {
+				s.logger.Error("Command links to a workflow that no longer exists",
+					"command", cmd.Command, "id", cmd.ID, "workflow_id", *cmd.WorkflowID)
+				workflowError = fmt.Sprintf("%s (%s)", errLinkedWorkflowMissing, *cmd.WorkflowID)
+			}
+		}
+		groupIDStrs := make([]string, len(groupIDs[cmd.ID]))
+		for j, id := range groupIDs[cmd.ID] {
+			groupIDStrs[j] = id.String()
+		}
+		out[i] = &client.Command{
+			Id:              cmd.ID.String(),
+			Command:         cmd.Command,
+			ActionsJson:     defaultActionsJSON(cmd.Actions),
+			Cooldown:        int32(cmd.Cooldown),
+			CreatedByType:   cmd.CreatedByType,
+			CreatedByRef:    cmd.CreatedByRef,
+			Priority:        int32(cmd.Priority),
+			Enabled:         cmd.Enabled,
+			CreatedAt:       timestamppb.New(cmd.CreatedAt),
+			Visibility:      cmd.Visibility,
+			GroupIds:        groupIDStrs,
+			Usernames:       usernames[cmd.ID],
+			ArgumentPattern: cmd.ArgumentPattern,
+			WorkflowId:      workflowID,
+			StepsJson:       stepsJSON,
+			WorkflowError:   workflowError,
+		}
+		if out[i].Usernames == nil {
+			out[i].Usernames = []string{}
+		}
+	}
+	return out, nil
+}
+
+// publishCommandIn announces a command row change on the outbox inside tx, so
+// the event goes out exactly when the change commits. The api projects it
+// onto the UI's command webhooks, which is the only way the UI hears about
+// commands written by something other than the api's own command routes --
+// barkloader registering a module's commands, or db-proxy linking a command
+// to its workflow at start.
+func (s *commandService) publishCommandIn(tx *gorm.DB, cmd *client.Command, op string) error {
 	if s.publisher == nil {
-		return
+		return nil
 	}
-	s.publisher.Publish(workers.PublishOptions{
+	return s.publisher.PublishIn(tx, workers.PublishOptions{
 		EntityType:      "command",
 		EntityID:        cmd.Id,
 		Operation:       op,
@@ -242,6 +294,7 @@ func buildCommandChangeData(cmd *client.Command) map[string]any {
 		"created_by_ref":   cmd.CreatedByRef,
 		"workflow_id":      cmd.WorkflowId,
 		"steps_json":       cmd.StepsJson,
+		"workflow_error":   cmd.WorkflowError,
 	}
 }
 
@@ -263,7 +316,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	if createdByType == "MODULE" {
 		existing, err := s.repo.GetByOrigin(createdByType, cmd.CreatedByRef, cmd.Command)
 		if err == nil {
-			protoCmd, err := s.toProtoCommand(existing)
+			protoCmd, err := s.commandProto(s.repo.DB(), existing)
 			if err != nil {
 				return nil, err
 			}
@@ -306,33 +359,41 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	}
 
 	var change *commandWorkflowChange
+	var protoCmd *client.Command
 	err := s.repo.Transaction(func(tx *gorm.DB) error {
-		var err error
-		change, err = setCommandSteps(tx, &m, steps)
-		if err != nil {
-			return err
-		}
+		// Inserted before its steps are written: the workflow is linked to the
+		// row with a conditional UPDATE.
 		if err := tx.Create(&m).Error; err != nil {
 			return err
 		}
-		return change.announceIn(tx, s.publisher)
+		var err error
+		change, err = s.setCommandSteps(tx, &m, steps)
+		if err != nil {
+			return err
+		}
+		if err := tx.Save(&m).Error; err != nil {
+			return err
+		}
+		if err := s.writeCommandPermissions(tx, &m, cmd.GroupIds, cmd.Usernames); err != nil {
+			return err
+		}
+		if protoCmd, err = s.commandProto(tx, &m); err != nil {
+			return err
+		}
+		if err := change.announceIn(tx, s.publisher); err != nil {
+			return err
+		}
+		return s.publishCommandIn(tx, protoCmd, "created")
 	})
 	if err != nil {
+		return nil, twirpError(err)
+	}
+	if err := s.reloadPolicy(); err != nil {
 		return nil, err
 	}
 
-	change.syncEdges(s.refRepo)
+	change.syncEdges(s.refRepo, s.logger)
 	s.syncCommandEdges(&m, m.Actions, m.CreatedByType, m.CreatedByRef)
-
-	if err := s.syncCommandPermissions(&m, cmd.GroupIds, cmd.Usernames); err != nil {
-		return nil, err
-	}
-
-	protoCmd, err := s.toProtoCommand(&m)
-	if err != nil {
-		return nil, err
-	}
-	s.publishChange(protoCmd, "created")
 
 	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -349,7 +410,7 @@ func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandR
 		return nil, err
 	}
 
-	protoCmd, err := s.toProtoCommand(cmd)
+	protoCmd, err := s.commandProto(s.repo.DB(), cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -369,13 +430,9 @@ func (s *commandService) ListCommands(ctx context.Context, req *client.ListComma
 		return nil, err
 	}
 
-	protoCommands := make([]*client.Command, len(commands))
-	for i, cmd := range commands {
-		protoCmd, err := s.toProtoCommand(cmd)
-		if err != nil {
-			return nil, err
-		}
-		protoCommands[i] = protoCmd
+	protoCommands, err := s.commandProtos(s.repo.DB(), commands)
+	if err != nil {
+		return nil, err
 	}
 
 	res := &client.ListCommandsResponse{
@@ -390,39 +447,41 @@ func (s *commandService) ListCommands(ctx context.Context, req *client.ListComma
 }
 
 func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCommandRequest) (*client.CommandResponse, error) {
-	commandId, err := uuid.Parse(req.Id)
+	commandID, err := uuid.Parse(req.Id)
 	if err != nil {
-		return nil, err
+		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
-
-	m, err := s.repo.GetByID(commandId)
-	if err != nil {
-		return nil, err
-	}
-
-	oldCommandName := m.Command
-	m.Command = req.Command
-	m.Cooldown = int(req.Cooldown)
-	m.Priority = int(req.Priority)
-	m.Enabled = req.Enabled
-	if req.Visibility != "" {
-		m.Visibility = req.Visibility
-	}
-	m.ArgumentPattern = req.ArgumentPattern
 
 	steps, err := updatedCommandSteps(req)
 	if err != nil {
 		return nil, err
 	}
 
+	var m *models.Command
 	var change *commandWorkflowChange
+	var protoCmd *client.Command
 	err = s.repo.Transaction(func(tx *gorm.DB) error {
 		var err error
+		m, err = lockCommand(s.repo.WithDB(tx), commandID)
+		if err != nil {
+			return err
+		}
+
+		oldCommandName := m.Command
+		m.Command = req.Command
+		m.Cooldown = int(req.Cooldown)
+		m.Priority = int(req.Priority)
+		m.Enabled = req.Enabled
+		if req.Visibility != "" {
+			m.Visibility = req.Visibility
+		}
+		m.ArgumentPattern = req.ArgumentPattern
+
 		switch {
 		case steps != nil:
-			change, err = setCommandSteps(tx, m, *steps)
+			change, err = s.setCommandSteps(tx, m, *steps)
 		case oldCommandName != m.Command:
-			change, err = renameCommandWorkflow(tx, m)
+			change, err = s.renameCommandWorkflow(tx, m)
 		}
 		if err != nil {
 			return err
@@ -430,33 +489,35 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 		if err := tx.Save(m).Error; err != nil {
 			return err
 		}
-		return change.announceIn(tx, s.publisher)
+
+		// A rename changes the "command/<name>" Casbin object string - clear
+		// the old object's rows too, since writeCommandPermissions only
+		// re-derives under the (possibly new) current name.
+		if oldCommandName != m.Command {
+			if err := s.casbinRepo.WithDB(tx).RemoveAllPTypeForObject("command/" + oldCommandName); err != nil {
+				return err
+			}
+		}
+		if err := s.writeCommandPermissions(tx, m, req.GroupIds, req.Usernames); err != nil {
+			return err
+		}
+		if protoCmd, err = s.commandProto(tx, m); err != nil {
+			return err
+		}
+		if err := change.announceIn(tx, s.publisher); err != nil {
+			return err
+		}
+		return s.publishCommandIn(tx, protoCmd, "updated")
 	})
 	if err != nil {
+		return nil, twirpError(err)
+	}
+	if err := s.reloadPolicy(); err != nil {
 		return nil, err
 	}
 
-	change.syncEdges(s.refRepo)
+	change.syncEdges(s.refRepo, s.logger)
 	s.syncCommandEdges(m, m.Actions, m.CreatedByType, m.CreatedByRef)
-
-	// A rename changes the "command/<name>" Casbin object string - clear the
-	// old object's rows too, since syncCommandPermissions only re-derives
-	// under the (possibly new) current name.
-	if oldCommandName != m.Command {
-		if err := s.casbinRepo.RemoveAllPTypeForObject("command/" + oldCommandName); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := s.syncCommandPermissions(m, req.GroupIds, req.Usernames); err != nil {
-		return nil, err
-	}
-
-	protoCmd, err := s.toProtoCommand(m)
-	if err != nil {
-		return nil, err
-	}
-	s.publishChange(protoCmd, "updated")
 
 	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -468,65 +529,77 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 }
 
 func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCommandRequest) (*client.ResponseStatus, error) {
-	commandId, err := uuid.Parse(req.Id)
+	commandID, err := uuid.Parse(req.Id)
 	if err != nil {
-		return nil, err
+		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
 
-	m, err := s.repo.GetByID(commandId)
-	if err != nil {
-		return nil, err
-	}
-
+	var m *models.Command
 	var change *commandWorkflowChange
 	err = s.repo.Transaction(func(tx *gorm.DB) error {
 		var err error
-		change, err = setCommandSteps(tx, m, "[]")
+		m, err = lockCommand(s.repo.WithDB(tx), commandID)
 		if err != nil {
+			return err
+		}
+		change, err = s.setCommandSteps(tx, m, "[]")
+		if err != nil {
+			return err
+		}
+		if err := s.permRepo.WithDB(tx).DeleteBySourceCommand(m.ID); err != nil {
+			return err
+		}
+		if err := s.casbinRepo.WithDB(tx).RemoveAllPTypeForObject("command/" + m.Command); err != nil {
 			return err
 		}
 		if err := tx.Delete(m).Error; err != nil {
 			return err
 		}
-		return change.announceIn(tx, s.publisher)
-	})
-	if err != nil {
-		return nil, err
-	}
-	change.syncEdges(s.refRepo)
-
-	if s.refRepo != nil {
-		if err := s.refRepo.DeleteEdgesBySource("command", m.ID); err != nil {
-			log.Printf("command_service: DeleteEdgesBySource failed for command %s: %v", m.ID, err)
+		if err := change.announceIn(tx, s.publisher); err != nil {
+			return err
 		}
-	}
-
-	if err := s.permRepo.DeleteBySourceCommand(m.ID); err != nil {
-		log.Printf("command_service: DeleteBySourceCommand failed for command %s: %v", m.ID, err)
-	}
-	if err := s.casbinRepo.RemoveAllPTypeForObject("command/" + m.Command); err != nil {
-		log.Printf("command_service: RemoveAllPTypeForObject failed for command %s: %v", m.ID, err)
-	}
-	if err := s.enforcer.LoadPolicy(); err != nil {
-		log.Printf("command_service: enforcer.LoadPolicy failed after deleting command %s: %v", m.ID, err)
-	}
-
-	if s.publisher != nil {
-		s.publisher.Publish(workers.PublishOptions{
+		if s.publisher == nil {
+			return nil
+		}
+		return s.publisher.PublishIn(tx, workers.PublishOptions{
 			EntityType:      "command",
 			EntityID:        m.ID.String(),
 			Operation:       "deleted",
 			Data:            map[string]any{"id": m.ID.String(), "command": m.Command},
 			AutoAcknowledge: true,
 		})
+	})
+	if err != nil {
+		return nil, twirpError(err)
+	}
+	if err := s.reloadPolicy(); err != nil {
+		return nil, err
+	}
+	change.syncEdges(s.refRepo, s.logger)
+
+	if s.refRepo != nil {
+		if err := s.refRepo.DeleteEdgesBySource("command", m.ID); err != nil {
+			s.logger.Error("Delete the edges of a deleted command", "id", m.ID, "error", err)
+		}
 	}
 
-	res := &client.ResponseStatus{
+	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
 		Message: "Command deleted successfully",
-	}
+	}, nil
+}
 
-	return res, nil
+// lockCommand reads the command with id through commands, which runs on a
+// transaction, locking its row until that transaction ends.
+func lockCommand(commands *repo.CommandRepository, id uuid.UUID) (*models.Command, error) {
+	cmd, err := commands.LockByID(id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, twirp.NotFoundError("command not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read command %s: %w", id, err)
+	}
+	return cmd, nil
 }
 
 // updatedCommandSteps is what an update makes the command's steps: nil to
@@ -555,57 +628,107 @@ func updatedCommandSteps(req *client.UpdateCommandRequest) (*string, error) {
 // left to do.
 //
 // Each command is converted in a transaction of its own. One that fails is
-// logged and left exactly as it was: it keeps running its actions without a
-// workflow, and the next start tries it again.
-func (s *commandService) LinkCommandWorkflows(logger *slog.Logger) (linked int, failed int) {
+// left as it was, keeps running its actions without a workflow, and gets the
+// reason as its workflow_error, where the streamer can see it; the next start
+// tries it again.
+func (s *commandService) LinkCommandWorkflows() (linked int, failed int) {
 	commands, err := s.repo.GetUnlinked()
 	if err != nil {
-		logger.Error("List commands to link to workflows", "error", err)
+		s.logger.Error("List commands to link to workflows", "error", err)
 		return 0, 0
 	}
-	for _, cmd := range commands {
-		steps, err := chainActions(cmd.Actions)
-		if err == nil {
-			var count int
-			count, err = countSteps(steps)
-			if err == nil && count == 0 {
-				continue
-			}
-		}
-		var change *commandWorkflowChange
-		if err == nil {
-			err = s.repo.Transaction(func(tx *gorm.DB) error {
-				var err error
-				change, err = setCommandSteps(tx, cmd, steps)
-				if err != nil {
-					return err
-				}
-				if err := tx.Save(cmd).Error; err != nil {
-					return err
-				}
-				return change.announceIn(tx, s.publisher)
-			})
-		}
+	for _, listed := range commands {
+		change, cmd, err := s.linkCommandWorkflow(listed.ID)
 		if err != nil {
-			logger.Warn("Command keeps running its actions without a workflow",
-				"command", cmd.Command, "id", cmd.ID, "error", err)
 			failed++
+			s.logger.Warn("Command keeps running its actions without a workflow",
+				"command", listed.Command, "id", listed.ID, "error", err)
+			if err := s.recordWorkflowError(listed.ID, err.Error()); err != nil {
+				s.logger.Error("Record why a command has no workflow", "id", listed.ID, "error", err)
+			}
 			continue
 		}
-
+		if change == nil {
+			continue
+		}
 		linked++
-		change.syncEdges(s.refRepo)
+		change.syncEdges(s.refRepo, s.logger)
 		s.syncCommandEdges(cmd, cmd.Actions, cmd.CreatedByType, cmd.CreatedByRef)
-		// The link is committed and the workflow announced. Without the command's
-		// own event the UI catches up at its next full sync of commands.
-		protoCmd, err := s.toProtoCommand(cmd)
-		if err != nil {
-			logger.Error("Read back a command linked to its workflow", "id", cmd.ID, "error", err)
-			continue
-		}
-		s.publishChange(protoCmd, "updated")
 	}
 	return linked, failed
+}
+
+// linkCommandWorkflow converts one command for LinkCommandWorkflows. The
+// command is read again, locked, inside the transaction: another db-proxy may
+// have linked it since the listing. A nil change is a command with nothing to
+// convert.
+func (s *commandService) linkCommandWorkflow(id uuid.UUID) (*commandWorkflowChange, *models.Command, error) {
+	var change *commandWorkflowChange
+	var cmd *models.Command
+	err := s.repo.Transaction(func(tx *gorm.DB) error {
+		var err error
+		cmd, err = lockCommand(s.repo.WithDB(tx), id)
+		if err != nil {
+			return err
+		}
+		if cmd.WorkflowID != nil {
+			return nil
+		}
+		steps, err := chainActions(cmd.Actions)
+		if err != nil {
+			return err
+		}
+		count, err := countSteps(steps)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return nil
+		}
+		if change, err = s.setCommandSteps(tx, cmd, steps); err != nil {
+			return err
+		}
+		if err := tx.Save(cmd).Error; err != nil {
+			return err
+		}
+		protoCmd, err := s.commandProto(tx, cmd)
+		if err != nil {
+			return err
+		}
+		if err := change.announceIn(tx, s.publisher); err != nil {
+			return err
+		}
+		return s.publishCommandIn(tx, protoCmd, "updated")
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return change, cmd, nil
+}
+
+// recordWorkflowError stores reason as the command's workflow_error and
+// announces the change, unless it already says exactly that: the same failure
+// is retried on every start, and only a new reason is news.
+func (s *commandService) recordWorkflowError(id uuid.UUID, reason string) error {
+	return s.repo.Transaction(func(tx *gorm.DB) error {
+		commands := s.repo.WithDB(tx)
+		cmd, err := lockCommand(commands, id)
+		if err != nil {
+			return err
+		}
+		if cmd.WorkflowError == reason {
+			return nil
+		}
+		if err := commands.SetWorkflowError(id, reason); err != nil {
+			return err
+		}
+		cmd.WorkflowError = reason
+		protoCmd, err := s.commandProto(tx, cmd)
+		if err != nil {
+			return err
+		}
+		return s.publishCommandIn(tx, protoCmd, "updated")
+	})
 }
 
 func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enforcer, method string, request any) (bool, error) {
