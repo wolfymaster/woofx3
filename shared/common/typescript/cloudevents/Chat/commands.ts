@@ -1,6 +1,6 @@
 import { commandNameToSubjectSegment } from "../slug";
 import { encode } from "../utils";
-import Event from "../BaseEvent";
+import Event, { type BaseEvent } from "../BaseEvent";
 
 export interface ChatCommandEventData {
   command: string;
@@ -19,6 +19,15 @@ export interface ChatCommandEventData {
 
 type EventTuple = [string, Uint8Array];
 
+/** One invocation of a chat command, as announced on `chat.command.<slug>`. */
+export type ChatCommandEvent = BaseEvent<ChatCommandEventData>;
+
+/** Who the invocation came from, carried as CloudEvents extension attributes. */
+export interface ChatCommandAttributes {
+  platform?: string;
+  triggeredBy?: string;
+}
+
 /**
  * Build the (subject, encoded-payload) tuple for a chat-command CloudEvent.
  * Subject shape: `chat.command.<slug>` where slug is the normalized command
@@ -31,10 +40,28 @@ type EventTuple = [string, Uint8Array];
 export default class ChatCommandEvents {
   constructor(private source: string) {}
 
-  command(commandName: string, data: Omit<ChatCommandEventData, "command">): EventTuple {
+  /**
+   * The `chat.command.<slug>` event of one invocation. Built once per
+   * invocation: the same object is announced (`encode`) and handed to the
+   * command's own workflow run, so both read the same id, time, session and
+   * `data.command` slug.
+   */
+  event(
+    commandName: string,
+    data: Omit<ChatCommandEventData, "command">,
+    attributes: ChatCommandAttributes = {}
+  ): ChatCommandEvent {
     const slug = commandNameToSubjectSegment(commandName);
-    const subject = `chat.command.${slug}`;
-    const payload: ChatCommandEventData = { ...data, command: slug };
-    return [subject, encode(Event({ type: subject, source: this.source }, payload))];
+    const type = `chat.command.${slug}`;
+    return Event<ChatCommandEventData>({ type, source: this.source, ...attributes }, { ...data, command: slug });
+  }
+
+  /** The (subject, encoded-payload) tuple announcing `event`. */
+  encode(event: ChatCommandEvent): EventTuple {
+    return [event.type, encode(event)];
+  }
+
+  command(commandName: string, data: Omit<ChatCommandEventData, "command">): EventTuple {
+    return this.encode(this.event(commandName, data));
   }
 }

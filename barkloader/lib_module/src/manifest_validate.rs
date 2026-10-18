@@ -533,7 +533,8 @@ async fn validate_theme_dependencies(
 /// (`engine.obs.command`, `slobs`), call the Twitch API (`twitchapi`), speak in
 /// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
 /// `widget.queue.`), or run, replay or stop workflows and actions
-/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`).
+/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`,
+/// `workflow.command.execute`, `action.execute`).
 /// Must match the command prefixes in api/src/workflow/reserved-subjects.ts.
 /// See docs/services/engine-integrity.md.
 ///
@@ -552,7 +553,7 @@ const USER_RESERVED_EVENT_PREFIXES: [&str; 14] = [
     "workflow.execute",
     "workflow.replay",
     "workflow.cancel",
-    "workflow.command.run",
+    "workflow.command.execute",
     "action.execute",
 ];
 
@@ -3240,7 +3241,7 @@ mod tests {
             "workflow.execute",
             "workflow.replay",
             "workflow.cancel",
-            "workflow.command.run",
+            "workflow.command.execute",
             "action.execute",
             "viewer.segment.entered",
             "viewer.segment.left",

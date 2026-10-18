@@ -71,5 +71,6 @@ func All() []*gormigrate.Migration {
 		AddActionSentence(),
 		AddCommandWorkflow(),
 		SplitAlertWorkflows(),
+		AddCommandWorkflowError(),
 	}
 }

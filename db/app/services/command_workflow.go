@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/twitchtv/twirp"
 	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -23,6 +24,38 @@ import (
 // Must match types.TriggerTypeCommand in workflow/internal/types.
 const commandTriggerType = "command"
 
+// errLinkedWorkflowMissing is a command linking to a workflow row that does
+// not exist. The postgres foreign key nulls the link when the row is
+// deleted; SQLite has none, so this is a link left by a deletion there.
+var errLinkedWorkflowMissing = errors.New("the workflow this command runs no longer exists")
+
+// invalidArgument is a write refused for what the caller sent rather than for
+// anything that went wrong in db-proxy. Carried as a plain error so the reason
+// can also be stored as a command's workflow_error; twirpError turns it into
+// an InvalidArgument at the RPC boundary.
+type invalidArgument struct {
+	argument string
+	err      error
+}
+
+func (e *invalidArgument) Error() string { return e.err.Error() }
+
+func (e *invalidArgument) Unwrap() error { return e.err }
+
+// twirpError is err as an RPC returns it: a refused argument as
+// InvalidArgument, a write that lost a race for the command's workflow link
+// as Aborted (the caller can retry it), and a twirp error as it is.
+func twirpError(err error) error {
+	var invalid *invalidArgument
+	if errors.As(err, &invalid) {
+		return twirp.InvalidArgumentError(invalid.argument, invalid.Error())
+	}
+	if errors.Is(err, repo.ErrCommandLinkChanged) {
+		return twirp.NewError(twirp.Aborted, err.Error())
+	}
+	return err
+}
+
 // commandWorkflowChange is what writing a command's steps did to its
 // workflow, for the caller to announce once the transaction commits.
 type commandWorkflowChange struct {
@@ -36,10 +69,10 @@ type commandWorkflowChange struct {
 func commandSubjectSegment(name string) (string, error) {
 	stripped := strings.TrimPrefix(name, "!")
 	if stripped == "" {
-		return "", fmt.Errorf("invalid command name: empty after stripping \"!\"")
+		return "", &invalidArgument{"command", fmt.Errorf("invalid command name: empty after stripping \"!\"")}
 	}
 	if strings.ContainsAny(stripped, ".*>") || strings.ContainsFunc(stripped, isSubjectSpace) {
-		return "", fmt.Errorf("invalid command name %q: a subject segment may not contain \".\" \"*\" \">\" or whitespace", name)
+		return "", &invalidArgument{"command", fmt.Errorf("invalid command name %q: a subject segment may not contain \".\" \"*\" \">\" or whitespace", name)}
 	}
 	return strings.ToLower(stripped), nil
 }
@@ -121,11 +154,11 @@ func countSteps(stepsJSON string) (int, error) {
 	}
 	var steps []map[string]any
 	if err := json.Unmarshal([]byte(stepsJSON), &steps); err != nil {
-		return 0, fmt.Errorf("steps are not a JSON array of objects: %w", err)
+		return 0, &invalidArgument{"steps_json", fmt.Errorf("steps are not a JSON array of objects: %w", err)}
 	}
 	for i, step := range steps {
 		if step == nil {
-			return 0, fmt.Errorf("step %d is null", i+1)
+			return 0, &invalidArgument{"steps_json", fmt.Errorf("step %d is null", i+1)}
 		}
 	}
 	return len(steps), nil
@@ -142,24 +175,32 @@ func countSteps(stepsJSON string) (int, error) {
 // removes the workflow of the module's command along with the command
 // (DeleteCommand) rather than through the module's own workflows.
 //
-// cmd is changed but not saved; the caller saves it in the same transaction.
-func setCommandSteps(tx *gorm.DB, cmd *models.Command, stepsJSON string) (*commandWorkflowChange, error) {
+// cmd's row must already exist, read inside tx: the link is written with a
+// conditional UPDATE that fails with repo.ErrCommandLinkChanged when another
+// writer changed it since. cmd is changed to match but not saved; the caller
+// saves it in the same transaction.
+func (s *commandService) setCommandSteps(tx *gorm.DB, cmd *models.Command, stepsJSON string) (*commandWorkflowChange, error) {
 	count, err := countSteps(stepsJSON)
 	if err != nil {
 		return nil, err
 	}
 
-	existing, err := linkedWorkflow(tx, cmd)
+	existing, err := s.currentWorkflow(tx, cmd)
 	if err != nil {
 		return nil, err
 	}
+	commands := s.repo.WithDB(tx)
+	cmd.WorkflowError = ""
 
 	if count == 0 {
-		cmd.WorkflowID = nil
 		cmd.Actions = "[]"
 		if existing == nil {
 			return nil, nil
 		}
+		if err := commands.UnlinkWorkflow(cmd.ID, existing.ID); err != nil {
+			return nil, fmt.Errorf("unlink the workflow of command %q: %w", cmd.Command, err)
+		}
+		cmd.WorkflowID = nil
 		if err := tx.Delete(existing).Error; err != nil {
 			return nil, fmt.Errorf("delete the workflow of command %q: %w", cmd.Command, err)
 		}
@@ -195,14 +236,17 @@ func setCommandSteps(tx *gorm.DB, cmd *models.Command, stepsJSON string) (*comma
 	if err := tx.Create(wf).Error; err != nil {
 		return nil, fmt.Errorf("create the workflow of command %q: %w", cmd.Command, err)
 	}
+	if err := commands.LinkWorkflow(cmd.ID, wf.ID); err != nil {
+		return nil, fmt.Errorf("link command %q to its workflow: %w", cmd.Command, err)
+	}
 	cmd.WorkflowID = &wf.ID
 	return &commandWorkflowChange{workflow: wf, operation: "created"}, nil
 }
 
 // renameCommandWorkflow points cmd's workflow at the command's current name,
 // inside tx. Returns nil when cmd has no workflow.
-func renameCommandWorkflow(tx *gorm.DB, cmd *models.Command) (*commandWorkflowChange, error) {
-	existing, err := linkedWorkflow(tx, cmd)
+func (s *commandService) renameCommandWorkflow(tx *gorm.DB, cmd *models.Command) (*commandWorkflowChange, error) {
+	existing, err := s.currentWorkflow(tx, cmd)
 	if err != nil || existing == nil {
 		return nil, err
 	}
@@ -218,8 +262,26 @@ func renameCommandWorkflow(tx *gorm.DB, cmd *models.Command) (*commandWorkflowCh
 	return &commandWorkflowChange{workflow: existing, operation: "updated"}, nil
 }
 
-// linkedWorkflow is the workflow cmd links to, or nil when it links to none or
-// to one that no longer exists.
+// currentWorkflow is the workflow cmd links to, read inside tx, or nil when it
+// links to none. A link to a row that no longer exists is cleared, so that
+// writing the command's steps gives it a workflow again instead of failing on
+// the missing one forever.
+func (s *commandService) currentWorkflow(tx *gorm.DB, cmd *models.Command) (*models.WorkflowDefinition, error) {
+	wf, err := linkedWorkflow(tx, cmd)
+	if !errors.Is(err, errLinkedWorkflowMissing) {
+		return wf, err
+	}
+	s.logger.Warn("Command links to a workflow that no longer exists; clearing the link",
+		"command", cmd.Command, "id", cmd.ID, "workflow_id", *cmd.WorkflowID)
+	if err := s.repo.WithDB(tx).UnlinkWorkflow(cmd.ID, *cmd.WorkflowID); err != nil {
+		return nil, fmt.Errorf("unlink the missing workflow of command %q: %w", cmd.Command, err)
+	}
+	cmd.WorkflowID = nil
+	return nil, nil
+}
+
+// linkedWorkflow is the workflow cmd links to, or nil when it links to none.
+// errLinkedWorkflowMissing when the row it links to does not exist.
 func linkedWorkflow(tx *gorm.DB, cmd *models.Command) (*models.WorkflowDefinition, error) {
 	if cmd.WorkflowID == nil {
 		return nil, nil
@@ -227,7 +289,7 @@ func linkedWorkflow(tx *gorm.DB, cmd *models.Command) (*models.WorkflowDefinitio
 	var wf models.WorkflowDefinition
 	err := tx.Where("id = ?", *cmd.WorkflowID).First(&wf).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
+		return nil, fmt.Errorf("command %q, workflow %s: %w", cmd.Command, *cmd.WorkflowID, errLinkedWorkflowMissing)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read the workflow of command %q: %w", cmd.Command, err)
@@ -258,13 +320,13 @@ func (c *commandWorkflowChange) announceIn(tx *gorm.DB, publisher *workers.Event
 // syncEdges recomputes the resource_references edges of change's workflow.
 // Best effort, like the workflow service's own: the edges are a secondary
 // index, and the workflow has already been written.
-func (c *commandWorkflowChange) syncEdges(refRepo *repo.ResourceReferenceRepository) {
+func (c *commandWorkflowChange) syncEdges(refRepo *repo.ResourceReferenceRepository, logger *slog.Logger) {
 	if c == nil || refRepo == nil {
 		return
 	}
 	if c.operation == "deleted" {
 		if err := refRepo.DeleteEdgesBySource("workflow", c.workflow.ID); err != nil {
-			log.Printf("command_workflow: DeleteEdgesBySource failed for workflow %s: %v", c.workflow.ID, err)
+			logger.Error("Delete the edges of a command's workflow", "workflow_id", c.workflow.ID, "error", err)
 		}
 		return
 	}
@@ -276,6 +338,6 @@ func (c *commandWorkflowChange) syncEdges(refRepo *repo.ResourceReferenceReposit
 	}
 	edges := refsvc.ExtractWorkflowEdges(src, c.workflow.Steps, c.workflow.Trigger)
 	if err := refRepo.ReplaceEdgesForSource("workflow", c.workflow.ID, edges); err != nil {
-		log.Printf("command_workflow: ReplaceEdgesForSource failed for workflow %s: %v", c.workflow.ID, err)
+		logger.Error("Replace the edges of a command's workflow", "workflow_id", c.workflow.ID, "error", err)
 	}
 }

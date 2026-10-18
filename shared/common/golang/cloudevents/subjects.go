@@ -53,7 +53,7 @@ const (
 	// running a command for the dashboard); the workflow engine runs that one
 	// workflow (Engine.RunCommand). Its trigger has type "command", so the
 	// event the same invocation announces cannot start it a second time.
-	SubjectWorkflowCommandRun Subject = "workflow.command.run"
+	SubjectWorkflowCommandExecute Subject = "workflow.command.execute"
 
 	// Run a recorded run again, whole or from one of its steps. Carries the
 	// original trigger event and the recorded step outcomes, published by the

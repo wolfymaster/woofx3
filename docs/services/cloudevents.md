@@ -189,21 +189,24 @@ A raid on this channel is published once, as `channel.raid`, from the `channel.r
 
 ## Running a command's workflow
 
-`workflow.command.run` asks the workflow engine to run the workflow a chat
+`workflow.command.execute` asks the workflow engine to run the workflow a chat
 command is linked to, for one invocation. Published by woofwoofwoof once a
-command has matched and passed its cooldown and permission checks, after it
+command has matched and passed its permission and cooldown checks, after it
 has announced the match on `chat.command.<slug>`, and by the engine api's
-`executeCommand`. The workflow service runs that one workflow
-(`Engine.RunCommand`), which must have a trigger of type `"command"`; its
-trigger conditions apply, nothing else is checked again.
+`executeCommand` (which publishes it first, then the announcement). `event` is
+the announced `chat.command.<slug>` CloudEvent itself, not a copy: the same
+`id`, `time` and `sessionId`, with the command's slug as `data.command`. The
+workflow service runs that one workflow (`Engine.RunCommand`), which must have
+a trigger of type `"command"` whose `event` matches `event.type`; its trigger
+conditions apply, nothing else is checked again.
 
 ```jsonc
-// subject: "workflow.command.run"
+// subject: "workflow.command.execute"
 {
   "workflowId": "3f1c…",
   "event": {                     // the invocation; the run's ${trigger...}
-    "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...",
-    "platform": "twitch", "triggeredBy": "twitch",
+    "specversion": "1.0.0", "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...",
+    "sessionId": "...", "platform": "twitch", "triggeredBy": "twitch",
     "data": { "command": "hug", "chatter": "wolfy", "text": "", "args": [], "variables": {}, "rawMessage": "!hug", "platform": "twitch" }
   }
 }

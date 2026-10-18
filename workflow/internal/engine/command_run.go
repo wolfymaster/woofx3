@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -28,7 +29,10 @@ const (
 //
 // Whoever asks has already matched the command and checked its cooldown and
 // who may run it, so this decides nothing about the command; it refuses only
-// what is not a command's workflow. The workflow's trigger conditions still
+// what is not a command's workflow, or an event that is not the one the
+// workflow's trigger names: its steps read `${trigger.data...}` in that
+// event's shape, so another command's event would run them on the wrong
+// payload. The workflow's trigger conditions still
 // apply, as they would to an event, since an author can add them.
 //
 // Only a workflow whose trigger has type "command" runs this way. Such a
@@ -48,6 +52,9 @@ func (e *Engine[TServices]) RunCommand(run CommandRun) (CommandRunOutcome, strin
 	}
 	if def.Trigger == nil || def.Trigger.Type != types.TriggerTypeCommand {
 		return "", "", fmt.Errorf("RunCommand: workflow %s is not a command's workflow", def.ID)
+	}
+	if !eventmatch.Matches(def.Trigger.Event, run.Event.Type) {
+		return "", "", fmt.Errorf("RunCommand: workflow %s runs on %q, not on %q", def.ID, def.Trigger.Event, run.Event.Type)
 	}
 
 	viewer := e.newViewerLoader(viewerTrigger(def), run.Event)

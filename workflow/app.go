@@ -177,7 +177,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	composite.Set(types.TriggerTypeEvent, eventReg)
 	composite.Set(types.TriggerTypeSchedule, a.scheduleReg)
 	// Nothing to subscribe: a command's commander runs its workflow by id
-	// (handleCommandRunEvent).
+	// (handleCommandExecuteEvent).
 	composite.Set(types.TriggerTypeCommand, triggers.NoopRegistrar{})
 	a.engine.Registry().SetRegistrar(composite)
 	a.engine.Registry().SetLogger(a.logger)
@@ -250,10 +250,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	}
 
 	// "Run this command's workflow", from whoever matched the command.
-	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowCommandRun), func(msg natsclient.Msg) {
-		a.handleCommandRunEvent(msg)
+	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowCommandExecute), func(msg natsclient.Msg) {
+		a.handleCommandExecuteEvent(msg)
 	}); err != nil {
-		a.logger.Error("Failed to subscribe to command run events", "error", err)
+		return fmt.Errorf("subscribe to %s: %w", cloudevents.SubjectWorkflowCommandExecute, err)
 	}
 
 	// "Run these actions now", from a caller that has actions and no workflow.
@@ -581,12 +581,12 @@ func (a *WorkflowApp) handleActionExecuteEvent(msg natsclient.Msg) {
 		"execution", executionID)
 }
 
-// commandRunMessage asks for the workflow a chat command is linked to to run.
+// commandExecuteMessage asks for the workflow a chat command is linked to to run.
 //
 // Decoded into a typed shape rather than through validateCloudEvent, like
 // actionExecuteMessage: the command's own event travels whole inside it,
 // because that event, not this envelope, is what the run reads as its trigger.
-type commandRunMessage struct {
+type commandExecuteMessage struct {
 	ID   string `json:"id"`
 	Data struct {
 		WorkflowID string       `json:"workflowId"`
@@ -594,9 +594,9 @@ type commandRunMessage struct {
 	} `json:"data"`
 }
 
-// handleCommandRunEvent runs a command's workflow for one invocation.
-func (a *WorkflowApp) handleCommandRunEvent(msg natsclient.Msg) {
-	var message commandRunMessage
+// handleCommandExecuteEvent runs a command's workflow for one invocation.
+func (a *WorkflowApp) handleCommandExecuteEvent(msg natsclient.Msg) {
+	var message commandExecuteMessage
 	if err := json.Unmarshal(msg.Data(), &message); err != nil {
 		a.logger.Error("Invalid command run event", "error", err, "subject", msg.Subject())
 		return
