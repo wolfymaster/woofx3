@@ -32,9 +32,15 @@ export interface ConditionConfig {
 // Schedule cron grammar follows robfig/cron/v3 (5-field, no seconds).
 // Examples: "0 * * * *" (top of every hour), "*/15 * * * *" (every 15 min).
 //
-// A "command" trigger belongs to the workflow a chat command runs: nothing
-// subscribes it, and only its command starts it. `event` is the command's
-// `chat.command.<slug>`, which the run reads as its trigger event.
+/**
+ * The trigger type of the workflow a chat command runs: nothing subscribes it,
+ * and only its command starts it. `event` is the command's
+ * `chat.command.<slug>`, which the run reads as its trigger event. Only the
+ * command writes such a workflow. Must match types.TriggerTypeCommand in
+ * workflow/internal/types/types.go.
+ */
+export const TRIGGER_TYPE_COMMAND = "command";
+
 export type TriggerConfig =
   | {
       type: "event";
@@ -50,7 +56,7 @@ export type TriggerConfig =
       order?: number;
     }
   | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] }
-  | { type: "command"; event: string; conditions?: ConditionConfig[] };
+  | { type: typeof TRIGGER_TYPE_COMMAND; event: string; conditions?: ConditionConfig[] };
 
 export interface AggregationConfig {
   strategy: "count" | "sum" | "threshold";

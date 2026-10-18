@@ -81,6 +81,9 @@ export interface ConfigBundleCommand {
   /** The tasks of the command's workflow, when it has one. The workflow itself
    *  is not among the bundle's workflows: it travels with its command. */
   steps?: TaskDefinition[];
+  /** Sub-workflow targets of `steps`, task id to workflow name, as on
+   *  ConfigBundleWorkflow; present with `steps`. */
+  workflowRefs?: Record<string, string>;
   groups: string[];
   usernames?: string[];
   requires: string[];

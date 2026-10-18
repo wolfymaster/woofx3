@@ -73,6 +73,13 @@ export interface Command {
    * "[]" when the command has no workflow.
    */
   stepsJson: string;
+  /**
+   * Why this command has no workflow when it should have one, or empty.
+   * Either db-proxy could not turn its actions into a workflow (it then
+   * keeps running actions_json, and the next start of db-proxy tries
+   * again), or the workflow named by workflow_id no longer exists.
+   */
+  workflowError: string;
 }
 
 /**
@@ -466,6 +473,7 @@ export const Command = {
       actionsJson: "",
       workflowId: "",
       stepsJson: "",
+      workflowError: "",
       ...msg,
     };
   },
@@ -525,6 +533,9 @@ export const Command = {
     }
     if (msg.stepsJson) {
       writer.writeString(24, msg.stepsJson);
+    }
+    if (msg.workflowError) {
+      writer.writeString(25, msg.workflowError);
     }
     return writer;
   },
@@ -597,6 +608,10 @@ export const Command = {
         }
         case 24: {
           msg.stepsJson = reader.readString();
+          break;
+        }
+        case 25: {
+          msg.workflowError = reader.readString();
           break;
         }
         default: {
@@ -1332,6 +1347,7 @@ export const CommandJSON = {
       actionsJson: "",
       workflowId: "",
       stepsJson: "",
+      workflowError: "",
       ...msg,
     };
   },
@@ -1385,6 +1401,9 @@ export const CommandJSON = {
     }
     if (msg.stepsJson) {
       json["stepsJson"] = msg.stepsJson;
+    }
+    if (msg.workflowError) {
+      json["workflowError"] = msg.workflowError;
     }
     return json;
   },
@@ -1453,6 +1472,10 @@ export const CommandJSON = {
     const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
     if (_stepsJson_) {
       msg.stepsJson = _stepsJson_;
+    }
+    const _workflowError_ = json["workflowError"] ?? json["workflow_error"];
+    if (_workflowError_) {
+      msg.workflowError = _workflowError_;
     }
     return msg;
   },

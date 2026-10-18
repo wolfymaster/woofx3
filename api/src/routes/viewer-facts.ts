@@ -57,7 +57,8 @@ export function viewerFacts(definitions: readonly viewer_fact.FactDefinition[]):
     }
     facts.push({ path, name: definition.name || path, description: definition.description, valueKind, window });
   }
-  return facts.sort((a, b) => a.path.localeCompare(b.path));
+  // By code unit, so the order is the same on every machine whatever its locale.
+  return facts.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 export const viewerFactsRoutes = routeModule({

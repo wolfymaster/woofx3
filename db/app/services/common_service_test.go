@@ -61,7 +61,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			visibility VARCHAR(20) NOT NULL DEFAULT 'restricted',
 			argument_pattern VARCHAR(255) NOT NULL DEFAULT '',
-			workflow_id TEXT
+			workflow_id TEXT,
+			workflow_error TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE workflow_definitions (
 			id TEXT PRIMARY KEY,

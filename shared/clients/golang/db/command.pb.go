@@ -67,7 +67,12 @@ type Command struct {
 	// The tasks of the workflow named by workflow_id, as that workflow stores
 	// them (its `steps`), so a reader of the command needs no second lookup.
 	// "[]" when the command has no workflow.
-	StepsJson     string `protobuf:"bytes,24,opt,name=steps_json,json=stepsJson,proto3" json:"steps_json,omitempty"`
+	StepsJson string `protobuf:"bytes,24,opt,name=steps_json,json=stepsJson,proto3" json:"steps_json,omitempty"`
+	// Why this command has no workflow when it should have one, or empty.
+	// Either db-proxy could not turn its actions into a workflow (it then
+	// keeps running actions_json, and the next start of db-proxy tries
+	// again), or the workflow named by workflow_id no longer exists.
+	WorkflowError string `protobuf:"bytes,25,opt,name=workflow_error,json=workflowError,proto3" json:"workflow_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -203,6 +208,13 @@ func (x *Command) GetWorkflowId() string {
 func (x *Command) GetStepsJson() string {
 	if x != nil {
 		return x.StepsJson
+	}
+	return ""
+}
+
+func (x *Command) GetWorkflowError() string {
+	if x != nil {
+		return x.WorkflowError
 	}
 	return ""
 }
@@ -728,7 +740,7 @@ var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
 	"\n" +
-	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbd\x04\n" +
+	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe4\x04\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x03 \x01(\tR\acommand\x12\x1a\n" +
@@ -749,7 +761,8 @@ const file_command_proto_rawDesc = "" +
 	"\vworkflow_id\x18\x17 \x01(\tR\n" +
 	"workflowId\x12\x1d\n" +
 	"\n" +
-	"steps_json\x18\x18 \x01(\tR\tstepsJsonJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x0eapplication_idR\x04typeR\n" +
+	"steps_json\x18\x18 \x01(\tR\tstepsJson\x12%\n" +
+	"\x0eworkflow_error\x18\x19 \x01(\tR\rworkflowErrorJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x0eapplication_idR\x04typeR\n" +
 	"type_valueR\n" +
 	"created_by\"q\n" +
 	"\x11GetCommandRequest\x12\x18\n" +

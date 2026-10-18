@@ -107,6 +107,18 @@ func TestRunCommandRefusesAWorkflowThatIsNotACommands(t *testing.T) {
 	}
 }
 
+func TestRunCommandRefusesAnotherCommandsEvent(t *testing.T) {
+	h := newManualHarness(t, hugCommandWorkflow())
+	event := hugEvent()
+	event.Type = "chat.command.lurk"
+	if _, _, err := h.engine.RunCommand(CommandRun{WorkflowID: "wf-hug", Event: event}); err == nil {
+		t.Fatal("the !hug workflow ran on the !lurk event")
+	}
+	if started := h.log.startedCount(); started != 0 {
+		t.Fatalf("a refused run started %d runs", started)
+	}
+}
+
 func TestRunCommandHonoursTriggerConditions(t *testing.T) {
 	h := newManualHarness(t, hugCommandWorkflow(
 		types.ConditionConfig{Field: "${trigger.data.chatter}", Operator: "eq", Value: "someone else"},

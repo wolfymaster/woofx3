@@ -9,6 +9,7 @@ import type {
   GroupSnapshot,
   UpdateCommandInput,
   UpdateGroupInput,
+  TaskDefinition,
   UpdateWorkflowInput,
   WorkflowDefinition,
   WorkflowMutationResult,
@@ -146,6 +147,22 @@ async function applyGroup(
   return { id, name: targetName, ...(warning ? { warning } : {}) };
 }
 
+/** `tasks` with each sub-workflow step named in `workflowRefs` pointed at
+ *  the id its target has here. */
+function withWorkflowIds(
+  tasks: TaskDefinition[],
+  workflowRefs: Record<string, string>,
+  workflows: Resolved
+): TaskDefinition[] {
+  return tasks.map((task) => {
+    const target = workflowRefs[task.id];
+    if (target === undefined || !task.workflow) {
+      return task;
+    }
+    return { ...task, workflow: { ...task.workflow, workflowId: workflows.id(target) } };
+  });
+}
+
 async function applyWorkflow(
   step: Extract<PlannedStep, { kind: "workflow" }>,
   writer: ConfigWriter,
@@ -153,13 +170,7 @@ async function applyWorkflow(
 ): Promise<Applied> {
   const { action, targetName } = step.planItem;
   const wf = step.item;
-  const tasks = wf.definition.tasks.map((task) => {
-    const target = wf.workflowRefs[task.id];
-    if (target === undefined || !task.workflow) {
-      return task;
-    }
-    return { ...task, workflow: { ...task.workflow, workflowId: workflows.id(target) } };
-  });
+  const tasks = withWorkflowIds(wf.definition.tasks, wf.workflowRefs, workflows);
   const definition: Omit<WorkflowDefinition, "id"> = { ...wf.definition, name: targetName, tasks };
 
   let id: string;
@@ -198,6 +209,7 @@ async function applyCommand(
   step: Extract<PlannedStep, { kind: "command" }>,
   writer: ConfigWriter,
   groups: Resolved,
+  workflows: Resolved,
   applyMembers: boolean
 ): Promise<Applied> {
   const { action, targetName } = step.planItem;
@@ -207,9 +219,10 @@ async function applyCommand(
   const usernames = [
     ...new Set([...(step.existing && action === "update" ? step.existing.usernames : []), ...bundleUsernames]),
   ];
+  const steps = withWorkflowIds(cmd.steps ?? [], cmd.workflowRefs ?? {}, workflows);
   const input: CreateCommandInput = {
     command: targetName,
-    ...(cmd.steps && cmd.steps.length > 0 ? { steps: cmd.steps } : { actions: cmd.actions }),
+    ...(steps.length > 0 ? { steps } : { actions: cmd.actions }),
     cooldown: cmd.cooldown,
     priority: cmd.priority,
     enabled: cmd.enabled,
@@ -304,7 +317,7 @@ export async function applyImport(
           applied = await applyWorkflow(step, writer, workflows);
           break;
         case "command":
-          applied = await applyCommand(step, writer, groups, options.applyMembers);
+          applied = await applyCommand(step, writer, groups, workflows, options.applyMembers);
           break;
       }
       resolved?.set(key, { id: applied.id });
