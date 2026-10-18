@@ -11,11 +11,17 @@
     ],
     ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     ["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Changelog" }],
-    ["@semantic-release/exec", { "verifyReleaseCmd": ".github/scripts/release-tag.sh ${nextRelease.gitTag}" }],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": ".github/scripts/release-tag.sh ${nextRelease.gitTag}",
+        "prepareCmd": "node .github/scripts/capability-since.mjs ${nextRelease.gitTag}"
+      }
+    ],
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md"],
+        "assets": ["CHANGELOG.md", "docs/services/engine-capabilities.md"],
         "message": "chore(release): ${nextRelease.gitTag} [skip ci]\n\n${nextRelease.notes}"
       }
     ],

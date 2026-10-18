@@ -123,10 +123,13 @@ describe("ENGINE_CAPABILITIES", () => {
     }
   });
 
-  test("documents every id in docs/services/engine-capabilities.md", () => {
+  test("documents every id in docs/services/engine-capabilities.md, with its first release", () => {
     const doc = readFileSync(DOC_PATH, "utf8");
     for (const id of Object.values(ENGINE_CAPABILITIES)) {
-      expect(doc).toContain(`| \`${id}\` |`);
+      const row = doc.split("\n").find((line) => line.startsWith(`| \`${id}\` |`));
+      expect(row, `no row for ${id}`).toBeDefined();
+      // Since: the tag .github/scripts/capability-since.mjs records, or unreleased until then.
+      expect(row?.split(" | ")[1]).toMatch(/^(v\d+\.\d+\.\d+|unreleased)$/);
     }
   });
 });
