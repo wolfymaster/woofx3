@@ -198,6 +198,7 @@ export const RPC_METHODS = [
   "updateScene",
   "deleteScene",
   "getSceneEditorSession",
+  "repairScene",
   "listAlertCompositions",
   "getAlertComposition",
   "createAlertComposition",

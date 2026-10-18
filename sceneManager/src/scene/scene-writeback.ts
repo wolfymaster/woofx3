@@ -39,6 +39,29 @@ export class SceneWriteback {
   }
 
   /**
+   * Write the scene back now rather than after the autosave delay, waiting out
+   * a write in flight first. True when the row holds what the scene holds
+   * afterwards; false when the write failed (it is retried on the next
+   * change) or cannot be made (no persister, or a column could not be read).
+   */
+  async writeNow(held: HeldScene): Promise<boolean> {
+    if (held.save.timer !== null) {
+      this.clock.clearTimeout(held.save.timer);
+      held.save.timer = null;
+    }
+    while (held.save.writing !== null) {
+      await held.save.writing;
+    }
+    if (this.persister === null || unreadableColumns(held).length > 0) {
+      return false;
+    }
+    held.save.dirty = true;
+    held.save.docsDirty = true;
+    await this.write(held);
+    return !held.save.dirty;
+  }
+
+  /**
    * Stop scheduling writes, and write each scene's unwritten changes, waiting
    * out any write in flight and trying `CLOSE_WRITE_ATTEMPTS` times.
    */
