@@ -65,3 +65,42 @@ jobs:
       - name: Test
         working-directory: ${{ matrix.module }}
         run: go test ./...
+
+  # The postgres migration tests skip without a database to run against, so
+  # the check job above only proves them against sqlite. This one gives them a
+  # throwaway postgres: the dialect-specific SQL (jsonb casts and scans,
+  # INSERT ... SELECT copies) is only exercised here.
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: woofx3
+          POSTGRES_PASSWORD: migration-test
+          POSTGRES_DB: woofx3_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U woofx3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: db/go.sum
+
+      # One package at a time: every test in it clears the shared database
+      # when it ends and refuses to start on one that is not empty.
+      - name: Test postgres migrations
+        working-directory: db
+        env:
+          WOOFX3_MIGRATION_TEST_POSTGRES_URL: postgres://woofx3:migration-test@127.0.0.1:5432/woofx3_migration_test?sslmode=disable
+        run: go test -p 1 -count=1 ./database/migrate/migrations/postgres/...
