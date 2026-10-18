@@ -162,6 +162,13 @@ pub struct ManifestAction {
     /// an opaque map and never validates it against this.
     #[serde(default)]
     pub returns: Option<ManifestDataShape>,
+    /// A one-line English template the UI renders for a configured step that
+    /// runs this action, e.g. `"Add {amount} to {counter}"`. Each `{fieldId}`
+    /// names a field in `schema`; the UI substitutes the configured value or
+    /// that field's `missingText`. Absent means the UI builds a sentence from
+    /// the setting labels.
+    #[serde(default)]
+    pub sentence: Option<String>,
     /// Only a system module may use this action in a workflow or command.
     /// For actions that do what module code is not allowed to ask for through
     /// a sandbox capability, so an uploaded module cannot reach the same
@@ -260,8 +267,8 @@ pub struct ManifestConfigField {
     /// to the UI.
     #[serde(default)]
     pub any_text: Option<String>,
-    /// Trigger config only - the words a trigger `sentence` shows in place of
-    /// this field while it is required and has no value yet.
+    /// The words a trigger or action `sentence` shows in place of this field
+    /// while it is required and has no value yet.
     #[serde(default)]
     pub missing_text: Option<String>,
 }
@@ -1696,6 +1703,7 @@ impl ManifestAction {
             call: resolved_call.to_string(),
             params_schema: encode_field_list(Some(&self.schema)),
             returns: encode_data_shape(self.returns.as_ref()),
+            sentence: self.sentence.clone().unwrap_or_default(),
             taxonomy: self.taxonomy.clone(),
             manifest_id: self.id.clone(),
         }
@@ -2541,6 +2549,36 @@ mod tests {
         }))
         .expect("parse");
         assert_eq!(t.to_input("test_mod").sentence, "");
+    }
+
+    #[test]
+    fn action_to_input_projects_sentence() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "increment",
+            "name": "Increment",
+            "type": "function",
+            "function": "increment",
+            "sentence": "Add {amount} to {counter}",
+            "schema": [
+                { "id": "counter", "label": "Counter", "type": "text" },
+                { "id": "amount", "label": "Amount", "type": "number" }
+            ]
+        }))
+        .expect("parse");
+        let input = a.to_input("function", "mod:function:increment");
+        assert_eq!(input.sentence, "Add {amount} to {counter}");
+    }
+
+    #[test]
+    fn action_to_input_defaults_sentence_to_empty() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "alert",
+            "name": "Alert",
+            "type": "native",
+            "handler": "alert"
+        }))
+        .expect("parse");
+        assert_eq!(a.to_input("alert", "").sentence, "");
     }
 
     #[test]
