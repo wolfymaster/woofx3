@@ -309,8 +309,8 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `description` | string | no | Short prose rendered as muted helper text below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
-| `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. |
-| `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it is required and has no value yet. Must be non-empty when present. |
+| `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. Rejected on an action field, which is never set to "any". |
+| `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it has no value: for a required field, until one is set; for an optional action field, whenever the step leaves it empty, so they say what the action does then. Must be non-empty when present. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -763,9 +763,11 @@ An action's `sentence` is how the UI describes a configured step that runs it, s
 
 - the value the user configured, or the option's label for a `select`
 - the field's short variable name when the value is taken from an earlier step or the trigger (`next` for `${increment.next}`)
-- the field's `missingText` (rendered as a warning) while a required field has no value yet
+- the field's `missingText` while the field is empty: rendered as a warning for a required field, which the step cannot run without, and as ordinary words for an optional one, which the action runs without
 
-`anyText` does not apply: an action field is never set to "any".
+An optional field's `missingText` says what the action does with the field left empty, in words that fit the sentence. The bundled `counter.increment` declares `"sentence": "Add {amount} to {target}"` and gives its optional `amount` the missing text `"the counter's step"`, so a step that leaves it empty reads "Add the counter's step to Deaths". An optional field with neither a value nor `missingText` is worded by the UI.
+
+`anyText` does not apply, and is rejected on an action field: an action field is never set to "any".
 
 A sentence is rejected at install, naming the action, when it is empty or only whitespace, when a brace is unbalanced, nested or encloses nothing, or when a placeholder is not the `id` of a field in the action's `schema`. The rules and their reasons are the trigger ones.
 
