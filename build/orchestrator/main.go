@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/wolfymaster/woofx3/common/logging"
+	woofx3runtime "github.com/wolfymaster/woofx3/common/runtime"
 )
 
 func main() {
@@ -67,7 +68,11 @@ func main() {
 		}
 	}
 
-	config, err := loadConfig(configPath, os.Getenv)
+	getenv, err := runtimeGetenv()
+	if err != nil {
+		fatalExit(sharedLogger, reporter, "Failed to load the runtime configuration", err)
+	}
+	config, err := loadConfig(configPath, getenv)
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to load configuration", err)
 	}
@@ -167,6 +172,19 @@ func findConfigFile(startDir string) string {
 	return ""
 }
 
+// runtimeGetenv looks up WOOFX3_* settings the way the services do: the
+// process environment, then .env, then .woofx3.json, found from the working
+// directory the services inherit. Health endpoints expanded with it follow a
+// port set in .woofx3.json (apiPort) as well as one set by variable, so they
+// check the port the service actually listens on.
+func runtimeGetenv() (func(string) string, error) {
+	env, err := woofx3runtime.LoadRuntimeEnv(nil)
+	if err != nil {
+		return nil, err
+	}
+	return func(key string) string { return env[key] }, nil
+}
+
 // loadConfig reads services.json and resolves each enabled service's health
 // endpoint with getenv, so a configuration that leaves one unusable stops the
 // orchestrator before it starts anything.
@@ -200,6 +218,17 @@ func loadConfig(path string, getenv func(string) string) (*Config, error) {
 // resolveService fills in the fields of service that loadConfig derives from
 // its configuration.
 func resolveService(service Service, getenv func(string) string) (Service, error) {
+	service.healthTimeout = defaultHealthTimeout
+	if service.HealthTimeout != "" {
+		timeout, err := time.ParseDuration(service.HealthTimeout)
+		if err != nil {
+			return Service{}, fmt.Errorf("service %s: health_timeout: %w", service.Name, err)
+		}
+		if timeout <= 0 {
+			return Service{}, fmt.Errorf("service %s: health_timeout %q is not positive", service.Name, service.HealthTimeout)
+		}
+		service.healthTimeout = timeout
+	}
 	if service.HealthEndpoint != "" {
 		healthURL, err := resolveEndpoint(service.HealthEndpoint, getenv)
 		if err != nil {
@@ -226,10 +255,16 @@ type Service struct {
 	Args           []string `json:"args,omitempty"`
 	Dependencies   []string `json:"dependencies,omitempty"`
 	HealthEndpoint string   `json:"health_endpoint,omitempty"`
+	// HealthTimeout is how long the service has, once started, to pass its
+	// health check before it is reported unhealthy: a Go duration such as
+	// "90s". Empty means defaultHealthTimeout.
+	HealthTimeout string `json:"health_timeout,omitempty"`
 
-	// healthURL is HealthEndpoint with its variables expanded, set by
-	// resolveService; empty when the service has no health endpoint.
-	healthURL string
+	// healthURL and healthTimeout are HealthEndpoint, with its variables
+	// expanded, and HealthTimeout, parsed, as set by resolveService.
+	// healthURL is empty when the service has no health endpoint.
+	healthURL     string
+	healthTimeout time.Duration
 }
 
 // serviceTypeBinary marks a service the build does not produce: a prebuilt
@@ -309,16 +344,70 @@ func (status ServiceStatus) String() string {
 // running, and its health check either timed out while it started or failed
 // later. Holding its dependents back for good would stop the engine on a
 // check that may be wrong (a port mismatch, a slow dependency) rather than
-// on the service itself, so the check gates them for healthCheckTimeout at
-// most.
+// on the service itself, so the check gates them for the service's health
+// timeout at most.
 func (status ServiceStatus) satisfiesDependents() bool {
 	return status == StatusHealthy || status == StatusUnhealthy
 }
 
-// healthCheckTimeout is how long a starting service with a health endpoint
-// has to pass its check before it is reported unhealthy and its dependents
-// start anyway.
-const healthCheckTimeout = 30 * time.Second
+// defaultHealthTimeout is how long a starting service with a health endpoint
+// has to pass its check, unless its health_timeout says otherwise, before it
+// is reported unhealthy and its dependents start anyway.
+const defaultHealthTimeout = 30 * time.Second
+
+// stopGracePeriod is how long the services have, after the orchestrator is
+// asked to stop, to exit on their own before whatever is left is killed. A
+// host that stops the engine must allow more than this before it kills the
+// container.
+const stopGracePeriod = 25 * time.Second
+
+// dependentStopPeriod is the part of stopGracePeriod the services that depend
+// on others get to themselves, before the services they depend on are asked
+// to stop. It must cover the workflow engine's Stop (DefaultStopDrainTimeout
+// plus DefaultStopSettleTimeout in workflow/internal/engine/engine.go), which
+// records through db-proxy the runs it could not finish. What is left of
+// stopGracePeriod must cover db-proxy's final flush of module storage to its
+// replica (closeTimeout in db/app/services/module_storage_service.go); a kill
+// mid-flush loses the writes since the last sync.
+const dependentStopPeriod = 8 * time.Second
+
+// exitRecordPeriod bounds how long StopAll waits, once it has killed what was
+// left, for the supervisor's goroutines to record and report each exit. A
+// killed process exits at once unless the OS cannot reap it; the bound keeps
+// such a process from holding the orchestrator open.
+const exitRecordPeriod = 5 * time.Second
+
+// supervisorConfig holds the supervisor's timings. defaultSupervisorConfig is
+// what the orchestrator runs with.
+type supervisorConfig struct {
+	// pollInterval paces each service's loop (start requests and health
+	// checks) and each wait for a service's dependencies.
+	pollInterval time.Duration
+	// startFailureDelay is the pause in a service's loop after it failed to
+	// start.
+	startFailureDelay time.Duration
+	// healthRequestTimeout bounds one health check request.
+	healthRequestTimeout time.Duration
+	// stopPollInterval paces the checks for exited services while stopping.
+	stopPollInterval time.Duration
+	// stopGracePeriod, dependentStopPeriod and exitRecordPeriod default to,
+	// and are described by, the constants of the same names.
+	stopGracePeriod     time.Duration
+	dependentStopPeriod time.Duration
+	exitRecordPeriod    time.Duration
+}
+
+func defaultSupervisorConfig() supervisorConfig {
+	return supervisorConfig{
+		pollInterval:         1 * time.Second,
+		startFailureDelay:    5 * time.Second,
+		healthRequestTimeout: 5 * time.Second,
+		stopPollInterval:     100 * time.Millisecond,
+		stopGracePeriod:      stopGracePeriod,
+		dependentStopPeriod:  dependentStopPeriod,
+		exitRecordPeriod:     exitRecordPeriod,
+	}
+}
 
 // ServiceProcess is one supervised service. Cmd, Status and LastHealth are
 // shared between the service's goroutines and guarded by the supervisor's mu.
@@ -326,17 +415,21 @@ type ServiceProcess struct {
 	Service Service
 	// healthURL is the service's health endpoint with its variables expanded,
 	// or empty when it has none.
-	healthURL  string
-	Cmd        serviceHandle
-	Status     ServiceStatus
-	LastHealth time.Time
-	CanStart   chan bool
+	healthURL string
+	// healthTimeout is how long the service has to pass its health check
+	// once started.
+	healthTimeout time.Duration
+	Cmd           serviceHandle
+	Status        ServiceStatus
+	LastHealth    time.Time
+	CanStart      chan bool
 }
 
 type Supervisor struct {
 	baseDir  string
 	services map[string]*ServiceProcess
 	logger   *slog.Logger
+	config   supervisorConfig
 
 	// ctx is cancelled when StopAll begins. The polling loops and in-flight
 	// health checks end with it; stopping the processes does not use it.
@@ -373,7 +466,9 @@ type Supervisor struct {
 
 func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
+	config := defaultSupervisorConfig()
 	supervisor := &Supervisor{
+		config:       config,
 		baseDir:      baseDir,
 		services:     make(map[string]*ServiceProcess),
 		stopping:     false,
@@ -382,18 +477,23 @@ func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 		cancel:       cancel,
 		clock:        systemClock{},
 		startProcess: startOSProcess,
-		httpClient:   &http.Client{Timeout: healthRequestTimeout},
+		httpClient:   &http.Client{Timeout: config.healthRequestTimeout},
 	}
 	supervisor.checkHealth = supervisor.checkHealthOverHTTP
 	return supervisor
 }
 
+// AddService adds a service that resolveService has resolved.
 func (s *Supervisor) AddService(service Service) {
+	if service.healthTimeout <= 0 {
+		panic(fmt.Sprintf("service %s was added without being resolved", service.Name))
+	}
 	s.services[service.Name] = &ServiceProcess{
-		Service:   service,
-		healthURL: service.healthURL,
-		Status:    StatusStopped,
-		CanStart:  make(chan bool, 1),
+		Service:       service,
+		healthURL:     service.healthURL,
+		healthTimeout: service.healthTimeout,
+		Status:        StatusStopped,
+		CanStart:      make(chan bool, 1),
 	}
 }
 
@@ -474,7 +574,7 @@ func (s *Supervisor) spawn(f func()) {
 
 func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 	for {
-		if err := s.clock.Sleep(s.ctx, 1*time.Second); err != nil {
+		if err := s.clock.Sleep(s.ctx, s.config.pollInterval); err != nil {
 			return
 		}
 
@@ -504,28 +604,6 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 	}
 }
 
-// stopGracePeriod is how long the services have, after the orchestrator is
-// asked to stop, to exit on their own before whatever is left is killed. A
-// host that stops the engine must allow more than this before it kills the
-// container.
-const stopGracePeriod = 25 * time.Second
-
-// dependentStopPeriod is the part of stopGracePeriod the services that depend
-// on others get to themselves, before the services they depend on are asked
-// to stop. It must cover the workflow engine's Stop (DefaultStopDrainTimeout
-// plus DefaultStopSettleTimeout in workflow/internal/engine/engine.go), which
-// records through db-proxy the runs it could not finish. What is left of
-// stopGracePeriod must cover db-proxy's final flush of module storage to its
-// replica (closeTimeout in db/app/services/module_storage_service.go); a kill
-// mid-flush loses the writes since the last sync.
-const dependentStopPeriod = 8 * time.Second
-
-// exitRecordPeriod bounds how long StopAll waits, once it has killed what was
-// left, for the supervisor's goroutines to record and report each exit. A
-// killed process exits at once unless the OS cannot reap it; the bound keeps
-// such a process from holding the orchestrator open.
-const exitRecordPeriod = 5 * time.Second
-
 // StopAll stops the services in two phases and kills whatever is still running
 // once the grace period is over. It returns once every service's exit has been
 // reported, so the caller's own final status comes after them.
@@ -536,7 +614,7 @@ const exitRecordPeriod = 5 * time.Second
 // write down and announce, and it can do neither after the database proxy and
 // the bus have gone.
 func (s *Supervisor) StopAll() {
-	deadline := s.clock.Now().Add(stopGracePeriod)
+	deadline := s.clock.Now().Add(s.config.stopGracePeriod)
 	s.mu.Lock()
 	s.stopping = true
 	s.stopDeadline = deadline
@@ -553,7 +631,7 @@ func (s *Supervisor) StopAll() {
 	}
 
 	s.signalStop(dependents)
-	s.waitForExit(dependents, s.clock.Now().Add(dependentStopPeriod))
+	s.waitForExit(dependents, s.clock.Now().Add(s.config.dependentStopPeriod))
 	s.signalStop(foundations)
 	s.waitForExit(append(dependents, foundations...), deadline)
 
@@ -567,7 +645,7 @@ func (s *Supervisor) StopAll() {
 	s.waitForGoroutines()
 }
 
-// waitForGoroutines waits up to exitRecordPeriod for the supervisor's
+// waitForGoroutines waits up to the exit record period for the supervisor's
 // goroutines to end. It uses the wall clock rather than s.clock: what it waits
 // for is the OS reaping killed processes.
 func (s *Supervisor) waitForGoroutines() {
@@ -576,12 +654,12 @@ func (s *Supervisor) waitForGoroutines() {
 		s.goroutines.Wait()
 		close(done)
 	}()
-	timer := time.NewTimer(exitRecordPeriod)
+	timer := time.NewTimer(s.config.exitRecordPeriod)
 	defer timer.Stop()
 	select {
 	case <-done:
 	case <-timer.C:
-		s.logger.Warn("Services were killed but their exits were not recorded in time", "waited", exitRecordPeriod)
+		s.logger.Warn("Services were killed but their exits were not recorded in time", "waited", s.config.exitRecordPeriod)
 	}
 }
 
@@ -622,7 +700,7 @@ func (s *Supervisor) stopLateStart(serviceProcess *ServiceProcess, process servi
 	s.requestStop(name, process)
 	running := func() bool { return s.process(serviceProcess) == process }
 	for running() && s.clock.Now().Before(deadline) {
-		s.clock.Sleep(context.Background(), 100*time.Millisecond)
+		s.clock.Sleep(context.Background(), s.config.stopPollInterval)
 	}
 	if running() {
 		s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
@@ -635,7 +713,7 @@ func (s *Supervisor) stopLateStart(serviceProcess *ServiceProcess, process servi
 func (s *Supervisor) waitForExit(names []string, deadline time.Time) {
 	// s.ctx is already cancelled while stopping.
 	for s.anyRunning(names) && s.clock.Now().Before(deadline) {
-		s.clock.Sleep(context.Background(), 100*time.Millisecond)
+		s.clock.Sleep(context.Background(), s.config.stopPollInterval)
 	}
 }
 
@@ -662,7 +740,7 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 				if err := s.startServiceProcess(serviceProcess, binaryPath); err != nil {
 					s.logger.Error("Failed to start service", "service", service.Name, "error", err)
 					s.reporter.failure(service.Name, fmt.Sprintf("failed to start: %v", err))
-					if err := s.clock.Sleep(s.ctx, 5*time.Second); err != nil {
+					if err := s.clock.Sleep(s.ctx, s.config.startFailureDelay); err != nil {
 						return
 					}
 				}
@@ -670,7 +748,7 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 		default:
 			s.updateHealth(serviceProcess)
 		}
-		if err := s.clock.Sleep(s.ctx, 1*time.Second); err != nil {
+		if err := s.clock.Sleep(s.ctx, s.config.pollInterval); err != nil {
 			return
 		}
 	}
@@ -703,7 +781,7 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 			if s.transition(serviceProcess, process, StatusStarting, StatusHealthy) {
 				s.logger.Info("Service is healthy", "service", service.Name)
 			}
-		} else if s.clock.Now().Sub(lastHealth) > healthCheckTimeout {
+		} else if s.clock.Now().Sub(lastHealth) > serviceProcess.healthTimeout {
 			if s.transition(serviceProcess, process, StatusStarting, StatusUnhealthy) {
 				s.logger.Warn("Service health check timeout, starting its dependents anyway", "service", service.Name, "endpoint", healthURL)
 			}
@@ -884,9 +962,6 @@ func resolveEndpoint(endpoint string, getenv func(string) string) (string, error
 	}
 	return expanded, nil
 }
-
-// healthRequestTimeout bounds one health check request.
-const healthRequestTimeout = 5 * time.Second
 
 // checkHealthOverHTTP reports whether a GET of endpoint answers 200. A
 // cancelled ctx ends the request at once.

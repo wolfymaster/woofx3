@@ -244,9 +244,10 @@ privileges before migrating or starting anything.
 The orchestrator starts each service once the services it depends on are up.
 The api declares `GET /ready` as its health endpoint in `services.json`, so the
 edge starts once the api reports ready, or after 30 seconds if it has not by
-then; a timeout is logged as a warning and never stops the engine. The probe
-goes to `127.0.0.1` on `WOOFX3_API_PORT`, or `5050` (the baked `apiPort`) when
-that is unset.
+then; a timeout is logged as a warning and never stops the engine. A service's
+`health_timeout` in `services.json` raises that limit for it. The probe goes to
+`127.0.0.1` on the port the api reads: `WOOFX3_API_PORT`, else `apiPort` in
+`.woofx3.json` (`5050` in the image), else `5050`.
 
 ## Module storage
 

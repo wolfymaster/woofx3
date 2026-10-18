@@ -27,6 +27,16 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// mustResolve resolves a service as loadConfig would, with no variables set.
+func mustResolve(t *testing.T, service Service) Service {
+	t.Helper()
+	resolved, err := resolveService(service, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("resolve %s: %v", service.Name, err)
+	}
+	return resolved
+}
+
 func TestAServiceIsLaunchedWithItsDeclaredArguments(t *testing.T) {
 	service := Service{Name: "edge", Args: []string{"run", "--config", "Caddyfile.edge"}}
 
@@ -92,7 +102,7 @@ func TestStopAllWaitsForAServiceToExitAfterSIGTERM(t *testing.T) {
 	script := `trap 'sleep 1; touch "$0"; exit 0' TERM; while true; do sleep 0.05; done`
 
 	supervisor := NewSupervisor(t.TempDir(), discardLogger())
-	supervisor.AddService(Service{Name: "slow", Args: []string{"-c", script, marker}})
+	supervisor.AddService(mustResolve(t, Service{Name: "slow", Args: []string{"-c", script, marker}}))
 	if err := supervisor.startServiceProcess(supervisor.services["slow"], "/bin/sh"); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -124,12 +134,12 @@ func TestStopAllStopsDependentsBeforeWhatTheyDependOn(t *testing.T) {
 	foundationScript := `trap '[ -f "$0" ] && touch "$1"; exit 0' TERM; while true; do sleep 0.05; done`
 
 	supervisor := NewSupervisor(t.TempDir(), discardLogger())
-	supervisor.AddService(Service{Name: "foundation", Args: []string{"-c", foundationScript, dependentExited, stoppedInOrder}})
-	supervisor.AddService(Service{
+	supervisor.AddService(mustResolve(t, Service{Name: "foundation", Args: []string{"-c", foundationScript, dependentExited, stoppedInOrder}}))
+	supervisor.AddService(mustResolve(t, Service{
 		Name:         "dependent",
 		Args:         []string{"-c", dependentScript, dependentExited},
 		Dependencies: []string{"foundation"},
-	})
+	}))
 	for _, name := range []string{"foundation", "dependent"} {
 		if err := supervisor.startServiceProcess(supervisor.services[name], "/bin/sh"); err != nil {
 			t.Fatalf("start %s: %v", name, err)
@@ -319,11 +329,7 @@ func newFakeSupervisor(t *testing.T, services []Service, healthy func(endpoint s
 		if err := os.WriteFile(filepath.Join(baseDir, binaryFileName(service)), []byte{}, 0o755); err != nil {
 			t.Fatalf("write %s: %v", service.Name, err)
 		}
-		resolved, err := resolveService(service, func(string) string { return "" })
-		if err != nil {
-			t.Fatalf("resolve %s: %v", service.Name, err)
-		}
-		supervisor.AddService(resolved)
+		supervisor.AddService(mustResolve(t, service))
 	}
 	return supervisor, processes, output
 }
@@ -421,8 +427,8 @@ func TestAServiceThatNeverPassesItsHealthCheckIsReportedUnhealthyAndTheEngineNev
 			unhealthyAt = at
 		}
 	}
-	if waited := unhealthyAt.Sub(startedAt); waited <= healthCheckTimeout {
-		t.Errorf("reported unhealthy %s after starting, want after the %s timeout", waited, healthCheckTimeout)
+	if waited := unhealthyAt.Sub(startedAt); waited <= defaultHealthTimeout {
+		t.Errorf("reported unhealthy %s after starting, want after the %s timeout", waited, defaultHealthTimeout)
 	}
 }
 
@@ -912,7 +918,7 @@ func TestAHealthCheckEndsWhenItsContextIsCancelled(t *testing.T) {
 		if healthy {
 			t.Error("a cancelled check passed")
 		}
-	case <-time.After(healthRequestTimeout / 2):
+	case <-time.After(defaultSupervisorConfig().healthRequestTimeout / 2):
 		t.Fatal("the check did not end when its context was cancelled")
 	}
 }
@@ -956,5 +962,107 @@ func TestServiceStatusEventsAreWrittenUnderTheSupervisorLock(t *testing.T) {
 	}
 	if n := output.unlocked.Load(); n != 0 {
 		t.Fatalf("%d status events were written without the supervisor lock held", n)
+	}
+}
+
+func TestHealthTimeoutDefaultsAndParses(t *testing.T) {
+	cases := []struct {
+		name    string
+		timeout string
+		want    time.Duration
+	}{
+		{name: "unset", want: defaultHealthTimeout},
+		{name: "set", timeout: "90s", want: 90 * time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolved, err := resolveService(Service{Name: "api", HealthTimeout: tc.timeout}, func(string) string { return "" })
+			if err != nil {
+				t.Fatalf("resolveService: %v", err)
+			}
+			if resolved.healthTimeout != tc.want {
+				t.Errorf("health timeout = %s, want %s", resolved.healthTimeout, tc.want)
+			}
+		})
+	}
+}
+
+func TestAnInvalidHealthTimeoutIsRejected(t *testing.T) {
+	for _, timeout := range []string{"90", "soon", "0s", "-5s"} {
+		t.Run(timeout, func(t *testing.T) {
+			if _, err := resolveService(Service{Name: "api", HealthTimeout: timeout}, func(string) string { return "" }); err == nil {
+				t.Errorf("health_timeout %q was accepted", timeout)
+			}
+		})
+	}
+}
+
+// First-run migrations and boot module installs can keep the api from ready
+// for longer than the default; a service's own health_timeout is what holds.
+func TestAServicesOwnHealthTimeoutGatesItsUnhealthyReport(t *testing.T) {
+	supervisor, _, output := newFakeSupervisor(t, []Service{
+		{Name: "api", Output: "api", HealthEndpoint: "http://127.0.0.1:5050/ready", HealthTimeout: "90s"},
+	}, func(string) bool { return false })
+
+	supervisor.StartInOrder([]string{"api"})
+	waitFor(t, "unhealthy", func() bool {
+		return slices.Contains(summary(output.events(t)), "service:api:unhealthy")
+	})
+	supervisor.StopAll()
+
+	var startedAt, unhealthyAt time.Time
+	for _, event := range output.events(t) {
+		at, err := time.Parse(time.RFC3339Nano, event.Time)
+		if err != nil {
+			t.Fatalf("event time %q: %v", event.Time, err)
+		}
+		switch event.Status {
+		case "starting":
+			startedAt = at
+		case "unhealthy":
+			unhealthyAt = at
+		}
+	}
+	if waited := unhealthyAt.Sub(startedAt); waited <= 90*time.Second {
+		t.Errorf("reported unhealthy %s after starting, want after its 90s health_timeout", waited)
+	}
+}
+
+// The api reads its port from WOOFX3_API_PORT or, failing that, apiPort in
+// .woofx3.json; its health check must follow both.
+func TestTheAPIsHealthCheckFollowsItsPortFromTheRuntimeConfig(t *testing.T) {
+	cases := []struct {
+		name    string
+		envPort string
+		want    string
+	}{
+		{name: "apiPort in .woofx3.json", want: "http://127.0.0.1:6061/ready"},
+		{name: "WOOFX3_API_PORT beats the file", envPort: "7071", want: "http://127.0.0.1:7071/ready"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, ".woofx3.json"), []byte(`{"apiPort": "6061"}`), 0o644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			t.Setenv("WOOFX3_ROOT", root)
+			t.Setenv("WOOFX3_CONFIG", "")
+			t.Setenv("WOOFX3_API_PORT", tc.envPort)
+
+			getenv, err := runtimeGetenv()
+			if err != nil {
+				t.Fatalf("runtimeGetenv: %v", err)
+			}
+			config, err := loadConfig(filepath.Join("..", "config", "services.json"), getenv)
+			if err != nil {
+				t.Fatalf("load services.json: %v", err)
+			}
+
+			for _, service := range config.Services {
+				if service.Name == "api" && service.healthURL != tc.want {
+					t.Errorf("api health endpoint = %q, want %q", service.healthURL, tc.want)
+				}
+			}
+		})
 	}
 }

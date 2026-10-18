@@ -184,7 +184,7 @@ func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Superv
 	}
 	for name, process := range processes {
 		process.name = name
-		supervisor.AddService(Service{Name: name, Output: name})
+		supervisor.AddService(mustResolve(t, Service{Name: name, Output: name}))
 		binaryPath := filepath.Join(supervisor.baseDir, name)
 		if err := os.WriteFile(binaryPath, []byte{}, 0o755); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -268,8 +268,7 @@ func TestAServiceStartedWhileStoppingIsAskedToStopAtOnce(t *testing.T) {
 	calls := &callLog{}
 	supervisor := NewSupervisor(t.TempDir(), discardLogger())
 	supervisor.clock = clock
-	service := Service{Name: "late", Output: "late"}
-	supervisor.AddService(service)
+	supervisor.AddService(mustResolve(t, Service{Name: "late", Output: "late"}))
 	binaryPath := filepath.Join(supervisor.baseDir, "late")
 	if err := os.WriteFile(binaryPath, []byte{}, 0o755); err != nil {
 		t.Fatalf("write: %v", err)
