@@ -172,9 +172,8 @@ func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Superv
 	if err != nil {
 		t.Fatalf("reporter: %v", err)
 	}
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), reporter, childIO{})
 	supervisor.clock = clock
-	supervisor.reporter = reporter
 	supervisor.startProcess = func(path string, argv []string, attr *os.ProcAttr) (serviceHandle, error) {
 		process := processes[filepath.Base(path)]
 		process.clock = clock
@@ -266,7 +265,7 @@ func TestStopAllReturnsOnceEveryServicesExitIsReported(t *testing.T) {
 func TestAServiceStartedWhileStoppingIsAskedToStopAtOnce(t *testing.T) {
 	clock := newFakeClock()
 	calls := &callLog{}
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
 	supervisor.clock = clock
 	supervisor.AddService(mustResolve(t, Service{Name: "late", Output: "late"}))
 	binaryPath := filepath.Join(supervisor.baseDir, "late")

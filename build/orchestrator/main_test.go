@@ -98,15 +98,17 @@ func TestStopAllWaitsForAServiceToExitAfterSIGTERM(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("windows cannot deliver SIGTERM")
 	}
-	marker := filepath.Join(t.TempDir(), "exited-cleanly")
-	script := `trap 'sleep 1; touch "$0"; exit 0' TERM; while true; do sleep 0.05; done`
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "exited-cleanly")
+	trapped := filepath.Join(directory, "trapped")
+	script := `trap 'sleep 1; touch "$0"; exit 0' TERM; touch "$1"; while true; do sleep 0.05; done`
 
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
-	supervisor.AddService(mustResolve(t, Service{Name: "slow", Args: []string{"-c", script, marker}}))
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
+	supervisor.AddService(mustResolve(t, Service{Name: "slow", Args: []string{"-c", script, marker, trapped}}))
 	if err := supervisor.startServiceProcess(supervisor.services["slow"], "/bin/sh"); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	waitForFiles(t, trapped)
 
 	started := time.Now()
 	supervisor.StopAll()
@@ -128,16 +130,21 @@ func TestStopAllStopsDependentsBeforeWhatTheyDependOn(t *testing.T) {
 	directory := t.TempDir()
 	dependentExited := filepath.Join(directory, "dependent-exited")
 	stoppedInOrder := filepath.Join(directory, "stopped-in-order")
-	dependentScript := `trap 'sleep 1; touch "$0"; exit 0' TERM; while true; do sleep 0.05; done`
+	dependentTrapped := filepath.Join(directory, "dependent-trapped")
+	foundationTrapped := filepath.Join(directory, "foundation-trapped")
+	dependentScript := `trap 'sleep 1; touch "$0"; exit 0' TERM; touch "$1"; while true; do sleep 0.05; done`
 	// Records, at the moment it is asked to stop, whether the dependent had
 	// already finished.
-	foundationScript := `trap '[ -f "$0" ] && touch "$1"; exit 0' TERM; while true; do sleep 0.05; done`
+	foundationScript := `trap '[ -f "$0" ] && touch "$1"; exit 0' TERM; touch "$2"; while true; do sleep 0.05; done`
 
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
-	supervisor.AddService(mustResolve(t, Service{Name: "foundation", Args: []string{"-c", foundationScript, dependentExited, stoppedInOrder}}))
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
+	supervisor.AddService(mustResolve(t, Service{
+		Name: "foundation",
+		Args: []string{"-c", foundationScript, dependentExited, stoppedInOrder, foundationTrapped},
+	}))
 	supervisor.AddService(mustResolve(t, Service{
 		Name:         "dependent",
-		Args:         []string{"-c", dependentScript, dependentExited},
+		Args:         []string{"-c", dependentScript, dependentExited, dependentTrapped},
 		Dependencies: []string{"foundation"},
 	}))
 	for _, name := range []string{"foundation", "dependent"} {
@@ -145,7 +152,7 @@ func TestStopAllStopsDependentsBeforeWhatTheyDependOn(t *testing.T) {
 			t.Fatalf("start %s: %v", name, err)
 		}
 	}
-	time.Sleep(200 * time.Millisecond)
+	waitForFiles(t, dependentTrapped, foundationTrapped)
 
 	started := time.Now()
 	supervisor.StopAll()
@@ -287,6 +294,18 @@ func summary(events []statusEvent) []string {
 	return out
 }
 
+// waitForFiles waits until each path exists: a test service's signal that it
+// has installed its stop handler.
+func waitForFiles(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, path := range paths {
+		waitFor(t, path, func() bool {
+			_, err := os.Stat(path)
+			return err == nil
+		})
+	}
+}
+
 func waitFor(t *testing.T, what string, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -320,11 +339,10 @@ func newFakeSupervisor(t *testing.T, services []Service, healthy func(endpoint s
 	}
 	processes := &fakeProcesses{}
 
-	supervisor := NewSupervisor(baseDir, discardLogger())
+	supervisor := NewSupervisor(baseDir, discardLogger(), reporter, childIO{})
 	supervisor.clock = clock
 	supervisor.startProcess = processes.start
 	supervisor.checkHealth = func(_ context.Context, endpoint string) bool { return healthy(endpoint) }
-	supervisor.reporter = reporter
 	for _, service := range services {
 		if err := os.WriteFile(filepath.Join(baseDir, binaryFileName(service)), []byte{}, 0o755); err != nil {
 			t.Fatalf("write %s: %v", service.Name, err)
@@ -459,7 +477,7 @@ func TestStatusLinesAreJSONWithTheEventTime(t *testing.T) {
 	}
 
 	reporter.service("api", StatusHealthy, 42, "")
-	reporter.skipped("edge", "prebuilt binary not installed")
+	reporter.service("edge", StatusSkipped, 0, "prebuilt binary not installed")
 	reporter.ready()
 	reporter.failure("", "services.json not found")
 	reporter.stopped()
@@ -532,14 +550,15 @@ func TestParseSupervisionOptions(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		got, err := parseSupervisionOptions(tc.args, env(tc.env))
-		if err != nil {
-			t.Errorf("%s: %v", tc.name, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("%s: options = %+v, want %+v", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseSupervisionOptions(tc.args, env(tc.env))
+			if err != nil {
+				t.Fatalf("parseSupervisionOptions: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("options = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 
 	if _, err := parseSupervisionOptions(nil, env(map[string]string{statusModeEnv: "stdout"})); err == nil {
@@ -551,7 +570,7 @@ func TestParseSupervisionOptions(t *testing.T) {
 }
 
 func TestServicesShareTheOrchestratorStdioByDefault(t *testing.T) {
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
 
 	files, closeFiles, err := supervisor.childFiles("api")
 	if err != nil {
@@ -575,11 +594,12 @@ func TestServiceOutputGoesToItsOwnFileWhenStdoutCarriesStatus(t *testing.T) {
 	}
 	defer devNull.Close()
 
-	supervisor := NewSupervisor(baseDir, discardLogger())
 	// As main sets it up: the orchestrator's own log directory, which the
 	// data directory relocates.
-	supervisor.childOutputDirectory = logging.ResolveLogDirectory(filepath.Join(baseDir, "logs"))
-	supervisor.childStdin = devNull
+	supervisor := NewSupervisor(baseDir, discardLogger(), nil, childIO{
+		stdin:           devNull,
+		outputDirectory: logging.ResolveLogDirectory(filepath.Join(baseDir, "logs")),
+	})
 
 	files, closeFiles, err := supervisor.childFiles("api")
 	if err != nil {
@@ -614,7 +634,9 @@ func TestWaitForEOFReturnsWhenTheParentClosesStdin(t *testing.T) {
 
 	returned := make(chan struct{})
 	go func() {
-		waitForEOF(reader)
+		if err := waitForEOF(reader); err != nil {
+			t.Errorf("waitForEOF: %v", err)
+		}
 		close(returned)
 	}()
 
@@ -798,7 +820,7 @@ func TestShippedServicesJSONChecksWhereEachServiceListens(t *testing.T) {
 				t.Fatalf("load services.json: %v", err)
 			}
 
-			supervisor := NewSupervisor(t.TempDir(), discardLogger())
+			supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
 			for _, service := range config.Services {
 				if service.Enabled {
 					supervisor.AddService(service)
@@ -898,7 +920,7 @@ func TestAHealthCheckPassesOnlyOn200(t *testing.T) {
 				w.WriteHeader(tc.status)
 			}))
 			defer server.Close()
-			supervisor := NewSupervisor(t.TempDir(), discardLogger())
+			supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
 
 			if got := supervisor.checkHealth(context.Background(), server.URL); got != tc.want {
 				t.Errorf("check of a %d = %v, want %v", tc.status, got, tc.want)
@@ -921,7 +943,7 @@ func TestAHealthCheckEndsWhenItsContextIsCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 	defer close(release)
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
 	ctx, cancel := context.WithCancel(context.Background())
 
 	result := make(chan bool, 1)

@@ -117,10 +117,6 @@ func (r *statusReporter) service(name string, status ServiceStatus, pid int, mes
 	r.emit(statusEvent{Event: eventService, Name: name, Status: status.String(), PID: pid, Message: message})
 }
 
-func (r *statusReporter) skipped(name string, message string) {
-	r.emit(statusEvent{Event: eventService, Name: name, Status: "skipped", Message: message})
-}
-
 func (r *statusReporter) ready() {
 	r.emit(statusEvent{Event: eventReady})
 }
@@ -171,16 +167,21 @@ func (r *statusReporter) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, closer := range r.closers {
-		closer.Close()
+		if err := closer.Close(); err != nil {
+			r.logger.Warn("Could not close the status output", "error", err)
+		}
 	}
+	r.closers = nil
 	r.writers = nil
 }
 
-// waitForEOF returns once reader is closed. The orchestrator's parent holds
-// the other end of its stdin, so EOF means the parent has gone, even when it
-// was killed without a chance to stop the orchestrator.
-func waitForEOF(reader io.Reader) {
-	io.Copy(io.Discard, reader)
+// waitForEOF returns once reader is closed, or with the error that ended the
+// read. The orchestrator's parent holds the other end of its stdin, so EOF
+// means the parent has gone, even when it was killed without a chance to stop
+// the orchestrator.
+func waitForEOF(reader io.Reader) error {
+	_, err := io.Copy(io.Discard, reader)
+	return err
 }
 
 // childOutputFileName is the file in the log directory that receives a

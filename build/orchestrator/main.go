@@ -77,10 +77,9 @@ func main() {
 		fatalExit(sharedLogger, reporter, "Failed to load configuration", err)
 	}
 
-	supervisor := NewSupervisor(baseDir, logger)
-	supervisor.reporter = reporter
+	var serviceIO childIO
 	if options.statusToStdout {
-		supervisor.childOutputDirectory = logging.ResolveLogDirectory(logDirectory)
+		serviceIO.outputDirectory = logging.ResolveLogDirectory(logDirectory)
 	}
 	if options.exitOnStdinEOF {
 		// The services must not read the stdin whose EOF stops the
@@ -90,8 +89,9 @@ func main() {
 			fatalExit(sharedLogger, reporter, "Failed to open the null device", err)
 		}
 		defer devNull.Close()
-		supervisor.childStdin = devNull
+		serviceIO.stdin = devNull
 	}
+	supervisor := NewSupervisor(baseDir, logger, reporter, serviceIO)
 
 	for _, service := range servicesToRun(baseDir, config, logger, reporter) {
 		supervisor.AddService(service)
@@ -113,7 +113,9 @@ func main() {
 	stdinClosed := make(chan struct{})
 	if options.exitOnStdinEOF {
 		go func() {
-			waitForEOF(os.Stdin)
+			if err := waitForEOF(os.Stdin); err != nil {
+				logger.Warn("Reading standard input failed, stopping as if it had closed", "error", err)
+			}
 			close(stdinClosed)
 		}()
 	}
@@ -285,7 +287,7 @@ func servicesToRun(baseDir string, config *Config, logger *slog.Logger, reporter
 			binaryPath := filepath.Join(baseDir, binaryFileName(service))
 			if _, err := os.Stat(binaryPath); err != nil {
 				logger.Warn("Skipping service: its prebuilt binary is not installed", "service", service.Name, "path", binaryPath)
-				reporter.skipped(service.Name, "prebuilt binary not installed")
+				reporter.service(service.Name, StatusSkipped, 0, "prebuilt binary not installed")
 				continue
 			}
 		}
@@ -321,6 +323,9 @@ const (
 	StatusStarting
 	StatusHealthy
 	StatusUnhealthy
+	// StatusSkipped is a service that is not run: its prebuilt binary is not
+	// installed.
+	StatusSkipped
 )
 
 // String is the status as reported in status events.
@@ -334,6 +339,8 @@ func (status ServiceStatus) String() string {
 		return "healthy"
 	case StatusUnhealthy:
 		return "unhealthy"
+	case StatusSkipped:
+		return "skipped"
 	default:
 		panic(fmt.Sprintf("unknown service status %d", int(status)))
 	}
@@ -457,14 +464,22 @@ type Supervisor struct {
 	// connections.
 	httpClient *http.Client
 	reporter   *statusReporter
-	// childStdin replaces the orchestrator's stdin for the services when set.
-	childStdin *os.File
-	// childOutputDirectory, when set, receives each service's stdout and
-	// stderr in a file of its own instead of the orchestrator's.
-	childOutputDirectory string
+	childIO    childIO
 }
 
-func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
+// childIO is what the services' standard streams are connected to. The zero
+// value shares the orchestrator's own.
+type childIO struct {
+	// stdin replaces the orchestrator's stdin for the services when set.
+	stdin *os.File
+	// outputDirectory, when set, receives each service's stdout and stderr in
+	// a file of its own instead of the orchestrator's.
+	outputDirectory string
+}
+
+// NewSupervisor returns a supervisor of no services yet. reporter may be nil,
+// to report nothing.
+func NewSupervisor(baseDir string, logger *slog.Logger, reporter *statusReporter, serviceIO childIO) *Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
 	config := defaultSupervisorConfig()
 	supervisor := &Supervisor{
@@ -478,6 +493,8 @@ func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 		clock:        systemClock{},
 		startProcess: startOSProcess,
 		httpClient:   &http.Client{Timeout: config.healthRequestTimeout},
+		reporter:     reporter,
+		childIO:      serviceIO,
 	}
 	supervisor.checkHealth = supervisor.checkHealthOverHTTP
 	return supervisor
@@ -911,22 +928,27 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 // function that closes the ones opened for it.
 func (s *Supervisor) childFiles(serviceName string) ([]*os.File, func(), error) {
 	stdin := os.Stdin
-	if s.childStdin != nil {
-		stdin = s.childStdin
+	if s.childIO.stdin != nil {
+		stdin = s.childIO.stdin
 	}
-	if s.childOutputDirectory == "" {
+	if s.childIO.outputDirectory == "" {
 		return []*os.File{stdin, os.Stdout, os.Stderr}, func() {}, nil
 	}
 
-	if err := os.MkdirAll(s.childOutputDirectory, 0o755); err != nil {
+	if err := os.MkdirAll(s.childIO.outputDirectory, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("create service output directory: %w", err)
 	}
-	path := filepath.Join(s.childOutputDirectory, childOutputFileName(serviceName))
+	path := filepath.Join(s.childIO.outputDirectory, childOutputFileName(serviceName))
 	output, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open service output file: %w", err)
 	}
-	return []*os.File{stdin, output, output}, func() { output.Close() }, nil
+	closeOutput := func() {
+		if err := output.Close(); err != nil {
+			s.logger.Warn("Could not close the service output file", "service", serviceName, "error", err)
+		}
+	}
+	return []*os.File{stdin, output, output}, closeOutput, nil
 }
 
 // resolveEndpoint fills ${NAME} and ${NAME:-default} in a health endpoint
