@@ -15,16 +15,16 @@
 // a composition, and the converted document goes through it like any other.
 //
 // The conversion keeps what the old shape said and nothing more: the stacking
-// order becomes `z` keys, a field the placement also has is read with the
-// placement's default when it is missing or out of range, any other field of
-// an entry is kept in the placement's `extra`, and there are no behaviors. It
+// order becomes `z` keys, each entry becomes a placement through
+// `placementOfStored` (the same mapping a scene row's entries use), and there
+// are no behaviors. It
 // does not judge the widgets themselves (whether the canonical id names an
 // installed widget that may play in an alert); the caller that knows the
 // catalog does that on the composition, the same way for both shapes.
 
 import { isPlainObject, normalizeComposition } from "./composition";
-import { PLACEMENT_NAME_MAX_LENGTH } from "./entity-types";
 import { evenKeys } from "./keys";
+import { placementOfStored } from "./stored-placement";
 import type { CompositionDocument, NodeId, PlacementDocument } from "./types";
 
 /** The old shape's outer fields; each widget entry is read defensively. */
@@ -94,7 +94,7 @@ export function compositionOfLegacyAlert(legacy: LegacyAlertLayout): LegacyAlert
   const widgets: Record<NodeId, PlacementDocument> = {};
   const indexOf: Record<NodeId, number> = {};
   stackingOrder(kept).forEach(({ id, index, entry }, rank) => {
-    widgets[id] = placementOf(entry, zKeys[rank] as string);
+    widgets[id] = placementOfStored(entry, zKeys[rank] as string);
     indexOf[id] = index;
   });
   return { doc: { layout: canvas, widgets, behaviors: {} }, indexOf, skipped };
@@ -126,54 +126,6 @@ export function alertCompositionOf(value: unknown): CompositionDocument | null {
   return normalizeComposition(value);
 }
 
-/**
- * Entry fields the conversion reads. `zIndex` is read into the order of `z`
- * keys rather than kept, so it cannot disagree with them.
- */
-const LEGACY_ENTRY_FIELDS: ReadonlySet<string> = new Set([
-  "id",
-  "widgetCanonicalId",
-  "position",
-  "size",
-  "settings",
-  "name",
-  "visible",
-  "rotation",
-  "opacity",
-  "locked",
-  "zIndex",
-]);
-
-function placementOf(entry: Record<string, unknown>, z: string): PlacementDocument {
-  const position = isPlainObject(entry.position) ? entry.position : {};
-  const size = isPlainObject(entry.size) ? entry.size : {};
-  const extra: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(entry)) {
-    if (!LEGACY_ENTRY_FIELDS.has(key)) {
-      extra[key] = value;
-    }
-  }
-  return {
-    widget: typeof entry.widgetCanonicalId === "string" ? entry.widgetCanonicalId : "",
-    x: numberOr(position.x, 0),
-    y: numberOr(position.y, 0),
-    width: numberOr(position.width, numberOr(size.width, 0)),
-    height: numberOr(position.height, numberOr(size.height, 0)),
-    visible: typeof entry.visible === "boolean" ? entry.visible : true,
-    z,
-    settings: isPlainObject(entry.settings) ? entry.settings : {},
-    name: typeof entry.name === "string" && entry.name.length <= PLACEMENT_NAME_MAX_LENGTH ? entry.name : "",
-    rotation: numberOr(entry.rotation, 0),
-    opacity: isFiniteNumber(entry.opacity) && entry.opacity >= 0 && entry.opacity <= 1 ? entry.opacity : 1,
-    locked: typeof entry.locked === "boolean" ? entry.locked : false,
-    extra,
-  };
-}
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  return isFiniteNumber(value) ? value : fallback;
 }

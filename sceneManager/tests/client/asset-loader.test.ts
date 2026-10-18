@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AssetCache, moduleIdOfWidget, readAheadAssetPaths } from "../../public/scene-manager/asset-loader";
+import { AssetCache, readAheadAssetPaths } from "../../public/scene-manager/asset-loader";
 
 const ORIGIN = "http://scene.test";
 
@@ -15,15 +15,6 @@ function respond(...responses: Array<Response | Error>) {
     return next;
   });
 }
-
-describe("moduleIdOfWidget", () => {
-  it("takes the stable module id from a canonical widget id", () => {
-    expect(moduleIdOfWidget("woofx3:widget:lottie")).toBe("woofx3");
-    expect(moduleIdOfWidget("spotify:1.0.0:abc1234:widget:now_playing")).toBe("spotify");
-    expect(moduleIdOfWidget("lottie")).toBeNull();
-    expect(moduleIdOfWidget(":widget:lottie")).toBeNull();
-  });
-});
 
 describe("AssetCache.scopedTo", () => {
   const json = () => new Response("{}", { headers: { "Content-Type": "application/json" } });

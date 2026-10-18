@@ -8,7 +8,12 @@
 // nothing here is saved or sent on. Opened top-level, the page does nothing.
 
 import { encodePlacementBoot, type WidgetEvent } from "@woofx3/module-sdk";
-import { type CompositionDocument, isDeclaredBehaviorKinds, NO_DECLARED_KINDS } from "@woofx3/scene/model";
+import {
+  type CompositionDocument,
+  isDeclaredBehaviorKinds,
+  moduleIdOfCanonicalId,
+  NO_DECLARED_KINDS,
+} from "@woofx3/scene/model";
 import { fitCanvas, isPreviewMessage, type PreviewProblem, type PreviewReport } from "@woofx3/scene/runtime";
 import {
   createCompositionPreview,
@@ -18,7 +23,7 @@ import {
   type PreviewFrameMeta,
   type PreviewFrameSpec,
 } from "./composition-preview";
-import { AssetCache, moduleIdOfWidget, readAheadAssetPaths } from "./asset-loader";
+import { AssetCache, readAheadAssetPaths } from "./asset-loader";
 import { replaceMediaUrls } from "./media-url";
 import { PAGE_CLOCK } from "./page-clock";
 import { createFrameLoadHandler, WidgetBridge } from "./widget-bridge";
@@ -108,7 +113,7 @@ function mountFrame(
   facts: PreviewFrameFacts
 ): PreviewFrame {
   const instanceId = `preview.${spec.widgetId}`;
-  const moduleId = moduleIdOfWidget(spec.widgetCanonicalId) ?? "";
+  const moduleId = moduleIdOfCanonicalId(spec.widgetCanonicalId) ?? "";
   const nonce = generateNonce();
   const iframe = document.createElement("iframe");
   iframe.className = "widget-frame";
