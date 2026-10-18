@@ -846,3 +846,45 @@ func TestAHealthCheckEndsWhenItsContextIsCancelled(t *testing.T) {
 		t.Fatal("the check did not end when its context was cancelled")
 	}
 }
+
+// lockCheckingWriter records whether the supervisor's lock was held each time
+// a status line was written.
+type lockCheckingWriter struct {
+	syncBuffer
+	supervisor *Supervisor
+	unlocked   atomic.Int32
+}
+
+func (w *lockCheckingWriter) Write(p []byte) (int, error) {
+	if w.supervisor.mu.TryLock() {
+		w.supervisor.mu.Unlock()
+		w.unlocked.Add(1)
+	}
+	return w.syncBuffer.Write(p)
+}
+
+// A service's status events must go out in the order its status changed. The
+// exit of its process can change its status at any moment, so each event is
+// written while the change it reports still holds the supervisor's lock.
+func TestServiceStatusEventsAreWrittenUnderTheSupervisorLock(t *testing.T) {
+	supervisor, _, _ := newFakeSupervisor(t, []Service{
+		{Name: "api", Output: "api", HealthEndpoint: "http://127.0.0.1:5050/ready"},
+	}, func(string) bool { return true })
+	output := &lockCheckingWriter{supervisor: supervisor}
+	reporter, err := newStatusReporter(supervisionOptions{statusToStdout: true}, output, newFakeClock(), discardLogger())
+	if err != nil {
+		t.Fatalf("reporter: %v", err)
+	}
+	supervisor.reporter = reporter
+
+	supervisor.StartInOrder([]string{"api"})
+	waitFor(t, "ready", func() bool { return hasEvent(output.events(t), eventReady) })
+	supervisor.StopAll()
+
+	if got := summary(output.events(t)); !reflect.DeepEqual(got, []string{"service:api:starting", "service:api:healthy", "ready", "service:api:stopped"}) {
+		t.Fatalf("events = %v", got)
+	}
+	if n := output.unlocked.Load(); n != 0 {
+		t.Fatalf("%d status events were written without the supervisor lock held", n)
+	}
+}

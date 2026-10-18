@@ -698,6 +698,11 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 // health check that passes just as the process exits must not mark the
 // stopped service healthy. It reports the change and, the first time every
 // service is healthy, that the engine is ready.
+//
+// Status events about a service are emitted under s.mu, with the change they
+// report, so they go out in the order the changes were made: a health check
+// passing as the process exits cannot be reported after its stopped event.
+// The reporter's lock is only ever taken inside s.mu, never the other way.
 func (s *Supervisor) transition(serviceProcess *ServiceProcess, process serviceHandle, from ServiceStatus, to ServiceStatus) bool {
 	s.mu.Lock()
 	if serviceProcess.Cmd != process || serviceProcess.Status != from {
@@ -708,16 +713,16 @@ func (s *Supervisor) transition(serviceProcess *ServiceProcess, process serviceH
 	if to == StatusHealthy {
 		serviceProcess.LastHealth = s.clock.Now()
 	}
+	s.reporter.service(serviceProcess.Service.Name, to, process.Pid(), "")
 	nowReady := !s.readyReported && s.allHealthyLocked()
 	if nowReady {
 		s.readyReported = true
+		s.reporter.ready()
 	}
 	s.mu.Unlock()
 
-	s.reporter.service(serviceProcess.Service.Name, to, process.Pid(), "")
 	if nowReady {
 		s.logger.Info("All services are healthy")
-		s.reporter.ready()
 	}
 	return true
 }
@@ -760,9 +765,9 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	serviceProcess.LastHealth = s.clock.Now()
 	startedWhileStopping := s.stopping
 	stopDeadline := s.stopDeadline
+	s.reporter.service(service.Name, StatusStarting, process.Pid(), "")
 	s.mu.Unlock()
 	s.logger.Info("Started service", "service", service.Name, "pid", process.Pid())
-	s.reporter.service(service.Name, StatusStarting, process.Pid(), "")
 	if startedWhileStopping {
 		s.spawn(func() { s.stopLateStart(serviceProcess, process, stopDeadline) })
 	}
@@ -779,8 +784,8 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 		serviceProcess.Cmd = nil
 		serviceProcess.Status = StatusStopped
 		stopping := s.stopping
-		s.mu.Unlock()
 		s.reporter.service(service.Name, StatusStopped, process.Pid(), exit)
+		s.mu.Unlock()
 
 		if !stopping {
 			s.spawn(func() { s.monitorDependencies(serviceProcess) })
