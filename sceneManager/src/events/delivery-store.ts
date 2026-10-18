@@ -1,16 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { type DeliveryFrame, encodeStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
 import type { DbClient } from "../db";
-
-/** One addressed delivery pushed down the SSE stream — always scoped
- *  to a single target widget instance, even though many instances can
- *  share the same parent eventId from one fan-out. */
-export interface DeliveryFrame {
-  eventId: string;
-  instanceId: string;
-  type: string;
-  key: string;
-  value: unknown;
-}
 
 interface OpenDelivery {
   eventId: string;
@@ -42,17 +32,10 @@ export interface OpenDeliveryRef {
   startedAt: number | null;
 }
 
-/** SSE event name telling a scene's pages to drop deliveries the server closed. */
-export const CANCEL_EVENT = "cancel";
-
 type SseController = ReadableStreamDefaultController<Uint8Array>;
 
 const REDELIVER_AFTER_MS = 5_000;
 const SWEEP_INTERVAL_MS = 3_000;
-
-function encodeSseFrame(frame: DeliveryFrame): Uint8Array {
-  return new TextEncoder().encode("event: delivery\ndata: " + JSON.stringify(frame) + "\n\n");
-}
 
 function safeParseJson(value: string): unknown {
   try {
@@ -419,7 +402,7 @@ export class DeliveryStore {
     for (const eventId of eventIds) {
       this.deleteOpen(sceneId, eventId, instanceId);
     }
-    this.broadcast(sceneId, CANCEL_EVENT, { instanceId, eventIds });
+    this.broadcast(sceneId, { kind: "cancel", frame: { instanceId, eventIds } });
     return Promise.all(
       eventIds.map(async (eventId) => {
         try {
@@ -448,14 +431,14 @@ export class DeliveryStore {
    * delivery it is not recorded, acked or redelivered: it carries state
    * the page can ask for again, not an event it must not miss.
    */
-  broadcast(sceneId: string, event: string, data: unknown): void {
-    const bytes = new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  broadcast(sceneId: string, frame: StreamFrame): void {
+    const bytes = new TextEncoder().encode(encodeStreamFrame(frame));
     for (const controller of this.connections.get(sceneId) ?? []) {
       try {
         controller.enqueue(bytes);
       } catch (err) {
         this.logger.warn("delivery-store: SSE push failed", {
-          event,
+          event: frame.kind,
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -470,7 +453,7 @@ export class DeliveryStore {
 
   private sendTo(controller: SseController, frame: DeliveryFrame): void {
     try {
-      controller.enqueue(encodeSseFrame(frame));
+      controller.enqueue(new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame })));
     } catch (err) {
       this.logger.warn("delivery-store: SSE push failed", {
         error: err instanceof Error ? err.message : String(err),

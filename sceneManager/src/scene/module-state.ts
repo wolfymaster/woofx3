@@ -1,4 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
+import type { ModuleStateFrame, StreamFrame } from "../../contract/overlay-stream";
 
 /**
  * Module storage as a scene's widgets see it through `host.storage`.
@@ -37,16 +38,7 @@ export interface ModuleStateDb {
 /** Where changes are pushed: the scenes with an open event stream. `DeliveryStore` implements it. */
 export interface ModuleStateScenes {
   connectedSceneIds(): string[];
-  broadcast(sceneId: string, event: string, data: unknown): void;
-}
-
-/** SSE event name of a pushed change. Must match `parseSseChunk` in public/scene-manager/event-source.ts. */
-export const MODULE_STATE_EVENT = "module-state";
-
-export interface ModuleStateFrame {
-  moduleId: string;
-  key: string;
-  value: unknown;
+  broadcast(sceneId: string, frame: StreamFrame): void;
 }
 
 const RESOURCE_STATE_PREFIX = "state:";
@@ -296,7 +288,7 @@ export class ModuleStateWatch {
     }
     for (const { sceneId } of watching) {
       const frame: ModuleStateFrame = { moduleId, key, value: reading };
-      this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+      this.scenes.broadcast(sceneId, { kind: "module-state", frame });
     }
   }
 
@@ -325,7 +317,7 @@ export class ModuleStateWatch {
     for (const { sceneId, readAs } of watching) {
       for (const as of readAs) {
         const frame: ModuleStateFrame = { moduleId: as, key, value };
-        this.scenes.broadcast(sceneId, MODULE_STATE_EVENT, frame);
+        this.scenes.broadcast(sceneId, { kind: "module-state", frame });
       }
     }
   }

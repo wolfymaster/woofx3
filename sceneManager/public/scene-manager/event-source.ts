@@ -21,39 +21,16 @@
 // ReconnectCoordinator (see reconnect-coordinator.ts).
 
 import { ALWAYS_PROBE, type ReconnectCoordinator } from "./reconnect-coordinator";
-import { type SceneOpsEvent, parseSceneOpsEvent } from "./scene-document";
+import {
+  type CancelFrame,
+  type DeliveryFrame,
+  type ModuleStateFrame,
+  parseStreamFrame,
+} from "../../contract/overlay-stream";
+import type { SceneOpsEvent } from "./scene-document";
 
-export interface DeliveryFrame {
-  eventId: string;
-  instanceId: string;
-  type: string;
-  key: string;
-  value: unknown;
-}
-
-/** A change to a module storage key some widget on the page reads. */
-export interface ModuleStateFrame {
-  moduleId: string;
-  key: string;
-  value: unknown;
-}
-
-/** Deliveries to one widget instance the server closed before it finished them. */
-export interface CancelFrame {
-  instanceId: string;
-  eventIds: string[];
-}
-
-/** The stream carries five frame kinds: per-event deliveries, module
- *  storage changes, the `hello` control frame the server opens every
- *  stream with, `scene-ops` when the scene changes, and `cancel` when an
- *  operator skips or clears alerts. */
-export type SceneFrame =
-  | { kind: "delivery"; frame: DeliveryFrame }
-  | { kind: "module-state"; frame: ModuleStateFrame }
-  | { kind: "hello"; bootId: string; seq: number; draftSeq: number }
-  | { kind: "scene-ops"; event: SceneOpsEvent }
-  | { kind: "cancel"; frame: CancelFrame };
+/** The stream's frames, as the scene manager writes them (see contract/overlay-stream.ts). */
+export type { CancelFrame, DeliveryFrame, ModuleStateFrame, StreamFrame } from "../../contract/overlay-stream";
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
@@ -87,82 +64,6 @@ export interface SceneEventSourceOptions {
   reconnectMaxMs?: number;
   coordinator?: ReconnectCoordinator;
   random?: () => number;
-}
-
-/** Parses one SSE frame into its typed form, or `null` for
- *  comment/keepalive lines and malformed payloads. */
-export function parseSseChunk(rawEvent: string): SceneFrame | null {
-  const lines = rawEvent.split("\n");
-  const eventLine = lines.find((line) => line.startsWith("event:"));
-  const dataLine = lines.find((line) => line.startsWith("data:"));
-  if (!dataLine) {
-    return null;
-  }
-  const json = dataLine.slice("data:".length).trim();
-  if (!json) {
-    return null;
-  }
-  const eventName = eventLine ? eventLine.slice("event:".length).trim() : "";
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(json) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object") {
-    return null;
-  }
-
-  if (eventName === "hello") {
-    return typeof parsed.bootId === "string" && parsed.bootId.length > 0
-      ? {
-          kind: "hello",
-          bootId: parsed.bootId,
-          seq: typeof parsed.seq === "number" ? parsed.seq : 0,
-          draftSeq: typeof parsed.draftSeq === "number" ? parsed.draftSeq : 0,
-        }
-      : null;
-  }
-
-  if (eventName === "scene-ops") {
-    const event = parseSceneOpsEvent(parsed);
-    return event ? { kind: "scene-ops", event } : null;
-  }
-
-  if (eventName === "cancel") {
-    const { instanceId, eventIds } = parsed;
-    return typeof instanceId === "string" &&
-      Array.isArray(eventIds) &&
-      eventIds.every((id): id is string => typeof id === "string")
-      ? { kind: "cancel", frame: { instanceId, eventIds } }
-      : null;
-  }
-
-  if (eventName === "module-state") {
-    return typeof parsed.moduleId === "string" && typeof parsed.key === "string"
-      ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } }
-      : null;
-  }
-
-  if (
-    typeof parsed.eventId === "string" &&
-    typeof parsed.instanceId === "string" &&
-    typeof parsed.type === "string" &&
-    typeof parsed.key === "string"
-  ) {
-    return {
-      kind: "delivery",
-      frame: {
-        eventId: parsed.eventId,
-        instanceId: parsed.instanceId,
-        type: parsed.type,
-        key: parsed.key,
-        value: parsed.value,
-      },
-    };
-  }
-  return null;
 }
 
 export class SceneEventSource {
@@ -287,7 +188,7 @@ export class SceneEventSource {
         while ((sep = buffer.indexOf("\n\n")) !== -1) {
           const rawEvent = buffer.slice(0, sep);
           buffer = buffer.slice(sep + 2);
-          const parsed = parseSseChunk(rawEvent);
+          const parsed = parseStreamFrame(rawEvent);
           if (!parsed) {
             continue;
           }

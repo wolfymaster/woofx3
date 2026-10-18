@@ -4595,6 +4595,116 @@ function toWidgetEvent(item) {
   };
 }
 
+// ../shared/clients/typescript/api/scene-editor/document.ts
+var import_ot_json0 = __toESM(require_lib(), 1);
+var json0 = import_ot_json0.default.type;
+function isVersion(value) {
+  return value === "draft" || value === "published";
+}
+var MAX_OPS_BYTES = 64 * 1024;
+var MAX_DOCUMENT_BYTES = 1024 * 1024;
+var MAX_ITEM_BYTES = 3 * MAX_DOCUMENT_BYTES;
+function applyOps(doc, ops) {
+  return json0.apply(structuredClone(doc), structuredClone([...ops]));
+}
+function mergeMeta(meta, changes) {
+  const next = { ...meta };
+  for (const [id, value] of Object.entries(changes)) {
+    if (value === null) {
+      delete next[id];
+    } else {
+      next[id] = value;
+    }
+  }
+  return next;
+}
+function parseSnapshot(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const doc = normalizeComposition(value.doc);
+  if (typeof value.sceneId !== "string" || typeof value.seq !== "number" || doc === null || !isPlainObject(value.meta)) {
+    return null;
+  }
+  return { ...value, doc };
+}
+function parseSceneOpsEvent(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  if (typeof value.seq !== "number" || !Array.isArray(value.ops) || !isPlainObject(value.meta)) {
+    return null;
+  }
+  if (value.version !== undefined && !isVersion(value.version)) {
+    return null;
+  }
+  return value;
+}
+var COMPONENT_KEYS = new Set(["p", "oi", "od", "si", "sd"]);
+
+// contract/overlay-stream.ts
+function parseStreamFrame(rawEvent) {
+  const lines = rawEvent.split(`
+`);
+  const eventLine = lines.find((line) => line.startsWith("event:"));
+  const dataLine = lines.find((line) => line.startsWith("data:"));
+  if (!dataLine) {
+    return null;
+  }
+  const json = dataLine.slice("data:".length).trim();
+  if (!json) {
+    return null;
+  }
+  const eventName = eventLine ? eventLine.slice("event:".length).trim() : "";
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  switch (eventName) {
+    case "hello":
+      return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? {
+        kind: "hello",
+        bootId: parsed.bootId,
+        seq: typeof parsed.seq === "number" ? parsed.seq : 0,
+        draftSeq: typeof parsed.draftSeq === "number" ? parsed.draftSeq : 0
+      } : null;
+    case "scene-ops": {
+      const event = parseSceneOpsEvent(parsed);
+      return event ? { kind: "scene-ops", event } : null;
+    }
+    case "cancel": {
+      const { instanceId, eventIds } = parsed;
+      return typeof instanceId === "string" && Array.isArray(eventIds) && eventIds.every((id) => typeof id === "string") ? { kind: "cancel", frame: { instanceId, eventIds } } : null;
+    }
+    case "module-state":
+      return typeof parsed.moduleId === "string" && typeof parsed.key === "string" ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } } : null;
+    case "delivery":
+      return typeof parsed.eventId === "string" && typeof parsed.instanceId === "string" && typeof parsed.type === "string" && typeof parsed.key === "string" ? {
+        kind: "delivery",
+        frame: {
+          eventId: parsed.eventId,
+          instanceId: parsed.instanceId,
+          type: parsed.type,
+          key: parsed.key,
+          value: parsed.value
+        }
+      } : null;
+    default:
+      return null;
+  }
+}
+function ackPath(sceneBase, eventId, kind) {
+  return `${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`;
+}
+function encodeAckBody(instanceIds) {
+  return JSON.stringify({ instanceIds });
+}
+
 // public/scene-manager/ack-batcher.ts
 var ACK_BATCH_WINDOW_MS = 250;
 var DEFAULT_ACK_RETRY = { initialMs: 1000, maxMs: 30000, attempts: 12 };
@@ -4614,7 +4724,7 @@ function postAck(fetchFn, url, instanceIds, retry = DEFAULT_ACK_RETRY, attempt =
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instanceIds })
+    body: encodeAckBody(instanceIds)
   }).then((response) => {
     if (!response.ok && retryable(response.status)) {
       again();
@@ -4822,172 +4932,8 @@ function createReconnectCoordinator() {
   }
 }
 
-// ../shared/clients/typescript/api/scene-editor/document.ts
-var import_ot_json0 = __toESM(require_lib(), 1);
-var json0 = import_ot_json0.default.type;
-function isVersion(value) {
-  return value === "draft" || value === "published";
-}
-var MAX_OPS_BYTES = 64 * 1024;
-var MAX_DOCUMENT_BYTES = 1024 * 1024;
-var MAX_ITEM_BYTES = 3 * MAX_DOCUMENT_BYTES;
-function applyOps(doc, ops) {
-  return json0.apply(structuredClone(doc), structuredClone([...ops]));
-}
-function mergeMeta(meta, changes) {
-  const next = { ...meta };
-  for (const [id, value] of Object.entries(changes)) {
-    if (value === null) {
-      delete next[id];
-    } else {
-      next[id] = value;
-    }
-  }
-  return next;
-}
-function parseSnapshot(value) {
-  if (!isPlainObject(value)) {
-    return null;
-  }
-  const doc = normalizeComposition(value.doc);
-  if (typeof value.sceneId !== "string" || typeof value.seq !== "number" || doc === null || !isPlainObject(value.meta)) {
-    return null;
-  }
-  return { ...value, doc };
-}
-function parseSceneOpsEvent(value) {
-  if (!isPlainObject(value)) {
-    return null;
-  }
-  if (typeof value.seq !== "number" || !Array.isArray(value.ops) || !isPlainObject(value.meta)) {
-    return null;
-  }
-  if (value.version !== undefined && !isVersion(value.version)) {
-    return null;
-  }
-  return value;
-}
-var COMPONENT_KEYS = new Set(["p", "oi", "od", "si", "sd"]);
-
-// public/scene-manager/scene-document.ts
-function configOfSnapshot(snapshot) {
-  const widgets = [];
-  for (const id of stackOrder(snapshot.doc)) {
-    const placement = snapshot.doc.widgets[id];
-    const meta = snapshot.meta[id];
-    if (!meta) {
-      continue;
-    }
-    widgets.push({
-      id,
-      widgetCanonicalId: placement.widget,
-      moduleId: meta.moduleId,
-      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
-      settings: placement.settings,
-      hostsSurface: meta.hostsSurface,
-      frameUrl: meta.frameUrl,
-      linkedResources: meta.linkedResources,
-      ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
-      ...meta.behaviorKinds === undefined ? {} : { behaviorKinds: meta.behaviorKinds },
-      visible: placement.visible
-    });
-  }
-  return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
-}
-function compositionOfConfig(config, base, drafts = null) {
-  const draftById = new Map;
-  for (const raw of drafts ?? []) {
-    if (typeof raw === "object" && raw !== null && typeof raw.id === "string") {
-      draftById.set(raw.id, raw);
-    }
-  }
-  const zKeys = evenKeys(config.widgets.length);
-  const widgets = {};
-  config.widgets.forEach((instance, index) => {
-    const saved = base && Object.hasOwn(base.widgets, instance.id) ? base.widgets[instance.id] : undefined;
-    const draft = draftById.get(instance.id);
-    widgets[instance.id] = {
-      name: saved?.name ?? "",
-      locked: saved?.locked ?? false,
-      extra: saved?.extra ?? {},
-      widget: instance.widgetCanonicalId,
-      x: instance.position.x,
-      y: instance.position.y,
-      width: instance.position.width,
-      height: instance.position.height,
-      visible: instance.visible !== false,
-      z: zKeys[index],
-      settings: instance.settings,
-      rotation: finiteOr(draft?.rotation, saved?.rotation ?? 0),
-      opacity: opacityOr(draft?.opacity, saved?.opacity ?? 1)
-    };
-  });
-  return { layout: config.layout, widgets, behaviors: base?.behaviors ?? {} };
-}
-function finiteOr(value, fallback) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-function opacityOr(value, fallback) {
-  return typeof value === "number" && value >= 0 && value <= 1 ? value : fallback;
-}
-
 // public/scene-manager/event-source.ts
 var SESSION_REJECTED_STATUSES = new Set([401, 403]);
-function parseSseChunk(rawEvent) {
-  const lines = rawEvent.split(`
-`);
-  const eventLine = lines.find((line) => line.startsWith("event:"));
-  const dataLine = lines.find((line) => line.startsWith("data:"));
-  if (!dataLine) {
-    return null;
-  }
-  const json = dataLine.slice("data:".length).trim();
-  if (!json) {
-    return null;
-  }
-  const eventName = eventLine ? eventLine.slice("event:".length).trim() : "";
-  let parsed;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object") {
-    return null;
-  }
-  if (eventName === "hello") {
-    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? {
-      kind: "hello",
-      bootId: parsed.bootId,
-      seq: typeof parsed.seq === "number" ? parsed.seq : 0,
-      draftSeq: typeof parsed.draftSeq === "number" ? parsed.draftSeq : 0
-    } : null;
-  }
-  if (eventName === "scene-ops") {
-    const event = parseSceneOpsEvent(parsed);
-    return event ? { kind: "scene-ops", event } : null;
-  }
-  if (eventName === "cancel") {
-    const { instanceId, eventIds } = parsed;
-    return typeof instanceId === "string" && Array.isArray(eventIds) && eventIds.every((id) => typeof id === "string") ? { kind: "cancel", frame: { instanceId, eventIds } } : null;
-  }
-  if (eventName === "module-state") {
-    return typeof parsed.moduleId === "string" && typeof parsed.key === "string" ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } } : null;
-  }
-  if (typeof parsed.eventId === "string" && typeof parsed.instanceId === "string" && typeof parsed.type === "string" && typeof parsed.key === "string") {
-    return {
-      kind: "delivery",
-      frame: {
-        eventId: parsed.eventId,
-        instanceId: parsed.instanceId,
-        type: parsed.type,
-        key: parsed.key,
-        value: parsed.value
-      }
-    };
-  }
-  return null;
-}
 
 class SceneEventSource {
   url;
@@ -5084,7 +5030,7 @@ class SceneEventSource {
 `)) !== -1) {
           const rawEvent = buffer.slice(0, sep);
           buffer = buffer.slice(sep + 2);
-          const parsed = parseSseChunk(rawEvent);
+          const parsed = parseStreamFrame(rawEvent);
           if (!parsed) {
             continue;
           }
@@ -5510,6 +5456,68 @@ function applySceneBackground(element, layout) {
   element.style.backgroundColor = sceneBackground(layout) ?? "";
 }
 
+// public/scene-manager/scene-document.ts
+function configOfSnapshot(snapshot) {
+  const widgets = [];
+  for (const id of stackOrder(snapshot.doc)) {
+    const placement = snapshot.doc.widgets[id];
+    const meta = snapshot.meta[id];
+    if (!meta) {
+      continue;
+    }
+    widgets.push({
+      id,
+      widgetCanonicalId: placement.widget,
+      moduleId: meta.moduleId,
+      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+      settings: placement.settings,
+      hostsSurface: meta.hostsSurface,
+      frameUrl: meta.frameUrl,
+      linkedResources: meta.linkedResources,
+      ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
+      ...meta.behaviorKinds === undefined ? {} : { behaviorKinds: meta.behaviorKinds },
+      visible: placement.visible
+    });
+  }
+  return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
+}
+function compositionOfConfig(config, base, drafts = null) {
+  const draftById = new Map;
+  for (const raw of drafts ?? []) {
+    if (typeof raw === "object" && raw !== null && typeof raw.id === "string") {
+      draftById.set(raw.id, raw);
+    }
+  }
+  const zKeys = evenKeys(config.widgets.length);
+  const widgets = {};
+  config.widgets.forEach((instance, index) => {
+    const saved = base && Object.hasOwn(base.widgets, instance.id) ? base.widgets[instance.id] : undefined;
+    const draft = draftById.get(instance.id);
+    widgets[instance.id] = {
+      name: saved?.name ?? "",
+      locked: saved?.locked ?? false,
+      extra: saved?.extra ?? {},
+      widget: instance.widgetCanonicalId,
+      x: instance.position.x,
+      y: instance.position.y,
+      width: instance.position.width,
+      height: instance.position.height,
+      visible: instance.visible !== false,
+      z: zKeys[index],
+      settings: instance.settings,
+      rotation: finiteOr(draft?.rotation, saved?.rotation ?? 0),
+      opacity: opacityOr(draft?.opacity, saved?.opacity ?? 1)
+    };
+  });
+  return { layout: config.layout, widgets, behaviors: base?.behaviors ?? {} };
+}
+function finiteOr(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function opacityOr(value, fallback) {
+  return typeof value === "number" && value >= 0 && value <= 1 ? value : fallback;
+}
+
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
@@ -5551,8 +5559,8 @@ function main() {
   const view = new URLSearchParams(location.search).get("view") === "draft" ? "draft" : "published";
   const bridges = new Set;
   const queueManager = new EventQueueManager;
-  const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
-  const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
+  const deliveredBatcher = new AckBatcher((eventId) => ackPath(sceneBase, eventId, "delivered"));
+  const completedBatcher = new AckBatcher((eventId) => ackPath(sceneBase, eventId, "completed"));
   const moduleState = new ModuleStateCache(async (instanceId, key) => {
     const url = `${sceneBase}/widget/${encodeURIComponent(instanceId)}/storage?key=${encodeURIComponent(key)}`;
     const resp = await fetch(url, { credentials: "same-origin" });
@@ -5578,9 +5586,7 @@ function main() {
     }).catch(() => {});
   }
   function postAlertAck(kind, eventId, instanceId) {
-    postAck(globalThis.fetch.bind(globalThis), `${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, [
-      instanceId
-    ]);
+    postAck(globalThis.fetch.bind(globalThis), ackPath(sceneBase, eventId, kind), [instanceId]);
   }
   let configs = new Map(sceneData.widgets.map((instance) => [instance.id, instance]));
   const contents = new Map;

@@ -39,6 +39,7 @@ import {
   zKey,
 } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
+import type { StreamFrame } from "../../contract/overlay-stream";
 import { STRICT_REGISTRY } from "@woofx3/scene/model";
 import { externalMediaUrls } from "../../public/scene-manager/media-url";
 import { themeOf } from "../../public/scene-manager/scene-update";
@@ -51,9 +52,6 @@ import type {
   StoredColumn,
   StoredUnread,
 } from "./scene-host";
-
-/** SSE event carrying a `SceneOpsEvent` to every overlay open on the scene. */
-export const SCENE_OPS_EVENT = "scene-ops";
 
 /** The slice of `OverlayHost` the documents load scenes through. */
 export interface SceneLoader {
@@ -86,7 +84,7 @@ export interface ScenePersister {
 
 /** The slice of `DeliveryStore` that pushes to a scene's open overlays. */
 export interface SceneBroadcaster {
-  broadcast(sceneId: string, event: string, data: unknown): void;
+  broadcast(sceneId: string, frame: StreamFrame): void;
   connectedSceneIds(): string[];
 }
 
@@ -909,7 +907,7 @@ export class SceneDocuments {
         meta: meta ?? {},
       };
       try {
-        this.broadcaster.broadcast(held.sceneId, SCENE_OPS_EVENT, event);
+        this.broadcaster.broadcast(held.sceneId, { kind: "scene-ops", event });
       } catch (err) {
         this.logger.warn("scene documents: pushing to overlays failed", {
           sceneId: held.sceneId,
