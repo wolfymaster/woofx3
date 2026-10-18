@@ -10,7 +10,7 @@
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "open": "^10.1.0",
-    "zod": "^3.24.0"
+    "zod": "^4.6.6"
   },
   "scripts": {
     "start": "bun run src/api.ts",
