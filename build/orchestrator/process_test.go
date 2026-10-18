@@ -95,9 +95,11 @@ func TestAServiceStartedByTheOrchestratorExitsCleanlyWhenAskedToStop(t *testing.
 // scriptedProcess records what the supervisor asks of it, and exits when
 // asked to stop only if it is polite.
 type scriptedProcess struct {
-	name       string
-	polite     bool
-	stopErr    error
+	name    string
+	polite  bool
+	stopErr error
+	// reapDelay is how long Wait takes to return after the process exits.
+	reapDelay  time.Duration
 	clock      clock
 	calls      *callLog
 	exited     chan struct{}
@@ -151,6 +153,7 @@ func (p *scriptedProcess) Kill() error {
 
 func (p *scriptedProcess) Wait() (string, error) {
 	<-p.exited
+	time.Sleep(p.reapDelay)
 	return "exit status 0", nil
 }
 
@@ -159,12 +162,17 @@ func (p *scriptedProcess) exit() {
 }
 
 // startScripted starts one scripted process per service on a fake clock and
-// returns the supervisor with them running.
-func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Supervisor, *fakeClock, *callLog) {
+// returns the supervisor with them running, and where its status goes.
+func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Supervisor, *fakeClock, *callLog, *syncBuffer) {
 	t.Helper()
 	clock := newFakeClock()
 	calls := &callLog{}
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	output := &syncBuffer{}
+	reporter, err := newStatusReporter(supervisionOptions{statusToStdout: true}, output, clock, discardLogger())
+	if err != nil {
+		t.Fatalf("reporter: %v", err)
+	}
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), reporter, childIO{})
 	supervisor.clock = clock
 	supervisor.startProcess = func(path string, argv []string, attr *os.ProcAttr) (serviceHandle, error) {
 		process := processes[filepath.Base(path)]
@@ -175,7 +183,7 @@ func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Superv
 	}
 	for name, process := range processes {
 		process.name = name
-		supervisor.AddService(Service{Name: name, Output: name})
+		supervisor.AddService(mustResolve(t, Service{Name: name, Output: name}))
 		binaryPath := filepath.Join(supervisor.baseDir, name)
 		if err := os.WriteFile(binaryPath, []byte{}, 0o755); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -184,11 +192,11 @@ func startScripted(t *testing.T, processes map[string]*scriptedProcess) (*Superv
 			t.Fatalf("start %s: %v", name, err)
 		}
 	}
-	return supervisor, clock, calls
+	return supervisor, clock, calls, output
 }
 
 func TestStopAllAsksEveryServiceToStopAndKillsOnlyThoseStillRunningAfterTheGracePeriod(t *testing.T) {
-	supervisor, clock, calls := startScripted(t, map[string]*scriptedProcess{
+	supervisor, clock, calls, _ := startScripted(t, map[string]*scriptedProcess{
 		"polite":   {polite: true},
 		"stubborn": {polite: false},
 	})
@@ -214,7 +222,7 @@ func TestStopAllAsksEveryServiceToStopAndKillsOnlyThoseStillRunningAfterTheGrace
 }
 
 func TestAServiceThatCannotBeAskedToStopIsKilledAtOnce(t *testing.T) {
-	supervisor, _, calls := startScripted(t, map[string]*scriptedProcess{
+	supervisor, _, calls, _ := startScripted(t, map[string]*scriptedProcess{
 		"unreachable": {stopErr: errors.New("no console to send the event through")},
 	})
 
@@ -226,5 +234,74 @@ func TestAServiceThatCannotBeAskedToStopIsKilledAtOnce(t *testing.T) {
 	}
 	if !times["unreachable:kill"].Equal(times["unreachable:stop"]) {
 		t.Fatalf("the kill came %s after the failed stop request, want no wait", times["unreachable:kill"].Sub(times["unreachable:stop"]))
+	}
+}
+
+// The orchestrator reports stopped once StopAll returns, and closes its status
+// output: a service's own stopped event must already be out by then, including
+// that of a service that had to be killed.
+func TestStopAllReturnsOnceEveryServicesExitIsReported(t *testing.T) {
+	supervisor, _, _, output := startScripted(t, map[string]*scriptedProcess{
+		"stubborn":    {polite: false, reapDelay: 20 * time.Millisecond},
+		"unreachable": {stopErr: errors.New("no console"), reapDelay: 20 * time.Millisecond},
+	})
+
+	supervisor.StopAll()
+
+	stopped := map[string]bool{}
+	for _, event := range output.events(t) {
+		if event.Event == eventService && event.Status == StatusStopped.String() {
+			stopped[event.Name] = true
+		}
+	}
+	if !stopped["stubborn"] || !stopped["unreachable"] {
+		t.Fatalf("stopped reported for %v when StopAll returned, want both killed services", stopped)
+	}
+}
+
+// StopAll can begin while a service is being started, after the supervisor
+// decided to start it and before the process exists. That process must still
+// be asked to stop, not left for the kill at the end of the grace period.
+func TestAServiceStartedWhileStoppingIsAskedToStopAtOnce(t *testing.T) {
+	clock := newFakeClock()
+	calls := &callLog{}
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
+	supervisor.clock = clock
+	supervisor.AddService(mustResolve(t, Service{Name: "late", Output: "late"}))
+	binaryPath := filepath.Join(supervisor.baseDir, "late")
+	if err := os.WriteFile(binaryPath, []byte{}, 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	stopAllDone := make(chan struct{})
+	stopStarted := clock.Now()
+	supervisor.startProcess = func(string, []string, *os.ProcAttr) (serviceHandle, error) {
+		// StopAll begins, and has signalled the services it can see, while
+		// this one is being created.
+		go func() {
+			supervisor.StopAll()
+			close(stopAllDone)
+		}()
+		waitFor(t, "StopAll to begin", func() bool {
+			supervisor.mu.Lock()
+			defer supervisor.mu.Unlock()
+			return supervisor.stopping
+		})
+		return &scriptedProcess{name: "late", polite: true, clock: clock, calls: calls, exited: make(chan struct{})}, nil
+	}
+	// As from the service's loop, which StopAll waits for.
+	supervisor.spawn(func() {
+		if err := supervisor.startServiceProcess(supervisor.services["late"], binaryPath); err != nil {
+			t.Errorf("start: %v", err)
+		}
+	})
+	<-stopAllDone
+
+	got, times := calls.snapshot()
+	if !reflect.DeepEqual(got, []string{"late:stop"}) {
+		t.Fatalf("calls = %v, want one stop request and no kill", got)
+	}
+	if waited := times["late:stop"].Sub(stopStarted); waited >= stopGracePeriod {
+		t.Fatalf("asked to stop %s after StopAll began, want before the grace period was over", waited)
 	}
 }

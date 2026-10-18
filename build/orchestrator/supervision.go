@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -116,10 +117,6 @@ func (r *statusReporter) service(name string, status ServiceStatus, pid int, mes
 	r.emit(statusEvent{Event: eventService, Name: name, Status: status.String(), PID: pid, Message: message})
 }
 
-func (r *statusReporter) skipped(name string, message string) {
-	r.emit(statusEvent{Event: eventService, Name: name, Status: "skipped", Message: message})
-}
-
 func (r *statusReporter) ready() {
 	r.emit(statusEvent{Event: eventReady})
 }
@@ -135,11 +132,14 @@ func (r *statusReporter) failure(name string, message string) {
 }
 
 func (r *statusReporter) emit(event statusEvent) {
-	if r == nil || len(r.writers) == 0 {
+	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(r.writers) == 0 {
+		return
+	}
 
 	event.Time = r.clock.Now().UTC().Format(time.RFC3339Nano)
 	line, err := json.Marshal(event)
@@ -167,16 +167,21 @@ func (r *statusReporter) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, closer := range r.closers {
-		closer.Close()
+		if err := closer.Close(); err != nil {
+			r.logger.Warn("Could not close the status output", "error", err)
+		}
 	}
+	r.closers = nil
 	r.writers = nil
 }
 
-// waitForEOF returns once reader is closed. The orchestrator's parent holds
-// the other end of its stdin, so EOF means the parent has gone, even when it
-// was killed without a chance to stop the orchestrator.
-func waitForEOF(reader io.Reader) {
-	io.Copy(io.Discard, reader)
+// waitForEOF returns once reader is closed, or with the error that ended the
+// read. The orchestrator's parent holds the other end of its stdin, so EOF
+// means the parent has gone, even when it was killed without a chance to stop
+// the orchestrator.
+func waitForEOF(reader io.Reader) error {
+	_, err := io.Copy(io.Discard, reader)
+	return err
 }
 
 // childOutputFileName is the file in the log directory that receives a
@@ -189,13 +194,25 @@ func childOutputFileName(serviceName string) string {
 // loops without waiting on the wall clock.
 type clock interface {
 	Now() time.Time
-	Sleep(d time.Duration)
+	// Sleep waits for d, or until ctx is done, and returns ctx's error in
+	// that case.
+	Sleep(ctx context.Context, d time.Duration) error
 }
 
 type systemClock struct{}
 
-func (systemClock) Now() time.Time        { return time.Now() }
-func (systemClock) Sleep(d time.Duration) { time.Sleep(d) }
+func (systemClock) Now() time.Time { return time.Now() }
+
+func (systemClock) Sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 // serviceHandle is a started service process.
 type serviceHandle interface {

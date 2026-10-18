@@ -35,6 +35,7 @@
     {
       "name": "sceneManager",
       "dependencies": ["message-bus", "db-proxy"],
+      "health_endpoint": "http://127.0.0.1:${WOOFX3_SCENE_MANAGER_PORT:-9101}/health",
       "type": "bun",
       "path": "../sceneManager",
       "enabled": true,
