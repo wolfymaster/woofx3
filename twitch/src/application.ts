@@ -1,4 +1,5 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
+import type { AuthProvider } from "@twurple/auth";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { HELIX_COMMAND } from "@woofx3/common/cloudevents/Twitch/commands";
 import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
@@ -213,8 +214,9 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     // own; one whose token comes from a dashboard asks the dashboard instead.
     const clientId = ctx.config.getConfig("woofx3TwitchClientId") as string | undefined;
     const clientSecret = ctx.config.getConfig("woofx3TwitchClientSecret") as string | undefined;
+    let authProvider: AuthProvider;
     try {
-      await twitchClient.init(
+      authProvider = await twitchClient.init(
         clientId && clientSecret
           ? { clientId, clientSecret, redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string }
           : undefined
@@ -237,7 +239,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const twitchApi = new TwitchApiClientImpl(
       apiClient,
       broadcaster,
-      enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts))
+      enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts)),
+      authProvider
     );
     const events = new EventFactory({ source: "twitch" });
     const messageBus = ctx.services.messageBus.client;

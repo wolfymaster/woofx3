@@ -1,10 +1,10 @@
-import type { ApiClient } from "@twurple/api";
+import type { AuthProvider } from "@twurple/auth";
 import type {
   HelixCommandArgs,
   HelixCommandResult,
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
-import { httpStatusOf, TwitchApiError } from "./twitchApiError";
+import { TwitchApiError } from "./twitchApiError";
 
 type HelixMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -198,26 +198,6 @@ export function buildHelixRequest(
   };
 }
 
-/** Twurple's HttpStatusCodeError body, matched by shape like `httpStatusOf`. */
-function errorBodyOf(err: unknown): string {
-  if (err && typeof err === "object" && "body" in err && typeof err.body === "string") {
-    return compactJson(err.body);
-  }
-  return "";
-}
-
-/**
- * Twurple re-indents a JSON error body before keeping it. Helix sends it
- * compact, so it is compacted back to the text Twitch sent.
- */
-function compactJson(text: string): string {
-  try {
-    return JSON.stringify(JSON.parse(text));
-  } catch {
-    return text;
-  }
-}
-
 function parseHelixArgs(args: unknown): { operation: HelixOperationName; params: unknown } {
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     throw new TwitchApiError("invalid_arguments", "helix: args must be { operation, params? }");
@@ -229,35 +209,71 @@ function parseHelixArgs(args: unknown): { operation: HelixOperationName; params:
   return { operation, params };
 }
 
+const HELIX_BASE_URL = "https://api.twitch.tv/helix/";
+
+/** What `runHelixOperation` needs of the twitch service's Twurple auth provider. */
+export type HelixAuth = Pick<AuthProvider, "clientId" | "getAccessTokenForUser" | "refreshAccessTokenForUser">;
+
+export type HelixFetch = (url: string, init: RequestInit) => Promise<Response>;
+
 /**
  * Perform one declared Helix operation with the broadcaster's token and
  * answer with Twitch's own result. Twitch answering with an error status is
  * a result (`ok: false`), so its status and reason reach the caller intact;
  * only a request refused before it is sent, or one that never got an answer,
  * throws.
+ *
+ * Sent with a plain fetch rather than Twurple's API client, because that
+ * client retries a 5xx or a network failure up to three times: a chat
+ * message, ban or clip that Twitch carried out before failing would be
+ * carried out again. Every operation, reads included, gets one attempt, as
+ * the dashboard's own Helix calls do. The one exception is a 401, which
+ * Twitch answers before acting: the token is renewed and the request sent
+ * once more.
  */
 export async function runHelixOperation(
-  apiClient: ApiClient,
+  auth: HelixAuth,
   broadcasterId: string,
-  args: unknown
+  args: unknown,
+  fetchFn: HelixFetch = fetch
 ): Promise<HelixCommandResult> {
   const { operation, params } = parseHelixArgs(args);
   const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
-  try {
-    const body = await apiClient.callApi<unknown>({
-      type: "helix",
-      url: request.url,
-      method: request.method,
-      userId: broadcasterId,
-      query: request.query,
-      jsonBody: request.jsonBody,
-    });
-    return { ok: true, body: body ?? null };
-  } catch (err) {
-    const status = httpStatusOf(err);
-    if (status === undefined) {
-      throw err;
+  const search = new URLSearchParams(request.query).toString();
+  const url = `${HELIX_BASE_URL}${request.url}${search ? `?${search}` : ""}`;
+  const send = (accessToken: string) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}`, "Client-Id": auth.clientId };
+    if (request.jsonBody !== undefined) {
+      headers["Content-Type"] = "application/json";
     }
-    return { ok: false, status, body: errorBodyOf(err) };
+    return fetchFn(url, {
+      method: request.method,
+      headers,
+      body: request.jsonBody === undefined ? undefined : JSON.stringify(request.jsonBody),
+    });
+  };
+
+  const token = await auth.getAccessTokenForUser(broadcasterId);
+  if (!token) {
+    throw new Error(`helix ${operation}: there is no Twitch token for the broadcaster`);
+  }
+  let response = await send(token.accessToken);
+  if (response.status === 401 && auth.refreshAccessTokenForUser) {
+    await response.body?.cancel();
+    const renewed = await auth.refreshAccessTokenForUser(broadcasterId);
+    response = await send(renewed.accessToken);
+  }
+
+  const text = await response.text();
+  if (!response.ok) {
+    return { ok: false, status: response.status, body: text };
+  }
+  if (text === "") {
+    return { ok: true, body: null };
+  }
+  try {
+    return { ok: true, body: JSON.parse(text) };
+  } catch {
+    throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`);
   }
 }
