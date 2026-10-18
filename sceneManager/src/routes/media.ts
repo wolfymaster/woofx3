@@ -1,5 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { MEDIA_PROXY_PATH } from "../../public/scene-manager/media-url";
+import { MEDIA_PROXY_PATH } from "../../contract/media-url";
 import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
 
 /** `/assets/media/{token}`: exactly one segment, the signed upstream URL. */

@@ -3,7 +3,7 @@ import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
 import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
 import type { SceneVersion } from "../scene/scene-host";
 import { renderSceneShell } from "../scene/shell";
-import { configOfSnapshot } from "../../public/scene-manager/scene-document";
+import { configOfSnapshot } from "../../contract/scene-config";
 
 /** Which version of the scene a page shows: `?view=draft` for the editor's preview. */
 export function viewOf(url: URL): SceneVersion {

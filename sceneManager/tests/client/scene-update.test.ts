@@ -1,11 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import {
-  parseSceneConfig,
-  planSceneUpdate,
-  sameValue,
-  settingsUpdate,
-  type WidgetPlacementConfig,
-} from "../../public/scene-manager/scene-update";
+import { sameValue } from "@woofx3/scene/model";
+import { parseSceneConfig, type WidgetPlacementConfig } from "../../contract/scene-config";
+import { planSceneUpdate, settingsUpdate } from "../../public/scene-manager/scene-update";
 
 function placement(id: string, overrides: Partial<WidgetPlacementConfig> = {}): WidgetPlacementConfig {
   return {

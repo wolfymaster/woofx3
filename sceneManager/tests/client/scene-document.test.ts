@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import { configOfSnapshot } from "../../contract/scene-config";
 import {
   type SceneDocument,
   type SceneSnapshot,
   applyOps,
   compositionOfConfig,
-  configOfSnapshot,
   diffDocuments,
   mergeMeta,
   parseSnapshot,

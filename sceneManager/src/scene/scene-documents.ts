@@ -41,8 +41,8 @@ import {
 import type { Logger } from "@woofx3/common/runtime";
 import type { StreamFrame } from "../../contract/overlay-stream";
 import { placementOfStored, STRICT_REGISTRY, storedOfPlacement } from "@woofx3/scene/model";
-import { externalMediaUrls } from "../../public/scene-manager/media-url";
-import { themeOf } from "../../public/scene-manager/scene-update";
+import { externalMediaUrls } from "../../contract/media-url";
+import { themeOf } from "../../contract/scene-config";
 import type { MediaProxy } from "./media-proxy";
 import type {
   EditableScene,

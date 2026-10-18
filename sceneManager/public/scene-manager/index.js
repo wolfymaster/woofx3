@@ -3545,86 +3545,6 @@ var PAGE_CLOCK = {
   clearTimer: (handle) => clearTimeout(handle)
 };
 
-// public/scene-manager/scene-update.ts
-function planSceneUpdate(current, next) {
-  const currentById = new Map(current.map((placement) => [placement.id, placement]));
-  const nextIds = new Set(next.map((placement) => placement.id));
-  const plan2 = {
-    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
-    mount: [],
-    replace: [],
-    place: [],
-    order: next.map((placement) => placement.id)
-  };
-  for (const placement of next) {
-    const existing = currentById.get(placement.id);
-    if (!existing) {
-      plan2.mount.push(placement);
-    } else if (sameFrame(existing, placement)) {
-      plan2.place.push(placement);
-    } else {
-      plan2.replace.push(placement);
-    }
-  }
-  return plan2;
-}
-function sameFrame(a, b) {
-  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue3(a.settings, b.settings));
-}
-function settingsUpdate(current, next, reads) {
-  const keys2 = new Set([...Object.keys(current), ...Object.keys(next)]);
-  const changed = [...keys2].filter((key) => !sameValue3(current[key], next[key]));
-  if (changed.length === 0) {
-    return "none";
-  }
-  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
-    return "reload";
-  }
-  return "patch";
-}
-var THEME_SETTING_ID = "theme";
-function themeOf(settings) {
-  const value = settings[THEME_SETTING_ID];
-  return typeof value === "string" ? value.trim() : "";
-}
-function sameValue3(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue3(item, b[i]));
-  }
-  const aRecord = a;
-  const bRecord = b;
-  const aKeys = Object.keys(aRecord);
-  if (aKeys.length !== Object.keys(bRecord).length) {
-    return false;
-  }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue3(aRecord[key], bRecord[key]));
-}
-function parseSceneConfig(body) {
-  if (typeof body !== "object" || body === null) {
-    return null;
-  }
-  const scene = body.scene;
-  if (typeof scene !== "object" || scene === null) {
-    return null;
-  }
-  const s = scene;
-  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
-    return null;
-  }
-  return {
-    id: s.id,
-    name: typeof s.name === "string" ? s.name : "",
-    layout: s.layout,
-    widgets: s.widgets
-  };
-}
-
 // public/scene-manager/widget-behaviors.ts
 function behaviorStateOf(delegated) {
   const durationMs = delegated.endMs === null ? null : Math.max(0, delegated.endMs - delegated.startMs);
@@ -3718,7 +3638,7 @@ class BehaviorRelay {
   }
 }
 function sameExceptDuration(a, b) {
-  return a.type === b.type && a.kind === b.kind && a.phase === b.phase && a.easing === b.easing && sameValue3(a.params, b.params);
+  return a.type === b.type && a.kind === b.kind && a.phase === b.phase && a.easing === b.easing && sameValue(a.params, b.params);
 }
 function compareText3(a, b) {
   if (a === b) {
@@ -5238,6 +5158,58 @@ class ConnectionStatus {
   }
 }
 
+// ../shared/clients/typescript/api/ui-schema.ts
+var THEME_SETTING_ID = "theme";
+
+// contract/scene-config.ts
+function themeOf(settings) {
+  const value = settings[THEME_SETTING_ID];
+  return typeof value === "string" ? value.trim() : "";
+}
+function configOfSnapshot(snapshot) {
+  const widgets = [];
+  for (const id of stackOrder(snapshot.doc)) {
+    const placement = snapshot.doc.widgets[id];
+    const meta = snapshot.meta[id];
+    if (!meta) {
+      continue;
+    }
+    widgets.push({
+      id,
+      widgetCanonicalId: placement.widget,
+      moduleId: meta.moduleId,
+      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+      settings: placement.settings,
+      hostsSurface: meta.hostsSurface,
+      frameUrl: meta.frameUrl,
+      linkedResources: meta.linkedResources,
+      ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
+      ...meta.behaviorKinds === undefined ? {} : { behaviorKinds: meta.behaviorKinds },
+      visible: placement.visible
+    });
+  }
+  return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
+}
+function parseSceneConfig(body) {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const scene = body.scene;
+  if (typeof scene !== "object" || scene === null) {
+    return null;
+  }
+  const s = scene;
+  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: typeof s.name === "string" ? s.name : "",
+    layout: s.layout,
+    widgets: s.widgets
+  };
+}
+
 // public/scene-manager/preview-layout.ts
 var PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
 function isFiniteNumber4(value) {
@@ -5323,7 +5295,7 @@ function transientOfPreviewLayout(layout, ids) {
   return transient;
 }
 
-// public/scene-manager/media-url.ts
+// contract/media-url.ts
 var MAX_DEPTH2 = 32;
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -5488,31 +5460,45 @@ function applySceneBackground(element, layout) {
   element.style.backgroundColor = sceneBackground(layout) ?? "";
 }
 
-// public/scene-manager/scene-document.ts
-function configOfSnapshot(snapshot) {
-  const widgets = [];
-  for (const id of stackOrder(snapshot.doc)) {
-    const placement = snapshot.doc.widgets[id];
-    const meta = snapshot.meta[id];
-    if (!meta) {
-      continue;
+// public/scene-manager/scene-update.ts
+function planSceneUpdate(current, next) {
+  const currentById = new Map(current.map((placement) => [placement.id, placement]));
+  const nextIds = new Set(next.map((placement) => placement.id));
+  const plan2 = {
+    remove: current.filter((placement) => !nextIds.has(placement.id)).map((placement) => placement.id),
+    mount: [],
+    replace: [],
+    place: [],
+    order: next.map((placement) => placement.id)
+  };
+  for (const placement of next) {
+    const existing = currentById.get(placement.id);
+    if (!existing) {
+      plan2.mount.push(placement);
+    } else if (sameFrame(existing, placement)) {
+      plan2.place.push(placement);
+    } else {
+      plan2.replace.push(placement);
     }
-    widgets.push({
-      id,
-      widgetCanonicalId: placement.widget,
-      moduleId: meta.moduleId,
-      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
-      settings: placement.settings,
-      hostsSurface: meta.hostsSurface,
-      frameUrl: meta.frameUrl,
-      linkedResources: meta.linkedResources,
-      ...meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase },
-      ...meta.behaviorKinds === undefined ? {} : { behaviorKinds: meta.behaviorKinds },
-      visible: placement.visible
-    });
   }
-  return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
+  return plan2;
 }
+function sameFrame(a, b) {
+  return a.widgetCanonicalId === b.widgetCanonicalId && a.moduleId === b.moduleId && a.hostsSurface === b.hostsSurface && a.frameUrl === b.frameUrl && (a.hostsSurface === "" || sameValue(a.settings, b.settings));
+}
+function settingsUpdate(current, next, reads) {
+  const keys2 = new Set([...Object.keys(current), ...Object.keys(next)]);
+  const changed = [...keys2].filter((key) => !sameValue(current[key], next[key]));
+  if (changed.length === 0) {
+    return "none";
+  }
+  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
+    return "reload";
+  }
+  return "patch";
+}
+
+// public/scene-manager/scene-document.ts
 function compositionOfConfig(config, base, drafts = null) {
   const draftById = new Map;
   for (const raw of drafts ?? []) {

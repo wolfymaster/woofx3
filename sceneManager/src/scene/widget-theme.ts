@@ -1,8 +1,5 @@
 import { isWidgetTheme, type WidgetTheme } from "@woofx3/module-sdk";
-
-/** Settings key of the theme picker barkloader adds to a themeable widget.
- *  Must match `THEME_SETTING_ID` in barkloader's module_manifest.rs. */
-export const THEME_SETTING_ID = "theme";
+import { themeOf } from "../../contract/scene-config";
 
 /**
  * A widget's theme as barkloader resolves it for one frame: what the widget
@@ -35,8 +32,8 @@ export function parseFrameTheme(raw: unknown): FrameTheme | null {
 
 /** The theme canonical id a placement's settings select, if any. */
 export function selectedThemeId(settings: Record<string, unknown>): string | undefined {
-  const value = settings[THEME_SETTING_ID];
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+  const id = themeOf(settings);
+  return id === "" ? undefined : id;
 }
 
 /** What `host.theme` carries: the frame theme without the stylesheet. */
