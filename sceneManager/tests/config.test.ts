@@ -1,13 +1,21 @@
 import { describe, expect, it } from "bun:test";
-import { resolve } from "node:path";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type SceneManagerRuntimeConfig, validateConfig } from "../src/config";
+import { WIDGET_HOST_SHIM_FILE } from "../src/scene/frame-assembler";
+
+// The shim is a build output, absent from a checkout that has not built it;
+// validation checks it is there, so the config points at a directory that has one.
+const publicDir = mkdtempSync(join(tmpdir(), "woofx3-config-test-"));
+writeFileSync(join(publicDir, WIDGET_HOST_SHIM_FILE), "");
 
 const valid: SceneManagerRuntimeConfig = {
   port: 9101,
   bindHost: "127.0.0.1",
   tokenSecret: "secret",
   rootDir: "/tmp",
-  publicDir: resolve(import.meta.dir, "../public"),
+  publicDir,
   fontCacheDir: "/tmp/fonts",
   databaseProxyUrl: "http://127.0.0.1:9000",
   barkloaderUrl: "http://127.0.0.1:9653",
