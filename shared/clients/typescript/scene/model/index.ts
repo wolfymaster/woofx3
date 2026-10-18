@@ -9,5 +9,6 @@ export * from "./json-schema";
 export * from "./keys";
 export * from "./legacy-alert";
 export * from "./registry";
+export * from "./stored-placement";
 export * from "./timeline";
 export * from "./types";

@@ -1,7 +1,13 @@
 import type { CompositionKind } from "@woofx3/api";
 import type { SceneDocument } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
-import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
+import {
+  type DeclaredBehaviorKinds,
+  parseWidgetCanonicalId,
+  placementOfStored,
+  stableModuleKey,
+  storedWidgetId,
+} from "@woofx3/scene/model";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
@@ -168,25 +174,6 @@ export interface OverlayHostOptions {
 }
 
 const WIDGET_CACHE_TTL_MS = 30_000;
-
-/**
- * Parse a widget canonical id with the invariant `{moduleKey}:widget:{manifestId}`.
- * The moduleKey itself may contain colons (e.g. `spotify:1.0.0:df18e02`), so we
- * locate the last `:widget:` marker rather than splitting on all colons.
- */
-export function parseWidgetCanonicalId(canonicalId: string): { moduleKey: string; manifestId: string } | null {
-  const MARKER = ":widget:";
-  const markerIdx = canonicalId.lastIndexOf(MARKER);
-  if (markerIdx <= 0) {
-    return null;
-  }
-  const moduleKey = canonicalId.slice(0, markerIdx);
-  const manifestId = canonicalId.slice(markerIdx + MARKER.length);
-  if (!moduleKey || !manifestId) {
-    return null;
-  }
-  return { moduleKey, manifestId };
-}
 
 /**
  * Scene host: token -> assembled scene config. Ported from
@@ -661,12 +648,7 @@ export class OverlayHost {
     }
     const w = raw as Record<string, unknown>;
     const id = typeof w.id === "string" ? w.id : "";
-    const canonicalId =
-      typeof w.widgetCanonicalId === "string" && w.widgetCanonicalId
-        ? w.widgetCanonicalId
-        : typeof w.widgetDefinitionRef === "string"
-          ? w.widgetDefinitionRef
-          : "";
+    const canonicalId = storedWidgetId(w);
     if (!id || !canonicalId) {
       return null;
     }
@@ -678,9 +660,9 @@ export class OverlayHost {
     // Strip version segments from the module key so scene placements remain
     // stable across module updates. A versioned key like "spotify:1.0.0:abc1234"
     // normalises to "spotify"; a simple key like "woofx3" is unchanged.
-    const stableModuleKey = stableModuleKeyFrom(parsed.moduleKey);
-    const stableCanonicalId = `${stableModuleKey}:widget:${parsed.manifestId}`;
-    if (stableModuleKey !== parsed.moduleKey) {
+    const moduleId = stableModuleKey(parsed.moduleKey);
+    const stableCanonicalId = `${moduleId}:widget:${parsed.manifestId}`;
+    if (moduleId !== parsed.moduleKey) {
       this.logger.warn(
         "normalizeInstance: stripping version from moduleKey — update the UI to store the stable projection key",
         {
@@ -698,21 +680,23 @@ export class OverlayHost {
       });
     }
 
-    const settings = w.settings && typeof w.settings === "object" ? (w.settings as Record<string, unknown>) : {};
+    // The placement's fields read as every stored entry is (`placementOfStored`).
+    const placement = placementOfStored(w, "");
+    const settings = placement.settings;
     return {
       id,
       widgetCanonicalId: stableCanonicalId,
-      moduleId: stableModuleKey,
+      moduleId: moduleId,
       manifestId: parsed.manifestId,
-      position: normalizePosition(w),
+      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
       settings,
-      visible: w.visible !== false,
+      visible: placement.visible,
       stored: w,
       // Placements carry none; `resolveInstances` takes it from the widget
       // definition.
       hostsSurface: "",
       // Versioned by `framing` when the config is built.
-      frameUrl: frameDocumentUrl(stableModuleKey, parsed.manifestId, selectedThemeId(settings), UNAVAILABLE_VERSION),
+      frameUrl: frameDocumentUrl(moduleId, parsed.manifestId, selectedThemeId(settings), UNAVAILABLE_VERSION),
       // Assumed until the catalog says otherwise; `resolveInstances` is what
       // decides, since parsing alone cannot know what exists.
       resolved: true,
@@ -753,28 +737,6 @@ function declaredKindsOf(kinds: module_widget.WidgetBehaviorKinds | null | undef
   return {
     transitions: (kinds?.transitions ?? []).map((kind) => kind.id),
     effects: (kinds?.effects ?? []).map((kind) => kind.id),
-  };
-}
-
-/**
- * Extract the stable base name from a module key. If the key contains colons
- * (indicating a versioned form like "spotify:1.0.0:abc1234"), only the first
- * segment is returned. Simple keys like "woofx3" pass through unchanged.
- */
-export function stableModuleKeyFrom(moduleKey: string): string {
-  const colonIdx = moduleKey.indexOf(":");
-  return colonIdx === -1 ? moduleKey : moduleKey.slice(0, colonIdx);
-}
-
-export function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosition {
-  const position = (w.position ?? {}) as Record<string, unknown>;
-  const size = (w.size ?? {}) as Record<string, unknown>;
-  const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
-  return {
-    x: num(position.x) ?? 0,
-    y: num(position.y) ?? 0,
-    width: num(position.width) ?? num(size.width) ?? 0,
-    height: num(position.height) ?? num(size.height) ?? 0,
   };
 }
 

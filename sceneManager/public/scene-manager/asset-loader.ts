@@ -59,20 +59,6 @@ export class AssetLoadError extends Error {
 }
 
 /**
- * The stable module id in a widget canonical id (`{moduleId}:widget:{id}`),
- * or null when it is not one. A versioned module key (`spotify:1.0.0:abc`)
- * gives its stable id, which is the one its files are stored under.
- */
-export function moduleIdOfWidget(canonicalId: string): string | null {
-  const marker = canonicalId.lastIndexOf(":widget:");
-  if (marker <= 0) {
-    return null;
-  }
-  const moduleId = canonicalId.slice(0, marker).split(":")[0] ?? "";
-  return moduleId === "" ? null : moduleId;
-}
-
-/**
  * Engine paths of the library files a placement's settings name that a
  * script will read rather than an element: every value the asset picker
  * stores for a library file (`{ id, url, type }`) whose type is not an

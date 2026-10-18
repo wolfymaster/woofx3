@@ -105,7 +105,11 @@ function parseWidgetToHostMessage(value, nonce) {
   if (m === null) {
     return null;
   }
-  const envelope = { proto: WIDGET_PROTOCOL, v: m.v, nonce };
+  const envelope = {
+    proto: WIDGET_PROTOCOL,
+    v: m.v,
+    nonce
+  };
   switch (m.type) {
     case "hello":
       return {
@@ -1214,6 +1218,75 @@ function evenKeys(n) {
   }
   return keys;
 }
+// ../shared/clients/typescript/scene/model/stored-placement.ts
+var STORED_PLACEMENT_FIELDS = new Set([
+  "id",
+  "widgetCanonicalId",
+  "widgetDefinitionRef",
+  "position",
+  "size",
+  "settings",
+  "name",
+  "visible",
+  "rotation",
+  "opacity",
+  "locked",
+  "zIndex"
+]);
+function storedWidgetId(entry) {
+  if (typeof entry.widgetCanonicalId === "string" && entry.widgetCanonicalId !== "") {
+    return entry.widgetCanonicalId;
+  }
+  return typeof entry.widgetDefinitionRef === "string" ? entry.widgetDefinitionRef : "";
+}
+function placementOfStored(entry, z) {
+  const position = isPlainObject(entry.position) ? entry.position : {};
+  const size = isPlainObject(entry.size) ? entry.size : {};
+  const extra = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (!STORED_PLACEMENT_FIELDS.has(key)) {
+      extra[key] = value;
+    }
+  }
+  return {
+    widget: storedWidgetId(entry),
+    x: numberOr(position.x, 0),
+    y: numberOr(position.y, 0),
+    width: numberOr(position.width, numberOr(size.width, 0)),
+    height: numberOr(position.height, numberOr(size.height, 0)),
+    visible: typeof entry.visible === "boolean" ? entry.visible : true,
+    z,
+    settings: isPlainObject(entry.settings) ? entry.settings : {},
+    name: typeof entry.name === "string" && entry.name.length <= PLACEMENT_NAME_MAX_LENGTH ? entry.name : "",
+    rotation: numberOr(entry.rotation, 0),
+    opacity: isFiniteNumber2(entry.opacity) && entry.opacity >= 0 && entry.opacity <= 1 ? entry.opacity : 1,
+    locked: typeof entry.locked === "boolean" ? entry.locked : false,
+    extra
+  };
+}
+function parseWidgetCanonicalId(canonicalId) {
+  const marker = canonicalId.lastIndexOf(":widget:");
+  if (marker <= 0) {
+    return null;
+  }
+  const moduleKey = canonicalId.slice(0, marker);
+  const manifestId = canonicalId.slice(marker + ":widget:".length);
+  return moduleKey === "" || manifestId === "" ? null : { moduleKey, manifestId };
+}
+function stableModuleKey(moduleKey) {
+  return moduleKey.split(":")[0] ?? moduleKey;
+}
+function moduleIdOfCanonicalId(canonicalId) {
+  const parsed = parseWidgetCanonicalId(canonicalId);
+  return parsed === null ? null : stableModuleKey(parsed.moduleKey);
+}
+function isFiniteNumber2(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function numberOr(value, fallback) {
+  return isFiniteNumber2(value) ? value : fallback;
+}
+
 // ../shared/clients/typescript/scene/model/legacy-alert.ts
 function isLegacyAlertLayout(value) {
   return isPlainObject(value) && Array.isArray(value.widgets);
@@ -1246,13 +1319,13 @@ function compositionOfLegacyAlert(legacy) {
   const widgets = {};
   const indexOf = {};
   stackingOrder(kept).forEach(({ id, index, entry }, rank) => {
-    widgets[id] = placementOf(entry, zKeys[rank]);
+    widgets[id] = placementOfStored(entry, zKeys[rank]);
     indexOf[id] = index;
   });
   return { doc: { layout: canvas, widgets, behaviors: {} }, indexOf, skipped };
 }
 function stackingOrder(kept) {
-  const zIndexed = kept.every(({ entry }) => isFiniteNumber2(entry.zIndex));
+  const zIndexed = kept.every(({ entry }) => isFiniteNumber3(entry.zIndex));
   if (!zIndexed) {
     return kept;
   }
@@ -1264,49 +1337,8 @@ function alertCompositionOf(value) {
   }
   return normalizeComposition(value);
 }
-var LEGACY_ENTRY_FIELDS = new Set([
-  "id",
-  "widgetCanonicalId",
-  "position",
-  "size",
-  "settings",
-  "name",
-  "visible",
-  "rotation",
-  "opacity",
-  "locked",
-  "zIndex"
-]);
-function placementOf(entry, z) {
-  const position = isPlainObject(entry.position) ? entry.position : {};
-  const size = isPlainObject(entry.size) ? entry.size : {};
-  const extra = {};
-  for (const [key, value] of Object.entries(entry)) {
-    if (!LEGACY_ENTRY_FIELDS.has(key)) {
-      extra[key] = value;
-    }
-  }
-  return {
-    widget: typeof entry.widgetCanonicalId === "string" ? entry.widgetCanonicalId : "",
-    x: numberOr(position.x, 0),
-    y: numberOr(position.y, 0),
-    width: numberOr(position.width, numberOr(size.width, 0)),
-    height: numberOr(position.height, numberOr(size.height, 0)),
-    visible: typeof entry.visible === "boolean" ? entry.visible : true,
-    z,
-    settings: isPlainObject(entry.settings) ? entry.settings : {},
-    name: typeof entry.name === "string" && entry.name.length <= PLACEMENT_NAME_MAX_LENGTH ? entry.name : "",
-    rotation: numberOr(entry.rotation, 0),
-    opacity: isFiniteNumber2(entry.opacity) && entry.opacity >= 0 && entry.opacity <= 1 ? entry.opacity : 1,
-    locked: typeof entry.locked === "boolean" ? entry.locked : false,
-    extra
-  };
-}
-function isFiniteNumber2(value) {
+function isFiniteNumber3(value) {
   return typeof value === "number" && Number.isFinite(value);
-}
-function numberOr(value, fallback) {
-  return isFiniteNumber2(value) ? value : fallback;
 }
 // ../shared/clients/typescript/scene/model/registry.ts
 var DEFAULT_WIDGET_TRAITS = { keepsAspect: false, heightFollowsText: false };
@@ -2685,7 +2717,7 @@ function parsePreviewCommand(data) {
       case PREVIEW_RESTART:
         return { ok: true, command: { type: PREVIEW_RESTART }, dropped: [] };
       case PREVIEW_SEEK:
-        if (!isFiniteNumber3(message.ms) || message.ms < 0) {
+        if (!isFiniteNumber4(message.ms) || message.ms < 0) {
           return refuse("seek needs a non-negative finite ms");
         }
         return { ok: true, command: { type: PREVIEW_SEEK, ms: message.ms }, dropped: [] };
@@ -2709,7 +2741,7 @@ function parseLoad(message) {
     return refuse("load needs a composition document");
   }
   const { width, height } = shaped.layout;
-  if (!(isFiniteNumber3(width) && width > 0 && isFiniteNumber3(height) && height > 0)) {
+  if (!(isFiniteNumber4(width) && width > 0 && isFiniteNumber4(height) && height > 0)) {
     return refuse("the composition's canvas needs a positive width and height");
   }
   if (shaped.inputs !== undefined && !Array.isArray(shaped.inputs)) {
@@ -2782,7 +2814,7 @@ function parseOverridesMessage(message) {
     for (const key of OVERRIDE_NUMBERS) {
       if (raw[key] !== undefined) {
         const value = raw[key];
-        if (!isFiniteNumber3(value)) {
+        if (!isFiniteNumber4(value)) {
           return refuse(`overrides for ${id}: ${key} must be a finite number`);
         }
         override[key] = value;
@@ -2792,7 +2824,7 @@ function parseOverridesMessage(message) {
       return refuse(`overrides for ${id}: a size cannot be negative`);
     }
     if (raw.opacity !== undefined) {
-      if (!isFiniteNumber3(raw.opacity) || raw.opacity < 0 || raw.opacity > 1) {
+      if (!isFiniteNumber4(raw.opacity) || raw.opacity < 0 || raw.opacity > 1) {
         return refuse(`overrides for ${id}: opacity must be from 0 to 1`);
       }
       override.opacity = raw.opacity;
@@ -2810,7 +2842,7 @@ function parseOverridesMessage(message) {
 function isLoadId(value) {
   return typeof value === "string" && value.length > 0 && value.length <= PREVIEW_LOAD_ID_MAX_LENGTH;
 }
-function isFiniteNumber3(value) {
+function isFiniteNumber4(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 function refuse(error) {
@@ -3842,14 +3874,6 @@ class AssetLoadError extends Error {
     this.name = "AssetLoadError";
   }
 }
-function moduleIdOfWidget(canonicalId) {
-  const marker = canonicalId.lastIndexOf(":widget:");
-  if (marker <= 0) {
-    return null;
-  }
-  const moduleId = canonicalId.slice(0, marker).split(":")[0] ?? "";
-  return moduleId === "" ? null : moduleId;
-}
 function readAheadAssetPaths(settings, pageOrigin) {
   const paths = new Set;
   collect2(settings, pageOrigin, paths, 0);
@@ -4305,7 +4329,7 @@ async function resolveFrames(doc) {
 }
 function mountFrame(bridges, assets, slot, spec, facts) {
   const instanceId = `preview.${spec.widgetId}`;
-  const moduleId = moduleIdOfWidget(spec.widgetCanonicalId) ?? "";
+  const moduleId = moduleIdOfCanonicalId(spec.widgetCanonicalId) ?? "";
   const nonce = generateNonce();
   const iframe = document.createElement("iframe");
   iframe.className = "widget-frame";

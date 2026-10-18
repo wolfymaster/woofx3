@@ -9,7 +9,13 @@
 // plays one alert at a time.
 
 import { encodePlacementBoot, type WidgetBehaviorState, type WidgetEvent } from "@woofx3/module-sdk";
-import { alertCompositionOf, type CompositionDocument, type NodeId, PROFILES } from "@woofx3/scene/model";
+import {
+  alertCompositionOf,
+  type CompositionDocument,
+  moduleIdOfCanonicalId,
+  type NodeId,
+  PROFILES,
+} from "@woofx3/scene/model";
 import {
   createDomRenderer,
   createScheduler,
@@ -19,7 +25,7 @@ import {
   type Scheduler,
   type SchedulerClock,
 } from "@woofx3/scene/runtime";
-import { type AssetCache, moduleIdOfWidget, readAheadAssetPaths } from "./asset-loader";
+import { type AssetCache, readAheadAssetPaths } from "./asset-loader";
 import type { QueuedEvent } from "./event-queue";
 import { PAGE_CLOCK } from "./page-clock";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
@@ -269,7 +275,7 @@ export class AlertWidget {
     const { sceneBase, bridges } = this.opts;
     const instanceId = `${eventId}.${widgetId}`;
     const placement = layout.widgets[widgetId];
-    const moduleId = placement ? moduleIdOfWidget(placement.widget) : null;
+    const moduleId = placement ? moduleIdOfCanonicalId(placement.widget) : null;
     const nonce = this.opts.generateNonce();
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
@@ -312,7 +318,7 @@ export class AlertWidget {
 
 function readAheadAlertAssets(assets: AssetCache, layout: CompositionDocument): void {
   for (const placement of Object.values(layout.widgets)) {
-    const moduleId = moduleIdOfWidget(placement.widget);
+    const moduleId = moduleIdOfCanonicalId(placement.widget);
     if (moduleId !== null) {
       assets.readAhead(readAheadAssetPaths(placement.settings, location.origin), moduleId);
     }

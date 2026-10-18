@@ -40,7 +40,7 @@ import {
 } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
 import type { StreamFrame } from "../../contract/overlay-stream";
-import { STRICT_REGISTRY } from "@woofx3/scene/model";
+import { placementOfStored, STRICT_REGISTRY, storedOfPlacement } from "@woofx3/scene/model";
 import { externalMediaUrls } from "../../public/scene-manager/media-url";
 import { themeOf } from "../../public/scene-manager/scene-update";
 import type { MediaProxy } from "./media-proxy";
@@ -119,26 +119,6 @@ export type EditorPresenceUpdate = { selection: string | null; version: Version 
 /** The answer to an item that committed no entry; a committed item's answer is its entry. */
 export type ItemReply = AckMessage | NackMessage | ErrorMessage;
 
-/** The fields of a stored placement the document models; the rest go to `extra`. */
-const MODELED_FIELDS = new Set([
-  "id",
-  "widgetCanonicalId",
-  "widgetDefinitionRef",
-  "name",
-  "position",
-  "size",
-  "rotation",
-  "opacity",
-  "zIndex",
-  "locked",
-  "visible",
-  "settings",
-]);
-
-function numberOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
 /**
  * The canvas a scene stored without a usable size is drawn on. The dashboard
  * already shows such a scene at this size; the editor refuses every move,
@@ -166,29 +146,19 @@ function canvasDimensionOr(value: unknown, fallback: number): number {
 export function documentOf(state: OverlaySceneState): SceneDocument {
   const widgets: SceneDocument["widgets"] = {};
   state.instances.forEach((instance, index) => {
-    const stored = instance.stored ?? {};
-    const extra: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(stored)) {
-      if (!MODELED_FIELDS.has(key)) {
-        extra[key] = value;
-      }
-    }
-    widgets[instance.id] = {
-      // As stored, so writing the scene back does not rewrite the id.
-      widget: typeof stored.widgetCanonicalId === "string" ? stored.widgetCanonicalId : instance.widgetCanonicalId,
-      x: instance.position.x,
-      y: instance.position.y,
-      width: instance.position.width,
-      height: instance.position.height,
+    // Read as stored, so writing the scene back keeps the canonical id and
+    // every field the document does not model. An instance built without
+    // its entry (tests, previews) reads as the entry its fields describe.
+    const stored = instance.stored ?? {
+      id: instance.id,
+      widgetCanonicalId: instance.widgetCanonicalId,
+      position: { x: instance.position.x, y: instance.position.y },
+      size: { width: instance.position.width, height: instance.position.height },
       visible: instance.visible,
-      z: zKey(index),
       settings: instance.settings,
-      name: typeof stored.name === "string" ? stored.name : "",
-      rotation: numberOr(stored.rotation, 0),
-      opacity: numberOr(stored.opacity, 1),
-      locked: stored.locked === true,
-      extra,
     };
+    const placement = placementOfStored(stored, zKey(index));
+    widgets[instance.id] = placement.widget === "" ? { ...placement, widget: instance.widgetCanonicalId } : placement;
   });
   const layout = {
     ...state.layout,
@@ -223,7 +193,7 @@ export function storedSceneOf(
   doc: SceneDocument,
   unreadPlacements: readonly unknown[] = []
 ): { widgetsJson: string; layoutJson: string; behaviorsJson: string } {
-  const widgets: unknown[] = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
+  const widgets: unknown[] = stackOrder(doc).map((id, index) => storedOfPlacement(id, doc.widgets[id]!, index));
   // After the placements the document holds, so a placement the loader could
   // not read stays in the row instead of being deleted by this write.
   widgets.push(...unreadPlacements);
@@ -231,24 +201,6 @@ export function storedSceneOf(
     widgetsJson: JSON.stringify(widgets),
     layoutJson: JSON.stringify(doc.layout),
     behaviorsJson: JSON.stringify(doc.behaviors),
-  };
-}
-
-/** One placement as the editor stores it. */
-export function storedPlacementOf(id: string, p: PlacementDocument, zIndex: number): Record<string, unknown> {
-  return {
-    ...p.extra,
-    id,
-    widgetCanonicalId: p.widget,
-    name: p.name,
-    position: { x: p.x, y: p.y },
-    size: { width: p.width, height: p.height },
-    rotation: p.rotation,
-    opacity: p.opacity,
-    zIndex,
-    locked: p.locked,
-    visible: p.visible,
-    settings: p.settings,
   };
 }
 
@@ -1054,7 +1006,7 @@ export class SceneDocuments {
       return { meta, unframed };
     }
     const order = stackOrder(after);
-    const entries = reframe.map((id) => storedPlacementOf(id, after.widgets[id]!, order.indexOf(id)));
+    const entries = reframe.map((id) => storedOfPlacement(id, after.widgets[id]!, order.indexOf(id)));
     try {
       const wanted = new Set(reframe);
       const framing = framingOf(

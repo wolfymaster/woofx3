@@ -1,10 +1,11 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { parseWidgetCanonicalId } from "@woofx3/scene/model";
 import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
-import { type OverlayHost, parseWidgetCanonicalId } from "./scene-host";
+import type { OverlayHost } from "./scene-host";
 import {
   type FrameTheme,
   buildThemeStyle,
