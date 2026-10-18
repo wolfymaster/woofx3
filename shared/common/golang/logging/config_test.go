@@ -47,3 +47,11 @@ func TestResolveLogDirectoryWithDataDir(t *testing.T) {
 		t.Errorf("absolute WOOFX3_LOG_DIR resolved to %q, want %q", got, absolute)
 	}
 }
+
+func TestARelativeDataDirFailsTheLogger(t *testing.T) {
+	t.Setenv(config.DataDirEnv, "relative-data")
+
+	if _, err := resolveConfig(Config{ServiceName: "test"}); err == nil {
+		t.Fatal("resolveConfig accepted a relative WOOFX3_DATA_DIR")
+	}
+}

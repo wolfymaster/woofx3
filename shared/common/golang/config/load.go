@@ -21,8 +21,11 @@ type Sources struct {
 }
 
 // LoadSources reads every source at location. A missing config file or .env is not an error,
-// except a config file WOOFX3_CONFIG named.
+// except a config file WOOFX3_CONFIG named. A relative WOOFX3_DATA_DIR is (see CheckDataDir).
 func LoadSources(location Location) (Sources, error) {
+	if err := CheckDataDir(); err != nil {
+		return Sources{}, err
+	}
 	if location.Required {
 		if _, err := os.Stat(location.ConfigPath); err != nil {
 			return Sources{}, fmt.Errorf("%s names a config file that cannot be read: %w", ConfigFileEnv, err)

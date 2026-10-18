@@ -82,6 +82,9 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		}
 	}
 
+	if err := config.CheckDataDir(); err != nil {
+		return resolvedConfig{}, err
+	}
 	logDirectory := ResolveLogDirectory(cfg.LogDirectory)
 
 	enableTerminal := cfg.EnableTerminalTransport

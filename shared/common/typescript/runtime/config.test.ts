@@ -323,6 +323,22 @@ describe("Config location", () => {
     }
   });
 
+  test("loadRuntimeEnv refuses a relative WOOFX3_DATA_DIR", () => {
+    const previous = process.env.WOOFX3_DATA_DIR;
+    process.env.WOOFX3_DATA_DIR = "relative-data";
+    try {
+      withLocationEnv({}, () => {
+        expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow("WOOFX3_DATA_DIR");
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.WOOFX3_DATA_DIR;
+      } else {
+        process.env.WOOFX3_DATA_DIR = previous;
+      }
+    }
+  });
+
   test("loadRuntimeEnv refuses a WOOFX3_CONFIG naming a missing file", () => {
     withLocationEnv({ config: path.join(process.cwd(), "tmp-runtime-location-missing", "engine.json") }, () => {
       expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(CONFIG_FILE_ENV);

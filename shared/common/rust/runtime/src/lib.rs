@@ -72,6 +72,8 @@ pub enum ConfigError {
     ParseError(#[from] serde_json::Error),
     #[error("config key `{key}` is not a boolean: `{value}`")]
     InvalidBool { key: String, value: String },
+    #[error("{DATA_DIR_ENV} must be an absolute path, not `{0}`")]
+    RelativeDataDir(String),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -89,8 +91,10 @@ impl Config {
     }
 
     /// Load the config from `source`. Only a `ConfigSource::File` must exist;
-    /// otherwise an absent file is an empty config, as in `load_from`.
+    /// otherwise an absent file is an empty config, as in `load_from`. A
+    /// relative `WOOFX3_DATA_DIR` is an error (see `check_data_dir`).
     pub fn load_source(source: &ConfigSource) -> Result<Config, ConfigError> {
+        check_data_dir()?;
         match source {
             ConfigSource::File(path) => Self::read_file(path),
             ConfigSource::Root(dir) => Self::read_config_in(dir),
@@ -210,8 +214,26 @@ impl Config {
 /// `shared/common/typescript/runtime/data-dir.ts`.
 pub const DATA_DIR_ENV: &str = "WOOFX3_DATA_DIR";
 
+/// Fail when `WOOFX3_DATA_DIR` is set to a relative path. Each process would
+/// resolve it against its own working directory, and the orchestrator and the
+/// services it starts do not share one, so they would write to different
+/// places. `Config::load_source` calls it, so a service whose config loads has
+/// a usable `data_dir`.
+pub fn check_data_dir() -> Result<(), ConfigError> {
+    check_data_dir_value(std::env::var(DATA_DIR_ENV).ok().as_deref())
+}
+
+fn check_data_dir_value(value: Option<&str>) -> Result<(), ConfigError> {
+    match value.map(str::trim) {
+        Some(dir) if !dir.is_empty() && !Path::new(dir).is_absolute() => {
+            Err(ConfigError::RelativeDataDir(dir.to_string()))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// The data directory, made absolute, or `None` when `WOOFX3_DATA_DIR` is
-/// unset or blank.
+/// unset or blank. See `check_data_dir` for a relative value.
 pub fn data_dir() -> Option<PathBuf> {
     let value = std::env::var(DATA_DIR_ENV).ok()?;
     let trimmed = value.trim();
@@ -508,6 +530,21 @@ mod tests {
 
         assert!(config.values.is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_relative_data_dir_is_refused() {
+        assert!(check_data_dir_value(None).is_ok());
+        assert!(check_data_dir_value(Some("  ")).is_ok());
+        assert!(check_data_dir_value(Some(&std::env::temp_dir().to_string_lossy())).is_ok());
+        assert!(matches!(
+            check_data_dir_value(Some("relative-data")),
+            Err(ConfigError::RelativeDataDir(_))
+        ));
+        assert!(matches!(
+            check_data_dir_value(Some("./data")),
+            Err(ConfigError::RelativeDataDir(_))
+        ));
     }
 
     #[test]

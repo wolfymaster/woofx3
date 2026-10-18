@@ -310,8 +310,10 @@ When it is set:
 | sceneManager font cache | `<rootPath>/cache/fonts` | `<data dir>/cache/fonts` |
 | Logs (every service, `migrate` and the orchestrator) | `<rootPath>/logs`, `<exe dir>/logs`, `./logs` | `WOOFX3_LOG_DIR` if set (relative under the data dir), else `<data dir>/logs` |
 
-Absolute paths are always used as given, and Postgres URLs are untouched. A
-relative `WOOFX3_DATA_DIR` is resolved against the working directory. Rust
+Absolute paths are always used as given, and Postgres URLs are untouched.
+`WOOFX3_DATA_DIR` itself must be absolute: a relative value stops every service
+and the orchestrator at startup, since each would otherwise resolve it against
+its own working directory and write somewhere different. Rust
 services also accept `logDir` from `.woofx3.json` in place of `WOOFX3_LOG_DIR`,
 as they do without a data directory.
 

@@ -28,12 +28,35 @@ func TestResolveDataPathAnchorsRelativePathsInTheDataDir(t *testing.T) {
 	}
 }
 
-func TestDataDirIsMadeAbsolute(t *testing.T) {
+func TestCheckDataDir(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		ok    bool
+	}{
+		{name: "unset", value: "", ok: true},
+		{name: "blank", value: "  ", ok: true},
+		{name: "absolute", value: t.TempDir(), ok: true},
+		{name: "relative", value: "relative-data", ok: false},
+		{name: "dot relative", value: "./data", ok: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(DataDirEnv, tc.value)
+
+			if err := CheckDataDir(); (err == nil) != tc.ok {
+				t.Errorf("CheckDataDir() = %v, want ok %v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestLoadRefusesARelativeDataDir(t *testing.T) {
+	isolate(t)
 	t.Setenv(DataDirEnv, "relative-data")
 
-	got := DataDir()
-	if !filepath.IsAbs(got) || filepath.Base(got) != "relative-data" {
-		t.Errorf("DataDir() = %q, want an absolute path ending in relative-data", got)
+	if _, err := Load(ResolveLocation("")); err == nil {
+		t.Fatal("Load accepted a relative WOOFX3_DATA_DIR")
 	}
 }
 

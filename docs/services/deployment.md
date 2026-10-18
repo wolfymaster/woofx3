@@ -119,8 +119,8 @@ from its working directory. See
 [Finding the config](./runtime.md#finding-the-config).
 
 To keep the engine's state out of its install directory (a release unpacked
-under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR`. The
-relative database, module storage, module and upload paths, caches and every
+under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR` to an
+absolute path. The relative database, module storage, module and upload paths, caches and every
 log file then live under it. Unset, it has no effect on any path. See
 [The data directory](./runtime.md#the-data-directory).
 

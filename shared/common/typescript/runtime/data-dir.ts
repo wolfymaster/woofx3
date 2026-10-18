@@ -9,10 +9,20 @@ import path from "node:path";
  */
 export const DATA_DIR_ENV = "WOOFX3_DATA_DIR";
 
-/** The absolute data directory, or undefined when WOOFX3_DATA_DIR is unset or blank. */
+/**
+ * The data directory, or undefined when WOOFX3_DATA_DIR is unset or blank. Throws on a relative
+ * path: each process would resolve it against its own working directory, and the orchestrator and
+ * the services it starts do not share one, so they would write to different places.
+ */
 export function dataDir(env: Record<string, string | undefined> = process.env): string | undefined {
   const value = env[DATA_DIR_ENV]?.trim();
-  return value ? path.resolve(value) : undefined;
+  if (!value) {
+    return undefined;
+  }
+  if (!path.isAbsolute(value)) {
+    throw new Error(`${DATA_DIR_ENV} must be an absolute path, not "${value}"`);
+  }
+  return path.normalize(value);
 }
 
 /**

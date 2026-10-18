@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { z } from "zod";
+import { dataDir } from "./data-dir";
 
 /**
  * Convert camelCase to SCREAMING_SNAKE_CASE for env key mapping.
@@ -262,6 +263,8 @@ export function loadRuntimeEnv(options: LoadRuntimeEnvOptions): RuntimeEnvResult
   if (configPath !== undefined && !fs.existsSync(configPath)) {
     throw new Error(`${CONFIG_FILE_ENV} names a config file that does not exist: ${configPath}`);
   }
+  // Fails a relative WOOFX3_DATA_DIR at startup rather than at the first path resolved under it.
+  dataDir(process.env);
   const woofx3Raw = configPath !== undefined ? readWoofx3ConfigFile(configPath) : loadWoofx3ConfigFile(rootDir);
   const configFromFile: Record<string, string | number | boolean> = {};
   if (woofx3Raw) {
