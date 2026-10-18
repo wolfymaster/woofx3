@@ -29,9 +29,8 @@ export const WIDGET_BOOT_GLOBAL = "__WOOFX3_WIDGET_BOOT__";
 /**
  * Boot payload inlined into the assembled frame document ahead of the
  * shim script. Carrying `settings` here (rather than waiting for
- * `init`) keeps `widgetHost.settings` synchronously readable — the
- * FR-4.3 source-compatibility requirement for existing widgets that
- * read settings at IIFE time.
+ * `init`) keeps `widgetHost.settings` synchronously readable, as
+ * existing widgets that read settings at IIFE time require.
  *
  * `nonce` is a per-frame CSPRNG value; every P1 message in both
  * directions must carry it, and each side drops messages whose nonce

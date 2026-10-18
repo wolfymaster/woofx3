@@ -190,12 +190,12 @@ export class SceneRowReader {
       settings,
       visible: placement.visible,
       stored: w,
-      // Placements carry none; `resolveInstances` takes it from the widget
+      // Placements carry none; `WidgetCatalog.resolve` takes it from the widget
       // definition.
       hostsSurface: "",
       // Versioned by `framing` when the config is built.
       frameUrl: frameDocumentUrl(moduleId, parsed.manifestId, selectedThemeId(settings), UNAVAILABLE_VERSION),
-      // Assumed until the catalog says otherwise; `resolveInstances` is what
+      // Assumed until the catalog says otherwise; `WidgetCatalog.resolve` is what
       // decides, since parsing alone cannot know what exists.
       resolved: true,
     };

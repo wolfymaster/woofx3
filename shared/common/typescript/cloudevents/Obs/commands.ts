@@ -24,6 +24,9 @@ export interface OBSCommand {
   priority: number;
 }
 
+/** Show a source, hide it, or flip whichever it is when the command runs. */
+export type SourceVisibility = "visible" | "hidden" | "toggle";
+
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
  * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
@@ -36,9 +39,6 @@ export interface OBSCommand {
  *
  * Must match the commands built in barkloader/lib_sandbox/src/extensions/obs.rs.
  */
-/** Show a source, hide it, or flip whichever it is when the command runs. */
-export type SourceVisibility = "visible" | "hidden" | "toggle";
-
 export type ObsControlCommand =
   | { command: "switch_scene"; sceneName: string }
   | {

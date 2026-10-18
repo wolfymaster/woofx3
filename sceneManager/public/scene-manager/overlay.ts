@@ -114,7 +114,7 @@ export function createOverlay(env: OverlayEnv): void {
 
   const assets = new AssetCache({ pageOrigin: env.location.origin, fetchFn });
 
-  /** `moduleId` is the placement's, from the scene record, never the widget's claim. */
+  /** `moduleId` is the placement's, from the scene record. */
   function postStatus(instanceId: string, moduleId: string, report: WidgetStatusReportPayload): void {
     fetchFn(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",

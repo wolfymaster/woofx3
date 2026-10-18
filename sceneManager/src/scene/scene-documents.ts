@@ -89,7 +89,10 @@ const SYSTEM_CLOCK: SceneDocumentsClock = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
-/** One editor socket, as the documents talk to it. */
+/** Standard WebSocket close codes (the IANA registry), for closes no editor needs to tell apart. */
+const WS_INTERNAL_ERROR = 1011;
+const WS_SERVICE_RESTART = 1012;
+
 /** An editor's opening message, as the documents need it. */
 export interface EditorHello {
   clientId: string;

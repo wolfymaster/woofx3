@@ -89,8 +89,8 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
 }
 
 /** `POST /scene/{sceneId}/events/{eventId}/delivered` — body
- *  `{ instanceIds: string[] }`, batched per the design note (a burst
- *  of events shouldn't mean a burst of single-item HTTP calls). */
+ *  `{ instanceIds: string[] }`, batched by the page (ack-batcher.ts) so a
+ *  burst of events is not a burst of single-item HTTP calls. */
 export async function handleEventDeliveredRoute(
   req: Request,
   sceneId: string,

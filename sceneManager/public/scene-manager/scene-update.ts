@@ -1,8 +1,8 @@
 // What a saved scene change means for the widgets already on the page.
 //
-// A save used to reload the whole overlay, restarting every widget on stream
-// to apply a change to one. The page instead fetches the saved config and
-// works out, per placement, the least it has to do. A placement whose frame
+// A save must not restart every widget on stream to apply a change to one, so
+// the page fetches the saved config and works out, per placement, the least
+// it has to do. A placement whose frame
 // document is the same keeps its frame: it is moved, and its settings are
 // patched in or, when the widget's script read a changed one, it is swapped
 // for a fresh frame once that has painted. Only a different frame document
