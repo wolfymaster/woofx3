@@ -2551,7 +2551,10 @@ fn validate_field_options(field: &ManifestDataShapeField, context: &str) -> Resu
                 option.value
             ));
         }
-        if seen.contains(&&option.value) {
+        if seen
+            .iter()
+            .any(|earlier| same_option_value(earlier, &option.value))
+        {
             return Err(anyhow!(
                 "{context}: option value {} is listed twice",
                 option.value
@@ -2560,6 +2563,16 @@ fn validate_field_options(field: &ManifestDataShapeField, context: &str) -> Resu
         seen.push(&option.value);
     }
     Ok(())
+}
+
+/// Whether two option values are the same value to a comparison. Numbers are
+/// compared by value, so `1` and `1.0`, or `1e3` and `1000`, are one option
+/// however the manifest spells them.
+fn same_option_value(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 fn validate_sibling_reference(
@@ -4395,6 +4408,18 @@ mod tests {
                 { "value": "1000", "label": "Tier 1" }, { "value": "1000", "label": "Tier one" }] }"#,
         );
         assert!(msg.contains("listed twice"), "{msg}");
+    }
+
+    // A number is one option however it is spelled.
+    #[test]
+    fn rejects_a_number_option_repeated_in_another_spelling() {
+        for (first, second) in [("1", "1.0"), ("1e3", "1000"), ("-0", "0")] {
+            let msg = emits_rejection(&format!(
+                r#"{{ "path": "level", "type": "number", "options": [
+                    {{ "value": {first}, "label": "One" }}, {{ "value": {second}, "label": "Also one" }}] }}"#
+            ));
+            assert!(msg.contains("listed twice"), "{first} and {second}: {msg}");
+        }
     }
 
     #[test]
