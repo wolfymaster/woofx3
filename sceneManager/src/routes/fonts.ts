@@ -1,10 +1,5 @@
 import { FONT_FILES_PREFIX, FONT_STYLESHEET_PATH, type GoogleFontCache } from "../fonts/google-font-cache";
 
-/** Whether `pathname` is one of the font routes. */
-export function isFontPath(pathname: string): boolean {
-  return pathname === FONT_STYLESHEET_PATH || pathname.startsWith(FONT_FILES_PREFIX);
-}
-
 /**
  * `GET /fonts/css?family={family}` and `GET /fonts/files/{path}`: the Google
  * families widget frames link for their `font` settings (see

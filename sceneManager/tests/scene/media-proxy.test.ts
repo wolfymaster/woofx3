@@ -15,8 +15,8 @@ import {
   rewriteExternalMedia,
 } from "../../contract/media-url";
 import { applyOps, type PlacementMeta } from "../../public/scene-manager/scene-document";
-import { corsHeadersFor, type HttpDeps } from "../../src/http";
-import { handleMediaProxyRoute, isMediaProxyPath } from "../../src/routes/media";
+import { corsHeadersFor, type HttpDeps, routeOf } from "../../src/http";
+import { handleMediaProxyRoute } from "../../src/routes/media";
 import { handleSceneDraftConfigRoute } from "../../src/routes/scene";
 import { FrameAssembler } from "../../src/scene/frame-assembler";
 import { FrameCatalog } from "../../src/scene/frame-catalog";
@@ -782,9 +782,9 @@ describe("handleMediaProxyRoute", () => {
   const path = new URL(EXTERNAL_PROXIED).pathname;
 
   it("matches only a single token segment under the media path", () => {
-    expect(isMediaProxyPath(path)).toBe(true);
-    expect(isMediaProxyPath("/assets/media/")).toBe(false);
-    expect(isMediaProxyPath("/assets/media/a/b")).toBe(false);
+    expect(routeOf(path)).toBe("/assets/media/:token");
+    expect(routeOf("/assets/media/")).toBe("/assets/*");
+    expect(routeOf("/assets/media/a/b")).toBe("/assets/*");
   });
 
   it("grants no cross-origin reads", () => {

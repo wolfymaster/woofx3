@@ -1,12 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { corsHeadersFor } from "../../src/http";
-import {
-  handleStorageAssetRoute,
-  handleUploadRoute,
-  isStorageAssetPath,
-  isUploadPath,
-  MAX_UPLOAD_BYTES,
-} from "../../src/routes/storage";
+import { corsHeadersFor, routeOf } from "../../src/http";
+import { handleStorageAssetRoute, handleUploadRoute, MAX_UPLOAD_BYTES } from "../../src/routes/storage";
 
 const BARKLOADER_URL = "http://barkloader.test/";
 
@@ -26,13 +20,13 @@ function upstream(response: Response) {
   return mock(async (_input: string | URL | Request, _init?: RequestInit) => response);
 }
 
-describe("isStorageAssetPath", () => {
-  it("claims repository keys and leaves sceneManager's own files alone", () => {
-    expect(isStorageAssetPath("/assets/modules/m1/abc123/assets/bell.mp3")).toBe(true);
-    expect(isStorageAssetPath("/assets/user/res-1/photo.png")).toBe(true);
-    expect(isStorageAssetPath("/assets/vendor/datastar.js")).toBe(false);
-    expect(isStorageAssetPath("/assets/widget-host-shim.js")).toBe(false);
-    expect(isStorageAssetPath("/assets/modulesx/m1/a.png")).toBe(false);
+describe("routes for stored files", () => {
+  it("answer module and library files, and nothing else under /assets/ but the static catch-all", () => {
+    expect(routeOf("/assets/modules/m1/abc123/assets/bell.mp3")).toBe("/assets/modules/*");
+    expect(routeOf("/assets/user/res-1/photo.png")).toBe("/assets/user/*");
+    expect(routeOf("/assets/vendor/datastar.js")).toBe("/assets/*");
+    expect(routeOf("/assets/widget-host-shim.js")).toBe("/assets/*");
+    expect(routeOf("/assets/modulesx/m1/a.png")).toBe("/assets/*");
   });
 });
 
@@ -112,13 +106,12 @@ function put(path: string, body: BodyInit | null, headers: Record<string, string
   return { req: new Request(url, { method: "PUT", body, headers }), url };
 }
 
-describe("isUploadPath", () => {
-  it("claims exactly one token segment under /assets/upload/", () => {
-    expect(isUploadPath(UPLOAD_PATH)).toBe(true);
-    expect(isUploadPath("/assets/upload/")).toBe(false);
-    expect(isUploadPath("/assets/upload/a/b")).toBe(false);
-    expect(isUploadPath("/assets/user/res-1/photo.png")).toBe(false);
-    expect(isStorageAssetPath(UPLOAD_PATH)).toBe(false);
+describe("the upload route", () => {
+  it("answers exactly one grant segment", () => {
+    expect(routeOf(UPLOAD_PATH)).toBe("/assets/upload/:grant");
+    expect(routeOf("/assets/upload/")).toBe("/assets/*");
+    expect(routeOf("/assets/upload/a/b")).toBe("/assets/*");
+    expect(routeOf("/assets/user/res-1/photo.png")).toBe("/assets/user/*");
   });
 });
 

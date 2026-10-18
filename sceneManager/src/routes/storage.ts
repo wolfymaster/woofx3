@@ -1,5 +1,4 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { ENGINE_ASSET_PREFIXES } from "@woofx3/module-sdk";
 import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
 
 const STORAGE_ASSET_RELAY: BarkloaderRelay = {
@@ -8,10 +7,6 @@ const STORAGE_ASSET_RELAY: BarkloaderRelay = {
   failure: "barkloader asset request failed",
   loggedPath: (url) => url.pathname,
 };
-
-export function isStorageAssetPath(pathname: string): boolean {
-  return ENGINE_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-}
 
 /**
  * Relays to barkloader, which is not browser-reachable. Redirects are
@@ -40,7 +35,6 @@ export async function handleStorageAssetRoute(
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 
 /** `/assets/upload/{token}`: exactly one segment, the signed grant. */
-const UPLOAD_PATH = /^\/assets\/upload\/[^/]+$/;
 
 /** The only method an upload grant is good for, plus its preflight. */
 export const UPLOAD_ALLOWED_METHODS = "PUT, OPTIONS";
@@ -53,10 +47,6 @@ export const UPLOAD_ALLOWED_METHODS = "PUT, OPTIONS";
  * be a promise this relay cannot keep if the client goes away mid-upload.
  */
 const UPLOAD_FORWARDED_HEADERS = ["Content-Type"] as const;
-
-export function isUploadPath(pathname: string): boolean {
-  return UPLOAD_PATH.test(pathname);
-}
 
 /**
  * Relays a token-guarded upload to barkloader, which issues these grants
