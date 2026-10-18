@@ -61,9 +61,6 @@ describe("WidgetBridge settings", () => {
   const NONCE = "n-1";
   const noop = () => {};
   const callbacks: WidgetBridgeCallbacks = {
-    onStorageGet: () => null,
-    onStorageSubscribe: noop,
-    onStorageUnsubscribe: noop,
     onStatusReport: noop,
     onAssetLoad: () => Promise.reject(new AssetLoadError("not_found", "")),
     onEventsSubscribe: noop,
@@ -138,9 +135,6 @@ describe("WidgetBridge assets", () => {
     };
     const noop = () => {};
     const bridge = new WidgetBridge("inst-1", NONCE, {
-      onStorageGet: () => null,
-      onStorageSubscribe: noop,
-      onStorageUnsubscribe: noop,
       onStatusReport: noop,
       onAssetLoad,
       onEventsSubscribe: noop,
@@ -227,9 +221,6 @@ describe("WidgetBridge status reports", () => {
     const reports: Record<string, unknown>[] = [];
     const contentWindow = { postMessage: noop };
     const bridge = new WidgetBridge("inst-1", NONCE, {
-      onStorageGet: () => null,
-      onStorageSubscribe: noop,
-      onStorageUnsubscribe: noop,
       onStatusReport: (report) => reports.push({ ...report }),
       onAssetLoad: () => Promise.reject(new AssetLoadError("not_found", "")),
       onEventsSubscribe: noop,
@@ -248,5 +239,89 @@ describe("WidgetBridge status reports", () => {
     fromWidget("status.report", { key: "count", value: 3, ts: "2026-10-17T00:00:00Z" });
 
     expect(reports).toEqual([{ instanceId: "inst-1", key: "count", value: 3, ts: "2026-10-17T00:00:00Z" }]);
+  });
+});
+
+describe("WidgetBridge storage and capabilities", () => {
+  const NONCE = "n-1";
+  const noop = () => {};
+
+  function setup(storage?: { values: Record<string, unknown>; subscribed: string[]; unsubscribed: string[] }) {
+    const posted: Record<string, unknown>[] = [];
+    const contentWindow = { postMessage: (message: Record<string, unknown>) => posted.push(message) };
+    const bridge = new WidgetBridge("inst-1", NONCE, {
+      ...(storage === undefined
+        ? {}
+        : {
+            storage: {
+              get: (key: string) => storage.values[key] ?? null,
+              subscribe: (key: string) => storage.subscribed.push(key),
+              unsubscribe: (key: string) => storage.unsubscribed.push(key),
+            },
+          }),
+      onStatusReport: noop,
+      onAssetLoad: () => Promise.reject(new AssetLoadError("not_found", "")),
+      onEventsSubscribe: noop,
+      onEventsUnsubscribe: noop,
+      onEventComplete: noop,
+      onDispose: noop,
+    });
+    bridge.attach({ contentWindow } as unknown as HTMLIFrameElement);
+    const fromWidget = (type: string, extra: Record<string, unknown> = {}, v: unknown = PROTOCOL_VERSION) =>
+      bridge.handleMessage({
+        source: contentWindow,
+        data: { proto: WIDGET_PROTOCOL, v, nonce: NONCE, type, ...extra },
+      } as unknown as MessageEvent);
+    return { bridge, posted, fromWidget, of: (type: string) => posted.filter((m) => m.type === type) };
+  }
+
+  it("tells a frame with storage that it has it, and one without that it has not", () => {
+    const withStorage = setup({ values: {}, subscribed: [], unsubscribed: [] });
+    withStorage.fromWidget("hello");
+    expect(withStorage.of("init")[0]!.capabilities).toEqual(["storage", "events", "status", "settings", "assets"]);
+
+    const without = setup();
+    without.fromWidget("hello");
+    expect(without.of("init")[0]!.capabilities).toEqual(["events", "status", "settings", "assets"]);
+  });
+
+  it("serves storage by key, whatever module the widget claims to be", () => {
+    const storage = { values: { count: 3 }, subscribed: [] as string[], unsubscribed: [] as string[] };
+    const { bridge, fromWidget, of } = setup(storage);
+    fromWidget("hello", { moduleId: "someone-else" });
+
+    fromWidget("storage.get", { id: "g1", key: "count" });
+    expect(of("storage.value")).toEqual([expect.objectContaining({ id: "g1", key: "count", value: 3 })]);
+
+    fromWidget("storage.subscribe", { subId: "s1", key: "count" });
+    bridge.sendStorageValue("count", 4);
+    expect(of("storage.changed")).toEqual([expect.objectContaining({ subId: "s1", key: "count", value: 4 })]);
+
+    fromWidget("storage.unsubscribe", { subId: "s1" });
+    bridge.sendStorageValue("count", 5);
+    expect(of("storage.changed")).toHaveLength(1);
+    expect(storage.subscribed).toEqual(["count"]);
+    expect(storage.unsubscribed).toEqual(["count"]);
+  });
+
+  it("answers a frame with no storage null, and never subscribes it", () => {
+    const { bridge, fromWidget, of } = setup();
+    fromWidget("hello");
+    fromWidget("storage.get", { id: "g1", key: "count" });
+    fromWidget("storage.subscribe", { subId: "s1", key: "count" });
+    bridge.sendStorageValue("count", 4);
+    expect(of("storage.value")).toEqual([expect.objectContaining({ id: "g1", value: null })]);
+    expect(of("storage.changed")).toEqual([]);
+  });
+
+  it("refuses a widget speaking another protocol version, and ignores malformed messages", () => {
+    const { fromWidget, of } = setup();
+    fromWidget("hello", {}, 2);
+    expect(of("init.reject")).toEqual([expect.objectContaining({ supportedVersions: [PROTOCOL_VERSION] })]);
+    expect(of("init")).toEqual([]);
+
+    fromWidget("hello");
+    fromWidget("storage.get", { key: "count" });
+    expect(of("storage.value")).toEqual([]);
   });
 });

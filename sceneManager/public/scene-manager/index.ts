@@ -302,9 +302,11 @@ function main(): void {
     const callbacks: WidgetBridgeCallbacks = {
       // The module comes from the scene record, not from the module the
       // widget names in its hello (see module-state.ts).
-      onStorageGet: (_moduleId, key) => moduleState.peek(instance.moduleId, key),
-      onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
-      onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
+      storage: {
+        get: (key) => moduleState.peek(instance.moduleId, key),
+        subscribe: (key) => moduleState.watch(instance.moduleId, key, storageTarget),
+        unsubscribe: (key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
+      },
       onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
       onAssetLoad: assets.scopedTo(instance.moduleId),
       onEventsSubscribe: (subId, queue) => {

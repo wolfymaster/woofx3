@@ -29,7 +29,7 @@ import {
   parseEngineAssetPath,
   widgetMayRead,
 } from "../widget-assets";
-import type { EventQueueConfig } from "../widget-protocol";
+import { type EventQueueConfig, WIDGET_CAPABILITIES, type WidgetCapability } from "../widget-protocol";
 
 /** Re-exported so the preview harness can apply a widget's setting bindings
  *  the way the widget host shim does. */
@@ -38,6 +38,8 @@ export { applySettingBindings } from "../widget-bindings";
 export interface MockHostOptions {
   /** Module id surfaced as `widgetHost.moduleId`. */
   moduleId?: string;
+  /** `widgetHost.capabilities`; every capability by default. */
+  capabilities?: readonly WidgetCapability[];
   /** Stable instance id surfaced as `widgetHost.instanceId`. */
   instanceId?: string;
   /** Frozen settings object surfaced as `widgetHost.settings`. */
@@ -239,6 +241,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     linkedResources: Object.freeze({ ...(opts.linkedResources ?? {}) }),
     moduleId,
     instanceId,
+    capabilities: Object.freeze([...(opts.capabilities ?? WIDGET_CAPABILITIES)]),
     get settings() {
       return settings;
     },

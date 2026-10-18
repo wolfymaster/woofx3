@@ -11,7 +11,7 @@
 // Anything in this file is part of the public API surface. Breaking
 // changes require a major version bump.
 
-import type { EventQueueConfig } from "./widget-protocol";
+import type { EventQueueConfig, WidgetCapability } from "./widget-protocol";
 
 /**
  * Module-storage read surface scoped to the widget's owning module.
@@ -226,6 +226,13 @@ export interface WidgetHost {
   /** Module id this widget belongs to. Surfaced so widgets can scope
    *  storage calls without the shell having to bind it. */
   readonly moduleId: string;
+
+  /**
+   * What the host gives this frame, to feature-detect on: an alert's widget
+   * has no `"storage"`, say, and its storage reads answer `null`. Final once
+   * the handshake is done; before it, what the host may offer.
+   */
+  readonly capabilities: readonly WidgetCapability[];
 
   /** Stable per-placement instance id from `WidgetInstance.id`.
    *  Carried on every status report so the engine / dashboard can

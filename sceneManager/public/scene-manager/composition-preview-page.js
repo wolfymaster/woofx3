@@ -45,9 +45,6 @@ function engineAssetPath(ref, resourceBaseUrl) {
   }
   return parseEngineAssetPath(url.pathname)?.path ?? null;
 }
-// ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
-var URL_ATTRIBUTES = ["src", "href", "poster"];
-var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
 // ../shared/clients/typescript/module-sdk/dist/widget-protocol.js
 var WIDGET_PROTOCOL = "woofx3.widget";
 var PROTOCOL_VERSION = 1;
@@ -61,13 +58,112 @@ function encodePlacementBoot(boot) {
   const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return `${WIDGET_BOOT_FRAGMENT_PARAM}=${base64}`;
 }
-function isWidgetProtocolEnvelope(value) {
+function readEnvelope(value, nonce) {
   if (typeof value !== "object" || value === null) {
-    return false;
+    return null;
   }
   const msg = value;
-  return msg.proto === WIDGET_PROTOCOL && msg.v === PROTOCOL_VERSION && typeof msg.type === "string" && msg.type.length > 0 && typeof msg.nonce === "string" && msg.nonce.length > 0;
+  if (msg.proto !== WIDGET_PROTOCOL || msg.nonce !== nonce || typeof msg.type !== "string" || msg.type === "") {
+    return null;
+  }
+  const negotiating = msg.type === "hello" || msg.type === "init.reject";
+  if (negotiating ? typeof msg.v !== "number" : msg.v !== PROTOCOL_VERSION) {
+    return null;
+  }
+  return msg;
 }
+function nonEmptyString(value) {
+  return typeof value === "string" && value.length > 0;
+}
+function plainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stringList(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+}
+function eventQueueConfig(value) {
+  if (!plainObject(value)) {
+    return;
+  }
+  const config = {};
+  if (typeof value.retryTimeoutMs === "number" && value.retryTimeoutMs > 0) {
+    config.retryTimeoutMs = value.retryTimeoutMs;
+  }
+  if (typeof value.maxInFlight === "number" && value.maxInFlight >= 1) {
+    config.maxInFlight = Math.floor(value.maxInFlight);
+  }
+  if (typeof value.autoComplete === "boolean") {
+    config.autoComplete = value.autoComplete;
+  }
+  if (typeof value.priorityExpr === "string") {
+    config.priorityExpr = value.priorityExpr;
+  }
+  return config;
+}
+function parseWidgetToHostMessage(value, nonce) {
+  const m = readEnvelope(value, nonce);
+  if (m === null) {
+    return null;
+  }
+  const envelope = { proto: WIDGET_PROTOCOL, v: m.v, nonce };
+  switch (m.type) {
+    case "hello":
+      return {
+        ...envelope,
+        type: "hello",
+        instanceId: typeof m.instanceId === "string" ? m.instanceId : "",
+        sdkVersion: typeof m.sdkVersion === "string" ? m.sdkVersion : "",
+        wants: stringList(m.wants)
+      };
+    case "storage.get":
+      return nonEmptyString(m.id) && typeof m.key === "string" ? { ...envelope, type: "storage.get", id: m.id, key: m.key } : null;
+    case "storage.subscribe":
+      return nonEmptyString(m.subId) && typeof m.key === "string" ? { ...envelope, type: "storage.subscribe", subId: m.subId, key: m.key } : null;
+    case "storage.unsubscribe":
+      return nonEmptyString(m.subId) ? { ...envelope, type: "storage.unsubscribe", subId: m.subId } : null;
+    case "asset.load":
+      return nonEmptyString(m.id) && typeof m.path === "string" ? { ...envelope, type: "asset.load", id: m.id, path: m.path } : null;
+    case "events.subscribe": {
+      if (!nonEmptyString(m.subId)) {
+        return null;
+      }
+      const message = { ...envelope, type: "events.subscribe", subId: m.subId };
+      if (Array.isArray(m.types)) {
+        message.types = stringList(m.types);
+      }
+      const queue = eventQueueConfig(m.queue);
+      if (queue !== undefined) {
+        message.queue = queue;
+      }
+      return message;
+    }
+    case "events.unsubscribe":
+      return nonEmptyString(m.subId) ? { ...envelope, type: "events.unsubscribe", subId: m.subId } : null;
+    case "event.complete":
+      return nonEmptyString(m.subId) && nonEmptyString(m.eventId) ? { ...envelope, type: "event.complete", subId: m.subId, eventId: m.eventId } : null;
+    case "status.report":
+      return typeof m.key === "string" ? {
+        ...envelope,
+        type: "status.report",
+        key: m.key,
+        value: m.value,
+        ts: typeof m.ts === "string" ? m.ts : ""
+      } : null;
+    case "settings.reads":
+      return { ...envelope, type: "settings.reads", keys: stringList(m.keys), all: m.all === true };
+    case "rendered":
+      return { ...envelope, type: "rendered" };
+    case "ping":
+    case "pong":
+      return { ...envelope, type: m.type, ts: typeof m.ts === "number" ? m.ts : 0 };
+    default:
+      return null;
+  }
+}
+
+// ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
+var URL_ATTRIBUTES = ["src", "href", "poster"];
+var ELEMENT_SELECTOR = ["[data-setting]", ...URL_ATTRIBUTES.map((a) => `[data-setting-${a}]`)].join(", ");
 // ../shared/clients/typescript/module-sdk/dist/widget-fonts.js
 var GENERIC_FAMILIES = new Set([
   "serif",
@@ -3933,7 +4029,6 @@ class WidgetBridge {
   nonce;
   callbacks;
   iframe = null;
-  moduleId = null;
   initialized = false;
   shimStorageSubs = new Map;
   shimSubToKey = new Map;
@@ -3952,7 +4047,6 @@ class WidgetBridge {
   onFrameLoad() {
     this.documentGeneration += 1;
     this.initialized = false;
-    this.moduleId = null;
     this.readKeys.clear();
     this.readAll = false;
     this.shimStorageSubs.clear();
@@ -3963,161 +4057,93 @@ class WidgetBridge {
     if (!this.iframe || event.source !== this.iframe.contentWindow) {
       return;
     }
-    const data = event.data;
-    if (typeof data !== "object" || data === null) {
+    const msg = parseWidgetToHostMessage(event.data, this.nonce);
+    if (msg === null) {
       return;
     }
-    const msg = data;
-    if (msg.proto !== WIDGET_PROTOCOL) {
-      return;
-    }
-    if (msg.nonce !== this.nonce) {
-      return;
-    }
-    const type = typeof msg.type === "string" ? msg.type : "";
-    if (!type) {
-      return;
-    }
-    if (type === "hello") {
-      const v = msg.v;
-      const incomingModuleId = typeof msg.moduleId === "string" ? msg.moduleId : "";
-      if (v !== PROTOCOL_VERSION) {
-        this.sendReject(`unsupported protocol version ${v}`);
+    if (msg.type === "hello") {
+      if (msg.v !== PROTOCOL_VERSION) {
+        this.sendReject(`unsupported protocol version ${msg.v}`);
         return;
       }
-      this.moduleId = incomingModuleId;
       this.initialized = true;
       this.sendInit({});
       return;
     }
-    if (!isWidgetProtocolEnvelope(data)) {
+    if (msg.type === "rendered") {
+      this.callbacks.onRendered?.();
       return;
     }
-    switch (type) {
+    if (!this.initialized) {
+      return;
+    }
+    const storage = this.callbacks.storage;
+    switch (msg.type) {
       case "storage.get": {
-        if (!this.initialized || !this.moduleId) {
-          return;
-        }
-        const id = typeof msg.id === "string" ? msg.id : "";
-        const key = typeof msg.key === "string" ? msg.key : "";
-        const value = this.callbacks.onStorageGet(this.moduleId, key);
-        this.post({ type: "storage.value", id, key, value });
-        return;
-      }
-      case "asset.load": {
-        if (!this.initialized) {
-          return;
-        }
-        const id = typeof msg.id === "string" ? msg.id : "";
-        const path = typeof msg.path === "string" ? msg.path : "";
-        if (!id) {
-          return;
-        }
-        this.answerAssetLoad(id, path);
+        this.post({ type: "storage.value", id: msg.id, key: msg.key, value: storage ? storage.get(msg.key) : null });
         return;
       }
       case "storage.subscribe": {
-        if (!this.initialized || !this.moduleId) {
+        if (!storage) {
           return;
         }
-        const key = typeof msg.key === "string" ? msg.key : "";
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        const storageKey = `${this.moduleId}:${key}`;
-        let subIds = this.shimStorageSubs.get(storageKey);
+        let subIds = this.shimStorageSubs.get(msg.key);
         if (!subIds) {
           subIds = new Set;
-          this.shimStorageSubs.set(storageKey, subIds);
+          this.shimStorageSubs.set(msg.key, subIds);
         }
-        subIds.add(subId);
-        this.shimSubToKey.set(subId, storageKey);
-        this.callbacks.onStorageSubscribe(this.moduleId, key, this.instanceId);
+        subIds.add(msg.subId);
+        this.shimSubToKey.set(msg.subId, msg.key);
+        storage.subscribe(msg.key);
         return;
       }
       case "storage.unsubscribe": {
-        if (!this.initialized || !this.moduleId) {
+        const key = this.shimSubToKey.get(msg.subId);
+        if (!storage || key === undefined) {
           return;
         }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        const storageKey = this.shimSubToKey.get(subId);
-        if (!storageKey) {
-          return;
+        this.shimSubToKey.delete(msg.subId);
+        const subIds = this.shimStorageSubs.get(key);
+        subIds?.delete(msg.subId);
+        if (subIds?.size === 0) {
+          this.shimStorageSubs.delete(key);
         }
-        this.shimSubToKey.delete(subId);
-        const subIds = this.shimStorageSubs.get(storageKey);
-        if (subIds) {
-          subIds.delete(subId);
-          if (subIds.size === 0) {
-            this.shimStorageSubs.delete(storageKey);
-          }
-        }
-        const colonIdx = storageKey.indexOf(":");
-        const key = colonIdx >= 0 ? storageKey.slice(colonIdx + 1) : storageKey;
-        this.callbacks.onStorageUnsubscribe(this.moduleId, key, this.instanceId);
+        storage.unsubscribe(key);
+        return;
+      }
+      case "asset.load": {
+        this.answerAssetLoad(msg.id, msg.path);
         return;
       }
       case "events.subscribe": {
-        if (!this.initialized) {
-          return;
-        }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        if (!subId) {
-          return;
-        }
-        this.shimEventSubs.add(subId);
-        const queue = isEventQueueConfig(msg.queue) ? msg.queue : undefined;
-        this.callbacks.onEventsSubscribe(subId, queue);
+        this.shimEventSubs.add(msg.subId);
+        this.callbacks.onEventsSubscribe(msg.subId, msg.queue);
         return;
       }
       case "events.unsubscribe": {
-        if (!this.initialized) {
-          return;
-        }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        this.shimEventSubs.delete(subId);
-        this.callbacks.onEventsUnsubscribe(subId);
+        this.shimEventSubs.delete(msg.subId);
+        this.callbacks.onEventsUnsubscribe(msg.subId);
         return;
       }
       case "event.complete": {
-        if (!this.initialized) {
-          return;
-        }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        const eventId = typeof msg.eventId === "string" ? msg.eventId : "";
-        if (!subId || !eventId) {
-          return;
-        }
-        this.callbacks.onEventComplete(subId, eventId);
+        this.callbacks.onEventComplete(msg.subId, msg.eventId);
         return;
       }
       case "settings.reads": {
-        if (!this.initialized) {
-          return;
-        }
-        if (msg.all === true) {
+        if (msg.all) {
           this.readAll = true;
         }
-        if (Array.isArray(msg.keys)) {
-          for (const key of msg.keys) {
-            if (typeof key === "string") {
-              this.readKeys.add(key);
-            }
-          }
+        for (const key of msg.keys) {
+          this.readKeys.add(key);
         }
-        return;
-      }
-      case "rendered": {
-        this.callbacks.onRendered?.();
         return;
       }
       case "status.report": {
-        if (!this.initialized) {
-          return;
-        }
         this.callbacks.onStatusReport({
           instanceId: this.instanceId,
-          key: typeof msg.key === "string" ? msg.key : "",
+          key: msg.key,
           value: msg.value,
-          ts: typeof msg.ts === "string" ? msg.ts : new Date().toISOString()
+          ts: msg.ts === "" ? new Date().toISOString() : msg.ts
         });
         return;
       }
@@ -4125,12 +4151,12 @@ class WidgetBridge {
         return;
     }
   }
+  capabilities() {
+    const given = ["events", "status", "settings", "assets"];
+    return this.callbacks.storage ? ["storage", ...given] : given;
+  }
   sendInit(settings) {
-    this.post({
-      type: "init",
-      settings,
-      capabilities: ["storage", "events", "status", "settings", "assets"]
-    });
+    this.post({ type: "init", settings, capabilities: this.capabilities() });
   }
   sendReject(reason) {
     this.post({
@@ -4140,23 +4166,12 @@ class WidgetBridge {
     });
   }
   sendStorageValue(key, value) {
-    if (this.moduleId) {
-      this.sendStorageChanged(this.moduleId, key, value);
-    }
-  }
-  sendStorageChanged(moduleId, key, value) {
     if (!this.initialized) {
       return;
     }
-    const storageKey = `${moduleId}:${key}`;
-    const subIds = this.shimStorageSubs.get(storageKey);
     const occurredAt = new Date().toISOString();
-    if (subIds && subIds.size > 0) {
-      for (const subId of subIds) {
-        this.post({ type: "storage.changed", subId, key, value, occurredAt });
-      }
-    } else {
-      this.post({ type: "storage.changed", subId: storageKey, key, value, occurredAt });
+    for (const subId of this.shimStorageSubs.get(key) ?? []) {
+      this.post({ type: "storage.changed", subId, key, value, occurredAt });
     }
   }
   sendEvent(subId, event) {
@@ -4185,7 +4200,6 @@ class WidgetBridge {
     this.documentGeneration += 1;
     this.iframe = null;
     this.initialized = false;
-    this.moduleId = null;
     this.readKeys.clear();
     this.readAll = false;
     this.shimStorageSubs.clear();
@@ -4219,9 +4233,6 @@ class WidgetBridge {
       ...payload
     }, "*");
   }
-}
-function isEventQueueConfig(value) {
-  return typeof value === "object" && value !== null;
 }
 function createFrameLoadHandler(bridge) {
   let loadCount = 0;
@@ -4312,9 +4323,6 @@ function mountFrame(bridges, assets, slot, spec, facts) {
   const waiting = [];
   let released = false;
   const bridge = new WidgetBridge(instanceId, nonce, {
-    onStorageGet: () => null,
-    onStorageSubscribe: () => {},
-    onStorageUnsubscribe: () => {},
     onStatusReport: () => {},
     onAssetLoad: assets.scopedTo(moduleId),
     onEventsSubscribe: (subId, queue) => {

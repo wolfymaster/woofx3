@@ -10,9 +10,11 @@
 // failing either check are silently dropped.
 //
 // Module storage (`storage.get`/`storage.subscribe`) is answered by the
-// page's ModuleStateCache (module-state.ts) for scene placements. Alert
-// layout widgets are not given storage: `storage.get` answers `null`
-// and subscriptions never fire.
+// page's ModuleStateCache (module-state.ts) for scene placements, through
+// the `storage` callbacks. Alert and preview widgets are given none: their
+// `init` leaves "storage" out, `storage.get` answers `null`, and
+// subscriptions never fire. Which module's storage is read is the page's
+// decision, from the scene record; the bridge never sees a module id.
 //
 // File reads (`asset.load`) are answered by the page's AssetCache
 // (asset-loader.ts), limited to what the frame's module may read.
@@ -21,10 +23,13 @@ import { AssetLoadError, type LoadedAsset } from "./asset-loader";
 import {
   WIDGET_PROTOCOL,
   PROTOCOL_VERSION,
-  isWidgetProtocolEnvelope,
+  parseWidgetToHostMessage,
   type EventQueueConfig,
+  type HostToWidgetMessage,
   type WidgetBehaviorState,
+  type WidgetCapability,
   type WidgetEvent,
+  type WidgetMessageBody,
 } from "@woofx3/module-sdk";
 
 /**
@@ -40,10 +45,18 @@ export interface WidgetStatusReportPayload {
   ts: string;
 }
 
+/** The module storage a frame reads, by key; the page knows whose storage it is. */
+export interface WidgetStorageAccess {
+  /** The value the page holds for `key`, or null. */
+  get(key: string): unknown;
+  /** The frame wants `key`'s changes (sent through `sendStorageValue`). */
+  subscribe(key: string): void;
+  unsubscribe(key: string): void;
+}
+
 export interface WidgetBridgeCallbacks {
-  onStorageGet(moduleId: string, key: string): unknown;
-  onStorageSubscribe(moduleId: string, key: string, bridgeId: string): void;
-  onStorageUnsubscribe(moduleId: string, key: string, bridgeId: string): void;
+  /** Module storage; absent where widgets get none, and then the frame is told so. */
+  storage?: WidgetStorageAccess;
   onStatusReport(report: WidgetStatusReportPayload): void;
   /** Read a file the widget asked for; rejects with an `AssetLoadError` saying why not. */
   onAssetLoad(path: string): Promise<LoadedAsset>;
@@ -60,14 +73,13 @@ export interface WidgetBridgeCallbacks {
 
 export class WidgetBridge {
   private iframe: HTMLIFrameElement | null = null;
-  private moduleId: string | null = null;
   private initialized = false;
 
+  // The frame's storage subscriptions: key -> its subIds, and back.
   private readonly shimStorageSubs = new Map<string, Set<string>>();
   private readonly shimSubToKey = new Map<string, string>();
-  // subId -> types filter (unused for matching today — the host
-  // delivers whatever event-queue.ts routes to this instance; kept so
-  // sendEvent can validate a subscriber actually exists).
+  // The frame's open event subscriptions, so sendEvent delivers only to one
+  // that exists.
   private readonly shimEventSubs = new Set<string>();
   // The settings the widget's script has read (`settings.reads`). A change
   // to one of these needs a fresh frame; any other is patched in.
@@ -91,7 +103,6 @@ export class WidgetBridge {
   onFrameLoad(): void {
     this.documentGeneration += 1;
     this.initialized = false;
-    this.moduleId = null;
     this.readKeys.clear();
     this.readAll = false;
     this.shimStorageSubs.clear();
@@ -103,161 +114,93 @@ export class WidgetBridge {
     if (!this.iframe || event.source !== this.iframe.contentWindow) {
       return;
     }
-    const data: unknown = event.data;
-    if (typeof data !== "object" || data === null) {
+    const msg = parseWidgetToHostMessage(event.data, this.nonce);
+    if (msg === null) {
       return;
     }
-    const msg = data as Record<string, unknown>;
-    if (msg.proto !== WIDGET_PROTOCOL) {
-      return;
-    }
-    if (msg.nonce !== this.nonce) {
-      return;
-    }
-    const type = typeof msg.type === "string" ? msg.type : "";
-    if (!type) {
-      return;
-    }
-    if (type === "hello") {
-      const v = msg.v as number;
-      const incomingModuleId = typeof msg.moduleId === "string" ? msg.moduleId : "";
-      if (v !== PROTOCOL_VERSION) {
-        this.sendReject(`unsupported protocol version ${v}`);
+    if (msg.type === "hello") {
+      if (msg.v !== PROTOCOL_VERSION) {
+        this.sendReject(`unsupported protocol version ${msg.v}`);
         return;
       }
-      this.moduleId = incomingModuleId;
       this.initialized = true;
       this.sendInit({});
       return;
     }
-    if (!isWidgetProtocolEnvelope(data)) {
+    if (msg.type === "rendered") {
+      this.callbacks.onRendered?.();
       return;
     }
-    switch (type) {
+    if (!this.initialized) {
+      return;
+    }
+    const storage = this.callbacks.storage;
+    switch (msg.type) {
       case "storage.get": {
-        if (!this.initialized || !this.moduleId) {
-          return;
-        }
-        const id = typeof msg.id === "string" ? msg.id : "";
-        const key = typeof msg.key === "string" ? msg.key : "";
-        const value = this.callbacks.onStorageGet(this.moduleId, key);
-        this.post({ type: "storage.value", id, key, value });
-        return;
-      }
-      case "asset.load": {
-        if (!this.initialized) {
-          return;
-        }
-        const id = typeof msg.id === "string" ? msg.id : "";
-        const path = typeof msg.path === "string" ? msg.path : "";
-        if (!id) {
-          return;
-        }
-        this.answerAssetLoad(id, path);
+        this.post({ type: "storage.value", id: msg.id, key: msg.key, value: storage ? storage.get(msg.key) : null });
         return;
       }
       case "storage.subscribe": {
-        if (!this.initialized || !this.moduleId) {
+        if (!storage) {
           return;
         }
-        const key = typeof msg.key === "string" ? msg.key : "";
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        const storageKey = `${this.moduleId}:${key}`;
-        let subIds = this.shimStorageSubs.get(storageKey);
+        let subIds = this.shimStorageSubs.get(msg.key);
         if (!subIds) {
           subIds = new Set();
-          this.shimStorageSubs.set(storageKey, subIds);
+          this.shimStorageSubs.set(msg.key, subIds);
         }
-        subIds.add(subId);
-        this.shimSubToKey.set(subId, storageKey);
-        this.callbacks.onStorageSubscribe(this.moduleId, key, this.instanceId);
+        subIds.add(msg.subId);
+        this.shimSubToKey.set(msg.subId, msg.key);
+        storage.subscribe(msg.key);
         return;
       }
       case "storage.unsubscribe": {
-        if (!this.initialized || !this.moduleId) {
+        const key = this.shimSubToKey.get(msg.subId);
+        if (!storage || key === undefined) {
           return;
         }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        const storageKey = this.shimSubToKey.get(subId);
-        if (!storageKey) {
-          return;
+        this.shimSubToKey.delete(msg.subId);
+        const subIds = this.shimStorageSubs.get(key);
+        subIds?.delete(msg.subId);
+        if (subIds?.size === 0) {
+          this.shimStorageSubs.delete(key);
         }
-        this.shimSubToKey.delete(subId);
-        const subIds = this.shimStorageSubs.get(storageKey);
-        if (subIds) {
-          subIds.delete(subId);
-          if (subIds.size === 0) {
-            this.shimStorageSubs.delete(storageKey);
-          }
-        }
-        const colonIdx = storageKey.indexOf(":");
-        const key = colonIdx >= 0 ? storageKey.slice(colonIdx + 1) : storageKey;
-        this.callbacks.onStorageUnsubscribe(this.moduleId, key, this.instanceId);
+        storage.unsubscribe(key);
+        return;
+      }
+      case "asset.load": {
+        this.answerAssetLoad(msg.id, msg.path);
         return;
       }
       case "events.subscribe": {
-        if (!this.initialized) {
-          return;
-        }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        if (!subId) {
-          return;
-        }
-        this.shimEventSubs.add(subId);
-        const queue = isEventQueueConfig(msg.queue) ? msg.queue : undefined;
-        this.callbacks.onEventsSubscribe(subId, queue);
+        this.shimEventSubs.add(msg.subId);
+        this.callbacks.onEventsSubscribe(msg.subId, msg.queue);
         return;
       }
       case "events.unsubscribe": {
-        if (!this.initialized) {
-          return;
-        }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        this.shimEventSubs.delete(subId);
-        this.callbacks.onEventsUnsubscribe(subId);
+        this.shimEventSubs.delete(msg.subId);
+        this.callbacks.onEventsUnsubscribe(msg.subId);
         return;
       }
       case "event.complete": {
-        if (!this.initialized) {
-          return;
-        }
-        const subId = typeof msg.subId === "string" ? msg.subId : "";
-        const eventId = typeof msg.eventId === "string" ? msg.eventId : "";
-        if (!subId || !eventId) {
-          return;
-        }
-        this.callbacks.onEventComplete(subId, eventId);
+        this.callbacks.onEventComplete(msg.subId, msg.eventId);
         return;
       }
       case "settings.reads": {
-        if (!this.initialized) {
-          return;
-        }
-        if (msg.all === true) {
+        if (msg.all) {
           this.readAll = true;
         }
-        if (Array.isArray(msg.keys)) {
-          for (const key of msg.keys) {
-            if (typeof key === "string") {
-              this.readKeys.add(key);
-            }
-          }
+        for (const key of msg.keys) {
+          this.readKeys.add(key);
         }
-        return;
-      }
-      case "rendered": {
-        this.callbacks.onRendered?.();
         return;
       }
       case "status.report": {
-        if (!this.initialized) {
-          return;
-        }
         this.callbacks.onStatusReport({
           instanceId: this.instanceId,
-          key: typeof msg.key === "string" ? msg.key : "",
+          key: msg.key,
           value: msg.value,
-          ts: typeof msg.ts === "string" ? msg.ts : new Date().toISOString(),
+          ts: msg.ts === "" ? new Date().toISOString() : msg.ts,
         });
         return;
       }
@@ -266,12 +209,14 @@ export class WidgetBridge {
     }
   }
 
+  /** What this frame is given: storage only where the page supplies it. */
+  capabilities(): WidgetCapability[] {
+    const given: WidgetCapability[] = ["events", "status", "settings", "assets"];
+    return this.callbacks.storage ? ["storage", ...given] : given;
+  }
+
   sendInit(settings: Record<string, unknown>): void {
-    this.post({
-      type: "init",
-      settings,
-      capabilities: ["storage", "events", "status", "settings", "assets"],
-    });
+    this.post({ type: "init", settings, capabilities: this.capabilities() });
   }
 
   sendReject(reason: string): void {
@@ -282,26 +227,14 @@ export class WidgetBridge {
     });
   }
 
-  /** Deliver a value for `key` to this widget's subscriptions, under whichever module it named. */
+  /** Deliver a new value for `key` to the frame's subscriptions to it. */
   sendStorageValue(key: string, value: unknown): void {
-    if (this.moduleId) {
-      this.sendStorageChanged(this.moduleId, key, value);
-    }
-  }
-
-  sendStorageChanged(moduleId: string, key: string, value: unknown): void {
     if (!this.initialized) {
       return;
     }
-    const storageKey = `${moduleId}:${key}`;
-    const subIds = this.shimStorageSubs.get(storageKey);
     const occurredAt = new Date().toISOString();
-    if (subIds && subIds.size > 0) {
-      for (const subId of subIds) {
-        this.post({ type: "storage.changed", subId, key, value, occurredAt });
-      }
-    } else {
-      this.post({ type: "storage.changed", subId: storageKey, key, value, occurredAt });
+    for (const subId of this.shimStorageSubs.get(key) ?? []) {
+      this.post({ type: "storage.changed", subId, key, value, occurredAt });
     }
   }
 
@@ -350,7 +283,6 @@ export class WidgetBridge {
     this.documentGeneration += 1;
     this.iframe = null;
     this.initialized = false;
-    this.moduleId = null;
     this.readKeys.clear();
     this.readAll = false;
     this.shimStorageSubs.clear();
@@ -379,7 +311,7 @@ export class WidgetBridge {
     );
   }
 
-  private post(payload: Record<string, unknown>): void {
+  private post(payload: WidgetMessageBody<HostToWidgetMessage>): void {
     const win = this.iframe?.contentWindow;
     if (!win) {
       return;
@@ -394,10 +326,6 @@ export class WidgetBridge {
       "*"
     );
   }
-}
-
-function isEventQueueConfig(value: unknown): value is EventQueueConfig {
-  return typeof value === "object" && value !== null;
 }
 
 /**

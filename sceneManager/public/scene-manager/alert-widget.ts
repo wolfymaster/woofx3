@@ -276,9 +276,6 @@ export class AlertWidget {
     iframe.setAttribute("sandbox", "allow-scripts");
 
     const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
-      onStorageGet: () => null,
-      onStorageSubscribe: () => {},
-      onStorageUnsubscribe: () => {},
       onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
       onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
       onEventsSubscribe: (subId, queue) => {
