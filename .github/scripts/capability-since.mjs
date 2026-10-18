@@ -75,13 +75,12 @@ function firstReleases(ids) {
     if (since.size === ids.length) {
       break;
     }
-    let source;
-    try {
-      source = git("show", `${tag}:${CAPABILITIES}`);
-    } catch {
-      continue; // predates capabilities.ts
+    // Only a tag without the file predates capabilities.ts. Any other git
+    // failure throws: skipping the tag would record a later one as the Since.
+    if (git("ls-tree", "--name-only", tag, "--", CAPABILITIES).trim() === "") {
+      continue;
     }
-    for (const id of parseCapabilities(source).advertised) {
+    for (const id of parseCapabilities(git("show", `${tag}:${CAPABILITIES}`)).advertised) {
       if (ids.includes(id) && !since.has(id)) {
         since.set(id, tag);
       }
