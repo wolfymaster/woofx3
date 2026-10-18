@@ -1,4 +1,5 @@
 import { isWidgetTheme, type WidgetTheme } from "@woofx3/module-sdk";
+import type { CspDirectives } from "../routes/security-headers";
 import { themeOf } from "../../contract/scene-config";
 
 /**
@@ -123,13 +124,13 @@ export function injectThemeStylesheet(html: string, stylesheetUrl: string): stri
 export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
 
 /**
- * The Content-Security-Policy for a themeable widget's frame: styles, fonts,
+ * The Content-Security-Policy directives for a themeable widget's frame: styles, fonts,
  * images and media from the engine only, plus images from Twitch's CDN
  * (`TWITCH_IMAGE_CDN`). A theme stylesheet is author data, and its `url(...)`
  * or `@import` could otherwise reach any host, carrying whatever its
  * selectors can read off the page; nothing a theme ships is a script, so
  * scripts are left as they were. Connections are closed for every frame,
- * themed or not (`FRAME_CONNECT_POLICY` in frame-assembler.ts). External media a
+ * themed or not (`FRAME_DIRECTIVES` in frame-assembler.ts). External media a
  * placement's settings name reaches the frame through the engine's media
  * proxy (see media-proxy.ts), so it needs no outside host here either.
  *
@@ -145,14 +146,14 @@ export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
  * engine origin is listed. `'unsafe-inline'` is for the widget's own inline
  * styles and the variables block this module injects.
  */
-export function themeContentSecurityPolicy(engineOrigins: string[]): string {
-  const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))].join(" ");
-  return [
-    `style-src ${origins} 'unsafe-inline'`,
-    `font-src ${origins} data:`,
-    `img-src ${origins} ${TWITCH_IMAGE_CDN} data: blob:`,
-    `media-src ${origins} data: blob:`,
-  ].join("; ");
+export function themeCspDirectives(engineOrigins: string[]): CspDirectives {
+  const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))];
+  return {
+    "style-src": [...origins, "'unsafe-inline'"],
+    "font-src": [...origins, "data:"],
+    "img-src": [...origins, TWITCH_IMAGE_CDN, "data:", "blob:"],
+    "media-src": [...origins, "data:", "blob:"],
+  };
 }
 
 /** The origin of an absolute URL, or `""` when it has none. */

@@ -1,8 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
 import { MEDIA_PROXY_PATH } from "../../contract/media-url";
-import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
-
-/** `/assets/media/{token}`: exactly one segment, the signed upstream URL. */
+import { type BarkloaderRelay, relayToBarkloader } from "./barkloader-relay";
 
 const MEDIA_RELAY: BarkloaderRelay = {
   // What the browser may say about the bytes it wants: seeking needs both.
@@ -43,5 +41,5 @@ export async function handleMediaProxyRoute(
   if (req.method !== "GET") {
     return new Response(null, { status: 405, headers: { Allow: "GET" } });
   }
-  return relayGetToBarkloader(req, url, barkloaderUrl, logger, MEDIA_RELAY, fetchFn);
+  return relayToBarkloader(req, url, barkloaderUrl, logger, MEDIA_RELAY, fetchFn);
 }

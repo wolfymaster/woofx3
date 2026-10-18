@@ -1,4 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { contentSecurityPolicy, type CspDirectives, withDirectives } from "../routes/security-headers";
 import { parseWidgetCanonicalId } from "@woofx3/scene/model";
 import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
@@ -14,7 +15,7 @@ import {
   originOf,
   parseFrameTheme,
   selectedThemeId,
-  themeContentSecurityPolicy,
+  themeCspDirectives,
 } from "./widget-theme";
 
 /**
@@ -36,13 +37,22 @@ export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
 export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
 
 /**
- * Every widget frame's policy on connections: none. Widget code is end-user
- * code, and a frame that could `fetch`, open a socket or beacon could send
- * whatever it is shown anywhere. What a widget needs from the network it asks
- * the host for over the bridge (storage, events, `assets.load`), and elements
- * still load media by URL under their own directives.
+ * The directives every widget frame is served with, laid over any theme's so
+ * a theme can never relax them:
+ *
+ * - `connect-src 'none'`: widget code is end-user code, and a frame that
+ *   could `fetch`, open a socket or beacon could send whatever it is shown
+ *   anywhere. What a widget needs from the network it asks the host for over
+ *   the bridge (storage, events, `assets.load`), and elements still load
+ *   media by URL under their own directives.
+ * - `sandbox allow-scripts`: the same sandbox the pages give the iframe, so a
+ *   frame document opened on its own, outside any page, still runs with an
+ *   opaque origin rather than on the origin that holds overlay sessions.
  */
-export const FRAME_CONNECT_POLICY = "connect-src 'none'";
+export const FRAME_DIRECTIVES: CspDirectives = {
+  "connect-src": ["'none'"],
+  sandbox: ["allow-scripts"],
+};
 
 const FRAME_HEADERS: Record<string, string> = {
   "Content-Type": "text/html; charset=utf-8",
@@ -437,22 +447,22 @@ export class FrameAssembler {
     const theme = frameInfo.theme;
     const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
     let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
+    // Every widget that opted into themes runs under the theme policy, themed
+    // or not, so a theme can never be the thing that changes what loads.
+    const themeDirectives: CspDirectives = theme
+      ? themeCspDirectives([
+          originOf(frameInfo.resourceBaseUrl),
+          ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
+        ])
+      : {};
+    if (theme?.stylesheetUrl) {
+      assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
+    }
     const headers: Record<string, string> = {
       ...FRAME_HEADERS,
       "Cache-Control": cacheControl,
-      "Content-Security-Policy": FRAME_CONNECT_POLICY,
+      "Content-Security-Policy": contentSecurityPolicy(withDirectives(themeDirectives, FRAME_DIRECTIVES)),
     };
-    if (theme) {
-      if (theme.stylesheetUrl) {
-        assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
-      }
-      // Every widget that opted into themes runs under the policy, themed or
-      // not, so a theme can never be the thing that changes what loads.
-      headers["Content-Security-Policy"] = `${themeContentSecurityPolicy([
-        originOf(frameInfo.resourceBaseUrl),
-        ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
-      ])}; ${FRAME_CONNECT_POLICY}`;
-    }
     return new Response(assembled, { status: 200, headers });
   }
 
