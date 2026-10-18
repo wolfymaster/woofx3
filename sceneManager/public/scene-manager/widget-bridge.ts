@@ -13,7 +13,11 @@
 // page's ModuleStateCache (module-state.ts) for scene placements. Alert
 // layout widgets are not given storage: `storage.get` answers `null`
 // and subscriptions never fire.
+//
+// File reads (`asset.load`) are answered by the page's AssetCache
+// (asset-loader.ts), limited to what the frame's module may read.
 
+import { AssetLoadError, type LoadedAsset } from "./asset-loader";
 import {
   WIDGET_PROTOCOL,
   PROTOCOL_VERSION,
@@ -37,6 +41,8 @@ export interface WidgetBridgeCallbacks {
   onStorageSubscribe(moduleId: string, key: string, bridgeId: string): void;
   onStorageUnsubscribe(moduleId: string, key: string, bridgeId: string): void;
   onStatusReport(report: WidgetStatusReportPayload): void;
+  /** Read a file the widget asked for; rejects with an `AssetLoadError` saying why not. */
+  onAssetLoad(path: string): Promise<LoadedAsset>;
   /** Widget opened an event subscription, optionally with a queue
    *  dispatch policy — "the widget registers itself." */
   onEventsSubscribe(subId: string, queue: EventQueueConfig | undefined): void;
@@ -63,6 +69,10 @@ export class WidgetBridge {
   // to one of these needs a fresh frame; any other is patched in.
   private readonly readKeys = new Set<string>();
   private readAll = false;
+  // Bumped whenever the frame's document goes away, so a file read for the
+  // old document is never answered into its successor, whose request ids
+  // start over.
+  private documentGeneration = 0;
 
   constructor(
     private readonly instanceId: string,
@@ -75,6 +85,7 @@ export class WidgetBridge {
   }
 
   onFrameLoad(): void {
+    this.documentGeneration += 1;
     this.initialized = false;
     this.moduleId = null;
     this.readKeys.clear();
@@ -127,6 +138,18 @@ export class WidgetBridge {
         const key = typeof msg.key === "string" ? msg.key : "";
         const value = this.callbacks.onStorageGet(this.moduleId, key);
         this.post({ type: "storage.value", id, key, value });
+        return;
+      }
+      case "asset.load": {
+        if (!this.initialized) {
+          return;
+        }
+        const id = typeof msg.id === "string" ? msg.id : "";
+        const path = typeof msg.path === "string" ? msg.path : "";
+        if (!id) {
+          return;
+        }
+        this.answerAssetLoad(id, path);
         return;
       }
       case "storage.subscribe": {
@@ -244,7 +267,7 @@ export class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status", "settings"],
+      capabilities: ["storage", "events", "status", "settings", "assets"],
     });
   }
 
@@ -321,6 +344,7 @@ export class WidgetBridge {
   }
 
   detach(): void {
+    this.documentGeneration += 1;
     this.iframe = null;
     this.initialized = false;
     this.moduleId = null;
@@ -329,6 +353,27 @@ export class WidgetBridge {
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
     this.shimEventSubs.clear();
+  }
+
+  private answerAssetLoad(id: string, path: string): void {
+    const generation = this.documentGeneration;
+    this.callbacks.onAssetLoad(path).then(
+      (asset) => {
+        if (generation === this.documentGeneration) {
+          // Posted as a copy, never transferred: the page's cache keeps the
+          // original for the next widget that asks.
+          this.post({ type: "asset.value", id, contentType: asset.contentType, bytes: asset.bytes });
+        }
+      },
+      (err: unknown) => {
+        if (!(err instanceof AssetLoadError)) {
+          console.warn("[scene-manager] asset load failed unexpectedly", { path }, err);
+        }
+        if (generation === this.documentGeneration) {
+          this.post({ type: "asset.error", id, code: err instanceof AssetLoadError ? err.code : "unavailable" });
+        }
+      }
+    );
   }
 
   private post(payload: Record<string, unknown>): void {

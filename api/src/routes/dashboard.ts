@@ -4,6 +4,7 @@ import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
 import { timestampToEpochMs } from "../stream-session-resolver";
+import { ANALYTICS_EVENT_TYPES } from "../user-event-recorder";
 import { routeModule } from "./context";
 import { timestampFromDate } from "./helpers";
 
@@ -12,8 +13,9 @@ export const RECENT_ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_ACTIVITY_LIMIT = 20;
 
 /**
- * The platform events of the recent window, newest first and at most `limit`,
- * and how many there were in all.
+ * The viewer activity of the recent window (the Twitch events Analytics
+ * attributes), newest first and at most `limit`, and how many there were in
+ * all.
  */
 export async function readRecentActivity(
   db: Pick<DbClient, "listRecentUserEvents">,
@@ -21,7 +23,11 @@ export async function readRecentActivity(
   limit: number
 ): Promise<{ activity: RecentActivity[]; total: number }> {
   const since = new Date(now.getTime() - RECENT_ACTIVITY_WINDOW_MS);
-  const { events, total } = await db.listRecentUserEvents({ since: timestampFromDate(since), limit });
+  const { events, total } = await db.listRecentUserEvents({
+    since: timestampFromDate(since),
+    limit,
+    eventTypes: [...ANALYTICS_EVENT_TYPES],
+  });
   const count = Number(total);
   if (!Number.isSafeInteger(count)) {
     throw new Error(`recent event total ${total} is outside the safe integer range`);

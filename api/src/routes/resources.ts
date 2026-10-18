@@ -37,6 +37,21 @@ export interface UploadGrant {
 /** A grant to upload a video's captured frame; it creates no resource of its own. */
 export type PosterUploadGrant = Omit<UploadGrant, "resource">;
 
+export interface ResourceUsage {
+  bytes: number;
+  files: number;
+}
+
+/**
+ * A grant admits exactly this many bytes, so it has to be a length a body
+ * can have. Fails fast rather than letting barkloader answer a 400.
+ */
+function requireUploadSize(size: number): void {
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new Error(`size must be a whole number of bytes, at least 1; got ${size}`);
+  }
+}
+
 /** Completion payload barkloader POSTs back once processing finishes. */
 interface ProcessingCallbackBody {
   resource_id?: string;
@@ -123,12 +138,16 @@ export const resourcesRoutes = routeModule({
    *
    * The row starts "pending": it exists, but nothing is servable from it
    * until the caller reports the bytes landed.
+   *
+   * The grant admits exactly `size` bytes and the row records that size,
+   * so the row accounts for what the grant can store before anything is
+   * sent.
    */
   async requestUploadUrl(input: {
     name: string;
     contentType: string;
     parentId?: string | null;
-    size?: number;
+    size: number;
     ttlSeconds?: number;
   }): Promise<UploadGrant> {
     if (input.name.length === 0) {
@@ -137,6 +156,7 @@ export const resourcesRoutes = routeModule({
     if (input.contentType.length === 0) {
       throw new Error("contentType is required");
     }
+    requireUploadSize(input.size);
 
     const resourceId = crypto.randomUUID();
     const response = await this.barkloaderRequest("/assets/upload-url", {
@@ -146,6 +166,7 @@ export const resourcesRoutes = routeModule({
         resource_id: resourceId,
         file_name: input.name,
         content_type: input.contentType,
+        content_length: input.size,
         ttl_seconds: input.ttlSeconds,
       }),
     });
@@ -172,7 +193,7 @@ export const resourcesRoutes = routeModule({
       kind: kindForContentType(input.contentType),
       contentType: input.contentType,
       repositoryKey: grant.repositoryKey,
-      size: BigInt(input.size ?? 0),
+      size: BigInt(input.size),
       status: "pending",
     });
 
@@ -210,11 +231,13 @@ export const resourcesRoutes = routeModule({
   async requestPosterUploadUrl(
     resourceId: string,
     contentType: string,
+    size: number,
     ttlSeconds?: number
   ): Promise<PosterUploadGrant> {
     if (!contentType.toLowerCase().startsWith("image/")) {
       throw new Error("A poster must be an image");
     }
+    requireUploadSize(size);
 
     const row = await this.db.getResource({ id: resourceId });
     if (row.kind !== "video") {
@@ -231,6 +254,7 @@ export const resourcesRoutes = routeModule({
       body: JSON.stringify({
         repository_key: repositoryKey,
         content_type: contentType,
+        content_length: size,
         ttl_seconds: ttlSeconds,
       }),
     });
@@ -248,6 +272,16 @@ export const resourcesRoutes = routeModule({
       headers: grant.headers,
       expiresAt: grant.expiresAt,
     };
+  },
+
+  /**
+   * What every file resource holds, pending ones included: a pending row's
+   * size is what its grant admits, which may already be stored. Derived
+   * thumbnails and posters are not rows and are not counted.
+   */
+  async getResourceUsage(): Promise<ResourceUsage> {
+    const usage = await this.db.getResourceUsage();
+    return { bytes: Number(usage.bytes), files: Number(usage.files) };
   },
 
   async createFolder(name: string, parentId?: string | null): Promise<ResourceItem> {

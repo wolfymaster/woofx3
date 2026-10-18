@@ -62,6 +62,11 @@ func forEachDialect(t *testing.T, test func(t *testing.T, db *gorm.DB)) {
 		t.Cleanup(func() {
 			db.Exec(`DROP SCHEMA public CASCADE`)
 			db.Exec(`CREATE SCHEMA public`)
+			// Each test opens its own pool; leaving it open runs a full
+			// package run past the server's connection limit.
+			if sqlDB, err := db.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
 		})
 		if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 			t.Fatalf("enable uuid-ossp: %v", err)
@@ -411,14 +416,133 @@ func TestRecentEventsAreTheNewestInTheSpan(t *testing.T) {
 	})
 }
 
+func TestRecentEventsPageThroughTheWholeLogByType(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		f.seedTwoSessions(t)
+		ctx := context.Background()
+
+		// Ten of the seeded events are of these types, and seven of them share
+		// one instant, so pages of three must break inside it and resume.
+		types := []string{models.UserEventTypeCheer, models.UserEventTypeSubscribe}
+		limit := int32(3)
+		var got []string
+		var before *client.UserEventPosition
+		for pages := 0; ; pages++ {
+			if pages > 10 {
+				t.Fatalf("paging did not end; read %v", got)
+			}
+			resp, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{
+				EventTypes: types,
+				Before:     before,
+				Limit:      &limit,
+			})
+			if err != nil {
+				t.Fatalf("ListRecentUserEvents: %v", err)
+			}
+			if resp.Total != 10 {
+				t.Fatalf("total = %d, want 10", resp.Total)
+			}
+			for _, event := range resp.Events {
+				got = append(got, event.EventId)
+			}
+			if !resp.More {
+				break
+			}
+			last := resp.Events[len(resp.Events)-1]
+			before = &client.UserEventPosition{OccurredAt: last.OccurredAt, Id: last.Id}
+		}
+
+		resp, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{EventTypes: types, Limit: &recentAll})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		want := make([]string, 0, len(resp.Events))
+		for _, event := range resp.Events {
+			if event.EventType != models.UserEventTypeCheer && event.EventType != models.UserEventTypeSubscribe {
+				t.Fatalf("event type %s was not asked for", event.EventType)
+			}
+			want = append(want, event.EventId)
+		}
+		if resp.More || len(want) != 10 {
+			t.Fatalf("one page of 100 = %d events, more %v; want 10 and no more", len(want), resp.More)
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("paged = %v, want %v", got, want)
+		}
+	})
+}
+
+var recentAll = int32(100)
+
+func TestRecentEventsSkipTheCountWhenAsked(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		f.seedTwoSessions(t)
+		ctx := context.Background()
+		limit := int32(2)
+
+		counted, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{Limit: &limit})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		skipped, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{Limit: &limit, SkipTotal: true})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		if counted.Total != 17 || skipped.Total != 0 {
+			t.Fatalf("total = %d counted, %d skipped; want 17 and 0", counted.Total, skipped.Total)
+		}
+		if !skipped.More || len(skipped.Events) != 2 || skipped.Events[0].Id != counted.Events[0].Id ||
+			skipped.Events[1].Id != counted.Events[1].Id {
+			t.Fatalf("skipping the count changed the page")
+		}
+	})
+}
+
+// The log records every event an installed trigger fires, so the totals must
+// keep counting only the types they name.
+func TestTotalsIgnoreEventTypesTheyDoNotName(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		f.seedTwoSessions(t)
+		in := f.started.Add(time.Hour)
+		f.record(t, fact{eventType: "kofi.donation", user: "1001", name: "Alice", amount: 500, at: in})
+		f.record(t, fact{eventType: "goal.reached", amount: 3, at: in})
+		ctx := context.Background()
+
+		resp, err := f.svc.GetStreamSessionEventTotals(ctx, &client.GetStreamSessionEventTotalsRequest{StreamSessionId: f.first})
+		if err != nil {
+			t.Fatalf("GetStreamSessionEventTotals: %v", err)
+		}
+		assertSessionTotals(t, resp.Totals, &client.StreamSessionEventTotals{
+			Bits: 167, Cheers: 4, Subs: 2, GiftedSubs: 8, Follows: 1, Raids: 1, Raiders: 25,
+		})
+
+		viewer, err := f.svc.GetViewerEventTotals(ctx, &client.GetViewerEventTotalsRequest{Platform: "twitch", PlatformUserId: "1001"})
+		if err != nil {
+			t.Fatalf("GetViewerEventTotals: %v", err)
+		}
+		if viewer.Totals.Bits != 1110 || viewer.Totals.GiftedSubs != 10 {
+			t.Fatalf("viewer totals = %d bits, %d gifted; want 1110 and 10", viewer.Totals.Bits, viewer.Totals.GiftedSubs)
+		}
+	})
+}
+
 func TestRecentEventsRejectBadRequests(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		ctx := context.Background()
 		zero := int32(0)
 		requests := map[string]*client.ListRecentUserEventsRequest{
-			"no since":   {},
-			"zero limit": {Since: timestamppb.New(f.started), Limit: &zero},
+			"zero limit":       {Since: timestamppb.New(f.started), Limit: &zero},
+			"empty event type": {EventTypes: []string{""}},
+			"before without a time": {
+				Before: &client.UserEventPosition{Id: "7f0c5a1e-0000-4000-8000-000000000001"},
+			},
+			"before without an id": {
+				Before: &client.UserEventPosition{OccurredAt: timestamppb.New(f.started)},
+			},
 		}
 		for name, req := range requests {
 			t.Run(name, func(t *testing.T) {

@@ -37,7 +37,7 @@
       const container = document.getElementById("animation");
 
       function start(onDone) {
-        loadAnimationData(mediaUrl(settings.src))
+        loadAnimationData(host, settings.src)
           .then((animationData) => {
             const layerName = typeof settings.textLayer === "string" ? settings.textLayer.trim() : "";
             if (layerName) {
@@ -75,13 +75,14 @@
       }, { autoComplete: false });
     })();
 
-    function loadAnimationData(url) {
-      return fetch(url).then((response) => {
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-        return response.json();
-      });
+    // Read by the host: the frame may open no connections of its own, so an
+    // animation must be an engine file (the asset library, or this module's).
+    // Started inside a promise so an empty setting fails the load, not the
+    // script.
+    function loadAnimationData(host, src) {
+      return Promise.resolve()
+        .then(() => host.assets.load(src))
+        .then((asset) => asset.json());
     }
 
     // Set the text of every text layer named `layerName`, in the main
@@ -102,17 +103,6 @@
           }
         }
       }
-    }
-
-    // A media setting is a URL, or the asset picker's `{ url, ... }`.
-    function mediaUrl(value) {
-      if (typeof value === "string") {
-        return value;
-      }
-      if (value && typeof value.url === "string") {
-        return value.url;
-      }
-      return "";
     }
 
     function num(value, fallback) {

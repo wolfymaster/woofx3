@@ -33,7 +33,8 @@ pub struct UserEvent {
     /// for a raid, points for a redemption. Absent when the event carries none.
     #[prost(int64, optional, tag="9")]
     pub amount: ::core::option::Option<i64>,
-    /// The CloudEvent `data`, as JSON.
+    /// The CloudEvent `data`, as JSON. `{}` for an event of a compacted
+    /// session's timeline, which keeps everything about an event but its payload.
     #[prost(string, tag="10")]
     pub event_value: ::prost::alloc::string::String,
     /// When the event happened (the CloudEvent `time`).
@@ -190,25 +191,51 @@ pub struct ListViewerLeaderboardResponse {
     #[prost(message, repeated, tag="2")]
     pub entries: ::prost::alloc::vec::Vec<LeaderboardEntry>,
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListRecentUserEventsRequest {
-    /// Start of the span, inclusive. Required.
+    /// Start of the span, inclusive. Absent for the whole log.
     #[prost(message, optional, tag="1")]
     pub since: ::core::option::Option<::pbjson_types::Timestamp>,
     /// 1-100. Defaults to 20.
     #[prost(int32, optional, tag="2")]
     pub limit: ::core::option::Option<i32>,
+    /// The CloudEvent types to return. Empty returns every type.
+    #[prost(string, repeated, tag="3")]
+    pub event_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Return only events after this one in newest-first order: the last event
+    /// of the previous page. Absent for the newest page.
+    #[prost(message, optional, tag="4")]
+    pub before: ::core::option::Option<UserEventPosition>,
+    /// Leave `total` zero rather than counting the span, for a caller that only
+    /// pages.
+    #[prost(bool, tag="5")]
+    pub skip_total: bool,
+}
+/// Where an event sits in the log's newest-first order: by occurred_at, then
+/// by id among events at the same instant.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UserEventPosition {
+    #[prost(message, optional, tag="1")]
+    pub occurred_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// UserEvent.id.
+    #[prost(string, tag="2")]
+    pub id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListRecentUserEventsResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<super::common::ResponseStatus>,
-    /// Newest first by occurred_at, at most `limit` of them.
+    /// Newest first by occurred_at, then by id, at most `limit` of them.
     #[prost(message, repeated, tag="2")]
     pub events: ::prost::alloc::vec::Vec<UserEvent>,
-    /// Every event in the span, not only those returned.
+    /// Every event in the span of the requested types, not only those returned,
+    /// and whatever `before` is. Zero when the request set `skip_total`.
     #[prost(int64, tag="3")]
     pub total: i64,
+    /// True when the span holds older events of the requested types than those
+    /// returned, so a request with `before` set to the last of them returns more.
+    #[prost(bool, tag="4")]
+    pub more: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListStreamSessionUserEventsRequest {
@@ -228,6 +255,24 @@ pub struct ListStreamSessionUserEventsResponse {
     /// Every counted event in the session, not only those returned.
     #[prost(int64, tag="3")]
     pub total: i64,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompactStreamSessionRequest {
+    #[prost(string, tag="1")]
+    pub stream_session_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompactStreamSessionResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// Viewers with any event in the session, each holding one totals row.
+    #[prost(int64, tag="2")]
+    pub viewers: i64,
+    /// Events on the session's timeline.
+    #[prost(int64, tag="3")]
+    pub timeline_events: i64,
+    #[prost(message, optional, tag="4")]
+    pub compacted_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

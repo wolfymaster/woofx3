@@ -121,3 +121,17 @@ describe("createMockHost", () => {
     expect(cb).toHaveBeenCalledTimes(0);
   });
 });
+
+describe("createMockHost assets", () => {
+  it("answers assets.load with the files it was given", async () => {
+    const { host } = createMockHost({ assets: { "anim.json": '{"layers":[]}' } });
+    const asset = await host.assets.load("anim.json");
+    expect(asset.json()).toEqual({ layers: [] });
+  });
+
+  it("answers a media setting's value by its url", async () => {
+    const { host } = createMockHost({ assets: { "https://engine.test/assets/user/r/a.txt": "hi" } });
+    const asset = await host.assets.load({ url: "https://engine.test/assets/user/r/a.txt" });
+    expect(asset.text()).toBe("hi");
+  });
+});

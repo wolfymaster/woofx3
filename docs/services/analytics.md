@@ -8,10 +8,11 @@ follower and subscriber levels are sampled once a minute while live (see
 totals, leaderboards and gauge series as engine RPCs (see [Reading the
 log](#reading-the-log)); the engine side of step 5 — a `SESSION_SUMMARY`
 webhook for every session that ends (see [Summaries to the
-UI](#summaries-to-the-ui)).
+UI](#summaries-to-the-ui)); step 6 — each ended session compacted into
+permanent tables and the raw detail pruned after a week (see
+[Retention](#retention)).
 
-**Not built:** the Convex table that stores summaries, and the backfill
-(step 6). This is
+**Not built:** the Convex table that stores summaries. This is
 the design [stream
 sessions](/services/stream-sessions#analytics-is-a-separate-subsystem) defers
 to, written down so the first person to need a total does not invent a
@@ -133,8 +134,9 @@ survives are incidental:
   survives inside any alert that fired.
 
 Both are biased samples — they contain the events that happened to trigger
-something. They are worth a one-off backfill when Analytics turns on. They are
-not a foundation.
+something, and both are now pruned after the [retention](#retention) window.
+Nothing is backfilled from them: Analytics is built around stream sessions,
+and a session that ended before the log existed has nothing to count.
 
 ## The design
 
@@ -188,32 +190,89 @@ attribution to a session, and the time axis.
 
 ## The fact log
 
-`user_events` is the log, one row per platform event, never updated
+`user_events` is the log, one row per event, never updated
 (`db/database/migrate/migrations/*/0048_user_events_fact_log.go`).
 
 | Column | Meaning |
 |---|---|
 | `event_id`, `source` | The CloudEvent identity. Unique together, so a redelivery is a conflict, not a second row. |
-| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. |
+| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. A module's own event that names no platform is recorded under the id of the module that registered its trigger. |
 | `platform_user_id`, `user_name` | The viewer, as the platform names them. Null when the event is attributable to nobody. |
 | `session_id` | The session the event was stamped with. Not a foreign key and not a stable key; resolve it. |
-| `amount` | Bits, gifted subs, raiders or channel points. Null when the event carries no quantity. |
+| `amount` | Bits, gifted subs, raiders or channel points, for the Twitch events the totals read. Null for every other event, and when the event carries no quantity. |
 | `event_value` | The CloudEvent `data`, whole. |
 | `occurred_at` | The CloudEvent `time`. The time axis every reader groups on. |
 
 **One writer, on the bus.** `UserEventRecorder` (`api/src/user-event-recorder.ts`)
-subscribes to the platform subjects and calls `UserEventService.RecordUserEvent`.
+subscribes to the event types it records (below) and calls `UserEventService.RecordUserEvent`.
 It sits in the api rather than in each platform integration because the api
 already holds the db-proxy client and one subscriber serves every platform; it
 is on the ingestion path in the sense that matters — nothing has to react to an
 event for it to be recorded. A failed write is retried a few times, which is
 safe only because the write is idempotent.
 
-**What is recorded.** Cheer, follow, raid, redemption, sub, gift, resub, and
-the gift-paid, prime-paid and pay-it-forward upgrades. Chat is not: it is the
-one high-volume subject and no total is built from it. Neither are the
-`shared*` events, which happened in another channel during shared chat.
-Events the api publishes itself are dashboard simulations and are skipped.
+**What is recorded.** The event types the streamer selected, plus the
+analytics types, which are recorded whatever the selection so a recap never
+depends on it. There is no rate measuring and no manifest flag: a type is
+either logged or not, and the streamer decides.
+
+- **Offered** (`EventLogSettings.offered`): the event catalog
+  (`api/src/event-catalog.ts`), every subject an installed `eventbus` trigger
+  fires, so installing a module offers its events. It leaves out chat
+  (`user.message`: it fires at chat rate, no total is built from it, and it
+  has its own channel), the `channel.shared*` events (they happened in another
+  channel during shared chat), and wildcard trigger patterns
+  (`chat.command.*`), which name a family of subjects rather than one event.
+  The catalog re-reads the triggers on every trigger registration or
+  deregistration on the bus, every five minutes as a safety net, and with
+  backoff until its first read succeeds.
+- **On by default** (`defaults`): offered types with a trigger whose taxonomy
+  has an `alert.*` entry, the set the Alerts menu offers, except `alert.chat`,
+  `alert.shared` and anything under them.
+- **The selection** (`EventLogSelection`): one per engine, stored in the
+  engine's settings under `eventLog.selection` as overrides on the defaults,
+  `{ shown, hidden }`, keyed by event type. `enabled` is
+  `(defaults ∪ shown) − hidden` within `offered`. Overrides naming a type no
+  installed module offers are kept, so reinstalling the module restores the
+  choice, and a newly installed module's alert-worthy types are on without
+  anyone re-selecting. Read and written with `getEventLogSettings` and
+  `setEventLogSelection`; a type turned on is recorded from the moment the
+  call resolves, never retroactively.
+- **Analytics types**: the Twitch types the totals read (the fixed map under
+  *Attribution*), recorded even when no installed trigger offers them.
+
+`EventLogSelectionSource` (`api/src/event-log-selection.ts`) recomputes the
+settings whenever the catalog or the selection changes, and the recorder
+rebinds its subjects to `enabled ∪ analytics types`. Events the api publishes
+itself are dashboard simulations and are skipped.
+
+`listEvents` reads the log back a page at a time, so a dashboard feed merges
+history and live events by CloudEvent id. A page is not counted
+(`ListRecentUserEvents` with `skip_total`), and the history reaches back as far
+as the [retention](#retention) window.
+
+**Live push.** `StreamEventBroadcaster` pushes each `subscribeStreamEvents`
+client exactly the types it asked for, within `offered`; a client that names
+no types gets the fixed set older clients relied on (follow, subscribe, gift,
+cheer, raid, stream online/offline, the three ad-break events). A session
+holds one registration, so a client re-registers when what it wants changes
+and the new types replace the old. The bus subscriptions are the union of
+every client's types, bound and unbound as that union changes. Chat is never
+pushed.
+
+**Attribution.** The Twitch events the totals read (cheer, follow, raid,
+redemption, sub, gift, resub, and the gift-paid, prime-paid and
+pay-it-forward upgrades) name their viewer and quantity through a fixed map
+in the recorder. Every other event is attributed through its trigger's
+`emits` [identity annotations](../barkloader/modules.md#identity-fields): the
+one `string` field marked `identity: "viewer"`, its `displayName`, and
+`anonymousWhen`. A trigger that marks none, marks several, or disagrees with
+another trigger of the same subject attributes its events to nobody. Such
+events carry no `amount`.
+
+**The totals read only the types they name.** Every aggregate filters by
+`event_type`, so the wider log changes no total, leaderboard or session
+timeline.
 
 **Anonymous events count, but not for anybody.** An anonymous cheer or gift is
 stored with a null viewer, so channel totals include it and no per-viewer total
@@ -285,6 +344,11 @@ Five engine RPCs read the log and the samples
 
 Each returns `null` for a session that does not exist.
 
+A session that has ended and been [compacted](#retention) is read from its
+compact rows rather than the raw log, and a lifetime figure adds the compact
+rows of every compacted session to the raw rows no compaction covers. The
+answers are the same either way, before or after the raw rows are pruned.
+
 **A session owns a span of time, and its events are the ones in it.** A session
 runs from its start until the session that replaced it began, or to now while
 it is open. A split closes one session and opens the next at the same instant,
@@ -320,12 +384,15 @@ ever taken inside one and carry its id.
   its gifter's `SubscriptionGift` alone, never its recipients' gifted subs,
   so the list and the totals agree on what happened.
 - *Lifetime* is every event recorded, regardless of session, so merges and
-  splits cannot change it.
+  splits cannot change it, and neither does pruning: a pruned event is still
+  counted from its session's compact rows.
 
 **Anonymous events count for the channel and for nobody.** They carry no
 `platform_user_id`, so they are in session totals and never in a viewer's
 totals or on a leaderboard. A viewer is `(platform, platform_user_id)`; the
-name shown is the one on their most recent event, because names change.
+name shown is the one on their most recent named event of any type, because
+names change; two names at the same instant resolve to the one that sorts
+first.
 
 ## Summaries to the UI
 
@@ -401,12 +468,100 @@ summary; "this stream so far" is a live read, not a stored one.
 segments, every count zero, `peakViewers` and `averageViewers` null,
 `viewerSampleMinutes` zero. That is a real answer, not a missing one.
 
+**Compacted first.** Before it reads the totals, the emitter asks db-proxy to
+[compact](#retention) the session (`UserEventService.CompactStreamSession`),
+so the session's copy is made while the raw log still holds all of it, and a
+re-summarised session has its copy rebuilt from the log as it stands. A
+failed compaction is logged and the summary sent anyway, from the raw log;
+db-proxy's cleaner compacts the session later.
+
 **What can be missed.** The webhook is best-effort, like every engine
 callback: a UI that is not registered or not reachable when the session ends
 does not get that summary, and nothing retries it. Sessions ended before the
 UI started storing summaries have none either. Both are recoverable from the
 engine while its database lasts — `listStreamSessions` plus
-`getStreamSessionTotals` yield the same two halves the webhook carries.
+`getStreamSessionTotals` yield the same two halves the webhook carries, for
+every session, because a session's totals are kept in its compact rows after
+its raw events are pruned.
+
+## Retention
+
+Recording the streamer's selected event types makes the raw log grow with every
+module, and nobody drills into one alert from last week. Stream recaps,
+though, must last forever. So the engine keeps two kinds of data: the detail
+of what happened, for a week, and what a recap needs, for good.
+
+### Kept forever
+
+- **Session summaries**, in Convex (above).
+- **Per-viewer totals per stream**: `viewer_session_totals`, one row per
+  viewer with any event in the session — bits, cheers, subs gifted, gifts,
+  subs, and the newest name the session saw with when it saw it.
+- **Each stream's timeline**: `session_timeline_events`, exactly the events
+  `getStreamSessionEvents` lists (cheers, follows, subs, gifts from the
+  gifter's side, raids), with everything the log holds about them but their
+  payload.
+- **Gauge samples** (the recap's viewer chart) and
+  [viewer facts](/services/viewer-facts).
+
+Both compact tables stay on the engine: they name viewers.
+
+### Compaction
+
+`UserEventService.CompactStreamSession(stream_session_id)` copies one closed
+session out of the raw log, selecting events by the session's window like
+every other read, never by the stamped session id. It deletes the session's
+previous copy and writes the new one in one transaction, so it is idempotent,
+and it records the compaction in `stream_session_compactions` with the window
+it covers and when it ran. The open session cannot be compacted: it still
+owns the present.
+
+It runs:
+
+- **when a session ends**, from `SessionSummaryEmitter`, before the summary
+  is read (see [Summaries to the UI](#summaries-to-the-ui)), and again
+  whenever a session is re-summarised;
+- **from db-proxy's cleanup worker**, once when it starts and then every
+  hour before it prunes anything, for each closed session whose copy is
+  missing or out of date: never compacted (the backfill for sessions that
+  ended before compaction existed, or while the api could not reach
+  db-proxy), compacted with bounds the session no longer has, or holding a
+  raw event recorded after its compaction (a write retried across the
+  session's end). The backfill runs here rather than in a migration because
+  it is the same compaction the api asks for, kept in one place, and the
+  cleaner has to find sessions left behind anyway.
+
+The reads take a closed session from its copy when the copy's window is still
+the session's; the open session and any session not yet compacted read the
+raw log. Lifetime figures add every copy to the raw events no compaction
+covers. Compaction windows never overlap, because closed sessions' bounds do
+not move; any future operation that moves them must compact the sessions it
+touches while their raw events are still there.
+
+### Pruning
+
+db-proxy's `CleanupWorker`, which already prunes the outbox and the viewer
+facts' dedupe rows, deletes detail older than `EVENT_DETAIL_RETENTION_PERIOD`
+(default `168h`, 7 days) every `OUTBOX_CLEANUP_INTERVAL` (default an hour),
+in batches of `EVENT_DETAIL_PRUNE_BATCH_SIZE` rows (default 1000):
+
+| What | Deleted when | Never deleted |
+|---|---|---|
+| `user_events` | It occurred before the window and a compaction made after it was recorded covers the time it occurred in. | A row in the open session's time, in a closed session not yet compacted, before the first session began, or recorded after its session was compacted. |
+| `alerts` | It settled (`completed`, `failed`, `timed_out`, `skipped`, `replayed`) and was created before the window. | A row still `sent`, `dispatched` or `playing`. |
+| `workflow_executions` and their `workflow_execution_steps` | The run settled (`completed`, `failed`, `cancelled`) before the window. | A pending or running run. |
+
+A session ends at the next `stream.online`, so a session can stay open well
+past a week; its raw events wait for it to end and be compacted.
+
+Once the cleaner deletes a session's first raw event, it marks the
+compaction pruned (`pruned_at`), in the same transaction. From then on the
+copy is the only record of the session and is never rebuilt:
+`CompactStreamSession` refuses it with `failed_precondition`, and a raw event
+recorded into its time afterwards is kept but not counted.
+
+The engine does not prune the UI's copies in Convex (`engineAlerts`, the run
+history); the UI repository owns their retention.
 
 ## Two constraints to design against
 
@@ -420,7 +575,9 @@ The reads above resolve the session to its time window once per query instead.
 first thing this system will hold that a viewer could reasonably ask to have
 deleted. Retention and deletion are a design input here, not an operational
 afterthought, and they are the reason step 5 sends summaries rather than
-shipping every viewer's activity to a multi-tenant store.
+shipping every viewer's activity to a multi-tenant store. The raw detail is
+[pruned](#retention) after a week; the per-viewer totals of each stream are
+kept, on the engine only.
 
 ## Gaps that block specific questions
 
@@ -432,8 +589,11 @@ The dashboard's "recent" figures read the log too, by time rather than by
 session: `UserEventService.ListRecentUserEvents` returns the latest events at
 or after a given instant and how many there were. `getDashboard().recentActivity`
 is the latest twenty of the last 24 hours, and `getDashboardStats().recentEvents`
-is the count for the same span (`api/src/routes/dashboard.ts`). Both are empty
-or zero on a quiet day, which is the true answer. `getDashboardStats` has no
+is the count for the same span (`api/src/routes/dashboard.ts`). Both count only
+the Twitch viewer activity the recorder attributes through its fixed map
+(`ANALYTICS_EVENT_TYPES` in `api/src/user-event-recorder.ts`), not every
+trigger's events. Both are empty or zero on a quiet day, which is the true
+answer. `getDashboardStats` has no
 account count: the engine is single-tenant and has nothing to count.
 
 ## Build order
@@ -454,8 +614,13 @@ Each step is independently useful and safe to stop after:
 5. **Summarise to the UI** — the engine half is done: a `SESSION_SUMMARY`
    webhook on `session.ended`, one whole snapshot per session. The Convex
    table behind it lives in the UI repository.
-6. **Backfill** what `workflow_executions.trigger_event` and `alerts.payload`
-   can supply, once there is something to backfill into.
+6. **Keep the recaps, drop the detail** — done. Each ended session is
+   compacted into permanent tables, and the raw log, alerts and run history
+   are pruned after a week (see [Retention](#retention)).
+
+There is no backfill from alerts or run history. Analytics are per session:
+a month is the sessions that started in those thirty days, summed from their
+summaries, so it needs nothing stored beyond them.
 
 Step 1 came first because it is the only one that cannot be added
 retroactively: a day without it is a day of history that does not exist.

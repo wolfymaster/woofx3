@@ -59,7 +59,8 @@ export interface UserEvent {
    */
   amount?: bigint | null | undefined;
   /**
-   * The CloudEvent `data`, as JSON.
+   * The CloudEvent `data`, as JSON. `{}` for an event of a compacted
+   * session's timeline, which keeps everything about an event but its payload.
    */
   eventValue: string;
   /**
@@ -211,25 +212,57 @@ export interface ListViewerLeaderboardResponse {
 
 export interface ListRecentUserEventsRequest {
   /**
-   * Start of the span, inclusive. Required.
+   * Start of the span, inclusive. Absent for the whole log.
    */
   since: protoscript.Timestamp;
   /**
    * 1-100. Defaults to 20.
    */
   limit?: number | null | undefined;
+  /**
+   * The CloudEvent types to return. Empty returns every type.
+   */
+  eventTypes: string[];
+  /**
+   * Return only events after this one in newest-first order: the last event
+   * of the previous page. Absent for the newest page.
+   */
+  before: UserEventPosition;
+  /**
+   * Leave `total` zero rather than counting the span, for a caller that only
+   * pages.
+   */
+  skipTotal: boolean;
+}
+
+/**
+ * Where an event sits in the log's newest-first order: by occurred_at, then
+ * by id among events at the same instant.
+ */
+export interface UserEventPosition {
+  occurredAt: protoscript.Timestamp;
+  /**
+   * UserEvent.id.
+   */
+  id: string;
 }
 
 export interface ListRecentUserEventsResponse {
   status: common.ResponseStatus;
   /**
-   * Newest first by occurred_at, at most `limit` of them.
+   * Newest first by occurred_at, then by id, at most `limit` of them.
    */
   events: UserEvent[];
   /**
-   * Every event in the span, not only those returned.
+   * Every event in the span of the requested types, not only those returned,
+   * and whatever `before` is. Zero when the request set `skip_total`.
    */
   total: bigint;
+  /**
+   * True when the span holds older events of the requested types than those
+   * returned, so a request with `before` set to the last of them returns more.
+   */
+  more: boolean;
 }
 
 export interface ListStreamSessionUserEventsRequest {
@@ -250,6 +283,23 @@ export interface ListStreamSessionUserEventsResponse {
    * Every counted event in the session, not only those returned.
    */
   total: bigint;
+}
+
+export interface CompactStreamSessionRequest {
+  streamSessionId: string;
+}
+
+export interface CompactStreamSessionResponse {
+  status: common.ResponseStatus;
+  /**
+   * Viewers with any event in the session, each holding one totals row.
+   */
+  viewers: bigint;
+  /**
+   * Events on the session's timeline.
+   */
+  timelineEvents: bigint;
+  compactedAt: protoscript.Timestamp;
 }
 
 //========================================//
@@ -327,6 +377,8 @@ export async function ListViewerLeaderboard(
 /**
  * The latest events that occurred at or after `since`, newest first, and how
  * many occurred in that span. Reads the log by time alone, not by session.
+ * Pages back through the log with `before`, the last event of the previous
+ * page, and narrows it to some event types with `event_types`.
  */
 export async function ListRecentUserEvents(
   listRecentUserEventsRequest: ListRecentUserEventsRequest,
@@ -359,6 +411,27 @@ export async function ListStreamSessionUserEvents(
     config,
   );
   return ListStreamSessionUserEventsResponse.decode(response);
+}
+
+/**
+ * Copies what the reads above need of one closed session out of the raw log
+ * into permanent tables: each viewer's totals and the session's timeline.
+ * From then on the reads take that session from the copy, so its raw rows
+ * can be pruned without changing any answer. Idempotent: compacting again
+ * rebuilds the copy from the raw log as it stands, in one transaction.
+ * `not_found` for an unknown session, `failed_precondition` for the open
+ * one, whose time is still running.
+ */
+export async function CompactStreamSession(
+  compactStreamSessionRequest: CompactStreamSessionRequest,
+  config?: ClientConfiguration,
+): Promise<CompactStreamSessionResponse> {
+  const response = await PBrequest(
+    "/user_event.UserEventService/CompactStreamSession",
+    CompactStreamSessionRequest.encode(compactStreamSessionRequest),
+    config,
+  );
+  return CompactStreamSessionResponse.decode(response);
 }
 
 //========================================//
@@ -436,6 +509,8 @@ export async function ListViewerLeaderboardJSON(
 /**
  * The latest events that occurred at or after `since`, newest first, and how
  * many occurred in that span. Reads the log by time alone, not by session.
+ * Pages back through the log with `before`, the last event of the previous
+ * page, and narrows it to some event types with `event_types`.
  */
 export async function ListRecentUserEventsJSON(
   listRecentUserEventsRequest: ListRecentUserEventsRequest,
@@ -468,6 +543,27 @@ export async function ListStreamSessionUserEventsJSON(
     config,
   );
   return ListStreamSessionUserEventsResponseJSON.decode(response);
+}
+
+/**
+ * Copies what the reads above need of one closed session out of the raw log
+ * into permanent tables: each viewer's totals and the session's timeline.
+ * From then on the reads take that session from the copy, so its raw rows
+ * can be pruned without changing any answer. Idempotent: compacting again
+ * rebuilds the copy from the raw log as it stands, in one transaction.
+ * `not_found` for an unknown session, `failed_precondition` for the open
+ * one, whose time is still running.
+ */
+export async function CompactStreamSessionJSON(
+  compactStreamSessionRequest: CompactStreamSessionRequest,
+  config?: ClientConfiguration,
+): Promise<CompactStreamSessionResponse> {
+  const response = await JSONrequest(
+    "/user_event.UserEventService/CompactStreamSession",
+    CompactStreamSessionRequestJSON.encode(compactStreamSessionRequest),
+    config,
+  );
+  return CompactStreamSessionResponseJSON.decode(response);
 }
 
 //========================================//
@@ -522,6 +618,8 @@ export interface UserEventService<Context = unknown> {
   /**
    * The latest events that occurred at or after `since`, newest first, and how
    * many occurred in that span. Reads the log by time alone, not by session.
+   * Pages back through the log with `before`, the last event of the previous
+   * page, and narrows it to some event types with `event_types`.
    */
   ListRecentUserEvents: (
     listRecentUserEventsRequest: ListRecentUserEventsRequest,
@@ -540,6 +638,19 @@ export interface UserEventService<Context = unknown> {
   ) =>
     | Promise<ListStreamSessionUserEventsResponse>
     | ListStreamSessionUserEventsResponse;
+  /**
+   * Copies what the reads above need of one closed session out of the raw log
+   * into permanent tables: each viewer's totals and the session's timeline.
+   * From then on the reads take that session from the copy, so its raw rows
+   * can be pruned without changing any answer. Idempotent: compacting again
+   * rebuilds the copy from the raw log as it stands, in one transaction.
+   * `not_found` for an unknown session, `failed_precondition` for the open
+   * one, whose time is still running.
+   */
+  CompactStreamSession: (
+    compactStreamSessionRequest: CompactStreamSessionRequest,
+    context: Context,
+  ) => Promise<CompactStreamSessionResponse> | CompactStreamSessionResponse;
 }
 
 export function createUserEventService<Context>(
@@ -618,6 +729,18 @@ export function createUserEventService<Context>(
         output: {
           protobuf: ListStreamSessionUserEventsResponse,
           json: ListStreamSessionUserEventsResponseJSON,
+        },
+      },
+      CompactStreamSession: {
+        name: "CompactStreamSession",
+        handler: service.CompactStreamSession,
+        input: {
+          protobuf: CompactStreamSessionRequest,
+          json: CompactStreamSessionRequestJSON,
+        },
+        output: {
+          protobuf: CompactStreamSessionResponse,
+          json: CompactStreamSessionResponseJSON,
         },
       },
     },
@@ -1950,6 +2073,9 @@ export const ListRecentUserEventsRequest = {
     return {
       since: protoscript.Timestamp.initialize(),
       limit: undefined,
+      eventTypes: [],
+      before: UserEventPosition.initialize(),
+      skipTotal: false,
       ...msg,
     };
   },
@@ -1966,6 +2092,15 @@ export const ListRecentUserEventsRequest = {
     }
     if (msg.limit != undefined) {
       writer.writeInt32(2, msg.limit);
+    }
+    if (msg.eventTypes?.length) {
+      writer.writeRepeatedString(3, msg.eventTypes);
+    }
+    if (msg.before) {
+      writer.writeMessage(4, msg.before, UserEventPosition._writeMessage);
+    }
+    if (msg.skipTotal) {
+      writer.writeBool(5, msg.skipTotal);
     }
     return writer;
   },
@@ -1986,6 +2121,101 @@ export const ListRecentUserEventsRequest = {
         }
         case 2: {
           msg.limit = reader.readInt32();
+          break;
+        }
+        case 3: {
+          msg.eventTypes.push(reader.readString());
+          break;
+        }
+        case 4: {
+          reader.readMessage(msg.before, UserEventPosition._readMessage);
+          break;
+        }
+        case 5: {
+          msg.skipTotal = reader.readBool();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UserEventPosition = {
+  /**
+   * Serializes UserEventPosition to protobuf.
+   */
+  encode: function (msg: PartialDeep<UserEventPosition>): Uint8Array {
+    return UserEventPosition._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UserEventPosition from protobuf.
+   */
+  decode: function (bytes: ByteSource): UserEventPosition {
+    return UserEventPosition._readMessage(
+      UserEventPosition.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UserEventPosition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<UserEventPosition>): UserEventPosition {
+    return {
+      occurredAt: protoscript.Timestamp.initialize(),
+      id: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UserEventPosition>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.occurredAt) {
+      writer.writeMessage(
+        1,
+        msg.occurredAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.id) {
+      writer.writeString(2, msg.id);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UserEventPosition,
+    reader: protoscript.BinaryReader,
+  ): UserEventPosition {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(
+            msg.occurredAt,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        case 2: {
+          msg.id = reader.readString();
           break;
         }
         default: {
@@ -2031,6 +2261,7 @@ export const ListRecentUserEventsResponse = {
       status: common.ResponseStatus.initialize(),
       events: [],
       total: 0n,
+      more: false,
       ...msg,
     };
   },
@@ -2054,6 +2285,9 @@ export const ListRecentUserEventsResponse = {
     }
     if (msg.total) {
       writer.writeInt64String(3, msg.total.toString() as any);
+    }
+    if (msg.more) {
+      writer.writeBool(4, msg.more);
     }
     return writer;
   },
@@ -2080,6 +2314,10 @@ export const ListRecentUserEventsResponse = {
         }
         case 3: {
           msg.total = BigInt(reader.readInt64String());
+          break;
+        }
+        case 4: {
+          msg.more = reader.readBool();
           break;
         }
         default: {
@@ -2254,6 +2492,179 @@ export const ListStreamSessionUserEventsResponse = {
         }
         case 3: {
           msg.total = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompactStreamSessionRequest = {
+  /**
+   * Serializes CompactStreamSessionRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<CompactStreamSessionRequest>): Uint8Array {
+    return CompactStreamSessionRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompactStreamSessionRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompactStreamSessionRequest {
+    return CompactStreamSessionRequest._readMessage(
+      CompactStreamSessionRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompactStreamSessionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompactStreamSessionRequest>,
+  ): CompactStreamSessionRequest {
+    return {
+      streamSessionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompactStreamSessionRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.streamSessionId) {
+      writer.writeString(1, msg.streamSessionId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompactStreamSessionRequest,
+    reader: protoscript.BinaryReader,
+  ): CompactStreamSessionRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.streamSessionId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompactStreamSessionResponse = {
+  /**
+   * Serializes CompactStreamSessionResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CompactStreamSessionResponse>,
+  ): Uint8Array {
+    return CompactStreamSessionResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompactStreamSessionResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompactStreamSessionResponse {
+    return CompactStreamSessionResponse._readMessage(
+      CompactStreamSessionResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompactStreamSessionResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompactStreamSessionResponse>,
+  ): CompactStreamSessionResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      viewers: 0n,
+      timelineEvents: 0n,
+      compactedAt: protoscript.Timestamp.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompactStreamSessionResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.viewers) {
+      writer.writeInt64String(2, msg.viewers.toString() as any);
+    }
+    if (msg.timelineEvents) {
+      writer.writeInt64String(3, msg.timelineEvents.toString() as any);
+    }
+    if (msg.compactedAt) {
+      writer.writeMessage(
+        4,
+        msg.compactedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompactStreamSessionResponse,
+    reader: protoscript.BinaryReader,
+  ): CompactStreamSessionResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          msg.viewers = BigInt(reader.readInt64String());
+          break;
+        }
+        case 3: {
+          msg.timelineEvents = BigInt(reader.readInt64String());
+          break;
+        }
+        case 4: {
+          reader.readMessage(
+            msg.compactedAt,
+            protoscript.Timestamp._readMessage,
+          );
           break;
         }
         default: {
@@ -3437,6 +3848,9 @@ export const ListRecentUserEventsRequestJSON = {
     return {
       since: protoscript.TimestampJSON.initialize(),
       limit: undefined,
+      eventTypes: [],
+      before: UserEventPositionJSON.initialize(),
+      skipTotal: false,
       ...msg,
     };
   },
@@ -3453,6 +3867,18 @@ export const ListRecentUserEventsRequestJSON = {
     }
     if (msg.limit != undefined) {
       json["limit"] = msg.limit;
+    }
+    if (msg.eventTypes?.length) {
+      json["eventTypes"] = msg.eventTypes;
+    }
+    if (msg.before) {
+      const _before_ = UserEventPositionJSON._writeMessage(msg.before);
+      if (Object.keys(_before_).length > 0) {
+        json["before"] = _before_;
+      }
+    }
+    if (msg.skipTotal) {
+      json["skipTotal"] = msg.skipTotal;
     }
     return json;
   },
@@ -3471,6 +3897,82 @@ export const ListRecentUserEventsRequestJSON = {
     const _limit_ = json["limit"];
     if (_limit_) {
       msg.limit = protoscript.parseNumber(_limit_);
+    }
+    const _eventTypes_ = json["eventTypes"] ?? json["event_types"];
+    if (_eventTypes_) {
+      msg.eventTypes = _eventTypes_;
+    }
+    const _before_ = json["before"];
+    if (_before_) {
+      UserEventPositionJSON._readMessage(msg.before, _before_);
+    }
+    const _skipTotal_ = json["skipTotal"] ?? json["skip_total"];
+    if (_skipTotal_) {
+      msg.skipTotal = _skipTotal_;
+    }
+    return msg;
+  },
+};
+
+export const UserEventPositionJSON = {
+  /**
+   * Serializes UserEventPosition to JSON.
+   */
+  encode: function (msg: PartialDeep<UserEventPosition>): string {
+    return JSON.stringify(UserEventPositionJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes UserEventPosition from JSON.
+   */
+  decode: function (json: string): UserEventPosition {
+    return UserEventPositionJSON._readMessage(
+      UserEventPositionJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UserEventPosition with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<UserEventPosition>): UserEventPosition {
+    return {
+      occurredAt: protoscript.TimestampJSON.initialize(),
+      id: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UserEventPosition>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.occurredAt && (msg.occurredAt.seconds || msg.occurredAt.nanos)) {
+      json["occurredAt"] = protoscript.serializeTimestamp(msg.occurredAt);
+    }
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UserEventPosition,
+    json: any,
+  ): UserEventPosition {
+    const _occurredAt_ = json["occurredAt"] ?? json["occurred_at"];
+    if (_occurredAt_) {
+      msg.occurredAt = protoscript.parseTimestamp(_occurredAt_);
+    }
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
     }
     return msg;
   },
@@ -3504,6 +4006,7 @@ export const ListRecentUserEventsResponseJSON = {
       status: common.ResponseStatusJSON.initialize(),
       events: [],
       total: 0n,
+      more: false,
       ...msg,
     };
   },
@@ -3526,6 +4029,9 @@ export const ListRecentUserEventsResponseJSON = {
     }
     if (msg.total) {
       json["total"] = String(msg.total);
+    }
+    if (msg.more) {
+      json["more"] = msg.more;
     }
     return json;
   },
@@ -3552,6 +4058,10 @@ export const ListRecentUserEventsResponseJSON = {
     const _total_ = json["total"];
     if (_total_) {
       msg.total = BigInt(_total_);
+    }
+    const _more_ = json["more"];
+    if (_more_) {
+      msg.more = _more_;
     }
     return msg;
   },
@@ -3708,6 +4218,150 @@ export const ListStreamSessionUserEventsResponseJSON = {
     const _total_ = json["total"];
     if (_total_) {
       msg.total = BigInt(_total_);
+    }
+    return msg;
+  },
+};
+
+export const CompactStreamSessionRequestJSON = {
+  /**
+   * Serializes CompactStreamSessionRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CompactStreamSessionRequest>): string {
+    return JSON.stringify(CompactStreamSessionRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompactStreamSessionRequest from JSON.
+   */
+  decode: function (json: string): CompactStreamSessionRequest {
+    return CompactStreamSessionRequestJSON._readMessage(
+      CompactStreamSessionRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompactStreamSessionRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompactStreamSessionRequest>,
+  ): CompactStreamSessionRequest {
+    return {
+      streamSessionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompactStreamSessionRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.streamSessionId) {
+      json["streamSessionId"] = msg.streamSessionId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompactStreamSessionRequest,
+    json: any,
+  ): CompactStreamSessionRequest {
+    const _streamSessionId_ =
+      json["streamSessionId"] ?? json["stream_session_id"];
+    if (_streamSessionId_) {
+      msg.streamSessionId = _streamSessionId_;
+    }
+    return msg;
+  },
+};
+
+export const CompactStreamSessionResponseJSON = {
+  /**
+   * Serializes CompactStreamSessionResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<CompactStreamSessionResponse>): string {
+    return JSON.stringify(CompactStreamSessionResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompactStreamSessionResponse from JSON.
+   */
+  decode: function (json: string): CompactStreamSessionResponse {
+    return CompactStreamSessionResponseJSON._readMessage(
+      CompactStreamSessionResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompactStreamSessionResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompactStreamSessionResponse>,
+  ): CompactStreamSessionResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      viewers: 0n,
+      timelineEvents: 0n,
+      compactedAt: protoscript.TimestampJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompactStreamSessionResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.viewers) {
+      json["viewers"] = String(msg.viewers);
+    }
+    if (msg.timelineEvents) {
+      json["timelineEvents"] = String(msg.timelineEvents);
+    }
+    if (msg.compactedAt && (msg.compactedAt.seconds || msg.compactedAt.nanos)) {
+      json["compactedAt"] = protoscript.serializeTimestamp(msg.compactedAt);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompactStreamSessionResponse,
+    json: any,
+  ): CompactStreamSessionResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _viewers_ = json["viewers"];
+    if (_viewers_) {
+      msg.viewers = BigInt(_viewers_);
+    }
+    const _timelineEvents_ = json["timelineEvents"] ?? json["timeline_events"];
+    if (_timelineEvents_) {
+      msg.timelineEvents = BigInt(_timelineEvents_);
+    }
+    const _compactedAt_ = json["compactedAt"] ?? json["compacted_at"];
+    if (_compactedAt_) {
+      msg.compactedAt = protoscript.parseTimestamp(_compactedAt_);
     }
     return msg;
   },

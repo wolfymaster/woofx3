@@ -232,6 +232,12 @@ export class DbClient {
     return response.repositoryKeys ?? [];
   }
 
+  async getResourceUsage(): Promise<{ bytes: bigint; files: bigint }> {
+    const response = await resource.GetResourceUsage({}, this.config);
+    unwrapVoid("getResourceUsage", response);
+    return { bytes: response.bytes ?? 0n, files: response.files ?? 0n };
+  }
+
   async createGroup(req: group.CreateGroupRequest): Promise<group.Group> {
     const response = await group.CreateGroup(req, this.config);
     return unwrap("createGroup", response, response.group);
@@ -643,6 +649,24 @@ export class DbClient {
     return response.samples ?? [];
   }
 
+  /**
+   * Copies a closed session's per-viewer totals and timeline out of the raw
+   * event log into permanent tables, rebuilding any earlier copy, so its
+   * analytics outlive the log's retention window. Null for an unknown
+   * session. Rejects with `failed_precondition` for the open session, and for
+   * one whose raw events are already being pruned, whose copy then stands.
+   */
+  async compactStreamSession(streamSessionId: string): Promise<user_event.CompactStreamSessionResponse | null> {
+    const response = await nullWhenSessionMissing("compactStreamSession", () =>
+      user_event.CompactStreamSession({ streamSessionId }, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("compactStreamSession", response);
+    return response;
+  }
+
   /** Channel totals for the time a session owns, or null for an unknown session. */
   async findStreamSessionEventTotals(streamSessionId: string): Promise<user_event.StreamSessionEventTotals | null> {
     const response = await nullWhenSessionMissing("findStreamSessionEventTotals", () =>
@@ -701,13 +725,20 @@ export class DbClient {
     return { events: response.events ?? [], total: response.total };
   }
 
-  /** The latest events at or after `since`, newest first, and how many fell in that span. */
+  /**
+   * A page of the event log, newest first: the latest events at or after
+   * `since` (the whole log without it) of `eventTypes` (every type without
+   * them), older than `before` when it is set. `total` counts the span, and
+   * `more` says whether an older page follows.
+   */
   async listRecentUserEvents(
-    req: user_event.ListRecentUserEventsRequest
-  ): Promise<{ events: user_event.UserEvent[]; total: bigint }> {
-    const response = await user_event.ListRecentUserEvents(req, this.config);
+    req: Partial<user_event.ListRecentUserEventsRequest>
+  ): Promise<{ events: user_event.UserEvent[]; total: bigint; more: boolean }> {
+    // The generated encoder writes only the fields present; its signature
+    // asks for every field only because protoscript types requests that way.
+    const response = await user_event.ListRecentUserEvents(req as user_event.ListRecentUserEventsRequest, this.config);
     unwrapVoid("listRecentUserEvents", response);
-    return { events: response.events ?? [], total: response.total };
+    return { events: response.events ?? [], total: response.total, more: response.more };
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {

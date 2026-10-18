@@ -331,8 +331,9 @@ impl Repository for S3Repository {
     }
 
     /// A genuine presigned PUT. The signature covers the bucket, the
-    /// key, the expiry, and -- when supplied -- the Content-Type, so a
-    /// grant issued for one object cannot be replayed against another.
+    /// key, the expiry, the Content-Length, and -- when supplied -- the
+    /// Content-Type, so a grant issued for one object cannot be replayed
+    /// against another or used to store a larger body than requested.
     /// The client must send back exactly the headers returned here.
     async fn presign_upload(&self, req: UploadRequest<'_>) -> Result<UploadEndpoint> {
         let full_key = self.full_key(req.key);
@@ -343,7 +344,14 @@ impl Repository for S3Repository {
             .client
             .put_object()
             .bucket(&self.config.bucket)
-            .key(&full_key);
+            .key(&full_key)
+            .content_length(i64::try_from(req.content_length).map_err(|_| {
+                anyhow!(
+                    "content length {} for {} does not fit a signed request",
+                    req.content_length,
+                    full_key
+                )
+            })?);
         if let Some(content_type) = req.content_type {
             put = put.content_type(content_type);
         }
@@ -356,7 +364,7 @@ impl Repository for S3Repository {
         // Echo back only what the signature actually covers. Handing the
         // client a header the signature does not include would make the
         // upload fail in a way that looks like a client bug.
-        let mut headers = Vec::new();
+        let mut headers = vec![("Content-Length".to_string(), req.content_length.to_string())];
         if let Some(content_type) = req.content_type {
             headers.push(("Content-Type".to_string(), content_type.to_string()));
         }

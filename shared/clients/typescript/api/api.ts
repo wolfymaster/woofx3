@@ -10,7 +10,13 @@ import type {
 } from "./config-bundle";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
 import type { RegisterClientOptions } from "./rpc";
-import type { StreamEventSubscriber } from "./stream-events";
+import type {
+  EventLogPage,
+  EventLogQuery,
+  EventLogSelection,
+  EventLogSettings,
+  StreamEventSubscriber,
+} from "./stream-events";
 import type {
   ActionDefinition,
   ModuleResourceUsage,
@@ -631,8 +637,18 @@ export interface RequestUploadUrlInput {
   name: string;
   contentType: string;
   parentId?: string | null;
-  size?: number;
+  /**
+   * Exact byte length of the upload. The grant is bound to it, so storage
+   * refuses a body of any other length.
+   */
+  size: number;
   ttlSeconds?: number;
+}
+
+/** What the engine's user assets hold: every file resource, pending or ready. */
+export interface ResourceUsage {
+  bytes: number;
+  files: number;
 }
 
 // ==================== Scenes ====================
@@ -1797,7 +1813,13 @@ export interface Woofx3EngineApi {
   completeUpload(resourceId: string, size?: number): Promise<Resource>;
   // The engine decodes no video: a video's thumbnail comes from a frame
   // the caller captures and PUTs to this grant before requestProcessing.
-  requestPosterUploadUrl(resourceId: string, contentType: string, ttlSeconds?: number): Promise<PosterUploadGrant>;
+  requestPosterUploadUrl(
+    resourceId: string,
+    contentType: string,
+    size: number,
+    ttlSeconds?: number
+  ): Promise<PosterUploadGrant>;
+  getResourceUsage(): Promise<ResourceUsage>;
   createFolder(name: string, parentId?: string | null): Promise<Resource>;
   getResource(id: string): Promise<Resource>;
   listResources(query?: ResourcesQuery): Promise<PaginatedResources>;
@@ -2247,15 +2269,40 @@ export interface Woofx3EngineApi {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void>;
 
-  /** Push live stream events -- follows, subs, cheers, raids, stream on/off,
-   *  ad breaks (upcoming, begin, end) -- to the caller for the life of the
-   *  session. Chat is deliberately not on
-   *  this channel; see ./stream-events.
+  /** Push live events to the caller for the life of the session.
+   *
+   *  With `types`, exactly those event types (CloudEvent `type`) are pushed
+   *  that are in `EventLogSettings.offered`, so never chat messages
+   *  (`user.message`, which has its own channel); others are ignored, and
+   *  start being pushed if a module offering them is installed. Calling again
+   *  on the same session replaces the previous registration and its types.
+   *  Without `types`, the fixed set
+   *  older clients relied on: follow, subscribe, gift, cheer, raid, stream
+   *  online/offline and the three ad-break events.
+   *
+   *  Events the api published itself (dashboard tests) are pushed too, with
+   *  `source: "api"`; a client that wants only real activity drops those.
    *
    *  Delivery is not gapless: nothing buffers events behind this, so a client
    *  that connects late or reconnects has missed the gap and should re-read
    *  point-in-time state rather than assume a continuous stream. */
-  subscribeStreamEvents(callback: StreamEventSubscriber): Promise<void>;
+  subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]): Promise<void>;
+
+  /** Read the engine's event log, newest first; see `EventLogQuery`. The
+   *  history behind `subscribeStreamEvents`: a client reads a page on load and
+   *  on reconnect, then merges live frames by `id`. */
+  listEvents(query?: EventLogQuery): Promise<EventLogPage>;
+
+  /** The engine's event-type selection, its defaults, what may be selected
+   *  and the effective set; see `EventLogSettings`. */
+  getEventLogSettings(): Promise<EventLogSettings>;
+
+  /** Replace the selection. Types outside `offered` are kept but have no
+   *  effect, so a selection naming an uninstalled module's events still
+   *  saves, and reinstalling the module brings the choice back. Logging of a
+   *  newly enabled type starts before this resolves. Rejects a malformed
+   *  selection: not two lists of event types, or more than 500 in a list. */
+  setEventLogSelection(selection: EventLogSelection): Promise<EventLogSettings>;
 
   getUserProfile(userId: string): Promise<{
     id: string;

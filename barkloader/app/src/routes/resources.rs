@@ -5,7 +5,7 @@
 //!
 //!   `POST /assets/upload-url`        ask for permission to upload
 //!   `POST /assets/poster-upload-url` ask for permission to upload a video's poster frame
-//!   `PUT  /assets/upload/{token}`    send the bytes (file backend only)
+//!   `PUT  /assets/upload/{token}`    send the bytes (relayed grants)
 //!   `POST /assets/process`           derive a thumbnail, asynchronously
 //!   `DELETE /assets/resource`        purge one resource's stored bytes
 //!
@@ -14,7 +14,9 @@
 //! straight at the bucket; on local disk it points back at this
 //! service's own token-guarded PUT. Either way the caller gets
 //! `{uploadUrl, method, headers, expiresAt}` and performs one PUT, so
-//! nothing upstream ever branches on the provider.
+//! nothing upstream ever branches on the provider. Either way the grant
+//! admits exactly the requested `content_length`: S3 signs it, and the
+//! relay token carries it.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -41,9 +43,14 @@ use crate::types::{AppContext, SharedRepository};
 const DEFAULT_UPLOAD_TTL_SECONDS: u64 = 300;
 const MAX_UPLOAD_TTL_SECONDS: u64 = 3600;
 
-/// Ceiling on a single proxied upload. Only applies to the file
-/// backend; S3 uploads never pass through this process.
+/// Ceiling on a single proxied upload. Only applies to relayed grants;
+/// presigned uploads never pass through this process.
 const MAX_PROXIED_UPLOAD_BYTES: usize = 512 * 1024 * 1024;
+
+/// Ceiling on a single presigned upload: R2's limit for one PUT, a little
+/// under S3's 5 GiB. Anything larger needs a multipart upload, which grants
+/// do not offer, so the store would refuse it anyway.
+const MAX_PRESIGNED_UPLOAD_BYTES: u64 = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024;
 
 /// The only processing utility implemented today. Named rather than
 /// implied so adding a second one is an additive change.
@@ -69,6 +76,8 @@ struct UploadUrlRequest {
     resource_id: String,
     file_name: String,
     content_type: Option<String>,
+    /// Exact byte length of the upload; the grant is bound to it.
+    content_length: u64,
     ttl_seconds: Option<u64>,
 }
 
@@ -98,6 +107,8 @@ struct PosterUploadUrlRequest {
     /// derived from it, so the caller cannot aim the grant elsewhere.
     repository_key: String,
     content_type: String,
+    /// Exact byte length of the upload; the grant is bound to it.
+    content_length: u64,
     ttl_seconds: Option<u64>,
 }
 
@@ -158,6 +169,7 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
         &ctx,
         key,
         request.content_type.as_deref(),
+        request.content_length,
         request.ttl_seconds,
     )
     .await
@@ -189,18 +201,34 @@ async fn poster_upload_url_handler(
         }
     };
 
-    issue_upload_grant(&ctx, key, Some(&request.content_type), request.ttl_seconds).await
+    issue_upload_grant(
+        &ctx,
+        key,
+        Some(&request.content_type),
+        request.content_length,
+        request.ttl_seconds,
+    )
+    .await
 }
 
 /// Mint the grant for one already-validated `user/` key: presigned at the
 /// backend when direct uploads are enabled and supported, relayed through
-/// `upload_handler` otherwise.
+/// `upload_handler` otherwise. Either way the grant admits exactly
+/// `content_length` bytes, so the caller knows what it will store.
 async fn issue_upload_grant(
     ctx: &AppContext,
     key: String,
     content_type: Option<&str>,
+    content_length: u64,
     ttl_seconds: Option<u64>,
 ) -> HttpResponse {
+    if content_length == 0 {
+        return HttpResponse::BadRequest().json(error_body("content_length must be at least 1"));
+    }
+    if content_length > MAX_PRESIGNED_UPLOAD_BYTES {
+        return HttpResponse::BadRequest().json(error_body("upload exceeds size limit"));
+    }
+
     let ttl = Duration::from_secs(
         ttl_seconds
             .unwrap_or(DEFAULT_UPLOAD_TTL_SECONDS)
@@ -215,6 +243,7 @@ async fn issue_upload_grant(
             .presign_upload(UploadRequest {
                 key: &key,
                 content_type,
+                content_length,
                 ttl,
             })
             .await
@@ -234,21 +263,27 @@ async fn issue_upload_grant(
             // Relaying, either by configuration or because the backend cannot
             // presign at all (local disk): mint our own grant and point the
             // caller at the PUT endpoint below. Same shape, same single request.
+            if content_length > MAX_PROXIED_UPLOAD_BYTES as u64 {
+                return HttpResponse::BadRequest().json(error_body("upload exceeds size limit"));
+            }
             let secret = upload_secret();
-            let issued = upload_token::issue(&secret, &key, content_type, ttl, now);
+            let issued = upload_token::issue(&secret, &key, content_type, content_length, ttl, now);
             let Ok((token, _)) = issued else {
                 error!("Failed to issue upload token for {}", key);
                 return HttpResponse::InternalServerError()
                     .json(error_body("could not issue an upload grant"));
             };
             let base = ctx.public_url_resolver.resolve().await;
-            let headers = match content_type {
-                Some(content_type) => vec![UploadHeader {
+            let mut headers = vec![UploadHeader {
+                name: "Content-Length".to_string(),
+                value: content_length.to_string(),
+            }];
+            if let Some(content_type) = content_type {
+                headers.push(UploadHeader {
                     name: "Content-Type".to_string(),
                     value: content_type.to_string(),
-                }],
-                None => Vec::new(),
-            };
+                });
+            }
             (
                 format!("{}/assets/upload/{}", base.trim_end_matches('/'), token),
                 headers,
@@ -362,9 +397,18 @@ where
         }
     }
 
-    if declared_length.is_some_and(|length| length > MAX_PROXIED_UPLOAD_BYTES as u64) {
+    // Same contract as an S3 presigned PUT, which signs the length: a body
+    // declared at any other size was never granted.
+    if declared_length.is_some_and(|length| length != grant.content_length) {
+        return HttpResponse::Forbidden()
+            .json(error_body("content length does not match upload grant"));
+    }
+    // Grants are only issued under the ceiling; a secret leak should still
+    // not become a way to buffer an unbounded body.
+    if grant.content_length > MAX_PROXIED_UPLOAD_BYTES as u64 {
         return HttpResponse::PayloadTooLarge().json(error_body("upload exceeds size limit"));
     }
+    let granted_length = grant.content_length as usize;
 
     match repository.exists(&grant.key).await {
         Ok(false) => {}
@@ -380,12 +424,7 @@ where
         }
     }
 
-    let mut content = Vec::with_capacity(
-        declared_length
-            .map(|length| length as usize)
-            .unwrap_or(0)
-            .min(MAX_PROXIED_UPLOAD_BYTES),
-    );
+    let mut content = Vec::with_capacity(granted_length);
     while let Some(chunk) = body.next().await {
         let chunk = match chunk {
             Ok(chunk) => chunk,
@@ -395,13 +434,14 @@ where
                     .json(error_body("upload body could not be read"));
             }
         };
-        if content.len() + chunk.len() > MAX_PROXIED_UPLOAD_BYTES {
-            return HttpResponse::PayloadTooLarge().json(error_body("upload exceeds size limit"));
+        if content.len() + chunk.len() > granted_length {
+            return HttpResponse::PayloadTooLarge()
+                .json(error_body("upload is longer than its grant"));
         }
         content.extend_from_slice(&chunk);
     }
-    if content.is_empty() {
-        return HttpResponse::BadRequest().json(error_body("upload body was empty"));
+    if content.len() != granted_length {
+        return HttpResponse::BadRequest().json(error_body("upload is shorter than its grant"));
     }
 
     let extension = std::path::Path::new(&grant.key)
@@ -748,10 +788,17 @@ mod tests {
             RepositoryImpl::File(repo)
         }
 
-        fn token_for(key: &str, content_type: Option<&str>) -> String {
-            upload_token::issue(SECRET, key, content_type, Duration::from_secs(300), NOW)
-                .expect("issue token")
-                .0
+        fn token_for(key: &str, content_type: Option<&str>, content_length: u64) -> String {
+            upload_token::issue(
+                SECRET,
+                key,
+                content_type,
+                content_length,
+                Duration::from_secs(300),
+                NOW,
+            )
+            .expect("issue token")
+            .0
         }
 
         fn body_of(
@@ -782,7 +829,7 @@ mod tests {
             let response = accept_upload(
                 &repo,
                 SECRET,
-                &token_for(KEY, Some("image/png")),
+                &token_for(KEY, Some("image/png"), 10),
                 Some("image/png"),
                 Some(10),
                 body_of(&[b"\x89PNG", b"-bytes"]),
@@ -804,7 +851,7 @@ mod tests {
         async fn a_grant_is_good_for_one_upload() {
             let root = tempfile::tempdir().expect("tempdir");
             let repo = file_repo(root.path());
-            let token = token_for(KEY, Some("image/png"));
+            let token = token_for(KEY, Some("image/png"), 8);
 
             let first = accept_upload(
                 &repo,
@@ -840,7 +887,7 @@ mod tests {
             let response = accept_upload(
                 &repo,
                 SECRET,
-                &token_for(KEY, Some("image/png")),
+                &token_for(KEY, Some("image/png"), 8),
                 Some("image/png"),
                 None,
                 unread_body(),
@@ -856,10 +903,16 @@ mod tests {
         async fn forged_grant_is_refused() {
             let root = tempfile::tempdir().expect("tempdir");
             let repo = file_repo(root.path());
-            let token =
-                upload_token::issue("another-secret", KEY, None, Duration::from_secs(300), NOW)
-                    .expect("issue token")
-                    .0;
+            let token = upload_token::issue(
+                "another-secret",
+                KEY,
+                None,
+                8,
+                Duration::from_secs(300),
+                NOW,
+            )
+            .expect("issue token")
+            .0;
 
             let response =
                 accept_upload(&repo, SECRET, &token, None, None, unread_body(), NOW).await;
@@ -876,7 +929,7 @@ mod tests {
             let response = accept_upload(
                 &repo,
                 SECRET,
-                &token_for("modules/m1/index.js", None),
+                &token_for("modules/m1/index.js", None, 8),
                 None,
                 None,
                 unread_body(),
@@ -891,7 +944,7 @@ mod tests {
         async fn bytes_must_be_sent_as_the_granted_content_type() {
             let root = tempfile::tempdir().expect("tempdir");
             let repo = file_repo(root.path());
-            let token = token_for(KEY, Some("image/png"));
+            let token = token_for(KEY, Some("image/png"), 1);
 
             for declared in [Some("text/html"), None] {
                 let response =
@@ -914,16 +967,38 @@ mod tests {
         }
 
         #[actix_web::test]
-        async fn declared_oversize_is_refused_before_reading() {
+        async fn declared_length_must_match_the_grant() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+            let token = token_for(KEY, None, 10);
+
+            for declared in [9, 11, 1 << 40] {
+                let response = accept_upload(
+                    &repo,
+                    SECRET,
+                    &token,
+                    None,
+                    Some(declared),
+                    unread_body(),
+                    NOW,
+                )
+                .await;
+                assert_eq!(status_of(response).await, 403, "declared {declared}");
+            }
+            assert!(!root.path().join(KEY).exists());
+        }
+
+        #[actix_web::test]
+        async fn grant_over_the_relay_ceiling_is_refused_before_reading() {
             let root = tempfile::tempdir().expect("tempdir");
             let repo = file_repo(root.path());
 
             let response = accept_upload(
                 &repo,
                 SECRET,
-                &token_for(KEY, None),
+                &token_for(KEY, None, MAX_PROXIED_UPLOAD_BYTES as u64 + 1),
                 None,
-                Some(MAX_PROXIED_UPLOAD_BYTES as u64 + 1),
+                None,
                 unread_body(),
                 NOW,
             )
@@ -932,23 +1007,46 @@ mod tests {
             assert_eq!(status_of(response).await, 413);
         }
 
+        /// Without a declared length (chunked transfer) the body itself is
+        /// held to the grant.
         #[actix_web::test]
-        async fn empty_body_is_refused() {
+        async fn body_longer_than_the_grant_is_refused_and_writes_nothing() {
             let root = tempfile::tempdir().expect("tempdir");
             let repo = file_repo(root.path());
 
             let response = accept_upload(
                 &repo,
                 SECRET,
-                &token_for(KEY, None),
+                &token_for(KEY, None, 4),
                 None,
-                Some(0),
-                body_of(&[]),
+                None,
+                body_of(&[b"abc", b"defgh"]),
                 NOW,
             )
             .await;
 
-            assert_eq!(status_of(response).await, 400);
+            assert_eq!(status_of(response).await, 413);
+            assert!(!root.path().join(KEY).exists());
+        }
+
+        #[actix_web::test]
+        async fn body_shorter_than_the_grant_is_refused_and_writes_nothing() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+
+            for body in [body_of(&[b"abcd"]), body_of(&[])] {
+                let response = accept_upload(
+                    &repo,
+                    SECRET,
+                    &token_for(KEY, None, 10),
+                    None,
+                    None,
+                    body,
+                    NOW,
+                )
+                .await;
+                assert_eq!(status_of(response).await, 400);
+            }
             assert!(!root.path().join(KEY).exists());
         }
 
@@ -980,6 +1078,7 @@ mod tests {
                 &secret,
                 "user/res-2/clip.mp4",
                 Some("video/mp4"),
+                1024 * 1024,
                 Duration::from_secs(300),
                 unix_now(),
             )

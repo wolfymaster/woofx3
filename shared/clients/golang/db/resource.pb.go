@@ -374,6 +374,102 @@ func (x *GetResourceRequest) GetId() string {
 	return ""
 }
 
+type GetResourceUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetResourceUsageRequest) Reset() {
+	*x = GetResourceUsageRequest{}
+	mi := &file_resource_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetResourceUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetResourceUsageRequest) ProtoMessage() {}
+
+func (x *GetResourceUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_resource_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetResourceUsageRequest.ProtoReflect.Descriptor instead.
+func (*GetResourceUsageRequest) Descriptor() ([]byte, []int) {
+	return file_resource_proto_rawDescGZIP(), []int{4}
+}
+
+type GetResourceUsageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Bytes         int64                  `protobuf:"varint,2,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	Files         int64                  `protobuf:"varint,3,opt,name=files,proto3" json:"files,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetResourceUsageResponse) Reset() {
+	*x = GetResourceUsageResponse{}
+	mi := &file_resource_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetResourceUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetResourceUsageResponse) ProtoMessage() {}
+
+func (x *GetResourceUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_resource_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetResourceUsageResponse.ProtoReflect.Descriptor instead.
+func (*GetResourceUsageResponse) Descriptor() ([]byte, []int) {
+	return file_resource_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetResourceUsageResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *GetResourceUsageResponse) GetBytes() int64 {
+	if x != nil {
+		return x.Bytes
+	}
+	return 0
+}
+
+func (x *GetResourceUsageResponse) GetFiles() int64 {
+	if x != nil {
+		return x.Files
+	}
+	return 0
+}
+
 type ListResourcesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unset lists the root. Set lists that folder's direct children.
@@ -391,7 +487,7 @@ type ListResourcesRequest struct {
 
 func (x *ListResourcesRequest) Reset() {
 	*x = ListResourcesRequest{}
-	mi := &file_resource_proto_msgTypes[4]
+	mi := &file_resource_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -403,7 +499,7 @@ func (x *ListResourcesRequest) String() string {
 func (*ListResourcesRequest) ProtoMessage() {}
 
 func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_resource_proto_msgTypes[4]
+	mi := &file_resource_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -416,7 +512,7 @@ func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
-	return file_resource_proto_rawDescGZIP(), []int{4}
+	return file_resource_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListResourcesRequest) GetParentId() string {
@@ -467,7 +563,7 @@ type ListResourcesResponse struct {
 
 func (x *ListResourcesResponse) Reset() {
 	*x = ListResourcesResponse{}
-	mi := &file_resource_proto_msgTypes[5]
+	mi := &file_resource_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -479,7 +575,7 @@ func (x *ListResourcesResponse) String() string {
 func (*ListResourcesResponse) ProtoMessage() {}
 
 func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_resource_proto_msgTypes[5]
+	mi := &file_resource_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -492,7 +588,7 @@ func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesResponse.ProtoReflect.Descriptor instead.
 func (*ListResourcesResponse) Descriptor() ([]byte, []int) {
-	return file_resource_proto_rawDescGZIP(), []int{5}
+	return file_resource_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListResourcesResponse) GetStatus() *ResponseStatus {
@@ -548,7 +644,7 @@ type UpdateResourceRequest struct {
 
 func (x *UpdateResourceRequest) Reset() {
 	*x = UpdateResourceRequest{}
-	mi := &file_resource_proto_msgTypes[6]
+	mi := &file_resource_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -560,7 +656,7 @@ func (x *UpdateResourceRequest) String() string {
 func (*UpdateResourceRequest) ProtoMessage() {}
 
 func (x *UpdateResourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_resource_proto_msgTypes[6]
+	mi := &file_resource_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -573,7 +669,7 @@ func (x *UpdateResourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResourceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateResourceRequest) Descriptor() ([]byte, []int) {
-	return file_resource_proto_rawDescGZIP(), []int{6}
+	return file_resource_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateResourceRequest) GetId() string {
@@ -634,7 +730,7 @@ type DeleteResourceRequest struct {
 
 func (x *DeleteResourceRequest) Reset() {
 	*x = DeleteResourceRequest{}
-	mi := &file_resource_proto_msgTypes[7]
+	mi := &file_resource_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +742,7 @@ func (x *DeleteResourceRequest) String() string {
 func (*DeleteResourceRequest) ProtoMessage() {}
 
 func (x *DeleteResourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_resource_proto_msgTypes[7]
+	mi := &file_resource_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +755,7 @@ func (x *DeleteResourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResourceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteResourceRequest) Descriptor() ([]byte, []int) {
-	return file_resource_proto_rawDescGZIP(), []int{7}
+	return file_resource_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteResourceRequest) GetId() string {
@@ -681,7 +777,7 @@ type DeleteResourceResponse struct {
 
 func (x *DeleteResourceResponse) Reset() {
 	*x = DeleteResourceResponse{}
-	mi := &file_resource_proto_msgTypes[8]
+	mi := &file_resource_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -693,7 +789,7 @@ func (x *DeleteResourceResponse) String() string {
 func (*DeleteResourceResponse) ProtoMessage() {}
 
 func (x *DeleteResourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_resource_proto_msgTypes[8]
+	mi := &file_resource_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -706,7 +802,7 @@ func (x *DeleteResourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResourceResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResourceResponse) Descriptor() ([]byte, []int) {
-	return file_resource_proto_rawDescGZIP(), []int{8}
+	return file_resource_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DeleteResourceResponse) GetStatus() *ResponseStatus {
@@ -733,7 +829,7 @@ type ResourceResponse struct {
 
 func (x *ResourceResponse) Reset() {
 	*x = ResourceResponse{}
-	mi := &file_resource_proto_msgTypes[9]
+	mi := &file_resource_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -745,7 +841,7 @@ func (x *ResourceResponse) String() string {
 func (*ResourceResponse) ProtoMessage() {}
 
 func (x *ResourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_resource_proto_msgTypes[9]
+	mi := &file_resource_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -758,7 +854,7 @@ func (x *ResourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceResponse.ProtoReflect.Descriptor instead.
 func (*ResourceResponse) Descriptor() ([]byte, []int) {
-	return file_resource_proto_rawDescGZIP(), []int{9}
+	return file_resource_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ResourceResponse) GetStatus() *ResponseStatus {
@@ -816,7 +912,12 @@ const file_resource_proto_rawDesc = "" +
 	"\n" +
 	"_parent_idJ\x04\b\x01\x10\x02R\x0eapplication_id\":\n" +
 	"\x12GetResourceRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02idJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xb9\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02idJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x19\n" +
+	"\x17GetResourceUsageRequest\"v\n" +
+	"\x18GetResourceUsageResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x14\n" +
+	"\x05bytes\x18\x02 \x01(\x03R\x05bytes\x12\x14\n" +
+	"\x05files\x18\x03 \x01(\x03R\x05files\"\xb9\x01\n" +
 	"\x14ListResourcesRequest\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x16\n" +
@@ -853,14 +954,15 @@ const file_resource_proto_rawDesc = "" +
 	"\x0frepository_keys\x18\x02 \x03(\tR\x0erepositoryKeys\"r\n" +
 	"\x10ResourceResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12.\n" +
-	"\bresource\x18\x02 \x01(\v2\x12.resource.ResourceR\bresource2\xea\x03\n" +
+	"\bresource\x18\x02 \x01(\v2\x12.resource.ResourceR\bresource2\xc5\x04\n" +
 	"\x0fResourceService\x12M\n" +
 	"\x0eCreateResource\x12\x1f.resource.CreateResourceRequest\x1a\x1a.resource.ResourceResponse\x12I\n" +
 	"\fCreateFolder\x12\x1d.resource.CreateFolderRequest\x1a\x1a.resource.ResourceResponse\x12G\n" +
 	"\vGetResource\x12\x1c.resource.GetResourceRequest\x1a\x1a.resource.ResourceResponse\x12P\n" +
 	"\rListResources\x12\x1e.resource.ListResourcesRequest\x1a\x1f.resource.ListResourcesResponse\x12M\n" +
 	"\x0eUpdateResource\x12\x1f.resource.UpdateResourceRequest\x1a\x1a.resource.ResourceResponse\x12S\n" +
-	"\x0eDeleteResource\x12\x1f.resource.DeleteResourceRequest\x1a .resource.DeleteResourceResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x0eDeleteResource\x12\x1f.resource.DeleteResourceRequest\x1a .resource.DeleteResourceResponse\x12Y\n" +
+	"\x10GetResourceUsage\x12!.resource.GetResourceUsageRequest\x1a\".resource.GetResourceUsageResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_resource_proto_rawDescOnce sync.Once
@@ -874,46 +976,51 @@ func file_resource_proto_rawDescGZIP() []byte {
 	return file_resource_proto_rawDescData
 }
 
-var file_resource_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_resource_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_resource_proto_goTypes = []any{
-	(*Resource)(nil),               // 0: resource.Resource
-	(*CreateResourceRequest)(nil),  // 1: resource.CreateResourceRequest
-	(*CreateFolderRequest)(nil),    // 2: resource.CreateFolderRequest
-	(*GetResourceRequest)(nil),     // 3: resource.GetResourceRequest
-	(*ListResourcesRequest)(nil),   // 4: resource.ListResourcesRequest
-	(*ListResourcesResponse)(nil),  // 5: resource.ListResourcesResponse
-	(*UpdateResourceRequest)(nil),  // 6: resource.UpdateResourceRequest
-	(*DeleteResourceRequest)(nil),  // 7: resource.DeleteResourceRequest
-	(*DeleteResourceResponse)(nil), // 8: resource.DeleteResourceResponse
-	(*ResourceResponse)(nil),       // 9: resource.ResourceResponse
-	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),         // 11: common.ResponseStatus
+	(*Resource)(nil),                 // 0: resource.Resource
+	(*CreateResourceRequest)(nil),    // 1: resource.CreateResourceRequest
+	(*CreateFolderRequest)(nil),      // 2: resource.CreateFolderRequest
+	(*GetResourceRequest)(nil),       // 3: resource.GetResourceRequest
+	(*GetResourceUsageRequest)(nil),  // 4: resource.GetResourceUsageRequest
+	(*GetResourceUsageResponse)(nil), // 5: resource.GetResourceUsageResponse
+	(*ListResourcesRequest)(nil),     // 6: resource.ListResourcesRequest
+	(*ListResourcesResponse)(nil),    // 7: resource.ListResourcesResponse
+	(*UpdateResourceRequest)(nil),    // 8: resource.UpdateResourceRequest
+	(*DeleteResourceRequest)(nil),    // 9: resource.DeleteResourceRequest
+	(*DeleteResourceResponse)(nil),   // 10: resource.DeleteResourceResponse
+	(*ResourceResponse)(nil),         // 11: resource.ResourceResponse
+	(*timestamppb.Timestamp)(nil),    // 12: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),           // 13: common.ResponseStatus
 }
 var file_resource_proto_depIdxs = []int32{
-	10, // 0: resource.Resource.created_at:type_name -> google.protobuf.Timestamp
-	10, // 1: resource.Resource.updated_at:type_name -> google.protobuf.Timestamp
-	11, // 2: resource.ListResourcesResponse.status:type_name -> common.ResponseStatus
-	0,  // 3: resource.ListResourcesResponse.resources:type_name -> resource.Resource
-	11, // 4: resource.DeleteResourceResponse.status:type_name -> common.ResponseStatus
-	11, // 5: resource.ResourceResponse.status:type_name -> common.ResponseStatus
-	0,  // 6: resource.ResourceResponse.resource:type_name -> resource.Resource
-	1,  // 7: resource.ResourceService.CreateResource:input_type -> resource.CreateResourceRequest
-	2,  // 8: resource.ResourceService.CreateFolder:input_type -> resource.CreateFolderRequest
-	3,  // 9: resource.ResourceService.GetResource:input_type -> resource.GetResourceRequest
-	4,  // 10: resource.ResourceService.ListResources:input_type -> resource.ListResourcesRequest
-	6,  // 11: resource.ResourceService.UpdateResource:input_type -> resource.UpdateResourceRequest
-	7,  // 12: resource.ResourceService.DeleteResource:input_type -> resource.DeleteResourceRequest
-	9,  // 13: resource.ResourceService.CreateResource:output_type -> resource.ResourceResponse
-	9,  // 14: resource.ResourceService.CreateFolder:output_type -> resource.ResourceResponse
-	9,  // 15: resource.ResourceService.GetResource:output_type -> resource.ResourceResponse
-	5,  // 16: resource.ResourceService.ListResources:output_type -> resource.ListResourcesResponse
-	9,  // 17: resource.ResourceService.UpdateResource:output_type -> resource.ResourceResponse
-	8,  // 18: resource.ResourceService.DeleteResource:output_type -> resource.DeleteResourceResponse
-	13, // [13:19] is the sub-list for method output_type
-	7,  // [7:13] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	12, // 0: resource.Resource.created_at:type_name -> google.protobuf.Timestamp
+	12, // 1: resource.Resource.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 2: resource.GetResourceUsageResponse.status:type_name -> common.ResponseStatus
+	13, // 3: resource.ListResourcesResponse.status:type_name -> common.ResponseStatus
+	0,  // 4: resource.ListResourcesResponse.resources:type_name -> resource.Resource
+	13, // 5: resource.DeleteResourceResponse.status:type_name -> common.ResponseStatus
+	13, // 6: resource.ResourceResponse.status:type_name -> common.ResponseStatus
+	0,  // 7: resource.ResourceResponse.resource:type_name -> resource.Resource
+	1,  // 8: resource.ResourceService.CreateResource:input_type -> resource.CreateResourceRequest
+	2,  // 9: resource.ResourceService.CreateFolder:input_type -> resource.CreateFolderRequest
+	3,  // 10: resource.ResourceService.GetResource:input_type -> resource.GetResourceRequest
+	6,  // 11: resource.ResourceService.ListResources:input_type -> resource.ListResourcesRequest
+	8,  // 12: resource.ResourceService.UpdateResource:input_type -> resource.UpdateResourceRequest
+	9,  // 13: resource.ResourceService.DeleteResource:input_type -> resource.DeleteResourceRequest
+	4,  // 14: resource.ResourceService.GetResourceUsage:input_type -> resource.GetResourceUsageRequest
+	11, // 15: resource.ResourceService.CreateResource:output_type -> resource.ResourceResponse
+	11, // 16: resource.ResourceService.CreateFolder:output_type -> resource.ResourceResponse
+	11, // 17: resource.ResourceService.GetResource:output_type -> resource.ResourceResponse
+	7,  // 18: resource.ResourceService.ListResources:output_type -> resource.ListResourcesResponse
+	11, // 19: resource.ResourceService.UpdateResource:output_type -> resource.ResourceResponse
+	10, // 20: resource.ResourceService.DeleteResource:output_type -> resource.DeleteResourceResponse
+	5,  // 21: resource.ResourceService.GetResourceUsage:output_type -> resource.GetResourceUsageResponse
+	15, // [15:22] is the sub-list for method output_type
+	8,  // [8:15] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_resource_proto_init() }
@@ -925,15 +1032,15 @@ func file_resource_proto_init() {
 	file_resource_proto_msgTypes[0].OneofWrappers = []any{}
 	file_resource_proto_msgTypes[1].OneofWrappers = []any{}
 	file_resource_proto_msgTypes[2].OneofWrappers = []any{}
-	file_resource_proto_msgTypes[4].OneofWrappers = []any{}
 	file_resource_proto_msgTypes[6].OneofWrappers = []any{}
+	file_resource_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_resource_proto_rawDesc), len(file_resource_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

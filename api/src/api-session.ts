@@ -3,6 +3,7 @@ import type {
   ConfigImportOptions,
   MarketplaceInstallRequest,
   RelayConfig,
+  StreamEventSubscriber,
   TwitchAccessToken,
   Woofx3EngineApi,
 } from "@woofx3/api";
@@ -58,6 +59,11 @@ export class ApiSession extends RpcTarget {
 
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
     return this.api.setTwitchToken(token, convexUserId, { clientId: this.clientId });
+  }
+
+  /** The session is the registration's key, so a second call replaces the first. */
+  async subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]) {
+    return this.api.subscribeStreamEvents(callback, types, { session: this });
   }
 
   async setRelayConfig(config: RelayConfig | null) {
@@ -187,6 +193,7 @@ export const RPC_METHODS = [
   "requestUploadUrl",
   "completeUpload",
   "requestPosterUploadUrl",
+  "getResourceUsage",
   "createFolder",
   "getResource",
   "listResources",
@@ -242,6 +249,9 @@ export const RPC_METHODS = [
   "cancelWorkflow",
   "subscribeTriggerChanges",
   "subscribeStreamEvents",
+  "listEvents",
+  "getEventLogSettings",
+  "setEventLogSelection",
   "getUserProfile",
   "awardTreatsToUser",
   "simulateTwitchEvent",

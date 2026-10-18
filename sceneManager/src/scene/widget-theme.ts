@@ -131,7 +131,8 @@ export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
  * (`TWITCH_IMAGE_CDN`). A theme stylesheet is author data, and its `url(...)`
  * or `@import` could otherwise reach any host, carrying whatever its
  * selectors can read off the page; nothing a theme ships is a script, so
- * scripts and connections are left as they were. External media a
+ * scripts are left as they were. Connections are closed for every frame,
+ * themed or not (`FRAME_CONNECT_POLICY` in frame-assembler.ts). External media a
  * placement's settings name reaches the frame through the engine's media
  * proxy (see media-proxy.ts), so it needs no outside host here either.
  *

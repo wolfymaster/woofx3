@@ -113,6 +113,8 @@ export interface FrameResolution {
 /** What a frame is mounted with. */
 export interface PreviewFrameSpec {
   widgetId: NodeId;
+  /** The widget's canonical id, `{moduleId}:widget:{manifestId}`. */
+  widgetCanonicalId: string;
   meta: PreviewFrameMeta;
   settings: Record<string, unknown>;
   surface: ProfileId;
@@ -338,6 +340,7 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
         slot,
         {
           widgetId,
+          widgetCanonicalId: placement.widget,
           meta,
           settings: placement.settings,
           surface: PROFILES[source.profile].surface,

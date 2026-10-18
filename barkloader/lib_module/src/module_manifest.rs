@@ -358,9 +358,25 @@ pub const WIDGET_BEHAVIOR_LABEL_MAX: usize = 64;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestDataShape {
+    /// How one event reads as an alert, as a template of `{path}` placeholders
+    /// naming paths in `fields`, e.g. `"{userName} redeemed {rewardTitle}"`.
+    /// Only on a trigger's `emits`: a function result is never shown as an
+    /// alert. Stored verbatim; the UI fills it from the event's data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Up to `DATA_SHAPE_DETAILS_MAX` secondary templates shown under
+    /// `summary`, same grammar. Each must hold a placeholder: the UI drops a
+    /// detail whose values are missing, which is what lets a detail name an
+    /// optional field, so a constant one would show on every alert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<Vec<String>>,
     #[serde(default)]
     pub fields: Vec<ManifestDataShapeField>,
 }
+
+/// The most `details` one shape may declare. An alert row has room for a
+/// few short lines under its summary, not a payload dump.
+pub const DATA_SHAPE_DETAILS_MAX: usize = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -2430,6 +2446,51 @@ mod tests {
             Some("isAnonymous")
         );
         assert_eq!(reparsed.fields[0].display_name.as_deref(), Some("userName"));
+    }
+
+    #[test]
+    fn trigger_to_input_keeps_summary_and_details_in_emits() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_redeem",
+            "name": "Redeem",
+            "event": "channel.redeem",
+            "emits": {
+                "summary": "{userName} redeemed {rewardTitle}",
+                "details": ["\u{201c}{message}\u{201d}"],
+                "fields": [
+                    { "path": "userName", "type": "string" },
+                    { "path": "rewardTitle", "type": "string" },
+                    { "path": "message", "type": "string" }
+                ]
+            }
+        }))
+        .expect("parse");
+        let emits = t.to_input("test_mod").emits;
+        let reparsed: ManifestDataShape = serde_json::from_str(&emits).expect("round-trips");
+        assert_eq!(
+            reparsed.summary.as_deref(),
+            Some("{userName} redeemed {rewardTitle}")
+        );
+        assert_eq!(
+            reparsed.details,
+            Some(vec!["\u{201c}{message}\u{201d}".to_string()])
+        );
+    }
+
+    #[test]
+    fn trigger_to_input_omits_absent_summary_and_details_from_emits() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_cheer",
+            "name": "Cheer",
+            "event": "channel.cheer",
+            "emits": { "fields": [{ "path": "bits", "type": "number" }] }
+        }))
+        .expect("parse");
+        let emits = t.to_input("test_mod").emits;
+        let parsed: serde_json::Value = serde_json::from_str(&emits).expect("valid json");
+        let shape = parsed.as_object().expect("shape is an object");
+        assert!(!shape.contains_key("summary"), "{emits}");
+        assert!(!shape.contains_key("details"), "{emits}");
     }
 
     #[test]

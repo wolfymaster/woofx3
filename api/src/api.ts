@@ -1,3 +1,4 @@
+import type { EventLogSelectionSource } from "./event-log-selection";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
 import { type ApiOptions, ApiRouteHost } from "./routes/context";
 import type { StreamEventBroadcaster } from "./stream-event-broadcaster";
@@ -49,6 +50,10 @@ export class Api extends ApiRouteHost {
 
   setStreamEventBroadcaster(broadcaster: StreamEventBroadcaster): void {
     this.streamEventBroadcaster = broadcaster;
+  }
+
+  setEventLogSelectionSource(source: EventLogSelectionSource): void {
+    this.eventLogSelection = source;
   }
 }
 

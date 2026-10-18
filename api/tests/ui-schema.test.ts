@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type DataShape, parseDataShape } from "@woofx3/api/ui-schema";
+import { type DataShape, type DataShapeField, parseDataShape } from "@woofx3/api/ui-schema";
 
 // parseDataShape is the one place that decides whether a trigger's `emits` /
 // an action's `returns` names anything at all. Every "no" answer means the
@@ -63,5 +63,40 @@ describe("parseDataShape", () => {
 
   test("returns undefined when every entry is unusable", () => {
     expect(parseDataShape('{"fields":[{"type":"string"},null]}')).toBeUndefined();
+  });
+
+  test("keeps a summary, its details and identity annotations", () => {
+    const raw = JSON.stringify({
+      summary: "{userName} redeemed {rewardTitle}",
+      details: ["\u201c{message}\u201d"],
+      fields: [
+        { path: "userId", type: "string", identity: "viewer", anonymousWhen: "isAnonymous", displayName: "userName" },
+        { path: "isAnonymous", type: "boolean" },
+        { path: "userName", type: "string" },
+        { path: "rewardTitle", type: "string" },
+        { path: "message", type: "string" },
+      ],
+    } satisfies DataShape);
+
+    expect(parseDataShape(raw)).toEqual(JSON.parse(raw));
+  });
+
+  // Barkloader rejects these at install; a stale row must still not put a
+  // blank line or a non-string under an alert.
+  test("drops an empty summary and unusable details", () => {
+    const raw = JSON.stringify({
+      summary: "",
+      details: ["{tier}", "", 3, null],
+      fields: [{ path: "tier", type: "string" }],
+    });
+
+    expect(parseDataShape(raw)).toEqual({ details: ["{tier}"], fields: [{ path: "tier", type: "string" }] });
+  });
+
+  test("omits details when no entry is usable or the value is not an array", () => {
+    const fields: DataShapeField[] = [{ path: "tier", type: "string" }];
+
+    expect(parseDataShape(JSON.stringify({ summary: 7, details: ["", 1], fields }))).toEqual({ fields });
+    expect(parseDataShape(JSON.stringify({ details: "{tier}", fields }))).toEqual({ fields });
   });
 });
