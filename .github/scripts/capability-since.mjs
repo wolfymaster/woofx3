@@ -110,22 +110,34 @@ const current = parseCapabilities(readFileSync(path.join(root, CAPABILITIES), "u
 const docPath = path.join(root, DOC);
 const doc = readFileSync(docPath, "utf8");
 
-// `| \`id\` | since | feature |`, or `| \`id\` | feature |` before it has a Since cell.
-const row = new RegExp(`^\\| \`(${ID})\` \\|\\s*(.*?)\\s*\\|(?:\\s*(.*?)\\s*\\|)?$`);
+// `| \`id\` | since | feature |`, or `| \`id\` | feature |` before it has a Since
+// cell. Cells split on unescaped pipes; a feature may contain `\|`.
+const rowStart = new RegExp(`^\\| \`(${ID})\` \\|`);
 const rows = new Map();
 const lines = doc.split("\n");
 lines.forEach((line, index) => {
-  const match = line.match(row);
+  const match = line.match(rowStart);
   if (!match) {
     return;
   }
-  const [, id, second, rest] = match;
-  const hasSince = rest !== undefined && (second === "" || second === UNRELEASED || RELEASE_TAG.test(second));
-  rows.set(id, {
-    index,
-    since: hasSince ? second : "",
-    feature: hasSince ? rest : rest === undefined ? second : `${second} | ${rest}`,
-  });
+  const [, id] = match;
+  const cells = line
+    .split(/(?<!\\)\|/)
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  const where = `${DOC}:${index + 1}`;
+  if (cells.length === 2) {
+    rows.set(id, { index, since: "", feature: cells[1] });
+    return;
+  }
+  if (cells.length !== 3) {
+    throw new Error(`${where}: the ${id} row has ${cells.length} cells; expected | Id | Since | Feature |`);
+  }
+  const [, since, feature] = cells;
+  if (since !== "" && since !== UNRELEASED && !RELEASE_TAG.test(since)) {
+    throw new Error(`${where}: the ${id} row's Since is "${since}"; expected empty, ${UNRELEASED} or vX.Y.Z`);
+  }
+  rows.set(id, { index, since, feature });
 });
 
 const missingRows = current.declared.filter((id) => !rows.has(id));
