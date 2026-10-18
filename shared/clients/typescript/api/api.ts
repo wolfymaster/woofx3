@@ -857,6 +857,32 @@ export interface SceneEditorSession {
 }
 
 /**
+ * One value a workflow can read as `${viewer.<path>}` about the viewer its
+ * triggering event names: the viewer's `id`, `platform` and `name`, and each
+ * active viewer fact, a fact `{owner}:fact:{slug}` at `{owner}.{slug}`.
+ *
+ * `${viewer.*}` holds values only when the trigger's `emits` marks exactly
+ * one `string` field with `identity: "viewer"`. A fact the viewer has no
+ * value for yet reads as null, as does `name` when neither the event nor the
+ * db knows it.
+ */
+export interface ViewerFact {
+  /** The path after `viewer.`, e.g. `"id"` or `"user.apple_mentions"`. */
+  path: string;
+  name: string;
+  /** Empty when the fact's author wrote none. */
+  description: string;
+  /** What the value is; a timestamp is epoch milliseconds, compared as a number. */
+  valueKind: "string" | "number" | "timestamp";
+  /**
+   * Whether a fact counts over the viewer's lifetime or the current stream
+   * session, in which case it reads the current session's value. Absent on
+   * `id`, `platform` and `name`, which are not facts.
+   */
+  window?: "lifetime" | "session";
+}
+
+/**
  * Outcome of `getObsStatus`.
  *
  * - `state`: the connection's state, or `unanswered` when the scene manager did
@@ -1644,6 +1670,12 @@ export interface Woofx3EngineApi {
    * partial.
    */
   getWorkflowHealth(): Promise<WorkflowHealth[]>;
+  /**
+   * Every value `${viewer.*}` can resolve in a workflow, in a stable order:
+   * `id`, `platform` and `name` first, then the active facts by path.
+   * Requires the `workflow.viewerFacts` capability.
+   */
+  listViewerFacts(): Promise<ViewerFact[]>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
   // command.created / command.updated / command.deleted webhooks on success)

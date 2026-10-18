@@ -17,6 +17,11 @@ type Condition struct {
 // Evaluate resolves a condition's field and value and applies its operator.
 // A field that resolves to nil satisfies only an operator about presence or
 // difference; see EvaluateAtomValue.
+//
+// A list value (the items of `in`, the bounds of `between`) has each item
+// resolved on its own, so an item may be a `${...}` reference. An item that
+// is exactly one reference keeps its value's type, as a whole value does: a
+// reference to a list stays one item holding that list, never spliced in.
 func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 	fieldValue, err := resolver.ResolveString(condition.Field)
 	if err != nil {
@@ -24,8 +29,15 @@ func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
 	}
 
 	expectedValue := condition.Value
-	if strVal, ok := expectedValue.(string); ok {
-		resolved, err := resolver.ResolveString(strVal)
+	switch value := expectedValue.(type) {
+	case string:
+		resolved, err := resolver.ResolveString(value)
+		if err != nil {
+			return false, fmt.Errorf("failed to resolve value: %w", err)
+		}
+		expectedValue = resolved
+	case []any:
+		resolved, err := resolver.resolveSlice(value)
 		if err != nil {
 			return false, fmt.Errorf("failed to resolve value: %w", err)
 		}
@@ -235,6 +247,11 @@ func betweenCheck(actual, expected any) (bool, error) {
 	}
 
 	min, max := bounds[0], bounds[1]
+	// A bound read from a missing value bounds nothing. Compared as text,
+	// "<nil>" would sort after every digit and admit any number below it.
+	if min == nil || max == nil {
+		return false, nil
+	}
 
 	actualNum, actualIsNum := toFloat64(actual)
 	minNum, minIsNum := toFloat64(min)

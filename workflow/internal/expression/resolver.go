@@ -26,6 +26,13 @@ const assetURLPrefix = "woofx3_asset_url:"
 // such member.
 var ErrPathNotFound = errors.New("path not found")
 
+// OpenRecord is an object whose keys are open-ended: a path into it that it
+// does not have resolves to nil rather than failing, however deep the path
+// goes. It stands in for data that may legitimately be absent, such as the
+// payload of a wait that ended without its event, so a reference to one of
+// its fields reads as empty instead of breaking the step that uses it.
+type OpenRecord map[string]any
+
 type Resolver struct {
 	sources         map[string]any
 	lazySources     map[string]LazyLoader
@@ -215,6 +222,12 @@ func ResolvePath(data any, path string) (any, error) {
 		}
 
 		switch v := current.(type) {
+		case OpenRecord:
+			val, ok := v[part]
+			if !ok {
+				return nil, nil
+			}
+			current = val
 		case map[string]any:
 			val, ok := v[part]
 			if !ok {

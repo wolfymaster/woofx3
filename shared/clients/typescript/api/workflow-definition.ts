@@ -36,7 +36,19 @@ export interface ConditionConfig {
 // subscribes it, and only its command starts it. `event` is the command's
 // `chat.command.<slug>`, which the run reads as its trigger event.
 export type TriggerConfig =
-  | { type: "event"; event: string; conditions?: ConditionConfig[] }
+  | {
+      type: "event";
+      event: string;
+      conditions?: ConditionConfig[];
+      /**
+       * Puts the workflow in line with the other ordered workflows on the same
+       * event: they run one at a time, lowest first (by id among equals), each
+       * starting once the one before it settles or pauses at a wait. Unset runs
+       * it alongside everything else. Must match TriggerConfig.Order in
+       * workflow/internal/types/types.go.
+       */
+      order?: number;
+    }
   | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] }
   | { type: "command"; event: string; conditions?: ConditionConfig[] };
 

@@ -187,6 +187,9 @@ func planResume(
 
 		if len(record.Outputs) > 0 {
 			exports[task.ID] = record.Outputs
+			if task.Type == "wait" {
+				exports[task.ID] = tasks.RestoreWaitExports(record.Outputs)
+			}
 		}
 
 		if task.Type == "condition" {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -93,5 +94,51 @@ func TestAggregationWithoutWindowKeepsCounting(t *testing.T) {
 	satisfied, err := (&WaitTask{}).ProcessEvent(&types.Event{Type: "x"}, state, nil)
 	if err != nil || !satisfied {
 		t.Fatalf("satisfied = %v, err = %v; want satisfied", satisfied, err)
+	}
+}
+
+// A wait that ended without its event has no payload, so a later step's
+// reference to one of its fields reads as empty instead of failing.
+func TestAWaitWithoutAnEventExportsEmptyData(t *testing.T) {
+	task := &WaitTask{}
+	state := task.InitWaitState(&types.TaskDefinition{
+		ID:   "pause",
+		Type: "wait",
+		Wait: &types.WaitConfig{Event: "channel.follow", Timeout: &types.Duration{Duration: time.Minute}, OnTimeout: OnTimeoutContinue},
+	}, nil)
+	task.Expire(&types.WaitConfig{Event: "channel.follow"}, state)
+
+	resolver := expression.NewResolver()
+	resolver.AddSource("pause", task.GetExports(state))
+	for _, expr := range []string{"${pause.data.user}", "${pause.data.user.name}"} {
+		got, err := resolver.ResolveString(expr)
+		if err != nil {
+			t.Fatalf("%s: %v", expr, err)
+		}
+		if got != nil {
+			t.Errorf("%s = %v, want nil", expr, got)
+		}
+	}
+	got, err := resolver.ResolveString("Thanks ${pause.data.user}!")
+	if err != nil || got != "Thanks !" {
+		t.Errorf("embedded reference = %q (%v), want %q", got, err, "Thanks !")
+	}
+}
+
+// Recorded exports lose the openness of an absent payload in JSON; restoring
+// them for a resume puts it back, and leaves a wait that had an event alone.
+func TestRestoreWaitExports(t *testing.T) {
+	recorded := map[string]any{"satisfied": false, "timedOut": true, "events": []any{}, "data": map[string]any{}}
+	restored := RestoreWaitExports(recorded)
+	if _, open := restored["data"].(expression.OpenRecord); !open {
+		t.Errorf("data = %T, want an OpenRecord", restored["data"])
+	}
+	if _, open := recorded["data"].(expression.OpenRecord); open {
+		t.Error("RestoreWaitExports changed the recorded map it was given")
+	}
+
+	withEvent := map[string]any{"satisfied": true, "lastEvent": map[string]any{}, "data": map[string]any{"user": "ana"}}
+	if got := RestoreWaitExports(withEvent); got["data"].(map[string]any)["user"] != "ana" {
+		t.Errorf("data = %v, want the event's payload kept", got["data"])
 	}
 }

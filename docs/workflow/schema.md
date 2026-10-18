@@ -49,6 +49,7 @@ Defines the event that starts a workflow execution.
 | `type` | `string` | Yes | Trigger type: `"event"` (subscribes to `event`), `"schedule"` (fires on the cron expression in `schedule`), or `"command"`. A `"command"` trigger belongs to the workflow a chat command runs: nothing subscribes it, and only its command starts it, by id, once the command has matched and passed its checks, so the `chat.command.<slug>` event the same invocation announces cannot run it a second time. Its `event` is that `chat.command.<slug>`, the event the run reads as `${trigger...}`. See [How a command runs its steps](../services/commands-ui.md#how-a-command-runs-its-steps). |
 | `event` | `string` | Yes | NATS subject to subscribe to. Uses dot notation (e.g., `channel.cheer`). Supports NATS-style wildcards (`*` for one token, `>` for the remaining tail). Same value lives on the underlying trigger row's `event` column. A `webhook.*` subject is a webhook trigger's reserved placeholder: nothing publishes it, and a workflow cannot bind to it — bind to the event its handler returns. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Optional conditions evaluated against the matching event payload before the workflow starts. All conditions are evaluated with AND logic; if any returns false the workflow does not run. The same `${trigger.data.X}` expression syntax used in step conditions is available here. If omitted, any event matching `event` triggers the workflow. |
+| `order` | `integer` | No | Puts the workflow in line with the other workflows on the same event that set an `order`. For each event they run one at a time, lowest `order` first and by workflow id among equals, each starting once the one before it settles or pauses at a wait. A workflow that sets no `order` runs as soon as the event arrives, alongside everything else. See [Ordered workflows](./execution.md#ordered-workflows). |
 
 > **Why `$ref` and `event` are both present.** `event` is execution data — the actual NATS subject the workflow engine subscribes to, baked into the workflow at create time so the engine never needs a runtime lookup. `$ref` is reference metadata — the canonical id of the trigger declaration that owns that event, used only by the reference graph (in-use checks, upgrade tracking, "what depends on this module"). They live together in the same JSON object because they describe the same trigger from two different angles, but neither is derived from the other; both are populated at workflow create time.
 
@@ -130,7 +131,7 @@ A single condition that compares a field value against an expected value using a
 |----------|------|----------|-------------|
 | `field` | `string` | Yes | The value to test. Supports [expression syntax](#expression-syntax) (e.g., `${trigger.data.amount}`). |
 | `operator` | `string` | Yes | Comparison operator. See [Operators](#operators). |
-| `value` | `any` | Yes | The expected value to compare against. Also supports expression syntax if it's a string. Type depends on the operator. |
+| `value` | `any` | Yes | The expected value to compare against. Type depends on the operator. A string supports expression syntax, and so does each item of a list (an `in` item, a `between` bound). |
 
 ### Operators
 
@@ -153,6 +154,8 @@ A single condition that compares a field value against an expected value using a
 | `between` | `range` | Value is within inclusive range | `[min, max]` |
 
 A null or missing field satisfies only `eq null`, `ne`, `in` a list holding `null`, `not_in` and `not_exists`; every other operator is false for it. A malformed `value` (an invalid `regex`, a `between` that is not `[min, max]`) is an error even when the field is null.
+
+Each item of a list value is resolved on its own, so `"value": ["${trigger.data.low}", 1000]` bounds a `between` by a trigger field. An item that is exactly one `${…}` keeps its value's type, so a referenced number bound compares as a number; a reference to a list stays a single item and is not spliced into the list. An item naming a path that does not exist fails the condition, as a whole value does, and a `${viewer.*}` item the viewer has no value for is null. A `between` with a null bound is false.
 
 Comparisons are numeric when both sides are numbers. A string is never converted to a number: `"100"` against `99` compares as text. Any other pair falls back to string comparison.
 
@@ -230,7 +233,7 @@ Defines how multiple events are aggregated in a `wait` task.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `strategy` | `string` | Yes | Aggregation strategy. `"count"` is satisfied once the number of matching events reaches `threshold`. `"sum"` is satisfied once the running total of `field` reaches `threshold`. `"threshold"` is satisfied by the first single event whose `field` is at least `threshold`. Any other value is accepted but never satisfies the wait. |
-| `field` | `string` | No | Plain dot path (no `${...}`) to the numeric field to aggregate, rooted at the event, as in `data.amount`. Only the payload is reachable, so it starts with `data.`. Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`. An event whose value is missing or not a number is logged and not counted, and the wait keeps waiting. |
+| `field` | `string` | No | Plain dot path (no `${...}`) to the numeric field to aggregate, rooted at the event, as in `data.amount`. Only the payload is reachable, so it starts with `data.`. Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`. An event whose value is missing or not a number is logged and not counted, and the wait keeps waiting. Every strategy adds the value to the exported `sum` and counts the event in `count`; a `"count"` still counts an event without a number and adds nothing to `sum`. |
 | `threshold` | `number` | Yes | Target value. The wait is satisfied when the aggregated value reaches or exceeds this. |
 | `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began; without one, the window ends at the wait's `timeout`. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`, or, with no `timeout`, never ends. |
 

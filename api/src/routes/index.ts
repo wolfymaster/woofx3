@@ -27,6 +27,7 @@ import { subscriptionsRoutes } from "./subscriptions";
 import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { triggersRoutes } from "./triggers";
 import { userActionsRoutes } from "./user-actions";
+import { viewerFactsRoutes } from "./viewer-facts";
 import { workflowsRoutes } from "./workflows";
 import { workflowsExecutionRoutes } from "./workflows-execution";
 
@@ -58,7 +59,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof analyticsRoutes &
   typeof configBundlesRoutes &
   typeof moduleOAuthRoutes &
-  typeof relayRoutes;
+  typeof relayRoutes &
+  typeof viewerFactsRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -117,6 +119,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(analyticsRoutes),
     instrumentRoutes(configBundlesRoutes),
     instrumentRoutes(moduleOAuthRoutes),
-    instrumentRoutes(relayRoutes)
+    instrumentRoutes(relayRoutes),
+    instrumentRoutes(viewerFactsRoutes)
   );
 }

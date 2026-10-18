@@ -39,6 +39,13 @@ type TriggerConfig struct {
 	Event      string            `json:"event,omitempty" yaml:"event,omitempty"`
 	Schedule   string            `json:"schedule,omitempty" yaml:"schedule,omitempty"`
 	Conditions []ConditionConfig `json:"conditions,omitempty" yaml:"conditions,omitempty"`
+	// Order puts the workflow in line with the other ordered workflows on
+	// the same event: for each event they run one at a time, lowest Order
+	// first, each starting once the one before it settles or pauses at a
+	// wait. Nil runs it alongside everything else, as soon as the event
+	// arrives. An event's alert triggers are ordered this way, so the alerts
+	// they raise queue up in the order the streamer arranged them.
+	Order *int `json:"order,omitempty" yaml:"order,omitempty"`
 }
 
 type ConditionConfig struct {
