@@ -300,5 +300,11 @@ func TestAnEventRefusedForItsNumberIsNotCounted(t *testing.T) {
 		if state.Aggregation.Count != 0 || state.Aggregation.Sum != 0 {
 			t.Errorf("%s: count = %d, sum = %v, want 0 and 0", strategy, state.Aggregation.Count, state.Aggregation.Sum)
 		}
+		if len(state.ReceivedEvents) != 0 {
+			t.Errorf("%s: received %d events, want the refused one left out", strategy, len(state.ReceivedEvents))
+		}
+		if last, ok := task.GetExports(state)["lastEvent"]; ok {
+			t.Errorf("%s: lastEvent = %v, want none", strategy, last)
+		}
 	}
 }
