@@ -932,6 +932,86 @@ export interface UninstallModuleResponse {
   requested: boolean;
 }
 
+// ==================== Marketplace installs ====================
+
+/**
+ * What a marketplace install needs from its caller. The approvals are every
+ * permission and `local[]` endpoint id the streamer approved for this
+ * listing, including those an installed version already held; the install is
+ * refused while the archive declares one outside them.
+ *
+ * `buyerToken` is the short-lived marketplace token the dashboard minted for
+ * the buyer. The engine forwards it to the marketplace unread and keeps
+ * nothing. Without one the listing is read and downloaded anonymously, which
+ * only a free, public listing allows, and it is not claimed for anyone.
+ */
+export interface MarketplaceInstallRequest {
+  approvedPermissions: string[];
+  approvedLocalEndpoints: string[];
+  buyerToken?: string;
+}
+
+/**
+ * The outcome of `installMarketplaceListing`.
+ *
+ * - `installed`: barkloader accepted the archive under `moduleKey`
+ *   (`{listingId}:{version}:{first 7 hex of sha256}`); the install finishes
+ *   asynchronously with `module.installed` or `module.install_failed`.
+ *   `alreadyInstalled` when that key was installed before, in which case
+ *   `module.installed` has already been sent.
+ * - `needs_approval`: the archive declares permissions or local endpoints
+ *   outside the approval, e.g. because the listing was republished after the
+ *   streamer reviewed it. Nothing was installed.
+ * - `payment_required`: the buyer must buy the listing first. Nothing was
+ *   downloaded.
+ */
+export type MarketplaceInstallResult =
+  | { status: "installed"; moduleKey: string; alreadyInstalled?: boolean }
+  | {
+      status: "needs_approval";
+      name: string;
+      version: string;
+      unapproved: string[];
+      /** Ids of `local[]` endpoints outside the approval. */
+      unapprovedLocalEndpoints: string[];
+    }
+  | { status: "payment_required"; name: string; version: string };
+
+/** A `local[]` endpoint as an install review shows it: what the module reaches on the streamer's network. */
+export interface MarketplaceLocalEndpoint {
+  id: string;
+  name: string;
+  protocol: string;
+}
+
+/**
+ * A module listing's current build, read from the archive an install would
+ * use, for the review a streamer approves before installing.
+ */
+export interface MarketplaceListingInspection {
+  listingId: string;
+  type: "module" | "theme";
+  name: string;
+  version: string;
+  /** The key an install of this build would use. */
+  moduleKey: string;
+  sha256: string;
+  sizeBytes: number;
+  manifest: { id: string; name: string; version: string; description: string };
+  permissions: string[];
+  localEndpoints: MarketplaceLocalEndpoint[];
+  files: ModuleFileEntry[];
+}
+
+/**
+ * The outcome of `installMarketplaceBundle`. An overlay listing becomes a
+ * scene and an alert listing an alert composition; `engineId` is the new
+ * one's id.
+ */
+export type MarketplaceBundleInstallResult =
+  | { status: "installed"; listingId: string; engineId: string; kind: "scene" | "alert" }
+  | { status: "payment_required"; name: string; version: string };
+
 /** Summary row returned by `listEngineModules`. */
 export interface EngineModuleSummary {
   name: string;
@@ -1476,6 +1556,34 @@ export interface Woofx3EngineApi {
       marketplaceModuleId: string;
     }
   ): Promise<ModuleInstallZipResponse>;
+
+  /**
+   * Install a marketplace module or theme listing by id. The engine reads the
+   * listing, claims it for the buyer when given a `buyerToken` (a listing
+   * that must be bought first answers `payment_required`), downloads the
+   * archive only from an allowed host, refuses it unless its size and
+   * SHA-256 match what the marketplace recorded, and checks the manifest's
+   * permissions and `local[]` endpoints against the approval before handing
+   * it to barkloader. Install webhooks the engine sends itself carry
+   * `source: "marketplace"`. `clientId` is injected by the session.
+   * Capability `modules.marketplaceInstall`.
+   */
+  installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult>;
+
+  /**
+   * A module or theme listing's current build, read from its verified
+   * archive: the manifest, permissions, local endpoints and files an install
+   * would review. Claims nothing. Capability `modules.marketplaceInstall`.
+   */
+  inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection>;
+
+  /**
+   * Install an overlay or alert listing: its bundle becomes a new scene or
+   * alert composition, through the same writes as `createScene` and
+   * `createAlertComposition`. Claims the listing for the buyer first when
+   * given a `buyerToken`. Capability `modules.marketplaceInstall`.
+   */
+  installMarketplaceBundle(listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult>;
 
   /** Lightweight summary of every module currently installed on the engine. */
   listEngineModules(): Promise<EngineModuleSummary[]>;
