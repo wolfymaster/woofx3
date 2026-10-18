@@ -243,6 +243,9 @@ interface Registration extends QueueRegistration {
  */
 export class EventQueueManager {
   private readonly current = new Map<string, Registration>();
+  // Every registration not yet unregistered, by instance: during a frame swap
+  // the replaced queue still holds what it is playing beside the current one.
+  private readonly live = new Map<string, Set<Registration>>();
   private readonly finished = new Map<string, FinishedEvents>();
 
   register(
@@ -261,6 +264,12 @@ export class EventQueueManager {
     const registration: Registration = { instanceId, queue };
     const previous = this.current.get(instanceId);
     this.current.set(instanceId, registration);
+    let live = this.live.get(instanceId);
+    if (live === undefined) {
+      live = new Set();
+      this.live.set(instanceId, live);
+    }
+    live.add(registration);
     if (previous !== undefined) {
       queue.adoptPending(previous.queue);
     }
@@ -274,6 +283,11 @@ export class EventQueueManager {
    */
   unregister(registration: QueueRegistration): void {
     const { instanceId, queue } = registration as Registration;
+    const live = this.live.get(instanceId);
+    live?.delete(registration as Registration);
+    if (live?.size === 0) {
+      this.live.delete(instanceId);
+    }
     const current = this.current.get(instanceId);
     if (current === registration) {
       this.current.delete(instanceId);
@@ -308,11 +322,13 @@ export class EventQueueManager {
    * have, since the server closed it while this page could not hear.
    */
   retainOpen(open: Readonly<Record<string, readonly string[]>>): void {
-    for (const [instanceId, { queue }] of this.current) {
+    for (const [instanceId, registrations] of this.live) {
       const keep = new Set(open[instanceId] ?? []);
-      const closed = queue.held().filter((eventId) => !keep.has(eventId));
-      if (closed.length > 0) {
-        queue.cancel(closed);
+      for (const { queue } of registrations) {
+        const closed = queue.held().filter((eventId) => !keep.has(eventId));
+        if (closed.length > 0) {
+          queue.cancel(closed);
+        }
       }
     }
   }
