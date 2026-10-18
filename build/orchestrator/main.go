@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -66,7 +67,7 @@ func main() {
 		}
 	}
 
-	config, err := loadConfig(configPath)
+	config, err := loadConfig(configPath, os.Getenv)
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to load configuration", err)
 	}
@@ -166,7 +167,10 @@ func findConfigFile(startDir string) string {
 	return ""
 }
 
-func loadConfig(path string) (*Config, error) {
+// loadConfig reads services.json and resolves each enabled service's health
+// endpoint with getenv, so a configuration that leaves one unusable stops the
+// orchestrator before it starts anything.
+func loadConfig(path string, getenv func(string) string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -177,7 +181,33 @@ func loadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
+	for i, service := range config.Services {
+		// A disabled service's endpoint may name variables that only the
+		// deployments running it set.
+		if !service.Enabled {
+			continue
+		}
+		resolved, err := resolveService(service, getenv)
+		if err != nil {
+			return nil, err
+		}
+		config.Services[i] = resolved
+	}
+
 	return &config, nil
+}
+
+// resolveService fills in the fields of service that loadConfig derives from
+// its configuration.
+func resolveService(service Service, getenv func(string) string) (Service, error) {
+	if service.HealthEndpoint != "" {
+		healthURL, err := resolveEndpoint(service.HealthEndpoint, getenv)
+		if err != nil {
+			return Service{}, fmt.Errorf("service %s: health_endpoint: %w", service.Name, err)
+		}
+		service.healthURL = healthURL
+	}
+	return service, nil
 }
 
 type Config struct {
@@ -196,6 +226,10 @@ type Service struct {
 	Args           []string `json:"args,omitempty"`
 	Dependencies   []string `json:"dependencies,omitempty"`
 	HealthEndpoint string   `json:"health_endpoint,omitempty"`
+
+	// healthURL is HealthEndpoint with its variables expanded, set by
+	// resolveService; empty when the service has no health endpoint.
+	healthURL string
 }
 
 // serviceTypeBinary marks a service the build does not produce: a prebuilt
@@ -357,7 +391,7 @@ func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 func (s *Supervisor) AddService(service Service) {
 	s.services[service.Name] = &ServiceProcess{
 		Service:   service,
-		healthURL: expandEndpoint(service.HealthEndpoint, os.Getenv),
+		healthURL: service.healthURL,
 		Status:    StatusStopped,
 		CanStart:  make(chan bool, 1),
 	}
@@ -817,18 +851,38 @@ func (s *Supervisor) childFiles(serviceName string) ([]*os.File, func(), error) 
 	return []*os.File{stdin, output, output}, func() { output.Close() }, nil
 }
 
-// expandEndpoint fills ${NAME} and ${NAME:-default} in a health endpoint from
-// the environment, so services.json can follow a port the deployment
-// configures. A variable that is unset or empty takes its default, or
-// expands to nothing without one.
-func expandEndpoint(endpoint string, getenv func(string) string) string {
-	return os.Expand(endpoint, func(reference string) string {
-		name, fallback, _ := strings.Cut(reference, ":-")
+// resolveEndpoint fills ${NAME} and ${NAME:-default} in a health endpoint
+// from getenv, so services.json can follow a port the deployment configures,
+// and checks that the result is an absolute http(s) URL. A variable that is
+// unset or empty takes its default; one without a default is an error rather
+// than an empty port, which would only show as a check that never passes.
+func resolveEndpoint(endpoint string, getenv func(string) string) (string, error) {
+	var unset []string
+	expanded := os.Expand(endpoint, func(reference string) string {
+		name, fallback, hasDefault := strings.Cut(reference, ":-")
 		if value := getenv(name); value != "" {
 			return value
 		}
+		if !hasDefault {
+			unset = append(unset, name)
+		}
 		return fallback
 	})
+	if len(unset) > 0 {
+		return "", fmt.Errorf("%q uses %s, which is unset and has no default", endpoint, strings.Join(unset, ", "))
+	}
+
+	parsed, err := url.Parse(expanded)
+	if err != nil {
+		return "", fmt.Errorf("%q expands to %q, which is not a URL: %w", endpoint, expanded, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("%q expands to %q, which is not an http or https URL", endpoint, expanded)
+	}
+	if parsed.Hostname() == "" || strings.HasSuffix(parsed.Host, ":") {
+		return "", fmt.Errorf("%q expands to %q, which has no host or an empty port", endpoint, expanded)
+	}
+	return expanded, nil
 }
 
 // healthRequestTimeout bounds one health check request.

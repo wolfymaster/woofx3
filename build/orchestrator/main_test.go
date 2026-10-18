@@ -319,7 +319,11 @@ func newFakeSupervisor(t *testing.T, services []Service, healthy func(endpoint s
 		if err := os.WriteFile(filepath.Join(baseDir, binaryFileName(service)), []byte{}, 0o755); err != nil {
 			t.Fatalf("write %s: %v", service.Name, err)
 		}
-		supervisor.AddService(service)
+		resolved, err := resolveService(service, func(string) string { return "" })
+		if err != nil {
+			t.Fatalf("resolve %s: %v", service.Name, err)
+		}
+		supervisor.AddService(resolved)
 	}
 	return supervisor, processes, output
 }
@@ -671,22 +675,85 @@ func TestAnUnhealthyServiceThatRecoversMakesTheEngineReady(t *testing.T) {
 	}
 }
 
-func TestExpandEndpoint(t *testing.T) {
+func TestResolveEndpoint(t *testing.T) {
 	env := map[string]string{"WOOFX3_API_PORT": "6060", "EMPTY": ""}
 	getenv := func(key string) string { return env[key] }
 
-	cases := map[string]string{
-		"http://127.0.0.1:5050/ready":                     "http://127.0.0.1:5050/ready",
-		"http://127.0.0.1:${WOOFX3_API_PORT:-5050}/ready": "http://127.0.0.1:6060/ready",
-		"http://127.0.0.1:${UNSET_PORT:-5050}/ready":      "http://127.0.0.1:5050/ready",
-		"http://127.0.0.1:${EMPTY:-5050}/ready":           "http://127.0.0.1:5050/ready",
-		"http://127.0.0.1:${WOOFX3_API_PORT}/ready":       "http://127.0.0.1:6060/ready",
-		"": "",
+	cases := []struct {
+		name     string
+		endpoint string
+		want     string
+	}{
+		{name: "literal", endpoint: "http://127.0.0.1:5050/ready", want: "http://127.0.0.1:5050/ready"},
+		{name: "set variable beats its default", endpoint: "http://127.0.0.1:${WOOFX3_API_PORT:-5050}/ready", want: "http://127.0.0.1:6060/ready"},
+		{name: "unset variable takes its default", endpoint: "http://127.0.0.1:${UNSET_PORT:-5050}/ready", want: "http://127.0.0.1:5050/ready"},
+		{name: "empty variable takes its default", endpoint: "http://127.0.0.1:${EMPTY:-5050}/ready", want: "http://127.0.0.1:5050/ready"},
+		{name: "set variable without a default", endpoint: "http://127.0.0.1:${WOOFX3_API_PORT}/ready", want: "http://127.0.0.1:6060/ready"},
+		{name: "https", endpoint: "https://localhost/health", want: "https://localhost/health"},
 	}
-	for endpoint, want := range cases {
-		if got := expandEndpoint(endpoint, getenv); got != want {
-			t.Errorf("expandEndpoint(%q) = %q, want %q", endpoint, got, want)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveEndpoint(tc.endpoint, getenv)
+			if err != nil {
+				t.Fatalf("resolveEndpoint(%q): %v", tc.endpoint, err)
+			}
+			if got != tc.want {
+				t.Errorf("resolveEndpoint(%q) = %q, want %q", tc.endpoint, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveEndpointRejectsAnEndpointThatCannotBeChecked(t *testing.T) {
+	getenv := func(string) string { return "" }
+
+	cases := []struct {
+		name     string
+		endpoint string
+	}{
+		{name: "unset variable without a default", endpoint: "http://127.0.0.1:${UNSET_PORT}/ready"},
+		{name: "empty default", endpoint: "http://127.0.0.1:${UNSET_PORT:-}/ready"},
+		{name: "not a URL", endpoint: "http://127.0.0.1:%zz/ready"},
+		{name: "relative", endpoint: "/ready"},
+		{name: "not http", endpoint: "tcp://127.0.0.1:5050"},
+		{name: "no host", endpoint: "http:///ready"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, err := resolveEndpoint(tc.endpoint, getenv); err == nil {
+				t.Errorf("resolveEndpoint(%q) = %q, want an error", tc.endpoint, got)
+			}
+		})
+	}
+}
+
+func TestLoadConfigFailsOnAnEnabledServicesUnusableHealthEndpoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "services.json")
+	config := `{"services": [
+		{"name": "api", "enabled": true, "output": "api", "health_endpoint": "http://127.0.0.1:${WOOFX3_API_PORT}/ready"}
+	]}`
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := loadConfig(path, func(string) string { return "" })
+
+	if err == nil || !strings.Contains(err.Error(), "WOOFX3_API_PORT") {
+		t.Fatalf("loadConfig = %v, want an error naming the unset variable", err)
+	}
+}
+
+func TestLoadConfigIgnoresADisabledServicesHealthEndpoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "services.json")
+	config := `{"services": [
+		{"name": "extra", "enabled": false, "output": "extra", "health_endpoint": "http://127.0.0.1:${EXTRA_PORT}/ready"}
+	]}`
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := loadConfig(path, func(string) string { return "" }); err != nil {
+		t.Fatalf("loadConfig: %v", err)
 	}
 }
 
@@ -694,38 +761,41 @@ func TestExpandEndpoint(t *testing.T) {
 // run: it must load, resolve its dependencies, and point the api's health
 // check at the port the api listens on.
 func TestShippedServicesJSONChecksTheAPIsReadiness(t *testing.T) {
-	config, err := loadConfig(filepath.Join("..", "config", "services.json"))
-	if err != nil {
-		t.Fatalf("load services.json: %v", err)
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		// The default must match apiPort in build/config/.woofx3.json and the
+		// edge's in build/config/Caddyfile.edge.
+		{name: "default", want: "http://127.0.0.1:5050/ready"},
+		{name: "WOOFX3_API_PORT", env: map[string]string{"WOOFX3_API_PORT": "7070"}, want: "http://127.0.0.1:7070/ready"},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			config, err := loadConfig(filepath.Join("..", "config", "services.json"), func(key string) string { return tc.env[key] })
+			if err != nil {
+				t.Fatalf("load services.json: %v", err)
+			}
 
-	supervisor := NewSupervisor(t.TempDir(), discardLogger())
-	for _, service := range config.Services {
-		if service.Enabled {
-			supervisor.AddService(service)
-		}
-	}
-	if _, err := supervisor.GetStartupOrder(); err != nil {
-		t.Fatalf("startup order: %v", err)
-	}
+			supervisor := NewSupervisor(t.TempDir(), discardLogger())
+			for _, service := range config.Services {
+				if service.Enabled {
+					supervisor.AddService(service)
+				}
+			}
+			if _, err := supervisor.GetStartupOrder(); err != nil {
+				t.Fatalf("startup order: %v", err)
+			}
 
-	api, ok := supervisor.services["api"]
-	if !ok {
-		t.Fatal("services.json has no enabled api")
-	}
-	// The default must match apiPort in build/config/.woofx3.json and the
-	// edge's in build/config/Caddyfile.edge.
-	if got := expandEndpoint(api.Service.HealthEndpoint, func(string) string { return "" }); got != "http://127.0.0.1:5050/ready" {
-		t.Errorf("api health endpoint by default = %q", got)
-	}
-	port := func(key string) string {
-		if key == "WOOFX3_API_PORT" {
-			return "7070"
-		}
-		return ""
-	}
-	if got := expandEndpoint(api.Service.HealthEndpoint, port); got != "http://127.0.0.1:7070/ready" {
-		t.Errorf("api health endpoint with WOOFX3_API_PORT=7070 = %q", got)
+			api, ok := supervisor.services["api"]
+			if !ok {
+				t.Fatal("services.json has no enabled api")
+			}
+			if api.healthURL != tc.want {
+				t.Errorf("api health endpoint = %q, want %q", api.healthURL, tc.want)
+			}
+		})
 	}
 }
 
