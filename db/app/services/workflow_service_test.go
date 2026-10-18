@@ -40,6 +40,11 @@ func newWorkflowTestService(t *testing.T) client.WorkflowService {
 			taxonomy TEXT NOT NULL DEFAULT '[]',
 			enabled BOOLEAN NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE public.commands (
+			id TEXT PRIMARY KEY,
+			command VARCHAR(255) NOT NULL,
+			workflow_id TEXT
+		)`,
 		`CREATE UNIQUE INDEX public.idx_workflow_definitions_module_manifest
 			ON workflow_definitions (created_by_type, created_by_ref, manifest_id)
 			WHERE manifest_id <> ''`,
@@ -49,7 +54,7 @@ func newWorkflowTestService(t *testing.T) client.WorkflowService {
 			t.Fatalf("schema: %v", err)
 		}
 	}
-	return NewWorkflowService(repo.NewWorkflowRepository(db), db, nil, nil)
+	return NewWorkflowService(repo.NewWorkflowRepository(db), repo.NewCommandRepository(db), db, nil, nil)
 }
 
 func createWorkflow(t *testing.T, svc client.WorkflowService, req *client.CreateWorkflowRequest) *client.Workflow {
