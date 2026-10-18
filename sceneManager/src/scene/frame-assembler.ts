@@ -1,5 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
-import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
+import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
 import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
 import { frameVersion } from "./frame-catalog";
@@ -23,9 +23,6 @@ import {
  * Ported from streamware's `BLANK_FRAME_DOC` (design 5.2.11).
  */
 export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body></html>";
-
-/** Capabilities advertised in every boot payload. */
-export const FRAME_CAPABILITIES = ["storage", "events", "status", "settings"] as const;
 
 /** The widget host shim's file name under sceneManager's public directory. */
 export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
@@ -299,11 +296,12 @@ export class FrameAssembler {
       });
     }
     const boot: WidgetFrameBoot = {
-      v: 1,
+      v: PROTOCOL_VERSION,
       moduleId,
       widgetCanonicalId,
       surface: "scene",
-      capabilities: [...FRAME_CAPABILITIES],
+      // What the host may offer; `init` says what this frame gets.
+      capabilities: [...WIDGET_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: frameInfo.theme ? hostTheme(frameInfo.theme) : null,
       ...frameFonts(frameInfo),
@@ -399,14 +397,15 @@ export class FrameAssembler {
 
     const linkedResources = await this.loadLinkedResources(target.moduleId);
     const boot: WidgetBootPayload = {
-      v: 1,
+      v: PROTOCOL_VERSION,
       nonce,
       instanceId: target.instanceId,
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
       settings: this.bootSettings(target.settings, frameInfo),
-      capabilities: [...FRAME_CAPABILITIES],
+      // What the host may offer; `init` says what this frame gets.
+      capabilities: [...WIDGET_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
       linkedResources,

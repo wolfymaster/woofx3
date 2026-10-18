@@ -129,9 +129,6 @@ function mountFrame(
   let released = false;
 
   const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
-    onStorageGet: () => null,
-    onStorageSubscribe: () => {},
-    onStorageUnsubscribe: () => {},
     onStatusReport: () => {},
     onAssetLoad: assets.scopedTo(moduleId),
     onEventsSubscribe: (subId, queue) => {

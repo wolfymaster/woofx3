@@ -83,17 +83,23 @@ export type {
   WidgetSettingsReadsMessage,
   WidgetToHostMessage,
   WidgetBehaviorMessage,
+  WidgetCapability,
+  WidgetMessageBody,
 } from "./widget-protocol";
 export {
   PROTOCOL_VERSION,
   WIDGET_BOOT_FRAGMENT_PARAM,
   WIDGET_BOOT_GLOBAL,
+  WIDGET_CAPABILITIES,
   WIDGET_PROTOCOL,
   decodePlacementBoot,
   encodePlacementBoot,
   isWidgetBootPayload,
+  isWidgetCapability,
   isWidgetProtocolEnvelope,
   isWidgetTheme,
+  parseHostToWidgetMessage,
+  parseWidgetToHostMessage,
 } from "./widget-protocol";
 
 export type {

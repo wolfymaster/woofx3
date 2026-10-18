@@ -14,7 +14,7 @@
 // ignored by both sides (forward compatibility).
 
 import { isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
-import type { WidgetAssetErrorCode } from "./widget-assets";
+import { isWidgetAssetErrorCode, type WidgetAssetErrorCode } from "./widget-assets";
 import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
@@ -533,6 +533,250 @@ export function isWidgetTheme(value: unknown): value is WidgetTheme {
     isStringRecord(theme.defaultAssets, true) &&
     (theme.fallback === null || theme.fallback === "missing" || theme.fallback === "incompatible")
   );
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+/**
+ * What a host can give a widget. The boot payload lists what the host may
+ * offer; `init` lists what this frame actually gets (an alert's widget has
+ * no storage, say), and is what `widgetHost.capabilities` reports.
+ */
+export const WIDGET_CAPABILITIES = ["storage", "events", "status", "settings", "assets"] as const;
+export type WidgetCapability = (typeof WIDGET_CAPABILITIES)[number];
+
+export function isWidgetCapability(value: unknown): value is WidgetCapability {
+  return typeof value === "string" && (WIDGET_CAPABILITIES as readonly string[]).includes(value);
+}
+
+// ---------------------------------------------------------------------------
+// Reading messages
+// ---------------------------------------------------------------------------
+
+/** A message as its sender writes it, before the envelope is added. */
+export type WidgetMessageBody<M extends WidgetProtocolEnvelope> = M extends unknown
+  ? Omit<M, "proto" | "v" | "nonce">
+  : never;
+
+/**
+ * The envelope of a message on this frame's channel: the protocol, this
+ * frame's nonce, a type, and this version. `hello` and `init.reject` are
+ * read at any version, since they are how the two sides learn they differ.
+ */
+function readEnvelope(value: unknown, nonce: string): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const msg = value as Record<string, unknown>;
+  if (msg.proto !== WIDGET_PROTOCOL || msg.nonce !== nonce || typeof msg.type !== "string" || msg.type === "") {
+    return null;
+  }
+  const negotiating = msg.type === "hello" || msg.type === "init.reject";
+  if (negotiating ? typeof msg.v !== "number" : msg.v !== PROTOCOL_VERSION) {
+    return null;
+  }
+  return msg;
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function plainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function eventQueueConfig(value: unknown): EventQueueConfig | undefined {
+  if (!plainObject(value)) {
+    return undefined;
+  }
+  const config: EventQueueConfig = {};
+  if (typeof value.retryTimeoutMs === "number" && value.retryTimeoutMs > 0) {
+    config.retryTimeoutMs = value.retryTimeoutMs;
+  }
+  if (typeof value.maxInFlight === "number" && value.maxInFlight >= 1) {
+    config.maxInFlight = Math.floor(value.maxInFlight);
+  }
+  if (typeof value.autoComplete === "boolean") {
+    config.autoComplete = value.autoComplete;
+  }
+  if (typeof value.priorityExpr === "string") {
+    config.priorityExpr = value.priorityExpr;
+  }
+  return config;
+}
+
+/**
+ * A message from the widget on the channel with `nonce`, typed and with its
+ * fields checked, or null when it is not one: another channel's, malformed,
+ * or of a type this version does not know (ignored, for forward
+ * compatibility). The host reads every inbound message through this.
+ */
+export function parseWidgetToHostMessage(value: unknown, nonce: string): WidgetToHostMessage | null {
+  const m = readEnvelope(value, nonce);
+  if (m === null) {
+    return null;
+  }
+  const envelope: Omit<WidgetProtocolEnvelope, "type"> = {
+    proto: WIDGET_PROTOCOL,
+    v: m.v as WidgetProtocolVersion,
+    nonce,
+  };
+  switch (m.type) {
+    case "hello":
+      return {
+        ...envelope,
+        type: "hello",
+        instanceId: typeof m.instanceId === "string" ? m.instanceId : "",
+        sdkVersion: typeof m.sdkVersion === "string" ? m.sdkVersion : "",
+        wants: stringList(m.wants),
+      };
+    case "storage.get":
+      return nonEmptyString(m.id) && typeof m.key === "string"
+        ? { ...envelope, type: "storage.get", id: m.id, key: m.key }
+        : null;
+    case "storage.subscribe":
+      return nonEmptyString(m.subId) && typeof m.key === "string"
+        ? { ...envelope, type: "storage.subscribe", subId: m.subId, key: m.key }
+        : null;
+    case "storage.unsubscribe":
+      return nonEmptyString(m.subId) ? { ...envelope, type: "storage.unsubscribe", subId: m.subId } : null;
+    case "asset.load":
+      return nonEmptyString(m.id) && typeof m.path === "string"
+        ? { ...envelope, type: "asset.load", id: m.id, path: m.path }
+        : null;
+    case "events.subscribe": {
+      if (!nonEmptyString(m.subId)) {
+        return null;
+      }
+      const message: WidgetEventsSubscribeMessage = { ...envelope, type: "events.subscribe", subId: m.subId };
+      if (Array.isArray(m.types)) {
+        message.types = stringList(m.types);
+      }
+      const queue = eventQueueConfig(m.queue);
+      if (queue !== undefined) {
+        message.queue = queue;
+      }
+      return message;
+    }
+    case "events.unsubscribe":
+      return nonEmptyString(m.subId) ? { ...envelope, type: "events.unsubscribe", subId: m.subId } : null;
+    case "event.complete":
+      return nonEmptyString(m.subId) && nonEmptyString(m.eventId)
+        ? { ...envelope, type: "event.complete", subId: m.subId, eventId: m.eventId }
+        : null;
+    case "status.report":
+      return typeof m.key === "string"
+        ? {
+            ...envelope,
+            type: "status.report",
+            key: m.key,
+            value: m.value,
+            ts: typeof m.ts === "string" ? m.ts : "",
+          }
+        : null;
+    case "settings.reads":
+      return { ...envelope, type: "settings.reads", keys: stringList(m.keys), all: m.all === true };
+    case "rendered":
+      return { ...envelope, type: "rendered" };
+    case "ping":
+    case "pong":
+      return { ...envelope, type: m.type, ts: typeof m.ts === "number" ? m.ts : 0 };
+    default:
+      return null;
+  }
+}
+
+/**
+ * A message from the host on the channel with `nonce`, typed and with its
+ * fields checked, or null when it is not one. The shim reads every inbound
+ * message through this.
+ */
+export function parseHostToWidgetMessage(value: unknown, nonce: string): HostToWidgetMessage | null {
+  const m = readEnvelope(value, nonce);
+  if (m === null) {
+    return null;
+  }
+  const envelope: Omit<WidgetProtocolEnvelope, "type"> = {
+    proto: WIDGET_PROTOCOL,
+    v: m.v as WidgetProtocolVersion,
+    nonce,
+  };
+  switch (m.type) {
+    case "init":
+      return {
+        ...envelope,
+        type: "init",
+        settings: plainObject(m.settings) ? m.settings : {},
+        capabilities: stringList(m.capabilities),
+      };
+    case "init.reject":
+      return {
+        ...envelope,
+        type: "init.reject",
+        reason: typeof m.reason === "string" ? m.reason : "",
+        supportedVersions: Array.isArray(m.supportedVersions)
+          ? m.supportedVersions.filter((v): v is number => typeof v === "number")
+          : [],
+      };
+    case "storage.value":
+      return nonEmptyString(m.id) && typeof m.key === "string"
+        ? { ...envelope, type: "storage.value", id: m.id, key: m.key, value: m.value === undefined ? null : m.value }
+        : null;
+    case "storage.changed":
+      return nonEmptyString(m.subId) && typeof m.key === "string"
+        ? {
+            ...envelope,
+            type: "storage.changed",
+            subId: m.subId,
+            key: m.key,
+            value: m.value,
+            occurredAt: typeof m.occurredAt === "string" ? m.occurredAt : "",
+          }
+        : null;
+    case "asset.value":
+      return nonEmptyString(m.id) && m.bytes instanceof ArrayBuffer
+        ? {
+            ...envelope,
+            type: "asset.value",
+            id: m.id,
+            contentType: typeof m.contentType === "string" ? m.contentType : "",
+            bytes: m.bytes,
+          }
+        : null;
+    case "asset.error":
+      return nonEmptyString(m.id)
+        ? { ...envelope, type: "asset.error", id: m.id, code: isWidgetAssetErrorCode(m.code) ? m.code : "unavailable" }
+        : null;
+    case "event.deliver": {
+      if (!nonEmptyString(m.subId) || !plainObject(m.event)) {
+        return null;
+      }
+      const event = m.event as Partial<WidgetEvent>;
+      return typeof event.type === "string" && nonEmptyString(event.eventId)
+        ? { ...envelope, type: "event.deliver", subId: m.subId, event: event as WidgetEvent }
+        : null;
+    }
+    case "settings.changed":
+      return plainObject(m.settings) ? { ...envelope, type: "settings.changed", settings: m.settings } : null;
+    case "behavior":
+      return m.behavior === null || isWidgetBehaviorState(m.behavior)
+        ? { ...envelope, type: "behavior", behavior: m.behavior }
+        : null;
+    case "dispose":
+      return { ...envelope, type: "dispose", reason: typeof m.reason === "string" ? m.reason : "" };
+    case "ping":
+    case "pong":
+      return { ...envelope, type: m.type, ts: typeof m.ts === "number" ? m.ts : 0 };
+    default:
+      return null;
+  }
 }
 
 declare global {
