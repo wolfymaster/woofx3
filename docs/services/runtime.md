@@ -286,8 +286,8 @@ Rust services read no `.env` file; for them only the config file column applies.
 
 `WOOFX3_DATA_DIR` names one directory for everything the engine writes. It is
 read from the process environment only, never from `.woofx3.json`, so the
-orchestrator and every service it starts agree on it. Unset or blank, nothing
-changes: every path below resolves exactly as it does without the variable.
+orchestrator and every service it starts agree on it. Unset or blank, it has no
+effect: every path below resolves from its own setting alone.
 
 When it is set:
 

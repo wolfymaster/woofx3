@@ -31,8 +31,8 @@ export const engineRoutes = routeModule({
    * without worrying about double-slashes.
    *
    * `hosting` is left out, not sent as null, when the deployment does not
-   * declare it, so an engine without `WOOFX3_HOSTING` answers exactly as
-   * one that predates the field.
+   * declare it: `EngineInfo.hosting` is optional, and a client reads its
+   * absence as unknown.
    */
   async getEngineInfo(): Promise<EngineInfo> {
     const overlayPublicUrl = await resolveSceneManagerUrl(this.db, this.sceneManagerUrl);

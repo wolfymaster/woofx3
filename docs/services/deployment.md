@@ -47,7 +47,7 @@ and must reach each other, as `docker-compose.dev.yml` does.
 
 ## Message bus hardening
 
-The embedded NATS server (`services/nats`) has three opt-in settings. Each is
+The embedded NATS server (`services/nats`) has four opt-in settings. Each is
 off when unset, and the server then behaves exactly as it does without them.
 Each is a `.woofx3.json` key or its `WOOFX3_*` variable:
 
@@ -92,11 +92,10 @@ same-origin breaks no engine client. The `Origin` header is enforced only by
 browsers; a native program can send any value, so this protects against web
 pages, not local processes, which the token is for.
 
-**Binding.** The default bind is unchanged. `messagebusHost` defaults to
-`127.0.0.1`, but an explicitly blank `messagebusHost` binds every interface
-(`0.0.0.0`). A packager shipping the engine to run on a user's machine should
-set `messagebusHost` to `127.0.0.1` explicitly, and should also set a token,
-disable TCP and turn same-origin on.
+**Binding.** `messagebusHost` defaults to `127.0.0.1`, but an explicitly blank
+`messagebusHost` binds every interface (`0.0.0.0`). A packager shipping the
+engine to run on a user's machine should set `messagebusHost` to `127.0.0.1`
+explicitly, and should also set a token, disable TCP and turn same-origin on.
 
 ## Configuration
 
@@ -108,13 +107,13 @@ variable names.
 To read the config from somewhere other than the working directory and its
 parents, set `WOOFX3_ROOT` (the directory holding `.woofx3.json` and `.env`) or
 `WOOFX3_CONFIG` (the config file itself). Unset, every service searches upward
-from its working directory as before. See
+from its working directory. See
 [Finding the config](./runtime.md#finding-the-config).
 
 To keep the engine's state out of its install directory (a release unpacked
 under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR`. The
 relative database, module storage, module and upload paths, caches and every
-log file then live under it. Unset, paths resolve as before. See
+log file then live under it. Unset, it has no effect on any path. See
 [The data directory](./runtime.md#the-data-directory).
 
 ## Host and Origin checks
@@ -225,10 +224,10 @@ loopback host or the host of `WOOFX3_API_URL`, since the callback URL arrives in
 the processing request.
 
 The api checks that header only when `WOOFX3_BARKLOADER_WEBHOOK_AUTH=required`;
-unset (or `off`) it accepts every callback, as it always has. A callback
-without the right token is then answered `401` and not recorded. Because the
-check is opt-in, barkloader and the api can be updated in either order: turn it
-on once the running barkloader sends the header.
+unset (or `off`) it accepts every callback. A callback without the right token
+is then answered `401` and not recorded. Because the check is opt-in,
+barkloader and the api can be updated in either order: turn it on once the
+running barkloader sends the header.
 
 ## Startup
 

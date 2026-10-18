@@ -69,7 +69,7 @@ describe("hasBarkloaderBearer", () => {
 });
 
 describe("processing callback with auth off", () => {
-  test("is accepted without a token, as it always has been", async () => {
+  test("is accepted without a token", async () => {
     const { post, onProcessingCallback } = start(null);
 
     const res = await post();
@@ -78,7 +78,7 @@ describe("processing callback with auth off", () => {
     expect(onProcessingCallback).toHaveBeenCalledTimes(1);
   });
 
-  test("is accepted with a token from an updated barkloader", async () => {
+  test("is accepted with a token", async () => {
     const { post, onProcessingCallback } = start(null);
 
     expect((await post({ authorization: "Bearer whatever" })).status).toBe(204);
