@@ -25,11 +25,12 @@ import {
   type Scheduler,
   type SchedulerClock,
 } from "@woofx3/scene/runtime";
-import { type AssetCache, readAheadAssetPaths } from "./asset-loader";
+import type { AssetCache } from "./asset-loader";
 import type { QueuedEvent } from "./event-queue";
 import { PAGE_CLOCK } from "./page-clock";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
-import { createFrameLoadHandler, WidgetBridge, type WidgetStatusReportPayload } from "./widget-bridge";
+import type { WidgetBridge, WidgetStatusReportPayload } from "./widget-bridge";
+import { mountWidgetFrame } from "./widget-frame";
 
 /** The slice of the server's `AlertDelivery` the page needs. */
 export interface AlertDelivery {
@@ -160,7 +161,6 @@ export interface AlertWidgetOptions {
   sceneBase: string;
   /** Every live bridge on the page; inbound messages are routed through it. */
   bridges: Set<WidgetBridge>;
-  generateNonce(): string;
   /** `moduleId` is the alert layout placement's, never the widget's claim. */
   postStatus(instanceId: string, moduleId: string, report: WidgetStatusReportPayload): void;
   /** The page's file cache, which the alert's widgets read through. */
@@ -276,52 +276,39 @@ export class AlertWidget {
     const instanceId = `${eventId}.${widgetId}`;
     const placement = layout.widgets[widgetId];
     const moduleId = placement ? moduleIdOfCanonicalId(placement.widget) : null;
-    const nonce = this.opts.generateNonce();
-    const iframe = document.createElement("iframe");
-    iframe.className = "widget-frame";
-    iframe.setAttribute("sandbox", "allow-scripts");
-
-    const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
-      onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
-      onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
-      onEventsSubscribe: (subId, queue) => {
-        facts.subscribed(queue?.autoComplete === false);
-        bridge.sendEvent(subId, alertEvent);
-      },
-      onEventsUnsubscribe: () => {},
-      onEventComplete: () => facts.completed(),
-      onDispose: () => {},
-      onRendered: () => facts.rendered(),
+    const frame = mountWidgetFrame({
+      slot,
+      instanceId,
+      bridges,
+      // The frame document inlines the placement, so the fragment carries only
+      // the entrance it is marked with from boot.
+      src: (nonce) =>
+        `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widgetId)}` +
+        `?nonce=${encodeURIComponent(nonce)}` +
+        (entrance === null ? "" : `#${encodePlacementBoot({ behavior: entrance })}`),
+      callbacks: ({ bridge }) => ({
+        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
+        onAssetLoad: this.opts.assets.loaderFor(moduleId),
+        onEventsSubscribe: (subId, queue) => {
+          facts.subscribed(queue?.autoComplete === false);
+          bridge().sendEvent(subId, alertEvent);
+        },
+        onEventsUnsubscribe: () => {},
+        onEventComplete: () => facts.completed(),
+        onDispose: () => {},
+        onRendered: () => facts.rendered(),
+      }),
     });
-    iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    // The frame document inlines the placement, so the fragment carries only
-    // the entrance it is marked with from boot.
-    const fragment = entrance === null ? "" : `#${encodePlacementBoot({ behavior: entrance })}`;
-    iframe.src =
-      `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widgetId)}` +
-      `?nonce=${encodeURIComponent(nonce)}${fragment}`;
-
-    bridges.add(bridge);
-    slot.appendChild(iframe);
-    bridge.attach(iframe);
     return {
-      sendBehavior: (state) => bridge.sendBehavior(state),
-      unmount: () => {
-        bridge.dispose();
-        bridge.detach();
-        bridges.delete(bridge);
-        iframe.remove();
-      },
+      sendBehavior: (state) => frame.bridge.sendBehavior(state),
+      unmount: () => frame.unmount(),
     };
   }
 }
 
 function readAheadAlertAssets(assets: AssetCache, layout: CompositionDocument): void {
   for (const placement of Object.values(layout.widgets)) {
-    const moduleId = moduleIdOfCanonicalId(placement.widget);
-    if (moduleId !== null) {
-      assets.readAhead(readAheadAssetPaths(placement.settings, location.origin), moduleId);
-    }
+    assets.warm(moduleIdOfCanonicalId(placement.widget), placement.settings);
   }
 }
 

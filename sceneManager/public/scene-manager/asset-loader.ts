@@ -104,18 +104,27 @@ function collect(value: unknown, pageOrigin: string, paths: Set<string>, depth: 
  * engine path. A read that fails is forgotten at once, so the next ask tries
  * again.
  */
+export interface AssetCacheOptions {
+  /** The overlay page's origin: what a setting's URL is resolved against. */
+  pageOrigin: string;
+  fetchFn?: (url: string, init: RequestInit) => Promise<Response>;
+  /** How long a read is held after it arrives; `ASSET_RETAIN_MS` by default. */
+  retainMs?: number;
+}
+
 export class AssetCache {
   private readonly entries = new Map<string, Promise<LoadedAsset>>();
+  private readonly pageOrigin: string;
   private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response>;
+  private readonly retainMs: number;
 
-  constructor(
-    fetchFn?: (url: string, init: RequestInit) => Promise<Response>,
-    private readonly retainMs: number = ASSET_RETAIN_MS
-  ) {
+  constructor(options: AssetCacheOptions) {
+    this.pageOrigin = options.pageOrigin;
     // Bound to the global for the same reason SceneEventSource binds it: a
     // bare `fetch` called as `this.fetchFn(...)` throws "Illegal invocation"
     // in the browser, before any request is sent.
-    this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.retainMs = options.retainMs ?? ASSET_RETAIN_MS;
   }
 
   /** The file at `path`, read once for every ask while it is held. */
@@ -141,11 +150,16 @@ export class AssetCache {
   }
 
   /**
-   * Start reading the files a widget of `moduleId` may read among `paths`, so
-   * its ask finds them here. Failures are left for the ask to report.
+   * Start reading the library files a widget of `moduleId` will read, as its
+   * `settings` name them, so its ask finds them here. A widget whose module
+   * is not known (`null`) is warmed nothing. Failures are left for the ask to
+   * report.
    */
-  readAhead(paths: readonly string[], moduleId: string): void {
-    for (const path of paths) {
+  warm(moduleId: string | null, settings: unknown): void {
+    if (moduleId === null) {
+      return;
+    }
+    for (const path of readAheadAssetPaths(settings, this.pageOrigin)) {
       if (readable(path, moduleId)) {
         this.load(path).catch(() => {});
       }
@@ -154,11 +168,12 @@ export class AssetCache {
 
   /**
    * The loader a frame's bridge answers `asset.load` with: this cache,
-   * limited to what a widget of `moduleId` may read.
+   * limited to what a widget of `moduleId` may read. A frame whose module is
+   * not known (`null`) may read nothing.
    */
-  scopedTo(moduleId: string): (path: string) => Promise<LoadedAsset> {
+  loaderFor(moduleId: string | null): (path: string) => Promise<LoadedAsset> {
     return (path) => {
-      if (!readable(path, moduleId)) {
+      if (moduleId === null || !readable(path, moduleId)) {
         return Promise.reject(new AssetLoadError("out_of_scope", path));
       }
       return this.load(path);

@@ -3885,12 +3885,14 @@ function collect2(value, pageOrigin, paths, depth) {
 }
 
 class AssetCache {
-  retainMs;
   entries = new Map;
+  pageOrigin;
   fetchFn;
-  constructor(fetchFn, retainMs = ASSET_RETAIN_MS) {
-    this.retainMs = retainMs;
-    this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
+  retainMs;
+  constructor(options) {
+    this.pageOrigin = options.pageOrigin;
+    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.retainMs = options.retainMs ?? ASSET_RETAIN_MS;
   }
   load(path) {
     const held = this.entries.get(path);
@@ -3910,16 +3912,19 @@ class AssetCache {
   size() {
     return this.entries.size;
   }
-  readAhead(paths, moduleId) {
-    for (const path of paths) {
+  warm(moduleId, settings) {
+    if (moduleId === null) {
+      return;
+    }
+    for (const path of readAheadAssetPaths(settings, this.pageOrigin)) {
       if (readable(path, moduleId)) {
         this.load(path).catch(() => {});
       }
     }
   }
-  scopedTo(moduleId) {
+  loaderFor(moduleId) {
     return (path) => {
-      if (!readable(path, moduleId)) {
+      if (moduleId === null || !readable(path, moduleId)) {
         return Promise.reject(new AssetLoadError("out_of_scope", path));
       }
       return this.load(path);
@@ -4250,15 +4255,62 @@ function createFrameLoadHandler(bridge) {
   };
 }
 
-// public/scene-manager/composition-preview-page.ts
-var FRAMES_PATH = "/preview/composition/frames";
-var REFRESH_PATH = "/preview/composition/session/refresh";
-var REFRESH_INTERVAL_MS = 50000;
+// public/scene-manager/widget-frame.ts
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function mountWidgetFrame(options) {
+  const nonce = generateNonce();
+  const iframe = document.createElement("iframe");
+  iframe.className = "widget-frame";
+  if (options.hidden) {
+    iframe.style.opacity = "0";
+  }
+  iframe.setAttribute("sandbox", "allow-scripts");
+  let mounted = null;
+  const bridge = new WidgetBridge(options.instanceId, nonce, options.callbacks({
+    nonce,
+    bridge: () => {
+      if (mounted === null) {
+        throw new Error("widget frame: a bridge callback ran before the frame was mounted");
+      }
+      return mounted;
+    }
+  }));
+  mounted = bridge;
+  iframe.addEventListener("load", createFrameLoadHandler(bridge));
+  iframe.src = options.src(nonce);
+  options.bridges.add(bridge);
+  options.slot.appendChild(iframe);
+  bridge.attach(iframe);
+  let unmounted = false;
+  return {
+    element: iframe,
+    bridge,
+    nonce,
+    reveal: () => {
+      iframe.style.opacity = "";
+    },
+    unmount: () => {
+      if (unmounted) {
+        return;
+      }
+      unmounted = true;
+      bridge.dispose();
+      bridge.detach();
+      options.bridges.delete(bridge);
+      options.onUnmount?.();
+      iframe.remove();
+    }
+  };
+}
+
+// public/scene-manager/composition-preview-page.ts
+var FRAMES_PATH = "/preview/composition/frames";
+var REFRESH_PATH = "/preview/composition/session/refresh";
+var REFRESH_INTERVAL_MS = 50000;
 function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -4311,83 +4363,76 @@ async function resolveFrames(doc) {
 }
 function mountFrame(bridges, assets, slot, spec, facts) {
   const instanceId = `preview.${spec.widgetId}`;
-  const moduleId = moduleIdOfCanonicalId(spec.widgetCanonicalId) ?? "";
-  const nonce = generateNonce();
-  const iframe = document.createElement("iframe");
-  iframe.className = "widget-frame";
-  if (spec.swapping) {
-    iframe.style.opacity = "0";
-  }
-  iframe.setAttribute("sandbox", "allow-scripts");
-  const event = {
-    type: spec.surface === "alert" ? "alert" : spec.event?.type ?? "preview",
-    source: "scene-manager",
-    time: new Date().toISOString(),
-    data: spec.surface === "alert" ? spec.event : spec.event?.data ?? null,
-    eventId: `preview-${nonce}`
-  };
+  const moduleId = moduleIdOfCanonicalId(spec.widgetCanonicalId);
   const waiting = [];
   let released = false;
-  const bridge = new WidgetBridge(instanceId, nonce, {
-    onStatusReport: () => {},
-    onAssetLoad: assets.scopedTo(moduleId),
-    onEventsSubscribe: (subId, queue) => {
-      facts.subscribed(queue?.autoComplete === false);
-      if (spec.event === null) {
-        return;
-      }
-      if (released) {
-        bridge.sendEvent(subId, event);
-      } else {
-        waiting.push(subId);
-      }
-    },
-    onEventsUnsubscribe: (subId) => {
-      const at = waiting.indexOf(subId);
-      if (at >= 0) {
-        waiting.splice(at, 1);
-      }
-    },
-    onEventComplete: () => facts.completed(),
-    onDispose: () => {},
-    onRendered: () => facts.rendered()
-  });
-  iframe.addEventListener("load", createFrameLoadHandler(bridge));
-  const boot = encodePlacementBoot({
-    nonce,
+  let event = null;
+  const frame = mountWidgetFrame({
+    slot,
     instanceId,
-    settings: replaceMediaUrls(spec.settings, new Map(Object.entries(spec.meta.mediaUrls))),
-    linkedResources: spec.meta.linkedResources,
-    surface: spec.surface,
-    ...spec.entrance === null ? {} : { behavior: spec.entrance }
+    bridges,
+    hidden: spec.swapping,
+    src: (nonce) => {
+      const boot = encodePlacementBoot({
+        nonce,
+        instanceId,
+        settings: replaceMediaUrls(spec.settings, new Map(Object.entries(spec.meta.mediaUrls))),
+        linkedResources: spec.meta.linkedResources,
+        surface: spec.surface,
+        ...spec.entrance === null ? {} : { behavior: spec.entrance }
+      });
+      return `${spec.meta.frameUrl}#${boot}`;
+    },
+    callbacks: ({ nonce, bridge }) => {
+      event = {
+        type: spec.surface === "alert" ? "alert" : spec.event?.type ?? "preview",
+        source: "scene-manager",
+        time: new Date().toISOString(),
+        data: spec.surface === "alert" ? spec.event : spec.event?.data ?? null,
+        eventId: `preview-${nonce}`
+      };
+      return {
+        onStatusReport: () => {},
+        onAssetLoad: assets.loaderFor(moduleId),
+        onEventsSubscribe: (subId, queue) => {
+          facts.subscribed(queue?.autoComplete === false);
+          if (spec.event === null) {
+            return;
+          }
+          if (released) {
+            bridge().sendEvent(subId, event);
+          } else {
+            waiting.push(subId);
+          }
+        },
+        onEventsUnsubscribe: (subId) => {
+          const at = waiting.indexOf(subId);
+          if (at >= 0) {
+            waiting.splice(at, 1);
+          }
+        },
+        onEventComplete: () => facts.completed(),
+        onDispose: () => {},
+        onRendered: () => facts.rendered()
+      };
+    }
   });
-  iframe.src = `${spec.meta.frameUrl}#${boot}`;
-  assets.readAhead(readAheadAssetPaths(spec.settings, location.origin), moduleId);
-  bridges.add(bridge);
-  slot.appendChild(iframe);
-  bridge.attach(iframe);
+  assets.warm(moduleId, spec.settings);
   return {
-    sendBehavior: (state) => bridge.sendBehavior(state),
+    sendBehavior: (state) => frame.bridge.sendBehavior(state),
     release: () => {
       if (released) {
         return;
       }
       released = true;
       for (const subId of waiting.splice(0)) {
-        bridge.sendEvent(subId, event);
+        frame.bridge.sendEvent(subId, event);
       }
     },
-    settingsReads: () => bridge.settingsReads(),
-    sendSettings: (settings, mediaUrls) => bridge.sendSettings(replaceMediaUrls(settings, new Map(Object.entries(mediaUrls)))),
-    reveal: () => {
-      iframe.style.opacity = "";
-    },
-    unmount: () => {
-      bridge.dispose();
-      bridge.detach();
-      bridges.delete(bridge);
-      iframe.remove();
-    }
+    settingsReads: () => frame.bridge.settingsReads(),
+    sendSettings: (settings, mediaUrls) => frame.bridge.sendSettings(replaceMediaUrls(settings, new Map(Object.entries(mediaUrls)))),
+    reveal: () => frame.reveal(),
+    unmount: () => frame.unmount()
   };
 }
 function main() {
@@ -4397,7 +4442,7 @@ function main() {
     return;
   }
   const bridges = new Set;
-  const assets = new AssetCache;
+  const assets = new AssetCache({ pageOrigin: location.origin });
   let parentOrigin = null;
   let canvas = null;
   const fitStage = () => {

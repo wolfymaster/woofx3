@@ -23,10 +23,11 @@ import {
   type PreviewFrameMeta,
   type PreviewFrameSpec,
 } from "./composition-preview";
-import { AssetCache, readAheadAssetPaths } from "./asset-loader";
+import { AssetCache } from "./asset-loader";
 import { replaceMediaUrls } from "../../contract/media-url";
 import { PAGE_CLOCK } from "./page-clock";
-import { createFrameLoadHandler, WidgetBridge } from "./widget-bridge";
+import type { WidgetBridge } from "./widget-bridge";
+import { mountWidgetFrame } from "./widget-frame";
 
 /** Must match the routes in sceneManager's routes/composition-preview.ts. */
 const FRAMES_PATH = "/preview/composition/frames";
@@ -34,15 +35,6 @@ const REFRESH_PATH = "/preview/composition/session/refresh";
 
 /** The session cookie lives 60 s; refreshed well before. */
 const REFRESH_INTERVAL_MS = 50_000;
-
-function generateNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -113,88 +105,80 @@ function mountFrame(
   facts: PreviewFrameFacts
 ): PreviewFrame {
   const instanceId = `preview.${spec.widgetId}`;
-  const moduleId = moduleIdOfCanonicalId(spec.widgetCanonicalId) ?? "";
-  const nonce = generateNonce();
-  const iframe = document.createElement("iframe");
-  iframe.className = "widget-frame";
-  if (spec.swapping) {
-    iframe.style.opacity = "0";
-  }
-  iframe.setAttribute("sandbox", "allow-scripts");
-
-  const event: WidgetEvent = {
-    type: spec.surface === "alert" ? "alert" : (spec.event?.type ?? "preview"),
-    source: "scene-manager",
-    time: new Date().toISOString(),
-    data: spec.surface === "alert" ? spec.event : (spec.event?.data ?? null),
-    eventId: `preview-${nonce}`,
-  };
+  const moduleId = moduleIdOfCanonicalId(spec.widgetCanonicalId);
   // Subscriptions waiting for the playhead to run before they get the event.
   const waiting: string[] = [];
   let released = false;
+  let event: WidgetEvent | null = null;
 
-  const bridge: WidgetBridge = new WidgetBridge(instanceId, nonce, {
-    onStatusReport: () => {},
-    onAssetLoad: assets.scopedTo(moduleId),
-    onEventsSubscribe: (subId, queue) => {
-      facts.subscribed(queue?.autoComplete === false);
-      if (spec.event === null) {
-        return;
-      }
-      if (released) {
-        bridge.sendEvent(subId, event);
-      } else {
-        waiting.push(subId);
-      }
-    },
-    onEventsUnsubscribe: (subId) => {
-      const at = waiting.indexOf(subId);
-      if (at >= 0) {
-        waiting.splice(at, 1);
-      }
-    },
-    onEventComplete: () => facts.completed(),
-    onDispose: () => {},
-    onRendered: () => facts.rendered(),
-  });
-  iframe.addEventListener("load", createFrameLoadHandler(bridge));
-  const boot = encodePlacementBoot({
-    nonce,
+  const frame = mountWidgetFrame({
+    slot,
     instanceId,
-    settings: replaceMediaUrls(spec.settings, new Map(Object.entries(spec.meta.mediaUrls))),
-    linkedResources: spec.meta.linkedResources,
-    surface: spec.surface,
-    ...(spec.entrance === null ? {} : { behavior: spec.entrance }),
+    bridges,
+    hidden: spec.swapping,
+    src: (nonce) => {
+      const boot = encodePlacementBoot({
+        nonce,
+        instanceId,
+        settings: replaceMediaUrls(spec.settings, new Map(Object.entries(spec.meta.mediaUrls))),
+        linkedResources: spec.meta.linkedResources,
+        surface: spec.surface,
+        ...(spec.entrance === null ? {} : { behavior: spec.entrance }),
+      });
+      return `${spec.meta.frameUrl}#${boot}`;
+    },
+    callbacks: ({ nonce, bridge }) => {
+      event = {
+        type: spec.surface === "alert" ? "alert" : (spec.event?.type ?? "preview"),
+        source: "scene-manager",
+        time: new Date().toISOString(),
+        data: spec.surface === "alert" ? spec.event : (spec.event?.data ?? null),
+        eventId: `preview-${nonce}`,
+      };
+      return {
+        onStatusReport: () => {},
+        onAssetLoad: assets.loaderFor(moduleId),
+        onEventsSubscribe: (subId, queue) => {
+          facts.subscribed(queue?.autoComplete === false);
+          if (spec.event === null) {
+            return;
+          }
+          if (released) {
+            bridge().sendEvent(subId, event!);
+          } else {
+            waiting.push(subId);
+          }
+        },
+        onEventsUnsubscribe: (subId) => {
+          const at = waiting.indexOf(subId);
+          if (at >= 0) {
+            waiting.splice(at, 1);
+          }
+        },
+        onEventComplete: () => facts.completed(),
+        onDispose: () => {},
+        onRendered: () => facts.rendered(),
+      };
+    },
   });
-  iframe.src = `${spec.meta.frameUrl}#${boot}`;
-  assets.readAhead(readAheadAssetPaths(spec.settings, location.origin), moduleId);
+  assets.warm(moduleId, spec.settings);
 
-  bridges.add(bridge);
-  slot.appendChild(iframe);
-  bridge.attach(iframe);
   return {
-    sendBehavior: (state) => bridge.sendBehavior(state),
+    sendBehavior: (state) => frame.bridge.sendBehavior(state),
     release: () => {
       if (released) {
         return;
       }
       released = true;
       for (const subId of waiting.splice(0)) {
-        bridge.sendEvent(subId, event);
+        frame.bridge.sendEvent(subId, event!);
       }
     },
-    settingsReads: () => bridge.settingsReads(),
+    settingsReads: () => frame.bridge.settingsReads(),
     sendSettings: (settings, mediaUrls) =>
-      bridge.sendSettings(replaceMediaUrls(settings, new Map(Object.entries(mediaUrls)))),
-    reveal: () => {
-      iframe.style.opacity = "";
-    },
-    unmount: () => {
-      bridge.dispose();
-      bridge.detach();
-      bridges.delete(bridge);
-      iframe.remove();
-    },
+      frame.bridge.sendSettings(replaceMediaUrls(settings, new Map(Object.entries(mediaUrls)))),
+    reveal: () => frame.reveal(),
+    unmount: () => frame.unmount(),
   };
 }
 
@@ -205,7 +189,7 @@ function main(): void {
     return;
   }
   const bridges = new Set<WidgetBridge>();
-  const assets = new AssetCache();
+  const assets = new AssetCache({ pageOrigin: location.origin });
   // Reports go to the origin the editor's messages come from, once it has
   // sent one; the first report (`ready`) says only that the page is here.
   let parentOrigin: string | null = null;

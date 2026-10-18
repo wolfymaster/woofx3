@@ -3420,124 +3420,6 @@ function createScheduler(options) {
 function sameJson(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
-// public/scene-manager/asset-loader.ts
-var ASSET_RETAIN_MS = 60000;
-var MAX_DEPTH = 32;
-var ELEMENT_LOADED_TYPE = /^(image|video|audio|font)(\/|$)/;
-
-class AssetLoadError extends Error {
-  code;
-  constructor(code, path) {
-    super(`asset ${path}: ${code}`);
-    this.code = code;
-    this.name = "AssetLoadError";
-  }
-}
-function readAheadAssetPaths(settings, pageOrigin) {
-  const paths = new Set;
-  collect(settings, pageOrigin, paths, 0);
-  return [...paths];
-}
-function collect(value, pageOrigin, paths, depth) {
-  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collect(item, pageOrigin, paths, depth + 1);
-    }
-    return;
-  }
-  const record = value;
-  if (typeof record.id === "string" && record.id !== "" && record.source !== "url" && typeof record.url === "string" && !(typeof record.type === "string" && ELEMENT_LOADED_TYPE.test(record.type))) {
-    const path = engineAssetPath(record.url, pageOrigin);
-    if (path !== null) {
-      paths.add(path);
-    }
-    return;
-  }
-  for (const item of Object.values(record)) {
-    collect(item, pageOrigin, paths, depth + 1);
-  }
-}
-
-class AssetCache {
-  retainMs;
-  entries = new Map;
-  fetchFn;
-  constructor(fetchFn, retainMs = ASSET_RETAIN_MS) {
-    this.retainMs = retainMs;
-    this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
-  }
-  load(path) {
-    const held = this.entries.get(path);
-    if (held !== undefined) {
-      return held;
-    }
-    const reading = this.read(path);
-    this.entries.set(path, reading);
-    const forget = () => {
-      if (this.entries.get(path) === reading) {
-        this.entries.delete(path);
-      }
-    };
-    reading.then(() => setTimeout(forget, this.retainMs), forget);
-    return reading;
-  }
-  size() {
-    return this.entries.size;
-  }
-  readAhead(paths, moduleId) {
-    for (const path of paths) {
-      if (readable(path, moduleId)) {
-        this.load(path).catch(() => {});
-      }
-    }
-  }
-  scopedTo(moduleId) {
-    return (path) => {
-      if (!readable(path, moduleId)) {
-        return Promise.reject(new AssetLoadError("out_of_scope", path));
-      }
-      return this.load(path);
-    };
-  }
-  async read(path) {
-    let response;
-    try {
-      const asset = parseEngineAssetPath(path);
-      if (asset === null) {
-        throw new AssetLoadError("not_engine_asset", path);
-      }
-      response = await this.fetchFn(assetReadPath(asset), {
-        credentials: "same-origin"
-      });
-    } catch (err) {
-      console.warn("[scene-manager] asset read failed", { path }, err);
-      throw new AssetLoadError("unavailable", path);
-    }
-    if (response.status === 404) {
-      throw new AssetLoadError("not_found", path);
-    }
-    if (!response.ok) {
-      console.warn("[scene-manager] asset read refused", { path, status: response.status });
-      throw new AssetLoadError("unavailable", path);
-    }
-    let bytes;
-    try {
-      bytes = await response.arrayBuffer();
-    } catch (err) {
-      console.warn("[scene-manager] asset read cut short", { path }, err);
-      throw new AssetLoadError("unavailable", path);
-    }
-    return { contentType: response.headers.get("Content-Type") ?? "", bytes };
-  }
-}
-function readable(path, moduleId) {
-  const asset = parseEngineAssetPath(path);
-  return asset !== null && widgetMayRead(asset, moduleId);
-}
-
 // public/scene-manager/page-clock.ts
 var PAGE_CLOCK = {
   now: () => performance.now(),
@@ -3645,6 +3527,129 @@ function compareText3(a, b) {
     return 0;
   }
   return a < b ? -1 : 1;
+}
+
+// public/scene-manager/asset-loader.ts
+var ASSET_RETAIN_MS = 60000;
+var MAX_DEPTH = 32;
+var ELEMENT_LOADED_TYPE = /^(image|video|audio|font)(\/|$)/;
+
+class AssetLoadError extends Error {
+  code;
+  constructor(code, path) {
+    super(`asset ${path}: ${code}`);
+    this.code = code;
+    this.name = "AssetLoadError";
+  }
+}
+function readAheadAssetPaths(settings, pageOrigin) {
+  const paths = new Set;
+  collect(settings, pageOrigin, paths, 0);
+  return [...paths];
+}
+function collect(value, pageOrigin, paths, depth) {
+  if (depth > MAX_DEPTH || typeof value !== "object" || value === null) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collect(item, pageOrigin, paths, depth + 1);
+    }
+    return;
+  }
+  const record = value;
+  if (typeof record.id === "string" && record.id !== "" && record.source !== "url" && typeof record.url === "string" && !(typeof record.type === "string" && ELEMENT_LOADED_TYPE.test(record.type))) {
+    const path = engineAssetPath(record.url, pageOrigin);
+    if (path !== null) {
+      paths.add(path);
+    }
+    return;
+  }
+  for (const item of Object.values(record)) {
+    collect(item, pageOrigin, paths, depth + 1);
+  }
+}
+
+class AssetCache {
+  entries = new Map;
+  pageOrigin;
+  fetchFn;
+  retainMs;
+  constructor(options) {
+    this.pageOrigin = options.pageOrigin;
+    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.retainMs = options.retainMs ?? ASSET_RETAIN_MS;
+  }
+  load(path) {
+    const held = this.entries.get(path);
+    if (held !== undefined) {
+      return held;
+    }
+    const reading = this.read(path);
+    this.entries.set(path, reading);
+    const forget = () => {
+      if (this.entries.get(path) === reading) {
+        this.entries.delete(path);
+      }
+    };
+    reading.then(() => setTimeout(forget, this.retainMs), forget);
+    return reading;
+  }
+  size() {
+    return this.entries.size;
+  }
+  warm(moduleId, settings) {
+    if (moduleId === null) {
+      return;
+    }
+    for (const path of readAheadAssetPaths(settings, this.pageOrigin)) {
+      if (readable(path, moduleId)) {
+        this.load(path).catch(() => {});
+      }
+    }
+  }
+  loaderFor(moduleId) {
+    return (path) => {
+      if (moduleId === null || !readable(path, moduleId)) {
+        return Promise.reject(new AssetLoadError("out_of_scope", path));
+      }
+      return this.load(path);
+    };
+  }
+  async read(path) {
+    let response;
+    try {
+      const asset = parseEngineAssetPath(path);
+      if (asset === null) {
+        throw new AssetLoadError("not_engine_asset", path);
+      }
+      response = await this.fetchFn(assetReadPath(asset), {
+        credentials: "same-origin"
+      });
+    } catch (err) {
+      console.warn("[scene-manager] asset read failed", { path }, err);
+      throw new AssetLoadError("unavailable", path);
+    }
+    if (response.status === 404) {
+      throw new AssetLoadError("not_found", path);
+    }
+    if (!response.ok) {
+      console.warn("[scene-manager] asset read refused", { path, status: response.status });
+      throw new AssetLoadError("unavailable", path);
+    }
+    let bytes;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (err) {
+      console.warn("[scene-manager] asset read cut short", { path }, err);
+      throw new AssetLoadError("unavailable", path);
+    }
+    return { contentType: response.headers.get("Content-Type") ?? "", bytes };
+  }
+}
+function readable(path, moduleId) {
+  const asset = parseEngineAssetPath(path);
+  return asset !== null && widgetMayRead(asset, moduleId);
 }
 
 // public/scene-manager/widget-bridge.ts
@@ -3868,6 +3873,58 @@ function createFrameLoadHandler(bridge) {
   };
 }
 
+// public/scene-manager/widget-frame.ts
+function generateNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function mountWidgetFrame(options) {
+  const nonce = generateNonce();
+  const iframe = document.createElement("iframe");
+  iframe.className = "widget-frame";
+  if (options.hidden) {
+    iframe.style.opacity = "0";
+  }
+  iframe.setAttribute("sandbox", "allow-scripts");
+  let mounted = null;
+  const bridge = new WidgetBridge(options.instanceId, nonce, options.callbacks({
+    nonce,
+    bridge: () => {
+      if (mounted === null) {
+        throw new Error("widget frame: a bridge callback ran before the frame was mounted");
+      }
+      return mounted;
+    }
+  }));
+  mounted = bridge;
+  iframe.addEventListener("load", createFrameLoadHandler(bridge));
+  iframe.src = options.src(nonce);
+  options.bridges.add(bridge);
+  options.slot.appendChild(iframe);
+  bridge.attach(iframe);
+  let unmounted = false;
+  return {
+    element: iframe,
+    bridge,
+    nonce,
+    reveal: () => {
+      iframe.style.opacity = "";
+    },
+    unmount: () => {
+      if (unmounted) {
+        return;
+      }
+      unmounted = true;
+      bridge.dispose();
+      bridge.detach();
+      options.bridges.delete(bridge);
+      options.onUnmount?.();
+      iframe.remove();
+    }
+  };
+}
+
 // public/scene-manager/alert-widget.ts
 function playAlert(options) {
   const { doc } = options;
@@ -4004,45 +4061,33 @@ class AlertWidget {
     const instanceId = `${eventId}.${widgetId}`;
     const placement = layout.widgets[widgetId];
     const moduleId = placement ? moduleIdOfCanonicalId(placement.widget) : null;
-    const nonce = this.opts.generateNonce();
-    const iframe = document.createElement("iframe");
-    iframe.className = "widget-frame";
-    iframe.setAttribute("sandbox", "allow-scripts");
-    const bridge = new WidgetBridge(instanceId, nonce, {
-      onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
-      onAssetLoad: this.opts.assets.scopedTo(moduleId ?? ""),
-      onEventsSubscribe: (subId, queue) => {
-        facts.subscribed(queue?.autoComplete === false);
-        bridge.sendEvent(subId, alertEvent);
-      },
-      onEventsUnsubscribe: () => {},
-      onEventComplete: () => facts.completed(),
-      onDispose: () => {},
-      onRendered: () => facts.rendered()
+    const frame = mountWidgetFrame({
+      slot,
+      instanceId,
+      bridges,
+      src: (nonce) => `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widgetId)}` + `?nonce=${encodeURIComponent(nonce)}` + (entrance === null ? "" : `#${encodePlacementBoot({ behavior: entrance })}`),
+      callbacks: ({ bridge }) => ({
+        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
+        onAssetLoad: this.opts.assets.loaderFor(moduleId),
+        onEventsSubscribe: (subId, queue) => {
+          facts.subscribed(queue?.autoComplete === false);
+          bridge().sendEvent(subId, alertEvent);
+        },
+        onEventsUnsubscribe: () => {},
+        onEventComplete: () => facts.completed(),
+        onDispose: () => {},
+        onRendered: () => facts.rendered()
+      })
     });
-    iframe.addEventListener("load", createFrameLoadHandler(bridge));
-    const fragment = entrance === null ? "" : `#${encodePlacementBoot({ behavior: entrance })}`;
-    iframe.src = `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widgetId)}` + `?nonce=${encodeURIComponent(nonce)}${fragment}`;
-    bridges.add(bridge);
-    slot.appendChild(iframe);
-    bridge.attach(iframe);
     return {
-      sendBehavior: (state) => bridge.sendBehavior(state),
-      unmount: () => {
-        bridge.dispose();
-        bridge.detach();
-        bridges.delete(bridge);
-        iframe.remove();
-      }
+      sendBehavior: (state) => frame.bridge.sendBehavior(state),
+      unmount: () => frame.unmount()
     };
   }
 }
 function readAheadAlertAssets(assets, layout) {
   for (const placement of Object.values(layout.widgets)) {
-    const moduleId = moduleIdOfCanonicalId(placement.widget);
-    if (moduleId !== null) {
-      assets.readAhead(readAheadAssetPaths(placement.settings, location.origin), moduleId);
-    }
+    assets.warm(moduleIdOfCanonicalId(placement.widget), placement.settings);
   }
 }
 function canvasOf(doc) {
@@ -4894,6 +4939,8 @@ class SceneEventSource {
   reconnectMaxMs;
   coordinator;
   random;
+  setTimer;
+  cancelTimer;
   sink = null;
   stopped = true;
   everConnected = false;
@@ -4907,6 +4954,8 @@ class SceneEventSource {
     this.reconnectMaxMs = options.reconnectMaxMs ?? 5000;
     this.coordinator = options.coordinator ?? ALWAYS_PROBE;
     this.random = options.random ?? Math.random;
+    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    this.cancelTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
   }
   start(sink) {
     this.sink = sink;
@@ -5012,7 +5061,7 @@ class SceneEventSource {
   }
   clearTimer() {
     if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
+      this.cancelTimer(this.reconnectTimer);
       this.reconnectTimer = null;
     }
   }
@@ -5026,7 +5075,7 @@ class SceneEventSource {
     }
     const delay = this.nextDelayMs();
     this.reconnectAttempt += 1;
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = this.setTimer(() => {
       this.reconnectTimer = null;
       if (!this.coordinator.shouldProbe()) {
         this.scheduleReconnect();
@@ -5539,11 +5588,6 @@ function opacityOr(value, fallback) {
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 var DRAFT_SETTLE_MS = 400;
-function generateNonce() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 function frameSrc(instance, nonce, entrance) {
   const boot = encodePlacementBoot({
     nonce,
@@ -5588,7 +5632,7 @@ function main() {
     const body = await resp.json();
     return body.value ?? null;
   });
-  const assets = new AssetCache;
+  const assets = new AssetCache({ pageOrigin: location.origin });
   function postStatus(instanceId, moduleId, report) {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -5627,7 +5671,6 @@ function main() {
       element,
       sceneBase,
       bridges,
-      generateNonce,
       postStatus,
       assets,
       onFinished: (eventId) => {
@@ -5654,74 +5697,70 @@ function main() {
     };
   };
   const mountFrame = (instance, slot, swapping, onRendered) => {
-    const iframe = document.createElement("iframe");
-    iframe.className = "widget-frame";
-    if (swapping) {
-      iframe.style.opacity = "0";
-    }
-    iframe.setAttribute("sandbox", "allow-scripts");
-    const nonce = generateNonce();
     let subscription = null;
-    const callbacks = {
-      storage: {
-        get: (key) => moduleState.peek(instance.moduleId, key),
-        subscribe: (key) => moduleState.watch(instance.moduleId, key, storageTarget),
-        unsubscribe: (key) => moduleState.unwatch(instance.moduleId, key, storageTarget)
-      },
-      onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
-      onAssetLoad: assets.scopedTo(instance.moduleId),
-      onEventsSubscribe: (subId, queue) => {
-        playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
-        const previous = subscription;
-        subscription = {
-          subId,
-          queue: queueManager.register(instance.id, queue, (item) => bridge.sendEvent(subId, toWidgetEvent(item)), (eventId) => completedBatcher.add(eventId, instance.id))
-        };
-        if (previous !== null) {
-          queueManager.unregister(previous.queue);
-        }
-      },
-      onEventsUnsubscribe: (subId) => {
-        if (subscription?.subId === subId) {
-          queueManager.unregister(subscription.queue);
-          subscription = null;
-        }
-      },
-      onEventComplete: (subId, eventId) => {
-        if (subscription?.subId === subId) {
-          queueManager.complete(subscription.queue, eventId);
-        }
-        completedBatcher.add(eventId, instance.id);
-      },
-      onDispose: () => {
-        if (subscription !== null) {
-          queueManager.unregister(subscription.queue);
-          subscription = null;
-        }
-      },
-      onRendered
-    };
-    const bridge = new WidgetBridge(instance.id, nonce, callbacks);
-    const storageTarget = {
-      instanceId: instance.id,
-      sendStorageValue: (key, value) => bridge.sendStorageValue(key, value)
-    };
-    iframe.addEventListener("load", createFrameLoadHandler(bridge));
     const declared = instance.behaviorKinds ?? NO_DECLARED_KINDS;
     const entrance = swapping ? null : entranceOf(composition2, instance.id, (type, kind) => declaresKind(declared, type, kind));
-    iframe.src = frameSrc(instance, nonce, entrance);
-    assets.readAhead(readAheadAssetPaths(instance.settings, location.origin), instance.moduleId);
-    bridges.add(bridge);
-    slot.appendChild(iframe);
-    bridge.attach(iframe);
-    const unmount = () => {
-      bridge.dispose();
-      bridge.detach();
-      bridges.delete(bridge);
-      moduleState.unwatchAll(storageTarget);
-      iframe.remove();
-    };
-    return { element: iframe, bridge, unmount };
+    let storageTarget = null;
+    const frame = mountWidgetFrame({
+      slot,
+      instanceId: instance.id,
+      bridges,
+      hidden: swapping,
+      src: (nonce) => frameSrc(instance, nonce, entrance),
+      callbacks: ({ bridge }) => {
+        const target = {
+          instanceId: instance.id,
+          sendStorageValue: (key, value) => bridge().sendStorageValue(key, value)
+        };
+        storageTarget = target;
+        return {
+          storage: {
+            get: (key) => moduleState.peek(instance.moduleId, key),
+            subscribe: (key) => moduleState.watch(instance.moduleId, key, target),
+            unsubscribe: (key) => moduleState.unwatch(instance.moduleId, key, target)
+          },
+          onStatusReport: (report) => postStatus(instance.id, instance.moduleId, report),
+          onAssetLoad: assets.loaderFor(instance.moduleId),
+          onEventsSubscribe: (subId, queue) => {
+            playing().widgetSubscribed(instance.id, queue?.autoComplete === false);
+            const previous = subscription;
+            subscription = {
+              subId,
+              queue: queueManager.register(instance.id, queue, (item) => bridge().sendEvent(subId, toWidgetEvent(item)), (eventId) => completedBatcher.add(eventId, instance.id))
+            };
+            if (previous !== null) {
+              queueManager.unregister(previous.queue);
+            }
+          },
+          onEventsUnsubscribe: (subId) => {
+            if (subscription?.subId === subId) {
+              queueManager.unregister(subscription.queue);
+              subscription = null;
+            }
+          },
+          onEventComplete: (subId, eventId) => {
+            if (subscription?.subId === subId) {
+              queueManager.complete(subscription.queue, eventId);
+            }
+            completedBatcher.add(eventId, instance.id);
+          },
+          onDispose: () => {
+            if (subscription !== null) {
+              queueManager.unregister(subscription.queue);
+              subscription = null;
+            }
+          },
+          onRendered
+        };
+      },
+      onUnmount: () => {
+        if (storageTarget !== null) {
+          moduleState.unwatchAll(storageTarget);
+        }
+      }
+    });
+    assets.warm(instance.moduleId, instance.settings);
+    return { element: frame.element, bridge: frame.bridge, unmount: frame.unmount };
   };
   function mountContent(slot, id) {
     const instance = configs.get(id);
