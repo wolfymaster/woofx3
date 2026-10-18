@@ -53,6 +53,13 @@ export class SceneWriteback {
         while (held.save.writing !== null) {
           await held.save.writing;
         }
+        if (held.save.dirty && unreadableColumns(held).length > 0) {
+          this.logger.warn("scene documents: changes left unwritten at shutdown; a column could not be read", {
+            sceneId: held.sceneId,
+            columns: unreadableColumns(held),
+          });
+          return;
+        }
         for (let attempt = 1; held.save.dirty && attempt <= CLOSE_WRITE_ATTEMPTS; attempt++) {
           if (attempt > 1) {
             await new Promise<void>((resolve) => this.clock.setTimeout(resolve, CLOSE_RETRY_MS));
@@ -73,8 +80,6 @@ export class SceneWriteback {
     if (this.persister === null || held.save.timer !== null || held.save.writing !== null || this.closed) {
       return;
     }
-    // A whole column the load could not read would be replaced by what the
-    // document holds in its place (nothing); the row stays as it is.
     if (unreadableColumns(held).length > 0) {
       return;
     }
@@ -90,7 +95,10 @@ export class SceneWriteback {
    * retried on the next schedule.
    */
   private async write(held: HeldScene): Promise<void> {
-    if (this.persister === null || held.save.writing !== null) {
+    // A whole column the load could not read would be replaced by what the
+    // document holds in its place (nothing); the row stays as it is. Checked
+    // here, which every write goes through, the shutdown flush included.
+    if (this.persister === null || held.save.writing !== null || unreadableColumns(held).length > 0) {
       return;
     }
     const write = sceneWriteOf(held, this.clock.now());
