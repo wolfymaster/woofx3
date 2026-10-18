@@ -93,12 +93,13 @@ export class SceneSync {
       void this.update();
       return;
     }
-    // While the editor previews a draft, the draft is what this page shows.
-    if (this.deps.draftPlacements()) {
-      void this.update();
-      return;
-    }
-    this.deps.apply(configOfSnapshot(this.doc), false);
+    // While the editor previews its placements, they stay what this page
+    // shows: the op's config goes on with the editor's newest settings laid
+    // over it, as a draft answer would (`apply`'s `fromDraft`). The op
+    // carries everything the server resolved for it (frames, signed media),
+    // so nothing is fetched; a widget or theme the server has yet to resolve
+    // is fetched by the draft preview on its own (draft-preview.ts).
+    this.deps.apply(configOfSnapshot(this.doc), this.deps.draftPlacements() !== null);
   }
 
   /**
