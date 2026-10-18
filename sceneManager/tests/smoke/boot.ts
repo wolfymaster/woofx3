@@ -28,7 +28,18 @@ export interface BootedSceneManager {
 
 const START_TIMEOUT_MS = 20_000;
 
-export async function bootSceneManager(busUrl: string): Promise<BootedSceneManager> {
+/** A start that failed, with what the scene manager logged on the way. */
+export class BootFailure extends Error {
+  constructor(
+    readonly cause: unknown,
+    readonly logs: LogLine[]
+  ) {
+    super(`smoke: the scene manager did not start: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+}
+
+/** `port` 0 (the default) lets the OS choose. */
+export async function bootSceneManager(busUrl: string, options: { port?: number } = {}): Promise<BootedSceneManager> {
   const scratch = mkdtempSync(join(tmpdir(), "woofx3-smoke-sm-"));
   const db = createFakeDb();
   const barkloader = startFakeBarkloader();
@@ -39,7 +50,7 @@ export async function bootSceneManager(busUrl: string): Promise<BootedSceneManag
   const logger = { debug: line("debug"), info: line("info"), warn: line("warn"), error: line("error") };
 
   const runtimeConfig: SceneManagerRuntimeConfig = {
-    port: 0,
+    port: options.port ?? 0,
     bindHost: "127.0.0.1",
     tokenSecret: "smoke-token-secret-0123456789abcdef",
     rootDir: scratch,
@@ -65,11 +76,12 @@ export async function bootSceneManager(busUrl: string): Promise<BootedSceneManag
   });
   const deadline = Date.now() + START_TIMEOUT_MS;
   while (app.listeningPort() === null) {
-    if (failed !== null) {
-      throw failed;
-    }
-    if (Date.now() > deadline) {
-      throw new Error("smoke: the scene manager did not start listening");
+    if (failed !== null || Date.now() > deadline) {
+      const cause = failed ?? new Error("it did not start listening");
+      await app.terminate(ctx).catch(() => {});
+      barkloader.stop();
+      rmSync(scratch, { recursive: true, force: true });
+      throw new BootFailure(cause, logs);
     }
     await Bun.sleep(20);
   }
