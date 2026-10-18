@@ -166,6 +166,7 @@ func planResume(
 
 	for _, task := range order[:start] {
 		if skipped[task.ID] {
+			skipBranchesOfSkippedCondition(task, skipped)
 			continue
 		}
 
@@ -177,6 +178,7 @@ func planResume(
 		switch record.Status {
 		case string(types.TaskStatusSkipped):
 			skipped[task.ID] = true
+			skipBranchesOfSkippedCondition(task, skipped)
 			continue
 		case string(types.TaskStatusSuccess):
 		default:
