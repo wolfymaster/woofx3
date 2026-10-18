@@ -20,16 +20,16 @@ pub struct FileMetadata {
 }
 
 pub struct FileService {
-    upload_dir: String,
+    upload_dir: PathBuf,
 }
 
 impl FileService {
-    pub fn new(upload_dir: &str) -> Self {
+    pub fn new(upload_dir: &Path) -> Self {
         // Create directory if it doesn't exist
         fs::create_dir_all(upload_dir).expect("Failed to create upload directory");
 
         Self {
-            upload_dir: upload_dir.to_string(),
+            upload_dir: upload_dir.to_path_buf(),
         }
     }
 
@@ -226,7 +226,7 @@ impl FileService {
         // Get filename
         let mut file_extension = None;
         let sanitized = sanitize_filename::sanitize(file_name);
-        let upload_dir_path = PathBuf::from(&self.upload_dir);
+        let upload_dir_path = self.upload_dir.clone();
         let temp_dir_path = upload_dir_path.join(&temp_dir_name);
 
         if let Some(ext) = Path::new(&sanitized).extension() {

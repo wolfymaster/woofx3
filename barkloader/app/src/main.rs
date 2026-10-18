@@ -336,6 +336,17 @@ async fn main() -> std::io::Result<()> {
         std::process::exit(1);
     }
 
+    // Before setup: a malformed api URL is a configuration error, and is
+    // reported as one rather than surfacing on the first thumbnail.
+    let callbacks = match callback::CallbackSender::from_config() {
+        Ok(callbacks) => Data::new(callbacks),
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
+
     // setup
     let ctx = setup().await.expect("Failed to complete set up");
 
@@ -355,6 +366,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(Data::new(ctx.clone()))
             .app_data(media_proxy.clone())
+            .app_data(callbacks.clone())
             // The assets and archives routes depend only on the repository,
             // not the full AppContext, so they get their own Data registration. It
             // shares the same swappable handle, so a storage reload takes

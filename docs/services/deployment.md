@@ -218,10 +218,18 @@ callers racing on a new engine cannot both be first.
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's
-`/webhooks/barkloader/processing`. It sends the engine secret
-(`WOOFX3_BARKLOADER_KEY`) as `Authorization: Bearer <key>`, but only to a
-loopback host or the host of `WOOFX3_API_URL`, since the callback URL arrives in
-the processing request.
+`/webhooks/barkloader/processing`, sending the engine secret
+(`WOOFX3_BARKLOADER_KEY`) as `Authorization: Bearer <key>`.
+
+The callback URL arrives in the processing request, so barkloader accepts one
+only on the api's origin (scheme, host and port; default ports are the same
+origin written or not) and answers `400` to any other. It resolves the api's
+URL the way the api does: `WOOFX3_API_URL` when set, otherwise
+`http://127.0.0.1:<WOOFX3_API_PORT>` (port `8080` when that is unset too).
+When that URL is on loopback, `localhost`, `127.0.0.1` and `::1` all name it,
+but only on its port. A `WOOFX3_API_URL` that is not an http(s) URL stops
+barkloader at startup. If the api is reached at an address other than its
+default, set `WOOFX3_API_URL` for barkloader to the same value the api uses.
 
 The api checks that header only when `WOOFX3_BARKLOADER_WEBHOOK_AUTH=required`;
 unset (or `off`) it accepts every callback. A callback without the right token
