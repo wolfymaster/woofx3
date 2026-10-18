@@ -9,7 +9,7 @@ export enum EventType {
   /** Run the workflow a command is linked to, for one invocation. Handled by the
    *  workflow engine (Engine.RunCommand); reserved, so no workflow or module
    *  can publish it. */
-  RunWorkflow = "workflow.command.run",
+  ExecuteWorkflow = "workflow.command.execute",
 }
 
 export interface CommandSnapshot {
@@ -44,7 +44,7 @@ export interface CommandSnapshot {
  * matched and passed its checks (cooldown, who may run it, enabled), which is
  * why the engine does not check them again.
  */
-export interface CommandWorkflowRun {
+export interface CommandWorkflowExecution {
   workflowId: string;
   /** The invocation's `chat.command.<slug>` event, which the run reads as its
    *  trigger: `${trigger.data.chatter}` and the rest. */

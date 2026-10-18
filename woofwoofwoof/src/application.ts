@@ -555,7 +555,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       ctx.commander.add(
         command.command,
         async (text, user, vars, invocation) => {
-          const [topic, payload] = ctx.events.Command().runWorkflow({
+          const [topic, payload] = ctx.events.Command().executeWorkflow({
             workflowId,
             event: {
               ...commandEvent(command.command, text, user, vars, invocation),

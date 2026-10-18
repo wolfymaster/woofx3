@@ -22,8 +22,8 @@ export default class CommandEvents {
     return this.encodeEvent(CommandEvent.EventType.Deleted, event);
   }
 
-  runWorkflow(event: CommandEvent.CommandWorkflowRun): EventTuple {
-    return this.encodeEvent(CommandEvent.EventType.RunWorkflow, event);
+  executeWorkflow(event: CommandEvent.CommandWorkflowExecution): EventTuple {
+    return this.encodeEvent(CommandEvent.EventType.ExecuteWorkflow, event);
   }
 
   private encodeEvent(type: CommandEvent.EventType, event: any): EventTuple {

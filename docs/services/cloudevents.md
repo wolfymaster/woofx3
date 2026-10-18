@@ -189,7 +189,7 @@ A raid on this channel is published once, as `channel.raid`, from the `channel.r
 
 ## Running a command's workflow
 
-`workflow.command.run` asks the workflow engine to run the workflow a chat
+`workflow.command.execute` asks the workflow engine to run the workflow a chat
 command is linked to, for one invocation. Published by woofwoofwoof once a
 command has matched and passed its cooldown and permission checks, after it
 has announced the match on `chat.command.<slug>`, and by the engine api's
@@ -198,7 +198,7 @@ has announced the match on `chat.command.<slug>`, and by the engine api's
 trigger conditions apply, nothing else is checked again.
 
 ```jsonc
-// subject: "workflow.command.run"
+// subject: "workflow.command.execute"
 {
   "workflowId": "3f1c…",
   "event": {                     // the invocation; the run's ${trigger...}

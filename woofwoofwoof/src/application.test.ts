@@ -508,10 +508,10 @@ describe("WoofWoofWoof application", () => {
 
     // The announcement comes first and the run once; nothing runs the steps a
     // second way.
-    expect(topics(base)).toEqual(["chat.command.hug", "workflow.command.run"]);
-    const run = base.publishLog.find((p) => p.topic === "workflow.command.run");
+    expect(topics(base)).toEqual(["chat.command.hug", "workflow.command.execute"]);
+    const run = base.publishLog.find((p) => p.topic === "workflow.command.execute");
     if (!run) {
-      throw new Error("expected a workflow.command.run publish");
+      throw new Error("expected a workflow.command.execute publish");
     }
     const payload = JSON.parse(new TextDecoder().decode(run.data)) as {
       data: { workflowId: string; event: { type: string; platform: string; data: Record<string, unknown> } };
@@ -535,7 +535,7 @@ describe("WoofWoofWoof application", () => {
     await chat({ json: () => ({ data: { message: "!hug", chatterName: "user1" } }) });
     await chat({ json: () => ({ data: { message: "!hug", chatterName: "user2" } }) });
 
-    expect(topics(base).filter((t) => t === "workflow.command.run")).toHaveLength(1);
+    expect(topics(base).filter((t) => t === "workflow.command.execute")).toHaveLength(1);
   });
 
   test("a chatter who may not use the command runs no workflow", async () => {
@@ -544,7 +544,7 @@ describe("WoofWoofWoof application", () => {
     });
     await chat({ json: () => ({ data: { message: "!hug", chatterName: "user1" } }) });
 
-    expect(topics(base)).not.toContain("workflow.command.run");
+    expect(topics(base)).not.toContain("workflow.command.execute");
     expect(topics(base)).not.toContain("chat.command.hug");
   });
 

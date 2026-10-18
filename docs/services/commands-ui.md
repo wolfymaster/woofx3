@@ -404,7 +404,7 @@ woofwoofwoof's commander handles a chat message in this order
    A refusal stops here.
 4. It publishes `chat.command.<slug>`, for any workflow listening to it.
 5. It runs the command: for a command with a workflow, it publishes
-   `workflow.command.run` naming that workflow and carrying the same
+   `workflow.command.execute` naming that workflow and carrying the same
    invocation event, and the workflow engine runs that one workflow
    (`Engine.RunCommand`) with `${trigger.data...}` reading the invocation.
 

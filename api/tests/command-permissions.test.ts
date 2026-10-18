@@ -130,8 +130,8 @@ describe("executeCommand permission enforcement", () => {
 
     await api.executeCommand("hug", "wolfy", "bob");
 
-    expect(nats.published).toEqual(["chat.command.hug", "workflow.command.run"]);
-    const run = nats.payloads.find((p) => p.subject === "workflow.command.run");
+    expect(nats.published).toEqual(["chat.command.hug", "workflow.command.execute"]);
+    const run = nats.payloads.find((p) => p.subject === "workflow.command.execute");
     expect(run?.data.workflowId).toBe("wf-hug");
     expect(run?.data.event.type).toBe("chat.command.hug");
     expect(run?.data.event.data).toMatchObject({ command: "hug", chatter: "wolfy", text: "bob" });

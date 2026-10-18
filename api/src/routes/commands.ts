@@ -211,7 +211,7 @@ export const commandsRoutes = routeModule({
 
     if (cmd.workflowId) {
       await this.publishEventTuple(
-        commandEvents.runWorkflow({
+        commandEvents.executeWorkflow({
           workflowId: cmd.workflowId,
           event: { ...commandEvent, platform: "twitch", triggeredBy: "dashboard" },
         })
