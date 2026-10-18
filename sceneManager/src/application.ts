@@ -28,12 +28,28 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   private deliveryStore: import("./events/delivery-store").DeliveryStore | null = null;
   private obs: import("./obs/connection").ObsConnection<import("./obs/manager").default> | null = null;
   private sceneDocuments: import("./scene/scene-documents").SceneDocuments | null = null;
+  private nats: Awaited<ReturnType<typeof import("@woofx3/nats").createMessageBus>> | null = null;
 
   constructor(runtimeConfig: SceneManagerRuntimeConfig) {
     this.context = { runtimeConfig };
   }
 
   async run(ctx: Context): Promise<void> {
+    try {
+      await this.start(ctx);
+    } catch (err) {
+      // A start that fails part way (the port taken, say) must not leave
+      // the bus connection or the redelivery sweep running behind it.
+      await this.release();
+      throw err;
+    }
+    // Block for the process lifetime — Bun.serve doesn't return a
+    // promise that resolves on its own; hold the runtime here until
+    // terminate() stops the server.
+    await new Promise<void>(() => {});
+  }
+
+  private async start(ctx: Context): Promise<void> {
     const { createHttpServer } = await import("./http");
     const { OverlayTokenResolver } = await import("./scene/token-resolver");
     const { OverlayHost } = await import("./scene/scene-host");
@@ -126,6 +142,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       });
       nats = null;
     }
+    this.nats = nats;
     // Started only once the server is listening (below), so the first
     // session's overlay refresh can never land before /scene is served.
     const readRelayConfig = async () => readStoredRelayConfig(await db.getSetting(RELAY_CONFIG_SETTING));
@@ -232,13 +249,15 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     });
 
     obs.start();
-    // Block for the process lifetime — Bun.serve doesn't return a
-    // promise that resolves on its own; hold the runtime here until
-    // terminate() stops the server.
-    await new Promise<void>(() => {});
   }
 
   async terminate(ctx: Context): Promise<void> {
+    await this.release();
+    ctx.logger.info("sceneManager stopped");
+  }
+
+  /** Stops whatever has been started, in any state `start` may have left. */
+  private async release(): Promise<void> {
     // Edits still waiting to be written would otherwise be lost with the process.
     await this.sceneDocuments?.close();
     this.sceneDocuments = null;
@@ -248,6 +267,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.server = null;
     await this.obs?.stop();
     this.obs = null;
-    ctx.logger.info("sceneManager stopped");
+    // Last, so nothing above is left publishing onto a closed connection.
+    await this.nats?.close();
+    this.nats = null;
   }
 }

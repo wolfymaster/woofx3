@@ -35,6 +35,14 @@ export interface ObsBackoff {
 
 export const DEFAULT_OBS_BACKOFF: ObsBackoff = { initialMs: 1_000, maxMs: 30_000 };
 
+/**
+ * How long one attempt may take to open a session, from dialing to a client
+ * ready for requests. Opening loads the scene list after the socket connects,
+ * and an OBS that accepts the socket and then stops answering would otherwise
+ * hold the attempt open forever, with no retry ever scheduled.
+ */
+export const DEFAULT_OBS_OPEN_TIMEOUT_MS = 15_000;
+
 export interface ObsConnectionOptions<TClient> {
   /** Open a session or throw. Must not retry on its own. */
   open: () => Promise<ObsSession<TClient>>;
@@ -46,6 +54,8 @@ export interface ObsConnectionOptions<TClient> {
   onConnected?: (client: TClient, info: { first: boolean }) => Promise<void> | void;
   logger: Logger;
   backoff?: ObsBackoff;
+  /** Defaults to `DEFAULT_OBS_OPEN_TIMEOUT_MS`. */
+  openTimeoutMs?: number;
   /** Source of jitter in [0, 1); injectable so tests are deterministic. */
   random?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -82,6 +92,14 @@ export function obsFailureKind(err: unknown): ObsFailureKind {
   return code === OBS_AUTHENTICATION_FAILED ? "authentication" : "unreachable";
 }
 
+/** An attempt to open a session did not finish within its deadline. */
+export class ObsOpenTimeout extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`OBS did not finish opening a session within ${timeoutMs}ms`);
+    this.name = "ObsOpenTimeout";
+  }
+}
+
 export class ObsConnection<TClient> {
   private state: ObsConnectionState = "connecting";
   private session: ObsSession<TClient> | null = null;
@@ -100,6 +118,7 @@ export class ObsConnection<TClient> {
   private attemptSeq = 0;
 
   private readonly backoff: ObsBackoff;
+  private readonly openTimeoutMs: number;
   private readonly random: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
@@ -108,6 +127,10 @@ export class ObsConnection<TClient> {
     this.backoff = options.backoff ?? DEFAULT_OBS_BACKOFF;
     if (this.backoff.initialMs <= 0 || this.backoff.maxMs < this.backoff.initialMs) {
       throw new Error("ObsConnection: backoff needs 0 < initialMs <= maxMs");
+    }
+    this.openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OBS_OPEN_TIMEOUT_MS;
+    if (this.openTimeoutMs <= 0) {
+      throw new Error("ObsConnection: openTimeoutMs must be positive");
     }
     this.random = options.random ?? Math.random;
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
@@ -212,7 +235,7 @@ export class ObsConnection<TClient> {
     const seq = this.attemptSeq;
     let session: ObsSession<TClient>;
     try {
-      session = await this.options.open();
+      session = await this.openWithinDeadline();
     } catch (err) {
       if (seq === this.attemptSeq) {
         this.onAttemptFailed(err);
@@ -224,6 +247,38 @@ export class ObsConnection<TClient> {
       return;
     }
     this.onSessionOpened(session);
+  }
+
+  /**
+   * `options.open()`, failed with `ObsOpenTimeout` if it has not settled in
+   * `openTimeoutMs`. A session that arrives after the deadline belongs to no
+   * attempt and is closed as soon as it does.
+   */
+  private openWithinDeadline(): Promise<ObsSession<TClient>> {
+    const opening = this.options.open();
+    return new Promise<ObsSession<TClient>>((resolve, reject) => {
+      let timedOut = false;
+      const deadline = this.setTimer(() => {
+        timedOut = true;
+        reject(new ObsOpenTimeout(this.openTimeoutMs));
+      }, this.openTimeoutMs);
+      opening.then(
+        (session) => {
+          if (timedOut) {
+            void session.close().catch(() => undefined);
+            return;
+          }
+          this.clearTimer(deadline);
+          resolve(session);
+        },
+        (err: unknown) => {
+          if (!timedOut) {
+            this.clearTimer(deadline);
+            reject(err);
+          }
+        }
+      );
+    });
   }
 
   private onSessionOpened(session: ObsSession<TClient>): void {
