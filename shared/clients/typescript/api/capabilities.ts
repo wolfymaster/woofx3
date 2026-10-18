@@ -85,6 +85,41 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
   /**
+   * The Stream info widget's Helix calls, made by the engine as the linked
+   * broadcaster and answered with Twitch's own result:
+   * `twitchGetChannelInformation`, `twitchGetGames`, `twitchSearchCategories`,
+   * `twitchModifyChannelInformation`, `twitchCreateStreamMarker`.
+   */
+  twitchStreamInfo: "twitch.streamInfo",
+  /**
+   * The Ad breaks widget's Helix calls, made and answered like
+   * `twitch.streamInfo`'s: `twitchGetAdSchedule`, `twitchSnoozeNextAd`.
+   */
+  twitchAds: "twitch.ads",
+  /**
+   * The Moderation widget's Helix calls, made and answered like
+   * `twitch.streamInfo`'s: `twitchGetUsers`, `twitchGetBlockedTerms`,
+   * `twitchAddBlockedTerm`, `twitchRemoveBlockedTerm`, `twitchBanUser`,
+   * `twitchUnbanUser`, `twitchGetChatSettings`, `twitchUpdateChatSettings`.
+   */
+  twitchModeration: "twitch.moderation",
+  /**
+   * The Broadcast controls' and Shoutouts widget's Helix calls, made and
+   * answered like `twitch.streamInfo`'s: `twitchSendChatMessage`,
+   * `twitchSendChatAnnouncement`, `twitchSendShoutout`, `twitchGetChatters`.
+   * Their user lookups are `twitchGetUsers`, which every engine with this id
+   * also serves (`twitch.moderation`).
+   */
+  twitchChat: "twitch.chat",
+  /**
+   * The Pins widget's Helix calls (Twitch beta), made and answered like
+   * `twitch.streamInfo`'s: `twitchGetChatPins`, `twitchPinChatMessage`,
+   * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
+   */
+  twitchPins: "twitch.pins",
+  /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
+  twitchClips: "twitch.clips",
+  /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
    * place of `updateScene`. No longer served; declared so a client can

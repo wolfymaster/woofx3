@@ -10,6 +10,25 @@ import type {
 } from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type {
+  TwitchAddBlockedTermParams,
+  TwitchBanUserParams,
+  TwitchChatPinParams,
+  TwitchCreateStreamMarkerParams,
+  TwitchGetBlockedTermsParams,
+  TwitchGetChattersParams,
+  TwitchGetGamesParams,
+  TwitchGetUsersParams,
+  TwitchHelixResult,
+  TwitchModifyChannelInformationParams,
+  TwitchRemoveBlockedTermParams,
+  TwitchSearchCategoriesParams,
+  TwitchSendChatAnnouncementParams,
+  TwitchSendChatMessageParams,
+  TwitchSendShoutoutParams,
+  TwitchUnbanUserParams,
+  TwitchUpdateChatSettingsParams,
+} from "./twitch-helix";
+import type {
   EventLogPage,
   EventLogQuery,
   EventLogSelection,
@@ -1706,6 +1725,57 @@ export interface Woofx3EngineApi {
   // and stored on settings.user_id so the row is properly user-scoped.
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
+
+  // Twitch: each method performs one Helix call as the linked broadcaster
+  // and answers with Twitch's own result (see ./twitch-helix.ts). They never
+  // throw for a refusal; `ok: false` carries the reason.
+
+  /** `GET /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  twitchGetChannelInformation(): Promise<TwitchHelixResult>;
+  /** `GET /helix/games`. Requires the `twitch.streamInfo` capability. */
+  twitchGetGames(params: TwitchGetGamesParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/search/categories`. Requires the `twitch.streamInfo` capability. */
+  twitchSearchCategories(params: TwitchSearchCategoriesParams): Promise<TwitchHelixResult>;
+  /** `PATCH /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  twitchModifyChannelInformation(params: TwitchModifyChannelInformationParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/streams/markers` on the broadcaster's stream. Requires the `twitch.streamInfo` capability. */
+  twitchCreateStreamMarker(params: TwitchCreateStreamMarkerParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/channels/ads` for the broadcaster. Requires the `twitch.ads` capability. */
+  twitchGetAdSchedule(): Promise<TwitchHelixResult>;
+  /** `POST /helix/channels/ads/schedule/snooze` for the broadcaster. Requires the `twitch.ads` capability. */
+  twitchSnoozeNextAd(): Promise<TwitchHelixResult>;
+  /** `GET /helix/users`. Requires the `twitch.moderation` capability. */
+  twitchGetUsers(params: TwitchGetUsersParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchGetBlockedTerms(params: TwitchGetBlockedTermsParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchAddBlockedTerm(params: TwitchAddBlockedTermParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchRemoveBlockedTerm(params: TwitchRemoveBlockedTermParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchBanUser(params: TwitchBanUserParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchUnbanUser(params: TwitchUnbanUserParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchGetChatSettings(): Promise<TwitchHelixResult>;
+  /** `PATCH /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/messages` as the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendChatMessage(params: TwitchSendChatMessageParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/announcements` for the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendChatAnnouncement(params: TwitchSendChatAnnouncementParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/shoutouts` from the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendShoutout(params: TwitchSendShoutoutParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/chatters` for the broadcaster. Requires the `twitch.chat` capability. */
+  twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchGetChatPins(): Promise<TwitchHelixResult>;
+  /** `PUT /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchPinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchUnpinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/clips` on the broadcaster's stream. Requires the `twitch.clips` capability. */
+  twitchCreateClip(): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires
