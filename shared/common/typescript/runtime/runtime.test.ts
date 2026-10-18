@@ -47,7 +47,7 @@ function createMockApplication(options?: {
   failRun?: boolean;
   failTerminate?: boolean;
   trackCalls?: { init: number; run: number; terminate: number };
-}): { app: Application<TestContext>; context: TestContext } {
+}): { app: Application<TestContext, ServicesRegistry>; context: TestContext } {
   const track = options?.trackCalls ?? { init: 0, run: 0, terminate: 0 };
   const context: TestContext = {
     services: {},
@@ -167,8 +167,8 @@ describe("Config and env loading", () => {
     });
     runtime.start();
     await new Promise((r) => setTimeout(r, 100));
-    expect(context.config.config).toEqual(configMap);
-    expect(context.config.getConfig("appName")).toBe("test-app");
+    expect(context.config?.config).toEqual(configMap);
+    expect(context.config?.getConfig("appName")).toBe("test-app");
     await runtime.stop();
   });
 
@@ -190,9 +190,9 @@ describe("Config and env loading", () => {
     });
     runtime.start();
     await new Promise((r) => setTimeout(r, 100));
-    expect(context.config.config).toEqual({ appName: "myapp", port: 9000 });
-    expect(context.config.getConfig("appName")).toBe("myapp");
-    expect(context.config.getConfig("port")).toBe(9000);
+    expect(context.config?.config).toEqual({ appName: "myapp", port: 9000 });
+    expect(context.config?.getConfig("appName")).toBe("myapp");
+    expect(context.config?.getConfig("port")).toBe(9000);
     await runtime.stop();
   });
 
@@ -234,8 +234,8 @@ describe("Exponential backoff", () => {
     });
     runtime.start();
     const delays: number[] = [];
-    const unsub = runtime.subscribe((snapshot: { context?: { backoffDelay?: number }; value?: unknown }) => {
-      const delay = snapshot.context?.backoffDelay;
+    const unsub = runtime.subscribe((state: unknown) => {
+      const delay = (state as { context?: { backoffDelay?: number } }).context?.backoffDelay;
       if (delay != null) delays.push(delay);
     });
     await new Promise((r) => setTimeout(r, 200));
@@ -307,12 +307,12 @@ describe("Service failure handling", () => {
       const realHealthCheck = monitor.healthCheck.bind(monitor);
       const failingMonitor = {
         ...monitor,
-        async healthCheck(services: ServicesRegistry) {
+        async healthCheck(_services: ServicesRegistry) {
           healthCheckCount++;
           if (healthCheckCount >= 2) {
             return false;
           }
-          return realHealthCheck(services);
+          return realHealthCheck();
         },
       };
       const { app } = createMockApplication();
@@ -394,10 +394,10 @@ describe("Env and config injection by type", () => {
     });
     runtime.start();
     await new Promise((r) => setTimeout(r, 100));
-    expect(context.config.getConfig("appName")).toBe("woof");
-    expect(context.config.getConfig("port")).toBe(8080);
-    expect(context.config.config?.appName).toBe("woof");
-    expect(context.config.config?.port).toBe(8080);
+    expect(context.config?.getConfig("appName")).toBe("woof");
+    expect(context.config?.getConfig("port")).toBe(8080);
+    expect(context.config?.config.appName).toBe("woof");
+    expect(context.config?.config.port).toBe(8080);
     await runtime.stop();
   });
 });

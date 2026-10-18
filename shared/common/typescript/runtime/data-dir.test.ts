@@ -21,7 +21,9 @@ describe("data directory", () => {
     expect(resolveDataPath("/srv/woofx3/data.db", env)).toBe("/srv/woofx3/data.db");
   });
 
-  test("a relative data directory is made absolute", () => {
-    expect(dataDir({ [DATA_DIR_ENV]: "data" })).toBe(path.resolve("data"));
+  test("a relative data directory is refused", () => {
+    expect(() => dataDir({ [DATA_DIR_ENV]: "data" })).toThrow(DATA_DIR_ENV);
+    expect(() => dataDir({ [DATA_DIR_ENV]: "./data" })).toThrow(DATA_DIR_ENV);
+    expect(() => resolveDataPath("logs", { [DATA_DIR_ENV]: "data" })).toThrow(DATA_DIR_ENV);
   });
 });

@@ -13,6 +13,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
+	github.com/wolfymaster/woofx3/common/config v0.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.13.0 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
@@ -33,5 +34,7 @@ require (
 	google.golang.org/grpc v1.75.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )
+
+replace github.com/wolfymaster/woofx3/common/config => ../../shared/common/golang/config
 
 replace github.com/wolfymaster/woofx3/common/logging => ../../shared/common/golang/logging

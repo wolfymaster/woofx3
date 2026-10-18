@@ -30,7 +30,7 @@ readonly GO_MODULES=(
   db workflow services/nats build/orchestrator
   shared/clients/golang/barkloader shared/clients/golang/db shared/clients/golang/nats
   shared/clients/golang/servicediscovery shared/common/golang/cloudevents
-  shared/common/golang/logging shared/common/golang/runtime
+  shared/common/golang/config shared/common/golang/logging shared/common/golang/runtime
 )
 readonly RUST_ROOTS=(barkloader shared/common/rust/logging shared/common/rust/runtime)
 readonly TS_SERVICES=(api twitch woofwoofwoof sceneManager)

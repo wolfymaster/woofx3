@@ -130,6 +130,56 @@ describe("RequestGuard origins", () => {
   });
 });
 
+describe("RequestGuard desktop webview origins", () => {
+  const guard = guardFor(undefined, "tauri://localhost,http://tauri.localhost");
+
+  test("tauri://localhost can be listed and matches case-insensitively", () => {
+    expect(guard.reject(request({ origin: "tauri://localhost" }))).toBeNull();
+    expect(guard.reject(request({ origin: "TAURI://LocalHost" }))).toBeNull();
+  });
+
+  test("http://tauri.localhost, the Windows webview origin, matches", () => {
+    expect(guard.reject(request({ origin: "http://tauri.localhost" }))).toBeNull();
+  });
+
+  test("other non-special origins and null are not matched by accident", () => {
+    expect(guard.reject(request({ origin: "null" }))?.status).toBe(403);
+    expect(guard.reject(request({ origin: "tauri://evil" }))?.status).toBe(403);
+    expect(guard.reject(request({ origin: "other://localhost" }))?.status).toBe(403);
+    expect(guard.reject(request({ origin: "tauri://localhost:8080" }))?.status).toBe(403);
+    expect(guard.reject(request({ origin: "file:///etc/passwd" }))?.status).toBe(403);
+  });
+
+  test("a non-special scheme takes a wildcard port", () => {
+    const anyPort = guardFor(undefined, "tauri://localhost:*");
+    expect(anyPort.reject(request({ origin: "tauri://localhost:1430" }))).toBeNull();
+    expect(anyPort.reject(request({ origin: "tauri://localhost" }))).toBeNull();
+  });
+
+  test("an origin with no host cannot be listed", () => {
+    expect(() => parseRequestGuardPolicy({ allowedOrigins: "file:///" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parseRequestGuardPolicy({ allowedOrigins: "mailto:a@b.example" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+  });
+});
+
+describe("RequestGuard default ports", () => {
+  test("a rule naming port 80 or 443 matches a Host without a port", () => {
+    const guard = guardFor("engine.example:443,plain.example:80");
+    expect(guard.reject(request({ host: "engine.example" }))).toBeNull();
+    expect(guard.reject(request({ host: "engine.example:443" }))).toBeNull();
+    expect(guard.reject(request({ host: "plain.example" }))).toBeNull();
+    expect(guard.reject(request({ host: "engine.example:8443" }))?.status).toBe(421);
+  });
+});
+
+describe("parseRequestGuardPolicy coerced values", () => {
+  test("a value the config loader coerced to a boolean or number is refused", () => {
+    expect(() => parseRequestGuardPolicy({ allowedHosts: true })).toThrow("WOOFX3_ALLOWED_HOSTS");
+    expect(() => parseRequestGuardPolicy({ allowedHosts: 8080 })).toThrow("WOOFX3_ALLOWED_HOSTS");
+    expect(() => parseRequestGuardPolicy({ allowedOrigins: false })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+  });
+});
+
 describe("RequestGuard hosts and origins", () => {
   test("Host is checked before Origin", () => {
     const guard = guardFor("localhost", "http://localhost:*");

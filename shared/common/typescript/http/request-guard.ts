@@ -19,12 +19,17 @@
  *
  * Matching rules (documented in docs/services/deployment.md):
  * - Host entries are `name` or `name:port`, compared case-insensitively.
- *   A bare name matches it on any port; with a port, only that port.
- *   IPv6 literals are bracketed: `[::1]`, `[::1]:8080`.
+ *   A bare name matches it on any port; with a port, only that port. A
+ *   browser leaves a default port out of Host, so `name:80` and `name:443`
+ *   also match a Host with no port. IPv6 literals are bracketed: `[::1]`,
+ *   `[::1]:8080`.
  * - Origin entries are `scheme://host[:port]`, compared as serialized web
  *   origins, so the scheme's default port may be written or left out.
- *   `scheme://host:*` matches the host on any port. The literal `null`
- *   matches the opaque origin that sandboxed frames send; nothing else does.
+ *   `scheme://host:*` matches the host on any port. A scheme the URL
+ *   standard has no origin for, such as the `tauri://localhost` a desktop
+ *   webview sends, is compared as `scheme://host[:port]`, lowercased. The
+ *   literal `null` matches the opaque origin that sandboxed frames send;
+ *   nothing else does.
  */
 
 export interface RequestGuardPolicy {
@@ -54,14 +59,41 @@ export interface RequestGuardSettings {
 
 const OPAQUE_ORIGIN = "null";
 
+/**
+ * The URL standard's special schemes with a tuple origin. Every other scheme
+ * serializes its origin as "null", which would make `tauri://localhost`
+ * impossible to list and every such origin equal to every other.
+ */
+const TUPLE_ORIGIN_SCHEMES = new Set(["http:", "https:", "ws:", "wss:", "ftp:"]);
+
+/** Ports a browser leaves out of the Host header. */
+const DEFAULT_HOST_PORTS = new Set(["80", "443"]);
+
+/**
+ * The origin a rule and a request Origin are compared by, or null when the
+ * URL has none worth comparing (file:, or a scheme with no host).
+ */
+function comparableOrigin(url: URL): string | null {
+  if (TUPLE_ORIGIN_SCHEMES.has(url.protocol)) {
+    return url.origin;
+  }
+  if (url.protocol === "file:" || url.host === "") {
+    return null;
+  }
+  return `${url.protocol}//${url.host}`.toLowerCase();
+}
+
 /** Allows every Host and Origin, with CORS `*`. */
 export const OPEN_REQUEST_GUARD_POLICY: RequestGuardPolicy = { allowedHosts: null, allowedOrigins: null };
 
-function splitList(value: string | number | boolean | undefined): string[] | null {
+function splitList(name: string, value: string | number | boolean | undefined): string[] | null {
   if (value === undefined) {
     return null;
   }
-  const entries = String(value)
+  if (typeof value !== "string") {
+    throw new Error(`${name}: ${String(value)} is not a comma-separated list`);
+  }
+  const entries = value
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
@@ -102,16 +134,17 @@ function parseOriginRule(entry: string): OriginRule {
     throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" is not scheme://host[:port]`);
   }
   const hasPathOrMore = (url.pathname !== "/" && url.pathname !== "") || url.search !== "" || url.hash !== "";
-  if (url.origin === OPAQUE_ORIGIN || hasPathOrMore || url.username !== "" || url.password !== "") {
+  const origin = comparableOrigin(url);
+  if (origin === null || hasPathOrMore || url.username !== "" || url.password !== "") {
     throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" is not scheme://host[:port]`);
   }
   if (anyPort) {
     if (url.port !== "") {
       throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" names both a port and :*`);
     }
-    return { kind: "anyPort", protocol: url.protocol, hostname: url.hostname };
+    return { kind: "anyPort", protocol: url.protocol, hostname: url.hostname.toLowerCase() };
   }
-  return { kind: "exact", origin: url.origin };
+  return { kind: "exact", origin };
 }
 
 /**
@@ -119,8 +152,8 @@ function parseOriginRule(entry: string): OriginRule {
  * the service at startup rather than locking every client out at runtime.
  */
 export function parseRequestGuardPolicy(settings: RequestGuardSettings): RequestGuardPolicy {
-  const hosts = splitList(settings.allowedHosts);
-  const origins = splitList(settings.allowedOrigins);
+  const hosts = splitList("WOOFX3_ALLOWED_HOSTS", settings.allowedHosts);
+  const origins = splitList("WOOFX3_ALLOWED_ORIGINS", settings.allowedOrigins);
   return {
     allowedHosts: hosts ? hosts.map(parseHostRule) : null,
     allowedOrigins: origins ? origins.map(parseOriginRule) : null,
@@ -135,7 +168,11 @@ function hostAllowed(rules: readonly HostRule[], hostHeader: string | null): boo
   if (!parsed) {
     return false;
   }
-  return rules.some((rule) => rule.hostname === parsed.hostname && (rule.port === null || rule.port === parsed.port));
+  return rules.some(
+    (rule) =>
+      rule.hostname === parsed.hostname &&
+      (rule.port === null || rule.port === parsed.port || (parsed.port === null && DEFAULT_HOST_PORTS.has(rule.port)))
+  );
 }
 
 function originAllowed(rules: readonly OriginRule[], origin: string): boolean {
@@ -148,12 +185,16 @@ function originAllowed(rules: readonly OriginRule[], origin: string): boolean {
   } catch {
     return false;
   }
+  const comparable = comparableOrigin(url);
+  if (comparable === null) {
+    return false;
+  }
   return rules.some((rule) => {
     if (rule.kind === "exact") {
-      return rule.origin === url.origin;
+      return rule.origin === comparable;
     }
     if (rule.kind === "anyPort") {
-      return rule.protocol === url.protocol && rule.hostname === url.hostname;
+      return rule.protocol === url.protocol && rule.hostname === url.hostname.toLowerCase();
     }
     return false;
   });

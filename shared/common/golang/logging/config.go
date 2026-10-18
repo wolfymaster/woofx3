@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/wolfymaster/woofx3/common/config"
 )
 
 const (
@@ -18,9 +19,6 @@ const (
 	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
 	envPrettyTerminal       = "WOOFX3_LOG_PRETTY"
 	envLogDirectory         = "WOOFX3_LOG_DIR"
-
-	// dataDirEnv must match DataDirEnv in shared/common/golang/runtime/datadir.go.
-	dataDirEnv = "WOOFX3_DATA_DIR"
 )
 
 type Fields map[string]any
@@ -84,6 +82,9 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		}
 	}
 
+	if err := config.CheckDataDir(); err != nil {
+		return resolvedConfig{}, err
+	}
 	logDirectory := ResolveLogDirectory(cfg.LogDirectory)
 
 	enableTerminal := cfg.EnableTerminalTransport
@@ -204,18 +205,12 @@ func normalizeKey(key string) string {
 // WOOFX3_LOG_DIR, else ./logs.
 func ResolveLogDirectory(configured string) string {
 	fromEnv := strings.TrimSpace(os.Getenv(envLogDirectory))
-	if dataDir := strings.TrimSpace(os.Getenv(dataDirEnv)); dataDir != "" {
-		if abs, err := filepath.Abs(dataDir); err == nil {
-			dataDir = abs
-		}
+	if dataDir := config.DataDir(); dataDir != "" {
 		logDirectory := fromEnv
 		if logDirectory == "" {
 			logDirectory = defaultLogDirectory
 		}
-		if filepath.IsAbs(logDirectory) {
-			return logDirectory
-		}
-		return filepath.Join(dataDir, logDirectory)
+		return config.ResolveDataPathIn(dataDir, logDirectory)
 	}
 
 	if logDirectory := strings.TrimSpace(configured); logDirectory != "" {

@@ -44,6 +44,10 @@ func main() {
 	if err != nil {
 		fatalExit(sharedLogger, "Failed to resolve ports", "error", err)
 	}
+	if reachableWithoutToken(host, cfg.Token) {
+		logger.Warn("NATS listens beyond loopback without a token: anyone who can reach it can read and publish every engine message; set WOOFX3_MESSAGEBUS_TOKEN",
+			"host", host)
+	}
 
 	ns, err := createServer(cfg, logger, host, wsPort)
 	if err != nil {

@@ -6,6 +6,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.12.2
 	github.com/nats-io/nats.go v1.47.0
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
+	github.com/wolfymaster/woofx3/common/config v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
 )
 
@@ -45,6 +46,8 @@ require (
 	google.golang.org/grpc v1.75.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )
+
+replace github.com/wolfymaster/woofx3/common/config => ../../shared/common/golang/config
 
 replace github.com/wolfymaster/woofx3/common/logging => ../../shared/common/golang/logging
 
