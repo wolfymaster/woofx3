@@ -322,8 +322,11 @@ type Supervisor struct {
 
 	clock        clock
 	startProcess processStarter
-	checkHealth  func(endpoint string) bool
-	reporter     *statusReporter
+	checkHealth  func(ctx context.Context, endpoint string) bool
+	// httpClient makes the health checks; one client, so they reuse
+	// connections.
+	httpClient *http.Client
+	reporter   *statusReporter
 	// childStdin replaces the orchestrator's stdin for the services when set.
 	childStdin *os.File
 	// childOutputDirectory, when set, receives each service's stdout and
@@ -333,7 +336,7 @@ type Supervisor struct {
 
 func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Supervisor{
+	supervisor := &Supervisor{
 		baseDir:      baseDir,
 		services:     make(map[string]*ServiceProcess),
 		stopping:     false,
@@ -342,8 +345,10 @@ func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 		cancel:       cancel,
 		clock:        systemClock{},
 		startProcess: startOSProcess,
-		checkHealth:  checkHealthOverHTTP,
+		httpClient:   &http.Client{Timeout: healthRequestTimeout},
 	}
+	supervisor.checkHealth = supervisor.checkHealthOverHTTP
+	return supervisor
 }
 
 func (s *Supervisor) AddService(service Service) {
@@ -633,7 +638,7 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 			s.logger.Info("Service started (no health check)", "service", service.Name)
 		}
 	case status == StatusStarting:
-		if s.checkHealth(healthURL) {
+		if s.checkHealth(s.ctx, healthURL) {
 			if s.transition(serviceProcess, process, StatusStarting, StatusHealthy) {
 				s.logger.Info("Service is healthy", "service", service.Name)
 			}
@@ -643,7 +648,7 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 			}
 		}
 	case status == StatusHealthy && healthURL != "":
-		if !s.checkHealth(healthURL) {
+		if !s.checkHealth(s.ctx, healthURL) {
 			if s.transition(serviceProcess, process, StatusHealthy, StatusUnhealthy) {
 				s.logger.Warn("Service became unhealthy", "service", service.Name)
 			}
@@ -653,7 +658,7 @@ func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
 			s.mu.Unlock()
 		}
 	case status == StatusUnhealthy && healthURL != "":
-		if s.checkHealth(healthURL) {
+		if s.checkHealth(s.ctx, healthURL) {
 			if s.transition(serviceProcess, process, StatusUnhealthy, StatusHealthy) {
 				s.logger.Info("Service is healthy", "service", service.Name)
 			}
@@ -789,16 +794,22 @@ func expandEndpoint(endpoint string, getenv func(string) string) string {
 	})
 }
 
-func checkHealthOverHTTP(endpoint string) bool {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
+// healthRequestTimeout bounds one health check request.
+const healthRequestTimeout = 5 * time.Second
 
-	resp, err := client.Get(endpoint)
+// checkHealthOverHTTP reports whether a GET of endpoint answers 200. A
+// cancelled ctx ends the request at once.
+func (s *Supervisor) checkHealthOverHTTP(ctx context.Context, endpoint string) bool {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		s.logger.Warn("Health endpoint is not a valid request", "endpoint", endpoint, "error", err)
+		return false
+	}
+	response, err := s.httpClient.Do(request)
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
 
-	return resp.StatusCode == 200
+	return response.StatusCode == http.StatusOK
 }

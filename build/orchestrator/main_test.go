@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -311,7 +313,7 @@ func newFakeSupervisor(t *testing.T, services []Service, healthy func(endpoint s
 	supervisor := NewSupervisor(baseDir, discardLogger())
 	supervisor.clock = clock
 	supervisor.startProcess = processes.start
-	supervisor.checkHealth = healthy
+	supervisor.checkHealth = func(_ context.Context, endpoint string) bool { return healthy(endpoint) }
 	supervisor.reporter = reporter
 	for _, service := range services {
 		if err := os.WriteFile(filepath.Join(baseDir, binaryFileName(service)), []byte{}, 0o755); err != nil {
@@ -785,5 +787,62 @@ func TestNoSupervisorGoroutineOutlivesStopAll(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("supervisor goroutines still running after StopAll returned")
+	}
+}
+
+func TestAHealthCheckPassesOnlyOn200(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		want   bool
+	}{
+		{name: "ok", status: http.StatusOK, want: true},
+		{name: "no content", status: http.StatusNoContent, want: false},
+		{name: "unavailable", status: http.StatusServiceUnavailable, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			defer server.Close()
+			supervisor := NewSupervisor(t.TempDir(), discardLogger())
+
+			if got := supervisor.checkHealth(context.Background(), server.URL); got != tc.want {
+				t.Errorf("check of a %d = %v, want %v", tc.status, got, tc.want)
+			}
+		})
+	}
+}
+
+// StopAll cancels the supervisor's context; a check of a service that hangs
+// must end with it rather than hold StopAll for the request timeout.
+func TestAHealthCheckEndsWhenItsContextIsCancelled(t *testing.T) {
+	release := make(chan struct{})
+	arrived := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	ctx, cancel := context.WithCancel(context.Background())
+
+	result := make(chan bool, 1)
+	go func() { result <- supervisor.checkHealth(ctx, server.URL) }()
+	<-arrived
+	cancel()
+
+	select {
+	case healthy := <-result:
+		if healthy {
+			t.Error("a cancelled check passed")
+		}
+	case <-time.After(healthRequestTimeout / 2):
+		t.Fatal("the check did not end when its context was cancelled")
 	}
 }
