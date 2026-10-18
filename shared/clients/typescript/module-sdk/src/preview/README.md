@@ -82,17 +82,32 @@ uninstall();
 
 - `host` — the `WidgetHost` object (assign to `window.widgetHost` or
   pass into your widget directly).
-- `fireEvent(event)` — synchronous dispatch to every `onEvent`
-  subscriber.
-- `setStorage(key, value)` — fires `storage.subscribe` callbacks for
-  matching keys.
+- `fireEvent(event)` — an event arrives for the placement. It goes to the
+  newest `onEvent` subscription only, through that subscription's queue:
+  `maxInFlight` events open at once (1 by default), each completed when
+  the handler returns unless `autoComplete` is `false`, and completed
+  anyway if the handler throws. An event id already delivered is dropped,
+  and an event with no subscription to take it is lost.
+- `setStorage(key, value)` — changes the key on the engine and fires
+  `storage.subscribe` callbacks for it.
+- `setSettings(settings)` — replaces `host.settings`, as an edit in the
+  scene editor would.
 - `onReport(handler)` — taps every `reportStatus` / `reportComplete`
   call.
+- `onComplete(handler)` — taps every event the widget completes, by id.
 - `install()` — assigns `host` to `globalThis.window.widgetHost`,
   returns an uninstall.
-- `reset()` — drops every subscriber + clears the storage cache.
+- `reset()` — drops every subscriber, queued event and storage value.
 
-The mock contract mirrors the real `createWidgetHost` factory in
-`streamware/ui/src/lib/widgetHost.ts` exactly — same fire-on-subscribe
-semantics, same return shapes. A widget that runs against the mock
-behaves identically against streamware.
+Storage behaves as on stream: `storage.get` answers `null` until the
+widget has subscribed to the key, and a subscriber is called back with
+the key's value (`null` when it holds none) once it has been read. A
+mock created without the `storage` capability gives the widget no
+storage at all, like an alert frame.
+
+The mock is held to the same behavior as the real host (the widget host
+shim and the scene manager's overlay page) by a contract suite that runs
+the same cases against both: `sceneManager/tests/widget-host-contract`.
+A widget that runs against the mock behaves the same on stream. Left
+out: reconnects and redelivery, queue timeouts (`retryTimeoutMs`), and
+`priorityExpr` ordering.

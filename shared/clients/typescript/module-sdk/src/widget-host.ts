@@ -31,9 +31,9 @@ export interface WidgetHostStorage {
 
   /**
    * Register `cb` for every subsequent change to `(moduleId, key)`.
-   * Returns an unsubscribe function. The callback fires once at
-   * subscription time with the cached value when one exists, then on
-   * every subsequent change.
+   * Returns an unsubscribe function. The callback fires once the host has
+   * read the key's current value (`null` when it holds none), then on every
+   * subsequent change.
    *
    * `"setting:" + id` reads one of the module's `list` settings instead of
    * its storage: the rows, an array of objects keyed by the setting's
@@ -117,16 +117,16 @@ export type WidgetSurface = "scene" | "alert";
 export interface WidgetEvent {
   /** Event type, e.g. `"alert"`. */
   type: string;
-  /** CloudEvent source (e.g. `"twitch"`, `"streamware"`). */
+  /** Who handed the event to the widget, e.g. `"scene-manager"`. */
   source: string;
   /** RFC3339 timestamp from the underlying CloudEvent. */
   time: string;
   /** Event payload — opaque at this boundary. Widgets parse based on
    *  the documented schema for `type`. */
   data: unknown;
-  /** Host-assigned id for this specific delivery, unique per delivery
-   *  attempt (a redelivered/retried event gets a fresh id). Echoed
-   *  back on `event.complete`; also the correlation key for the
+  /** Host-assigned id for this delivery, kept when the host sends it again
+   *  (after a reconnect, say), so a widget is never handed one event twice.
+   *  Echoed back on `event.complete`; also the correlation key for the
    *  server-side durable-delivery log. */
   eventId: string;
 }

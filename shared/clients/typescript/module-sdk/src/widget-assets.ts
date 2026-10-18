@@ -42,6 +42,18 @@ export class WidgetAssetError extends Error {
     this.code = code;
     this.ref = ref;
   }
+
+  // On stream the error is thrown by the widget host shim, a bundle of its
+  // own, while a widget checks it against the class from its own copy of the
+  // SDK. Recognised by shape, `instanceof` holds across the two.
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return (
+      value instanceof Error &&
+      value.name === "WidgetAssetError" &&
+      isWidgetAssetErrorCode((value as { code?: unknown }).code) &&
+      typeof (value as { ref?: unknown }).ref === "string"
+    );
+  }
 }
 
 /** Path prefixes of the files the engine stores for widgets to read. Must

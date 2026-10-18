@@ -5,12 +5,14 @@
 // `widget-preview.html` harness (which loads any widget URL with this
 // shim already wired up).
 //
-// The contract surface mirrors the real `createWidgetHost` factory in
-// `streamware/ui/src/lib/widgetHost.ts` exactly — same storage cache
-// semantics, same event delivery shape, same fire-on-subscribe
-// behaviour. A widget that runs against this mock behaves identically
-// against streamware (sans the WS reconnect / persistence side
-// effects).
+// It behaves as a widget's host does on stream: the widget host shim talking
+// to the scene manager's overlay page. Storage is seen only once watched, a
+// placement's events go through one queue with the subscription's policy,
+// and asset reads are judged as the engine judges them. The scene manager's
+// contract suite (sceneManager/tests/widget-host-contract) runs the same
+// cases against this mock and against the shim and page, so the two cannot
+// drift apart unnoticed. What it leaves out is the network: no reconnects,
+// no redelivery, no queue timeouts, and no `priorityExpr` ordering.
 
 import type {
   DeliveredWidgetEvent,
@@ -51,9 +53,11 @@ export interface MockHostOptions {
   theme?: WidgetHost["theme"];
   /** Surfaced as `widgetHost.linkedResources`; defaults to none. */
   linkedResources?: Record<string, string>;
-  /** Initial storage cache: `{ "<moduleId>:<key>": value }` or
-   *  `{ "<key>": value }` (the moduleId from `opts.moduleId` is
-   *  prepended automatically when the key has no `:`). */
+  /** What the engine holds in module storage: `{ "<moduleId>:<key>": value }`
+   *  or `{ "<key>": value }` (the moduleId from `opts.moduleId` is
+   *  prepended automatically when the key has no `:`). As on stream, the
+   *  host has seen a key only once the widget subscribes to it. Ignored
+   *  without the `storage` capability, as a frame given no storage sees none. */
   storage?: Record<string, unknown>;
   /** Base URL `getResourceUrl` resolves paths against. */
   resourceBaseUrl?: string;
@@ -70,6 +74,8 @@ export interface MockHostOptions {
    * on stream.
    */
   assets?: Record<string, string | ArrayBuffer>;
+  /** How a file not in `assets` is fetched; the global `fetch` by default. */
+  fetchFn?: (url: string) => Promise<Response>;
 }
 
 /** `fireEvent` input — `eventId` is optional; the mock assigns one
@@ -83,17 +89,18 @@ export interface MockHostController {
   readonly host: WidgetHost;
 
   /**
-   * Inject a `WidgetEvent` as if it arrived via `onEvent`. Synchronous
-   * — every subscribed handler fires before the call returns. `eventId`
-   * is optional; the mock assigns one when omitted. The delivered
-   * event's `complete()` is a no-op — this mock doesn't simulate queue
-   * timing/retry, only delivery.
+   * An event for this placement arrives, as the overlay would hand it to the
+   * widget: to the newest `onEvent` subscription only, through its queue
+   * (`maxInFlight` open at once, completed when the handler returns unless
+   * `autoComplete` is false, and when it throws). An event id already
+   * delivered is dropped, and an event with no subscription to take it is
+   * lost. `eventId` is optional; the mock assigns one when omitted.
    */
   fireEvent(event: MockFireEventInput): void;
 
   /**
-   * Mutate a storage key. Fires every `storage.subscribe` callback
-   * registered for `(moduleId, key)`. Use a colon-prefixed key to
+   * Change a storage key on the engine. Fires every `storage.subscribe`
+   * callback registered for `(moduleId, key)`. Use a colon-prefixed key to
    * write into a different module's storage namespace.
    */
   setStorage(key: string, value: unknown): void;
@@ -112,6 +119,9 @@ export interface MockHostController {
    */
   onReport(handler: (report: WidgetStatusReport) => void): () => void;
 
+  /** Tap into the events the widget completes, by id. Returns an unsubscribe. */
+  onComplete(handler: (eventId: string) => void): () => void;
+
   /**
    * Replace `globalThis.window.widgetHost` with the mock. Returns an
    * uninstall function that restores the previous value. Safe to call
@@ -128,6 +138,14 @@ interface StorageSubscription {
   cb: (value: unknown) => void;
 }
 
+interface EventSubscription {
+  handler: WidgetEventHandler;
+  queue: EventQueueConfig;
+}
+
+/** How many delivered event ids the mock remembers to drop repeats, as the overlay does. */
+const REMEMBERED_EVENTS = 256;
+
 const SCOPED_KEY_RE = /^[^:]+:[^:].*$/;
 
 function scope(moduleId: string, key: string): string {
@@ -137,33 +155,78 @@ function scope(moduleId: string, key: string): string {
 export function createMockHost(opts: MockHostOptions = {}): MockHostController {
   const moduleId = opts.moduleId ?? "preview";
   const instanceId = opts.instanceId ?? `${moduleId}-preview`;
+  const capabilities: readonly WidgetCapability[] = Object.freeze([...(opts.capabilities ?? WIDGET_CAPABILITIES)]);
+  const hasStorage = capabilities.includes("storage");
   let settings: Readonly<Record<string, unknown>> = Object.freeze({ ...(opts.settings ?? {}) });
 
-  const cache = new Map<string, unknown>();
-  if (opts.storage) {
+  // What the engine holds, and what of it the host has seen: a key is seen
+  // once the widget subscribes to it, as the overlay loads a key only then.
+  const engineStorage = new Map<string, unknown>();
+  const seen = new Map<string, unknown>();
+  if (opts.storage && hasStorage) {
     for (const [k, v] of Object.entries(opts.storage)) {
-      cache.set(scope(moduleId, k), v);
+      engineStorage.set(scope(moduleId, k), v);
     }
   }
   const storageSubs = new Set<StorageSubscription>();
-  const eventSubs = new Set<{ handler: WidgetEventHandler; queue?: EventQueueConfig }>();
   const reportSubs = new Set<(r: WidgetStatusReport) => void>();
+  const completeSubs = new Set<(eventId: string) => void>();
   const resourceBaseUrl = opts.resourceBaseUrl ?? "https://preview.local/resources";
+  const fetchFn = opts.fetchFn ?? ((url: string) => fetch(url));
   let nextMockEventId = 0;
+
+  // The placement's one queue: the overlay keeps a queue for the newest
+  // subscription only, so a second `onEvent` takes the events from the first.
+  let current: EventSubscription | null = null;
+  const pending: DeliveredWidgetEvent[] = [];
+  const inFlight = new Set<string>();
+  const known = new Set<string>();
+
+  function remember(eventId: string): void {
+    known.add(eventId);
+    if (known.size > REMEMBERED_EVENTS) {
+      known.delete(known.values().next().value as string);
+    }
+  }
+
+  function notifyStorage(scoped: string, value: unknown): void {
+    const bareKey = scoped.startsWith(`${moduleId}:`) ? scoped.slice(moduleId.length + 1) : scoped;
+    for (const sub of storageSubs) {
+      if (sub.key === bareKey) {
+        try {
+          sub.cb(value);
+        } catch (err) {
+          console.error("[mock-host] storage subscriber threw", err);
+        }
+      }
+    }
+  }
 
   const storage: WidgetHostStorage = {
     async get(key: string): Promise<unknown> {
-      return cache.has(scope(moduleId, key)) ? cache.get(scope(moduleId, key)) : null;
+      return seen.get(scope(moduleId, key)) ?? null;
     },
     subscribe(key: string, cb: (value: unknown) => void): () => void {
+      if (!hasStorage) {
+        return () => {};
+      }
       const sub: StorageSubscription = { key, cb };
       storageSubs.add(sub);
-      // Mirror the real factory's fire-on-subscribe behaviour: if a
-      // value is already cached, deliver it on the next microtask.
-      const cached = cache.get(scope(moduleId, key));
-      if (cached !== undefined) {
-        queueMicrotask(() => cb(cached));
-      }
+      const scoped = scope(moduleId, key);
+      // Called back with what the engine holds, null included, once it is
+      // read: on stream that is a fetch away, never synchronous.
+      queueMicrotask(() => {
+        if (!storageSubs.has(sub)) {
+          return;
+        }
+        const value = engineStorage.get(scoped) ?? null;
+        seen.set(scoped, value);
+        try {
+          cb(value);
+        } catch (err) {
+          console.error("[mock-host] storage subscriber threw", err);
+        }
+      });
       return () => {
         storageSubs.delete(sub);
       };
@@ -206,7 +269,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       }
       let response: Response;
       try {
-        response = await fetch(url);
+        response = await fetchFn(url.href);
       } catch (err) {
         throw new WidgetAssetError("unavailable", refUrl, err instanceof Error ? err.message : String(err));
       }
@@ -235,13 +298,47 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     }
   }
 
+  function complete(eventId: string): void {
+    if (!inFlight.delete(eventId)) {
+      return;
+    }
+    for (const fn of completeSubs) {
+      try {
+        fn(eventId);
+      } catch (err) {
+        console.error("[mock-host] complete subscriber threw", err);
+      }
+    }
+    pump();
+  }
+
+  function pump(): void {
+    while (current !== null && pending.length > 0 && inFlight.size < (current.queue.maxInFlight ?? 1)) {
+      const event = pending.shift()!;
+      const sub = current;
+      inFlight.add(event.eventId);
+      try {
+        sub.handler(event);
+      } catch (err) {
+        // As on stream: a handler that throws will never complete the event
+        // itself, and every later event would wait behind it.
+        console.error("[mock-host] event subscriber threw; completing the event", err);
+        complete(event.eventId);
+        continue;
+      }
+      if (sub.queue.autoComplete !== false) {
+        complete(event.eventId);
+      }
+    }
+  }
+
   const host: WidgetHost = {
     surface: opts.surface ?? "scene",
     theme: opts.theme ?? null,
     linkedResources: Object.freeze({ ...(opts.linkedResources ?? {}) }),
     moduleId,
     instanceId,
-    capabilities: Object.freeze([...(opts.capabilities ?? WIDGET_CAPABILITIES)]),
+    capabilities,
     get settings() {
       return settings;
     },
@@ -251,10 +348,13 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       return resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
     },
     onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void {
-      const sub = { handler, queue };
-      eventSubs.add(sub);
+      const sub: EventSubscription = { handler, queue: queue ?? {} };
+      current = sub;
+      pump();
       return () => {
-        eventSubs.delete(sub);
+        if (current === sub) {
+          current = null;
+        }
       };
     },
     reportStatus(key: string, value: unknown): void {
@@ -271,36 +371,19 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     host,
     fireEvent(event: MockFireEventInput): void {
       const eventId = event.eventId && event.eventId.length > 0 ? event.eventId : `mock-evt-${++nextMockEventId}`;
-      const delivered: DeliveredWidgetEvent = {
-        ...event,
-        eventId,
-        // This mock simulates delivery, not queue timing/retry — complete()
-        // is a no-op rather than a real acknowledgement.
-        complete: () => {},
-      };
-      for (const sub of eventSubs) {
-        try {
-          sub.handler(delivered);
-        } catch (err) {
-          console.error("[mock-host] event subscriber threw", err);
-        }
+      if (current === null || known.has(eventId)) {
+        return;
       }
+      remember(eventId);
+      pending.push({ ...event, eventId, complete: () => complete(eventId) });
+      pump();
     },
     setStorage(key: string, value: unknown): void {
       const scoped = scope(moduleId, key);
-      cache.set(scoped, value);
-      // Fire matching subscribers. The bare-key check matches the real
-      // factory's filter (it scopes by the host's own moduleId and
-      // matches the bare key the widget passed to .subscribe).
-      const bareKey = scoped.startsWith(`${moduleId}:`) ? scoped.slice(moduleId.length + 1) : scoped;
-      for (const sub of storageSubs) {
-        if (sub.key === bareKey) {
-          try {
-            sub.cb(value);
-          } catch (err) {
-            console.error("[mock-host] storage subscriber threw", err);
-          }
-        }
+      engineStorage.set(scoped, value);
+      if (hasStorage && seen.has(scoped)) {
+        seen.set(scoped, value);
+        notifyStorage(scoped, value);
       }
     },
     setSettings(next: Record<string, unknown>): void {
@@ -310,6 +393,12 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       reportSubs.add(handler);
       return () => {
         reportSubs.delete(handler);
+      };
+    },
+    onComplete(handler: (eventId: string) => void): () => void {
+      completeSubs.add(handler);
+      return () => {
+        completeSubs.delete(handler);
       };
     },
     install(): () => void {
@@ -335,10 +424,15 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       };
     },
     reset(): void {
-      cache.clear();
+      engineStorage.clear();
+      seen.clear();
       storageSubs.clear();
-      eventSubs.clear();
       reportSubs.clear();
+      completeSubs.clear();
+      current = null;
+      pending.length = 0;
+      inFlight.clear();
+      known.clear();
     },
   };
 }

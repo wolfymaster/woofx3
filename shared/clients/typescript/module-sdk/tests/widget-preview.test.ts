@@ -24,11 +24,14 @@ describe("createMockHost", () => {
     }).toThrow();
   });
 
-  it("storage.get returns initial cached value, null when absent", async () => {
+  it("storage.get answers null until the widget subscribes to a key, as on stream", async () => {
     const ctrl = createMockHost({
       moduleId: "counter",
       storage: { count: 7 },
     });
+    expect(await ctrl.host.storage.get("count")).toBeNull();
+    ctrl.host.storage.subscribe("count", () => {});
+    await Promise.resolve();
     expect(await ctrl.host.storage.get("count")).toBe(7);
     expect(await ctrl.host.storage.get("nope")).toBeNull();
   });
@@ -51,7 +54,7 @@ describe("createMockHost", () => {
     expect(cb).toHaveBeenCalledTimes(2); // still
   });
 
-  it("fireEvent dispatches to every onEvent subscriber", () => {
+  it("fireEvent hands the event to the newest onEvent subscription only, as on stream", () => {
     const ctrl = createMockHost();
     const a = mock(() => {});
     const b = mock(() => {});
@@ -63,7 +66,7 @@ describe("createMockHost", () => {
       time: "2026-05-09T00:00:00Z",
       data: { userName: "alice" },
     });
-    expect(a).toHaveBeenCalledTimes(1);
+    expect(a).toHaveBeenCalledTimes(0);
     expect(b).toHaveBeenCalledTimes(1);
   });
 
