@@ -1,3 +1,4 @@
+import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
@@ -12,6 +13,8 @@ export interface ApiConfig {
    * Reported publicly by `GET /health`.
    */
   engineName: string | null;
+  /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
+  hosting: EngineHosting | null;
   /**
    * Secret a caller must present to register (`WOOFX3_REGISTRATION_TOKEN`),
    * or null when registration is open.
@@ -65,6 +68,7 @@ export const ApiEnvSchema = z
     apiHost: z.string().optional(),
     woofx3Version: z.union([z.string(), z.number()]).optional(),
     woofx3EngineName: z.string().optional(),
+    woofx3Hosting: z.string().optional(),
     woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
@@ -110,6 +114,23 @@ function assertValidHttpUrl(label: string, value: string): void {
   }
 }
 
+/**
+ * `WOOFX3_HOSTING` as an `EngineHosting`, or null when unset or blank. Any
+ * other value stops startup: a deployment that declares how it is run must
+ * not be reported as one that did not.
+ */
+export function resolveHosting(value: unknown): EngineHosting | null {
+  const raw = String(value ?? "").trim();
+  if (raw === "") {
+    return null;
+  }
+  const hosting = parseEngineHosting(raw);
+  if (hosting === null) {
+    throw new Error(`Config error: WOOFX3_HOSTING must be one of ${ENGINE_HOSTINGS.join(", ")}, got ${raw}`);
+  }
+  return hosting;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -118,6 +139,7 @@ export function loadConfig(): ApiConfig {
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
   const engineName = String(config.woofx3EngineName ?? "").trim() || null;
+  const hosting = resolveHosting(config.woofx3Hosting);
   const registrationToken =
     config.woofx3RegistrationToken === undefined || String(config.woofx3RegistrationToken).trim() === ""
       ? null
@@ -173,6 +195,7 @@ export function loadConfig(): ApiConfig {
   return {
     version,
     engineName,
+    hosting,
     registrationToken,
     port,
     host,

@@ -51,6 +51,12 @@ baked `/app/.woofx3.json`, and a blank value never overrides a non-blank one, so
 the file only supplies defaults. See [Runtime](./runtime.md) for how keys map to
 variable names.
 
+To read the config from somewhere other than the working directory and its
+parents, set `WOOFX3_ROOT` (the directory holding `.woofx3.json` and `.env`) or
+`WOOFX3_CONFIG` (the config file itself). Unset, every service searches upward
+from its working directory as before. See
+[Finding the config](./runtime.md#finding-the-config).
+
 ## Host and Origin checks
 
 The api and sceneManager can refuse requests by their `Host` and `Origin`
@@ -260,6 +266,12 @@ holds only descriptive facts that are safe for anyone to read:
   [engine-capabilities.md](engine-capabilities.md)), readable without a
   registered client. `schema` is `ENGINE_CAPABILITIES_SCHEMA`. The example
   above is shortened; a real engine lists every id it supports.
+  It includes the hosting ids for `WOOFX3_HOSTING`, as below.
+
+`WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
+`getEngineInfo()` reports it as `hosting`, and `local` adds the
+`engine.localMode` capability. Unset, `getEngineInfo()` has no `hosting` field
+and no hosting capability is listed; any other value stops the api at startup.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything

@@ -261,6 +261,27 @@ Configuration is loaded from (in order of precedence):
 2. **`.env`** - Environment variables
 3. **Process environment** - `process.env`
 
+### Finding the config
+
+The TypeScript, Go and Rust runtimes, and the NATS server, find the config the
+same way. The first match wins:
+
+| Source | Config file | `.env` |
+|---|---|---|
+| An explicit root passed in code (`rootDir` / `RootDir`), or NATS's `-conf` flag | `.woofx3.json` in that root (the `-conf` file for NATS) | that root (the `-conf` file's directory) |
+| `WOOFX3_CONFIG` | the file it names, which must exist | `WOOFX3_ROOT` if set, else the file's directory |
+| `WOOFX3_ROOT` | `.woofx3.json` in that directory, if present | that directory |
+| Neither set | `.woofx3.json` in the nearest directory at or above the working directory that holds a config file | that directory |
+
+A `WOOFX3_CONFIG` naming a missing file stops the service at startup: a
+deployment that names its config file should not start on defaults instead.
+Under `WOOFX3_ROOT` a missing file is fine, as everywhere else: the service is
+then configured by variables alone. When neither variable is set, NATS falls
+back to the config files next to its executable if the search finds none; with
+either variable set it does not.
+
+Rust services read no `.env` file; for them only the config file column applies.
+
 The runtime validates configuration against a Zod schema (TypeScript) or schema (Go):
 
 ::: code-group
