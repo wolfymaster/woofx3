@@ -15,7 +15,7 @@ import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
+import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiReplyCode, twitchApiErrorCodeOf } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
 import type MessageBusService from "./services/messageBus";
@@ -440,7 +440,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * (e.g. `missing_scope` means relink Twitch, `rate_limited` means wait);
    * absent for everything else.
    */
-  private respondError(msg: Msg, error: string, code?: string) {
+  private respondError(msg: Msg, error: string, code?: TwitchApiReplyCode) {
     const envelope = {
       id: crypto.randomUUID(),
       type: "twitchapi.error",

@@ -9,7 +9,12 @@ import { type HelixAuth, runHelixOperation } from "./helix";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 
-export { TwitchApiError, type TwitchApiErrorCode, twitchApiErrorCodeOf } from "./twitchApiError";
+export {
+  TwitchApiError,
+  type TwitchApiErrorCode,
+  type TwitchApiReplyCode,
+  twitchApiErrorCodeOf,
+} from "./twitchApiError";
 
 /**
  * Each Twitch API method returns a plain data shape — the dispatcher in
