@@ -85,6 +85,11 @@ class OverlayStream {
   }
 }
 
+/** The scene manager's last log lines, for a failure to say what it was doing. */
+function recentLogs(booted: BootedSceneManager): string {
+  return JSON.stringify(booted.logs.filter((l) => l.level !== "debug").slice(-15));
+}
+
 describe.skipIf(!started.ok)("scene manager smoke", () => {
   const bus = started.ok ? started.bus : (null as unknown as MessageBus);
   let sm: BootedSceneManager;
@@ -233,9 +238,8 @@ describe.skipIf(!started.ok)("scene manager smoke", () => {
           })
         )
       );
-      const delivery = await stream.next("delivery").catch((err) => {
-        console.log(JSON.stringify(sm.logs.filter((l) => l.level !== "debug").slice(-15), null, 1));
-        throw err;
+      const delivery = await stream.next("delivery").catch((err: unknown) => {
+        throw new Error(`${err instanceof Error ? err.message : String(err)}; last logs: ${recentLogs(sm)}`);
       });
       expect(delivery.kind).toBe("delivery");
       const frame = (delivery as Extract<StreamFrame, { kind: "delivery" }>).frame;

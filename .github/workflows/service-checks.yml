@@ -82,7 +82,7 @@ jobs:
         if: matrix.service == 'sceneManager'
         uses: actions/setup-go@v5
         with:
-          go-version-file: services/nats/go.mod
+          go-version: "1.25"
           cache-dependency-path: services/nats/go.sum
 
       - name: Build the message bus
