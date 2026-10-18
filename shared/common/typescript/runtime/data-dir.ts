@@ -4,7 +4,7 @@ import path from "node:path";
  * Names the directory that holds everything an engine writes: databases, module storage, uploaded
  * modules, caches and logs. Read from the process environment only, never from .woofx3.json, so
  * every service and the orchestrator that starts them agree on it.
- * Must match DataDirEnv in shared/common/golang/runtime/datadir.go and DATA_DIR_ENV in
+ * Must match DataDirEnv in shared/common/golang/config/datadir.go and DATA_DIR_ENV in
  * shared/common/rust/runtime/src/lib.rs.
  */
 export const DATA_DIR_ENV = "WOOFX3_DATA_DIR";

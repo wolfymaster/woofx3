@@ -206,7 +206,7 @@ impl Config {
 /// module storage, uploaded modules, caches and logs. Read from the process
 /// environment only, never from `.woofx3.json`, so every service and the
 /// orchestrator that starts them agree on it. Must match `DataDirEnv` in
-/// `shared/common/golang/runtime/datadir.go` and `DATA_DIR_ENV` in
+/// `shared/common/golang/config/datadir.go` and `DATA_DIR_ENV` in
 /// `shared/common/typescript/runtime/data-dir.ts`.
 pub const DATA_DIR_ENV: &str = "WOOFX3_DATA_DIR";
 

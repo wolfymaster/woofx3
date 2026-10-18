@@ -315,7 +315,7 @@ relative `WOOFX3_DATA_DIR` is resolved against the working directory. Rust
 services also accept `logDir` from `.woofx3.json` in place of `WOOFX3_LOG_DIR`,
 as they do without a data directory.
 
-The helpers are `ResolveDataPath` (Go, `common/runtime`), `resolveDataPath`
+The helpers are `ResolveDataPath` (Go, `common/config`, re-exported by `common/runtime`), `resolveDataPath`
 (TypeScript, `@woofx3/common/runtime`) and `resolve_data_path` (Rust,
 `woofx3_runtime`); the shared loggers apply the log rule themselves.
 
