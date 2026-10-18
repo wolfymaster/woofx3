@@ -261,7 +261,14 @@ func (e *Engine[TServices]) RegisterValidatedAction(name string, action tasks.Ac
 // accepted, each by the rules of its type. A disabled step is skipped: it never
 // runs, and disabling a broken step is how an author gets the rest of the
 // workflow running again.
+//
+// The step graph is checked whole, disabled steps included, because every run
+// builds it from all of them: a duplicate id, a dependency or branch naming a
+// missing step, or a cycle would otherwise register fine and fail every run.
 func (e *Engine[TServices]) validateDefinition(def *types.WorkflowDefinition) error {
+	if _, err := NewDependencyGraph(def.Tasks); err != nil {
+		return err
+	}
 	for i := range def.Tasks {
 		task := &def.Tasks[i]
 		if task.Disabled {

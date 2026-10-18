@@ -377,6 +377,14 @@ create/update lifecycle event, and the reconciler.
 | Trigger could not be registered | `{ status: "error", reason }` | yes: it can be run manually by id, but never fires on its own |
 | Disabled or deleted (including ones the reconciler finds gone) | entry removed | no |
 
+Registration validation includes the step graph every run is built from, disabled steps
+included: a task id used twice, a `dependsOn`, `onTrue` or `onFalse` naming a step that is
+not in the workflow, a condition listing itself in its own branch, and a cycle (including one
+made by a condition depending on one of its own branch steps) are refused. A workflow stored
+before the engine checked this, for example with a branch still naming a step that was since
+deleted, loads as `{ status: "error", reason }` naming the problem, the rest of the start-up
+load carries on, and it fires again once it is saved with a graph the engine can build.
+
 `reason` is the engine's error verbatim; trigger refusals use the registrar's own wording,
 for example `schedule "* * *" is not a valid cron expression: ...`. Each entry carries
 `since`, when its current status and reason began.
