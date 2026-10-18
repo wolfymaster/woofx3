@@ -190,3 +190,14 @@ describe("writing back placements it could not read, across publish and discard"
     expect((JSON.parse(last.widgetsJson!) as Array<{ id: string }>).map((p) => p.id).sort()).toEqual(["a", "c"]);
   });
 });
+
+describe("after close", () => {
+  it("refuses a change rather than reporting one it will never write", async () => {
+    const { documents, writes, clock } = setup({ widgetsJson: JSON.stringify([readable]) });
+    await documents.close();
+    expect(await documents.applyChange("s1", "published", moveA as never)).toEqual({ ok: false, error: "unavailable" });
+    await documents.refresh("s1");
+    await clock.advance(5_000);
+    expect(writes).toEqual([]);
+  });
+});

@@ -461,6 +461,11 @@ export class SceneDocuments {
     change: (snapshot: SceneSnapshot) => SceneDocumentOps | { error: string }
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     return this.serial(sceneId, async () => {
+      // Past close the scenes have been written back for the last time, so a
+      // change committed now would be reported made and then lost.
+      if (this.closed) {
+        return { ok: false as const, error: "unavailable" };
+      }
       const held = await this.hold(sceneId);
       if (!held) {
         return { ok: false as const, error: "not_found" };
@@ -493,6 +498,9 @@ export class SceneDocuments {
    */
   refresh(sceneId: string): Promise<void> {
     return this.serial(sceneId, async () => {
+      if (this.closed) {
+        return;
+      }
       const held = this.scenes.get(sceneId);
       if (!held) {
         // Nobody has it open; the next overlay or editor loads the save.
