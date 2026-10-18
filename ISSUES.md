@@ -96,7 +96,7 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 - **Size:** medium
 - **Description:** Worth an audit pass to remove truly-dead code vs. add `#[cfg(test)]` or find proper usage.
 
-## twitch / streamlabs (legacy)
+## twitch (legacy)
 
 ### Rewrite or delete `twitch/src/api.ts` (mostly dead commented code)
 
@@ -111,20 +111,6 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 - **Category:** enhancement
 - **Size:** medium
 - **Description:** `// TODO: Add gift subscription event` sits inside dead/commented code, so gift subs aren't handled at all even though regular subs are. Only relevant if Twitch integration is revived (depends on the item above).
-
-### Persist streamlabs paint-game state instead of in-memory object
-
-- **Files:** `streamlabs/server.ts:60,239-248`
-- **Category:** bug
-- **Size:** small
-- **Description:** `inMemoryStorageKV` resets pen-color/game state on every restart, despite the rest of the service persisting to InstantDB (`db.transact`) — an inconsistent persistence story.
-
-### Remove legacy SockJS OBS path / add connection timeout
-
-- **Files:** `streamlabs/server.ts:44-49`
-- **Category:** tech-debt / bug
-- **Size:** medium
-- **Description:** A `// TODO: Prolly want a timeout on the socket connection...` note sits alongside a fully commented-out legacy SockJS/SLOBS client path next to a new direct `OBSWebSocket` connection. Two half-migrated OBS connection paths currently coexist; the legacy path should be removed or the migration finished.
 
 ## docs / roadmap
 
