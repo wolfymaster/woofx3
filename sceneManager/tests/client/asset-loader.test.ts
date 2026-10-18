@@ -1,10 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import {
-  AssetCache,
-  assetInScope,
-  moduleIdOfWidget,
-  readAheadAssetPaths,
-} from "../../public/scene-manager/asset-loader";
+import { AssetCache, moduleIdOfWidget, readAheadAssetPaths } from "../../public/scene-manager/asset-loader";
 
 const ORIGIN = "http://scene.test";
 
@@ -30,28 +25,43 @@ describe("moduleIdOfWidget", () => {
   });
 });
 
-describe("assetInScope", () => {
-  it("allows any library file and the widget's own module's files", () => {
-    expect(assetInScope("/assets/user/res-1/anim.json", "woofx3")).toBe(true);
-    expect(assetInScope("/assets/modules/woofx3/abc123/widgets/lottie/data.json", "woofx3")).toBe(true);
-    expect(assetInScope("/assets/user/res-1/my%20file.json", "woofx3")).toBe(true);
+describe("AssetCache.scopedTo", () => {
+  const json = () => new Response("{}", { headers: { "Content-Type": "application/json" } });
+  const allowed = async (path: string, moduleId: string) => {
+    const cache = new AssetCache(respond(json()));
+    return cache
+      .scopedTo(moduleId)(path)
+      .then(
+        () => true,
+        (err) => {
+          expect(err.code).toBe("out_of_scope");
+          return false;
+        }
+      );
+  };
+
+  it("reads any library file and the widget's own module's files, from the read route", async () => {
+    const fetchFn = respond(json());
+    await new AssetCache(fetchFn).scopedTo("woofx3")("/assets/user/res-1/my%20file.json");
+    expect(fetchFn.mock.calls[0]![0]).toBe("/assets/read/user/res-1/my%20file.json");
+    expect(await allowed("/assets/modules/woofx3/abc123/widgets/lottie/data.json", "woofx3")).toBe(true);
+    expect(await allowed("/assets/modules/%77oofx3/v/a.json", "woofx3")).toBe(true);
   });
 
-  it("refuses another module's files and anything outside storage", () => {
-    expect(assetInScope("/assets/modules/other/abc123/data.json", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/modules/woofx3x/abc123/data.json", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/media/token", "woofx3")).toBe(false);
-    expect(assetInScope("/scene/s1/config", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/user/res-1/anim.json", "")).toBe(false);
-  });
-
-  it("judges segments decoded, so none can step out", () => {
-    expect(assetInScope("/assets/user/%2e%2e/modules/other/v/a.json", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/user/res-1/..%2F..%2Fmodules%2Fother%2Fa.json", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/modules/woofx3/v/..%5Cother", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/modules/%77oofx3/v/a.json", "woofx3")).toBe(true);
-    expect(assetInScope("/assets/user/res-1/%E0%A4%A", "woofx3")).toBe(false);
-    expect(assetInScope("/assets/user//anim.json", "woofx3")).toBe(false);
+  it("refuses another module's files, anything outside storage, and paths that step out", async () => {
+    for (const path of [
+      "/assets/modules/other/abc123/data.json",
+      "/assets/modules/woofx3x/abc123/data.json",
+      "/assets/media/token",
+      "/scene/s1/config",
+      "/assets/user/%2e%2e/modules/other/v/a.json",
+      "/assets/user/res-1/..%2F..%2Fmodules%2Fother%2Fa.json",
+      "/assets/modules/woofx3/v/..%5Cother",
+      "/assets/user//anim.json",
+    ]) {
+      expect(await allowed(path, "woofx3")).toBe(false);
+    }
+    expect(await allowed("/assets/user/res-1/anim.json", "")).toBe(false);
   });
 });
 

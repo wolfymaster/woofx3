@@ -540,7 +540,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     load(ref: string | { url: string }): Promise<WidgetAsset> {
       const refUrl = assetRefUrl(ref);
       if (refUrl === null) {
-        throw new Error("[widget-host-shim] assets.load requires a URL, a path or a media setting's value");
+        return Promise.reject(new WidgetAssetError("not_engine_asset", typeof ref === "string" ? ref : ""));
       }
       return new Promise<WidgetAsset>((resolve, reject) => {
         if (disposed || rejected) {

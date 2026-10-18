@@ -1,8 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { ENGINE_ASSET_PREFIXES } from "@woofx3/module-sdk";
 import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
-
-// Mirrors barkloader's ALLOWED_TOP_LEVEL_PREFIXES.
-const STORAGE_ASSET_PREFIXES = ["/assets/modules/", "/assets/user/"] as const;
 
 const STORAGE_ASSET_RELAY: BarkloaderRelay = {
   forwardedRequestHeaders: [],
@@ -12,7 +10,7 @@ const STORAGE_ASSET_RELAY: BarkloaderRelay = {
 };
 
 export function isStorageAssetPath(pathname: string): boolean {
-  return STORAGE_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  return ENGINE_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 /**

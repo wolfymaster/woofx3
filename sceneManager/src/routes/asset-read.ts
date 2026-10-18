@@ -1,12 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { isStorageAssetPath } from "./storage";
-
-/**
- * Prefix of the route that reads a stored file's bytes for an overlay page.
- * `/assets/read/user/...` reads what `/assets/user/...` serves. Must match
- * `ASSET_READ_PREFIX` in public/scene-manager/asset-loader.ts.
- */
-export const ASSET_READ_PREFIX = "/assets/read/";
+import { ASSET_READ_PREFIX, assetOfReadPath } from "@woofx3/module-sdk";
 
 /** Request headers that let the browser revalidate a file it holds. */
 const CONDITIONAL_REQUEST_HEADERS = ["If-None-Match", "If-Modified-Since"] as const;
@@ -45,10 +38,12 @@ export async function handleAssetReadRoute(
   if (req.method !== "GET") {
     return new Response(null, { status: 405, headers: { Allow: "GET" } });
   }
-  const storagePath = `/assets/${url.pathname.slice(ASSET_READ_PREFIX.length)}`;
-  if (!isStorageAssetPath(storagePath)) {
+  // The same judgement of the path the page made before asking.
+  const asset = assetOfReadPath(url.pathname);
+  if (asset === null) {
     return new Response(null, { status: 404 });
   }
+  const storagePath = asset.path;
 
   const conditional = new Headers();
   for (const name of CONDITIONAL_REQUEST_HEADERS) {

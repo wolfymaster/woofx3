@@ -7,17 +7,21 @@
 // src/routes/asset-read.ts), and posts the bytes into the frame through the
 // bridge. Deciding what a widget may read happens here, because the page
 // knows each frame's module from the scene record and never from the widget:
-// any file in the asset library, and its own module's files.
+// any file in the asset library, and its own module's files (the rules are
+// module-sdk's `parseEngineAssetPath` and `widgetMayRead`).
 //
 // One cache serves the whole page, so a file several placements or alerts use
 // at once is read once. Files a placement's settings name are read as soon as
 // the placement is known, while its frame is still loading, so the widget's
 // ask usually finds them already here.
 
-import { type WidgetAssetErrorCode, engineAssetPath } from "@woofx3/module-sdk";
-
-/** Must match `ASSET_READ_PREFIX` in src/routes/asset-read.ts. */
-export const ASSET_READ_PREFIX = "/assets/read/";
+import {
+  type WidgetAssetErrorCode,
+  assetReadPath,
+  engineAssetPath,
+  parseEngineAssetPath,
+  widgetMayRead,
+} from "@woofx3/module-sdk";
 
 /**
  * How long a file read stays here after it arrives: long enough for the ask a
@@ -66,39 +70,6 @@ export function moduleIdOfWidget(canonicalId: string): string | null {
   }
   const moduleId = canonicalId.slice(0, marker).split(":")[0] ?? "";
   return moduleId === "" ? null : moduleId;
-}
-
-/**
- * Whether a widget of module `moduleId` may read the engine file at `path`:
- * a file in the asset library (`/assets/user/{id}/...`) or one of its own
- * module's (`/assets/modules/{moduleId}/...`). Each segment is judged
- * decoded, so an encoded separator or dot segment cannot step out of either.
- */
-export function assetInScope(path: string, moduleId: string): boolean {
-  if (moduleId === "") {
-    return false;
-  }
-  const segments = path.split("/");
-  if (segments[0] !== "" || segments[1] !== "assets" || segments.length < 5) {
-    return false;
-  }
-  const decoded: string[] = [];
-  for (const segment of segments.slice(2)) {
-    let value: string;
-    try {
-      value = decodeURIComponent(segment);
-    } catch {
-      return false;
-    }
-    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
-      return false;
-    }
-    decoded.push(value);
-  }
-  if (decoded[0] === "user") {
-    return true;
-  }
-  return decoded[0] === "modules" && decoded[1] === moduleId;
 }
 
 /**
@@ -189,7 +160,7 @@ export class AssetCache {
    */
   readAhead(paths: readonly string[], moduleId: string): void {
     for (const path of paths) {
-      if (assetInScope(path, moduleId)) {
+      if (readable(path, moduleId)) {
         this.load(path).catch(() => {});
       }
     }
@@ -201,7 +172,7 @@ export class AssetCache {
    */
   scopedTo(moduleId: string): (path: string) => Promise<LoadedAsset> {
     return (path) => {
-      if (!assetInScope(path, moduleId)) {
+      if (!readable(path, moduleId)) {
         return Promise.reject(new AssetLoadError("out_of_scope", path));
       }
       return this.load(path);
@@ -211,7 +182,11 @@ export class AssetCache {
   private async read(path: string): Promise<LoadedAsset> {
     let response: Response;
     try {
-      response = await this.fetchFn(`${ASSET_READ_PREFIX}${path.slice("/assets/".length)}`, {
+      const asset = parseEngineAssetPath(path);
+      if (asset === null) {
+        throw new AssetLoadError("not_engine_asset", path);
+      }
+      response = await this.fetchFn(assetReadPath(asset), {
         credentials: "same-origin",
       });
     } catch (err) {
@@ -234,4 +209,9 @@ export class AssetCache {
     }
     return { contentType: response.headers.get("Content-Type") ?? "", bytes };
   }
+}
+
+function readable(path: string, moduleId: string): boolean {
+  const asset = parseEngineAssetPath(path);
+  return asset !== null && widgetMayRead(asset, moduleId);
 }

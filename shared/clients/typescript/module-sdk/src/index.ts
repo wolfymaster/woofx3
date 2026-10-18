@@ -25,14 +25,19 @@ export type {
   WidgetTheme,
 } from "./widget-host";
 
-export type { WidgetAssetErrorCode } from "./widget-assets";
+export type { EngineAssetPath, WidgetAssetErrorCode } from "./widget-assets";
 export {
+  ASSET_READ_PREFIX,
   ENGINE_ASSET_PREFIXES,
   WidgetAssetError,
+  assetOfReadPath,
+  assetReadPath,
   assetRefUrl,
   createWidgetAsset,
   engineAssetPath,
   isWidgetAssetErrorCode,
+  parseEngineAssetPath,
+  widgetMayRead,
 } from "./widget-assets";
 
 export type {

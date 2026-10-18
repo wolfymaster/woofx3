@@ -22,7 +22,13 @@ import type {
   WidgetHostStorage,
   WidgetStatusReport,
 } from "../widget-host";
-import { WidgetAssetError, assetRefUrl, createWidgetAsset } from "../widget-assets";
+import {
+  WidgetAssetError,
+  assetRefUrl,
+  createWidgetAsset,
+  parseEngineAssetPath,
+  widgetMayRead,
+} from "../widget-assets";
 import type { EventQueueConfig } from "../widget-protocol";
 
 /** Re-exported so the preview harness can apply a widget's setting bindings
@@ -53,6 +59,13 @@ export interface MockHostOptions {
    * Files `assets.load` answers with, by the reference the widget passes
    * (a path relative to `resourceBaseUrl`, or a URL): text, or raw bytes.
    * A reference not listed here is fetched from where it resolves to.
+   *
+   * Either way the reference is judged as the engine judges it: one under
+   * `resourceBaseUrl` is the widget's own module's file, as it is in a real
+   * frame, any other must be an engine asset path the widget may read
+   * (`/assets/user/...`, or its own `/assets/modules/{moduleId}/...`), and
+   * anything else is refused, so a widget that loads in the preview loads
+   * on stream.
    */
   assets?: Record<string, string | ArrayBuffer>;
 }
@@ -155,18 +168,40 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     },
   };
 
+  /** Where `refUrl` is read from, or the refusal a real frame would get for it. */
+  function readableAssetUrl(refUrl: string): URL {
+    const base = resourceBaseUrl.replace(/\/*$/, "/");
+    let url: URL;
+    try {
+      url = new URL(refUrl, base);
+    } catch {
+      throw new WidgetAssetError("not_engine_asset", refUrl);
+    }
+    if (url.href.startsWith(base)) {
+      return url;
+    }
+    const asset = url.protocol === "http:" || url.protocol === "https:" ? parseEngineAssetPath(url.pathname) : null;
+    if (asset === null) {
+      throw new WidgetAssetError("not_engine_asset", refUrl);
+    }
+    if (!widgetMayRead(asset, moduleId)) {
+      throw new WidgetAssetError("out_of_scope", refUrl);
+    }
+    return url;
+  }
+
   const assets: WidgetHostAssets = {
     async load(ref: string | { url: string }): Promise<WidgetAsset> {
       const refUrl = assetRefUrl(ref);
       if (refUrl === null) {
-        throw new Error("[mock-host] assets.load requires a URL, a path or a media setting's value");
+        throw new WidgetAssetError("not_engine_asset", typeof ref === "string" ? ref : "");
       }
+      const url = readableAssetUrl(refUrl);
       const given = opts.assets?.[refUrl];
       if (given !== undefined) {
         const bytes = typeof given === "string" ? new TextEncoder().encode(given).buffer : given;
-        return createWidgetAsset(refUrl, "", bytes as ArrayBuffer);
+        return createWidgetAsset(url.pathname, "", bytes as ArrayBuffer);
       }
-      const url = new URL(refUrl, resourceBaseUrl.replace(/\/*$/, "/"));
       let response: Response;
       try {
         response = await fetch(url);
