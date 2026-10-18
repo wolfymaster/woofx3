@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.35.0](https://github.com/wolfymaster/woofx3/compare/v0.34.2...v0.35.0) (2026-10-18)
+
+### Features
+
+* **api:** opt-in bearer check on barkloader processing callbacks ([9017240](https://github.com/wolfymaster/woofx3/commit/90172404fa7da7169fd896c58f83f19fca4ae33d))
+* **barkloader:** send the engine secret with processing callbacks ([df45cde](https://github.com/wolfymaster/woofx3/commit/df45cde620120c54b7ab276ddce53f5991606b4f))
+* opt-in Host and Origin guard for the api and sceneManager ([592f0ae](https://github.com/wolfymaster/woofx3/commit/592f0ae6e27936765bdaba30ee899804fb291dfb))
+* registration modes and a generated registration token file ([32b0067](https://github.com/wolfymaster/woofx3/commit/32b00678c367cb16617c4775da36ce589edda66b))
+* **release:** record the first release of each engine capability id ([02070d7](https://github.com/wolfymaster/woofx3/commit/02070d7ef2a84472e488549b131f9690ec39ca03))
+
+### Bug Fixes
+
+* **api:** refuse an unrenewable dashboard Twitch token instead of using it as the engine's own ([9f447d4](https://github.com/wolfymaster/woofx3/commit/9f447d4e8e6bf88cfce4b359ecf5f2717d89bb3c))
+* **db:** keep Windows SQLite paths out of the data directory ([8cc8fd1](https://github.com/wolfymaster/woofx3/commit/8cc8fd1df44e7f7d8f0951124438eb48aa2af562))
+* **http:** let WOOFX3_ALLOWED_ORIGINS list tauri://localhost ([b262b7c](https://github.com/wolfymaster/woofx3/commit/b262b7c08dbcc99e45f06e6a1e35365719b4e368))
+* **nats:** read WebSocket settings under their documented spelling ([b9e9890](https://github.com/wolfymaster/woofx3/commit/b9e989041fee0eb0cb7156e74e6c2f987eb89ed8))
+* **release:** fail the Since fill on git errors instead of skipping the tag ([7ae5adf](https://github.com/wolfymaster/woofx3/commit/7ae5adfbf56246fe8d0b16bc21952ade3a6e9e47))
+* **release:** fail the Since fill when a declared id has no table row ([d9dbdd2](https://github.com/wolfymaster/woofx3/commit/d9dbdd2f62fcdcf570d2462d202ef4109c1ba998))
+* **release:** fail the Since fill when capabilities.ts does not parse ([a12d08a](https://github.com/wolfymaster/woofx3/commit/a12d08ab927e2c0cead521bbea6265e2841fec32))
+* **release:** reject capability rows with a malformed Since cell ([228e27a](https://github.com/wolfymaster/woofx3/commit/228e27a767f2c9b558d26f5f5b471c1d5d42c1d9))
+* **runtime:** fail on a config file that is not a JSON object ([91d6187](https://github.com/wolfymaster/woofx3/commit/91d61873a403711340d375bf660645b909ffc028))
+* **runtime:** refuse a relative WOOFX3_DATA_DIR ([4c71242](https://github.com/wolfymaster/woofx3/commit/4c712420958964b6e7a2cad1ddcf79eec4cb27ca))
+
 ## [0.34.2](https://github.com/wolfymaster/woofx3/compare/v0.34.1...v0.34.2) (2026-10-17)
 
 ### Bug Fixes
