@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -140,5 +141,76 @@ func TestWithoutLocationVariablesTheConfigIsFoundAboveTheWorkingDirectory(t *tes
 	}
 	if location.configPath != path || location.final {
 		t.Errorf("location = %+v, want the parent's config file with the executable-directory fallback kept", location)
+	}
+}
+
+func TestHardeningIsOffUnlessConfigured(t *testing.T) {
+	cfg := DefaultConfiguration()
+	if err := cfg.OverlayFromMap(map[string]string{}); err != nil {
+		t.Fatalf("OverlayFromMap: %v", err)
+	}
+
+	if cfg.Token != "" || cfg.TCPDisabled || cfg.WebSocketSameOrigin || len(cfg.WebSocketAllowedOrigins) != 0 {
+		t.Fatalf("hardening = %+v, want all of it off", cfg)
+	}
+}
+
+func TestHardeningIsReadFromTheConfigFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".woofx3.json")
+	config := `{
+		"messagebusToken": "s3cret",
+		"messagebusTcpDisabled": true,
+		"messagebusWebsocketSameOrigin": "true",
+		"messagebusWebsocketAllowedOrigins": "http://127.0.0.1:5173, https://app.example"
+	}`
+	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.Token != "s3cret" {
+		t.Errorf("token = %q, want s3cret", cfg.Token)
+	}
+	if !cfg.TCPDisabled {
+		t.Error("TCP listener enabled, want disabled")
+	}
+	if !cfg.WebSocketSameOrigin {
+		t.Error("same-origin check off, want on")
+	}
+	want := []string{"http://127.0.0.1:5173", "https://app.example"}
+	if strings.Join(cfg.WebSocketAllowedOrigins, " ") != strings.Join(want, " ") {
+		t.Errorf("allowed origins = %q, want %q", cfg.WebSocketAllowedOrigins, want)
+	}
+}
+
+func TestTheEnvironmentSetsTheToken(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".woofx3.json")
+	if err := os.WriteFile(path, []byte(`{"messagebusToken": "from-file"}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("WOOFX3_MESSAGEBUS_TOKEN", "from-env")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.Token != "from-env" {
+		t.Fatalf("token = %q, want the environment's", cfg.Token)
+	}
+}
+
+func TestAnUnreadableHardeningFlagFailsTheLoad(t *testing.T) {
+	cfg := DefaultConfiguration()
+	err := cfg.OverlayFromMap(map[string]string{"WOOFX3_MESSAGEBUS_TCP_DISABLED": "yes please"})
+
+	if err == nil {
+		t.Fatal("OverlayFromMap accepted a flag it cannot parse")
 	}
 }

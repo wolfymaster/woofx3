@@ -241,6 +241,8 @@ func LoadConfig(confPath string) (*Configuration, error) {
 			return nil, err
 		}
 	}
-	cfg.OverlayFromMap(env)
+	if err := cfg.OverlayFromMap(env); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
