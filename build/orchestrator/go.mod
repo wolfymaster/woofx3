@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
+	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	golang.org/x/sys v0.35.0
 )
 
@@ -13,7 +14,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
-	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.13.0 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
@@ -36,10 +36,6 @@ require (
 )
 
 replace (
-	github.com/wolfymaster/woofx3/clients/barkloader => ../../shared/clients/golang/barkloader
-	github.com/wolfymaster/woofx3/clients/db => ../../shared/clients/golang/db
-	github.com/wolfymaster/woofx3/clients/nats => ../../shared/clients/golang/nats
-	github.com/wolfymaster/woofx3/common/cloudevents => ../../shared/common/golang/cloudevents
 	github.com/wolfymaster/woofx3/common/logging => ../../shared/common/golang/logging
 	github.com/wolfymaster/woofx3/common/runtime => ../../shared/common/golang/runtime
 )
