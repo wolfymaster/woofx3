@@ -2,6 +2,7 @@
   "dependencies": {
     "@nats-io/transport-node": "^3.0.0-35",
     "@twurple/api": "^8.0.0",
+    "@twurple/api-call": "^8.1.4",
     "@twurple/auth": "^8.0.0",
     "@twurple/chat": "^8.1.4",
     "@twurple/eventsub-ws": "^8.0.0",

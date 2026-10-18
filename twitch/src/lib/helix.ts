@@ -1,3 +1,4 @@
+import { callTwitchApiRaw } from "@twurple/api-call";
 import type { AuthProvider } from "@twurple/auth";
 import type {
   HelixCommandArgs,
@@ -5,6 +6,14 @@ import type {
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { TwitchApiError } from "./twitchApiError";
+
+// Twurple passes these straight to fetch and leaves declaring the ones a
+// caller uses to the caller.
+declare module "@twurple/api-call" {
+  interface TwitchApiCallFetchOptions {
+    signal?: AbortSignal;
+  }
+}
 
 type HelixMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -322,7 +331,8 @@ function describeShape(shape: ParamShape): string {
 export interface HelixRequest {
   method: HelixMethod;
   url: string;
-  query: Record<string, string>;
+  /** An array is sent as the key repeated once per value, as Helix takes a list. */
+  query: Record<string, string | string[]>;
   /** Absent for an operation that sends no body. */
   jsonBody?: Record<string, unknown>;
 }
@@ -334,7 +344,7 @@ export function buildHelixRequest(
   params: Record<string, string | number | boolean | string[]>
 ): HelixRequest {
   const declared = HELIX_OPERATIONS[operation];
-  const query: Record<string, string> = {};
+  const query: Record<string, string | string[]> = {};
   for (const name of declared.broadcasterQuery) {
     query[name] = broadcasterId;
   }
@@ -346,7 +356,7 @@ export function buildHelixRequest(
   for (const [name, value] of Object.entries(params)) {
     switch (declared.paramsIn) {
       case "query": {
-        query[name] = String(value);
+        query[name] = Array.isArray(value) ? value : String(value);
         break;
       }
       case "body": {
@@ -382,8 +392,6 @@ function parseHelixArgs(args: unknown): { operation: HelixOperationName; params:
   return { operation, params };
 }
 
-const HELIX_BASE_URL = "https://api.twitch.tv/helix/";
-
 /**
  * How long one operation may take in all: getting the token, the request, the
  * renewal and resend after a 401, and reading Twitch's answer. Must stay below
@@ -395,8 +403,6 @@ export const HELIX_DEADLINE_MS = 8_000;
 
 /** What `runHelixOperation` needs of the twitch service's Twurple auth provider. */
 export type HelixAuth = Pick<AuthProvider, "clientId" | "getAccessTokenForUser" | "refreshAccessTokenForUser">;
-
-export type HelixFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
  * `promise`'s outcome, or the signal's reason once it aborts first. Bounds a
@@ -420,25 +426,22 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
  * only a request refused before it is sent, or one that never got an answer,
  * throws. The whole operation gives up after `deadlineMs`.
  *
- * Sent with a plain fetch rather than Twurple's API client, because that
- * client retries a 5xx or a network failure up to three times: a chat
- * message, ban or clip that Twitch carried out before failing would be
- * carried out again. Every operation, reads included, gets one attempt, as
- * the dashboard's own Helix calls do. The one exception is a 401, which
- * Twitch answers before acting: the token is renewed and the request sent
- * once more.
+ * Sent with Twurple's `callTwitchApiRaw`, which makes exactly one request,
+ * rather than its API client, because that client retries a 5xx or a network
+ * failure up to three times: a chat message, ban or clip that Twitch carried
+ * out before failing would be carried out again. Every operation, reads
+ * included, gets one attempt, as the dashboard's own Helix calls do. The one
+ * exception is a 401, which Twitch answers before acting: the token is renewed
+ * and the request sent once more.
  */
 export async function runHelixOperation(
   auth: HelixAuth,
   broadcasterId: string,
   args: unknown,
-  fetchFn: HelixFetch = fetch,
   deadlineMs: number = HELIX_DEADLINE_MS
 ): Promise<HelixCommandResult> {
   const { operation, params } = parseHelixArgs(args);
   const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
-  const search = new URLSearchParams(request.query).toString();
-  const url = `${HELIX_BASE_URL}${request.url}${search ? `?${search}` : ""}`;
   // Not `AbortSignal.timeout`: in Bun 1.3 its timer stops for good once its
   // last abort listener is removed, which every wait here does as it settles.
   const deadline = new AbortController();
@@ -449,18 +452,9 @@ export async function runHelixOperation(
   const signal = deadline.signal;
   let sent = false;
   const send = (accessToken: string) => {
-    const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}`, "Client-Id": auth.clientId };
-    if (request.jsonBody !== undefined) {
-      headers["Content-Type"] = "application/json";
-    }
     sent = true;
     return untilAborted(
-      fetchFn(url, {
-        method: request.method,
-        headers,
-        body: request.jsonBody === undefined ? undefined : JSON.stringify(request.jsonBody),
-        signal,
-      }),
+      callTwitchApiRaw({ type: "helix", ...request }, auth.clientId, accessToken, undefined, { signal }),
       signal
     );
   };
@@ -497,7 +491,9 @@ export async function runHelixOperation(
   }
   try {
     return { ok: true, body: JSON.parse(text) };
-  } catch {
-    throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`);
+  } catch (err) {
+    throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`, {
+      cause: err,
+    });
   }
 }
