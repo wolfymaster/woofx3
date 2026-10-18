@@ -187,12 +187,12 @@ func planResume(
 
 		if len(record.Outputs) > 0 {
 			exports[task.ID] = record.Outputs
-			if task.Type == "wait" {
+			if task.Type == types.TaskTypeWait {
 				exports[task.ID] = tasks.RestoreWaitExports(record.Outputs)
 			}
 		}
 
-		if task.Type == "condition" {
+		if task.Type == types.TaskTypeCondition {
 			result, ok := record.Outputs["result"].(bool)
 			if !ok {
 				return 0, nil, nil, fmt.Errorf("condition %q has no recorded result, so the branch it took is unknown", task.ID)

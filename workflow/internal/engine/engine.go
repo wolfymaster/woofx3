@@ -178,11 +178,11 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 }
 
 func (e *Engine[TServices]) registerBuiltInTasks() {
-	e.taskRegistry.Register("log", tasks.NewLogTask())
-	e.taskRegistry.Register("action", tasks.NewActionTask(e.actionRegistry))
-	e.taskRegistry.Register("wait", tasks.NewWaitTask())
-	e.taskRegistry.Register("condition", tasks.NewConditionTask())
-	e.taskRegistry.Register("workflow", tasks.NewWorkflowTask())
+	e.taskRegistry.Register(types.TaskTypeLog, tasks.NewLogTask())
+	e.taskRegistry.Register(types.TaskTypeAction, tasks.NewActionTask(e.actionRegistry))
+	e.taskRegistry.Register(types.TaskTypeWait, tasks.NewWaitTask())
+	e.taskRegistry.Register(types.TaskTypeCondition, tasks.NewConditionTask())
+	e.taskRegistry.Register(types.TaskTypeWorkflow, tasks.NewWorkflowTask())
 }
 
 // Registry exposes the underlying workflow registry so callers (the workflow
@@ -205,7 +205,7 @@ func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) erro
 // resolved, which the action does before it publishes.
 func validatePublishSteps(def *types.WorkflowDefinition) error {
 	for _, task := range def.Tasks {
-		if task.Type != "action" || task.Action != publishEventAction {
+		if task.Type != types.TaskTypeAction || task.Action != publishEventAction {
 			continue
 		}
 		eventType, ok := task.Parameters["eventType"].(string)
@@ -275,11 +275,11 @@ func (e *Engine[TServices]) validateDefinition(def *types.WorkflowDefinition) er
 			continue
 		}
 		switch task.Type {
-		case "action":
+		case types.TaskTypeAction:
 			if err := e.actionRegistry.ValidateParams(task.Action, task.Parameters); err != nil {
 				return fmt.Errorf("task %q (%s): %w", task.ID, task.Action, err)
 			}
-		case "wait":
+		case types.TaskTypeWait:
 			if err := tasks.ValidateWaitConfig(task.Wait); err != nil {
 				return fmt.Errorf("task %q: %w", task.ID, err)
 			}
@@ -835,7 +835,7 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 		return fmt.Errorf("workflow has no trigger")
 	}
 
-	if wf.Trigger.Type != "event" {
+	if wf.Trigger.Type != types.TriggerTypeEvent {
 		return fmt.Errorf("only event triggers supported in MVP")
 	}
 
@@ -1105,7 +1105,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		// Checked before any guard or condition is evaluated: a disabled task
 		// reads nothing, so an expression that would fail cannot fail the run.
 		if taskDef.Disabled {
-			if taskDef.Type == "condition" {
+			if taskDef.Type == types.TaskTypeCondition {
 				e.settleCondition(execution, taskDef, taskExec, i, false, true, taskExports, skippedTasks)
 				continue
 			}
@@ -1115,7 +1115,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 
 		// For non-condition tasks, evaluate conditions as guards (skip if false)
 		// Condition tasks use conditions for branching (OnTrue/OnFalse), not skipping
-		if taskDef.Type != "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
+		if taskDef.Type != types.TaskTypeCondition && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
 			resolver := e.buildResolver(execution, triggerEvent, taskExports)
 			condTask := &tasks.ConditionTask{}
 
@@ -1149,7 +1149,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			}
 		}
 
-		if taskDef.Type == "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
+		if taskDef.Type == types.TaskTypeCondition && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
 			resolver := e.buildResolver(execution, triggerEvent, taskExports)
 			condTask := &tasks.ConditionTask{}
 
@@ -1170,12 +1170,12 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			continue
 		}
 
-		if taskDef.Type == "wait" && taskDef.Wait != nil && execution.DryRun {
+		if taskDef.Type == types.TaskTypeWait && taskDef.Wait != nil && execution.DryRun {
 			e.completeDryRunWait(execution, taskDef, taskExec, i, taskExports)
 			continue
 		}
 
-		if taskDef.Type == "wait" && taskDef.Wait != nil {
+		if taskDef.Type == types.TaskTypeWait && taskDef.Wait != nil {
 			waitResult := e.handleWaitTask(execution, taskDef, taskExec, executionOrder, i, taskExports, triggerEvent, skippedTasks)
 			if waitResult == "waiting" {
 				return
@@ -1232,7 +1232,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			continue
 		}
 
-		if taskDef.Type == "workflow" {
+		if taskDef.Type == types.TaskTypeWorkflow {
 			// Note: Condition checking is now handled by the general guard above
 			// Handle workflow task - can use Workflow config or Parameters
 			workflowConfig := taskDef.Workflow
@@ -1428,7 +1428,7 @@ func (e *Engine[TServices]) settleCondition(
 // marking them as the condition is passed reaches each before it runs, and
 // through them the branches of conditions nested deeper.
 func skipBranchesOfSkippedCondition(taskDef *types.TaskDefinition, skippedTasks map[string]bool) {
-	if taskDef.Type != "condition" {
+	if taskDef.Type != types.TaskTypeCondition {
 		return
 	}
 	for _, id := range slices.Concat(taskDef.OnTrue, taskDef.OnFalse) {

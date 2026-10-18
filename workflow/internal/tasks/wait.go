@@ -132,8 +132,8 @@ func NewWaitTask() TaskFactory {
 	}
 }
 
-func (t *WaitTask) Type() string {
-	return "wait"
+func (t *WaitTask) Type() types.TaskType {
+	return types.TaskTypeWait
 }
 
 func (t *WaitTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {

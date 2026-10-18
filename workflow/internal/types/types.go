@@ -20,17 +20,40 @@ type WorkflowDefinition struct {
 	Ephemeral bool `json:"-" yaml:"-"`
 }
 
-// TriggerTypeCommand is the trigger type of a workflow a chat command runs. No
-// registrar subscribes it: the command's commander starts it by id
-// (Engine.RunCommand) once the command has matched and passed its checks, so
-// the `chat.command.<slug>` event the same invocation announces cannot start
-// it a second time. Event names that subject, for the run's
-// `${trigger.data...}`. Must match commandTriggerType in
-// db/app/services/command_workflow.go.
-const TriggerTypeCommand = "command"
+// TriggerType is how a workflow is started. It is read from a definition's
+// `trigger.type` as written; an unknown one is refused when the workflow's
+// trigger is registered (triggers.CompositeRegistrar).
+type TriggerType string
+
+const (
+	// TriggerTypeEvent starts the workflow on every bus event matching the
+	// trigger's Event.
+	TriggerTypeEvent TriggerType = "event"
+	// TriggerTypeSchedule starts the workflow on the trigger's cron Schedule.
+	TriggerTypeSchedule TriggerType = "schedule"
+	// TriggerTypeCommand is the trigger type of a workflow a chat command
+	// runs. No registrar subscribes it: the command's commander starts it by
+	// id (Engine.RunCommand) once the command has matched and passed its
+	// checks, so the `chat.command.<slug>` event the same invocation
+	// announces cannot start it a second time. Event names that subject, for
+	// the run's `${trigger.data...}`. Must match commandTriggerType in
+	// db/app/services/command_workflow.go.
+	TriggerTypeCommand TriggerType = "command"
+)
+
+// TaskType is what kind of step a task is, and so which task handler runs it.
+type TaskType string
+
+const (
+	TaskTypeAction    TaskType = "action"
+	TaskTypeLog       TaskType = "log"
+	TaskTypeWait      TaskType = "wait"
+	TaskTypeCondition TaskType = "condition"
+	TaskTypeWorkflow  TaskType = "workflow"
+)
 
 type TriggerConfig struct {
-	Type string `json:"type" yaml:"type"`
+	Type TriggerType `json:"type" yaml:"type"`
 	// Event is the NATS subject this trigger listens for. The same value
 	// lives on the trigger row (`triggers.event`); the workflow's
 	// persisted trigger JSON carries it so the engine can subscribe
@@ -56,8 +79,8 @@ type ConditionConfig struct {
 
 type TaskDefinition struct {
 	ID         string         `json:"id" yaml:"id"`
-	Type       string         `json:"type" yaml:"type"`
-	Action     string         `json:"action,omitempty" yaml:"action,omitempty"` // Registered action handler; required when Type == "action"
+	Type       TaskType       `json:"type" yaml:"type"`
+	Action     string         `json:"action,omitempty" yaml:"action,omitempty"` // Registered action handler; required when Type is TaskTypeAction
 	DependsOn  []string       `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
 	Parameters map[string]any `json:"parameters" yaml:"parameters"`
 	// $ref records the canonical id of the source declaration (e.g.

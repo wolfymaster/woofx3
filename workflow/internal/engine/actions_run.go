@@ -71,7 +71,7 @@ func sequentialTasks(actions []types.TaskDefinition) ([]types.TaskDefinition, er
 		}
 		seen[task.ID] = true
 		if task.Type == "" {
-			task.Type = "action"
+			task.Type = types.TaskTypeAction
 		}
 		if len(task.DependsOn) == 0 && i > 0 {
 			task.DependsOn = []string{tasks[i-1].ID}

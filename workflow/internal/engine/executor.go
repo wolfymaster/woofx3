@@ -58,7 +58,7 @@ func NewDependencyGraph(defTasks []types.TaskDefinition) (*DependencyGraph, erro
 
 	for i := range g.tasks {
 		condition := &g.tasks[i]
-		if condition.Type != "condition" {
+		if condition.Type != types.TaskTypeCondition {
 			continue
 		}
 		for _, memberID := range slices.Concat(condition.OnTrue, condition.OnFalse) {
@@ -97,7 +97,7 @@ func (g *DependencyGraph) addDependency(task int, depID string) {
 // hold. The author's declared order wins over the implied one.
 func (g *DependencyGraph) orderAfterBranches() {
 	for i := range g.tasks {
-		if g.tasks[i].Type != "condition" {
+		if g.tasks[i].Type != types.TaskTypeCondition {
 			continue
 		}
 		under := g.underCondition(i)
@@ -134,7 +134,7 @@ func (g *DependencyGraph) underCondition(condition int) []int {
 				continue
 			}
 			seen[member] = true
-			if g.tasks[member].Type == "condition" {
+			if g.tasks[member].Type == types.TaskTypeCondition {
 				visit(member)
 			}
 		}
