@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	woofx3config "github.com/wolfymaster/woofx3/common/config"
 	"github.com/wolfymaster/woofx3/common/logging"
-	woofx3runtime "github.com/wolfymaster/woofx3/common/runtime"
 )
 
 func main() {
@@ -180,7 +180,7 @@ func findConfigFile(startDir string) string {
 // port set in .woofx3.json (apiPort) as well as one set by variable, so they
 // check the port the service actually listens on.
 func runtimeGetenv() (func(string) string, error) {
-	env, err := woofx3runtime.LoadRuntimeEnv(nil)
+	env, err := woofx3config.Load(woofx3config.ResolveLocation(""))
 	if err != nil {
 		return nil, err
 	}
