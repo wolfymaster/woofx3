@@ -14,6 +14,7 @@ import { eventsRoutes } from "./events";
 import { fieldOptionsRoutes } from "./field-options";
 import { groupsRoutes } from "./groups";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
+import { marketplaceRoutes } from "./marketplace";
 import { moduleOAuthRoutes } from "./module-oauth";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
@@ -44,6 +45,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof dashboardRoutes &
   typeof accountsRoutes &
   typeof modulesRoutes &
+  typeof marketplaceRoutes &
   typeof workflowsRoutes &
   typeof scenesRoutes &
   typeof compositionsRoutes &
@@ -103,6 +105,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(dashboardRoutes),
     instrumentRoutes(accountsRoutes),
     instrumentRoutes(modulesRoutes),
+    instrumentRoutes(marketplaceRoutes),
     instrumentRoutes(workflowsRoutes),
     instrumentRoutes(scenesRoutes),
     instrumentRoutes(compositionsRoutes),

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
@@ -39,6 +40,9 @@ export const SceneManagerEnvSchema = z.object({
   // scene/media-proxy.ts); sceneManager signs them with it.
   woofx3BarkloaderKey: z.string().optional(),
   barkloaderKey: z.string().optional(),
+  // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
+  woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
 export type SceneManagerConfig = z.infer<typeof SceneManagerEnvSchema>;
@@ -55,6 +59,8 @@ export interface SceneManagerRuntimeConfig {
   barkloaderUrl: string;
   /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
   mediaProxySecret: string;
+  /** Which Host and Origin headers the HTTP server accepts; open unless set. */
+  requestGuard: RequestGuardPolicy;
   /**
    * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
    * the module is not installed, or a setting is empty.
@@ -164,6 +170,10 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? c.barkloaderUrl ?? "http://127.0.0.1:9653");
   const mediaProxySecret = String(c.woofx3BarkloaderKey ?? c.barkloaderKey ?? "");
+  const requestGuard = parseRequestGuardPolicy({
+    allowedHosts: c.woofx3AllowedHosts,
+    allowedOrigins: c.woofx3AllowedOrigins,
+  });
 
   return {
     port,
@@ -176,6 +186,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     databaseProxyUrl,
     barkloaderUrl,
     mediaProxySecret,
+    requestGuard,
     obs: {
       host: obsHost,
       port: obsPort,
