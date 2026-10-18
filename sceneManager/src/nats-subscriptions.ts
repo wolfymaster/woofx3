@@ -20,6 +20,7 @@ import {
 } from "./events/alert-controls";
 import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
 import type { DeliveryStore } from "./events/delivery-store";
+import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { handleStatusReport } from "./events/handlers";
 import { answerObsCommand } from "./obs/control";
 import type Manager from "./obs/manager";
@@ -291,10 +292,13 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   });
   logger.info(`Subscribed to ${RELAY_CONFIG_UPDATED_SUBJECT}`);
 
-  await subscribeJson<SceneUpdatedEnvelope>(nats, logger, "db.scene.updated.*", (envelope, msg) => {
-    if (!notifySceneUpdated(sceneDocuments, envelope)) {
+  await subscribeJson<SceneUpdatedEnvelope>(nats, logger, "db.scene.updated.*", async (envelope, msg) => {
+    const sceneId = notifySceneUpdated(sceneDocuments, envelope);
+    if (!sceneId) {
       logger.warn("db.scene.updated: missing scene id; dropping", { subject: msg.subject });
+      return;
     }
+    await closeDeliveriesToRemovedPlacements(sceneId, { host, deliveryStore, logger });
   });
 
   await nats.subscribe("db.overlay_token.updated.*", () => {

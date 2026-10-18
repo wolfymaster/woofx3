@@ -69,12 +69,12 @@ describe("readTextBody and readJsonBody", () => {
 });
 
 describe("requireSceneSession", () => {
-  const tokens = { verify: async (token: string) => (token === "good" ? { sceneId: "s1" } : null) };
+  const tokens = { verify: async (token: string) => (token === "good" ? { sceneId: "s1", authAt: 1 } : null) };
   const withCookie = (value: string, scene = "s1") =>
     new Request("http://scene.test/x", { headers: { Cookie: `sm_session_${scene}=${value}` } });
 
   it("gives the claims of a valid session for the scene", async () => {
-    expect(await requireSceneSession(withCookie("good"), "s1", tokens as never)).toEqual({ sceneId: "s1" });
+    expect(await requireSceneSession(withCookie("good"), "s1", tokens as never)).toEqual({ sceneId: "s1", authAt: 1 });
   });
 
   it("refuses no cookie, a bad token, and a session for another scene", async () => {

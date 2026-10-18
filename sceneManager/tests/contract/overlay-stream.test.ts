@@ -16,6 +16,8 @@ describe("encodeStreamFrame and parseStreamFrame", () => {
     { kind: "module-state", frame: { moduleId: "woofx3", key: "state:woofx3:counter:deaths", value: { value: 3 } } },
     { kind: "scene-ops", event: { seq: 3, ops: [{ p: ["widgets", "w1", "x"], od: 0, oi: 40 }], meta: {} } as never },
     { kind: "cancel", frame: { instanceId: "i1", eventIds: ["e1", "e2"] } },
+    { kind: "open-set", frame: { deliveries: { i1: ["e1"], i2: [] } } },
+    { kind: "open-set", frame: { deliveries: {} } },
   ];
 
   it("reads back every frame it writes, as one server-sent event", () => {
@@ -123,5 +125,13 @@ describe("acks", () => {
     expect(parseAckBody({ instanceIds: ["a", ""] })).toBeNull();
     expect(parseAckBody({ instanceIds: ["a", 2] })).toBeNull();
     expect(parseAckBody(null)).toBeNull();
+  });
+});
+
+describe("parseStreamFrame: open-set frames", () => {
+  it("refuses an open set that is not event ids by instance", () => {
+    for (const data of ['{"deliveries":[]}', '{"deliveries":{"i1":"e1"}}', '{"deliveries":{"i1":[1]}}', "{}"]) {
+      expect(parseStreamFrame(`event: open-set\ndata: ${data}`)).toBeNull();
+    }
   });
 });

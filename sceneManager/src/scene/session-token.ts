@@ -19,17 +19,31 @@ import { sceneEditorPath, type SceneEditorTokenReply } from "@woofx3/common/clou
  * tokens, no enumeration oracle). So there is no id to key a
  * DB-recheckable `sub` claim on without embedding the plaintext opaque
  * token itself, which would defeat the point of exchanging it for a
- * short-lived credential in the first place. The tradeoff this
- * implies: revoking an overlay token takes effect on the *next* full
- * page load (fresh `?token=` verification), not instantly mid-session
- * — the same behavior most session-cookie systems have.
+ * short-lived credential in the first place.
+ *
+ * Instead an overlay's session records when its overlay token was last
+ * verified (`authAt`), and a refresh past `SESSION_REAUTH_SECONDS` of that
+ * must present the token again (routes/session.ts): the page sends the one
+ * in its URL, so an open overlay re-verifies without reloading, and a
+ * revoked token stops it within that long rather than never.
  */
 export interface SessionClaims {
   sceneId: string;
 }
 
+/** An overlay's session: its scene, and when its overlay token was last verified (unix seconds). */
+export interface OverlaySession extends SessionClaims {
+  authAt: number;
+}
+
 /** Token lifetime: 60s, refreshed pre-emptively by the client every ~50s. */
 export const SESSION_TOKEN_TTL_SECONDS = 60;
+
+/**
+ * How long an overlay's session renews without its overlay token being
+ * verified again: the longest a revoked token keeps an open overlay going.
+ */
+export const SESSION_REAUTH_SECONDS = 600;
 
 /**
  * An editor token is only presented when the editor socket opens, so it
@@ -54,6 +68,11 @@ const PREVIEW_SESSION_SCOPE = "composition-preview-session";
 /** As an editor token: long enough for the dashboard to load the page it was minted for. */
 export const PREVIEW_TOKEN_TTL_SECONDS = 300;
 
+/** The current time as JWT times are kept: whole unix seconds. */
+export function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 export class SessionTokenService {
   private readonly key: Uint8Array;
 
@@ -64,8 +83,8 @@ export class SessionTokenService {
     this.key = new TextEncoder().encode(secret);
   }
 
-  async mint(claims: SessionClaims): Promise<string> {
-    return new SignJWT({ sceneId: claims.sceneId })
+  async mint(session: OverlaySession): Promise<string> {
+    return new SignJWT({ sceneId: session.sceneId, authAt: session.authAt })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime(`${SESSION_TOKEN_TTL_SECONDS}s`)
@@ -85,7 +104,7 @@ export class SessionTokenService {
   /** Verifies signature + expiry and returns the claims, or `null` for
    *  any failure (expired, tampered, malformed) — uniform, no detail
    *  leaked to the caller. An editor token is not a session. */
-  async verify(token: string): Promise<SessionClaims | null> {
+  async verify(token: string): Promise<OverlaySession | null> {
     return this.claims(token, false);
   }
 
@@ -133,7 +152,7 @@ export class SessionTokenService {
     }
   }
 
-  private async claims(token: string, editor: boolean): Promise<SessionClaims | null> {
+  private async claims(token: string, editor: boolean): Promise<OverlaySession | null> {
     if (!token) {
       return null;
     }
@@ -146,7 +165,10 @@ export class SessionTokenService {
       if ((payload.scope === EDIT_SCOPE) !== editor) {
         return null;
       }
-      return { sceneId };
+      // A session minted before `authAt` existed was verified when it was
+      // first issued at the latest, which its own iat bounds from above.
+      const authAt = typeof payload.authAt === "number" ? payload.authAt : (payload.iat ?? 0);
+      return { sceneId, authAt };
     } catch {
       return null;
     }

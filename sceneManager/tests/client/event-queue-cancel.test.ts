@@ -78,3 +78,40 @@ describe("EventQueueManager.cancel", () => {
     expect(stopped).toEqual([]);
   });
 });
+
+describe("EventQueueManager.retainOpen", () => {
+  it("cancels what an instance holds beyond its open deliveries, playing or waiting, and keeps the rest", () => {
+    const { mgr, delivered, stopped } = alertQueue();
+    for (const eventId of ["evt-1", "evt-2", "evt-3"]) {
+      mgr.enqueue("inst-1", item(eventId));
+    }
+
+    mgr.retainOpen({ "inst-1": ["evt-3"] });
+
+    expect(stopped).toEqual(["evt-1"]);
+    expect(delivered).toEqual(["evt-1", "evt-3"]);
+  });
+
+  it("cancels everything an instance holds when it has no open deliveries", () => {
+    const { mgr, stopped } = alertQueue();
+    mgr.enqueue("inst-1", item("evt-1"));
+    mgr.enqueue("inst-1", item("evt-2"));
+
+    mgr.retainOpen({});
+
+    expect(stopped).toEqual(["evt-1"]);
+    mgr.enqueue("inst-1", item("evt-2"));
+    expect(stopped).toEqual(["evt-1"]);
+  });
+
+  it("leaves a queue alone when everything it holds is still open", () => {
+    const { mgr, delivered, stopped } = alertQueue();
+    mgr.enqueue("inst-1", item("evt-1"));
+    mgr.enqueue("inst-1", item("evt-2"));
+
+    mgr.retainOpen({ "inst-1": ["evt-1", "evt-2", "evt-9"] });
+
+    expect(stopped).toEqual([]);
+    expect(delivered).toEqual(["evt-1"]);
+  });
+});

@@ -1,5 +1,5 @@
 import type { HttpDeps } from "../http";
-import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
+import { nowSeconds, SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
 import { serializeSessionCookie } from "../scene/session-cookie";
 import { BODY_LIMITS, invalidSession, jsonError, jsonOk, readJsonBody, requireSceneSession } from "./http-kit";
 import type { SceneVersion } from "../scene/scene-host";
@@ -39,7 +39,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   const scene = snapshot
     ? configOfSnapshot(snapshot)
     : deps.mediaProxy.sceneConfig((await deps.host.buildConfig(token)).scene).scene;
-  const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
+  const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId, authAt: nowSeconds() });
 
   return new Response(renderSceneShell({ scene, document: snapshot }), {
     status: 200,

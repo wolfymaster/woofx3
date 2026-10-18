@@ -19,6 +19,7 @@
 import { ALWAYS_PROBE, type ReconnectCoordinator } from "./reconnect-coordinator";
 import {
   type CancelFrame,
+  type OpenSetFrame,
   type DeliveryFrame,
   type ModuleStateFrame,
   parseStreamFrame,
@@ -26,7 +27,13 @@ import {
 import type { SceneOpsEvent } from "./scene-document";
 
 /** The stream's frames, as the scene manager writes them (see contract/overlay-stream.ts). */
-export type { CancelFrame, DeliveryFrame, ModuleStateFrame, StreamFrame } from "../../contract/overlay-stream";
+export type {
+  CancelFrame,
+  DeliveryFrame,
+  ModuleStateFrame,
+  OpenSetFrame,
+  StreamFrame,
+} from "../../contract/overlay-stream";
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
@@ -40,6 +47,8 @@ export interface SceneEventSink {
   onSceneOps?(event: SceneOpsEvent): void;
   /** The server closed deliveries the page may still be holding. */
   onCancel?(frame: CancelFrame): void;
+  /** A new stream's open deliveries: anything the page holds beyond them was closed meanwhile. */
+  onOpenSet?(frame: OpenSetFrame): void;
   /** The server rejected our session cookie. Unlike every other
    *  failure here, retrying cannot fix this -- see the note on
    *  SESSION_REJECTED_STATUSES. */
@@ -203,6 +212,8 @@ export class SceneEventSource {
             this.sink?.onSceneOps?.(parsed.event);
           } else if (parsed.kind === "cancel") {
             this.sink?.onCancel?.(parsed.frame);
+          } else if (parsed.kind === "open-set") {
+            this.sink?.onOpenSet?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }

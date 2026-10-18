@@ -10,14 +10,27 @@ function fakeLogger() {
   } as any;
 }
 
+/** A stream's delivery frames, and apart from them each new stream's open set, in arrival order. */
 function fakeController() {
   const frames: string[] = [];
+  const openSets: Array<Record<string, string[]>> = [];
+  const order: string[] = [];
   const controller = {
     enqueue: (chunk: Uint8Array) => {
-      frames.push(new TextDecoder().decode(chunk));
+      const raw = new TextDecoder().decode(chunk);
+      const event = raw
+        .split("\n")
+        .find((l) => l.startsWith("event: "))
+        ?.slice("event: ".length);
+      order.push(event ?? "");
+      if (event === "open-set") {
+        openSets.push((parseFrame(raw) as unknown as { deliveries: Record<string, string[]> }).deliveries);
+        return;
+      }
+      frames.push(raw);
     },
   } as unknown as ReadableStreamDefaultController<Uint8Array>;
-  return { controller, frames };
+  return { controller, frames, openSets, order };
 }
 
 function parseFrame(raw: string): { eventId: string; instanceId: string; type: string; key: string; value: unknown } {
@@ -90,6 +103,33 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     store.subscribe("scene-1", controller);
     expect(frames.length).toBe(1);
     expect(parseFrame(frames[0]!)).toMatchObject({ eventId: "evt-2", instanceId: "inst-a" });
+  });
+
+  it("follows the replay with the scene's open deliveries by instance, which is empty for a quiet scene", async () => {
+    let next = 0;
+    const db = {
+      recordSceneEvent: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        sceneEvent: { id: `evt-${++next}`, sceneId: "scene-1", type: "alert", key: "k", value: "null", occurredAt: "" },
+      })),
+    } as any;
+    const store = new DeliveryStore(db, fakeLogger());
+    const quiet = fakeController();
+    store.subscribe("scene-2", quiet.controller);
+    expect(quiet.openSets).toEqual([{}]);
+
+    await store.recordEvent({
+      sceneId: "scene-1",
+      type: "alert",
+      key: "k",
+      value: null,
+      targetInstanceIds: ["a", "b"],
+    });
+    await store.recordEvent({ sceneId: "scene-1", type: "alert", key: "k", value: null, targetInstanceIds: ["a"] });
+    const { controller, openSets, order } = fakeController();
+    store.subscribe("scene-1", controller);
+    expect(order).toEqual(["delivery", "delivery", "delivery", "open-set"]);
+    expect(openSets).toEqual([{ a: ["evt-1", "evt-2"], b: ["evt-1"] }]);
   });
 
   it("does not record an event with no fan-out targets", async () => {

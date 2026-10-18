@@ -182,11 +182,13 @@ describe.skipIf(!started.ok)("scene manager smoke", () => {
     expect(response.status).toBe(413);
   });
 
-  it("opens the event stream with a hello naming this process", async () => {
+  it("opens the event stream with a hello naming this process, and the scene's open deliveries", async () => {
     const stream = await OverlayStream.open(sm.baseUrl, cookie);
     try {
       const hello = await stream.next("hello");
       expect(hello.kind === "hello" && hello.bootId.length > 0).toBe(true);
+      const openSet = await stream.next("open-set");
+      expect(openSet.kind === "open-set" && openSet.frame.deliveries).toEqual({});
     } finally {
       stream.close();
     }

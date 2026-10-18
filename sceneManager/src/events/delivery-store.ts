@@ -312,7 +312,9 @@ export class DeliveryStore {
     }
     sockets.add(controller);
 
+    const openSet: Record<string, string[]> = {};
     for (const delivery of this.openDeliveriesFor(sceneId)) {
+      (openSet[delivery.instanceId] ??= []).push(delivery.eventId);
       // The page may be one that just reloaded, holding none of it: until it
       // says it queued the delivery again, the sweep keeps sending it.
       delivery.delivered = false;
@@ -322,6 +324,18 @@ export class DeliveryStore {
         type: delivery.type,
         key: delivery.key,
         value: delivery.value,
+      });
+    }
+    // After the replay, so the page knows the whole set: what it still holds
+    // beyond it was closed while its stream was down.
+    try {
+      controller.enqueue(
+        new TextEncoder().encode(encodeStreamFrame({ kind: "open-set", frame: { deliveries: openSet } }))
+      );
+    } catch (err) {
+      this.logger.warn("delivery-store: SSE push failed", {
+        event: "open-set",
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -334,7 +348,34 @@ export class DeliveryStore {
     };
   }
 
-  /** Scenes holding at least one open delivery — diagnostic and test use. */
+  /**
+   * Close every open delivery of a scene addressed to a placement not in
+   * `present`: one removed after the delivery was recorded, which no page
+   * will ever register a queue for. Returns how many were closed.
+   */
+  async closeAbsent(sceneId: string, present: ReadonlySet<string>): Promise<number> {
+    const absent = new Map<string, string[]>();
+    for (const delivery of this.openDeliveriesFor(sceneId)) {
+      if (!present.has(delivery.instanceId)) {
+        let eventIds = absent.get(delivery.instanceId);
+        if (!eventIds) {
+          eventIds = [];
+          absent.set(delivery.instanceId, eventIds);
+        }
+        eventIds.push(delivery.eventId);
+      }
+    }
+    let closed = 0;
+    const writes: Promise<void>[] = [];
+    for (const [instanceId, eventIds] of absent) {
+      closed += eventIds.length;
+      writes.push(this.cancel(sceneId, instanceId, eventIds));
+    }
+    await Promise.all(writes);
+    return closed;
+  }
+
+  /** Scenes holding at least one open delivery. */
   scenesWithOpenDeliveries(): string[] {
     return [...this.open.keys()];
   }
