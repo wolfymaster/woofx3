@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -612,6 +613,112 @@ func TestWaitForEOFReturnsWhenTheParentClosesStdin(t *testing.T) {
 	case <-returned:
 	case <-time.After(5 * time.Second):
 		t.Fatal("did not return after stdin closed")
+	}
+}
+
+func TestDependentsStartOnceTheirDependencysHealthCheckTimesOut(t *testing.T) {
+	supervisor, processes, output := newFakeSupervisor(t, []Service{
+		{Name: "api", Output: "api", HealthEndpoint: "http://127.0.0.1:5050/ready"},
+		{Name: "edge", Output: "edge", Dependencies: []string{"api"}},
+	}, func(string) bool { return false })
+
+	supervisor.StartInOrder([]string{"api", "edge"})
+	waitFor(t, "edge to start", func() bool { return len(processes.startedServices()) == 2 })
+	supervisor.StopAll()
+
+	got := summary(output.events(t))
+	unhealthy, edgeStarting := -1, -1
+	for i, event := range got {
+		switch event {
+		case "service:api:unhealthy":
+			unhealthy = i
+		case "service:edge:starting":
+			edgeStarting = i
+		case eventReady:
+			t.Errorf("ready reported although the api never passed its check: %v", got)
+		}
+	}
+	if unhealthy < 0 || edgeStarting < unhealthy {
+		t.Errorf("events = %v, want edge started only after the api's check timed out", got)
+	}
+}
+
+func TestAnUnhealthyServiceThatRecoversMakesTheEngineReady(t *testing.T) {
+	var recovered atomic.Bool
+	supervisor, _, output := newFakeSupervisor(t, []Service{
+		{Name: "api", Output: "api", HealthEndpoint: "http://127.0.0.1:5050/ready"},
+	}, func(string) bool { return recovered.Load() })
+
+	supervisor.StartInOrder([]string{"api"})
+	waitFor(t, "unhealthy", func() bool {
+		return slices.Contains(summary(output.events(t)), "service:api:unhealthy")
+	})
+	recovered.Store(true)
+	waitFor(t, "ready", func() bool { return hasEvent(output.events(t), eventReady) })
+	supervisor.StopAll()
+
+	got := summary(output.events(t))
+	want := []string{"service:api:starting", "service:api:unhealthy", "service:api:healthy", "ready"}
+	if len(got) < len(want) || !reflect.DeepEqual(got[:len(want)], want) {
+		t.Errorf("events = %v, want them to start with %v", got, want)
+	}
+}
+
+func TestExpandEndpoint(t *testing.T) {
+	env := map[string]string{"WOOFX3_API_PORT": "6060", "EMPTY": ""}
+	getenv := func(key string) string { return env[key] }
+
+	cases := map[string]string{
+		"http://127.0.0.1:5050/ready":                     "http://127.0.0.1:5050/ready",
+		"http://127.0.0.1:${WOOFX3_API_PORT:-5050}/ready": "http://127.0.0.1:6060/ready",
+		"http://127.0.0.1:${UNSET_PORT:-5050}/ready":      "http://127.0.0.1:5050/ready",
+		"http://127.0.0.1:${EMPTY:-5050}/ready":           "http://127.0.0.1:5050/ready",
+		"http://127.0.0.1:${WOOFX3_API_PORT}/ready":       "http://127.0.0.1:6060/ready",
+		"": "",
+	}
+	for endpoint, want := range cases {
+		if got := expandEndpoint(endpoint, getenv); got != want {
+			t.Errorf("expandEndpoint(%q) = %q, want %q", endpoint, got, want)
+		}
+	}
+}
+
+// The shipped services.json is what the container and the release archives
+// run: it must load, resolve its dependencies, and point the api's health
+// check at the port the api listens on.
+func TestShippedServicesJSONChecksTheAPIsReadiness(t *testing.T) {
+	config, err := loadConfig(filepath.Join("..", "config", "services.json"))
+	if err != nil {
+		t.Fatalf("load services.json: %v", err)
+	}
+
+	supervisor := NewSupervisor(t.TempDir(), discardLogger())
+	for _, service := range config.Services {
+		if service.Enabled {
+			supervisor.AddService(service)
+		}
+	}
+	if _, err := supervisor.GetStartupOrder(); err != nil {
+		t.Fatalf("startup order: %v", err)
+	}
+
+	api, ok := supervisor.services["api"]
+	if !ok {
+		t.Fatal("services.json has no enabled api")
+	}
+	// The default must match apiPort in build/config/.woofx3.json and the
+	// edge's in build/config/Caddyfile.edge.
+	if got := expandEndpoint(api.Service.HealthEndpoint, func(string) string { return "" }); got != "http://127.0.0.1:5050/ready" {
+		t.Errorf("api health endpoint by default = %q", got)
+	}
+	port := func(key string) string {
+		if key == "WOOFX3_API_PORT" {
+			return "7070"
+		}
+		return ""
+	}
+	if got := expandEndpoint(api.Service.HealthEndpoint, port); got != "http://127.0.0.1:7070/ready" {
+		t.Errorf("api health endpoint with WOOFX3_API_PORT=7070 = %q", got)
 	}
 }
 

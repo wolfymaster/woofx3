@@ -70,6 +70,13 @@ Define your services in `build/config/services.json`:
 }
 ```
 
+A service's `health_endpoint` gates the services that depend on it: they start
+once it answers `200`, or after 30 seconds without that, with a warning. Without
+one, a service counts as healthy as soon as it has started. `${NAME}` and
+`${NAME:-default}` in it are filled from the environment, so the endpoint can
+follow a port the deployment sets (the api's uses `WOOFX3_API_PORT`, defaulting
+to the `apiPort` in `config/.woofx3.json`).
+
 ### Environment Variables
 
 Override settings with BUILD_* environment variables in `.env`:
