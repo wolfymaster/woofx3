@@ -86,7 +86,7 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 | `action` | `string` | Yes (when `type` is `"action"`) | Registered action handler name: `function`, `alert`, `chat.reply`, `scene.widget.visibility` or `print` (see [Built-in Actions](./tasks.md#built-in-actions)). A step instantiating a module's `function` action uses `function`; one instantiating a `native` action uses that action's `handler`. |
 | `function` | `string` | Yes (when `action` is `"function"`) | Canonical id of the function this step invokes (e.g. `twitch_platform:function:play_alert`). Top-level handler config — same shape as `wait` and `workflow` configs sit at the top level for their step types. The `function` action handler reads it at runtime and dispatches to the barkloader sandbox without any DB lookup. |
 | `$ref` | `string` | No | Canonical id of the source action declaration this step instantiates (e.g. `twitch_platform:action:play_alert`). Recorded in `resource_references` for ownership tracking and the in-use check. The engine **ignores `$ref` at execution time** — dispatch is driven by `action` + `function`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's action selection. |
-| `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships and executes tasks in topological order. |
+| `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships, plus the orderings a `condition`'s branches imply, and executes tasks in topological order, ties going to the task declared first. |
 | `parameters` | `map<string, any>` | Yes | Task-specific inputs passed to the handler. For `function` actions the entire object is forwarded as a single argument to the sandboxed function. All string values support [expression resolution](#expression-syntax). |
 | `exports` | `map<string, string>` | No | Extracts values from the task result and makes them available to downstream tasks. Keys are the export names, values are dot-notation paths into the task's result data. |
 | `onError` | `string` | No | Error handling strategy. `"fail"` (default) stops the workflow. `"continue"` marks the task as failed but continues execution. |
@@ -102,8 +102,8 @@ These properties control conditional execution. For non-`condition` type tasks, 
 | `condition` | [ConditionConfig](#conditionconfig) | No | Single condition (backward compatible). Evaluated before the task runs. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Multiple conditions. Combined using `conditionLogic`. |
 | `conditionLogic` | `string` | No | How multiple conditions are combined. `"and"` (default) requires all conditions to be true. `"or"` requires at least one. |
-| `onTrue` | `string[]` | No | Task IDs to execute when the condition is **true**. Only used with `type: "condition"`. Tasks listed in `onFalse` are skipped. |
-| `onFalse` | `string[]` | No | Task IDs to execute when the condition is **false**. Only used with `type: "condition"`. Tasks listed in `onTrue` are skipped. |
+| `onTrue` | `string[]` | No | Task IDs to execute when the condition is **true**. Only used with `type: "condition"`. Tasks listed in `onFalse` are skipped, along with everything under any condition among them. Listed tasks always run after the condition. See [condition](./tasks.md#condition). |
+| `onFalse` | `string[]` | No | Task IDs to execute when the condition is **false**. Only used with `type: "condition"`. Tasks listed in `onTrue` are skipped, along with everything under any condition among them. Listed tasks always run after the condition. |
 
 ### Special Type Properties
 

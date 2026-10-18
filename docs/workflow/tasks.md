@@ -27,7 +27,7 @@ What "does no work" means depends on the type:
 
 This is how a single trigger inside a workflow is switched off: the trigger's `condition` task is disabled, so the event still starts the run but that trigger's branch never fires.
 
-A skip does not propagate. A task that `dependsOn` a disabled task still runs, and finds no exports from it; a task listed in a disabled condition's `onTrue` is skipped because the condition resolved false, not because of the dependency.
+A skip does not propagate through `dependsOn`. A task that `dependsOn` a disabled task still runs, and finds no exports from it; a task listed in a disabled condition's `onTrue` is skipped because the condition resolved false, not because of the dependency. Only a branch not taken skips what is under it, nested conditions' branches included (see [condition](#condition)).
 
 ## action
 
@@ -293,6 +293,27 @@ Evaluates conditions and controls branching. Unlike conditions on other task typ
 ```
 
 When the condition evaluates to `true`, tasks listed in `onFalse` are skipped. When `false`, tasks in `onTrue` are skipped. Both branches can contain multiple task IDs.
+
+A branch behaves like the steps under an "if" in a step list, whatever `dependsOn` the tasks in it declare:
+
+- **A branch task never runs before its condition.** Listing a task in `onTrue` or `onFalse` makes it wait for the condition, even with no `dependsOn` of its own.
+- **A branch not taken skips everything under it, at any depth.** A condition inside a skipped branch is skipped too, never evaluated, and so are both of its branches, and theirs. A condition only needs to list its direct children.
+- **The step after a condition waits for its branches.** A task outside a condition's branches that depends on the condition, or on any task in its branches, waits for every task in them, nested ones included. Skipped tasks count as finished, so it runs once the branch taken has finished, or right after the condition when that branch is empty. The one exception is a branch task that itself declares `dependsOn` that following task: the declared order is kept, and the following task does not wait for it.
+
+```json
+[
+  { "id": "check", "type": "condition", "conditions": [{ "field": "${trigger.data.amount}", "operator": "gte", "value": 500 }],
+    "onTrue": ["big-alert", "big-thanks"], "onFalse": ["small-thanks"] },
+  { "id": "big-alert", "type": "log", "dependsOn": ["check"], "parameters": { "message": "big alert" } },
+  { "id": "big-thanks", "type": "log", "dependsOn": ["big-alert"], "parameters": { "message": "big thanks" } },
+  { "id": "small-thanks", "type": "log", "dependsOn": ["check"], "parameters": { "message": "small thanks" } },
+  { "id": "log-it", "type": "log", "dependsOn": ["check"], "parameters": { "message": "after the branch" } }
+]
+```
+
+`log-it` depends only on `check`, but runs after `big-alert` and `big-thanks` (or after `small-thanks`), never alongside them.
+
+A condition listing an unknown task, or listing itself, is refused when the run starts, as is a condition that would have to run after its own branch.
 
 The condition task itself always succeeds (unless evaluation throws an error). It exports:
 
