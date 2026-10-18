@@ -83,6 +83,21 @@ describe("getActions", () => {
     const [action] = await getActions([{ id: "a2", createdByType: "USER", createdByRef: "", manifestId: "" }]);
     expect(action).not.toHaveProperty("projectionKey");
   });
+
+  test("carries a declared sentence and drops the empty column default", async () => {
+    const [declared, undeclared] = await getActions([
+      {
+        id: "a3",
+        createdByType: "MODULE",
+        createdByRef: "m",
+        manifestId: "increment",
+        sentence: "Add {amount} to {counter}",
+      },
+      { id: "a4", createdByType: "MODULE", createdByRef: "m", manifestId: "reset", sentence: "" },
+    ]);
+    expect(declared?.sentence).toBe("Add {amount} to {counter}");
+    expect(undeclared).not.toHaveProperty("sentence");
+  });
 });
 
 describe("moduleProjectionKey", () => {
