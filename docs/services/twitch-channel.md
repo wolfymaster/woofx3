@@ -229,10 +229,13 @@ enforce, and its refusal comes back as a `helix` result.
 
 Each method is the api's request to the twitch service's `helix` command,
 which performs one operation from `HELIX_OPERATIONS` in
-`twitch/src/lib/helix.ts` with Twurple's API client. That client renews a
-token Twitch refuses with 401 and retries once, and retries a 5xx or a
-network failure up to three times, so a call can take a few seconds before
-it answers.
+`twitch/src/lib/helix.ts`. Every operation is sent once, reads included, as
+the dashboard's own Helix calls are: a 5xx or a failed connection is
+answered as it is, never retried, because Twitch may have sent the chat
+message or made the clip before failing. The one exception is a 401, which
+Twitch answers before acting: the token is renewed and the request sent one
+more time. The request bypasses Twurple's API client, whose retries would
+break that rule, and uses the same auth provider for its token.
 
 | Method | Helix call | Params | Capability |
 |---|---|---|---|
