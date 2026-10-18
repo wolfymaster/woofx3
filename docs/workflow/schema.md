@@ -130,7 +130,7 @@ A single condition that compares a field value against an expected value using a
 |----------|------|----------|-------------|
 | `field` | `string` | Yes | The value to test. Supports [expression syntax](#expression-syntax) (e.g., `${trigger.data.amount}`). |
 | `operator` | `string` | Yes | Comparison operator. See [Operators](#operators). |
-| `value` | `any` | Yes | The expected value to compare against. Also supports expression syntax if it's a string. Type depends on the operator. |
+| `value` | `any` | Yes | The expected value to compare against. Type depends on the operator. A string supports expression syntax, and so does each item of a list (an `in` item, a `between` bound). |
 
 ### Operators
 
@@ -153,6 +153,8 @@ A single condition that compares a field value against an expected value using a
 | `between` | `range` | Value is within inclusive range | `[min, max]` |
 
 A null or missing field satisfies only `eq null`, `ne`, `in` a list holding `null`, `not_in` and `not_exists`; every other operator is false for it. A malformed `value` (an invalid `regex`, a `between` that is not `[min, max]`) is an error even when the field is null.
+
+Each item of a list value is resolved on its own, so `"value": ["${trigger.data.low}", 1000]` bounds a `between` by a trigger field. An item that is exactly one `${…}` keeps its value's type, so a referenced number bound compares as a number; a reference to a list stays a single item and is not spliced into the list. An item naming a path that does not exist fails the condition, as a whole value does, and a `${viewer.*}` item the viewer has no value for is null. A `between` with a null bound is false.
 
 Comparisons are numeric when both sides are numbers. A string is never converted to a number: `"100"` against `99` compares as text. Any other pair falls back to string comparison.
 

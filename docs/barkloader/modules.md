@@ -503,6 +503,8 @@ Both fields are **optional**. A module that declares neither behaves exactly as 
 }
 ```
 
+A field may also carry identity annotations (see [Identity fields](#identity-fields)) and a closed set of `options` (see [Field options](#field-options)).
+
 Deliberately a flat list of path strings rather than full JSON Schema: it matches `${trigger.data.X}` access exactly and renders straight into a picker. It carries no `required`, no nesting and no constraints — those would all be promises the engine does not keep.
 
 **Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`; a key the shape or a field does not define is rejected, so a misspelling cannot be dropped silently), and these rules are checked after, each reporting the offending resource by id:
@@ -579,6 +581,35 @@ The annotations are kept verbatim in the `emits` registered for the trigger; a f
 | `anonymousWhen` names a declared `boolean` path; `displayName` a declared `string` path | Both are read from the same payload as the identity, by exact path. |
 | `displayName` only on a `string` identity | One name cannot name each viewer of an array. |
 | `displayName` names a field other than the identity | An id is not a name; pointing at itself would show ids where names were promised. |
+
+#### Field options
+
+A `string` or `number` field whose values come from a known, closed set can list them with `options`, each value with the words a streamer reads for it. A condition editor then offers a picker ("Tier is Tier 1 or Tier 2") instead of asking the streamer to type the value the payload carries ("1000").
+
+```json
+{
+  "path": "tier",
+  "type": "string",
+  "description": "The subscription tier.",
+  "options": [
+    { "value": "1000", "label": "Tier 1" },
+    { "value": "2000", "label": "Tier 2" },
+    { "value": "3000", "label": "Tier 3" }
+  ]
+}
+```
+
+List options only when the set is closed: a picker offers only what is listed, so a value missing from it can only be checked with a typed `${…}`. Leave `options` out when the values are open (a user name, a reward title). It is allowed in `returns` too, for a function result with a fixed set of outcomes.
+
+When a trigger's `emits` field has no `options`, the condition editor borrows them from a `select` config field of the same trigger whose `eventPath` names that path, so a trigger already offering a choice in its settings offers the same choice in conditions.
+
+| Rule | Why |
+|---|---|
+| `options` only on a `string` or `number` field | A closed set is a set of scalars a condition compares with `eq` or `in`. |
+| at least one option | An empty list would offer nothing to choose; leave the key out instead. |
+| each `value` of the field's `type` | A `"1000"` option on a `number` field could never equal the `1000` the payload carries, so a condition built from it would never match. |
+| each `label` non-empty, each `value` listed once | A blank label shows nothing to pick, and a repeated value is two names for one thing. |
+| no keys beyond `value` and `label` | As everywhere in a shape, a misspelt key is rejected rather than dropped. |
 
 #### Alert summaries
 

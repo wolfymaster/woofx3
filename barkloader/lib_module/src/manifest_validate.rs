@@ -32,13 +32,13 @@ use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
     COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_DETAILS_MAX, DATA_SHAPE_FIELD_TYPES,
-    DATA_SHAPE_IDENTITIES, DATA_SHAPE_IDENTITY_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
-    HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES, ManifestAction,
-    ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape,
-    ManifestDataShapeField, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
-    ManifestTrigger, ManifestWidgetBehaviorKind, ManifestWorkflow, ModuleManifest, ModuleWidget,
-    SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
-    WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
+    DATA_SHAPE_IDENTITIES, DATA_SHAPE_IDENTITY_FIELD_TYPES, DATA_SHAPE_OPTION_FIELD_TYPES,
+    DEADLINES_MAX_PENDING_CAP, HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
+    ManifestDataShape, ManifestDataShapeField, ManifestFunction, ManifestResourceKind,
+    ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWidgetBehaviorKind, ManifestWorkflow,
+    ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE,
+    WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
@@ -2345,6 +2345,7 @@ fn validate_data_shape(
         let path = field.path.trim();
         let field_context = format!("{context} field #{i} ({path})");
         validate_identity_annotation(field, &types_by_path, owner, &field_context)?;
+        validate_field_options(field, &field_context)?;
     }
     validate_alert_templates(shape, &types_by_path, owner, context)?;
     Ok(())
@@ -2488,6 +2489,57 @@ fn validate_identity_annotation(
             ));
         }
         validate_sibling_reference(reference, "displayName", "string", types_by_path, context)?;
+    }
+    Ok(())
+}
+
+/// Check a field's `options`: a non-empty list of distinct values, each of
+/// the field's own type and each with a label. A value of another type could
+/// never equal what the payload carries, so a condition built from it would
+/// silently never match.
+fn validate_field_options(field: &ManifestDataShapeField, context: &str) -> Result<()> {
+    let Some(options) = field.options.as_deref() else {
+        return Ok(());
+    };
+    if !DATA_SHAPE_OPTION_FIELD_TYPES.contains(&field.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `options` requires `type` to be one of {}, not {:?}",
+            DATA_SHAPE_OPTION_FIELD_TYPES.join(", "),
+            field.field_type
+        ));
+    }
+    if options.is_empty() {
+        return Err(anyhow!(
+            "{context}: `options` must list at least one value; leave it out when the values are open"
+        ));
+    }
+    let mut seen: Vec<&serde_json::Value> = Vec::with_capacity(options.len());
+    for (i, option) in options.iter().enumerate() {
+        let matches_type = match field.field_type.as_str() {
+            "string" => option.value.is_string(),
+            "number" => option.value.is_number(),
+            _ => false,
+        };
+        if !matches_type {
+            return Err(anyhow!(
+                "{context}: option #{i} value {} is not a {}",
+                option.value,
+                field.field_type
+            ));
+        }
+        if option.label.trim().is_empty() {
+            return Err(anyhow!(
+                "{context}: option #{i} ({}) needs a non-empty `label`",
+                option.value
+            ));
+        }
+        if seen.contains(&&option.value) {
+            return Err(anyhow!(
+                "{context}: option value {} is listed twice",
+                option.value
+            ));
+        }
+        seen.push(&option.value);
     }
     Ok(())
 }
@@ -4251,6 +4303,91 @@ mod tests {
         assert!(msg.contains("trigger #0 (t1)"), "names the trigger: {msg}");
         assert!(msg.contains("`emits`"), "names the shape: {msg}");
         msg
+    }
+
+    #[test]
+    fn accepts_options_on_a_string_and_a_number_field() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "tier", "type": "string",
+              "options": [{ "value": "1000", "label": "Tier 1" }, { "value": "2000", "label": "Tier 2" }] },
+            { "path": "level", "type": "number",
+              "options": [{ "value": 1, "label": "Low" }, { "value": 2.5, "label": "High" }] }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_options_on_returns() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "returns": { "fields": [{ "path": "status", "type": "string",
+                    "options": [{ "value": "added", "label": "Added" }] }] } }]"#,
+        );
+        validate(&m).expect("a returned value may have a closed set too");
+    }
+
+    #[test]
+    fn rejects_options_on_a_field_that_holds_no_scalar() {
+        let msg = emits_rejection(
+            r#"{ "path": "tags", "type": "array", "options": [{ "value": "a", "label": "A" }] }"#,
+        );
+        assert!(msg.contains("`options`"), "{msg}");
+        assert!(
+            msg.contains("string, number"),
+            "lists the accepted types: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_an_empty_options_list() {
+        let msg = emits_rejection(r#"{ "path": "tier", "type": "string", "options": [] }"#);
+        assert!(msg.contains("at least one value"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_option_of_another_type_than_its_field() {
+        let msg = emits_rejection(
+            r#"{ "path": "tier", "type": "string", "options": [{ "value": 1000, "label": "Tier 1" }] }"#,
+        );
+        assert!(msg.contains("tier"), "{msg}");
+        assert!(msg.contains("is not a string"), "{msg}");
+
+        let msg = emits_rejection(
+            r#"{ "path": "level", "type": "number", "options": [{ "value": "1", "label": "Low" }] }"#,
+        );
+        assert!(msg.contains("is not a number"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_option_without_a_label() {
+        let msg = emits_rejection(
+            r#"{ "path": "tier", "type": "string", "options": [{ "value": "1000", "label": " " }] }"#,
+        );
+        assert!(msg.contains("`label`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_repeated_option_value() {
+        let msg = emits_rejection(
+            r#"{ "path": "tier", "type": "string", "options": [
+                { "value": "1000", "label": "Tier 1" }, { "value": "1000", "label": "Tier one" }] }"#,
+        );
+        assert!(msg.contains("listed twice"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_unknown_key_on_an_option() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [{ "path": "tier", "type": "string",
+                    "options": [{ "value": "1000", "label": "Tier 1", "colour": "gold" }] }] } }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json)
+            .expect_err("an unknown option key must not parse");
     }
 
     #[test]
