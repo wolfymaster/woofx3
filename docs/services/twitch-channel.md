@@ -243,6 +243,11 @@ Twitch answers before acting: the token is renewed and the request sent one
 more time. The request bypasses Twurple's API client, whose retries would
 break that rule, and uses the same auth provider for its token.
 
+An operation has 8 seconds in all, waiting for the token included, so the
+twitch service answers `failed` before the api's 10-second wait runs out and
+the caller learns why. Its error says whether a request had been sent, in
+which case Twitch may still have acted.
+
 | Method | Helix call | Params | Capability |
 |---|---|---|---|
 | `twitchGetChannelInformation()` | `GET /channels?broadcaster_id` | none | `twitch.streamInfo` |

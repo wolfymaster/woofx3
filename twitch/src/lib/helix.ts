@@ -384,17 +384,41 @@ function parseHelixArgs(args: unknown): { operation: HelixOperationName; params:
 
 const HELIX_BASE_URL = "https://api.twitch.tv/helix/";
 
+/**
+ * How long one operation may take in all: getting the token, the request, the
+ * renewal and resend after a 401, and reading Twitch's answer. Must stay below
+ * `TWITCH_HELIX_TIMEOUT_MS` (10s) in api/src/routes/twitch.ts, the api's wait
+ * for this service's reply, so the api hears why an operation failed instead
+ * of timing out on it; the rest of that wait is margin for the NATS round trip.
+ */
+export const HELIX_DEADLINE_MS = 8_000;
+
 /** What `runHelixOperation` needs of the twitch service's Twurple auth provider. */
 export type HelixAuth = Pick<AuthProvider, "clientId" | "getAccessTokenForUser" | "refreshAccessTokenForUser">;
 
 export type HelixFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
+ * `promise`'s outcome, or the signal's reason once it aborts first. Bounds a
+ * wait the signal cannot cancel, such as the dashboard auth provider asking
+ * the api for a token, which has a longer timeout of its own; that request
+ * carries on and still stores the token it gets.
+ */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+/**
  * Perform one declared Helix operation with the broadcaster's token and
  * answer with Twitch's own result. Twitch answering with an error status is
  * a result (`ok: false`), so its status and reason reach the caller intact;
  * only a request refused before it is sent, or one that never got an answer,
- * throws.
+ * throws. The whole operation gives up after `deadlineMs`.
  *
  * Sent with a plain fetch rather than Twurple's API client, because that
  * client retries a 5xx or a network failure up to three times: a chat
@@ -408,36 +432,63 @@ export async function runHelixOperation(
   auth: HelixAuth,
   broadcasterId: string,
   args: unknown,
-  fetchFn: HelixFetch = fetch
+  fetchFn: HelixFetch = fetch,
+  deadlineMs: number = HELIX_DEADLINE_MS
 ): Promise<HelixCommandResult> {
   const { operation, params } = parseHelixArgs(args);
   const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
   const search = new URLSearchParams(request.query).toString();
   const url = `${HELIX_BASE_URL}${request.url}${search ? `?${search}` : ""}`;
+  // Not `AbortSignal.timeout`: in Bun 1.3 its timer stops for good once its
+  // last abort listener is removed, which every wait here does as it settles.
+  const deadline = new AbortController();
+  const timer = setTimeout(
+    () => deadline.abort(new DOMException(`helix ${operation} timed out`, "TimeoutError")),
+    deadlineMs
+  );
+  const signal = deadline.signal;
+  let sent = false;
   const send = (accessToken: string) => {
     const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}`, "Client-Id": auth.clientId };
     if (request.jsonBody !== undefined) {
       headers["Content-Type"] = "application/json";
     }
-    return fetchFn(url, {
-      method: request.method,
-      headers,
-      body: request.jsonBody === undefined ? undefined : JSON.stringify(request.jsonBody),
-    });
+    sent = true;
+    return untilAborted(
+      fetchFn(url, {
+        method: request.method,
+        headers,
+        body: request.jsonBody === undefined ? undefined : JSON.stringify(request.jsonBody),
+        signal,
+      }),
+      signal
+    );
   };
 
-  const token = await auth.getAccessTokenForUser(broadcasterId);
-  if (!token) {
-    throw new Error(`helix ${operation}: there is no Twitch token for the broadcaster`);
-  }
-  let response = await send(token.accessToken);
-  if (response.status === 401 && auth.refreshAccessTokenForUser) {
-    await response.body?.cancel();
-    const renewed = await auth.refreshAccessTokenForUser(broadcasterId);
-    response = await send(renewed.accessToken);
+  let response: Response;
+  let text: string;
+  try {
+    const token = await untilAborted(auth.getAccessTokenForUser(broadcasterId), signal);
+    if (!token) {
+      throw new Error(`helix ${operation}: there is no Twitch token for the broadcaster`);
+    }
+    response = await send(token.accessToken);
+    if (response.status === 401 && auth.refreshAccessTokenForUser) {
+      await response.body?.cancel();
+      const renewed = await untilAborted(auth.refreshAccessTokenForUser(broadcasterId), signal);
+      response = await send(renewed.accessToken);
+    }
+    text = await untilAborted(response.text(), signal);
+  } catch (err) {
+    if (signal.aborted) {
+      const outcome = sent ? "; Twitch may still have acted" : ", before a request was sent";
+      throw new Error(`helix ${operation}: no answer within ${deadlineMs / 1000}s${outcome}`, { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 
-  const text = await response.text();
   if (!response.ok) {
     return { ok: false, status: response.status, body: text };
   }

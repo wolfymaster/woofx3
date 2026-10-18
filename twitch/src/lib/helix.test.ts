@@ -476,6 +476,51 @@ describe("runHelixOperation", () => {
     expect(sent).toEqual([]);
   });
 
+  test("gives up on a request Twitch does not answer within the deadline", async () => {
+    const sent: AbortSignal[] = [];
+    const hangingFetch = (_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal as AbortSignal;
+        sent.push(signal);
+        signal.addEventListener("abort", () => reject(signal.reason));
+      });
+
+    await expect(
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, hangingFetch, 20)
+    ).rejects.toThrow("helix createStreamMarker: no answer within 0.02s; Twitch may still have acted");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.aborted).toBe(true);
+  });
+
+  test("gives up on a body Twitch does not finish sending within the deadline", async () => {
+    const endless = new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("{")) });
+    const { fetchFn } = fetchAnswering(new Response(endless, { status: 200 }));
+
+    await expect(
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, fetchFn, 20)
+    ).rejects.toThrow("no answer within 0.02s");
+  });
+
+  test("counts the wait for a token against the deadline, and sends nothing after it", async () => {
+    const { fetchFn, sent } = fetchAnswering(json(200, { data: [] }));
+    const auth = { ...fakeAuth(), getAccessTokenForUser: () => new Promise<never>(() => {}) };
+
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, fetchFn, 20)
+    ).rejects.toThrow("no answer within 0.02s, before a request was sent");
+    expect(sent).toEqual([]);
+  });
+
+  test("counts the token renewal after a 401 against the same deadline", async () => {
+    const { fetchFn, sent } = fetchAnswering(new Response("", { status: 401 }), json(200, { data: [] }));
+    const auth = { ...fakeAuth(), refreshAccessTokenForUser: () => new Promise<never>(() => {}) };
+
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, fetchFn, 20)
+    ).rejects.toThrow("Twitch may still have acted");
+    expect(sent).toHaveLength(1);
+  });
+
   test("refuses an unknown or inherited operation without a request", async () => {
     const { fetchFn, sent } = fetchAnswering();
 
