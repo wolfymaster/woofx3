@@ -44,8 +44,8 @@ export interface ApiConfig {
   sceneManagerUrl: string;
   apiUrl: string;
   /**
-   * The marketplace this engine installs from, or null when installing from
-   * a marketplace is turned off (`marketplaceUrl` set to blank).
+   * The marketplace this engine installs and reads the catalog from, or null
+   * when the marketplace is turned off (`marketplaceUrl` set to blank).
    */
   marketplace: MarketplaceConfig | null;
   nats: {

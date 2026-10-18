@@ -63,7 +63,7 @@ export interface ApiOptions {
   logger: SharedLogger;
   /** The running release (`WOOFX3_VERSION`); "dev" for an unversioned build. */
   version?: string;
-  /** The marketplace to install from; null or absent when marketplace installs are turned off. */
+  /** The marketplace to install and read the catalog from; null or absent when it is turned off. */
   marketplace?: MarketplaceClient | null;
 }
 
