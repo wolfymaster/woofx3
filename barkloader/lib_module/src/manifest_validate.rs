@@ -1189,11 +1189,10 @@ fn add_step(
 /// Build the ordered list of install operations for `manifest`: a
 /// dependency graph over [`InstallStep`]s — nodes are the resources
 /// `resolved` carries, edges are the data dependencies traced through
-/// `run_install`'s current body (see the design notes in the
-/// `barkloader` implementation plan) — validated (including every
-/// cross-module reference, via `db_proxy`) and topologically sorted.
-/// Replaces `run_install`'s previously hand-ordered ~500-line sequence
-/// with an explicit, independently testable value.
+/// `run_install`'s body — validated (including every cross-module
+/// reference, via `db_proxy`) and topologically sorted, so the install
+/// order is an explicit, independently testable value rather than the
+/// order statements happen to appear in.
 pub async fn build_install_plan(
     manifest: &ModuleManifest,
     resolved: &ResolvedManifest,
@@ -1396,13 +1395,10 @@ fn topo_sort(nodes: Vec<StepNode>) -> Vec<InstallStep> {
 /// trigger, a workflow step's action) resolves against an already-installed
 /// module, via `db_proxy`.
 ///
-/// No namespace is exempt. Bundled declarations used to be, because whichever
-/// service owned them wrote their rows on its own startup schedule and they
-/// might genuinely not exist yet at validation time. They are installed by
-/// barkloader's boot reconciler before any user module can be uploaded now,
-/// so they are ordinary rows resolvable by the same query as anything else --
-/// and the namespace that was most prone to drift stops being the one with
-/// the least validation.
+/// No namespace is exempt, bundled declarations included: barkloader's boot
+/// reconciler installs them before any user module can be uploaded, so they
+/// are ordinary rows resolvable by the same query as anything else, and the
+/// namespace most prone to drift gets the same validation as the rest.
 async fn validate_cross_module_refs(
     resolved: &ResolvedManifest,
     db_proxy: &dyn ModuleDbProxy,

@@ -22,7 +22,7 @@ import (
 type workflowService struct {
 	workflowRepo  *repo.WorkflowRepository
 	commandRepo   *repo.CommandRepository
-	executionRepo *gorm.DB // We'll use direct DB access for executions for now
+	executionRepo *gorm.DB // no execution repository: models.WorkflowExecution helpers take this handle
 	publisher     *workers.EventPublisher
 	refRepo       *repo.ResourceReferenceRepository
 }

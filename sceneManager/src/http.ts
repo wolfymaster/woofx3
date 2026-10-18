@@ -1,3 +1,4 @@
+import { RequestGuard } from "@woofx3/common/http/request-guard";
 import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
@@ -68,33 +69,41 @@ export interface HttpDeps {
 }
 
 // CORS for iframe-embedded widgets and cross-origin OBS browser
-// sources — same rationale as streamware's CORS_HEADERS.
+// sources. The allowed origin is per request (see
+// RequestGuard.corsOriginHeaders).
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
   "Cross-Origin-Resource-Policy": "cross-origin",
 };
 
-// Upload grants are bearer capabilities carried in the URL, not cookies,
-// so allowing any origin to PUT grants nothing the token did not already.
+// Upload grants are bearer capabilities carried in the URL, not cookies, so
+// letting a cross-origin page PUT grants it nothing the token did not already.
+// Which origins may do so is the request guard's call, as on every route: any
+// origin while WOOFX3_ALLOWED_ORIGINS is unset, only the listed ones once set.
 const UPLOAD_CORS_HEADERS: Record<string, string> = {
   ...CORS_HEADERS,
   "Access-Control-Allow-Methods": UPLOAD_ALLOWED_METHODS,
 };
 
-/** CORS headers for a path: its preflight answer and its responses. The
- *  media proxy and the asset read route grant none (see routes/media.ts and
- *  routes/asset-read.ts). */
-export function corsHeadersFor(pathname: string): Record<string, string> {
+const ANY_ORIGIN: Record<string, string> = { "Access-Control-Allow-Origin": "*" };
+
+/** CORS headers for a path: its preflight answer and its responses.
+ *  `originHeaders` are the request's allowed-origin headers, `*` unless
+ *  WOOFX3_ALLOWED_ORIGINS is set. The media proxy and the asset read route
+ *  grant none (see routes/media.ts and routes/asset-read.ts). */
+export function corsHeadersFor(
+  pathname: string,
+  originHeaders: Record<string, string> = ANY_ORIGIN
+): Record<string, string> {
   if (isMediaProxyPath(pathname) || isAssetReadPath(pathname)) {
     return {};
   }
-  return isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS;
+  return { ...originHeaders, ...(isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS) };
 }
 
-function withCors(res: Response, corsHeaders: Record<string, string> = CORS_HEADERS): Response {
+function withCors(res: Response, corsHeaders: Record<string, string>): Response {
   const headers = new Headers(res.headers);
   for (const [name, value] of Object.entries(corsHeaders)) {
     headers.set(name, value);
@@ -103,14 +112,13 @@ function withCors(res: Response, corsHeaders: Record<string, string> = CORS_HEAD
 }
 
 /**
- * Hand-rolled `Bun.serve` routing — same convention streamware/api use
- * for this class of service (see the note in the earlier scaffold
- * about correcting course away from Hono/Express, neither of which is
- * actually the established pattern here).
+ * Hand-rolled `Bun.serve` routing, the convention api uses for this
+ * class of service; no Hono/Express.
  */
 export function createHttpServer(deps: HttpDeps) {
   const { ctx } = deps;
   const editorDeps = { sessionTokens: deps.sessionTokens, sceneDocuments: deps.sceneDocuments, logger: ctx.logger };
+  const requestGuard = new RequestGuard(ctx.runtimeConfig.requestGuard);
   return Bun.serve<EditorSocketData>({
     port: ctx.runtimeConfig.port,
     hostname: ctx.runtimeConfig.bindHost,
@@ -130,6 +138,22 @@ export function createHttpServer(deps: HttpDeps) {
     fetch: async (req, server) => {
       const url = new URL(req.url);
 
+      // Before any route, the editor's WebSocket upgrade and the SSE stream
+      // included; see "Host and Origin checks" in
+      // docs/services/deployment.md for what OBS and widget frames send.
+      const rejected = requestGuard.reject(req);
+      if (rejected) {
+        ctx.logger.warn("Request refused by host/origin guard", {
+          status: rejected.status,
+          host: req.headers.get("host"),
+          origin: req.headers.get("origin"),
+          path: url.pathname,
+        });
+        return rejected;
+      }
+      const cors = corsHeadersFor(url.pathname, requestGuard.corsOriginHeaders(req));
+      const respond = (res: Response): Response => withCors(res, cors);
+
       // GET /scene/{sceneId}/edit — upgraded outside the request span, since
       // a socket that opens returns no response for the span to end with.
       const editorMatch = /^\/scene\/([^/]+)\/edit$/.exec(url.pathname);
@@ -138,21 +162,18 @@ export function createHttpServer(deps: HttpDeps) {
       }
 
       if (req.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: corsHeadersFor(url.pathname) });
+        return new Response(null, { status: 204, headers: cors });
       }
 
       return withSpan(
         `scene-manager ${req.method}`,
         async (): Promise<Response> => {
           if (url.pathname === "/health") {
-            return withCors(Response.json({ status: "ok" }));
+            return respond(Response.json({ status: "ok" }));
           }
 
           if (isUploadPath(url.pathname)) {
-            return withCors(
-              await handleUploadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger),
-              UPLOAD_CORS_HEADERS
-            );
+            return respond(await handleUploadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
           }
 
           if (isAssetReadPath(url.pathname)) {
@@ -160,11 +181,11 @@ export function createHttpServer(deps: HttpDeps) {
           }
 
           if (isStorageAssetPath(url.pathname)) {
-            return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
+            return respond(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
           }
 
           if (isFontPath(url.pathname)) {
-            return withCors(await handleFontRoute(req, url, deps.fonts));
+            return respond(await handleFontRoute(req, url, deps.fonts));
           }
 
           if (isMediaProxyPath(url.pathname)) {
@@ -172,54 +193,54 @@ export function createHttpServer(deps: HttpDeps) {
           }
 
           if (url.pathname.startsWith("/assets/")) {
-            return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
+            return respond(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
           }
 
           // The editor's composition preview (routes/composition-preview.ts).
           if (url.pathname === COMPOSITION_PREVIEW_PATH && req.method === "GET") {
-            return withCors(await handleCompositionPreviewRoute(url, deps));
+            return respond(await handleCompositionPreviewRoute(url, deps));
           }
           if (url.pathname === COMPOSITION_PREVIEW_FRAMES_PATH && req.method === "POST") {
-            return withCors(await handleCompositionPreviewFramesRoute(req, deps));
+            return respond(await handleCompositionPreviewFramesRoute(req, deps));
           }
           if (url.pathname === COMPOSITION_PREVIEW_REFRESH_PATH && req.method === "POST") {
-            return withCors(await handleCompositionPreviewRefreshRoute(req, deps));
+            return respond(await handleCompositionPreviewRefreshRoute(req, deps));
           }
 
           // GET /scene/{sceneId} — shell + JWT mint.
           const sceneMatch = /^\/scene\/([^/]+)$/.exec(url.pathname);
           if (sceneMatch && req.method === "GET") {
-            return withCors(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
+            return respond(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
           }
 
           // GET /scene/{sceneId}/config
           const configMatch = /^\/scene\/([^/]+)\/config$/.exec(url.pathname);
           if (configMatch && req.method === "GET") {
-            return withCors(await handleSceneConfigRoute(req, configMatch[1]!, deps));
+            return respond(await handleSceneConfigRoute(req, configMatch[1]!, deps));
           }
 
           // POST /scene/{sceneId}/draft-config
           const draftConfigMatch = /^\/scene\/([^/]+)\/draft-config$/.exec(url.pathname);
           if (draftConfigMatch && req.method === "POST") {
-            return withCors(await handleSceneDraftConfigRoute(req, draftConfigMatch[1]!, deps));
+            return respond(await handleSceneDraftConfigRoute(req, draftConfigMatch[1]!, deps));
           }
 
           // POST /scene/{sceneId}/session/refresh
           const refreshMatch = /^\/scene\/([^/]+)\/session\/refresh$/.exec(url.pathname);
           if (refreshMatch && req.method === "POST") {
-            return withCors(await handleSessionRefreshRoute(req, refreshMatch[1]!, deps));
+            return respond(await handleSessionRefreshRoute(req, refreshMatch[1]!, deps));
           }
 
           // GET /frames/{moduleId}/{manifestId}
           const frameDocumentMatch = /^\/frames\/([^/]+)\/([^/]+)$/.exec(url.pathname);
           if (frameDocumentMatch && req.method === "GET") {
-            return withCors(await handleFrameDocumentRoute(req, frameDocumentMatch[1]!, frameDocumentMatch[2]!, deps));
+            return respond(await handleFrameDocumentRoute(req, frameDocumentMatch[1]!, frameDocumentMatch[2]!, deps));
           }
 
           // GET /scene/{sceneId}/alert/{eventId}/widget/{widgetId}
           const alertWidgetMatch = /^\/scene\/([^/]+)\/alert\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
           if (alertWidgetMatch && req.method === "GET") {
-            return withCors(
+            return respond(
               await handleAlertWidgetFrameRoute(
                 req,
                 alertWidgetMatch[1]!,
@@ -233,40 +254,40 @@ export function createHttpServer(deps: HttpDeps) {
           // POST /scene/{sceneId}/widget/{instanceId}/status
           const statusMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/status$/.exec(url.pathname);
           if (statusMatch && req.method === "POST") {
-            return withCors(await handleWidgetStatusRoute(req, statusMatch[1]!, statusMatch[2]!, deps));
+            return respond(await handleWidgetStatusRoute(req, statusMatch[1]!, statusMatch[2]!, deps));
           }
 
           // GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}
           const storageMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/storage$/.exec(url.pathname);
           if (storageMatch && req.method === "GET") {
-            return withCors(await handleWidgetStorageRoute(req, storageMatch[1]!, storageMatch[2]!, deps));
+            return respond(await handleWidgetStorageRoute(req, storageMatch[1]!, storageMatch[2]!, deps));
           }
 
           // GET /scene/{sceneId}/events — SSE.
           const eventsMatch = /^\/scene\/([^/]+)\/events$/.exec(url.pathname);
           if (eventsMatch && req.method === "GET") {
-            return withCors(await handleEventsStreamRoute(req, eventsMatch[1]!, deps));
+            return respond(await handleEventsStreamRoute(req, eventsMatch[1]!, deps));
           }
 
           // POST /scene/{sceneId}/events/{eventId}/delivered
           const deliveredMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/delivered$/.exec(url.pathname);
           if (deliveredMatch && req.method === "POST") {
-            return withCors(await handleEventDeliveredRoute(req, deliveredMatch[1]!, deliveredMatch[2]!, deps));
+            return respond(await handleEventDeliveredRoute(req, deliveredMatch[1]!, deliveredMatch[2]!, deps));
           }
 
           // POST /scene/{sceneId}/events/{eventId}/started
           const startedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/started$/.exec(url.pathname);
           if (startedMatch && req.method === "POST") {
-            return withCors(await handleEventStartedRoute(req, startedMatch[1]!, startedMatch[2]!, deps));
+            return respond(await handleEventStartedRoute(req, startedMatch[1]!, startedMatch[2]!, deps));
           }
 
           // POST /scene/{sceneId}/events/{eventId}/completed
           const completedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/completed$/.exec(url.pathname);
           if (completedMatch && req.method === "POST") {
-            return withCors(await handleEventCompletedRoute(req, completedMatch[1]!, completedMatch[2]!, deps));
+            return respond(await handleEventCompletedRoute(req, completedMatch[1]!, completedMatch[2]!, deps));
           }
 
-          return withCors(new Response("Not Found", { status: 404 }));
+          return respond(new Response("Not Found", { status: 404 }));
         },
         {
           attributes: { "http.request.method": req.method, "url.path": url.pathname },

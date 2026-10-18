@@ -39,6 +39,7 @@ const bus = await MessageBus.createMessageBus({
   url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
   jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
   nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
+  token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
 });
 const messageBusService = new MessageBusService(bus);
 
@@ -129,6 +130,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// The orchestrator's stop request on Windows (CTRL_BREAK_EVENT). Never raised elsewhere.
+process.on("SIGBREAK", () => gracefulShutdown("SIGBREAK"));
 process.on("uncaughtException", (error) => {
   console.error("Uncaught Exception:", error);
   gracefulShutdown("uncaughtException");

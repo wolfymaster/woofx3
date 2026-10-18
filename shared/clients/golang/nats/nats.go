@@ -58,6 +58,7 @@ func FromEnv(logger *slog.Logger) (*Client, error) {
 		Name:     name,
 		JWT:      os.Getenv("NATS_JWT"),
 		NKeySeed: os.Getenv("NATS_NKEY_SEED"),
+		Token:    os.Getenv("NATS_TOKEN"),
 	}
 
 	return CreateMessageBus(config, logger)

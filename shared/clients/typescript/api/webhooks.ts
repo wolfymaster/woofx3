@@ -686,6 +686,12 @@ export interface ModuleInstalledEvent {
   moduleKey: string;
   alreadyInstalled?: boolean;
   /**
+   * Where the install came from. Set only on the events the api sends
+   * itself (an already-installed answer); barkloader's own completion event
+   * carries none.
+   */
+  source?: "marketplace";
+  /**
    * Catalog metadata extracted from the stored manifest at install
    * completion. `author` is guaranteed non-empty by the engine —
    * "Unknown" when the manifest omitted the field. `taxonomy` is the
@@ -712,6 +718,12 @@ export interface ModuleInstallFailedEvent {
   version: string;
   moduleKey: string;
   error: string;
+  /**
+   * Where the install came from. Set only on failures the api reports
+   * before barkloader has the archive; barkloader's own failure event
+   * carries none.
+   */
+  source?: "marketplace";
 }
 
 export interface ModuleDeletedEvent {

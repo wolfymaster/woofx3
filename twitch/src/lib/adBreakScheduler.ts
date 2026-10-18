@@ -9,7 +9,7 @@ const POLL_INTERVAL_MS = 60_000;
  * cannot fix. A missing scope needs the streamer to relink, so it waits
  * longest; a rate limit doubles from its base on each consecutive refusal.
  */
-const BACKOFF_MS: Record<Exclude<TwitchApiErrorCode, "failed">, number> = {
+const BACKOFF_MS: Record<Exclude<TwitchApiErrorCode, "failed" | "invalid_arguments">, number> = {
   missing_scope: 15 * 60_000,
   unauthorized: 5 * 60_000,
   rate_limited: 2 * 60_000,
@@ -246,6 +246,7 @@ export class AdBreakScheduler {
         backoffMs = BACKOFF_MS[code];
         break;
       }
+      case "invalid_arguments":
       case "failed": {
         backoffMs = 0;
         break;

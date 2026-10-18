@@ -68,6 +68,48 @@ describe("resolveConfig OTel defaults", () => {
   });
 });
 
+describe("resolveConfig log directory", () => {
+  const keys = ["WOOFX3_DATA_DIR", "WOOFX3_LOG_DIR"];
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const key of keys) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+  afterEach(() => {
+    for (const key of keys) {
+      if (saved[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = saved[key];
+      }
+    }
+  });
+
+  test("without a data dir the caller's directory wins, as before", () => {
+    expect(resolveConfig({ logDir: "/opt/woofx3/logs" }).logDir).toBe("/opt/woofx3/logs");
+    expect(resolveConfig().logDir).toBe("logs");
+    process.env.WOOFX3_LOG_DIR = "elsewhere";
+    expect(resolveConfig().logDir).toBe("elsewhere");
+  });
+
+  test("with a data dir the logs default to <data dir>/logs", () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "woofx3-data-"));
+    process.env.WOOFX3_DATA_DIR = dataDir;
+    expect(resolveConfig({ logDir: "/opt/woofx3/logs" }).logDir).toBe(path.join(dataDir, "logs"));
+  });
+
+  test("with a data dir a relative WOOFX3_LOG_DIR is anchored in it and an absolute one is kept", () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "woofx3-data-"));
+    process.env.WOOFX3_DATA_DIR = dataDir;
+    process.env.WOOFX3_LOG_DIR = "service-logs";
+    expect(resolveConfig().logDir).toBe(path.join(dataDir, "service-logs"));
+    process.env.WOOFX3_LOG_DIR = path.join(os.tmpdir(), "absolute-logs");
+    expect(resolveConfig().logDir).toBe(path.join(os.tmpdir(), "absolute-logs"));
+  });
+});
+
 describe("file naming", () => {
   test("trace files mirror the log file convention", () => {
     const now = new Date(2026, 8, 6, 4, 7);

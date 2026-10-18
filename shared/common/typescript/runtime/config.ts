@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { z } from "zod";
+import { dataDir } from "./data-dir";
 
 /**
  * Convert camelCase to SCREAMING_SNAKE_CASE for env key mapping.
@@ -20,16 +21,21 @@ export function screamingSnakeToCamel(s: string): string {
     .join("");
 }
 
-const PROJECT_ROOT_MARKERS = [".woofx3.json", ".woofx3.config"] as const;
+/**
+ * Config file names read from a config root, in order of preference. Must match FileNames in
+ * shared/common/golang/config/location.go and CONFIG_FILE_NAMES in shared/common/rust/runtime/src/lib.rs.
+ */
+const CONFIG_FILE_NAMES = [".woofx3.json", ".woofx3.config"] as const;
 
 /**
- * Find project root by walking up from startDir until we find .woofx3.json, .woofx3.config, .env, or package.json.
+ * Find the project root by walking up from startDir until a directory holds .woofx3.json or
+ * .woofx3.config. Without one, startDir (default: the working directory) is the root.
  */
 export function findProjectRoot(startDir?: string): string {
   let dir = startDir ?? process.cwd();
   const root = path.parse(dir).root;
   while (dir !== root) {
-    if (PROJECT_ROOT_MARKERS.some((name) => fs.existsSync(path.join(dir, name)))) {
+    if (CONFIG_FILE_NAMES.some((name) => fs.existsSync(path.join(dir, name)))) {
       return dir;
     }
     dir = path.dirname(dir);
@@ -70,21 +76,80 @@ function loadDotenvFile(rootDir: string): Record<string, string> {
 }
 
 /**
- * Load .woofx3.json or .woofx3.config from rootDir if present (prefers .woofx3.json). Expects JSON with camelCase keys.
+ * Read a JSON config file with camelCase keys. A file that exists but cannot be read, does not
+ * parse, or does not hold a JSON object is an error: starting on defaults instead would hide a
+ * typo in the deployment's config until something misbehaves.
+ */
+function readWoofx3ConfigFile(configPath: string): Record<string, string | number | boolean> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch (error) {
+    throw new Error(`${configPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${configPath}: the config file must hold a JSON object`);
+  }
+  return coerceConfigValues(parsed as Record<string, unknown>);
+}
+
+/**
+ * Load .woofx3.json or .woofx3.config from rootDir, preferring .woofx3.json. Neither existing is
+ * not an error: a service can be configured entirely through WOOFX3_* variables.
  */
 function loadWoofx3ConfigFile(rootDir: string): Record<string, string | number | boolean> | null {
-  for (const name of [".woofx3.json", ".woofx3.config"]) {
+  for (const name of CONFIG_FILE_NAMES) {
     const configPath = path.join(rootDir, name);
-    if (!fs.existsSync(configPath)) continue;
-    try {
-      const content = fs.readFileSync(configPath, "utf8");
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      return coerceConfigValues(parsed);
-    } catch {
-      return null;
+    if (fs.existsSync(configPath)) {
+      return readWoofx3ConfigFile(configPath);
     }
   }
   return null;
+}
+
+/**
+ * Names an explicit config file. It must exist: a deployment that names its config file and gets
+ * an empty config instead would start with defaults it never asked for.
+ * Must match ConfigFileEnv in shared/common/golang/config/location.go and CONFIG_FILE_ENV in
+ * shared/common/rust/runtime/src/lib.rs.
+ */
+export const CONFIG_FILE_ENV = "WOOFX3_CONFIG";
+
+/** Names the config root directory, holding .env and, unless WOOFX3_CONFIG is set, .woofx3.json. */
+export const ROOT_DIR_ENV = "WOOFX3_ROOT";
+
+/** Where configuration is read from. */
+export interface ConfigLocation {
+  /** Holds .env, and .woofx3.json unless `configPath` is set. */
+  rootDir: string;
+  /** An explicitly named config file, which must exist. */
+  configPath?: string;
+}
+
+/**
+ * Pick the config root and file, first match wins. Values are trimmed and blank counts as unset, as
+ * in the Go and Rust loaders:
+ * - `rootDir`: that directory's .env and .woofx3.json.
+ * - WOOFX3_CONFIG: that file; .env from WOOFX3_ROOT if set, else the file's directory.
+ * - WOOFX3_ROOT: that directory's .env and .woofx3.json.
+ * - otherwise the nearest directory at or above the working directory holding a config file.
+ */
+export function resolveConfigLocation(
+  rootDir: string | undefined,
+  env: Record<string, string | undefined> = process.env
+): ConfigLocation {
+  const explicitRoot = rootDir?.trim();
+  if (explicitRoot) {
+    return { rootDir: path.resolve(explicitRoot) };
+  }
+  const rootValue = env[ROOT_DIR_ENV]?.trim();
+  const rootFromEnv = rootValue ? path.resolve(rootValue) : undefined;
+  const configFromEnv = env[CONFIG_FILE_ENV]?.trim();
+  if (configFromEnv) {
+    const configPath = path.resolve(configFromEnv);
+    return { rootDir: rootFromEnv ?? path.dirname(configPath), configPath };
+  }
+  return { rootDir: rootFromEnv ?? findProjectRoot() };
 }
 
 /**
@@ -142,7 +207,7 @@ export interface EnvConfigSchema {
 }
 
 export interface LoadRuntimeEnvOptions {
-  /** Project root directory. Defaults to findProjectRoot(). */
+  /** Project root directory; when set and not blank, WOOFX3_ROOT and WOOFX3_CONFIG are ignored. See resolveConfigLocation. */
   rootDir?: string;
   /** If true, set process.env from the validated config (camelCase keys -> SCREAMING_SNAKE_CASE) so code that reads process.env still works. */
   injectIntoProcess?: boolean;
@@ -191,11 +256,16 @@ function mergeByPrecedence(
  * must match exactly.
  */
 export function loadRuntimeEnv(options: LoadRuntimeEnvOptions): RuntimeEnvResult {
-  const rootDir = options?.rootDir ?? findProjectRoot();
+  const { rootDir, configPath } = resolveConfigLocation(options?.rootDir);
   const injectIntoProcess = options?.injectIntoProcess ?? false;
   const schema = options.schema;
 
-  const woofx3Raw = loadWoofx3ConfigFile(rootDir);
+  if (configPath !== undefined && !fs.existsSync(configPath)) {
+    throw new Error(`${CONFIG_FILE_ENV} names a config file that does not exist: ${configPath}`);
+  }
+  // Fails a relative WOOFX3_DATA_DIR at startup rather than at the first path resolved under it.
+  dataDir(process.env);
+  const woofx3Raw = configPath !== undefined ? readWoofx3ConfigFile(configPath) : loadWoofx3ConfigFile(rootDir);
   const configFromFile: Record<string, string | number | boolean> = {};
   if (woofx3Raw) {
     for (const [key, value] of Object.entries(woofx3Raw)) {

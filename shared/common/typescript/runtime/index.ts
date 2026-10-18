@@ -16,6 +16,7 @@ export {
   loadRuntimeEnv,
   screamingSnakeToCamel,
 } from "./config";
+export { DATA_DIR_ENV, dataDir, resolveDataPath } from "./data-dir";
 export type { CreateNATSMonitorOptions } from "./monitor/nats";
 export { createNATSMonitor } from "./monitor/nats";
 export type {

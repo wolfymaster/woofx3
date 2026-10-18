@@ -69,7 +69,7 @@ func main() {
 			}
 
 			storageSvc := services.NewModuleStorageService(services.ModuleStorageConfig{
-				Path:            cfg.StoragePath,
+				Path:            runtime.ResolveDataPath(cfg.StoragePath),
 				ReplicaURL:      cfg.StorageReplicaURL,
 				AccessKeyID:     cfg.StorageReplicaAccessKeyID,
 				SecretAccessKey: cfg.StorageReplicaSecretAccessKey,

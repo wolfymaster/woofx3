@@ -1,6 +1,7 @@
 import {
   ENGINE_CAPABILITIES_SCHEMA,
   type EngineCapabilities,
+  type EngineInfo,
   type PingResponse,
   type StorageConfig,
   supportedEngineCapabilities,
@@ -28,17 +29,18 @@ export const engineRoutes = routeModule({
    *
    * All URLs strip trailing slashes so callers can join with `/`
    * without worrying about double-slashes.
+   *
+   * `hosting` is left out, not sent as null, when the deployment does not
+   * declare it: `EngineInfo.hosting` is optional, and a client reads its
+   * absence as unknown.
    */
-  async getEngineInfo(): Promise<{
-    engineSceneOverlayBaseUrl: string;
-    overlayPublicUrl: string;
-    version: string;
-  }> {
+  async getEngineInfo(): Promise<EngineInfo> {
     const overlayPublicUrl = await resolveSceneManagerUrl(this.db, this.sceneManagerUrl);
     return {
       engineSceneOverlayBaseUrl: `${overlayPublicUrl}/overlay/scene`,
       overlayPublicUrl,
       version: this.version,
+      ...(this.hosting !== null ? { hosting: this.hosting } : {}),
     };
   },
 
@@ -47,7 +49,7 @@ export const engineRoutes = routeModule({
    * without probing methods or comparing image tags.
    */
   async getEngineCapabilities(): Promise<EngineCapabilities> {
-    return { schema: ENGINE_CAPABILITIES_SCHEMA, capabilities: supportedEngineCapabilities() };
+    return { schema: ENGINE_CAPABILITIES_SCHEMA, capabilities: supportedEngineCapabilities(this.hosting) };
   },
 
   /**

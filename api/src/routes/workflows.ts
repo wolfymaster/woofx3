@@ -1,4 +1,3 @@
-import { routeModule } from "./context";
 import type {
   CreateWorkflowInput,
   UpdateWorkflowInput,
@@ -10,10 +9,11 @@ import { EngineEventType } from "@woofx3/api/webhooks";
 import { TRIGGER_TYPE_COMMAND } from "@woofx3/api/workflow-definition";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
-import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
-import type { WorkflowItem } from "./types";
 import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
 import { requestWorkflowHealth } from "../workflow-health-emitter";
+import { routeModule } from "./context";
+import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
+import type { WorkflowItem } from "./types";
 
 /**
  * Refuse to change or delete a chat command's workflow here: its command owns

@@ -8,7 +8,7 @@ import (
 // `WorkflowDefinition` in spirit: typed audit columns with two opaque
 // JSONB blobs (`widgets_json`, `layout_json`) the engine never inspects.
 //
-// The streamware overlay (and the Convex scene editor when present)
+// sceneManager (and the Convex scene editor when present)
 // reads this row to compose the final browser-source render. The
 // engine's only job here is durable storage + delivery; presentation
 // semantics live entirely in the consumer.

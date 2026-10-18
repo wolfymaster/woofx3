@@ -23,6 +23,13 @@ type Module struct {
 	InstalledAt   time.Time        `gorm:"column:installed_at;default:CURRENT_TIMESTAMP;not null"`
 	UpdatedAt     time.Time        `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 	Functions     []ModuleFunction `gorm:"foreignKey:ModuleID;references:ID"`
+
+	// The marketplace listing the module was installed from and that
+	// listing's edition. Nil for any other install. Recorded because the
+	// module key's first segment is the manifest id, which every edition of
+	// a listing shares.
+	MarketplaceListingID *string `gorm:"column:marketplace_listing_id;type:text"`
+	MarketplaceEdition   *int32  `gorm:"column:marketplace_edition;type:integer"`
 }
 
 func (Module) TableName() string { return "modules" }

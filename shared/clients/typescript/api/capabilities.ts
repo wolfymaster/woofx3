@@ -1,10 +1,16 @@
+import type { EngineHosting } from "./api";
+
 /**
  * Engine capability ids: the features this engine build supports that a
  * client may need to detect before using. `getEngineCapabilities()` returns
  * exactly these values, so an id listed here is a promise the engine keeps.
  *
- * Engine images are tagged rather than semver-versioned, so a client cannot
- * infer features from `getEngineInfo().version`. It asks for the list instead.
+ * A client asks for this list rather than comparing `getEngineInfo().version`
+ * against the release that shipped a feature: a build from source reports
+ * `dev`, and a list keeps clients from tracking which release shipped what.
+ * The capability table in docs/services/engine-capabilities.md records each
+ * id's first release (its Since column) only so a client knows when every
+ * supported engine has the id and its check can be removed.
  *
  * An id is `<area>.<feature>` in camelCase and never changes meaning once
  * shipped: a behavior change that clients must tell apart gets a new id.
@@ -44,6 +50,12 @@ export const ENGINE_CAPABILITIES = {
    * taking the event types to push.
    */
   eventsLog: "events.log",
+  /**
+   * This engine runs on the streamer's own machine under the desktop app
+   * (`getEngineInfo().hosting` is `local`). Advertised only by such an engine;
+   * see HOSTING_ENGINE_CAPABILITIES.
+   */
+  engineLocalMode: "engine.localMode",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
@@ -67,11 +79,58 @@ export const ENGINE_CAPABILITIES = {
   /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
   modulesFiles: "modules.files",
   /**
+   * Installing from the marketplace by listing id, with the engine fetching
+   * and verifying the archive itself: `installMarketplaceListing`,
+   * `inspectMarketplaceListing`, `installMarketplaceBundle`.
+   */
+  modulesMarketplaceInstall: "modules.marketplaceInstall",
+  /**
+   * Marketplace catalog reads through the engine, answered with the
+   * marketplace's JSON unchanged: `marketplaceSearch`, `marketplaceCounts`,
+   * `marketplaceGetListing`, `marketplaceGetAuthor`, `marketplaceQuote`.
+   */
+  marketplaceCatalog: "marketplace.catalog",
+  /**
    * A Twitch token that carries the app's `clientId` is renewed by asking the
    * dashboard that sent it (`twitch.token.requested`), not with a refresh
    * token, so the dashboard need not send one.
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
+  /**
+   * The Stream info widget's Helix calls, made by the engine as the linked
+   * broadcaster and answered with Twitch's own result:
+   * `twitchGetChannelInformation`, `twitchGetGames`, `twitchSearchCategories`,
+   * `twitchModifyChannelInformation`, `twitchCreateStreamMarker`.
+   */
+  twitchStreamInfo: "twitch.streamInfo",
+  /**
+   * The Ad breaks widget's Helix calls, made and answered like
+   * `twitch.streamInfo`'s: `twitchGetAdSchedule`, `twitchSnoozeNextAd`.
+   */
+  twitchAds: "twitch.ads",
+  /**
+   * The Moderation widget's Helix calls, made and answered like
+   * `twitch.streamInfo`'s: `twitchGetUsers`, `twitchGetBlockedTerms`,
+   * `twitchAddBlockedTerm`, `twitchRemoveBlockedTerm`, `twitchBanUser`,
+   * `twitchUnbanUser`, `twitchGetChatSettings`, `twitchUpdateChatSettings`.
+   */
+  twitchModeration: "twitch.moderation",
+  /**
+   * The Broadcast controls' and Shoutouts widget's Helix calls, made and
+   * answered like `twitch.streamInfo`'s: `twitchSendChatMessage`,
+   * `twitchSendChatAnnouncement`, `twitchSendShoutout`, `twitchGetChatters`.
+   * Their user lookups are `twitchGetUsers`, which every engine with this id
+   * also serves (`twitch.moderation`).
+   */
+  twitchChat: "twitch.chat",
+  /**
+   * The Pins widget's Helix calls (Twitch beta), made and answered like
+   * `twitch.streamInfo`'s: `twitchGetChatPins`, `twitchPinChatMessage`,
+   * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
+   */
+  twitchPins: "twitch.pins",
+  /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
+  twitchClips: "twitch.clips",
   /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
@@ -156,9 +215,26 @@ export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = n
   ENGINE_CAPABILITIES.scenesEditorSessions,
 ]);
 
-/** The capability ids this build supports, sorted and unique. */
-export function supportedEngineCapabilities(): EngineCapability[] {
+/**
+ * Ids that describe how an engine is run rather than what its build can do,
+ * each advertised only by an engine whose deployment declares that hosting
+ * (`EngineInfo.hosting`).
+ */
+export const HOSTING_ENGINE_CAPABILITIES: ReadonlyMap<EngineCapability, EngineHosting> = new Map<
+  EngineCapability,
+  EngineHosting
+>([[ENGINE_CAPABILITIES.engineLocalMode, "local"]]);
+
+/**
+ * The capability ids this engine advertises, sorted and unique: every id its
+ * build supports, plus the ids for `hosting` when the deployment declares one.
+ */
+export function supportedEngineCapabilities(hosting: EngineHosting | null = null): EngineCapability[] {
   return [...new Set(Object.values(ENGINE_CAPABILITIES))]
     .filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id))
+    .filter((id) => {
+      const required = HOSTING_ENGINE_CAPABILITIES.get(id);
+      return required === undefined || required === hosting;
+    })
     .sort();
 }

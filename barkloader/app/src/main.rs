@@ -41,10 +41,13 @@ const MESSAGEBUS_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 /// gating on that -- the api's GET /ready, and so a provisioner waiting on a
 /// new engine -- waits forever. Retrying is what keeps a boot race from
 /// becoming a permanently degraded engine.
-async fn connect_messagebus(url: &str) -> Result<Arc<crate::services::nats::NatsService>> {
+async fn connect_messagebus(
+    url: &str,
+    token: Option<&str>,
+) -> Result<Arc<crate::services::nats::NatsService>> {
     let deadline = Instant::now() + MESSAGEBUS_WAIT;
     loop {
-        match crate::services::nats::NatsService::connect(url).await {
+        match crate::services::nats::NatsService::connect(url, token).await {
             Ok(nats) => return Ok(nats),
             Err(e) => {
                 if Instant::now() + MESSAGEBUS_RETRY_INTERVAL >= deadline {
@@ -91,8 +94,9 @@ async fn setup() -> Result<AppContext> {
 
         let messagebus_url =
             get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
+        let messagebus_token = crate::services::nats::configured_token();
         if !messagebus_url.is_empty() {
-            match connect_messagebus(&messagebus_url).await {
+            match connect_messagebus(&messagebus_url, messagebus_token.as_deref()).await {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
                     nats_raw_client = Some(nats.raw_client().clone());
@@ -332,6 +336,17 @@ async fn main() -> std::io::Result<()> {
         std::process::exit(1);
     }
 
+    // Before setup: a malformed api URL is a configuration error, and is
+    // reported as one rather than surfacing on the first thumbnail.
+    let callbacks = match callback::CallbackSender::from_config() {
+        Ok(callbacks) => Data::new(callbacks),
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
+
     // setup
     let ctx = setup().await.expect("Failed to complete set up");
 
@@ -347,10 +362,11 @@ async fn main() -> std::io::Result<()> {
 
     // Start HTTP server
     info!("Starting server on {}", bind_addr);
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(Data::new(ctx.clone()))
             .app_data(media_proxy.clone())
+            .app_data(callbacks.clone())
             // The assets and archives routes depend only on the repository,
             // not the full AppContext, so they get their own Data registration. It
             // shares the same swappable handle, so a storage reload takes
@@ -370,6 +386,32 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(bind_addr)?
     .shutdown_timeout(5)
-    .run()
-    .await
+    .run();
+    #[cfg(windows)]
+    stop_on_ctrl_break(server.handle());
+    server.await
+}
+
+/// Stops the server gracefully on CTRL_BREAK_EVENT, the orchestrator's stop
+/// request on Windows. actix-web stops on SIGINT, SIGTERM and SIGQUIT on unix,
+/// but on Windows only on Ctrl+C, which a process in its own console process
+/// group never receives.
+#[cfg(windows)]
+fn stop_on_ctrl_break(server: actix_web::dev::ServerHandle) {
+    actix_web::rt::spawn(async move {
+        let mut ctrl_break = match tokio::signal::windows::ctrl_break() {
+            Ok(ctrl_break) => ctrl_break,
+            Err(e) => {
+                warn!(
+                    "Cannot listen for CTRL_BREAK, the orchestrator can only kill this process: {}",
+                    e
+                );
+                return;
+            }
+        };
+        if ctrl_break.recv().await.is_some() {
+            info!("Received CTRL_BREAK, shutting down");
+            server.stop(true).await;
+        }
+    });
 }
