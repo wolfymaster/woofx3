@@ -1,6 +1,7 @@
 import { encodeCommand } from "../utils";
 
-const TWITCHAPI_SUBJECT = "twitchapi";
+/** The NATS subject the twitch service takes `twitchapi` commands on. */
+export const TWITCHAPI_SUBJECT = "twitchapi";
 
 /**
  * Argument shapes of the `twitchapi` commands. The twitch service
