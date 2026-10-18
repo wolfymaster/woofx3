@@ -368,10 +368,24 @@ Each line is one event, with an RFC 3339 `time`:
   `stopped` (with how it exited in `message`), or was `skipped` because its
   prebuilt binary is not installed.
 - `ready` — every service is healthy at once, sent once per run. A service with
-  a `health_endpoint` in `services.json` is healthy when that answers `200`; one
-  without is healthy once started. The api's is `GET /ready`, so `ready` means
-  the api has reported ready. A service whose check times out is `unhealthy`
-  but is still checked, and turns `healthy` when its check passes.
+  a `health_endpoint` in `services.json` is healthy when a `GET` of it answers
+  `200`; one without is healthy as soon as its process has started, whether or
+  not it has finished starting up. A service whose check times out is
+  `unhealthy` but is still checked, and turns `healthy` when its check passes.
+
+  In the shipped `services.json`, `ready` therefore means:
+
+  - the api's `GET /ready` answered `200`: db-proxy is reachable, the database
+    is fully migrated, and barkloader has reported ready over the message bus
+    (see [Readiness and version](#readiness-and-version) below);
+  - sceneManager's `GET /health` answered `200`: its HTTP server is listening
+    (on `WOOFX3_SCENE_MANAGER_PORT`, `9101` by default);
+  - the message bus, twitch, wooflow, woofwoofwoof and the edge each have a
+    running process. None of them serves an HTTP health route, so nothing more
+    is known about them, beyond the bus working for barkloader.
+
+  Both checks go to `127.0.0.1`, so a deployment that sets
+  `WOOFX3_ALLOWED_HOSTS` must list it.
 - `error` — a service could not be started (`name` set), or the orchestrator
   could not start at all (no `name`; it exits non-zero after this line).
 - `stopped` — every service has been stopped, and its own `stopped` event

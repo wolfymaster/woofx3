@@ -764,18 +764,32 @@ func TestLoadConfigIgnoresADisabledServicesHealthEndpoint(t *testing.T) {
 }
 
 // The shipped services.json is what the container and the release archives
-// run: it must load, resolve its dependencies, and point the api's health
-// check at the port the api listens on.
-func TestShippedServicesJSONChecksTheAPIsReadiness(t *testing.T) {
+// run: it must load, resolve its dependencies, and point each health check at
+// the port its service listens on.
+func TestShippedServicesJSONChecksWhereEachServiceListens(t *testing.T) {
 	cases := []struct {
 		name string
 		env  map[string]string
-		want string
+		want map[string]string
 	}{
-		// The default must match apiPort in build/config/.woofx3.json and the
-		// edge's in build/config/Caddyfile.edge.
-		{name: "default", want: "http://127.0.0.1:5050/ready"},
-		{name: "WOOFX3_API_PORT", env: map[string]string{"WOOFX3_API_PORT": "7070"}, want: "http://127.0.0.1:7070/ready"},
+		// The defaults must match apiPort in build/config/.woofx3.json, the
+		// default port in sceneManager/src/config.ts, and the edge's in
+		// build/config/Caddyfile.edge.
+		{
+			name: "defaults",
+			want: map[string]string{
+				"api":          "http://127.0.0.1:5050/ready",
+				"sceneManager": "http://127.0.0.1:9101/health",
+			},
+		},
+		{
+			name: "ports set",
+			env:  map[string]string{"WOOFX3_API_PORT": "7070", "WOOFX3_SCENE_MANAGER_PORT": "7171"},
+			want: map[string]string{
+				"api":          "http://127.0.0.1:7070/ready",
+				"sceneManager": "http://127.0.0.1:7171/health",
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -794,12 +808,14 @@ func TestShippedServicesJSONChecksTheAPIsReadiness(t *testing.T) {
 				t.Fatalf("startup order: %v", err)
 			}
 
-			api, ok := supervisor.services["api"]
-			if !ok {
-				t.Fatal("services.json has no enabled api")
-			}
-			if api.healthURL != tc.want {
-				t.Errorf("api health endpoint = %q, want %q", api.healthURL, tc.want)
+			for name, want := range tc.want {
+				service, ok := supervisor.services[name]
+				if !ok {
+					t.Fatalf("services.json has no enabled %s", name)
+				}
+				if service.healthURL != want {
+					t.Errorf("%s health endpoint = %q, want %q", name, service.healthURL, want)
+				}
 			}
 		})
 	}
