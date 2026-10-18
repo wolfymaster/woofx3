@@ -43,11 +43,15 @@ func (e *invalidArgument) Error() string { return e.err.Error() }
 func (e *invalidArgument) Unwrap() error { return e.err }
 
 // twirpError is err as an RPC returns it: a refused argument as
-// InvalidArgument, and a twirp error as it is.
+// InvalidArgument, a write that lost a race for the command's workflow link
+// as Aborted (the caller can retry it), and a twirp error as it is.
 func twirpError(err error) error {
 	var invalid *invalidArgument
 	if errors.As(err, &invalid) {
 		return twirp.InvalidArgumentError(invalid.argument, invalid.Error())
+	}
+	if errors.Is(err, repo.ErrCommandLinkChanged) {
+		return twirp.NewError(twirp.Aborted, err.Error())
 	}
 	return err
 }
