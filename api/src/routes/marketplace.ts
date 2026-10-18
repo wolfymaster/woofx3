@@ -31,11 +31,31 @@ import { scenesRoutes } from "./scenes";
 /**
  * The key a marketplace module is installed under. The dashboard stores it
  * and correlates install webhooks by it, so its format is a contract: the
- * listing id, the listing's version, and the first 7 hex characters of the
- * archive's SHA-256.
+ * module id (the manifest id every edition shares, which is the catalog's
+ * `moduleKey`, not the listing id), the listing's version, and the first 7
+ * hex characters of the archive's SHA-256. Barkloader computes the same key
+ * from the archive and refuses an install whose expected key differs.
+ *
+ * Keying by module id is what makes a later edition, which is a separate
+ * listing, replace the installed module in place. Which listing and edition
+ * is installed is recorded as the module's marketplace provenance instead.
  */
-export function marketplaceModuleKey(listingId: string, version: string, sha256: string): string {
-  return `${listingId}:${version}:${sha256.slice(0, 7)}`;
+export function marketplaceModuleKey(moduleId: string, version: string, sha256: string): string {
+  return `${moduleId}:${version}:${sha256.slice(0, 7)}`;
+}
+
+/**
+ * Refuses an archive whose manifest id is not the module id the catalog
+ * names. Barkloader would refuse it too, but only after the upload, as a
+ * key mismatch that names neither the listing nor the cause.
+ */
+function requireManifestMatchesListing(listing: MarketplaceListing, manifest: Record<string, unknown>): void {
+  const manifestId = manifest.id;
+  if (manifestId !== listing.moduleId) {
+    throw new Error(
+      `Marketplace listing ${listing.id} is module ${JSON.stringify(listing.moduleId)}, but its archive's manifest id is ${JSON.stringify(manifestId ?? null)}`
+    );
+  }
 }
 
 function requireMarketplace(marketplace: MarketplaceClient | null): MarketplaceClient {
@@ -114,7 +134,7 @@ export const marketplaceRoutes = routeModule({
     }
 
     const download = await marketplace.getModuleDownload(listingId, buyerToken);
-    const moduleKey = marketplaceModuleKey(listingId, version, download.sha256);
+    const moduleKey = marketplaceModuleKey(listing.moduleId, version, download.sha256);
     const { archive, contents } = await fetchVerifiedArchive(marketplace, download, async (message) => {
       this.logger.error("Marketplace archive refused", { clientId, listingId, moduleKey, message });
       await sendInstallFailed(
@@ -124,6 +144,19 @@ export const marketplaceRoutes = routeModule({
         "marketplace"
       );
     });
+    try {
+      requireManifestMatchesListing(listing, contents.manifest);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error("Marketplace archive refused", { clientId, listingId, moduleKey, message });
+      await sendInstallFailed(
+        this.webhookClient,
+        { moduleKey, name, version, error: message },
+        clientId,
+        "marketplace"
+      );
+      throw err;
+    }
 
     const unapproved = unapprovedIds(manifestPermissions(contents.manifest), approvedPermissions);
     const unapprovedLocalEndpoints = unapprovedIds(
@@ -160,13 +193,16 @@ export const marketplaceRoutes = routeModule({
     const download = await marketplace.getModuleDownload(listingId, buyerToken || undefined);
     const { archive, contents } = await fetchVerifiedArchive(marketplace, download, async () => {});
     const { manifest } = contents;
+    requireManifestMatchesListing(listing, manifest);
     const text = (value: unknown) => (typeof value === "string" ? value : "");
     return {
       listingId,
+      moduleId: listing.moduleId,
+      edition: listing.edition,
       type: listing.type,
       name: listing.name,
       version: listing.version,
-      moduleKey: marketplaceModuleKey(listingId, listing.version, download.sha256),
+      moduleKey: marketplaceModuleKey(listing.moduleId, listing.version, download.sha256),
       sha256: download.sha256,
       sizeBytes: archive.byteLength,
       manifest: {

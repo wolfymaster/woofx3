@@ -111,6 +111,47 @@ func TestReplacingAModuleUpdatesOrKeepsItsProvenance(t *testing.T) {
 	assertProvenance(t, "replace without provenance", rolledBack, "cozy-v2", 2)
 }
 
+// A later marketplace edition is a separate listing that installs under the
+// same manifest id, and it may rename the module. It replaces the installed
+// row, keyed by manifest id, rather than adding a second module beside it,
+// and the row records the new listing and edition.
+func TestALaterEditionReplacesTheModuleByManifestIDEvenWhenRenamed(t *testing.T) {
+	svc := newProvenanceSvc(t)
+	original := installCozy(t, svc, "cozy:1.0.0:abcdef0", ptr("cozy"), ptr(int32(1)))
+
+	res, err := svc.CreateModule(context.Background(), &client.CreateModuleRequest{
+		Name:                 "Cozy Alerts 2",
+		ModuleId:             "cozy",
+		Version:              "2.0.0",
+		Manifest:             "{}",
+		ModuleKey:            "cozy:2.0.0:1234567",
+		CreatedByType:        "CLIENT",
+		CreatedByRef:         "client-1",
+		MarketplaceListingId: ptr("cozy-v2"),
+		MarketplaceEdition:   ptr(int32(2)),
+	})
+	if err != nil {
+		t.Fatalf("CreateModule edition 2: %v", err)
+	}
+	upgraded := res.Module
+	if upgraded.Id != original.Id {
+		t.Fatalf("edition 2 row id = %s, want the edition 1 row %s", upgraded.Id, original.Id)
+	}
+	if upgraded.Name != "Cozy Alerts 2" || upgraded.ModuleKey != "cozy:2.0.0:1234567" || upgraded.Version != "2.0.0" {
+		t.Fatalf("edition 2 row = (%q, %q, %q), want the new name, key and version",
+			upgraded.Name, upgraded.ModuleKey, upgraded.Version)
+	}
+	assertProvenance(t, "edition 2", upgraded, "cozy-v2", 2)
+
+	listed, err := svc.ListModules(context.Background(), &client.ListModulesRequest{})
+	if err != nil {
+		t.Fatalf("ListModules: %v", err)
+	}
+	if len(listed.Modules) != 1 {
+		t.Fatalf("ListModules returned %d modules, want 1", len(listed.Modules))
+	}
+}
+
 func TestIncompleteMarketplaceProvenanceIsRefused(t *testing.T) {
 	cases := []struct {
 		name      string
