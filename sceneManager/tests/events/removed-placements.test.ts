@@ -98,3 +98,34 @@ describe("OverlayHost.placementIds", () => {
     expect(await hostWith({ widgetsJson: '{"a":1}' }).placementIds("s1")).toBeNull();
   });
 });
+
+describe("DeliveryStore.ackCompleted racing a cancel", () => {
+  it("does not report as completed a delivery a skip closed during the completion write", async () => {
+    let releaseWrite: (() => void) | null = null;
+    let next = 0;
+    const db = {
+      recordSceneEvent: mock(async () => ({
+        status: OK,
+        sceneEvent: { id: `evt-${++next}`, sceneId: "s1", type: "alert", key: "k", value: "null", occurredAt: "" },
+      })),
+      recordSceneEventCompletion: mock(
+        () =>
+          new Promise<typeof OK>((resolve) => {
+            if (releaseWrite === null) {
+              releaseWrite = () => resolve(OK);
+            } else {
+              resolve(OK);
+            }
+          })
+      ),
+    } as never;
+    const store = new DeliveryStore(db, quiet);
+    await store.recordEvent({ sceneId: "s1", type: "alert", key: "k", value: null, targetInstanceIds: ["a"] });
+
+    const acking = store.ackCompleted("s1", "evt-1", ["a"]);
+    await store.cancel("s1", "a", ["evt-1"]);
+    releaseWrite!();
+
+    expect((await acking).closed).toEqual([]);
+  });
+});

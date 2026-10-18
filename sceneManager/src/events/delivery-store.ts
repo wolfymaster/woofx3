@@ -284,16 +284,20 @@ export class DeliveryStore {
         });
         continue;
       }
-      this.deleteOpen(sceneId, eventId, instanceId);
-      if (delivery) {
-        closed.push({
-          eventId,
-          type: delivery.type,
-          key: delivery.key,
-          value: delivery.value,
-          startedAt: delivery.startedAt,
-        });
+      // Closed only if it is still the delivery this ack found: a skip, or
+      // another page's ack, may have closed it during the write and recorded
+      // its end already.
+      if (!delivery || this.open.get(sceneId)?.get(eventId)?.get(instanceId) !== delivery) {
+        continue;
       }
+      this.deleteOpen(sceneId, eventId, instanceId);
+      closed.push({
+        eventId,
+        type: delivery.type,
+        key: delivery.key,
+        value: delivery.value,
+        startedAt: delivery.startedAt,
+      });
     }
     return { closed, failed };
   }
