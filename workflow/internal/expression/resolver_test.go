@@ -189,3 +189,28 @@ func TestOpenRecordResolvesAnAbsentPathToNil(t *testing.T) {
 		t.Error("${pause.missing}: want an error")
 	}
 }
+
+// A reference to a whole open record leaves the resolver as a plain map, so an
+// action reading it as map[string]any gets it.
+func TestAWholeOpenRecordResolvesToAPlainMap(t *testing.T) {
+	r := NewResolver()
+	r.AddSource("pause", map[string]any{"data": OpenRecord{"user": "ana"}})
+	got, err := r.ResolveString("${pause.data}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	data, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("${pause.data} = %T, want map[string]any", got)
+	}
+	if data["user"] != "ana" {
+		t.Errorf("${pause.data} = %v, want the record's fields", data)
+	}
+	resolved, err := r.Resolve(map[string]any{"data": "${pause.data}"})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if _, ok := resolved.(map[string]any)["data"].(map[string]any); !ok {
+		t.Errorf("parameter data = %T, want map[string]any", resolved.(map[string]any)["data"])
+	}
+}
