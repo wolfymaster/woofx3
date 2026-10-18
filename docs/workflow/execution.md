@@ -440,6 +440,12 @@ Wait task timeouts follow `onTimeout`:
 
 ## Ordered workflows
 
-A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerconfig)) waits its turn behind the other ordered workflows the same event starts. Every matching workflow's trigger conditions are checked when the event arrives; the ordered ones that match then run one at a time on one goroutine, lowest `order` first and by workflow id among equals. Each starts once the run before it settles (completes, fails or is cancelled) or pauses at a wait or sub-workflow, so a wait holds back only its own run. Workflows that set no `order` start straight away, as before, alongside the ordered ones.
+A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerconfig)) waits its turn behind the other ordered workflows the same event starts. Every matching workflow's trigger conditions are checked when the event arrives; the ordered ones that match then run one at a time, lowest `order` first and by workflow id among equals. Each starts once the run before it settles (completes, fails or is cancelled) or pauses at a wait or sub-workflow, so a wait holds back only its own run. Workflows that set no `order` start straight away, alongside the ordered ones.
 
-For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list. A stopping engine starts no further ordered run.
+For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list.
+
+Every ordered run is begun when the event matches, so each is in the run history, recorded and announced as running, while it waits its turn; only executing its steps is sequential. As a result:
+
+- A queued run can be cancelled before its turn. It settles as cancelled at once, never starts, and the queue moves past it.
+- A stopping engine starts no further ordered run. Each run it never reached settles as failed with `engine stopped`, as any run the engine abandons does, so it can be resumed later like one.
+- A run gets one turn's worth of time, 30 seconds by default (`WOOFX3_WORKFLOW_ORDERED_TURN_TIMEOUT_SECONDS`). A run still going when it passes is left to finish, the overrun is logged (`Ordered workflow overran its turn`), and the next run starts, so a step that never returns cannot hold back every later workflow on the event.

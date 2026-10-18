@@ -98,6 +98,9 @@ type Engine[TServices any] struct {
 	// stopDrainTimeout and stopSettleTimeout bound the two waits in Stop.
 	stopDrainTimeout  time.Duration
 	stopSettleTimeout time.Duration
+	// turnTimeout bounds an ordered run's turn. Zero means
+	// DefaultOrderedTurnTimeout.
+	turnTimeout time.Duration
 }
 
 // errEngineStopped fails a run the engine gave up on because it was stopping:
@@ -115,6 +118,11 @@ const (
 	// DefaultStopSettleTimeout is how long Stop then waits for the runs it
 	// abandoned to unwind and record their outcome.
 	DefaultStopSettleTimeout = 2 * time.Second
+	// DefaultOrderedTurnTimeout is how long an ordered run holds its turn
+	// before the next ordered workflow on the same event starts anyway. Long
+	// enough for a run of alerts and module calls, each of which has a shorter
+	// deadline of its own; it exists for the step that never returns.
+	DefaultOrderedTurnTimeout = 30 * time.Second
 )
 
 type SubWorkflowWaiter struct {
@@ -473,7 +481,7 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 		"event_id", event.ID,
 		"match_count", len(workflows))
 
-	var ordered []orderedRun
+	var ordered []matchedWorkflow
 	for _, wf := range workflows {
 		viewer := e.viewerFor(viewers, wf, event)
 		if err := e.evaluateTrigger(wf, event, viewer); err != nil {
@@ -489,53 +497,150 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 				"reason", err.Error())
 			continue
 		}
-		e.logger.Info("Dispatching workflow",
-			"workflow", wf.ID,
-			"workflow_name", wf.Name,
-			"event_type", event.Type,
-			"event_id", event.ID)
 		if wf.Trigger.Order != nil {
-			ordered = append(ordered, orderedRun{wf: wf, viewer: viewer})
+			ordered = append(ordered, matchedWorkflow{wf: wf, viewer: viewer})
 			continue
 		}
+		e.logDispatch(wf, event)
 		go e.executeWorkflow(wf, event, viewer)
 	}
 	if len(ordered) > 0 {
-		go e.executeInOrder(ordered, event)
+		go e.executeInOrder(e.queueInOrder(ordered, event), event)
 	}
 
 	return nil
 }
 
-// orderedRun is a matched workflow waiting its turn in executeInOrder.
-type orderedRun struct {
+func (e *Engine[TServices]) logDispatch(wf *types.WorkflowDefinition, event *types.Event) {
+	e.logger.Info("Dispatching workflow",
+		"workflow", wf.ID,
+		"workflow_name", wf.Name,
+		"event_type", event.Type,
+		"event_id", event.ID)
+}
+
+// matchedWorkflow is a workflow whose trigger accepted an event, with the
+// `${viewer.*}` loader its run will read through.
+type matchedWorkflow struct {
 	wf     *types.WorkflowDefinition
 	viewer expression.LazyLoader
 }
 
-// executeInOrder runs an event's ordered workflows one at a time, lowest
-// `trigger.order` first and by id among equals, so the order does not
-// depend on the registry's map iteration.
+// queuedRun is a begun run waiting its turn in executeInOrder.
+type queuedRun struct {
+	wf        *types.WorkflowDefinition
+	execution *types.WorkflowExecution
+	control   *runControl
+}
+
+// queueInOrder begins a run for each of an event's ordered workflows, lowest
+// `trigger.order` first and by id among equals, so the order does not depend
+// on the registry's map iteration.
 //
-// executeWorkflow returns when a run settles or pauses at a wait, so the next
-// workflow starts then: a wait in one does not hold the rest back. For
-// workflows without waits this is the order one workflow holding all of them
-// as consecutive steps would run in, which is what an event's alert triggers
-// were before each became a workflow of its own.
-func (e *Engine[TServices]) executeInOrder(runs []orderedRun, event *types.Event) {
-	slices.SortStableFunc(runs, func(a, b orderedRun) int {
+// Every run is begun now, while only their execution waits its turn, so each
+// is in the run history from the moment its event matched. A run the engine
+// stops before reaching is then recorded failed like any other run Stop
+// abandons, rather than lost without a trace.
+func (e *Engine[TServices]) queueInOrder(matched []matchedWorkflow, event *types.Event) []queuedRun {
+	slices.SortStableFunc(matched, func(a, b matchedWorkflow) int {
 		if byOrder := cmp.Compare(*a.wf.Trigger.Order, *b.wf.Trigger.Order); byOrder != 0 {
 			return byOrder
 		}
 		return strings.Compare(a.wf.ID, b.wf.ID)
 	})
-	for _, run := range runs {
+	runs := make([]queuedRun, 0, len(matched))
+	for _, m := range matched {
+		execution := e.beginRun(m.wf, event, event.DryRun, m.viewer, runQueued)
+		runs = append(runs, queuedRun{wf: m.wf, execution: execution, control: e.control(execution.ID)})
+	}
+	return runs
+}
+
+// executeInOrder runs an event's queued runs one at a time.
+//
+// runExecution returns when a run settles or pauses at a wait or sub-workflow,
+// so the next run starts then: a wait in one does not hold the rest back. For
+// workflows without waits this is the order one workflow holding all of them
+// as consecutive steps would run in, which is what an event's alert triggers
+// were before each became a workflow of its own.
+//
+// A run that has not returned when its turn's deadline passes is left running
+// and the next one starts, so one step that never returns cannot hold back
+// every later workflow on the event.
+func (e *Engine[TServices]) executeInOrder(runs []queuedRun, event *types.Event) {
+	for i, run := range runs {
 		// A stopping engine starts nothing more; see HandleEventWith.
 		if e.ctx.Err() != nil {
+			e.abandonQueued(runs[i:])
 			return
 		}
-		e.executeWorkflow(run.wf, event, run.viewer)
+		if !run.control.startQueued() {
+			// Cancelled or abandoned while it waited, and settled by whoever
+			// did that (see abandonRun).
+			continue
+		}
+		e.logDispatch(run.wf, event)
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			e.runExecution(run.wf, run.execution, event)
+		}()
+		if !e.awaitTurn(run, event, finished) {
+			e.abandonQueued(runs[i+1:])
+			return
+		}
 	}
+}
+
+// awaitTurn waits for a queued run to return, or for its turn's deadline, and
+// reports whether the next run may start: false when the engine is stopping.
+func (e *Engine[TServices]) awaitTurn(run queuedRun, event *types.Event, finished <-chan struct{}) bool {
+	turn := e.orderedTurnTimeout()
+	deadline := time.NewTimer(turn)
+	defer deadline.Stop()
+	select {
+	case <-finished:
+		return true
+	case <-deadline.C:
+		e.logger.Warn("Ordered workflow overran its turn; starting the next one",
+			"workflow", run.wf.ID,
+			"execution", run.execution.ID,
+			"event_type", event.Type,
+			"event_id", event.ID,
+			"turn", turn)
+		return true
+	case <-e.ctx.Done():
+		return false
+	}
+}
+
+// abandonQueued gives up on queued runs the engine stopped before reaching.
+// Each settles as failed with errEngineStopped, as Stop records any run it
+// abandons; one Stop has already abandoned is passed over.
+func (e *Engine[TServices]) abandonQueued(runs []queuedRun) {
+	for _, run := range runs {
+		if !run.control.markStopped() {
+			continue
+		}
+		e.logger.Warn("Abandoning ordered workflow run: engine stopped before its turn",
+			"workflow", run.wf.ID,
+			"execution", run.execution.ID,
+			"event_id", run.execution.TriggerEvent.ID)
+		e.abandonRun(run.execution, run.control, nil)
+	}
+}
+
+func (e *Engine[TServices]) orderedTurnTimeout() time.Duration {
+	if e.turnTimeout > 0 {
+		return e.turnTimeout
+	}
+	return DefaultOrderedTurnTimeout
+}
+
+// SetOrderedTurnTimeout sets how long an ordered run holds its turn before the
+// next one on the same event starts. Zero restores DefaultOrderedTurnTimeout.
+func (e *Engine[TServices]) SetOrderedTurnTimeout(timeout time.Duration) {
+	e.turnTimeout = timeout
 }
 
 // FireByWorkflowID runs the named workflow with a synthesized trigger event.
@@ -836,6 +941,19 @@ func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *
 // is set before the run is announced or recorded, so the history never holds
 // a dry run that reads as a real one. viewer is the run's `${viewer.*}` loader.
 func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event *types.Event, dryRun bool, viewer expression.LazyLoader) *types.WorkflowExecution {
+	return e.beginRun(wf, event, dryRun, viewer, runNow)
+}
+
+// runStart says whether a begun run executes at once or waits its turn in an
+// event's ordered queue.
+type runStart int
+
+const (
+	runNow runStart = iota
+	runQueued
+)
+
+func (e *Engine[TServices]) beginRun(wf *types.WorkflowDefinition, event *types.Event, dryRun bool, viewer expression.LazyLoader, start runStart) *types.WorkflowExecution {
 	execution := &types.WorkflowExecution{
 		DryRun:       dryRun,
 		ID:           uuid.New().String(),
@@ -850,10 +968,17 @@ func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event
 
 	e.executionsMu.Lock()
 	e.executions[execution.ID] = execution
-	e.registerRunLocked(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
+	ctl := e.registerRunLocked(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
+	// Marked under the lock Cancel and Stop find runs through, so neither can
+	// see a queued run before it reads as queued.
+	ctl.queued = start == runQueued
 	e.executionsMu.Unlock()
 
-	e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", execution.ID)
+	if start == runQueued {
+		e.logger.Info("Queued workflow execution for its turn", "workflow", wf.ID, "execution", execution.ID)
+	} else {
+		e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", execution.ID)
+	}
 
 	// Announced here rather than through setExecutionStatus: the execution was
 	// built already running, and a caller waiting on this run needs to know a
