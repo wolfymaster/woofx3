@@ -22,18 +22,15 @@ import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/compo
 import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
-import { handleAssetReadRoute, isAssetReadPath } from "./routes/asset-read";
-import { handleFontRoute, isFontPath } from "./routes/fonts";
-import { handleMediaProxyRoute, isMediaProxyPath } from "./routes/media";
+import { handleAssetReadRoute } from "./routes/asset-read";
+import { handleFontRoute } from "./routes/fonts";
+import { handleMediaProxyRoute } from "./routes/media";
+import { corsHeadersForPath, dispatchRoute, matchRoute, type Route, routeTable } from "./routes/route-table";
+import { ENGINE_ASSET_PREFIXES } from "@woofx3/module-sdk";
+import { MEDIA_PROXY_PATH } from "../contract/media-url";
+import { FONT_FILES_PREFIX, FONT_STYLESHEET_PATH } from "./fonts/google-font-cache";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
-import {
-  handleStorageAssetRoute,
-  handleUploadRoute,
-  isStorageAssetPath,
-  isUploadPath,
-  MAX_UPLOAD_BYTES,
-  UPLOAD_ALLOWED_METHODS,
-} from "./routes/storage";
+import { handleStorageAssetRoute, handleUploadRoute, MAX_UPLOAD_BYTES } from "./routes/storage";
 import {
   handleEventCompletedRoute,
   handleEventDeliveredRoute,
@@ -67,47 +64,173 @@ export interface HttpDeps {
   bootId: string;
 }
 
-// CORS for iframe-embedded widgets and cross-origin OBS browser
-// sources — same rationale as streamware's CORS_HEADERS.
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400",
-  "Cross-Origin-Resource-Policy": "cross-origin",
-};
-
-// Upload grants are bearer capabilities carried in the URL, not cookies,
-// so allowing any origin to PUT grants nothing the token did not already.
-const UPLOAD_CORS_HEADERS: Record<string, string> = {
-  ...CORS_HEADERS,
-  "Access-Control-Allow-Methods": UPLOAD_ALLOWED_METHODS,
-};
-
-/** CORS headers for a path: its preflight answer and its responses. The
- *  media proxy and the asset read route grant none (see routes/media.ts and
- *  routes/asset-read.ts). */
-export function corsHeadersFor(pathname: string): Record<string, string> {
-  if (isMediaProxyPath(pathname) || isAssetReadPath(pathname)) {
-    return {};
-  }
-  return isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS;
-}
-
-function withCors(res: Response, corsHeaders: Record<string, string> = CORS_HEADERS): Response {
-  const headers = new Headers(res.headers);
-  for (const [name, value] of Object.entries(corsHeaders)) {
-    headers.set(name, value);
-  }
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-}
-
 /**
- * Hand-rolled `Bun.serve` routing — same convention streamware/api use
- * for this class of service (see the note in the earlier scaffold
- * about correcting course away from Hono/Express, neither of which is
- * actually the established pattern here).
+ * Every HTTP route. Which one answers a path is decided by specificity, not
+ * by order (see `matchRoute`).
  */
+const ROUTES = routeTable<HttpDeps>([
+  { path: "/health", methods: ["GET"], cors: "open", handle: () => Response.json({ status: "ok" }) },
+
+  // Stored files, the media proxy and fonts.
+  {
+    path: "/assets/upload/:grant",
+    methods: ["PUT"],
+    cors: "upload",
+    handle: (req, { url, deps }) => handleUploadRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
+  },
+  {
+    // Read only by the overlay page itself, so it grants no CORS.
+    path: "/assets/read/*",
+    methods: ["GET"],
+    cors: "none",
+    handle: (req, { url, deps }) =>
+      handleAssetReadRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
+  },
+  ...ENGINE_ASSET_PREFIXES.map(
+    (prefix): Route<HttpDeps> => ({
+      path: `${prefix}*`,
+      methods: ["GET"],
+      cors: "open",
+      handle: (req, { url, deps }) =>
+        handleStorageAssetRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
+    })
+  ),
+  {
+    // See routes/media.ts for why it grants no CORS.
+    path: `${MEDIA_PROXY_PATH}:token`,
+    methods: ["GET"],
+    cors: "none",
+    handle: (req, { url, deps }) =>
+      handleMediaProxyRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
+  },
+  {
+    path: FONT_STYLESHEET_PATH,
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { url, deps }) => handleFontRoute(req, url, deps.fonts),
+  },
+  {
+    path: `${FONT_FILES_PREFIX}*`,
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { url, deps }) => handleFontRoute(req, url, deps.fonts),
+  },
+  {
+    path: "/assets/*",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { url, deps }) => handleStaticAssetRoute(req, url, deps.ctx.runtimeConfig.publicDir),
+  },
+
+  // The editor's composition preview.
+  {
+    path: COMPOSITION_PREVIEW_PATH,
+    methods: ["GET"],
+    cors: "open",
+    handle: (_req, { url, deps }) => handleCompositionPreviewRoute(url, deps),
+  },
+  {
+    path: COMPOSITION_PREVIEW_FRAMES_PATH,
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { deps }) => handleCompositionPreviewFramesRoute(req, deps),
+  },
+  {
+    path: COMPOSITION_PREVIEW_REFRESH_PATH,
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { deps }) => handleCompositionPreviewRefreshRoute(req, deps),
+  },
+
+  // Widget frame documents.
+  {
+    path: "/frames/:moduleId/:manifestId",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleFrameDocumentRoute(req, params.moduleId!, params.manifestId!, deps),
+  },
+
+  // An overlay page and what it calls.
+  {
+    path: "/scene/:sceneId",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { url, params, deps }) => handleSceneRoute(req, url, params.sceneId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/config",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleSceneConfigRoute(req, params.sceneId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/draft-config",
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleSceneDraftConfigRoute(req, params.sceneId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/session/refresh",
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleSessionRefreshRoute(req, params.sceneId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/alert/:eventId/widget/:widgetId",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { params, deps }) =>
+      handleAlertWidgetFrameRoute(req, params.sceneId!, params.eventId!, params.widgetId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/widget/:instanceId/status",
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleWidgetStatusRoute(req, params.sceneId!, params.instanceId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/widget/:instanceId/storage",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleWidgetStorageRoute(req, params.sceneId!, params.instanceId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/events",
+    methods: ["GET"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleEventsStreamRoute(req, params.sceneId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/events/:eventId/delivered",
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleEventDeliveredRoute(req, params.sceneId!, params.eventId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/events/:eventId/started",
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleEventStartedRoute(req, params.sceneId!, params.eventId!, deps),
+  },
+  {
+    path: "/scene/:sceneId/events/:eventId/completed",
+    methods: ["POST"],
+    cors: "open",
+    handle: (req, { params, deps }) => handleEventCompletedRoute(req, params.sceneId!, params.eventId!, deps),
+  },
+]);
+
+/** The pattern of the route answering `pathname`, or null when none does. */
+export function routeOf(pathname: string): string | null {
+  const match = matchRoute(ROUTES, pathname);
+  return match.route === null ? null : match.route.path;
+}
+
+/** The CORS headers the route answering `pathname` grants: its preflight answer and its responses. */
+export function corsHeadersFor(pathname: string): Record<string, string> {
+  return corsHeadersForPath(ROUTES, pathname);
+}
+
 export function createHttpServer(deps: HttpDeps) {
   const { ctx } = deps;
   const editorDeps = { sessionTokens: deps.sessionTokens, sceneDocuments: deps.sceneDocuments, logger: ctx.logger };
@@ -120,159 +243,33 @@ export function createHttpServer(deps: HttpDeps) {
     // routes/events.ts) with room to spare, but still finite so a
     // genuinely dead socket gets reclaimed rather than leaked.
     idleTimeout: 120,
-    // Bun's 128 MiB default would cut off uploads the relay below is
-    // meant to accept. Bun only offers this limit server-wide, so the
-    // small-JSON routes inherit the same ceiling; that is the trade for
-    // one upload limit rather than two that disagree.
+    // Bun's 128 MiB default would cut off uploads the relay is meant to
+    // accept. Bun only offers this limit server-wide; every route that reads
+    // its body whole reads it under its own, far smaller, limit (BODY_LIMITS
+    // in routes/http-kit.ts).
     maxRequestBodySize: MAX_UPLOAD_BYTES,
     // The scene editor's socket (routes/editor.ts).
     websocket: editorSocketHandlers(editorDeps),
     fetch: async (req, server) => {
       const url = new URL(req.url);
 
-      // GET /scene/{sceneId}/edit — upgraded outside the request span, since
-      // a socket that opens returns no response for the span to end with.
+      // GET /scene/{sceneId}/edit — upgraded outside the route table and the
+      // request span, since a socket that opens returns no response.
       const editorMatch = /^\/scene\/([^/]+)\/edit$/.exec(url.pathname);
       if (editorMatch && req.method === "GET") {
-        return handleEditorUpgrade(req, server, decodeURIComponent(editorMatch[1]!), editorDeps);
-      }
-
-      if (req.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: corsHeadersFor(url.pathname) });
-      }
-
-      return withSpan(
-        `scene-manager ${req.method}`,
-        async (): Promise<Response> => {
-          if (url.pathname === "/health") {
-            return withCors(Response.json({ status: "ok" }));
-          }
-
-          if (isUploadPath(url.pathname)) {
-            return withCors(
-              await handleUploadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger),
-              UPLOAD_CORS_HEADERS
-            );
-          }
-
-          if (isAssetReadPath(url.pathname)) {
-            return handleAssetReadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-          }
-
-          if (isStorageAssetPath(url.pathname)) {
-            return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
-          }
-
-          if (isFontPath(url.pathname)) {
-            return withCors(await handleFontRoute(req, url, deps.fonts));
-          }
-
-          if (isMediaProxyPath(url.pathname)) {
-            return handleMediaProxyRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-          }
-
-          if (url.pathname.startsWith("/assets/")) {
-            return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
-          }
-
-          // The editor's composition preview (routes/composition-preview.ts).
-          if (url.pathname === COMPOSITION_PREVIEW_PATH && req.method === "GET") {
-            return withCors(await handleCompositionPreviewRoute(url, deps));
-          }
-          if (url.pathname === COMPOSITION_PREVIEW_FRAMES_PATH && req.method === "POST") {
-            return withCors(await handleCompositionPreviewFramesRoute(req, deps));
-          }
-          if (url.pathname === COMPOSITION_PREVIEW_REFRESH_PATH && req.method === "POST") {
-            return withCors(await handleCompositionPreviewRefreshRoute(req, deps));
-          }
-
-          // GET /scene/{sceneId} — shell + JWT mint.
-          const sceneMatch = /^\/scene\/([^/]+)$/.exec(url.pathname);
-          if (sceneMatch && req.method === "GET") {
-            return withCors(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
-          }
-
-          // GET /scene/{sceneId}/config
-          const configMatch = /^\/scene\/([^/]+)\/config$/.exec(url.pathname);
-          if (configMatch && req.method === "GET") {
-            return withCors(await handleSceneConfigRoute(req, configMatch[1]!, deps));
-          }
-
-          // POST /scene/{sceneId}/draft-config
-          const draftConfigMatch = /^\/scene\/([^/]+)\/draft-config$/.exec(url.pathname);
-          if (draftConfigMatch && req.method === "POST") {
-            return withCors(await handleSceneDraftConfigRoute(req, draftConfigMatch[1]!, deps));
-          }
-
-          // POST /scene/{sceneId}/session/refresh
-          const refreshMatch = /^\/scene\/([^/]+)\/session\/refresh$/.exec(url.pathname);
-          if (refreshMatch && req.method === "POST") {
-            return withCors(await handleSessionRefreshRoute(req, refreshMatch[1]!, deps));
-          }
-
-          // GET /frames/{moduleId}/{manifestId}
-          const frameDocumentMatch = /^\/frames\/([^/]+)\/([^/]+)$/.exec(url.pathname);
-          if (frameDocumentMatch && req.method === "GET") {
-            return withCors(await handleFrameDocumentRoute(req, frameDocumentMatch[1]!, frameDocumentMatch[2]!, deps));
-          }
-
-          // GET /scene/{sceneId}/alert/{eventId}/widget/{widgetId}
-          const alertWidgetMatch = /^\/scene\/([^/]+)\/alert\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
-          if (alertWidgetMatch && req.method === "GET") {
-            return withCors(
-              await handleAlertWidgetFrameRoute(
-                req,
-                alertWidgetMatch[1]!,
-                alertWidgetMatch[2]!,
-                alertWidgetMatch[3]!,
-                deps
-              )
-            );
-          }
-
-          // POST /scene/{sceneId}/widget/{instanceId}/status
-          const statusMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/status$/.exec(url.pathname);
-          if (statusMatch && req.method === "POST") {
-            return withCors(await handleWidgetStatusRoute(req, statusMatch[1]!, statusMatch[2]!, deps));
-          }
-
-          // GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}
-          const storageMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/storage$/.exec(url.pathname);
-          if (storageMatch && req.method === "GET") {
-            return withCors(await handleWidgetStorageRoute(req, storageMatch[1]!, storageMatch[2]!, deps));
-          }
-
-          // GET /scene/{sceneId}/events — SSE.
-          const eventsMatch = /^\/scene\/([^/]+)\/events$/.exec(url.pathname);
-          if (eventsMatch && req.method === "GET") {
-            return withCors(await handleEventsStreamRoute(req, eventsMatch[1]!, deps));
-          }
-
-          // POST /scene/{sceneId}/events/{eventId}/delivered
-          const deliveredMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/delivered$/.exec(url.pathname);
-          if (deliveredMatch && req.method === "POST") {
-            return withCors(await handleEventDeliveredRoute(req, deliveredMatch[1]!, deliveredMatch[2]!, deps));
-          }
-
-          // POST /scene/{sceneId}/events/{eventId}/started
-          const startedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/started$/.exec(url.pathname);
-          if (startedMatch && req.method === "POST") {
-            return withCors(await handleEventStartedRoute(req, startedMatch[1]!, startedMatch[2]!, deps));
-          }
-
-          // POST /scene/{sceneId}/events/{eventId}/completed
-          const completedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/completed$/.exec(url.pathname);
-          if (completedMatch && req.method === "POST") {
-            return withCors(await handleEventCompletedRoute(req, completedMatch[1]!, completedMatch[2]!, deps));
-          }
-
-          return withCors(new Response("Not Found", { status: 404 }));
-        },
-        {
-          attributes: { "http.request.method": req.method, "url.path": url.pathname },
-          kind: SpanKind.SERVER,
+        let sceneId: string;
+        try {
+          sceneId = decodeURIComponent(editorMatch[1]!);
+        } catch {
+          return new Response(null, { status: 400 });
         }
-      );
+        return handleEditorUpgrade(req, server, sceneId, editorDeps);
+      }
+
+      return withSpan(`scene-manager ${req.method}`, () => dispatchRoute(ROUTES, req, url, deps, ctx.logger), {
+        attributes: { "http.request.method": req.method, "url.path": url.pathname },
+        kind: SpanKind.SERVER,
+      });
     },
   });
 }

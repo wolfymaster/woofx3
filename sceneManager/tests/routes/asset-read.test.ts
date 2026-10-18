@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { corsHeadersFor } from "../../src/http";
-import { handleAssetReadRoute, isAssetReadPath } from "../../src/routes/asset-read";
+import { corsHeadersFor, routeOf } from "../../src/http";
+import { handleAssetReadRoute } from "../../src/routes/asset-read";
 
 const BARKLOADER_URL = "http://barkloader.test/";
 
@@ -29,11 +29,11 @@ function upstream(...responses: Response[]) {
 
 const SIGNED = "https://bucket.test/user/res-1/anim.json?X-Amz-Signature=abc";
 
-describe("isAssetReadPath", () => {
-  it("claims only the read prefix", () => {
-    expect(isAssetReadPath("/assets/read/user/res-1/anim.json")).toBe(true);
-    expect(isAssetReadPath("/assets/user/res-1/anim.json")).toBe(false);
-    expect(isAssetReadPath("/assets/reader/x")).toBe(false);
+describe("the read route", () => {
+  it("answers only paths below its prefix", () => {
+    expect(routeOf("/assets/read/user/res-1/anim.json")).toBe("/assets/read/*");
+    expect(routeOf("/assets/user/res-1/anim.json")).toBe("/assets/user/*");
+    expect(routeOf("/assets/reader/x")).toBe("/assets/*");
   });
 });
 

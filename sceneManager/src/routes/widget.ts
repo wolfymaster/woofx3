@@ -15,8 +15,8 @@ export async function handleFrameDocumentRoute(
 ): Promise<Response> {
   const url = new URL(req.url);
   return deps.frameAssembler.assembleDocument(
-    decodeURIComponent(moduleId),
-    decodeURIComponent(manifestId),
+    moduleId,
+    manifestId,
     url.searchParams.get("theme"),
     url.searchParams.get("v")
   );

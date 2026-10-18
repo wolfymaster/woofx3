@@ -1,15 +1,11 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { ASSET_READ_PREFIX, assetOfReadPath } from "@woofx3/module-sdk";
+import { assetOfReadPath } from "@woofx3/module-sdk";
 
 /** Request headers that let the browser revalidate a file it holds. */
 const CONDITIONAL_REQUEST_HEADERS = ["If-None-Match", "If-Modified-Since"] as const;
 
 /** Response headers that describe the file; nothing else of the storage response is relayed. */
 const RELAYED_RESPONSE_HEADERS = ["Content-Type", "Content-Length", "ETag", "Last-Modified"] as const;
-
-export function isAssetReadPath(pathname: string): boolean {
-  return pathname.startsWith(ASSET_READ_PREFIX);
-}
 
 /**
  * `GET /assets/read/{key}`: the bytes of the stored file `/assets/{key}`

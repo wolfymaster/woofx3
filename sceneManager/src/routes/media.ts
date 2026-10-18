@@ -3,7 +3,6 @@ import { MEDIA_PROXY_PATH } from "../../contract/media-url";
 import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
 
 /** `/assets/media/{token}`: exactly one segment, the signed upstream URL. */
-const MEDIA_PATH = new RegExp(`^${MEDIA_PROXY_PATH}[^/]+$`);
 
 const MEDIA_RELAY: BarkloaderRelay = {
   // What the browser may say about the bytes it wants: seeking needs both.
@@ -25,10 +24,6 @@ const MEDIA_RELAY: BarkloaderRelay = {
   failure: "barkloader media proxy request failed",
   loggedPath: () => `${MEDIA_PROXY_PATH}{token}`,
 };
-
-export function isMediaProxyPath(pathname: string): boolean {
-  return MEDIA_PATH.test(pathname);
-}
 
 /**
  * Relays a media proxy request to barkloader, which verifies the token and
