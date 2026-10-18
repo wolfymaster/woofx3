@@ -179,10 +179,20 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   let unreportedKeys: string[] = [];
   let unreportedAll = false;
   let reportScheduled = false;
+  // Set by `onSettingsChange`: the widget redraws itself, so nothing it
+  // reads needs a reload, and the host is told so once.
+  let handlesChanges = false;
+  let handlesUnreported = false;
+  const settingsHandlers = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
 
   function reportReads(): void {
     reportScheduled = false;
-    if (unreportedKeys.length === 0 && !unreportedAll) {
+    if (handlesUnreported) {
+      handlesUnreported = false;
+      send(envelope({ type: "settings.reads" as const, keys: [], all: false, handles: true }));
+      return;
+    }
+    if (handlesChanges || (unreportedKeys.length === 0 && !unreportedAll)) {
       return;
     }
     send(envelope({ type: "settings.reads" as const, keys: unreportedKeys, all: unreportedAll }));
@@ -198,7 +208,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }
 
   function noteRead(key: string | symbol): void {
-    if (typeof key !== "string" || readAll || readKeys.has(key)) {
+    if (handlesChanges || typeof key !== "string" || readAll || readKeys.has(key)) {
       return;
     }
     readKeys.add(key);
@@ -207,7 +217,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }
 
   function noteReadAll(): void {
-    if (readAll) {
+    if (handlesChanges || readAll) {
       return;
     }
     readAll = true;
@@ -453,6 +463,13 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         currentSettings = Object.freeze({ ...msg.settings });
         settingsForScript = settingsView(currentSettings);
         bind(previous);
+        for (const handler of [...settingsHandlers]) {
+          try {
+            handler(settingsForScript);
+          } catch (err) {
+            console.error("[widget-host-shim] a settings handler threw", err);
+          }
+        }
         return;
       }
       case "behavior": {
@@ -561,6 +578,22 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
           return;
         }
         send(envelope({ type: "events.unsubscribe" as const, subId }));
+      };
+    },
+    onSettingsChange(handler: (settings: Readonly<Record<string, unknown>>) => void): () => void {
+      if (typeof handler !== "function") {
+        throw new Error("[widget-host-shim] onSettingsChange requires a handler function");
+      }
+      settingsHandlers.add(handler);
+      if (!handlesChanges) {
+        handlesChanges = true;
+        handlesUnreported = true;
+        unreportedKeys = [];
+        unreportedAll = false;
+        scheduleReport();
+      }
+      return () => {
+        settingsHandlers.delete(handler);
       };
     },
     reportStatus(key: string, value: unknown): void {

@@ -107,8 +107,9 @@ export interface MockHostController {
 
   /**
    * Replace the settings, as a streamer editing them in the scene editor
-   * would. Only `host.settings` changes here; the harness applies the
-   * setting bindings to the widget's document itself.
+   * would: `host.settings` changes and every `onSettingsChange` handler
+   * runs. The harness applies the setting bindings to the widget's document
+   * itself.
    */
   setSettings(settings: Record<string, unknown>): void;
 
@@ -171,6 +172,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
   const storageSubs = new Set<StorageSubscription>();
   const reportSubs = new Set<(r: WidgetStatusReport) => void>();
   const completeSubs = new Set<(eventId: string) => void>();
+  const settingsSubs = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
   const resourceBaseUrl = opts.resourceBaseUrl ?? "https://preview.local/resources";
   const fetchFn = opts.fetchFn ?? ((url: string) => fetch(url));
   let nextMockEventId = 0;
@@ -369,6 +371,15 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
         }
       };
     },
+    onSettingsChange(handler: (settings: Readonly<Record<string, unknown>>) => void): () => void {
+      if (typeof handler !== "function") {
+        throw new Error("[mock-host] onSettingsChange requires a handler function");
+      }
+      settingsSubs.add(handler);
+      return () => {
+        settingsSubs.delete(handler);
+      };
+    },
     reportStatus(key: string, value: unknown): void {
       emitReport(key, value);
     },
@@ -400,6 +411,13 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     },
     setSettings(next: Record<string, unknown>): void {
       settings = Object.freeze({ ...next });
+      for (const handler of [...settingsSubs]) {
+        try {
+          handler(settings);
+        } catch (err) {
+          console.error("[mock-host] settings handler threw", err);
+        }
+      }
     },
     onReport(handler: (r: WidgetStatusReport) => void): () => void {
       reportSubs.add(handler);
@@ -441,6 +459,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       storageSubs.clear();
       reportSubs.clear();
       completeSubs.clear();
+      settingsSubs.clear();
       current = null;
       pending.length = 0;
       inFlight.clear();

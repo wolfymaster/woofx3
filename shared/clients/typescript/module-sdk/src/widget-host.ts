@@ -267,6 +267,22 @@ export interface WidgetHost {
   onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void;
 
   /**
+   * Redraw from the settings whenever they change, instead of being
+   * reloaded: from the first call on, every change to the placement's
+   * settings is applied in place, `host.settings` is updated, and `handler`
+   * runs with the new settings after the bindings have been applied. For a
+   * widget whose script uses a setting no binding can show (a text template
+   * filled with a live value, say), this is what makes an edit in the scene
+   * editor show at once. Returns an unsubscribe; the widget keeps being
+   * updated in place for as long as its document lives.
+   *
+   * Hosts older than this call do not have it: check
+   * `typeof host.onSettingsChange === "function"`, and without it the
+   * widget is reloaded on a change, as before.
+   */
+  onSettingsChange(handler: (settings: Readonly<Record<string, unknown>>) => void): () => void;
+
+  /**
    * Report a per-widget status update — counters, timer state, goal
    * progress, anything the widget wants to surface to the engine and
    * dashboard. Best-effort: silently dropped when no transport is
