@@ -1,117 +1,11 @@
-// Safe expression evaluator, ported UNCHANGED (same grammar, same
-// tokenizer, same recursive-descent parser) from
-// streamware/ui/src/lib/resolver.ts. Originally built for `{expr}`
-// template substitution in alert text — that pipeline had no live
-// call site anywhere in streamware (dead code, never wired to a
-// widget). It's ported here because it turns out to be exactly the
-// right tool for a second, unrelated use: `event-queue.ts` evaluates
-// a widget's `priorityExpr` against each arriving `WidgetEvent` with
-// this same safe, sandboxed evaluator (no `eval`, no `new Function()`,
-// no access to globals or the DOM) rather than trusting arbitrary
-// widget-supplied code in the parent page's unsandboxed realm.
-//
-// Both use cases — template resolution and priority scoring — remain
-// available: `resolve()` for `{expr}` strings, `evaluateExpression()`
-// directly for a bare expression string (what `event-queue.ts` uses).
+// Safe expression evaluator: a small tokenizer and recursive-descent parser
+// for ternaries, comparisons, arithmetic and dotted paths. `event-queue.ts`
+// evaluates a widget's `priorityExpr` against each arriving `WidgetEvent`
+// with it rather than running widget-supplied code in the page's
+// unsandboxed realm: no `eval`, no `new Function()`, no access to globals
+// or the DOM.
 
 export type ResolverContext = Record<string, unknown>;
-
-/**
- * Resolve a Resolvable<string|number> value against a render-time
- * context. Numbers and non-string primitives pass through unchanged.
- * Strings are scanned for `{...}` segments — segments are evaluated as
- * expressions, the surrounding text is left literal.
- */
-export function resolve(value: unknown, ctx: ResolverContext): unknown {
-  if (typeof value !== "string") {
-    return value;
-  }
-  if (!value.includes("{")) {
-    return value;
-  }
-
-  const segments = parseTemplate(value);
-  if (segments.length === 1) {
-    const seg = segments[0]!;
-    if (seg.kind === "literal") {
-      return seg.text;
-    }
-    return evaluateExpression(seg.expr, ctx);
-  }
-
-  let out = "";
-  for (const seg of segments) {
-    if (seg.kind === "literal") {
-      out += seg.text;
-      continue;
-    }
-    const value = evaluateExpression(seg.expr, ctx);
-    out += value === undefined || value === null ? "" : String(value);
-  }
-  return out;
-}
-
-type Segment = { kind: "literal"; text: string } | { kind: "expr"; expr: string };
-
-function parseTemplate(src: string): Segment[] {
-  const out: Segment[] = [];
-  let i = 0;
-  let lit = "";
-  while (i < src.length) {
-    const ch = src[i];
-    if (ch === "{") {
-      if (lit.length) {
-        out.push({ kind: "literal", text: lit });
-        lit = "";
-      }
-      let depth = 1;
-      let j = i + 1;
-      let inString: '"' | "'" | null = null;
-      while (j < src.length) {
-        const c = src[j];
-        if (inString) {
-          if (c === "\\") {
-            j += 2;
-            continue;
-          }
-          if (c === inString) {
-            inString = null;
-          }
-          j += 1;
-          continue;
-        }
-        if (c === '"' || c === "'") {
-          inString = c;
-          j += 1;
-          continue;
-        }
-        if (c === "{") {
-          depth += 1;
-        } else if (c === "}") {
-          depth -= 1;
-          if (depth === 0) {
-            break;
-          }
-        }
-        j += 1;
-      }
-      if (depth !== 0) {
-        lit += src.slice(i);
-        i = src.length;
-        break;
-      }
-      out.push({ kind: "expr", expr: src.slice(i + 1, j).trim() });
-      i = j + 1;
-      continue;
-    }
-    lit += ch;
-    i += 1;
-  }
-  if (lit.length) {
-    out.push({ kind: "literal", text: lit });
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // Safe expression evaluator
@@ -447,5 +341,3 @@ export function evaluateExpression(src: string, ctx: ResolverContext): unknown {
     return undefined;
   }
 }
-
-export const __testing = { tokenize, parseTemplate, evaluateExpression };

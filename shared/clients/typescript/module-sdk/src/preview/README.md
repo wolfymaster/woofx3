@@ -27,10 +27,12 @@ Or paste the URL into the input at the top of the panel and click
   `host.reportComplete` call, every `console.{log,warn,error}` from the
   iframe.
 
-The harness makes the iframe sandboxed (`allow-scripts
-allow-same-origin`) — same as the real streamware shell — so widget
-code that depends on the sandboxing constraints behaves the same way
-in preview.
+The harness sandboxes the iframe with `allow-scripts allow-same-origin`
+so it can hand the frame its mock host. A frame on stream is stricter:
+`allow-scripts` only, so it runs with an opaque origin and a
+`connect-src 'none'` policy, and talks to its host by `postMessage`.
+Code that fetches or reaches into its parent can work here and fail on
+stream; read files with `widgetHost.assets.load` instead.
 
 ### Cross-origin caveat
 

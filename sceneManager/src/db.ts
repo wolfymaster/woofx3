@@ -15,7 +15,7 @@ import type * as module_widget from "@woofx3/db/module_widget.pb";
 // twirpscript ClientConfiguration is { baseURL: string }; inlined so
 // sceneManager doesn't need twirpscript as a direct dep (the generated
 // `*.pb.ts` files in shared/clients/typescript/db/ pull it in
-// transitively) — same rationale as streamware/src/db.ts.
+// transitively).
 interface ClientConfiguration {
   baseURL: string;
 }
@@ -23,7 +23,7 @@ interface ClientConfiguration {
 /**
  * Twirpscript's TwirpError doesn't extend Error; normalise at this
  * boundary so callers upstream always see a real Error carrying the
- * Twirp code and message. Ported verbatim from streamware/src/db.ts.
+ * Twirp code and message.
  */
 function toError(err: unknown, op: string): Error {
   if (err instanceof Error) {
@@ -110,8 +110,8 @@ export class DbClient {
   }
 
   // Overlay-token resolution — engine-internal only. sceneManager is
-  // the single resolver of plaintext tokens (streamware's role,
-  // carried over); the api gateway never resolves them.
+  // the single resolver of plaintext tokens; the api gateway never
+  // resolves them.
   async resolveOverlayToken(
     req: overlay_token.ResolveOverlayTokenRequest
   ): Promise<overlay_token.ResolveOverlayTokenResponse> {

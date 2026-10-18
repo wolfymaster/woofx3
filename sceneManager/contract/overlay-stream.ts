@@ -143,8 +143,6 @@ export function parseStreamFrame(rawEvent: string): StreamFrame | null {
  */
 export type AckKind = "delivered" | "started" | "completed";
 
-export const ACK_KINDS: readonly AckKind[] = ["delivered", "started", "completed"];
-
 /** Where a page posts an ack: `sceneBase` is the scene's path, `/scene/{sceneId}`. */
 export function ackPath(sceneBase: string, eventId: string, kind: AckKind): string {
   return `${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`;

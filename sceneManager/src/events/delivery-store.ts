@@ -195,8 +195,12 @@ export class DeliveryStore {
         occurredAt: "",
         targetInstanceIds: params.targetInstanceIds,
       });
-      if (resp.status?.code !== "OK" || !resp.sceneEvent) {
+      if (resp.status?.code !== "OK") {
         this.logger.warn("delivery-store: recordSceneEvent did not return OK", { status: resp.status });
+        return null;
+      }
+      if (!resp.sceneEvent) {
+        this.logger.warn("delivery-store: recordSceneEvent returned OK with no scene event");
         return null;
       }
       eventId = resp.sceneEvent.id;
