@@ -264,14 +264,20 @@ Configuration is loaded from (in order of precedence):
 ### Finding the config
 
 The TypeScript, Go and Rust runtimes, and the NATS server, find the config the
-same way. The first match wins:
+same way. A config root's config file is `.woofx3.json`, or `.woofx3.config`
+when there is no `.woofx3.json`. The first match wins:
 
 | Source | Config file | `.env` |
 |---|---|---|
-| An explicit root passed in code (`rootDir` / `RootDir`), or NATS's `-conf` flag | `.woofx3.json` in that root (the `-conf` file for NATS) | that root (the `-conf` file's directory) |
+| An explicit root passed in code (`rootDir` / `RootDir`), or NATS's `-conf` flag | the config file in that root (the `-conf` file for NATS) | that root (the `-conf` file's directory) |
 | `WOOFX3_CONFIG` | the file it names, which must exist | `WOOFX3_ROOT` if set, else the file's directory |
-| `WOOFX3_ROOT` | `.woofx3.json` in that directory, if present | that directory |
-| Neither set | `.woofx3.json` in the nearest directory at or above the working directory that holds a config file | that directory |
+| `WOOFX3_ROOT` | the config file in that directory, if present | that directory |
+| Neither set | the config file in the nearest directory at or above the working directory that holds one | that directory, else the working directory |
+
+`WOOFX3_CONFIG` and `WOOFX3_ROOT` are trimmed, and blank counts as unset. The Go
+loader lives in its own dependency-free module, `common/config`
+(`shared/common/golang/config`), which the Go runtime and the NATS server both
+use.
 
 A `WOOFX3_CONFIG` naming a missing file stops the service at startup: a
 deployment that names its config file should not start on defaults instead.

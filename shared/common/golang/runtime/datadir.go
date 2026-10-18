@@ -22,7 +22,10 @@ func DataDir() string {
 	if dir == "" {
 		return ""
 	}
-	return absOrSelf(dir)
+	if abs, err := filepath.Abs(dir); err == nil {
+		return abs
+	}
+	return dir
 }
 
 // ResolveDataPath anchors a relative path in the data directory. Without a

@@ -222,6 +222,20 @@ describe("Config location", () => {
     });
   });
 
+  test("the variables are trimmed and blank counts as unset", () => {
+    expect(resolveConfigLocation(undefined, { [ROOT_DIR_ENV]: " /srv/root\n", [CONFIG_FILE_ENV]: "  " })).toEqual({
+      rootDir: path.resolve("/srv/root"),
+    });
+    expect(resolveConfigLocation(undefined, { [CONFIG_FILE_ENV]: "\t/srv/config/engine.json " })).toEqual({
+      rootDir: path.resolve("/srv/config"),
+      configPath: path.resolve("/srv/config/engine.json"),
+    });
+  });
+
+  test("a blank explicit rootDir counts as unset, as in Go", () => {
+    expect(resolveConfigLocation("", { [ROOT_DIR_ENV]: "/srv/root" })).toEqual({ rootDir: path.resolve("/srv/root") });
+  });
+
   test("loadRuntimeEnv reads the config and .env under WOOFX3_ROOT", () => {
     const root = tempDir({
       ".woofx3.json": JSON.stringify({ locationRootFile: "from-root" }),

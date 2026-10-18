@@ -20,7 +20,10 @@ export function screamingSnakeToCamel(s: string): string {
     .join("");
 }
 
-/** Config file names read from a config root, in order of preference. */
+/**
+ * Config file names read from a config root, in order of preference. Must match FileNames in
+ * shared/common/golang/config/location.go and CONFIG_FILE_NAMES in shared/common/rust/runtime/src/lib.rs.
+ */
 const CONFIG_FILE_NAMES = [".woofx3.json", ".woofx3.config"] as const;
 
 /**
@@ -106,7 +109,7 @@ function loadWoofx3ConfigFile(rootDir: string): Record<string, string | number |
 /**
  * Names an explicit config file. It must exist: a deployment that names its config file and gets
  * an empty config instead would start with defaults it never asked for.
- * Must match ConfigFileEnv in shared/common/golang/runtime/env.go and CONFIG_FILE_ENV in
+ * Must match ConfigFileEnv in shared/common/golang/config/location.go and CONFIG_FILE_ENV in
  * shared/common/rust/runtime/src/lib.rs.
  */
 export const CONFIG_FILE_ENV = "WOOFX3_CONFIG";
@@ -123,7 +126,8 @@ export interface ConfigLocation {
 }
 
 /**
- * Pick the config root and file, first match wins:
+ * Pick the config root and file, first match wins. Values are trimmed and blank counts as unset, as
+ * in the Go and Rust loaders:
  * - `rootDir`: that directory's .env and .woofx3.json.
  * - WOOFX3_CONFIG: that file; .env from WOOFX3_ROOT if set, else the file's directory.
  * - WOOFX3_ROOT: that directory's .env and .woofx3.json.
@@ -133,11 +137,13 @@ export function resolveConfigLocation(
   rootDir: string | undefined,
   env: Record<string, string | undefined> = process.env
 ): ConfigLocation {
-  if (rootDir !== undefined) {
-    return { rootDir: path.resolve(rootDir) };
+  const explicitRoot = rootDir?.trim();
+  if (explicitRoot) {
+    return { rootDir: path.resolve(explicitRoot) };
   }
-  const rootFromEnv = env[ROOT_DIR_ENV] ? path.resolve(env[ROOT_DIR_ENV]) : undefined;
-  const configFromEnv = env[CONFIG_FILE_ENV];
+  const rootValue = env[ROOT_DIR_ENV]?.trim();
+  const rootFromEnv = rootValue ? path.resolve(rootValue) : undefined;
+  const configFromEnv = env[CONFIG_FILE_ENV]?.trim();
   if (configFromEnv) {
     const configPath = path.resolve(configFromEnv);
     return { rootDir: rootFromEnv ?? path.dirname(configPath), configPath };
@@ -200,7 +206,7 @@ export interface EnvConfigSchema {
 }
 
 export interface LoadRuntimeEnvOptions {
-  /** Project root directory; when set, WOOFX3_ROOT and WOOFX3_CONFIG are ignored. See resolveConfigLocation. */
+  /** Project root directory; when set and not blank, WOOFX3_ROOT and WOOFX3_CONFIG are ignored. See resolveConfigLocation. */
   rootDir?: string;
   /** If true, set process.env from the validated config (camelCase keys -> SCREAMING_SNAKE_CASE) so code that reads process.env still works. */
   injectIntoProcess?: boolean;

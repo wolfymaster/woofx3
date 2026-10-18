@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/wolfymaster/woofx3/common/config"
 )
 
 func TestTheEnvironmentOverridesTheConfigFile(t *testing.T) {
@@ -42,8 +44,8 @@ func writeFile(t *testing.T, dir, name, content string) string {
 // file above it, so only what a test sets is found.
 func isolateLocation(t *testing.T) {
 	t.Helper()
-	t.Setenv(configFileEnv, "")
-	t.Setenv(rootDirEnv, "")
+	t.Setenv(config.ConfigFileEnv, "")
+	t.Setenv(config.RootDirEnv, "")
 	t.Setenv("WOOFX3_MESSAGEBUS_WEBSOCKET_PORT", "")
 	t.Chdir(t.TempDir())
 }
@@ -53,7 +55,7 @@ func TestWoofx3ConfigNamesTheConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, "engine.json", `{"messagebusWebSocketPort": 4301}`)
 	writeFile(t, dir, ".env", "WOOFX3_MESSAGEBUS_HOST=10.0.0.1\n")
-	t.Setenv(configFileEnv, path)
+	t.Setenv(config.ConfigFileEnv, path)
 
 	cfg, err := LoadConfig("")
 	if err != nil {
@@ -70,7 +72,7 @@ func TestWoofx3ConfigNamesTheConfigFile(t *testing.T) {
 
 func TestAMissingWoofx3ConfigFileIsAnError(t *testing.T) {
 	isolateLocation(t)
-	t.Setenv(configFileEnv, filepath.Join(t.TempDir(), "missing.json"))
+	t.Setenv(config.ConfigFileEnv, filepath.Join(t.TempDir(), "missing.json"))
 
 	if _, err := LoadConfig(""); err == nil {
 		t.Fatal("LoadConfig accepted a WOOFX3_CONFIG naming a missing file")
@@ -81,7 +83,7 @@ func TestWoofx3RootNamesTheConfigRoot(t *testing.T) {
 	isolateLocation(t)
 	root := t.TempDir()
 	writeFile(t, root, ".woofx3.json", `{"messagebusWebSocketPort": 4302}`)
-	t.Setenv(rootDirEnv, root)
+	t.Setenv(config.RootDirEnv, root)
 
 	cfg, err := LoadConfig("")
 	if err != nil {
@@ -98,8 +100,8 @@ func TestTheConfFlagWinsOverTheLocationVariables(t *testing.T) {
 	flagged := writeFile(t, t.TempDir(), ".woofx3.json", `{"messagebusWebSocketPort": 4303}`)
 	root := t.TempDir()
 	writeFile(t, root, ".woofx3.json", `{"messagebusWebSocketPort": 4304}`)
-	t.Setenv(rootDirEnv, root)
-	t.Setenv(configFileEnv, filepath.Join(root, ".woofx3.json"))
+	t.Setenv(config.RootDirEnv, root)
+	t.Setenv(config.ConfigFileEnv, filepath.Join(root, ".woofx3.json"))
 
 	cfg, err := LoadConfig(flagged)
 	if err != nil {
@@ -113,14 +115,11 @@ func TestTheConfFlagWinsOverTheLocationVariables(t *testing.T) {
 
 func TestAWoofx3RootWithoutAConfigFileIsConfiguredByVariablesOnly(t *testing.T) {
 	isolateLocation(t)
-	t.Setenv(rootDirEnv, t.TempDir())
+	t.Setenv(config.RootDirEnv, t.TempDir())
 
-	location, err := resolveConfigLocation("")
-	if err != nil {
-		t.Fatalf("resolveConfigLocation: %v", err)
-	}
+	location := resolveConfigLocation("")
 
-	if location.configPath != "" || !location.final {
+	if location.ConfigPath != "" || location.Searched {
 		t.Errorf("location = %+v, want no config file and no executable-directory fallback", location)
 	}
 }
@@ -135,11 +134,8 @@ func TestWithoutLocationVariablesTheConfigIsFoundAboveTheWorkingDirectory(t *tes
 	}
 	t.Chdir(nested)
 
-	location, err := resolveConfigLocation("")
-	if err != nil {
-		t.Fatalf("resolveConfigLocation: %v", err)
-	}
-	if location.configPath != path || location.final {
+	location := resolveConfigLocation("")
+	if location.ConfigPath != path || !location.Searched {
 		t.Errorf("location = %+v, want the parent's config file with the executable-directory fallback kept", location)
 	}
 }

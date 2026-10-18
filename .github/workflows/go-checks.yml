@@ -44,6 +44,7 @@ jobs:
           - shared/clients/golang/servicediscovery
           - shared/common/golang/cloudevents
           - shared/common/golang/conditions
+          - shared/common/golang/config
           - shared/common/golang/logging
           - shared/common/golang/runtime
     steps:

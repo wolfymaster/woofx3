@@ -12,26 +12,29 @@ pub use otel::{
     OTEL_TRACING_ENABLED_KEY,
 };
 
-const PROJECT_ROOT_MARKERS: &[&str] = &[".woofx3.json", ".woofx3.config"];
+/// Config file names read from a config root, in order of preference. Must
+/// match `FileNames` in `shared/common/golang/config/location.go` and
+/// `CONFIG_FILE_NAMES` in `shared/common/typescript/runtime/config.ts`.
+pub const CONFIG_FILE_NAMES: &[&str] = &[".woofx3.json", ".woofx3.config"];
 const ENV_PREFIX: &str = "WOOFX3_";
 
 /// Names an explicit config file. It must exist: a deployment that names its
 /// config file and gets an empty config instead would start with defaults it
 /// never asked for. Must match `ConfigFileEnv` in
-/// `shared/common/golang/runtime/env.go` and `CONFIG_FILE_ENV` in
+/// `shared/common/golang/config/location.go` and `CONFIG_FILE_ENV` in
 /// `shared/common/typescript/runtime/config.ts`.
 pub const CONFIG_FILE_ENV: &str = "WOOFX3_CONFIG";
 
-/// Names the config root directory, whose `.woofx3.json` is read unless
+/// Names the config root directory, whose config file is read unless
 /// `WOOFX3_CONFIG` is set.
 pub const ROOT_DIR_ENV: &str = "WOOFX3_ROOT";
 
-/// Where `Config::load` reads `.woofx3.json` from.
+/// Where `Config::load` reads the config file from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigSource {
     /// A file named by `WOOFX3_CONFIG`; it must exist.
     File(PathBuf),
-    /// `.woofx3.json` in the directory named by `WOOFX3_ROOT`; it may be absent.
+    /// The config file in the directory named by `WOOFX3_ROOT`; it may be absent.
     Root(PathBuf),
     /// The nearest directory at or above the working directory holding a
     /// config file.
@@ -40,12 +43,12 @@ pub enum ConfigSource {
 
 impl ConfigSource {
     /// Pick the source from the values of `WOOFX3_CONFIG` and `WOOFX3_ROOT`,
-    /// first match wins. Blank counts as unset.
+    /// first match wins. Values are trimmed and blank counts as unset.
     pub fn select(config_file: Option<&str>, root_dir: Option<&str>) -> ConfigSource {
-        if let Some(path) = config_file.filter(|v| !v.is_empty()) {
+        if let Some(path) = config_file.map(str::trim).filter(|v| !v.is_empty()) {
             return ConfigSource::File(PathBuf::from(path));
         }
-        if let Some(dir) = root_dir.filter(|v| !v.is_empty()) {
+        if let Some(dir) = root_dir.map(str::trim).filter(|v| !v.is_empty()) {
             return ConfigSource::Root(PathBuf::from(dir));
         }
         ConfigSource::Search
@@ -79,8 +82,8 @@ pub struct Config {
 
 impl Config {
     /// Load the config the environment points at: the file `WOOFX3_CONFIG`
-    /// names, else `.woofx3.json` in `WOOFX3_ROOT`, else the nearest
-    /// `.woofx3.json` at or above the working directory (see `load_from`).
+    /// names, else the config file in `WOOFX3_ROOT`, else the nearest one at
+    /// or above the working directory (see `load_from`).
     pub fn load() -> Result<Config, ConfigError> {
         Self::load_source(&ConfigSource::from_env())
     }
@@ -90,12 +93,13 @@ impl Config {
     pub fn load_source(source: &ConfigSource) -> Result<Config, ConfigError> {
         match source {
             ConfigSource::File(path) => Self::read_file(path),
-            ConfigSource::Root(dir) => Self::read_optional_file(&dir.join(".woofx3.json")),
+            ConfigSource::Root(dir) => Self::read_config_in(dir),
             ConfigSource::Search => Self::load_from("."),
         }
     }
 
-    /// Load `.woofx3.json` from the nearest directory at or above `start_dir`.
+    /// Load the config file (`.woofx3.json`, else `.woofx3.config`) from the
+    /// nearest directory at or above `start_dir`.
     ///
     /// An absent file is an empty config, not an error: a deployment may be
     /// configured entirely through `WOOFX3_*` variables, and `get` consults
@@ -103,14 +107,20 @@ impl Config {
     /// read or parsed is still an error.
     pub fn load_from(start_dir: &str) -> Result<Config, ConfigError> {
         let root = find_config_root(start_dir);
-        Self::read_optional_file(&PathBuf::from(&root).join(".woofx3.json"))
+        Self::read_config_in(Path::new(&root))
     }
 
-    fn read_optional_file(config_path: &Path) -> Result<Config, ConfigError> {
-        if !config_path.exists() {
-            return Ok(Config::default());
+    /// Read the first config file in `dir`, or an empty config when it holds
+    /// none.
+    fn read_config_in(dir: &Path) -> Result<Config, ConfigError> {
+        match CONFIG_FILE_NAMES
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|path| path.exists())
+        {
+            Some(path) => Self::read_file(&path),
+            None => Ok(Config::default()),
         }
-        Self::read_file(config_path)
     }
 
     fn read_file(config_path: &Path) -> Result<Config, ConfigError> {
@@ -252,7 +262,7 @@ pub fn find_config_root(start_dir: &str) -> String {
 
     let mut current = dir.clone();
     while current != root {
-        for marker in PROJECT_ROOT_MARKERS {
+        for marker in CONFIG_FILE_NAMES {
             let path = Path::new(&current).join(marker);
             if path.exists() {
                 return current;
@@ -376,6 +386,18 @@ mod tests {
     }
 
     #[test]
+    fn the_variables_are_trimmed_and_blank_counts_as_unset() {
+        assert_eq!(
+            ConfigSource::select(Some("  "), Some(" /srv/root\n")),
+            ConfigSource::Root(PathBuf::from("/srv/root"))
+        );
+        assert_eq!(
+            ConfigSource::select(Some("\t/srv/engine.json "), None),
+            ConfigSource::File(PathBuf::from("/srv/engine.json"))
+        );
+    }
+
+    #[test]
     fn the_root_variable_names_the_root() {
         assert_eq!(
             ConfigSource::select(None, Some("/srv/root")),
@@ -436,6 +458,45 @@ mod tests {
             Some(&serde_json::Value::from("from-root"))
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_root_without_woofx3_json_reads_woofx3_config() {
+        let dir = temp_dir("root-config-fallback");
+        std::fs::write(
+            dir.join(".woofx3.config"),
+            r#"{"sourceRoot": "from-config"}"#,
+        )
+        .expect("write");
+
+        let config = Config::load_source(&ConfigSource::Root(dir.clone())).expect("load");
+
+        assert_eq!(
+            config.values.get("sourceRoot"),
+            Some(&serde_json::Value::from("from-config"))
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_config_file_that_is_not_a_json_object_is_an_error() {
+        for (name, content) in [
+            ("malformed", "{not json"),
+            ("array", "[1, 2]"),
+            ("scalar", "42"),
+            ("null", "null"),
+        ] {
+            let dir = temp_dir(&format!("root-config-{name}"));
+            std::fs::write(dir.join(".woofx3.json"), content).expect("write");
+
+            let result = Config::load_source(&ConfigSource::Root(dir.clone()));
+
+            assert!(
+                matches!(result, Err(ConfigError::ParseError(_))),
+                "{name}: {result:?}"
+            );
+            std::fs::remove_dir_all(&dir).ok();
+        }
     }
 
     #[test]
