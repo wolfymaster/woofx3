@@ -26,8 +26,15 @@
       background: var(--theme-background, transparent) var(--theme-asset-backdrop, none) center / cover no-repeat;
     }
 
+    /* Colour, font, size and alignment come from the placement's settings
+       through the host's bindings, so changing them updates the widget in
+       place. */
     #text {
       width: 100%;
+      color: var(--setting-color, #ffffff);
+      font-family: var(--setting-fontFamily, Roboto, system-ui, sans-serif);
+      font-size: calc(var(--setting-fontSize, 48) * 1px);
+      text-align: var(--setting-align, center);
       font-weight: var(--theme-fontWeight, bold);
       line-height: 1.2;
       white-space: pre-wrap;
@@ -49,21 +56,13 @@
       if (!host) {
         return;
       }
-      const settings = host.settings;
       const el = document.getElementById("text");
-      el.style.color = str(settings.color, "#ffffff");
-      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
-      el.style.fontSize = num(settings.fontSize, 48) + "px";
-      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
 
-      const timer = str(settings.timer, "");
-      if (timer === "") {
-        return;
-      }
-      const template = str(settings.text, "{time}");
-
-      // The reading last synced to, and when it arrived on this page's
-      // monotonic clock. The time left is counted down from those alone.
+      // The timer followed and how to stop following it; the reading last
+      // synced to, and when it arrived on this page's monotonic clock. The
+      // time left is counted down from those alone.
+      let following = null;
+      let stopFollowing = null;
       let reading = null;
       let syncedAt = 0;
       let tick = null;
@@ -78,9 +77,15 @@
       // Draws the time left and, while it is running, wakes again just as
       // the shown second turns over.
       function draw() {
-        tick = null;
+        if (tick !== null) {
+          clearTimeout(tick);
+          tick = null;
+        }
+        if (reading === null) {
+          return;
+        }
         const left = remainingMs();
-        render(el, fill(template, {
+        render(el, fill(str(host.settings.text, "{time}"), {
           time: formatDuration(left),
           duration: formatDuration(reading.durationMs),
         }));
@@ -89,23 +94,47 @@
         }
       }
 
+      // Follows the timer the settings name and draws it with their template.
+      //
       // The host sends the timer as a whole, `{ value, settings, readAt }`,
       // whenever it changes, and never in between. A running timer stores
-      // when it ends; measured against `readAt`, the host's clock when it
-      // was sent, that is its time left as it arrives here, so this page's
-      // clock never has to agree with the host's. Nothing shows until the
-      // first one arrives rather than a time that may be wrong.
-      host.storage.subscribe("resource:" + timer, (instance) => {
-        if (instance === null || typeof instance !== "object" || typeof instance.readAt !== "number") {
+      // when it ends; measured against `readAt`, the host's clock when it was
+      // sent, that is its time left as it arrives here, so this page's clock
+      // never has to agree with the host's. Nothing shows until the first one
+      // arrives rather than a time that may be wrong.
+      function follow() {
+        const timer = str(host.settings.timer, "");
+        if (timer === following) {
+          draw();
           return;
         }
-        reading = timerReading(instance.value, instance.settings || {}, instance.readAt);
-        syncedAt = performance.now();
-        if (tick !== null) {
-          clearTimeout(tick);
+        if (stopFollowing !== null) {
+          stopFollowing();
+          stopFollowing = null;
         }
+        following = timer;
+        reading = null;
         draw();
-      });
+        el.textContent = "";
+        if (timer === "") {
+          return;
+        }
+        stopFollowing = host.storage.subscribe("resource:" + timer, (instance) => {
+          if (instance === null || typeof instance !== "object" || typeof instance.readAt !== "number") {
+            return;
+          }
+          reading = timerReading(instance.value, instance.settings || {}, instance.readAt);
+          syncedAt = performance.now();
+          draw();
+        });
+      }
+
+      // On a scene, an edit to the template or the timer redraws in place
+      // rather than reloading the widget. A host without the call reloads it.
+      if (host.surface !== "alert" && typeof host.onSettingsChange === "function") {
+        host.onSettingsChange(follow);
+      }
+      follow();
     })();
 
     // `{ running, remainingMs, durationMs }` at `now`, from what the timer
@@ -163,10 +192,6 @@
 
     function str(value, fallback) {
       return typeof value === "string" && value.trim() !== "" ? value : fallback;
-    }
-
-    function num(value, fallback) {
-      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
     }
   </script>
 </body>
