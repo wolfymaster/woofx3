@@ -51,7 +51,11 @@ export type HelixOperationName =
   | "banUser"
   | "unbanUser"
   | "getChatSettings"
-  | "updateChatSettings";
+  | "updateChatSettings"
+  | "sendChatMessage"
+  | "sendChatAnnouncement"
+  | "sendShoutout"
+  | "getChatters";
 
 export interface HelixCommandArgs {
   operation: HelixOperationName;

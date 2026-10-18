@@ -186,6 +186,44 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
       jsonBody: { slow_mode: true, slow_mode_wait_time: 30, follower_mode: false },
     },
   ],
+  [
+    "sendChatMessage",
+    { message: "hello chat" },
+    {
+      method: "POST",
+      url: "chat/messages",
+      query: {},
+      jsonBody: { broadcaster_id: BROADCASTER_ID, sender_id: BROADCASTER_ID, message: "hello chat" },
+    },
+  ],
+  [
+    "sendChatAnnouncement",
+    { message: "Giveaway at 9", color: "purple" },
+    {
+      method: "POST",
+      url: "chat/announcements",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { message: "Giveaway at 9", color: "purple" },
+    },
+  ],
+  [
+    "sendShoutout",
+    { to_broadcaster_id: "42" },
+    {
+      method: "POST",
+      url: "chat/shoutouts",
+      query: { from_broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, to_broadcaster_id: "42" },
+    },
+  ],
+  [
+    "getChatters",
+    { first: 1000 },
+    {
+      method: "GET",
+      url: "chat/chatters",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, first: "1000" },
+    },
+  ],
 ];
 
 describe("buildHelixRequest", () => {
@@ -216,6 +254,15 @@ describe("validateHelixParams", () => {
       'unknown parameter "moderator_id"'
     );
     expect(() => validateHelixParams("banUser", { data: { user_id: "42" } })).toThrow('unknown parameter "data"');
+  });
+
+  test("sends chat as the broadcaster only", () => {
+    expect(() => validateHelixParams("sendChatMessage", { message: "hi", sender_id: "someone-else" })).toThrow(
+      'unknown parameter "sender_id"'
+    );
+    expect(() => validateHelixParams("sendShoutout", { to_broadcaster_id: "42", from_broadcaster_id: "x" })).toThrow(
+      'unknown parameter "from_broadcaster_id"'
+    );
   });
 
   test("does not take inherited names for declared ones", () => {
