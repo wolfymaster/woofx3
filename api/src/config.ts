@@ -3,6 +3,7 @@ import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
+import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
 import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
@@ -61,6 +62,11 @@ export interface ApiConfig {
    * shared/common/typescript/http/request-guard.ts.
    */
   requestGuard: RequestGuardPolicy;
+  /**
+   * The marketplace this engine installs and reads the catalog from, or null
+   * when the marketplace is turned off (`marketplaceUrl` set to blank).
+   */
+  marketplace: MarketplaceConfig | null;
   nats: {
     url: string;
     name: string;
@@ -68,6 +74,17 @@ export interface ApiConfig {
     nkeySeed?: string;
     token?: string;
   };
+}
+
+export interface MarketplaceConfig {
+  /** `marketplaceUrl` / `WOOFX3_MARKETPLACE_URL`; the public marketplace when unset. */
+  url: string;
+  /**
+   * `marketplaceDownloadHosts` / `WOOFX3_MARKETPLACE_DOWNLOAD_HOSTS`,
+   * comma-separated: the hosts (HTTPS) or origins archive downloads may come
+   * from. Defaults to where the public marketplace presigns them.
+   */
+  downloadHosts: string[];
 }
 
 export const ApiEnvSchema = z
@@ -108,6 +125,10 @@ export const ApiEnvSchema = z
     woofx3RootPath: z.string().optional(),
     woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
     woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    woofx3MarketplaceUrl: z.string().optional(),
+    marketplaceUrl: z.string().optional(),
+    woofx3MarketplaceDownloadHosts: z.string().optional(),
+    marketplaceDownloadHosts: z.string().optional(),
   })
   .passthrough();
 
@@ -150,6 +171,38 @@ export function resolveHosting(value: unknown): EngineHosting | null {
 function nonBlank(value: unknown): string | undefined {
   const text = value === undefined || value === null ? "" : String(value).trim();
   return text === "" ? undefined : text;
+}
+
+/**
+ * The marketplace settings. An unset `marketplaceUrl` means the public
+ * marketplace; one set to blank turns marketplace installs off, which an
+ * engine that must never reach the internet wants. Malformed values fail at
+ * startup rather than at the first install.
+ */
+export function resolveMarketplaceConfig(
+  url: string | undefined,
+  downloadHosts: string | undefined
+): MarketplaceConfig | null {
+  if (url !== undefined && url.trim() === "") {
+    return null;
+  }
+  const resolvedUrl = (url ?? DEFAULT_MARKETPLACE_URL).trim();
+  assertValidHttpUrl("marketplaceUrl (WOOFX3_MARKETPLACE_URL)", resolvedUrl);
+  const hosts = (downloadHosts ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter((host) => host !== "");
+  const resolvedHosts = hosts.length > 0 ? hosts : [...DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS];
+  for (const host of resolvedHosts) {
+    try {
+      downloadOrigin(host);
+    } catch (err) {
+      throw new Error(
+        `Config error: marketplaceDownloadHosts (WOOFX3_MARKETPLACE_DOWNLOAD_HOSTS) entry ${host} is invalid — ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+  return { url: resolvedUrl, downloadHosts: resolvedHosts };
 }
 
 export function loadConfig(): ApiConfig {
@@ -203,6 +256,12 @@ export function loadConfig(): ApiConfig {
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,
   });
+  const marketplaceUrl = config.woofx3MarketplaceUrl ?? config.marketplaceUrl;
+  const marketplaceDownloadHosts = config.woofx3MarketplaceDownloadHosts ?? config.marketplaceDownloadHosts;
+  const marketplace = resolveMarketplaceConfig(
+    marketplaceUrl === undefined ? undefined : String(marketplaceUrl),
+    marketplaceDownloadHosts === undefined ? undefined : String(marketplaceDownloadHosts)
+  );
 
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
   const messageBusJwt =
@@ -234,6 +293,7 @@ export function loadConfig(): ApiConfig {
     streamwareUrl,
     sceneManagerUrl,
     apiUrl,
+    marketplace,
     rootDir,
     requestGuard,
     nats: {

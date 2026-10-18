@@ -17,10 +17,8 @@ import (
 
 // widgetStatusService implements `client.WidgetStatusService`.
 //
-// Phase 4 of the widget-completion plan: scene-overlay widgets call
-// `widgetHost.reportStatus(key, value)`; streamware republishes onto
-// NATS `module.widget.status.changed`; the api consumes that subject
-// and calls `UpsertWidgetStatus` here. The dashboard sees the change
+// Scene-overlay widgets call `widgetHost.reportStatus(key, value)`;
+// sceneManager calls `UpsertWidgetStatus` here. The dashboard sees the change
 // via the `WIDGET_STATUS_CHANGED` webhook (driven by the api's
 // outbox subscription on `db.widget_status.updated.*`).
 type widgetStatusService struct {

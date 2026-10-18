@@ -17,6 +17,7 @@
     "./client": "./client.ts",
     "./config-bundle": "./config-bundle.ts",
     "./google-fonts": "./google-fonts.ts",
+    "./marketplace-catalog": "./marketplace-catalog.ts",
     "./ui-schema": "./ui-schema.ts",
     "./workflow-definition": "./workflow-definition.ts",
     "./scene-editor": "./scene-editor/index.ts",
