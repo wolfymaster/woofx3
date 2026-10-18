@@ -264,14 +264,20 @@ Configuration is loaded from (in order of precedence):
 ### Finding the config
 
 The TypeScript, Go and Rust runtimes, and the NATS server, find the config the
-same way. The first match wins:
+same way. A config root's config file is `.woofx3.json`, or `.woofx3.config`
+when there is no `.woofx3.json`. The first match wins:
 
 | Source | Config file | `.env` |
 |---|---|---|
-| An explicit root passed in code (`rootDir` / `RootDir`), or NATS's `-conf` flag | `.woofx3.json` in that root (the `-conf` file for NATS) | that root (the `-conf` file's directory) |
+| An explicit root passed in code (`rootDir` / `RootDir`), or NATS's `-conf` flag | the config file in that root (the `-conf` file for NATS) | that root (the `-conf` file's directory) |
 | `WOOFX3_CONFIG` | the file it names, which must exist | `WOOFX3_ROOT` if set, else the file's directory |
-| `WOOFX3_ROOT` | `.woofx3.json` in that directory, if present | that directory |
-| Neither set | `.woofx3.json` in the nearest directory at or above the working directory that holds a config file | that directory |
+| `WOOFX3_ROOT` | the config file in that directory, if present | that directory |
+| Neither set | the config file in the nearest directory at or above the working directory that holds one | that directory, else the working directory |
+
+`WOOFX3_CONFIG` and `WOOFX3_ROOT` are trimmed, and blank counts as unset. The Go
+loader lives in its own dependency-free module, `common/config`
+(`shared/common/golang/config`), which the Go runtime and the NATS server both
+use.
 
 A `WOOFX3_CONFIG` naming a missing file stops the service at startup: a
 deployment that names its config file should not start on defaults instead.
@@ -279,6 +285,10 @@ Under `WOOFX3_ROOT` a missing file is fine, as everywhere else: the service is
 then configured by variables alone. When neither variable is set, NATS falls
 back to the config files next to its executable if the search finds none; with
 either variable set it does not.
+
+A config file that exists but cannot be read, is not valid JSON, or does not hold
+a JSON object stops the service at startup with the file's path in the error,
+whether it was named or found by the search.
 
 Rust services read no `.env` file; for them only the config file column applies.
 
@@ -293,19 +303,21 @@ When it is set:
 
 | What | Setting | Resolves to |
 |---|---|---|
-| System database (SQLite) | `databaseUrl` / `WOOFX3_DATABASE_URL` | a relative `sqlite://` path under the data dir; its directory is created |
+| System database (SQLite) | `databaseUrl` / `WOOFX3_DATABASE_URL` | a relative `sqlite://` path under the data dir, its directory created; `sqlite:///C:/…` and `sqlite:///…` paths are used as given on every OS |
 | Module storage | `storagePath` / `WOOFX3_STORAGE_PATH` | a relative path under the data dir |
 | Installed modules (file provider) | `storage.file.destination`, `MODULES_DIR`, default `./modules` | a relative path under the data dir |
 | Module uploads in progress | `./uploads` | `<data dir>/uploads` |
 | sceneManager font cache | `<rootPath>/cache/fonts` | `<data dir>/cache/fonts` |
 | Logs (every service, `migrate` and the orchestrator) | `<rootPath>/logs`, `<exe dir>/logs`, `./logs` | `WOOFX3_LOG_DIR` if set (relative under the data dir), else `<data dir>/logs` |
 
-Absolute paths are always used as given, and Postgres URLs are untouched. A
-relative `WOOFX3_DATA_DIR` is resolved against the working directory. Rust
+Absolute paths are always used as given, and Postgres URLs are untouched.
+`WOOFX3_DATA_DIR` itself must be absolute: a relative value stops every service
+and the orchestrator at startup, since each would otherwise resolve it against
+its own working directory and write somewhere different. Rust
 services also accept `logDir` from `.woofx3.json` in place of `WOOFX3_LOG_DIR`,
 as they do without a data directory.
 
-The helpers are `ResolveDataPath` (Go, `common/runtime`), `resolveDataPath`
+The helpers are `ResolveDataPath` (Go, `common/config`, re-exported by `common/runtime`), `resolveDataPath`
 (TypeScript, `@woofx3/common/runtime`) and `resolve_data_path` (Rust,
 `woofx3_runtime`); the shared loggers apply the log rule themselves.
 

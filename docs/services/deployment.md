@@ -55,11 +55,19 @@ Each is a `.woofx3.json` key or its `WOOFX3_*` variable:
 |---|---|---|
 | `messagebusToken` | `WOOFX3_MESSAGEBUS_TOKEN` | Every client must present this token, on the TCP and the WebSocket listener. |
 | `messagebusTcpDisabled` | `WOOFX3_MESSAGEBUS_TCP_DISABLED` | `true` turns off the plain TCP listener (`messagebusServerListeningPort`, 4222 by default), leaving only the WebSocket one. |
-| `messagebusWebsocketSameOrigin` | `WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN` | `true` rejects a WebSocket upgrade whose `Origin` names a different host and port than the one it was sent to. |
-| `messagebusWebsocketAllowedOrigins` | `WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGINS` | A comma-separated list (`http://127.0.0.1:5173,https://app.example`): only upgrades from these origins are accepted. |
+| `messagebusWebSocketSameOrigin` | `WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN` | `true` rejects a WebSocket upgrade whose `Origin` names a different host and port than the one it was sent to. |
+| `messagebusWebSocketAllowedOrigins` | `WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGINS` | A comma-separated list (`http://127.0.0.1:5173,https://app.example`): only upgrades from these origins are accepted. |
 
-A boolean the server cannot parse stops it at startup instead of running it with
-less protection than was asked for.
+Keys are spelt `messagebusWebSocket…`, like `messagebusWebSocketPort`, and
+variables `WOOFX3_MESSAGEBUS_WEBSOCKET_…`, like `WOOFX3_MESSAGEBUS_WEBSOCKET_PORT`.
+The server also reads `messagebusWebsocket…` and `WOOFX3_MESSAGEBUS_WEB_SOCKET_…`
+as the same settings.
+
+A boolean or port the server cannot parse stops it at startup instead of running
+it with less protection, or on another port, than was asked for. So does a
+`messagebus…` key or `WOOFX3_MESSAGEBUS_…` variable the engine does not know,
+so a misspelt setting cannot leave its hardening silently off. Bound beyond
+loopback without a token, the server logs a warning at startup.
 
 **The token.** The same key and variable configure the server and every client,
 so one `WOOFX3_MESSAGEBUS_TOKEN` in the environment of the whole engine is
@@ -83,7 +91,7 @@ deployment turns it off.
 
 **Origins.** A web page can open a WebSocket to any address, including
 `ws://127.0.0.1:4225` on the machine running the browser, and the browser always
-sends the page's `Origin` with it. With `messagebusWebsocketSameOrigin` on, the
+sends the page's `Origin` with it. With `messagebusWebSocketSameOrigin` on, the
 server refuses those upgrades. An upgrade with no `Origin` header is always
 accepted, and that is what the engine's clients send: the Go client (nats.go),
 the TypeScript client under Bun (`wsconnect`) and the Rust client (async-nats)
@@ -111,8 +119,8 @@ from its working directory. See
 [Finding the config](./runtime.md#finding-the-config).
 
 To keep the engine's state out of its install directory (a release unpacked
-under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR`. The
-relative database, module storage, module and upload paths, caches and every
+under Program Files on Windows cannot write there), set `WOOFX3_DATA_DIR` to an
+absolute path. The relative database, module storage, module and upload paths, caches and every
 log file then live under it. Unset, it has no effect on any path. See
 [The data directory](./runtime.md#the-data-directory).
 
@@ -130,20 +138,25 @@ so an engine that sets neither accepts every request and answers CORS with
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
 
 Each is a comma-separated list, read by both services, and each works without
-the other. A malformed entry stops the service at startup.
+the other. A malformed entry stops the service at startup, and so does a value
+that is not a list at all, such as `true`.
 
 Matching rules:
 
 - **Hosts** are `name` or `name:port`, case-insensitive; IPv6 literals are
   bracketed (`[::1]`, `[::1]:8080`). A bare name matches on any port; with a
-  port, only that port. List every name the services are reached by, internal
+  port, only that port. A browser leaves the default port out of `Host`, so
+  `name:80` and `name:443` also match a `Host` with no port. List every name the services are reached by, internal
   ones included: barkloader posts job results to the api at `WOOFX3_API_URL`,
   and health checks usually use `127.0.0.1`. Behind the edge, the Host is the
   public one, since Caddy passes it through.
 - **Origins** are `scheme://host[:port]`, compared as web origins, so
   `https://app.example` and `https://app.example:443` are the same entry.
   `scheme://host:*` matches that scheme and host on any port (for example
-  `http://localhost:*` for local dev servers). The literal `null` matches the
+  `http://localhost:*` for local dev servers). A scheme the URL standard gives
+  no origin to, such as `tauri://localhost` from the desktop app's webview on
+  macOS and Linux, is compared as `scheme://host[:port]`, case-insensitively;
+  on Windows the webview sends `http://tauri.localhost`. The literal `null` matches the
   opaque origin sandboxed frames send, and nothing else matches it. There is
   no subdomain wildcard.
 
@@ -170,10 +183,10 @@ For a desktop engine on loopback, for example:
 ```bash
 # both services
 WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
-# api
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*
+# api (the tauri origins admit the desktop app's webview)
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost
 # sceneManager
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,null
+WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
 ```
 
 ## Client registration
@@ -218,10 +231,18 @@ callers racing on a new engine cannot both be first.
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's
-`/webhooks/barkloader/processing`. It sends the engine secret
-(`WOOFX3_BARKLOADER_KEY`) as `Authorization: Bearer <key>`, but only to a
-loopback host or the host of `WOOFX3_API_URL`, since the callback URL arrives in
-the processing request.
+`/webhooks/barkloader/processing`, sending the engine secret
+(`WOOFX3_BARKLOADER_KEY`) as `Authorization: Bearer <key>`.
+
+The callback URL arrives in the processing request, so barkloader accepts one
+only on the api's origin (scheme, host and port; default ports are the same
+origin written or not) and answers `400` to any other. It resolves the api's
+URL the way the api does: `WOOFX3_API_URL` when set, otherwise
+`http://127.0.0.1:<WOOFX3_API_PORT>` (port `8080` when that is unset too).
+When that URL is on loopback, `localhost`, `127.0.0.1` and `::1` all name it,
+but only on its port. A `WOOFX3_API_URL` that is not an http(s) URL stops
+barkloader at startup. If the api is reached at an address other than its
+default, set `WOOFX3_API_URL` for barkloader to the same value the api uses.
 
 The api checks that header only when `WOOFX3_BARKLOADER_WEBHOOK_AUTH=required`;
 unset (or `off`) it accepts every callback. A callback without the right token

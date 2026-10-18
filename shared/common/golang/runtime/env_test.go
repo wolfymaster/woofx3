@@ -3,6 +3,7 @@ package runtime
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -180,5 +181,47 @@ func TestWithoutLocationVariablesTheConfigIsFoundAboveTheWorkingDirectory(t *tes
 
 	if got := env["WOOFX3_LOCATION_SEARCH"]; got != "from-parent" {
 		t.Errorf("parent-directory search did not find the config: got %q", got)
+	}
+}
+
+func TestAConfigFileThatIsNotAJSONObjectIsAnError(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{name: "malformed JSON", content: "{not json"},
+		{name: "a JSON array", content: "[1, 2]"},
+		{name: "a JSON scalar", content: "42"},
+		{name: "JSON null", content: "null"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+" named by WOOFX3_CONFIG", func(t *testing.T) {
+			path := filepath.Join(writeConfigRoot(t, map[string]string{"engine.json": tc.content}), "engine.json")
+			t.Setenv(RootDirEnv, "")
+			t.Setenv(ConfigFileEnv, path)
+
+			_, err := LoadRuntimeEnv(nil)
+			if err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("LoadRuntimeEnv error = %v, want one naming %s", err, path)
+			}
+		})
+		t.Run(tc.name+" found in the root", func(t *testing.T) {
+			root := writeConfigRoot(t, map[string]string{".woofx3.json": tc.content})
+
+			_, err := LoadRuntimeEnv(&LoadRuntimeEnvOptions{RootDir: root})
+			if err == nil || !strings.Contains(err.Error(), filepath.Join(root, ".woofx3.json")) {
+				t.Fatalf("LoadRuntimeEnv error = %v, want one naming the config file", err)
+			}
+		})
+	}
+}
+
+func TestAWoofx3ConfigNamingADirectoryIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(RootDirEnv, "")
+	t.Setenv(ConfigFileEnv, dir)
+
+	if _, err := LoadRuntimeEnv(nil); err == nil {
+		t.Fatal("LoadRuntimeEnv succeeded on a directory, want an error")
 	}
 }

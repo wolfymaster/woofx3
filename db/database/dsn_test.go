@@ -44,18 +44,22 @@ func TestParseDatabaseURL_SQLite(t *testing.T) {
 		{"sqlite://db.sqlite", "db.sqlite"},
 		{"sqlite:///tmp/woofx3.db", "/tmp/woofx3.db"},
 		{"sqlite://./data/db.sqlite", "./data/db.sqlite"},
+		{"sqlite:///C:/data/woofx3.db", "C:/data/woofx3.db"},
+		{"sqlite://C:/data/woofx3.db", "C:/data/woofx3.db"},
 	}
 	for _, tc := range cases {
-		got, err := ParseDatabaseURL(tc.raw)
-		if err != nil {
-			t.Fatalf("%q: %v", tc.raw, err)
-		}
-		if got.Dialect != DialectSQLite {
-			t.Fatalf("%q: dialect = %q, want sqlite", tc.raw, got.Dialect)
-		}
-		if got.DriverDSN != tc.path {
-			t.Fatalf("%q: path = %q, want %q", tc.raw, got.DriverDSN, tc.path)
-		}
+		t.Run(tc.raw, func(t *testing.T) {
+			got, err := ParseDatabaseURL(tc.raw)
+			if err != nil {
+				t.Fatalf("ParseDatabaseURL: %v", err)
+			}
+			if got.Dialect != DialectSQLite {
+				t.Fatalf("dialect = %q, want sqlite", got.Dialect)
+			}
+			if got.DriverDSN != tc.path {
+				t.Fatalf("path = %q, want %q", got.DriverDSN, tc.path)
+			}
+		})
 	}
 }
 
@@ -72,15 +76,22 @@ func TestParseDatabaseURL_SQLiteUnderDataDir(t *testing.T) {
 		{"sqlite:///tmp/woofx3.db", "/tmp/woofx3.db"},
 		{"sqlite:///:memory:", ":memory:"},
 		{":memory:", ":memory:"},
+		// Windows paths are never anchored, whichever OS reads the URL.
+		{"sqlite:///C:/data/woofx3.db", "C:/data/woofx3.db"},
+		{"sqlite:///c:/data/woofx3.db", "c:/data/woofx3.db"},
+		{"sqlite://C:/data/woofx3.db", "C:/data/woofx3.db"},
+		{`sqlite:///D:\data\woofx3.db`, `D:\data\woofx3.db`},
 	}
 	for _, tc := range cases {
-		got, err := ParseDatabaseURL(tc.raw)
-		if err != nil {
-			t.Fatalf("%q: %v", tc.raw, err)
-		}
-		if got.DriverDSN != tc.path {
-			t.Errorf("%q: path = %q, want %q", tc.raw, got.DriverDSN, tc.path)
-		}
+		t.Run(tc.raw, func(t *testing.T) {
+			got, err := ParseDatabaseURL(tc.raw)
+			if err != nil {
+				t.Fatalf("ParseDatabaseURL: %v", err)
+			}
+			if got.DriverDSN != tc.path {
+				t.Errorf("path = %q, want %q", got.DriverDSN, tc.path)
+			}
+		})
 	}
 }
 
@@ -103,6 +114,18 @@ func TestInitializeDB_SQLiteCreatesItsDirectoryUnderDataDir(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dataDir, "data", "woofx3.db")); err != nil {
 		t.Errorf("database file not created under the data dir: %v", err)
+	}
+}
+
+func TestInitializeDB_SQLiteOutsideTheDataDirGetsNoDirectoryMade(t *testing.T) {
+	t.Setenv(runtime.DataDirEnv, t.TempDir())
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	// Opening may fail or not; only whether a directory was made matters.
+	_, _ = InitializeDB("sqlite://"+filepath.Join(missing, "woofx3.db"), discardLogger())
+
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("directory outside the data dir was created (stat err = %v)", err)
 	}
 }
 

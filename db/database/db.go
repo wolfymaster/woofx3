@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -100,12 +101,26 @@ func openPostgres(dsn string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm
 	return db, nil
 }
 
+// insideDir reports whether path lies within dir. An empty dir contains
+// nothing.
+func insideDir(dir string, path string) bool {
+	if dir == "" {
+		return false
+	}
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func openSQLite(path string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm.DB, error) {
 	slogger.Info("Opening system database", "dialect", DialectSQLite, "path", path)
 
-	// A data directory may be brand new, so the database's directory is made
-	// for it. Without one, a missing directory stays the operator's to create.
-	if path != ":memory:" && runtime.DataDir() != "" {
+	// A data directory may be brand new, so a database inside it gets its
+	// directory made. Anywhere else, a missing directory stays the operator's
+	// to create.
+	if path != ":memory:" && insideDir(runtime.DataDir(), path) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			return nil, fmt.Errorf("create sqlite database directory: %w", err)
 		}

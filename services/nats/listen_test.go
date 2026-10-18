@@ -29,3 +29,26 @@ func TestTheServerListensOnLoopbackByDefault(t *testing.T) {
 		t.Fatalf("client listener bound %v, want loopback", addr.IP)
 	}
 }
+
+func TestReachableWithoutToken(t *testing.T) {
+	cases := []struct {
+		host  string
+		token string
+		want  bool
+	}{
+		{host: "127.0.0.1", want: false},
+		{host: "::1", want: false},
+		{host: "localhost", want: false},
+		{host: "0.0.0.0", want: true},
+		{host: "192.168.1.20", want: true},
+		{host: "nats.internal", want: true},
+		{host: "0.0.0.0", token: "s3cret", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.host+"/token="+tc.token, func(t *testing.T) {
+			if got := reachableWithoutToken(tc.host, tc.token); got != tc.want {
+				t.Errorf("reachableWithoutToken(%q, %q) = %v, want %v", tc.host, tc.token, got, tc.want)
+			}
+		})
+	}
+}

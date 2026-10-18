@@ -65,7 +65,7 @@ async fn upload_handler(
 ) -> Result<HttpResponse, Error> {
     let force = query.force.unwrap_or(false);
 
-    let file_service = FileService::new(&upload_dir().to_string_lossy());
+    let file_service = FileService::new(&upload_dir());
 
     // upload the file to temporary location for processing;
     // multipart fields client_id and module_key are extracted alongside the file

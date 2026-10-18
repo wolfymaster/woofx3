@@ -3,10 +3,12 @@ package logging
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/wolfymaster/woofx3/common/config"
 )
 
 func TestResolveLogDirectoryWithoutDataDir(t *testing.T) {
-	t.Setenv(dataDirEnv, "")
+	t.Setenv(config.DataDirEnv, "")
 
 	t.Setenv(envLogDirectory, "")
 	if got := ResolveLogDirectory("/srv/woofx3/logs"); got != "/srv/woofx3/logs" {
@@ -27,7 +29,7 @@ func TestResolveLogDirectoryWithoutDataDir(t *testing.T) {
 
 func TestResolveLogDirectoryWithDataDir(t *testing.T) {
 	dataDir := t.TempDir()
-	t.Setenv(dataDirEnv, dataDir)
+	t.Setenv(config.DataDirEnv, dataDir)
 
 	t.Setenv(envLogDirectory, "")
 	if got, want := ResolveLogDirectory("/opt/woofx3/logs"), filepath.Join(dataDir, "logs"); got != want {
@@ -43,5 +45,13 @@ func TestResolveLogDirectoryWithDataDir(t *testing.T) {
 	t.Setenv(envLogDirectory, absolute)
 	if got := ResolveLogDirectory(""); got != absolute {
 		t.Errorf("absolute WOOFX3_LOG_DIR resolved to %q, want %q", got, absolute)
+	}
+}
+
+func TestARelativeDataDirFailsTheLogger(t *testing.T) {
+	t.Setenv(config.DataDirEnv, "relative-data")
+
+	if _, err := resolveConfig(Config{ServiceName: "test"}); err == nil {
+		t.Fatal("resolveConfig accepted a relative WOOFX3_DATA_DIR")
 	}
 }
