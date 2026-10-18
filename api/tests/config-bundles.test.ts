@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { ConfigBundle, Woofx3EngineApi } from "@woofx3/api";
+import type { ConfigBundle, TaskDefinition, Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
 import { MAX_CONFIG_BUNDLE_BYTES, MAX_CONFIG_SECTION_ITEMS } from "../src/config-bundle/schema";
@@ -446,7 +446,7 @@ describe("round trip into an empty engine", () => {
 });
 
 describe("a command with a workflow", () => {
-  const steps = [
+  const steps: TaskDefinition[] = [
     {
       id: "check",
       type: "condition",
