@@ -1,5 +1,7 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
+import type { AuthProvider } from "@twurple/auth";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { HELIX_COMMAND } from "@woofx3/common/cloudevents/Twitch/commands";
 import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import { type SharedLogger, type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
@@ -13,7 +15,7 @@ import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, { isTwitchApiCommand, twitchApiErrorCodeOf } from "./lib/twitch";
+import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiReplyCode, twitchApiErrorCodeOf } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
 import type MessageBusService from "./services/messageBus";
@@ -212,8 +214,9 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     // own; one whose token comes from a dashboard asks the dashboard instead.
     const clientId = ctx.config.getConfig("woofx3TwitchClientId") as string | undefined;
     const clientSecret = ctx.config.getConfig("woofx3TwitchClientSecret") as string | undefined;
+    let authProvider: AuthProvider;
     try {
-      await twitchClient.init(
+      authProvider = await twitchClient.init(
         clientId && clientSecret
           ? { clientId, clientSecret, redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string }
           : undefined
@@ -236,6 +239,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const twitchApi = new TwitchApiClientImpl(
       apiClient,
       broadcaster,
+      authProvider,
       enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts))
     );
     const events = new EventFactory({ source: "twitch" });
@@ -382,7 +386,13 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
 
     if (!ctx.twitchApi) {
       if (isRequest) {
-        this.respondError(msg, "Twitch is not linked yet: the streamer has to connect Twitch first");
+        // Only `helix` carries a code here: every other command's contract,
+        // and `ctx.twitch`'s with it, documents this refusal as uncoded.
+        this.respondError(
+          msg,
+          "Twitch is not linked yet: the streamer has to connect Twitch first",
+          request.command === HELIX_COMMAND ? "not_linked" : undefined
+        );
       }
       return;
     }
@@ -430,7 +440,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * (e.g. `missing_scope` means relink Twitch, `rate_limited` means wait);
    * absent for everything else.
    */
-  private respondError(msg: Msg, error: string, code?: string) {
+  private respondError(msg: Msg, error: string, code?: TwitchApiReplyCode) {
     const envelope = {
       id: crypto.randomUUID(),
       type: "twitchapi.error",

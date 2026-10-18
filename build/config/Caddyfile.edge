@@ -6,7 +6,8 @@
 # relay -- to sceneManager. Every other process in the container listens on loopback.
 #
 # Ports must match the services' own: WOOFX3_API_PORT (apiPort in the baked
-# .woofx3.json) and WOOFX3_SCENE_MANAGER_PORT (sceneManager's default).
+# .woofx3.json, and the api's health_endpoint in services.json) and
+# WOOFX3_SCENE_MANAGER_PORT (sceneManager's default).
 {
 	# No admin endpoint: nothing reconfigures this at runtime, and an open
 	# admin API is a second listener to defend.

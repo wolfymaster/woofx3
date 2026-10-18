@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/wolfymaster/woofx3/common/runtime"
 )
 
 // Dialect is the system-DB backend selected from the connection URL scheme.
@@ -30,8 +32,13 @@ type ParsedDSN struct {
 //   - postgresql://… / postgres://…  → DialectPostgres (DSN unchanged for pgx)
 //   - sqlite://relative.db           → DialectSQLite, path "relative.db"
 //   - sqlite:///absolute/path.db     → DialectSQLite, path "/absolute/path.db"
+//   - sqlite:///C:/data/path.db      → DialectSQLite, path "C:/data/path.db"
 //   - sqlite:///:memory:             → DialectSQLite, path ":memory:"
 //   - :memory:                       → DialectSQLite (bare, no scheme)
+//
+// A relative SQLite path is anchored in WOOFX3_DATA_DIR when that is set (see
+// runtime.ResolveDataPath). This is the one place both the db proxy and the
+// migrate tool turn the URL into a file, so they always open the same one.
 func ParseDatabaseURL(raw string) (ParsedDSN, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -99,5 +106,31 @@ func sqlitePathFromURL(u *url.URL) (string, error) {
 		return ":memory:", nil
 	}
 
-	return path, nil
+	// sqlite:///C:/data/x.db → "/C:/data/x.db", which no OS reads as a drive.
+	if len(path) > 1 && path[0] == '/' && hasDriveLetter(path[1:]) {
+		path = path[1:]
+	}
+	if isRootedOnAnyOS(path) {
+		return path, nil
+	}
+	return runtime.ResolveDataPath(path), nil
+}
+
+// hasDriveLetter reports whether path starts with a Windows drive, "C:/" or
+// "C:\".
+func hasDriveLetter(path string) bool {
+	if len(path) < 3 || path[1] != ':' || (path[2] != '/' && path[2] != '\\') {
+		return false
+	}
+	letter := path[0] | 0x20
+	return letter >= 'a' && letter <= 'z'
+}
+
+// isRootedOnAnyOS reports whether path names a location independent of the
+// working directory on some OS: a drive path, or one starting at a root. Such
+// a path is never anchored in the data directory, whichever OS the URL was
+// written for. filepath.IsAbs alone would anchor "/var/db.sqlite" on Windows,
+// where it has no drive, and "C:/data/x.db" everywhere else.
+func isRootedOnAnyOS(path string) bool {
+	return hasDriveLetter(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\")
 }

@@ -5,6 +5,8 @@ type Config struct {
 	Name     string `env:"WOOFX3_MESSAGEBUS_NAME"`
 	JWT      string `env:"WOOFX3_MESSAGEBUS_JWT"`
 	NKeySeed string `env:"WOOFX3_MESSAGEBUS_NKEYSEED"`
+	// Token is sent when the message bus requires one; blank sends none.
+	Token string `env:"WOOFX3_MESSAGEBUS_TOKEN"`
 }
 
 type Handler func(msg Msg)

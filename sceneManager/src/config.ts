@@ -1,15 +1,15 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
 
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
   sceneManagerPort: z.union([z.number(), z.string()]).optional(),
-  // sceneManager binds loopback by default, same convention streamware
-  // used — a reverse proxy (or direct exposure in dev) is the public
-  // surface, never assumed here.
+  // sceneManager binds loopback by default — a reverse proxy (or direct
+  // exposure in dev) is the public surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
   sceneManagerHost: z.string().optional(),
   // HS256 signing secret for the short-lived session JWT minted at
@@ -25,6 +25,8 @@ export const SceneManagerEnvSchema = z.object({
   messagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
   messagebusNkey: z.string().optional(),
+  woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
+  messagebusToken: z.union([z.string(), z.number()]).optional(),
   woofx3ObsHost: z.string().default("127.0.0.1"),
   obsHost: z.string().optional(),
   woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
@@ -39,6 +41,9 @@ export const SceneManagerEnvSchema = z.object({
   // scene/media-proxy.ts); sceneManager signs them with it.
   woofx3BarkloaderKey: z.string().optional(),
   barkloaderKey: z.string().optional(),
+  // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
+  woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
 export type SceneManagerConfig = z.infer<typeof SceneManagerEnvSchema>;
@@ -55,6 +60,8 @@ export interface SceneManagerRuntimeConfig {
   barkloaderUrl: string;
   /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
   mediaProxySecret: string;
+  /** Which Host and Origin headers the HTTP server accepts; open unless set. */
+  requestGuard: RequestGuardPolicy;
   /**
    * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
    * the module is not installed, or a setting is empty.
@@ -69,12 +76,12 @@ export interface SceneManagerRuntimeConfig {
     name: string;
     jwt?: string;
     nkeySeed?: string;
+    token?: string;
   };
 }
 
 /**
- * Fail-fast validation, same spirit as streamware's
- * `validateOverlayConfig`: assert the invariants the rest of the
+ * Fail-fast validation: assert the invariants the rest of the
  * service depends on at startup rather than surfacing them as
  * confusing runtime failures later.
  */
@@ -132,6 +139,12 @@ export function resolvePublicDir(metaDir: string, execDir: string = dirname(proc
   return candidates[candidates.length - 1] as string;
 }
 
+/** A setting's text, or undefined when it is unset or blank. */
+function nonBlank(value: unknown): string | undefined {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  return text === "" ? undefined : text;
+}
+
 export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
@@ -152,6 +165,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     : c.messagebusNkey
       ? String(c.messagebusNkey)
       : undefined;
+  const token = nonBlank(c.woofx3MessagebusToken) ?? nonBlank(c.messagebusToken);
 
   const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
   const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
@@ -164,6 +178,10 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? c.barkloaderUrl ?? "http://127.0.0.1:9653");
   const mediaProxySecret = String(c.woofx3BarkloaderKey ?? c.barkloaderKey ?? "");
+  const requestGuard = parseRequestGuardPolicy({
+    allowedHosts: c.woofx3AllowedHosts,
+    allowedOrigins: c.woofx3AllowedOrigins,
+  });
 
   return {
     port,
@@ -171,10 +189,12 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     tokenSecret,
     rootDir,
     publicDir: resolvePublicDir(import.meta.dir),
-    fontCacheDir: join(rootDir, "cache", "fonts"),
+    // The cache is written at runtime, so it follows the data directory when there is one.
+    fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
     barkloaderUrl,
     mediaProxySecret,
+    requestGuard,
     obs: {
       host: obsHost,
       port: obsPort,
@@ -185,6 +205,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
       name: "woofx3-scene-manager",
       jwt,
       nkeySeed,
+      token,
     },
   };
 }

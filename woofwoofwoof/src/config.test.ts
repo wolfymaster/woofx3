@@ -36,6 +36,12 @@ describe("WoofEnvSchema", () => {
     expect(WoofEnvSchema.safeParse(withoutChannel).success).toBe(true);
   });
 
+  test("accepts a message bus token, numeric or not, and no token", () => {
+    expect(WoofEnvSchema.parse({ ...baseValid, woofx3MessagebusToken: "s3cret" }).woofx3MessagebusToken).toBe("s3cret");
+    expect(WoofEnvSchema.parse({ ...baseValid, woofx3MessagebusToken: 12345 }).woofx3MessagebusToken).toBe(12345);
+    expect(WoofEnvSchema.parse(baseValid).woofx3MessagebusToken).toBeUndefined();
+  });
+
   test("applies defaults for optional fields", () => {
     const parsed = WoofEnvSchema.safeParse(baseValid);
     expect(parsed.success).toBe(true);

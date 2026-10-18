@@ -70,6 +70,18 @@ Define your services in `build/config/services.json`:
 }
 ```
 
+A service's `health_endpoint` gates the services that depend on it: they start
+once a `GET` of it answers `200`, or once its `health_timeout` (a Go duration
+such as `"90s"`, 30 seconds when unset) has passed without that, with a warning.
+Without one, a service counts as healthy as soon as it has started.
+
+`${NAME}` and `${NAME:-default}` in an endpoint are filled from the same
+configuration the services read: the environment, then `.env`, then
+`.woofx3.json` (where `apiPort` is `WOOFX3_API_PORT`). The api's endpoint
+therefore follows its port however it is set. The orchestrator refuses to start
+when an enabled service's endpoint names a variable that is unset and has no
+default, or does not expand to an absolute `http`/`https` URL.
+
 ### Environment Variables
 
 Override settings with BUILD_* environment variables in `.env`:

@@ -1,8 +1,17 @@
+import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { fillEnvConfig, loadRuntimeEnv, screamingSnakeToCamel, camelToScreamingSnake } from "./config";
+import {
+  CONFIG_FILE_ENV,
+  camelToScreamingSnake,
+  fillEnvConfig,
+  findProjectRoot,
+  loadRuntimeEnv,
+  ROOT_DIR_ENV,
+  resolveConfigLocation,
+  screamingSnakeToCamel,
+} from "./config";
 
 describe("Config loading from file and environment", () => {
   /**
@@ -139,5 +148,200 @@ describe("Config loading from file and environment", () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Config location", () => {
+  const passthrough = { parse: (config: Record<string, string | number | boolean>) => config };
+
+  /** Run `body` with WOOFX3_ROOT and WOOFX3_CONFIG set to `vars` (absent means unset), restoring both after. */
+  function withLocationEnv(vars: { root?: string; config?: string }, body: () => void): void {
+    const previous = { root: process.env[ROOT_DIR_ENV], config: process.env[CONFIG_FILE_ENV] };
+    const assign = (name: string, value: string | undefined) => {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    };
+    assign(ROOT_DIR_ENV, vars.root);
+    assign(CONFIG_FILE_ENV, vars.config);
+    try {
+      body();
+    } finally {
+      assign(ROOT_DIR_ENV, previous.root);
+      assign(CONFIG_FILE_ENV, previous.config);
+    }
+  }
+
+  function tempDir(files: Record<string, string>): string {
+    const dir = fs.mkdtempSync(path.join(process.cwd(), "tmp-runtime-location-"));
+    for (const [name, content] of Object.entries(files)) {
+      fs.writeFileSync(path.join(dir, name), content);
+    }
+    return dir;
+  }
+
+  test("an explicit rootDir ignores WOOFX3_ROOT and WOOFX3_CONFIG", () => {
+    const location = resolveConfigLocation("/srv/explicit", {
+      [ROOT_DIR_ENV]: "/srv/root",
+      [CONFIG_FILE_ENV]: "/srv/config/engine.json",
+    });
+    expect(location).toEqual({ rootDir: path.resolve("/srv/explicit") });
+  });
+
+  test("WOOFX3_CONFIG names the file, with .env from its directory", () => {
+    const location = resolveConfigLocation(undefined, { [CONFIG_FILE_ENV]: "/srv/config/engine.json" });
+    expect(location).toEqual({
+      rootDir: path.resolve("/srv/config"),
+      configPath: path.resolve("/srv/config/engine.json"),
+    });
+  });
+
+  test("WOOFX3_CONFIG names the file and WOOFX3_ROOT the directory holding .env", () => {
+    const location = resolveConfigLocation(undefined, {
+      [ROOT_DIR_ENV]: "/srv/root",
+      [CONFIG_FILE_ENV]: "/srv/config/engine.json",
+    });
+    expect(location).toEqual({
+      rootDir: path.resolve("/srv/root"),
+      configPath: path.resolve("/srv/config/engine.json"),
+    });
+  });
+
+  test("WOOFX3_ROOT names the root", () => {
+    expect(resolveConfigLocation(undefined, { [ROOT_DIR_ENV]: "/srv/root" })).toEqual({
+      rootDir: path.resolve("/srv/root"),
+    });
+  });
+
+  test("with neither variable the root is found above the working directory", () => {
+    expect(resolveConfigLocation(undefined, {})).toEqual({ rootDir: findProjectRoot() });
+    expect(resolveConfigLocation(undefined, { [ROOT_DIR_ENV]: "", [CONFIG_FILE_ENV]: "" })).toEqual({
+      rootDir: findProjectRoot(),
+    });
+  });
+
+  test("the variables are trimmed and blank counts as unset", () => {
+    expect(resolveConfigLocation(undefined, { [ROOT_DIR_ENV]: " /srv/root\n", [CONFIG_FILE_ENV]: "  " })).toEqual({
+      rootDir: path.resolve("/srv/root"),
+    });
+    expect(resolveConfigLocation(undefined, { [CONFIG_FILE_ENV]: "\t/srv/config/engine.json " })).toEqual({
+      rootDir: path.resolve("/srv/config"),
+      configPath: path.resolve("/srv/config/engine.json"),
+    });
+  });
+
+  test("a blank explicit rootDir counts as unset, as in Go", () => {
+    expect(resolveConfigLocation("", { [ROOT_DIR_ENV]: "/srv/root" })).toEqual({ rootDir: path.resolve("/srv/root") });
+  });
+
+  test("loadRuntimeEnv reads the config and .env under WOOFX3_ROOT", () => {
+    const root = tempDir({
+      ".woofx3.json": JSON.stringify({ locationRootFile: "from-root" }),
+      ".env": "WOOFX3_LOCATION_ROOT_DOTENV=from-root\n",
+    });
+    try {
+      withLocationEnv({ root }, () => {
+        const { config } = loadRuntimeEnv({ schema: passthrough });
+        expect(config.woofx3LocationRootFile).toBe("from-root");
+        expect(config.woofx3LocationRootDotenv).toBe("from-root");
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("loadRuntimeEnv reads the file WOOFX3_CONFIG names", () => {
+    const dir = tempDir({
+      "engine.json": JSON.stringify({ locationConfigFile: "from-named-file" }),
+      ".env": "WOOFX3_LOCATION_CONFIG_DOTENV=from-file-dir\n",
+    });
+    try {
+      withLocationEnv({ config: path.join(dir, "engine.json") }, () => {
+        const { config } = loadRuntimeEnv({ schema: passthrough });
+        expect(config.woofx3LocationConfigFile).toBe("from-named-file");
+        expect(config.woofx3LocationConfigDotenv).toBe("from-file-dir");
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const unreadableConfigs = [
+    { name: "malformed JSON", content: "{not json" },
+    { name: "a JSON array", content: "[1, 2]" },
+    { name: "a JSON scalar", content: "42" },
+    { name: "JSON null", content: "null" },
+  ];
+
+  for (const { name, content } of unreadableConfigs) {
+    test(`loadRuntimeEnv refuses a WOOFX3_CONFIG file holding ${name}`, () => {
+      const dir = tempDir({ "engine.json": content });
+      const configPath = path.join(dir, "engine.json");
+      try {
+        withLocationEnv({ config: configPath }, () => {
+          expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(configPath);
+        });
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test(`loadRuntimeEnv refuses a discovered .woofx3.json holding ${name}`, () => {
+      const root = tempDir({ ".woofx3.json": content });
+      try {
+        withLocationEnv({ root }, () => {
+          expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(path.join(root, ".woofx3.json"));
+        });
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("loadRuntimeEnv refuses a WOOFX3_CONFIG naming a directory", () => {
+    const dir = tempDir({});
+    try {
+      withLocationEnv({ config: dir }, () => {
+        expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(dir);
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("loadRuntimeEnv reads .woofx3.config when there is no .woofx3.json", () => {
+    const root = tempDir({ ".woofx3.config": JSON.stringify({ locationFallbackFile: "from-config" }) });
+    try {
+      withLocationEnv({ root }, () => {
+        const { config } = loadRuntimeEnv({ schema: passthrough });
+        expect(config.woofx3LocationFallbackFile).toBe("from-config");
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("loadRuntimeEnv refuses a relative WOOFX3_DATA_DIR", () => {
+    const previous = process.env.WOOFX3_DATA_DIR;
+    process.env.WOOFX3_DATA_DIR = "relative-data";
+    try {
+      withLocationEnv({}, () => {
+        expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow("WOOFX3_DATA_DIR");
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.WOOFX3_DATA_DIR;
+      } else {
+        process.env.WOOFX3_DATA_DIR = previous;
+      }
+    }
+  });
+
+  test("loadRuntimeEnv refuses a WOOFX3_CONFIG naming a missing file", () => {
+    withLocationEnv({ config: path.join(process.cwd(), "tmp-runtime-location-missing", "engine.json") }, () => {
+      expect(() => loadRuntimeEnv({ schema: passthrough })).toThrow(CONFIG_FILE_ENV);
+    });
   });
 });

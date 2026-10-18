@@ -3,6 +3,7 @@ package nats
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,15 +46,7 @@ func (c *Client) conn() (*nats.Conn, error) {
 		return c.connection, nil
 	}
 
-	opts := []nats.Option{
-		nats.Name(c.config.Name),
-	}
-
-	if c.config.JWT != "" && c.config.NKeySeed != "" {
-		opts = append(opts, nats.UserJWTAndSeed(c.config.JWT, c.config.NKeySeed))
-	}
-
-	conn, err := nats.Connect(c.config.URL, opts...)
+	conn, err := nats.Connect(c.config.URL, c.config.options()...)
 	if err != nil {
 		c.logger.Error("Failed to connect to NATS", "error", err)
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
@@ -62,6 +55,20 @@ func (c *Client) conn() (*nats.Conn, error) {
 	c.connection = conn
 	c.logger.Info("Connected to NATS", "url", c.config.URL, "name", c.config.Name)
 	return conn, nil
+}
+
+// options are the connect options a Config asks for.
+func (cfg Config) options() []nats.Option {
+	opts := []nats.Option{
+		nats.Name(cfg.Name),
+	}
+	if cfg.JWT != "" && cfg.NKeySeed != "" {
+		opts = append(opts, nats.UserJWTAndSeed(cfg.JWT, cfg.NKeySeed))
+	}
+	if token := strings.TrimSpace(cfg.Token); token != "" {
+		opts = append(opts, nats.Token(token))
+	}
+	return opts
 }
 
 func (c *Client) Publish(subject string, data []byte) error {

@@ -30,7 +30,7 @@ readonly GO_MODULES=(
   db workflow services/nats build/orchestrator
   shared/clients/golang/barkloader shared/clients/golang/db shared/clients/golang/nats
   shared/clients/golang/servicediscovery shared/common/golang/cloudevents shared/common/golang/conditions
-  shared/common/golang/logging shared/common/golang/runtime
+  shared/common/golang/config shared/common/golang/logging shared/common/golang/runtime
 )
 readonly RUST_ROOTS=(barkloader shared/common/rust/logging shared/common/rust/runtime)
 readonly TS_SERVICES=(api twitch woofwoofwoof sceneManager)
@@ -87,6 +87,12 @@ select_for_path() {
   case "$path" in
     shared/common/rust/* | shared/clients/rust/*)
       select_target "rust:barkloader"
+      return
+      ;;
+    # api's tests import the capability Since script and read the table it
+    # fills. Every path arrives with a trailing slash, files included.
+    .github/scripts/capability-since.mts/ | docs/services/engine-capabilities.md/)
+      select_target "ts:api"
       return
       ;;
     shared/common/typescript/* | shared/clients/typescript/*)

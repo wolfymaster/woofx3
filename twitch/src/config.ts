@@ -4,6 +4,8 @@ export const TwitchEnvSchema = z.object({
   woofx3MessagebusUrl: z.string().min(1, "woofx3MessagebusUrl is required"),
   woofx3MessagebusJwt: z.string().optional(),
   woofx3MessagebusNKey: z.string().optional(),
+  // loadRuntimeEnv coerces an all-digit value to a number.
+  woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
   // Optional: without it the channel is whoever links Twitch, so an engine
   // can start before its streamer has linked an account.
   woofx3TwitchChannelName: z.string().optional(),
