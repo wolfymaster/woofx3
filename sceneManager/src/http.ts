@@ -110,10 +110,8 @@ function withCors(res: Response, corsHeaders: Record<string, string>): Response 
 }
 
 /**
- * Hand-rolled `Bun.serve` routing — same convention streamware/api use
- * for this class of service (see the note in the earlier scaffold
- * about correcting course away from Hono/Express, neither of which is
- * actually the established pattern here).
+ * Hand-rolled `Bun.serve` routing, the convention api uses for this
+ * class of service; no Hono/Express.
  */
 export function createHttpServer(deps: HttpDeps) {
   const { ctx } = deps;

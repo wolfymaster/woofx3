@@ -10,8 +10,7 @@ interface SlobsLegacyMessage {
  * Dispatch the subset of legacy `slobs`-subject commands that controlled
  * OBS scenes/sources. The InstantDB-backed commands (alert_message,
  * count, paint, setTime, updateTime) are intentionally not handled —
- * those have been replaced by the workflow `alert` action and are out of
- * scope for the streamware MVP.
+ * the workflow `alert` action covers them.
  */
 export async function handleLegacySlobsCommand(
   obs: Manager | null,
@@ -82,8 +81,8 @@ export async function handleLegacySlobsCommand(
     }
 
     default:
-      // Other legacy commands (alert_message, count, paint, setTime,
-      // updateTime) are no longer handled — see the file header comment.
+      // alert_message, count, paint, setTime and updateTime are not
+      // handled — see the function's doc comment.
       logger.debug("Ignoring unsupported legacy slobs command", { command });
   }
 }
