@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -472,6 +473,7 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 		"event_id", event.ID,
 		"match_count", len(workflows))
 
+	var ordered []orderedRun
 	for _, wf := range workflows {
 		viewer := e.viewerFor(viewers, wf, event)
 		if err := e.evaluateTrigger(wf, event, viewer); err != nil {
@@ -492,10 +494,48 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 			"workflow_name", wf.Name,
 			"event_type", event.Type,
 			"event_id", event.ID)
+		if wf.Trigger.Order != nil {
+			ordered = append(ordered, orderedRun{wf: wf, viewer: viewer})
+			continue
+		}
 		go e.executeWorkflow(wf, event, viewer)
+	}
+	if len(ordered) > 0 {
+		go e.executeInOrder(ordered, event)
 	}
 
 	return nil
+}
+
+// orderedRun is a matched workflow waiting its turn in executeInOrder.
+type orderedRun struct {
+	wf     *types.WorkflowDefinition
+	viewer expression.LazyLoader
+}
+
+// executeInOrder runs an event's ordered workflows one at a time, lowest
+// `trigger.order` first and by id among equals, so the order does not
+// depend on the registry's map iteration.
+//
+// executeWorkflow returns when a run settles or pauses at a wait, so the next
+// workflow starts then: a wait in one does not hold the rest back. For
+// workflows without waits this is the order one workflow holding all of them
+// as consecutive steps would run in, which is what an event's alert triggers
+// were before each became a workflow of its own.
+func (e *Engine[TServices]) executeInOrder(runs []orderedRun, event *types.Event) {
+	slices.SortStableFunc(runs, func(a, b orderedRun) int {
+		if byOrder := cmp.Compare(*a.wf.Trigger.Order, *b.wf.Trigger.Order); byOrder != 0 {
+			return byOrder
+		}
+		return strings.Compare(a.wf.ID, b.wf.ID)
+	})
+	for _, run := range runs {
+		// A stopping engine starts nothing more; see HandleEventWith.
+		if e.ctx.Err() != nil {
+			return
+		}
+		e.executeWorkflow(run.wf, event, run.viewer)
+	}
 }
 
 // FireByWorkflowID runs the named workflow with a synthesized trigger event.
