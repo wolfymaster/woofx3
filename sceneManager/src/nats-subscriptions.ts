@@ -8,6 +8,7 @@ import {
 import { SCENE_EDITOR_TOKEN_SUBJECT, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
 import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
+import type { Msg } from "@woofx3/nats/src/types";
 import type { DbClient } from "./db";
 import {
   ALERT_CLEAR_SUBJECT,
@@ -147,19 +148,9 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     return;
   }
 
-  await nats.subscribe("ui.notify.alert", async (msg) => {
-    let raw: AlertEnvelope;
-    try {
-      raw = msg.json<AlertEnvelope>();
-    } catch (err) {
-      logger.error("ui.notify.alert: malformed JSON payload", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
+  await subscribeJson<AlertEnvelope>(nats, logger, "ui.notify.alert", async (raw, msg) => {
     await dispatchAlert(raw, { db, host, deliveryStore, logger });
   });
-  logger.info("Subscribed to ui.notify.alert");
 
   // Only the api's requests are acted on. A plain publish has no one to
   // answer and is not how the api asks, so it is dropped: workflows can
@@ -197,16 +188,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   await answer(ALERT_REPLAY_SUBJECT, (body) => replays.replay(typeof body.id === "string" ? body.id : ""));
   logger.info("Answering widget.queue.{skip,clear,replay}");
 
-  await nats.subscribe("widget.event", async (msg) => {
-    let envelope: WidgetEventEnvelope;
-    try {
-      envelope = msg.json<WidgetEventEnvelope>();
-    } catch (err) {
-      logger.error("widget.event: malformed JSON envelope", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
+  await subscribeJson<WidgetEventEnvelope>(nats, logger, "widget.event", async (envelope, msg) => {
     const data = envelope.data ?? {};
     const instanceId = typeof data.instanceId === "string" ? data.instanceId : "";
     const key = typeof data.key === "string" ? data.key : "";
@@ -223,20 +205,10 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       occurredAt: typeof data.occurredAt === "string" ? data.occurredAt : undefined,
     });
   });
-  logger.info("Subscribed to widget.event");
 
   // Published by barkloader on every module storage write, and by the api
   // with a null value for each session-scoped key a session end cleared.
-  await nats.subscribe("module.storage.*.changed", async (msg) => {
-    let envelope: StorageChangedEnvelope;
-    try {
-      envelope = msg.json<StorageChangedEnvelope>();
-    } catch (err) {
-      logger.error("module.storage.changed: malformed JSON envelope", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
+  await subscribeJson<StorageChangedEnvelope>(nats, logger, "module.storage.*.changed", async (envelope, msg) => {
     const data = envelope.data ?? {};
     const moduleId = typeof data.moduleId === "string" ? data.moduleId : "";
     const key = typeof data.key === "string" ? data.key : "";
@@ -246,27 +218,21 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     }
     await moduleState.publish(moduleId, key, data.value ?? null);
   });
-  logger.info("Subscribed to module.storage.*.changed");
 
   // A resource instance's settings can change what its value reads as (a
   // counter's goals) without its storage changing.
-  await nats.subscribe("db.module.resource.instance.updated.*", async (msg) => {
-    let envelope: ResourceInstanceUpdatedEnvelope;
-    try {
-      envelope = msg.json<ResourceInstanceUpdatedEnvelope>();
-    } catch (err) {
-      logger.error("db.module.resource.instance.updated: malformed JSON envelope", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
+  await subscribeJson<ResourceInstanceUpdatedEnvelope>(
+    nats,
+    logger,
+    "db.module.resource.instance.updated.*",
+    async (envelope, msg) => {
+      const canonicalId = typeof envelope.data?.canonical_id === "string" ? envelope.data.canonical_id : "";
+      if (!canonicalId) {
+        return;
+      }
+      await moduleState.resourceUpdated(canonicalId);
     }
-    const canonicalId = typeof envelope.data?.canonical_id === "string" ? envelope.data.canonical_id : "";
-    if (!canonicalId) {
-      return;
-    }
-    await moduleState.resourceUpdated(canonicalId);
-  });
-  logger.info("Subscribed to db.module.resource.instance.updated.*");
+  );
 
   // Legacy slobs subject: kept temporarily so chat-bot scene/source
   // triggers don't break. Drop once everything moves to workflow actions.
@@ -325,26 +291,21 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // never its value. A change to the OBS module's connection reconnects with
   // the new details (obs/settings.ts reads them on each attempt), and a
   // module's widgets reading one of its list settings get its new rows.
-  await nats.subscribe("db.module.setting.updated.*", async (msg) => {
-    let envelope: ModuleSettingUpdatedEnvelope;
-    try {
-      envelope = msg.json<ModuleSettingUpdatedEnvelope>();
-    } catch (err) {
-      logger.error("db.module.setting.updated: malformed JSON envelope", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
+  await subscribeJson<ModuleSettingUpdatedEnvelope>(
+    nats,
+    logger,
+    "db.module.setting.updated.*",
+    async (envelope, msg) => {
+      if (envelope.data?.moduleId === OBS_MODULE_ID) {
+        obs.reconnectNow("OBS module settings changed");
+      }
+      const moduleId = typeof envelope.data?.moduleId === "string" ? envelope.data.moduleId : "";
+      const key = typeof envelope.data?.key === "string" ? envelope.data.key : "";
+      if (moduleId && key) {
+        await moduleState.settingUpdated(moduleId, key);
+      }
     }
-    if (envelope.data?.moduleId === OBS_MODULE_ID) {
-      obs.reconnectNow("OBS module settings changed");
-    }
-    const moduleId = typeof envelope.data?.moduleId === "string" ? envelope.data.moduleId : "";
-    const key = typeof envelope.data?.key === "string" ? envelope.data.key : "";
-    if (moduleId && key) {
-      await moduleState.settingUpdated(moduleId, key);
-    }
-  });
-  logger.info("Subscribed to db.module.setting.updated.*");
+  );
 
   // The api announces a change to which local endpoints go through the
   // companion. OBS's open session is replaced only when the change moves it to
@@ -357,24 +318,42 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   });
   logger.info(`Subscribed to ${RELAY_CONFIG_UPDATED_SUBJECT}`);
 
-  await nats.subscribe("db.scene.updated.*", (msg) => {
-    let envelope: SceneUpdatedEnvelope;
-    try {
-      envelope = msg.json<SceneUpdatedEnvelope>();
-    } catch (err) {
-      logger.error("db.scene.updated: malformed JSON envelope", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
+  await subscribeJson<SceneUpdatedEnvelope>(nats, logger, "db.scene.updated.*", (envelope, msg) => {
     if (!notifySceneUpdated(sceneDocuments, envelope)) {
       logger.warn("db.scene.updated: missing scene id; dropping", { subject: msg.subject });
     }
   });
-  logger.info("Subscribed to db.scene.updated.*");
 
   await nats.subscribe("db.overlay_token.updated.*", () => {
     resolver.invalidateAll();
   });
   logger.info("Subscribed to db.overlay_token.updated.*");
+}
+
+/**
+ * Subscribe to `subject`, handing each message's JSON body to `handle`. A
+ * body that is not JSON is logged with the subject and dropped; a `handle`
+ * that throws or rejects is logged by the client and does not end the
+ * subscription (see `consumeMessages`).
+ */
+export async function subscribeJson<T>(
+  nats: Pick<NATSClient, "subscribe">,
+  logger: Logger,
+  subject: string,
+  handle: (body: T, msg: Msg) => void | Promise<void>
+): Promise<void> {
+  await nats.subscribe(subject, (msg) => {
+    let body: T;
+    try {
+      body = msg.json<T>();
+    } catch (err) {
+      logger.error(`${subject}: malformed JSON body; dropped`, {
+        subject: msg.subject,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    return handle(body, msg);
+  });
+  logger.info(`Subscribed to ${subject}`);
 }
