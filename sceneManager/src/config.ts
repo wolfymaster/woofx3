@@ -8,9 +8,8 @@ import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
   sceneManagerPort: z.union([z.number(), z.string()]).optional(),
-  // sceneManager binds loopback by default, same convention streamware
-  // used — a reverse proxy (or direct exposure in dev) is the public
-  // surface, never assumed here.
+  // sceneManager binds loopback by default — a reverse proxy (or direct
+  // exposure in dev) is the public surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
   sceneManagerHost: z.string().optional(),
   // HS256 signing secret for the short-lived session JWT minted at
@@ -82,8 +81,7 @@ export interface SceneManagerRuntimeConfig {
 }
 
 /**
- * Fail-fast validation, same spirit as streamware's
- * `validateOverlayConfig`: assert the invariants the rest of the
+ * Fail-fast validation: assert the invariants the rest of the
  * service depends on at startup rather than surfacing them as
  * confusing runtime failures later.
  */

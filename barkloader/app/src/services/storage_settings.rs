@@ -176,10 +176,10 @@ fn env_or_setting(setting: Option<String>, env_var: &str) -> Option<String> {
 
 /// Resolve the active repository configuration. Tries the db-proxy
 /// settings first (when available); falls back to environment
-/// variables for any value not set there. Returns the legacy
-/// File repo using `MODULES_DIR` (or `./modules`) when nothing else
-/// is configured — the existing dev-mode default. A relative file
-/// destination is anchored in `WOOFX3_DATA_DIR` when that is set.
+/// variables for any value not set there. Returns the File repo
+/// using `MODULES_DIR` (or `./modules`) when nothing else is
+/// configured. A relative file destination is anchored in
+/// `WOOFX3_DATA_DIR` when that is set.
 pub async fn resolve_repository_config(
     db_proxy_url: Option<&str>,
     default_modules_dir: &str,
