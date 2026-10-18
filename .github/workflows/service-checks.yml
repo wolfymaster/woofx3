@@ -21,6 +21,8 @@ on:
       - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "services/nats/**"
+      - "shared/common/golang/logging/**"
       - ".github/workflows/service-checks.yml"
   pull_request:
     paths:
@@ -29,6 +31,8 @@ on:
       - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "services/nats/**"
+      - "shared/common/golang/logging/**"
       - ".github/workflows/service-checks.yml"
   workflow_dispatch:
 
@@ -71,6 +75,21 @@ jobs:
       # against it.
       - name: Build module-sdk
         run: cd shared/clients/typescript/module-sdk && bun run build
+
+      # sceneManager's smoke suite (tests/smoke) runs the service against the
+      # engine's real message bus, a Go program, and fails without it in CI.
+      - name: Set up Go
+        if: matrix.service == 'sceneManager'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/nats/go.mod
+          cache-dependency-path: services/nats/go.sum
+
+      - name: Build the message bus
+        if: matrix.service == 'sceneManager'
+        run: |
+          cd services/nats && go build -o "$RUNNER_TEMP/messagebus" .
+          echo "WOOFX3_MESSAGEBUS_BIN=$RUNNER_TEMP/messagebus" >> "$GITHUB_ENV"
 
       - name: Type check
         working-directory: ${{ matrix.service }}

@@ -143,9 +143,14 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       mediaProxy,
       bootId,
     });
-    logger.info("sceneManager listening", { port: runtimeConfig.port, bindHost: runtimeConfig.bindHost, bootId });
+    logger.info("sceneManager listening", { port: this.server.port, bindHost: runtimeConfig.bindHost, bootId });
 
     obs.start();
+  }
+
+  /** The port the server is listening on, once it is; the one the OS chose when configured with 0. */
+  listeningPort(): number | null {
+    return this.server?.port ?? null;
   }
 
   async terminate(ctx: Context): Promise<void> {
