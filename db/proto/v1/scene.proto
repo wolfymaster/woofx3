@@ -27,6 +27,7 @@ service SceneService {
     rpc UpdateScene(UpdateSceneRequest) returns (SceneResponse);
     rpc DeleteScene(DeleteSceneRequest) returns (common.ResponseStatus);
     rpc ListScenes(ListScenesRequest) returns (ListScenesResponse);
+    rpc CreateSceneBackups(CreateSceneBackupsRequest) returns (common.ResponseStatus);
 }
 
 message Scene {
@@ -169,4 +170,31 @@ message ListScenesResponse {
     int32 total_count = 3;
     int32 page = 4;
     int32 page_size = 5;
+}
+
+// Stored scene data a repair is about to replace, kept as it was. A scene
+// version whose stored text cannot be read (by this engine: a newer one may
+// have written it) is set aside here before the repair writes the readable
+// rest, so nothing is ever deleted for being unreadable. Nothing reads these
+// in normal operation; they exist to inspect or restore by hand.
+message SceneBackup {
+    string id = 1;
+    string scene_id = 2;
+    // "published" or "draft".
+    string version = 3;
+    // "widgets", "layout" or "behaviors": the column the content came from.
+    string column = 4;
+    // "unreadable_column": `content` is the column's whole stored text.
+    // "unreadable_placements": `content` is a JSON array of the placements
+    // in the column that could not be read, exactly as stored.
+    string reason = 5;
+    string content = 6;
+    google.protobuf.Timestamp created_at = 7;
+}
+
+// Backups for one scene, written together or not at all.
+message CreateSceneBackupsRequest {
+    string scene_id = 1;
+    // Each entry's `id`, `scene_id` and `created_at` are ignored.
+    repeated SceneBackup backups = 2;
 }
