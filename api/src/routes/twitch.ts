@@ -17,7 +17,7 @@ import { routeModule } from "./context";
 /** The `twitchapi` subject the twitch service answers on. */
 const TWITCHAPI_SUBJECT = "twitchapi";
 
-/** Long enough for Twurple's own retries of a failing Helix call; the same wait `ctx.twitch` gives. */
+/** Long enough for a token renewal and the resend after a 401; the same wait `ctx.twitch` gives. */
 export const TWITCH_HELIX_TIMEOUT_MS = 10_000;
 
 /** The codes the twitch service sends with a `helix` refusal that a caller can branch on. */
