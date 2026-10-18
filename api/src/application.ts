@@ -307,6 +307,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       gateway,
       requestGuard: config.requestGuard,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
+      barkloaderWebhookSecret: config.barkloaderWebhookAuth === "required" ? config.barkloaderKey : null,
     });
 
     logger.info("API server started", {

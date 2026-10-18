@@ -32,6 +32,7 @@ function start(requestGuard: RequestGuardPolicy): string {
     gateway: {} as ApiGateway,
     requestGuard,
     onProcessingCallback: async () => {},
+    barkloaderWebhookSecret: null,
   });
   return `http://127.0.0.1:${server.port}`;
 }

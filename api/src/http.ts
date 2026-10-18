@@ -1,6 +1,7 @@
 import { RequestGuard, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ServerWebSocket } from "bun";
+import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import type { ApiGateway } from "./gateway";
 import type { Health } from "./health";
@@ -23,6 +24,11 @@ export interface HttpDeps {
    * only on what it is handed.
    */
   onProcessingCallback: (body: unknown) => Promise<void>;
+  /**
+   * The bearer token a processing callback must carry, or null when callbacks
+   * are not checked (see barkloader-webhook-auth.ts).
+   */
+  barkloaderWebhookSecret: string | null;
 }
 
 /** CORS for `/api` batch RPC, beside the origin headers the request guard picks. */
@@ -152,7 +158,7 @@ class BunWebSocketAdapter {
  * ambiently, matching `sceneManager/src/http.ts`'s `createHttpServer`.
  */
 export function createHttpServer(deps: HttpDeps) {
-  const { port, hostname, readiness, health, logger, gateway, onProcessingCallback } = deps;
+  const { port, hostname, readiness, health, logger, gateway, onProcessingCallback, barkloaderWebhookSecret } = deps;
   const requestGuard = new RequestGuard(deps.requestGuard);
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
@@ -260,6 +266,10 @@ export function createHttpServer(deps: HttpDeps) {
       if (url.pathname === "/webhooks/barkloader/processing") {
         if (req.method !== "POST") {
           return new Response("Method Not Allowed", { status: 405 });
+        }
+        if (barkloaderWebhookSecret !== null && !hasBarkloaderBearer(req, barkloaderWebhookSecret)) {
+          logger.warn("Refused a processing callback without barkloader's bearer token");
+          return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
         }
         try {
           const body = await req.json();

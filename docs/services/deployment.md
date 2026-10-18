@@ -156,6 +156,20 @@ registration, so the lock survives restarts; removing every client opens
 registration again. Registrations are handled one at a time in this mode, so two
 callers racing on a new engine cannot both be first.
 
+## Barkloader processing callbacks
+
+barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's
+`/webhooks/barkloader/processing`. It sends the engine secret
+(`WOOFX3_BARKLOADER_KEY`) as `Authorization: Bearer <key>`, but only to a
+loopback host or the host of `WOOFX3_API_URL`, since the callback URL arrives in
+the processing request.
+
+The api checks that header only when `WOOFX3_BARKLOADER_WEBHOOK_AUTH=required`;
+unset (or `off`) it accepts every callback, as it always has. A callback
+without the right token is then answered `401` and not recorded. Because the
+check is opt-in, barkloader and the api can be updated in either order: turn it
+on once the running barkloader sends the header.
+
 ## Startup
 
 The entrypoint (`build/entrypoint.sh`) runs the database migrations with the

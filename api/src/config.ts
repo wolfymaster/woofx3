@@ -2,6 +2,7 @@ import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
+import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
 import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
@@ -40,6 +41,12 @@ export interface ApiConfig {
   barkloaderWsUrl: string;
   /** Token barkloader requires on that WebSocket. */
   barkloaderKey: string;
+  /**
+   * Whether barkloader's processing callbacks must carry `barkloaderKey` as a
+   * bearer token (`WOOFX3_BARKLOADER_WEBHOOK_AUTH`); see
+   * barkloader-webhook-auth.ts.
+   */
+  barkloaderWebhookAuth: BarkloaderWebhookAuth;
   /**
    * URL of the streamware service that serves scene overlays. The UI's
    * browser-source page iframes `${streamwareUrl}/overlay/scene/{id}`
@@ -99,6 +106,7 @@ export const ApiEnvSchema = z
     barkloaderWsUrl: z.string().optional(),
     woofx3BarkloaderKey: z.string().optional(),
     barkloaderKey: z.string().optional(),
+    woofx3BarkloaderWebhookAuth: z.string().optional(),
     woofx3StreamwareUrl: z.string().optional(),
     streamwareUrl: z.string().optional(),
     woofx3SceneManagerUrl: z.string().optional(),
@@ -208,6 +216,9 @@ export function loadConfig(): ApiConfig {
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
   const barkloaderWsUrl = String(config.woofx3BarkloaderWsUrl ?? config.barkloaderWsUrl ?? "");
   const barkloaderKey = String(config.woofx3BarkloaderKey ?? config.barkloaderKey ?? "");
+  const barkloaderWebhookAuth = parseBarkloaderWebhookAuth(
+    config.woofx3BarkloaderWebhookAuth === undefined ? undefined : String(config.woofx3BarkloaderWebhookAuth)
+  );
   const streamwareUrl = String(config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101");
 
   const sceneManagerUrl = String(config.woofx3SceneManagerUrl ?? config.sceneManagerUrl ?? "");
@@ -268,6 +279,7 @@ export function loadConfig(): ApiConfig {
     barkloaderUrl,
     barkloaderWsUrl,
     barkloaderKey,
+    barkloaderWebhookAuth,
     streamwareUrl,
     sceneManagerUrl,
     apiUrl,
