@@ -210,7 +210,7 @@ describe("FrameAssembler.assembleDocument", () => {
     const resp = await assembler.assembleDocument("mymod", "mywid", null, frameVersion(info));
     const html = await resp.text();
     expect(html).toContain('<base href="https://cdn.example.com/modules/mymod/abc123/widgets/mywid/">');
-    expect(resp.headers.get("Content-Security-Policy")).toBe("connect-src 'none'");
+    expect(resp.headers.get("Content-Security-Policy")).toBe("connect-src 'none'; sandbox allow-scripts");
     const boot = bootOf(html);
     expect(boot).toMatchObject({ moduleId: "mymod", widgetCanonicalId: "mymod:widget:mywid", surface: "scene" });
     expect(boot.theme).toBeNull();
@@ -355,13 +355,14 @@ describe("FrameAssembler — widget themes", () => {
       "img-src": ["'self'", "https://engine.example.com", "https://static-cdn.jtvnw.net", "data:", "blob:"],
       "media-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
       "connect-src": ["'none'"],
+      sandbox: ["allow-scripts"],
     });
     expect(csp).toBe(
       "style-src 'self' https://engine.example.com 'unsafe-inline'; " +
         "font-src 'self' https://engine.example.com data:; " +
         "img-src 'self' https://engine.example.com https://static-cdn.jtvnw.net data: blob:; " +
         "media-src 'self' https://engine.example.com data: blob:; " +
-        "connect-src 'none'"
+        "connect-src 'none'; sandbox allow-scripts"
     );
     for (const sources of Object.values(directives) as string[][]) {
       for (const source of sources) {

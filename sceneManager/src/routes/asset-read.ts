@@ -1,11 +1,25 @@
 import type { Logger } from "@woofx3/common/runtime";
 import { assetOfReadPath } from "@woofx3/module-sdk";
+import { type BarkloaderRelay, relayToBarkloader } from "./barkloader-relay";
+import { INERT_DOCUMENT_HEADERS } from "./security-headers";
 
-/** Request headers that let the browser revalidate a file it holds. */
-const CONDITIONAL_REQUEST_HEADERS = ["If-None-Match", "If-Modified-Since"] as const;
+const ASSET_READ_RELAY: BarkloaderRelay = {
+  // What lets the browser revalidate a file it holds.
+  forwardedRequestHeaders: ["If-None-Match", "If-Modified-Since"],
+  // What describes the file; nothing else of the storage response is relayed.
+  relayedResponseHeaders: ["Content-Type", "Content-Length", "ETag", "Last-Modified"],
+  failure: "asset read failed",
+  loggedPath: (url) => storagePathOf(url),
+  upstreamPath: (url) => storagePathOf(url),
+  followRedirect: true,
+  passStatus: (status) => (status >= 200 && status < 300) || status === 304 || status === 404,
+  responseHeaders: (url) => ({ "Cache-Control": cacheControlFor(storagePathOf(url)), ...INERT_DOCUMENT_HEADERS }),
+};
 
-/** Response headers that describe the file; nothing else of the storage response is relayed. */
-const RELAYED_RESPONSE_HEADERS = ["Content-Type", "Content-Length", "ETag", "Last-Modified"] as const;
+/** The stored file's own path; the handler has already checked it names one. */
+function storagePathOf(url: URL): string {
+  return assetOfReadPath(url.pathname)?.path ?? url.pathname;
+}
 
 /**
  * `GET /assets/read/{key}`: the bytes of the stored file `/assets/{key}`
@@ -39,59 +53,7 @@ export async function handleAssetReadRoute(
   if (asset === null) {
     return new Response(null, { status: 404 });
   }
-  const storagePath = asset.path;
-
-  const conditional = new Headers();
-  for (const name of CONDITIONAL_REQUEST_HEADERS) {
-    const value = req.headers.get(name);
-    if (value !== null) {
-      conditional.set(name, value);
-    }
-  }
-
-  let upstream: Response;
-  try {
-    upstream = await fetchFn(`${barkloaderUrl.replace(/\/+$/, "")}${storagePath}`, {
-      method: "GET",
-      headers: conditional,
-      redirect: "manual",
-    });
-    const location = upstream.headers.get("Location");
-    if (upstream.status >= 300 && upstream.status < 400 && location !== null) {
-      // Barkloader names the signed storage URL; nothing else chooses it. A
-      // redirect from storage is not followed, and is refused below as not ok.
-      // Not `redirect: "error"`: Bun counts a 304 as a redirect and throws,
-      // which would fail every revalidation.
-      upstream = await fetchFn(location, { method: "GET", headers: conditional, redirect: "manual" });
-    }
-  } catch (err) {
-    logger.warn("asset read failed", {
-      path: storagePath,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return new Response(null, { status: 502 });
-  }
-
-  if (upstream.status === 404) {
-    return new Response(null, { status: 404 });
-  }
-  if (!upstream.ok && upstream.status !== 304) {
-    logger.warn("asset read refused by storage", { path: storagePath, status: upstream.status });
-    return new Response(null, { status: 502 });
-  }
-
-  const headers = new Headers({
-    "Cache-Control": cacheControlFor(storagePath),
-    "Content-Security-Policy": "sandbox",
-    "X-Content-Type-Options": "nosniff",
-  });
-  for (const name of RELAYED_RESPONSE_HEADERS) {
-    const value = upstream.headers.get(name);
-    if (value !== null) {
-      headers.set(name, value);
-    }
-  }
-  return new Response(upstream.status === 304 ? null : upstream.body, { status: upstream.status, headers });
+  return relayToBarkloader(req, url, barkloaderUrl, logger, ASSET_READ_RELAY, fetchFn);
 }
 
 /**
