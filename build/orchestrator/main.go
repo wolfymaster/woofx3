@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,10 +25,22 @@ func main() {
 	}
 	baseDir := filepath.Dir(execPath)
 
-	sharedLogger, err := logging.New(logging.Config{
+	options, err := parseSupervisionOptions(os.Args[1:], os.Getenv)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid arguments: %v\n", err)
+		os.Exit(2)
+	}
+
+	logDirectory := filepath.Join(baseDir, "logs")
+	loggingConfig := logging.Config{
 		ServiceName:  "orchestrator",
-		LogDirectory: filepath.Join(baseDir, "logs"),
-	})
+		LogDirectory: logDirectory,
+	}
+	if options.statusToStdout {
+		// Stdout carries the status lines alone.
+		loggingConfig.EnableFileTransport = true
+	}
+	sharedLogger, err := logging.New(loggingConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
@@ -35,54 +48,95 @@ func main() {
 	defer sharedLogger.Close()
 	logger := sharedLogger.Slog()
 
+	reporter, err := newStatusReporter(options, os.Stdout, systemClock{}, logger)
+	if err != nil {
+		fatalExit(sharedLogger, nil, "Failed to open the status output", err)
+	}
+	defer reporter.Close()
+
 	logger.Info("Starting orchestrator", "baseDir", baseDir)
 
 	configPath := filepath.Join(baseDir, "services.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		configPath = findConfigFile(baseDir)
 		if configPath == "" {
-			fatalExit(sharedLogger, "services.json not found")
+			fatalExit(sharedLogger, reporter, "services.json not found", nil)
 		}
 	}
 
 	config, err := loadConfig(configPath)
 	if err != nil {
-		fatalExit(sharedLogger, "Failed to load configuration", "error", err)
+		fatalExit(sharedLogger, reporter, "Failed to load configuration", err)
 	}
 
 	supervisor := NewSupervisor(baseDir, logger)
+	supervisor.reporter = reporter
+	if options.statusToStdout {
+		supervisor.childOutputDirectory = logging.ResolveLogDirectory(logDirectory)
+	}
+	if options.exitOnStdinEOF {
+		// The services must not read the stdin whose EOF stops the
+		// orchestrator, nor keep it open.
+		devNull, err := os.Open(os.DevNull)
+		if err != nil {
+			fatalExit(sharedLogger, reporter, "Failed to open the null device", err)
+		}
+		defer devNull.Close()
+		supervisor.childStdin = devNull
+	}
 
-	for _, service := range servicesToRun(baseDir, config, logger) {
+	for _, service := range servicesToRun(baseDir, config, logger, reporter) {
 		supervisor.AddService(service)
 	}
 
 	if len(supervisor.services) == 0 {
 		logger.Info("No enabled services found, exiting")
+		reporter.stopped()
 		return
 	}
 
 	orderedServices, err := supervisor.GetStartupOrder()
 	if err != nil {
-		fatalExit(sharedLogger, "Failed to resolve service dependencies", "error", err)
+		fatalExit(sharedLogger, reporter, "Failed to resolve service dependencies", err)
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	stdinClosed := make(chan struct{})
+	if options.exitOnStdinEOF {
+		go func() {
+			waitForEOF(os.Stdin)
+			close(stdinClosed)
+		}()
 	}
 
 	logger.Info("Starting services in dependency order", "count", len(orderedServices))
 	supervisor.StartInOrder(orderedServices)
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	<-sigChan
-	logger.Info("Shutdown signal received, stopping services")
+	select {
+	case <-sigChan:
+		logger.Info("Shutdown signal received, stopping services")
+	case <-stdinClosed:
+		logger.Info("Standard input closed, stopping services")
+	}
 
 	supervisor.StopAll()
 	logger.Info("All services stopped, exiting")
+	reporter.stopped()
 }
 
 // fatalExit reports a startup failure and terminates. os.Exit skips deferred
-// closers, so the logger is flushed here before the process goes away.
-func fatalExit(logger *logging.Logger, message string, args ...any) {
-	logger.Error(message, args...)
+// closers, so the logger and the status output are flushed here before the
+// process goes away.
+func fatalExit(logger *logging.Logger, reporter *statusReporter, message string, err error) {
+	if err != nil {
+		logger.Error(message, "error", err)
+		reporter.failure("", fmt.Sprintf("%s: %v", message, err))
+	} else {
+		logger.Error(message)
+		reporter.failure("", message)
+	}
+	reporter.Close()
 	logger.Close()
 	os.Exit(1)
 }
@@ -144,7 +198,7 @@ const serviceTypeBinary = "binary"
 // servicesToRun returns the enabled services, minus prebuilt binaries that are
 // not installed. Those are skipped with a warning rather than retried forever:
 // a release archive has no edge, and runs its services directly.
-func servicesToRun(baseDir string, config *Config, logger *slog.Logger) []Service {
+func servicesToRun(baseDir string, config *Config, logger *slog.Logger, reporter *statusReporter) []Service {
 	var out []Service
 	for _, service := range config.Services {
 		if !service.Enabled {
@@ -154,6 +208,7 @@ func servicesToRun(baseDir string, config *Config, logger *slog.Logger) []Servic
 			binaryPath := filepath.Join(baseDir, binaryFileName(service))
 			if _, err := os.Stat(binaryPath); err != nil {
 				logger.Warn("Skipping service: its prebuilt binary is not installed", "service", service.Name, "path", binaryPath)
+				reporter.skipped(service.Name, "prebuilt binary not installed")
 				continue
 			}
 		}
@@ -191,9 +246,31 @@ const (
 	StatusUnhealthy
 )
 
+// String is the status as reported in status events.
+func (status ServiceStatus) String() string {
+	switch status {
+	case StatusStopped:
+		return "stopped"
+	case StatusStarting:
+		return "starting"
+	case StatusHealthy:
+		return "healthy"
+	case StatusUnhealthy:
+		return "unhealthy"
+	default:
+		panic(fmt.Sprintf("unknown service status %d", int(status)))
+	}
+}
+
+// healthCheckTimeout is how long a starting service with a health endpoint
+// has to pass its check before it is reported unhealthy.
+const healthCheckTimeout = 30 * time.Second
+
+// ServiceProcess is one supervised service. Cmd, Status and LastHealth are
+// shared between the service's goroutines and guarded by the supervisor's mu.
 type ServiceProcess struct {
 	Service    Service
-	Cmd        *os.Process
+	Cmd        serviceHandle
 	Restart    chan bool
 	Status     ServiceStatus
 	LastHealth time.Time
@@ -203,16 +280,36 @@ type ServiceProcess struct {
 type Supervisor struct {
 	baseDir  string
 	services map[string]*ServiceProcess
-	stopping bool
 	logger   *slog.Logger
+
+	// mu guards stopping, readyReported and every ServiceProcess's Cmd,
+	// Status and LastHealth.
+	mu       sync.Mutex
+	stopping bool
+	// readyReported is set once every service has been healthy at the same
+	// time; the ready event is sent once per run.
+	readyReported bool
+
+	clock        clock
+	startProcess processStarter
+	checkHealth  func(endpoint string) bool
+	reporter     *statusReporter
+	// childStdin replaces the orchestrator's stdin for the services when set.
+	childStdin *os.File
+	// childOutputDirectory, when set, receives each service's stdout and
+	// stderr in a file of its own instead of the orchestrator's.
+	childOutputDirectory string
 }
 
 func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 	return &Supervisor{
-		baseDir:  baseDir,
-		services: make(map[string]*ServiceProcess),
-		stopping: false,
-		logger:   logger,
+		baseDir:      baseDir,
+		services:     make(map[string]*ServiceProcess),
+		stopping:     false,
+		logger:       logger,
+		clock:        systemClock{},
+		startProcess: startOSProcess,
+		checkHealth:  checkHealthOverHTTP,
 	}
 }
 
@@ -292,36 +389,35 @@ func (s *Supervisor) StartInOrder(orderedServices []string) {
 }
 
 func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
 	for {
-		select {
-		case <-ticker.C:
-			if s.stopping {
-				return
-			}
+		s.clock.Sleep(1 * time.Second)
 
-			allHealthy := true
-			for _, depName := range serviceProcess.Service.Dependencies {
-				if depService, exists := s.services[depName]; exists {
-					if depService.Status != StatusHealthy {
-						allHealthy = false
-						break
-					}
-				} else {
+		s.mu.Lock()
+		stopping := s.stopping
+		allHealthy := true
+		for _, depName := range serviceProcess.Service.Dependencies {
+			if depService, exists := s.services[depName]; exists {
+				if depService.Status != StatusHealthy {
 					allHealthy = false
 					break
 				}
+			} else {
+				allHealthy = false
+				break
 			}
+		}
+		stopped := serviceProcess.Status == StatusStopped
+		s.mu.Unlock()
 
-			if allHealthy && serviceProcess.Status == StatusStopped {
-				select {
-				case serviceProcess.CanStart <- true:
-				default:
-				}
-				return
+		if stopping {
+			return
+		}
+		if allHealthy && stopped {
+			select {
+			case serviceProcess.CanStart <- true:
+			default:
 			}
+			return
 		}
 	}
 }
@@ -351,8 +447,10 @@ const dependentStopPeriod = 8 * time.Second
 // write down and announce, and it can do neither after the database proxy and
 // the bus have gone.
 func (s *Supervisor) StopAll() {
+	s.mu.Lock()
 	s.stopping = true
-	deadline := time.Now().Add(stopGracePeriod)
+	s.mu.Unlock()
+	deadline := s.clock.Now().Add(stopGracePeriod)
 
 	var dependents, foundations []string
 	for name, serviceProcess := range s.services {
@@ -364,22 +462,29 @@ func (s *Supervisor) StopAll() {
 	}
 
 	s.signalStop(dependents)
-	s.waitForExit(dependents, time.Now().Add(dependentStopPeriod))
+	s.waitForExit(dependents, s.clock.Now().Add(dependentStopPeriod))
 	s.signalStop(foundations)
 	s.waitForExit(append(dependents, foundations...), deadline)
 
 	for name, serviceProcess := range s.services {
-		if process := serviceProcess.Cmd; process != nil {
+		if process := s.process(serviceProcess); process != nil {
 			s.logger.Warn("Service did not exit within the grace period, killing it", "service", name)
 			process.Kill()
 		}
 	}
 }
 
+// process is the service's running process, or nil.
+func (s *Supervisor) process(serviceProcess *ServiceProcess) serviceHandle {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return serviceProcess.Cmd
+}
+
 // signalStop asks each named service that is running to stop.
 func (s *Supervisor) signalStop(names []string) {
 	for _, name := range names {
-		process := s.services[name].Cmd
+		process := s.process(s.services[name])
 		if process == nil {
 			continue
 		}
@@ -395,14 +500,14 @@ func (s *Supervisor) signalStop(names []string) {
 // waitForExit returns once none of the named services is running, or at the
 // deadline.
 func (s *Supervisor) waitForExit(names []string, deadline time.Time) {
-	for s.anyRunning(names) && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+	for s.anyRunning(names) && s.clock.Now().Before(deadline) {
+		s.clock.Sleep(100 * time.Millisecond)
 	}
 }
 
 func (s *Supervisor) anyRunning(names []string) bool {
 	for _, name := range names {
-		if s.services[name].Cmd != nil {
+		if s.process(s.services[name]) != nil {
 			return true
 		}
 	}
@@ -416,45 +521,111 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 	for {
 		select {
 		case <-serviceProcess.Restart:
+			s.mu.Lock()
 			if serviceProcess.Cmd != nil {
 				s.logger.Info("Restarting service", "service", service.Name)
 				serviceProcess.Cmd.Kill()
 				serviceProcess.Cmd = nil
 			}
 			serviceProcess.Status = StatusStopped
+			s.mu.Unlock()
 		case <-serviceProcess.CanStart:
-			if serviceProcess.Cmd == nil && !s.stopping && serviceProcess.Status == StatusStopped {
+			s.mu.Lock()
+			startable := serviceProcess.Cmd == nil && !s.stopping && serviceProcess.Status == StatusStopped
+			s.mu.Unlock()
+			if startable {
 				if err := s.startServiceProcess(serviceProcess, binaryPath); err != nil {
 					s.logger.Error("Failed to start service", "service", service.Name, "error", err)
-					time.Sleep(5 * time.Second)
+					s.reporter.failure(service.Name, fmt.Sprintf("failed to start: %v", err))
+					s.clock.Sleep(5 * time.Second)
 				}
 			}
 		default:
-			if serviceProcess.Cmd != nil && serviceProcess.Status == StatusStarting {
-				if service.HealthEndpoint != "" {
-					if s.checkHealth(service.HealthEndpoint) {
-						serviceProcess.Status = StatusHealthy
-						serviceProcess.LastHealth = time.Now()
-						s.logger.Info("Service is healthy", "service", service.Name)
-					} else if time.Since(serviceProcess.LastHealth) > 30*time.Second {
-						serviceProcess.Status = StatusUnhealthy
-						s.logger.Warn("Service health check timeout", "service", service.Name)
-					}
-				} else {
-					serviceProcess.Status = StatusHealthy
-					s.logger.Info("Service started (no health check)", "service", service.Name)
-				}
-			} else if serviceProcess.Cmd != nil && serviceProcess.Status == StatusHealthy && service.HealthEndpoint != "" {
-				if !s.checkHealth(service.HealthEndpoint) {
-					serviceProcess.Status = StatusUnhealthy
-					s.logger.Warn("Service became unhealthy", "service", service.Name)
-				} else {
-					serviceProcess.LastHealth = time.Now()
-				}
+			s.updateHealth(serviceProcess)
+		}
+		s.clock.Sleep(1 * time.Second)
+	}
+}
+
+// updateHealth moves a running service between starting, healthy and
+// unhealthy by its health check, or straight to healthy once started when it
+// has none.
+func (s *Supervisor) updateHealth(serviceProcess *ServiceProcess) {
+	service := serviceProcess.Service
+
+	s.mu.Lock()
+	process := serviceProcess.Cmd
+	status := serviceProcess.Status
+	lastHealth := serviceProcess.LastHealth
+	s.mu.Unlock()
+	if process == nil {
+		return
+	}
+
+	switch {
+	case status == StatusStarting && service.HealthEndpoint == "":
+		if s.transition(serviceProcess, process, StatusStarting, StatusHealthy) {
+			s.logger.Info("Service started (no health check)", "service", service.Name)
+		}
+	case status == StatusStarting:
+		if s.checkHealth(service.HealthEndpoint) {
+			if s.transition(serviceProcess, process, StatusStarting, StatusHealthy) {
+				s.logger.Info("Service is healthy", "service", service.Name)
+			}
+		} else if s.clock.Now().Sub(lastHealth) > healthCheckTimeout {
+			if s.transition(serviceProcess, process, StatusStarting, StatusUnhealthy) {
+				s.logger.Warn("Service health check timeout", "service", service.Name)
 			}
 		}
-		time.Sleep(1 * time.Second)
+	case status == StatusHealthy && service.HealthEndpoint != "":
+		if !s.checkHealth(service.HealthEndpoint) {
+			if s.transition(serviceProcess, process, StatusHealthy, StatusUnhealthy) {
+				s.logger.Warn("Service became unhealthy", "service", service.Name)
+			}
+		} else {
+			s.mu.Lock()
+			serviceProcess.LastHealth = s.clock.Now()
+			s.mu.Unlock()
+		}
 	}
+}
+
+// transition moves the service from one status to another, unless its
+// process has changed or its status has moved on since the caller looked: a
+// health check that passes just as the process exits must not mark the
+// stopped service healthy. It reports the change and, the first time every
+// service is healthy, that the engine is ready.
+func (s *Supervisor) transition(serviceProcess *ServiceProcess, process serviceHandle, from ServiceStatus, to ServiceStatus) bool {
+	s.mu.Lock()
+	if serviceProcess.Cmd != process || serviceProcess.Status != from {
+		s.mu.Unlock()
+		return false
+	}
+	serviceProcess.Status = to
+	if to == StatusHealthy {
+		serviceProcess.LastHealth = s.clock.Now()
+	}
+	nowReady := !s.readyReported && s.allHealthyLocked()
+	if nowReady {
+		s.readyReported = true
+	}
+	s.mu.Unlock()
+
+	s.reporter.service(serviceProcess.Service.Name, to, process.Pid(), "")
+	if nowReady {
+		s.logger.Info("All services are healthy")
+		s.reporter.ready()
+	}
+	return true
+}
+
+func (s *Supervisor) allHealthyLocked() bool {
+	for _, serviceProcess := range s.services {
+		if serviceProcess.Status != StatusHealthy {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryPath string) error {
@@ -464,32 +635,46 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 		return fmt.Errorf("binary not found: %s", binaryPath)
 	}
 
+	files, closeFiles, err := s.childFiles(service.Name)
+	if err != nil {
+		return err
+	}
 	attr := &os.ProcAttr{
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+		Files: files,
 		Env:   os.Environ(),
 	}
 
-	process, err := os.StartProcess(binaryPath, serviceArgv(binaryPath, service), attr)
+	process, err := s.startProcess(binaryPath, serviceArgv(binaryPath, service), attr)
+	// The child holds its own copies of the descriptors.
+	closeFiles()
 	if err != nil {
 		return fmt.Errorf("failed to start process: %w", err)
 	}
 
+	s.mu.Lock()
 	serviceProcess.Cmd = process
 	serviceProcess.Status = StatusStarting
-	serviceProcess.LastHealth = time.Now()
-	s.logger.Info("Started service", "service", service.Name, "pid", process.Pid)
+	serviceProcess.LastHealth = s.clock.Now()
+	s.mu.Unlock()
+	s.logger.Info("Started service", "service", service.Name, "pid", process.Pid())
+	s.reporter.service(service.Name, StatusStarting, process.Pid(), "")
 
 	go func() {
-		state, err := process.Wait()
+		exit, err := process.Wait()
 		if err != nil {
 			s.logger.Error("Service process error", "service", service.Name, "error", err)
+			exit = err.Error()
 		} else {
-			s.logger.Info("Service exited", "service", service.Name, "state", state.String())
+			s.logger.Info("Service exited", "service", service.Name, "state", exit)
 		}
+		s.mu.Lock()
 		serviceProcess.Cmd = nil
 		serviceProcess.Status = StatusStopped
+		stopping := s.stopping
+		s.mu.Unlock()
+		s.reporter.service(service.Name, StatusStopped, process.Pid(), exit)
 
-		if !s.stopping {
+		if !stopping {
 			go s.monitorDependencies(serviceProcess)
 		}
 	}()
@@ -497,7 +682,29 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	return nil
 }
 
-func (s *Supervisor) checkHealth(endpoint string) bool {
+// childFiles are the stdin, stdout and stderr a service starts with, and a
+// function that closes the ones opened for it.
+func (s *Supervisor) childFiles(serviceName string) ([]*os.File, func(), error) {
+	stdin := os.Stdin
+	if s.childStdin != nil {
+		stdin = s.childStdin
+	}
+	if s.childOutputDirectory == "" {
+		return []*os.File{stdin, os.Stdout, os.Stderr}, func() {}, nil
+	}
+
+	if err := os.MkdirAll(s.childOutputDirectory, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create service output directory: %w", err)
+	}
+	path := filepath.Join(s.childOutputDirectory, childOutputFileName(serviceName))
+	output, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open service output file: %w", err)
+	}
+	return []*os.File{stdin, output, output}, func() { output.Close() }, nil
+}
+
+func checkHealthOverHTTP(endpoint string) bool {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}

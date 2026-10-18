@@ -273,6 +273,48 @@ is still running after 25 seconds.
 The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
 Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
 
+### Supervision by a parent process
+
+A program that starts the orchestrator itself, such as a desktop shell, can ask
+it for machine-readable status. Both switches are off by default, and then the
+orchestrator behaves exactly as above: services share its stdout and stderr, and
+only a signal stops it.
+
+- `WOOFX3_SUPERVISOR_STATUS=stdout-jsonl` writes status as JSON lines on stdout.
+  Stdout then carries nothing else: the orchestrator logs to its log file only,
+  and each service's stdout and stderr are appended to `<service>.output.log`
+  in the log directory (`<data dir>/logs` under
+  [`WOOFX3_DATA_DIR`](./runtime.md#the-data-directory), else `logs/` next to the
+  orchestrator).
+- `--status-file <path>` writes the same lines to a file, truncated at start.
+  Alone, it changes nothing else.
+- `--exit-on-stdin-eof` stops the services and exits, as on SIGTERM, when the
+  orchestrator's stdin closes. A parent that keeps the write end of a pipe open
+  is then covered even when it is killed outright. The services get the null
+  device as stdin.
+
+Each line is one event, with an RFC 3339 `time`:
+
+```json
+{"event":"service","time":"2026-10-17T12:00:00.1Z","name":"api","status":"starting","pid":4242}
+{"event":"service","time":"2026-10-17T12:00:03.2Z","name":"api","status":"healthy","pid":4242}
+{"event":"ready","time":"2026-10-17T12:00:04.0Z"}
+{"event":"service","time":"2026-10-17T12:05:00.0Z","name":"api","status":"stopped","pid":4242,"message":"exit status 0"}
+{"event":"stopped","time":"2026-10-17T12:05:01.0Z"}
+```
+
+- `service` — a service moved to `starting`, `healthy`, `unhealthy` or
+  `stopped` (with how it exited in `message`), or was `skipped` because its
+  prebuilt binary is not installed.
+- `ready` — every service is healthy at once, sent once per run. A service with
+  a `health_endpoint` in `services.json` is healthy when that answers `200`; one
+  without is healthy once started.
+- `error` — a service could not be started (`name` set), or the orchestrator
+  could not start at all (no `name`; it exits non-zero after this line).
+- `stopped` — every service has been stopped and the orchestrator is exiting.
+
+Consumers must ignore event types and fields they do not know.
+
 ## Readiness and version
 
 `GET /ready` (served by the api, reachable through the edge) answers `200`
