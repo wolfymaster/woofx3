@@ -175,7 +175,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
-    this.server?.stop();
+    // Forced: open event streams would otherwise hold the server, and their
+    // heartbeats, past shutdown.
+    await this.server?.stop(true);
     this.server = null;
     await this.obs?.stop();
     this.obs = null;
