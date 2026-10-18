@@ -8,7 +8,7 @@ CloudEvents is the inter-service messaging format used throughout WoofX3. All ev
 - **Transport encoding**: JSON serialized to `Uint8Array`
 - **Subject routing**: The NATS subject is the CloudEvents `type` field (e.g. `user.message`)
 - **Source identification**: Each service sets a `source` string when constructing its `EventFactory`
-- **Command pattern**: Some integrations (TwitchApi, Slobs) use a lightweight command envelope instead of CloudEvents for imperative operations
+- **Command pattern**: Some integrations (TwitchApi) use a lightweight command envelope instead of CloudEvents for imperative operations
 
 ## Base Event Structure
 
@@ -51,8 +51,6 @@ const twitch = factory.Twitch();
 // Twitch API command events
 const twitchApi = factory.TwitchApi();
 
-// Streamlabs OBS events
-const slobs = factory.Slobs();
 ```
 
 ### Publishing an event
@@ -260,62 +258,13 @@ nats.publish(subject, payload);
 
 ---
 
-## Slobs Events
-
-Slobs events target [Streamlabs OBS](https://streamlabs.com/streamlabs-live-streaming-software). Widget notifications use a CloudEvent envelope; control commands use the command envelope. All commands publish to the `slobs` NATS subject.
-
-### Event Types
-
-| Method | Type | Pattern | Description |
-|--------|------|---------|-------------|
-| `notifyWidget` | `slobs` | CloudEvent | Send a notification payload to a widget |
-| `follow` | `slobs` | Command | Trigger a follow alert |
-| `sceneChange` | `slobs` | Command | Switch the active scene |
-| `sourceChange` | `slobs` | Command | Update a source property |
-
-### Payloads
-
-#### NotifyWidget
-
-```typescript
-interface NotifyWidget<T extends Object = {}> {
-    widgetId: string;
-    message: string;
-    data: T;            // widget-specific data, generic
-}
-```
-
-#### FollowArgs (command)
-
-```typescript
-interface FollowArgs {
-    username: string;
-}
-```
-
-#### SceneChangeArgs (command)
-
-```typescript
-interface SceneChangeArgs {
-    sceneName: string;
-}
-```
-
-#### SourceChangeArgs (command)
-
-```typescript
-interface SourceChangeArgs {
-    sourceName: string;
-    value: string;
-}
-```
+## Engine control
 
 ### OBS control (`engine.obs.command`)
 
 barkloader's `ctx.obs` host extension controls OBS through the scene manager
 with a request/reply CloudEvent on `engine.obs.command`, on behalf of module
-code holding the `obs.control` permission. Unlike `slobs`, every request is
-answered with `{ ok, error? }`. `ctx.obs.listScenes` and its siblings read OBS
+code holding the `obs.control` permission. Every request is answered with `{ ok, error? }`. `ctx.obs.listScenes` and its siblings read OBS
 over the separate, read-only `engine.obs.options`. See [OBS control](./obs.md).
 
 ### Scene control (`engine.scene.command`)

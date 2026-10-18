@@ -182,7 +182,6 @@ adapted at the edges and republished onto the bus as CloudEvents.
 | **twitch** | [`twitch/`](twitch) | TypeScript (Bun) | Twitch Helix API + EventSub WebSocket bridge. Republishes Twitch events as CloudEvents and dispatches API call results back onto the bus as new commands. |
 | **woofwoofwoof** | [`woofwoofwoof/`](woofwoofwoof) | TypeScript (Bun) | Twitch chatbot. Listens to chat, processes commands, and integrates with external services and modules. Docs: [`docs/woofwoofwoof/`](docs/woofwoofwoof/index.md). |
 | **streamlabs** | [`streamlabs/`](streamlabs) | TypeScript (Remix) | Browser-source overlays, alerts, and chat widgets. Integrates with OBS via the OBS WebSocket. |
-| **reward** | [`reward/`](reward) | TypeScript (Bun) | Viewer rewards subsystem (early sketch — see [`reward/README.md`](reward/README.md) for the rules-engine design notes). |
 | **treats** | [`treats/`](treats) | _planned_ | Viewer-engagement currency / treats system. Not yet implemented. |
 | **irl/srt-live-server** | [`irl/srt-live-server/`](irl/srt-live-server) | C++ (vendored) | SRT relay used for IRL streaming setups. |
 
@@ -375,7 +374,6 @@ woofx3/
 ├── twitch/          Twitch Helix + EventSub bridge (TS / Bun)
 ├── woofwoofwoof/    Twitch chatbot (TS / Bun)
 ├── streamlabs/      Browser-source overlays and widgets (Remix)
-├── reward/          Viewer rewards subsystem (TS / Bun, early)
 ├── treats/          Viewer treats system (planned)
 ├── services/
 │   └── nats/        Local NATS message bus

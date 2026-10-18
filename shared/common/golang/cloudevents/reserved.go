@@ -7,11 +7,11 @@ import "strings"
 // type is the NATS subject it goes out on, so publishing here would let that
 // code drive the engine rather than ask it (docs/services/engine-integrity.md).
 // An entry ending in "." reserves that namespace (everything that starts with
-// it); any other entry reserves exactly that name, so "reward" leaves
-// "rewards.x" and "reward.granted" open.
+// it); any other entry reserves exactly that name, so "message.send" leaves
+// "message.sent" and "message.send.later" open.
 
 // CommandSubjectPrefixes are the subjects the engine and its services treat as
-// commands: forge outbox events (`db.`), change OBS (`engine.`, `slobs`), call
+// commands: forge outbox events (`db.`), change OBS (`engine.`), call
 // the Twitch API, speak in chat, play or skip alerts, or run workflows and
 // actions.
 //
@@ -24,7 +24,6 @@ var CommandSubjectPrefixes = []string{
 	"webhook.",
 	"db.",
 	"engine.",
-	"slobs",
 	"twitchapi",
 	"message.send",
 	"ui.notify.",
@@ -51,7 +50,6 @@ var EngineEventSubjectPrefixes = []string{
 	"channelpoints.",
 	"chat.command.",
 	"module.",
-	"reward",
 	"session.",
 	"setting.",
 	"stream.offline",

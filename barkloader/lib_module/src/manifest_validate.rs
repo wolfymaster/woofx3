@@ -529,7 +529,7 @@ async fn validate_theme_dependencies(
 /// A webhook handler may publish any event type its module declares as an
 /// eventbus trigger, verbatim, so declaring one of these would let an upload
 /// drive the engine directly: forge outbox events (`db.`), change OBS
-/// (`engine.obs.command`, `slobs`), call the Twitch API (`twitchapi`), speak in
+/// (`engine.obs.command`), call the Twitch API (`twitchapi`), speak in
 /// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
 /// `widget.queue.`), or run, replay or stop workflows and actions
 /// (`workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`).
@@ -538,11 +538,10 @@ async fn validate_theme_dependencies(
 ///
 /// The outbox stays open to the system module, which owns the `db.workflow.*`
 /// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
+const USER_RESERVED_EVENT_PREFIXES: [&str; 12] = [
     WEBHOOK_EVENT_PREFIX,
     "db.",
     "engine.",
-    "slobs",
     "twitchapi",
     "message.send",
     "ui.notify.",
@@ -3111,7 +3110,6 @@ mod tests {
             "webhook.other_mod.orders",
             "db.module.trigger.registered",
             "engine.obs.command",
-            "slobs",
             "twitchapi",
             "message.send",
             "ui.notify.alert",
@@ -3173,7 +3171,6 @@ mod tests {
         for event in [
             "engine.obs.command",
             "engine.obs.options",
-            "slobs",
             "message.send",
             "workflow.execute",
             "some.service.command",

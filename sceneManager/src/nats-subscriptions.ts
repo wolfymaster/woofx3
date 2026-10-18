@@ -21,7 +21,6 @@ import {
 import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
 import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
-import { handleLegacySlobsCommand } from "./obs/commands";
 import { answerObsCommand } from "./obs/control";
 import type Manager from "./obs/manager";
 import { answerObsOptions } from "./obs/options";
@@ -107,8 +106,8 @@ interface WidgetEventEnvelope {
 
 /**
  * Wire NATS-sourced engine events into `DeliveryStore`, invalidate
- * caches on control-plane pushes, and bridge the legacy OBS `slobs`
- * command subject. Simplified from streamware's
+ * caches on control-plane pushes, and answer the engine's OBS and scene
+ * requests. Simplified from streamware's
  * `nats-subscriptions.ts` + `events/handlers.ts`:
  *
  *   - No `ui.alert.broadcast` round trip — that subject existed only
@@ -233,27 +232,6 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       await moduleState.resourceUpdated(canonicalId);
     }
   );
-
-  // Legacy slobs subject: kept temporarily so chat-bot scene/source
-  // triggers don't break. Drop once everything moves to workflow actions.
-  await nats.subscribe("slobs", (msg) => {
-    let body: { command: string; args: Record<string, string> };
-    try {
-      body = msg.json();
-    } catch (err) {
-      logger.error("slobs: malformed JSON payload", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
-    handleLegacySlobsCommand(obs.current(), body, logger).catch((err) => {
-      logger.error("Legacy slobs command failed", {
-        command: body.command,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-  });
-  logger.info("Subscribed to slobs (legacy OBS bridge)");
 
   // Engine OBS control, request/reply: barkloader's `ctx.obs` waits on this
   // answer to succeed or fail.
