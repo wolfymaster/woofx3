@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { TaskDefinition } from "@woofx3/api/workflow-definition";
 import { parseCommandCreated, parseCommandDeleted, parseCommandUpdated } from "../src/command-event-handlers";
 
 const COMMAND_ID = "33333333-3333-3333-3333-333333333333";
@@ -56,7 +57,7 @@ describe("parseCommandCreated", () => {
   });
 
   it("carries the workflow a linked command runs, and its steps", () => {
-    const steps = [{ id: "a", type: "wait", wait: { type: "delay", durationMs: 1000 } }];
+    const steps: TaskDefinition[] = [{ id: "a", type: "wait", wait: { type: "delay", durationMs: 1000 } }];
     const event = parseCommandCreated(
       commandRow({ actions_json: "[]", workflow_id: "wf-1", steps_json: JSON.stringify(steps) })
     );

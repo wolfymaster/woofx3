@@ -166,7 +166,11 @@ function checkWorkflow(item: Record<string, unknown>, path: string, errors: Shap
     }
   }
   checkWorkflowRefs(item.workflowRefs, `${path}.workflowRefs`, errors);
-  checkSubWorkflowIds(isPlainObject(item.definition) ? item.definition.tasks : undefined, `${path}.definition.tasks`, errors);
+  checkSubWorkflowIds(
+    isPlainObject(item.definition) ? item.definition.tasks : undefined,
+    `${path}.definition.tasks`,
+    errors
+  );
 }
 
 function checkWorkflowRefs(refs: unknown, path: string, errors: ShapeErrors): void {
@@ -194,10 +198,7 @@ function checkSubWorkflowIds(tasks: unknown, path: string, errors: ShapeErrors):
     }
     const workflowId = task.workflow.workflowId;
     if (typeof workflowId === "string" && workflowId !== "") {
-      errors.add(
-        `${path}[${index}].workflow.workflowId`,
-        "must be empty; name the target workflow in workflowRefs"
-      );
+      errors.add(`${path}[${index}].workflow.workflowId`, "must be empty; name the target workflow in workflowRefs");
     }
   });
 }
