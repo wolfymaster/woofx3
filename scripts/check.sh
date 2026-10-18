@@ -89,6 +89,12 @@ select_for_path() {
       select_target "rust:barkloader"
       return
       ;;
+    # api's tests import the capability Since script and read the table it
+    # fills. Every path arrives with a trailing slash, files included.
+    .github/scripts/capability-since.mts/ | docs/services/engine-capabilities.md/)
+      select_target "ts:api"
+      return
+      ;;
     shared/common/typescript/* | shared/clients/typescript/*)
       if [[ "$path" == shared/common/typescript/* ]]; then
         select_target "ts:shared/common/typescript"

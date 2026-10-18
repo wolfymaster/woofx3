@@ -34,7 +34,7 @@ A few ids describe how the engine is run rather than what its build can do. They
 
 ## Capability ids
 
-Since is the first release whose engine advertised the id, and `unreleased` until one does. Nobody writes it by hand: a new row leaves it `unreleased`, and the release job runs `.github/scripts/capability-since.mjs` with the tag it is cutting, which records that tag for every id the release ships, in the same commit as the release's `CHANGELOG.md` entry. The script reads the release tags in git, so running it locally (`node .github/scripts/capability-since.mjs`) fills any value a release has already settled. A recorded value never changes.
+Since is the first release whose engine advertised the id, and `unreleased` until one does. Nobody writes it by hand: a new row leaves it `unreleased`, and the release job runs `.github/scripts/capability-since.mts` with the tag it is cutting, which records that tag for every id the release ships, in the same commit as the release's `CHANGELOG.md` entry. The script reads the release tags in git, so running it locally (`node .github/scripts/capability-since.mts`) fills any value a release has already settled. A recorded value never changes.
 
 | Id | Since | Feature |
 |---|---|---|

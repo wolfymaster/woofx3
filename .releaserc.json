@@ -15,7 +15,7 @@
       "@semantic-release/exec",
       {
         "verifyReleaseCmd": ".github/scripts/release-tag.sh ${nextRelease.gitTag}",
-        "prepareCmd": "node .github/scripts/capability-since.mjs ${nextRelease.gitTag}"
+        "prepareCmd": "node .github/scripts/capability-since.mts ${nextRelease.gitTag}"
       }
     ],
     [

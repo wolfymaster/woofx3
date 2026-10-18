@@ -10,6 +10,7 @@ import {
   supportedEngineCapabilities,
   UNADVERTISED_ENGINE_CAPABILITIES,
 } from "@woofx3/api";
+import { SINCE } from "../../.github/scripts/capability-since.mjs";
 import { RPC_METHODS } from "../src/api-session";
 import { engineRoutes } from "../src/routes/engine";
 
@@ -128,8 +129,7 @@ describe("ENGINE_CAPABILITIES", () => {
     for (const id of Object.values(ENGINE_CAPABILITIES)) {
       const row = doc.split("\n").find((line) => line.startsWith(`| \`${id}\` |`));
       expect(row, `no row for ${id}`).toBeDefined();
-      // Since: the tag .github/scripts/capability-since.mjs records, or unreleased until then.
-      expect(row?.split(" | ")[1]).toMatch(/^(v\d+\.\d+\.\d+|unreleased)$/);
+      expect(row?.split(" | ")[1]).toMatch(SINCE);
     }
   });
 });

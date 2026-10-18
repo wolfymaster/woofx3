@@ -26,12 +26,18 @@ on:
       - "api/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      # Imported and read by api/tests; must match select_for_path in scripts/check.sh.
+      - ".github/scripts/capability-since.mts"
+      - "docs/services/engine-capabilities.md"
       - ".github/workflows/api-checks.yml"
   pull_request:
     paths:
       - "api/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      # Imported and read by api/tests; must match select_for_path in scripts/check.sh.
+      - ".github/scripts/capability-since.mts"
+      - "docs/services/engine-capabilities.md"
       - ".github/workflows/api-checks.yml"
   workflow_dispatch:
 
