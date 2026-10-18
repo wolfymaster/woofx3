@@ -175,7 +175,7 @@ describe("registerClient in first mode", () => {
 });
 
 describe("registerClient in an explicit mode", () => {
-  it("token mode behaves as an engine with a token always has", async () => {
+  it("token mode admits only a caller presenting the token", async () => {
     const { gateway: gw } = gateway(TOKEN, "token");
 
     expect((await refusal(gw.registerClient("ui", {}))).name).toBe(REGISTRATION_REFUSED);
