@@ -14,9 +14,8 @@
 // Since cell out entirely (`| id | feature |`); it gets one.
 //
 // Usage:
-//   node capability-since.mjs            fill from the release tags
-//   node capability-since.mjs <tag>      also give ids shipping in <tag> that tag
-//   node capability-since.mjs --check    exit 1 if the table would change
+//   node capability-since.mjs          fill from the release tags
+//   node capability-since.mjs <tag>    also give ids shipping in <tag> that tag
 //
 // The release job runs it with the tag being cut as semantic-release's
 // prepare step (.releaserc.json), so the values land in the release commit
@@ -27,16 +26,17 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const CAPABILITIES = "shared/clients/typescript/api/capabilities.ts";
+// Also named by .releaserc.json's git assets and release.yml's check of the
+// release commit; the three must match.
 const DOC = "docs/services/engine-capabilities.md";
 const UNRELEASED = "unreleased";
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
 const ID = "[a-z][a-zA-Z0-9]*\\.[a-z][a-zA-Z0-9]*";
 
 const args = process.argv.slice(2);
-const check = args.includes("--check");
-const releasing = args.find((arg) => arg !== "--check");
-if (releasing !== undefined && !RELEASE_TAG.test(releasing)) {
-  throw new Error(`usage: capability-since.mjs [--check] [vX.Y.Z]; got ${releasing}`);
+const releasing = args[0];
+if (args.length > 1 || (releasing !== undefined && !RELEASE_TAG.test(releasing))) {
+  throw new Error(`usage: capability-since.mjs [vX.Y.Z]; got ${args.join(" ")}`);
 }
 
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
@@ -162,12 +162,7 @@ for (const id of unfilled) {
 }
 
 const updated = lines.join("\n");
-if (check) {
-  if (updated !== doc) {
-    console.error(`${DOC} is missing Since values; run node .github/scripts/capability-since.mjs`);
-    process.exit(1);
-  }
-} else if (updated !== doc) {
+if (updated !== doc) {
   writeFileSync(docPath, updated);
   console.log(`Updated ${DOC}`);
 }

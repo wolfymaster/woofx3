@@ -294,6 +294,8 @@ jobs:
           released="$(git rev-parse "${TAG}^{commit}")"
           test "$(git rev-parse "${released}^")" = "${GITHUB_SHA}"
           git diff --name-only "${GITHUB_SHA}" "$released" > changed
+          # The capability table's path must match .releaserc.json's git
+          # assets and DOC in .github/scripts/capability-since.mjs.
           grep -qx CHANGELOG.md changed
           if grep -vx -e CHANGELOG.md -e docs/services/engine-capabilities.md changed; then
             echo "::error::The release commit changes more than CHANGELOG.md and the capability table."

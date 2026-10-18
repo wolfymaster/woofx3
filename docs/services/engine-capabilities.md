@@ -34,7 +34,8 @@ A few ids describe how the engine is run rather than what its build can do. They
 
 ## Capability ids
 
-Since is the first release whose engine advertised the id, and `unreleased` until one does. Nobody writes it by hand: a new row leaves it `unreleased`, and the release job runs `.github/scripts/capability-since.mjs` with the tag it is cutting, which records that tag for every id the release ships, in the same commit as the release's `CHANGELOG.md` entry. The script reads the release tags in git, so running it locally (`node .github/scripts/capability-since.mjs`) fills any value a release has already settled; `--check` exits non-zero when one is missing. A recorded value never changes.
+Since is the first release whose engine advertised the id, and `unreleased` until one does. Nobody writes it by hand: a new row leaves it `unreleased`, and the release job runs `.github/scripts/capability-since.mjs` with the tag it is cutting, which records that tag for every id the release ships, in the same commit as the release's `CHANGELOG.md` entry. The script reads the release tags in git, so running it locally (`node .github/scripts/capability-since.mjs`) fills any value a release has already settled. A recorded value never changes.
+
 | Id | Since | Feature |
 |---|---|---|
 | `alerts.compositionLayout` | v0.29.0 | An Alert step's inline `parameters.layout` may be a composition (`{ layout, widgets, behaviors }`: the canvas, placements keyed by id, and behaviors keyed by id) as well as the list shape (`{ width, height, widgets: [] }`). See [Task types → alert](../workflow/tasks.md#alert) |
