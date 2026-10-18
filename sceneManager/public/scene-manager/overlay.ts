@@ -158,6 +158,7 @@ export function createOverlay(env: OverlayEnv): void {
   const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state));
 
   const alertAreas = new AlertAreas({
+    document: env.document,
     sceneBase,
     bridges,
     queues: queueManager,
@@ -372,8 +373,12 @@ export function createOverlay(env: OverlayEnv): void {
       return;
     }
     if (next.hostsSurface !== "" || entry.bridge === null) {
-      unmountContent(next.id);
+      // The new content first: an alert area registers its queue as it
+      // mounts, taking over the alerts still waiting in the old one's, which
+      // is then retired with only what it was playing.
+      entry.swap?.cancel();
       mountContent(entry.slot, next.id);
+      entry.unmount();
       return;
     }
     entry.swap?.cancel();
