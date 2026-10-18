@@ -83,7 +83,7 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 |----------|------|----------|-------------|
 | `id` | `string` | Yes | Unique identifier within the workflow. Referenced by `dependsOn`, `onTrue`, and `onFalse` in other tasks. |
 | `type` | `string` | Yes | Task type. One of: `action`, `log`, `wait`, `condition`, `workflow`. See [Task Types](./tasks.md). |
-| `action` | `string` | Yes (when `type` is `"action"`) | Registered action handler name. Currently `"function"` is the only handler. Mirrors the manifest action's `type` field for module-contributed actions. |
+| `action` | `string` | Yes (when `type` is `"action"`) | Registered action handler name: `function`, `alert`, `chat.reply`, `scene.widget.visibility` or `print` (see [Built-in Actions](./tasks.md#built-in-actions)). A step instantiating a module's `function` action uses `function`; one instantiating a `native` action uses that action's `handler`. |
 | `function` | `string` | Yes (when `action` is `"function"`) | Canonical id of the function this step invokes (e.g. `twitch_platform:function:play_alert`). Top-level handler config — same shape as `wait` and `workflow` configs sit at the top level for their step types. The `function` action handler reads it at runtime and dispatches to the barkloader sandbox without any DB lookup. |
 | `$ref` | `string` | No | Canonical id of the source action declaration this step instantiates (e.g. `twitch_platform:action:play_alert`). Recorded in `resource_references` for ownership tracking and the in-use check. The engine **ignores `$ref` at execution time** — dispatch is driven by `action` + `function`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's action selection. |
 | `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships and executes tasks in topological order. |
@@ -167,7 +167,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
   "type": "aggregation",
   "event": "channel.cheer",
   "conditions": [
-    { "field": "${trigger.data.channelId}", "operator": "eq", "value": "${trigger.data.channelId}" }
+    { "field": "${event.data.isAnonymous}", "operator": "eq", "value": false }
   ],
   "aggregation": {
     "strategy": "sum",
@@ -182,9 +182,9 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. `"delay"` pauses for `durationMs` and then continues. |
-| `event` | `string` | Yes, except for `delay` | NATS subject to listen for while waiting. |
-| `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
+| `type` | `string` | No | Wait type, `"event"` when omitted or empty. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. `"delay"` pauses for `durationMs` and then continues. |
+| `event` | `string` | Yes, except for `delay` | Event type to wait for, matched exactly against each incoming event's `type`. |
+| `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions an incoming event must all match (AND) to be counted. Evaluated against the waited event only; see [Wait conditions](#wait-conditions). |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
 | `timeout` | `string` | No | Maximum time to wait, as a duration string of at least `"1s"` (numbers are refused). If exceeded, behavior is determined by `onTimeout`. Without one, the wait lasts until its event arrives. |
 | `onTimeout` | `string` | No | What happens when the timeout expires. `"continue"` marks the task as successful and proceeds. `"fail"` (default) fails the task and the workflow. |
@@ -195,6 +195,22 @@ A `delay` takes only `type` and `durationMs`; setting `event`, `conditions`, `ag
 ```json
 { "type": "delay", "durationMs": 10000 }
 ```
+
+### Wait conditions
+
+A wait's `conditions` are evaluated against the event being considered, not the run. The only [expression source](#sources) they can reference is `event`, plus `env`:
+
+| Path | Description |
+|------|-------------|
+| `${event.id}` | Event id |
+| `${event.type}` | Event type |
+| `${event.source}` | Event source |
+| `${event.time}` | Event timestamp |
+| `${event.data.X}` | Field `X` of the event payload |
+
+`trigger`, task exports and `viewer` are not available. A condition that names them fails to resolve, so it never matches and the wait never sees a qualifying event. The waited event cannot be compared against a value from the trigger.
+
+A condition whose `field` names a key the event does not carry also fails to resolve, so it is false for every operator, `not_exists` included.
 
 ---
 
@@ -213,10 +229,10 @@ Defines how multiple events are aggregated in a `wait` task.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `strategy` | `string` | Yes | Aggregation strategy. `"count"` counts events until threshold. `"sum"` sums a numeric field until threshold. `"threshold"` checks if a single event's field meets the threshold. |
-| `field` | `string` | No | Dot-notation path to the numeric field to aggregate, rooted at the event (`data.amount`). Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`, and fail the wait if the event carries neither. |
+| `strategy` | `string` | Yes | Aggregation strategy. `"count"` is satisfied once the number of matching events reaches `threshold`. `"sum"` is satisfied once the running total of `field` reaches `threshold`. `"threshold"` is satisfied by the first single event whose `field` is at least `threshold`. Any other value is accepted but never satisfies the wait. |
+| `field` | `string` | No | Plain dot path (no `${...}`) to the numeric field to aggregate, rooted at the event, as in `data.amount`. Only the payload is reachable, so it starts with `data.`. Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`. An event whose value is missing or not a number is logged and not counted, and the wait keeps waiting. |
 | `threshold` | `number` | Yes | Target value. The wait is satisfied when the aggregated value reaches or exceeds this. |
-| `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`. |
+| `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began; without one, the window ends at the wait's `timeout`. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`, or, with no `timeout`, never ends. |
 
 ---
 

@@ -186,7 +186,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `taxonomy` | array of string | no | Open, multi-valued UI classification for the module as a whole. **Legacy:** superseded by `category` (single string) on older manifests — see [Taxonomy](#taxonomy). |
 | `category` | string | no | **Legacy.** UI catalog grouping for the module as a whole (e.g. `platform`, `automation`). Still accepted; folded into `taxonomy` at parse time when `taxonomy` is unset. New manifests should use `taxonomy` instead. |
 | `triggers` | array | no | Event sources; see below. |
-| `actions` | array | no | Module-contributed actions — implementations of the workflow engine's `action` step type. Each carries a `type` matching a workflow action handler (`function` is the only one today) and the handler-specific config (e.g. `function` for the canonical function id). See [Module actions vs. action handlers](#module-actions-vs-action-handlers). |
+| `actions` | array | no | Module-contributed actions — implementations of the workflow engine's `action` step type. Each carries a `type` — `function` (a sandboxed module function) or `native` (an engine handler; bundled system modules only) — and that type's config (`function` or `handler`). See [Module actions vs. action handlers](#module-actions-vs-action-handlers). |
 | `functions` | array | no | Callable assets (`runtime`, `path` relative to ZIP root). |
 | `commands` | array | no | Chat/bot commands (`pattern`, `type`: `prefix` \| `exact` \| `regex`, optional `actions` or `workflow`, `requiredRole`). See [Command entry](#command-entry-commands). |
 | `workflows` | array | no | Bundled workflows (`trigger` reference + `steps`). |
@@ -368,7 +368,7 @@ These `type` values render dedicated pickers in the UI rather than freeform inpu
 | `color` | — | CSS color string (`"#7ad7ff"`). | Native browser color picker. |
 | `font` | — | CSS font-family list (`"\"Lobster\", cursive"`). Plain lists such as `"Roboto, system-ui, sans-serif"` are valid too. | Searchable list of every Google Fonts family; any other family name can be typed in. See [widget fonts](./sdk.md#fonts). |
 | `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
-| `resource_ref` | `kind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
+| `resource_ref` | `resourceKind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `resourceKind` (see [Naming a kind](#naming-a-kind)). Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 
 `resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, timers, queues, future polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
 
@@ -661,7 +661,7 @@ Same shape, describing the function's result rather than an event payload. See t
 
 ### Action entry (`actions[]`)
 
-> **Module actions vs. action handlers.** A manifest "action" is **not** a workflow primitive — it's a *configured implementation* of the workflow engine's built-in `action` step type. Each action's `type` field names a workflow action handler (`function` is the only one today; more may ship), and at runtime the engine dispatches via that handler. Modules cannot add new step types or new action handlers; they only declare configured invocations of existing handlers. The shape mirrors how engine `TaskDefinition` puts handler-specific config (`wait`, `workflow`, etc.) at the top level next to `type`.
+> **Module actions vs. action handlers.** A manifest "action" is **not** a workflow primitive — it's a *configured implementation* of the workflow engine's built-in `action` step type. Each action's `type` says how it reaches a workflow action handler: `function` dispatches through the engine's `function` handler to a sandboxed module function, and `native` names an engine handler directly. At runtime the engine dispatches via that handler. Modules cannot add new step types or new action handlers; they only declare configured invocations of existing handlers. The shape mirrors how engine `TaskDefinition` puts handler-specific config (`wait`, `workflow`, etc.) at the top level next to `type`.
 >
 > See also: [terminology — `action` is overloaded](#module-actions-vs-action-handlers).
 
@@ -672,7 +672,7 @@ Common fields:
 | `id` | string | yes | Manifest-local action id. Forms the canonical id `{moduleId}:action:{id}`. Must match `[A-Za-z0-9._-]+`. |
 | `name` | string | yes | Display name. Presentation only. |
 | `description` | string | no | Human-readable summary. |
-| `type` | string | yes | Workflow action handler name. Must match an existing engine handler (`function` is the only one today). Determines which other top-level fields are required. |
+| `type` | string | yes | `function` or `native`; any other value is refused at install. Determines which other top-level field is required. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
 | `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
@@ -682,7 +682,22 @@ Type-specific fields:
 
 | When `type` is | Required field | Description |
 |----------------|----------------|-------------|
-| `function`     | `function`     | Manifest-local function id (or full canonical id for cross-module references). Resolved to the canonical function id at install and stored on the action row's `call` column. |
+| `function`     | `function`     | Manifest-local function id (or full canonical id for cross-module references). Resolved to the canonical function id at install and stored on the action row's `call` column. The row's handler is `function`. |
+| `native`       | `handler`      | Name of an action handler compiled into the workflow engine: `alert`, `chat.reply`, `scene.widget.visibility`, `print` or `function` (the handlers registered in `workflow/app.go`). Must be non-empty; install does not check it against the engine's handlers, so a name the engine does not register installs and fails when a step runs. Stored as the action row's handler, with an empty `call`. **Bundled system modules only**: an uploaded module that declares a `native` action is refused at install, because naming an engine handler would let an upload bind workflow steps to engine internals. |
+
+The bundled `woofx3` module (`modules/woofx3/manifest.json`) declares its engine handlers this way:
+
+```json
+{
+  "id": "chat.reply",
+  "name": "Send chat message",
+  "type": "native",
+  "handler": "chat.reply",
+  "schema": [
+    { "id": "message", "label": "Message", "type": "text", "required": true }
+  ]
+}
+```
 
 **Example — an increment action declaring what it returns:**
 
@@ -694,7 +709,7 @@ Type-specific fields:
   "type": "function",
   "function": "increment",
   "schema": [
-    { "id": "target", "label": "Counter", "type": "resource_ref", "kind": "counter", "required": true },
+    { "id": "target", "label": "Counter", "type": "resource_ref", "resourceKind": "counter", "required": true },
     { "id": "step", "label": "Increment by", "type": "number", "defaultValue": 1, "min": 1 }
   ],
   "returns": {
@@ -729,7 +744,7 @@ The word `action` shows up at three layers in the system. Authors and reviewers 
 | Layer | What it is | Example | Extensible by modules? |
 |-------|-----------|---------|------------------------|
 | **Engine step type** | A workflow step's `type` field. The `action` value selects the action-dispatch step path. Other step types are `wait`, `condition`, `log`, `workflow`. | `step.type = "action"` | No — engine flow primitive |
-| **Action handler** | When a step's type is `action`, the handler that runs the work. | `function`, `print` | No — engine-built-in |
+| **Action handler** | When a step's type is `action`, the handler that runs the work. | `function`, `alert`, `chat.reply`, `print` | No — engine-built-in |
 | **Module action** | What a manifest contributes — a parameterized invocation of an action handler, exposed in the UI as a building block. | `twitch_platform:action:play_alert` (type `function`, function `twitch_platform:function:play_alert`) | **Yes** — that's what this section is about |
 
 A module's `actions[]` list is not "things modules add to the engine." It's "configured ways to use the engine's existing handlers, surfaced in the UI as building blocks for workflows."
@@ -1033,8 +1048,8 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
 
 - A `createX` action whose function calls `ctx.resources.create(kind, instanceId, displayName)`.
-- A `deleteX` action with a `target: resource_ref(kind=...)` parameter that calls `ctx.resources.delete(target)`.
-- One or more mutation actions (e.g. `increment`, `decrement`) whose `target` is a `resource_ref(kind=...)`.
+- A `deleteX` action with a `target: resource_ref(resourceKind=...)` parameter that calls `ctx.resources.delete(target)`.
+- One or more mutation actions (e.g. `increment`, `decrement`) whose `target` is a `resource_ref(resourceKind=...)`.
 
 See `modules/utility/counter/manifest.json` in the **woofx3-modules** repository for the canonical example.
 
@@ -1613,7 +1628,7 @@ Settings can be changed afterwards (`updateResourceInstance`), along with the di
 | Module declares it provides a kind | `manifest.resources[].kind` | Module manifest |
 | User triggers instance creation (UI, chat command, etc.) | `createResourceInstance(...)` engine RPC, or `ctx.resources.create(kind, instanceId, displayName, settings?)` | Dashboard / module function |
 | Engine persists the row + emits NATS event | `module.ModuleService/CreateResourceInstance` | DB proxy |
-| Other parts of the system reference the instance | `resource_ref(kind=...)` ConfigField → canonical id | UI / workflow editor |
+| Other parts of the system reference the instance | `resource_ref(resourceKind=...)` ConfigField → canonical id | UI / workflow editor |
 | Owning function performs work using the canonical id | `ctx.event.parameters.target` | Module function |
 | User triggers instance deletion | `ctx.resources.delete(canonicalId)` | Module function |
 | Engine cascades on module uninstall | FK `module_resource_instances.module_id → modules.id ON DELETE CASCADE` | DB |

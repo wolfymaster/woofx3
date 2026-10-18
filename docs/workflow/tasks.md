@@ -318,13 +318,15 @@ Waits for one matching event:
     "type": "event",
     "event": "channel.follow",
     "conditions": [
-      { "field": "${trigger.data.userId}", "operator": "eq", "value": "${trigger.data.userId}" }
+      { "field": "${event.data.userName}", "operator": "ne", "value": "" }
     ],
     "timeout": "5m",
     "onTimeout": "continue"
   }
 }
 ```
+
+A wait's `conditions` see only the event being considered, as `${event.data.X}`, `${event.type}` and `${event.id}`; `trigger` and task exports are not available to them. See [Wait conditions](./schema.md#wait-conditions).
 
 ### Aggregation Wait
 
@@ -388,10 +390,12 @@ Paused waits and delays live in the engine's memory. A run paused when the engin
 | `sum` | Sums the numeric value at `field` across events until `threshold` | Yes |
 | `threshold` | Satisfied when a single event's `field` value meets `threshold` | Yes |
 
-`field` is a dot path rooted at the event, as in `data.amount`. With no `field` set,
-`sum` and `threshold` read `data.amount` and then `data.value`; an event carrying
-neither fails the wait rather than contributing a default, so a `sum` that cannot
-find its number is reported instead of quietly behaving like a `count`.
+`field` is a plain dot path rooted at the event, as in `data.amount`; only the
+payload is reachable. With no `field` set, `sum` and `threshold` read `data.amount`
+and then `data.value`. An event whose value is missing or not a number is logged as
+an error and not counted, rather than contributing a default, so a `sum` that cannot
+find its number is reported instead of quietly behaving like a `count`; the wait
+keeps waiting for events that carry one.
 
 Wait tasks export aggregation results for downstream tasks:
 
