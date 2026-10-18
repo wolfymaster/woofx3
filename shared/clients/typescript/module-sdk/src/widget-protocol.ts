@@ -1,12 +1,10 @@
 // P1 — `woofx3.widget` v1: the widget <-> scene-manager postMessage
 // protocol. The widget side is implemented by `widget-host-shim.ts`
 // (built to a classic-script IIFE and injected into every assembled
-// widget frame); the parent side lives in streamware/ui's widget
-// bridge. Both sides import these types — this file is the single
-// source of truth for the wire shape.
-//
-// Design reference:
-//   docs/superpowers/specs/2026-06-12-streamware-overlay-architecture-design.md §2.3
+// widget frame); the parent side is the scene manager's widget bridge
+// (sceneManager/public/scene-manager/widget-bridge.ts). Both sides import
+// these types — this file is the single source of truth for the wire
+// shape.
 //
 // Versioning: `v` is bumped on any breaking wire change. A parent that
 // receives a `hello` with an unsupported `v` replies `init.reject`
@@ -781,7 +779,7 @@ export function parseHostToWidgetMessage(value: unknown, nonce: string): HostToW
 
 declare global {
   interface Window {
-    /** Inlined by streamware's frame assembler ahead of the shim
+    /** Inlined by the scene manager's frame assembler ahead of the shim
      *  script. Absent everywhere except assembled widget frames. */
     __WOOFX3_WIDGET_BOOT__?: WidgetBootPayload;
   }

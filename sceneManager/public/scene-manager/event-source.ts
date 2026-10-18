@@ -1,11 +1,7 @@
 // SSE client for `/scene/{sceneId}/events`, with a hand-written
-// reconnect/backoff loop -- ported in spirit (same exponential-backoff
-// shape) from streamware/ui/src/lib/eventSource.ts's
-// `WebSocketEventSource`. Deliberately NOT the native browser
-// `EventSource` (whose reconnect cadence isn't fully controllable --
-// see the design note in the plan about not depending on data-star's
-// or the browser's own opaque reconnect timing) and NOT dependent on
-// data-star's own SSE plugin: this is the thing that flips the
+// reconnect/backoff loop. Deliberately NOT the native browser
+// `EventSource`, whose reconnect cadence isn't controllable, and NOT
+// dependent on data-star's own SSE plugin: this is the thing that flips the
 // `$connected` signal data-star's `data-show`/`data-class` react to,
 // not something built on top of data-star's transport.
 //

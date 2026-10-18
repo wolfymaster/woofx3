@@ -1,7 +1,5 @@
-// Client-side, per-widget-instance dispatch policy — the direct
-// replacement for streamware's server-side `EventQueueManager`,
-// generalized from "one alert at a time, app-wide" to "one queue per
-// registered widget instance, configured by that widget." This is
+// Client-side, per-widget-instance dispatch policy: one queue per
+// registered widget instance, configured by that widget. This is
 // distinct from `delivery-store.ts` on the backend: that guarantees
 // the browser session eventually sees every event at least once; this
 // decides which iframe gets it, in what order, and how many at once.

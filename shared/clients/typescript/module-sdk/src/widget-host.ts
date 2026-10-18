@@ -1,8 +1,8 @@
 // Public widget-host contract — the surface every widget bundle sees on
-// `window.widgetHost` once the host shell injects it. This file is the
-// SINGLE SOURCE OF TRUTH for the contract; streamware (the live host
-// implementation) imports these types and provides the runtime
-// (`createWidgetHost` factory, the `/ws/module-state` transport, etc.).
+// `window.widgetHost`. This file is the SINGLE SOURCE OF TRUTH for the
+// contract: the widget host shim (`widget-host-shim.ts`) implements it in
+// each widget frame, talking to the scene manager's overlay page, and the
+// SDK's mock host (`preview/widget-preview.ts`) implements it for tests.
 //
 // External authors install `@woofx3/module-sdk` and reference these types
 // from their TS / JS / JSDoc / Lua-via-stub code. Internal modules in
@@ -16,9 +16,9 @@ import type { EventQueueConfig, WidgetCapability } from "./widget-protocol";
 /**
  * Module-storage read surface scoped to the widget's owning module.
  *
- * Backed by streamware's local cache of `module.storage.changed` events,
- * so reads are synchronous (no fetch round-trip) and subscriptions fire
- * with the cached value at attach time when one is known.
+ * Answered by the overlay page's module-state cache, which loads a key when
+ * a widget subscribes to it and is kept current by the engine's storage
+ * change events.
  */
 export interface WidgetHostStorage {
   /**
@@ -197,9 +197,8 @@ export interface WidgetTheme {
 /**
  * The injected `window.widgetHost` object — the only API a widget
  * bundle interacts with. The contract is host-agnostic so the same
- * widget code works inside streamware's iframe sandbox, a future
- * Convex-served preview, a tauri shell — anywhere a host implements
- * this interface.
+ * widget code works in the overlay's sandboxed frames, the SDK's mock
+ * host, or anywhere else a host implements this interface.
  */
 export interface WidgetHost {
   /** Per-instance settings resolved by the scene editor from the
@@ -291,9 +290,9 @@ export interface WidgetHost {
 
 // ── Host-side types (for embedders, not widget authors) ──────────────
 //
-// The interfaces below are exported because streamware (the live host
-// implementation) consumes them from this package. Widget authors
-// generally don't need them — `WidgetHost` is enough.
+// The interfaces below are exported for hosts that embed widgets (the
+// scene manager's overlay page). Widget authors generally don't need
+// them — `WidgetHost` is enough.
 
 /**
  * Stream of `module.storage.changed` events that the host shell
