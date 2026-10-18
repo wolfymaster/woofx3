@@ -4,7 +4,7 @@ import type { HttpDeps } from "../http";
 import { renderCompositionPreviewShell } from "../scene/preview-shell";
 import { readCookie } from "../scene/session-cookie";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
-import { MAX_DRAFT_BODY_BYTES } from "./scene";
+import { BODY_LIMITS, jsonError, NO_STORE, readTextBody } from "./http-kit";
 
 // The composition preview: the page the dashboard's alert editor embeds to
 // play the composition being edited with the real runtime and widget frames
@@ -38,8 +38,6 @@ export function serializePreviewSessionCookie(token: string, maxAgeSeconds: numb
 }
 
 const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
-
-const NO_STORE = { "Cache-Control": "no-store" };
 
 async function previewSessionAllows(req: Request, deps: HttpDeps): Promise<boolean> {
   const cookie = readCookie(req, PREVIEW_SESSION_COOKIE);
@@ -77,7 +75,7 @@ export async function handleCompositionPreviewRoute(url: URL, deps: HttpDeps): P
 /** `POST /preview/composition/session/refresh`: the page's ~50 s refresh, as an overlay's. */
 export async function handleCompositionPreviewRefreshRoute(req: Request, deps: HttpDeps): Promise<Response> {
   if (!(await previewSessionAllows(req, deps))) {
-    return Response.json({ error: "invalid_session" }, { status: 401, headers: NO_STORE });
+    return jsonError(401, "invalid_session");
   }
   return Response.json({ status: "ok" }, { headers: await withFreshSession(deps, NO_STORE) });
 }
@@ -137,19 +135,15 @@ function parseFramesRequest(text: string): FramesRequestWidget[] | null {
  */
 export async function handleCompositionPreviewFramesRoute(req: Request, deps: HttpDeps): Promise<Response> {
   if (!(await previewSessionAllows(req, deps))) {
-    return Response.json({ error: "invalid_session" }, { status: 401, headers: NO_STORE });
+    return jsonError(401, "invalid_session");
   }
-  const declaredLength = Number(req.headers.get("Content-Length") ?? "0");
-  if (declaredLength > MAX_DRAFT_BODY_BYTES) {
-    return Response.json({ error: "too_large" }, { status: 413, headers: NO_STORE });
+  const body = await readTextBody(req, BODY_LIMITS.placements);
+  if (!body.ok) {
+    return body.response;
   }
-  const text = await req.text();
-  if (text.length > MAX_DRAFT_BODY_BYTES) {
-    return Response.json({ error: "too_large" }, { status: 413, headers: NO_STORE });
-  }
-  const requested = parseFramesRequest(text);
+  const requested = parseFramesRequest(body.value);
   if (requested === null) {
-    return Response.json({ error: "invalid_body" }, { status: 400, headers: NO_STORE });
+    return jsonError(400, "invalid_body");
   }
 
   // The placement shape the scene host parses a stored scene's widgets in.
