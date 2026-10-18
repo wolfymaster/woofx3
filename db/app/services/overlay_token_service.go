@@ -25,10 +25,10 @@ import (
 //   - Tokens are plaintext at rest; the plaintext leaves the service
 //     only via RPC responses (Mint/Rotate/List). Outbox payloads carry
 //     the token id, never the plaintext, so downstream projections
-//     (api webhooks) stay redaction-safe.
+//     (api webhooks, streamware cache poisoning) stay redaction-safe.
 //   - Resolve returns identical NOT_FOUND responses for revoked and
 //     unknown tokens — no enumeration oracle. It is intended for
-//     engine-internal callers (sceneManager); the public api gateway
+//     engine-internal callers (streamware); the public api gateway
 //     never resolves plaintext tokens.
 //   - Revocation tombstones, never deletes.
 //

@@ -1,7 +1,9 @@
 /**
- * Server-rendered HTML shell for `GET /scene/{sceneId}`. This is the
- * whole client surface besides the vendored data-star bundle and the
- * small scene-manager client script (see `public/scene-manager/`).
+ * Server-rendered HTML shell for `GET /scene/{sceneId}`. Replaces
+ * streamware's React/Vite SPA entirely — this is the whole client
+ * surface besides the vendored data-star bundle and the small
+ * scene-manager client script (see `public/scene-manager/`, built in
+ * a later step).
  */
 export interface SceneShellConfig {
   scene: unknown;

@@ -30,7 +30,7 @@ const _ = twirp.TwirpPackageMinVersion_8_1_0
 //
 // Mirrors `workflow.Workflow` in shape: typed audit fields + opaque
 // JSON strings (`widgets_json`, `layout_json`) the engine forwards
-// verbatim. sceneManager (and any future Convex scene
+// verbatim. The streamware overlay (and any future Convex scene
 // editor) interprets the JSON; the engine only stores and delivers it.
 //
 // Why JSON-as-string and not a typed sub-message?

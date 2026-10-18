@@ -112,7 +112,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
 
     // NATS and OBS are both best-effort, non-blocking dependencies —
     // scene serving must degrade gracefully without live
-    // infrastructure, so neither
+    // infrastructure (same philosophy streamware used), so neither
     // goes through the shared runtime's health-monitor-gated startup
     // (that would block core scene-serving on their availability).
     let nats: Awaited<ReturnType<typeof createMessageBus>> | null = null;

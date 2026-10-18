@@ -107,17 +107,22 @@ interface WidgetEventEnvelope {
 /**
  * Wire NATS-sourced engine events into `DeliveryStore`, invalidate
  * caches on control-plane pushes, and bridge the legacy OBS `slobs`
- * command subject:
+ * command subject. Simplified from streamware's
+ * `nats-subscriptions.ts` + `events/handlers.ts`:
  *
- *   - Alerts come straight from `ui.notify.alert` (the workflow-sourced
- *     subject) into `DeliveryStore.recordEvent`; dispatch timing is the
- *     browser's per-widget queue, so there is no server-side re-publish.
+ *   - No `ui.alert.broadcast` round trip — that subject existed only
+ *     because streamware's own `EventQueueManager` re-published back
+ *     to NATS after dispatch-timing decisions it no longer makes (the
+ *     browser's per-widget queue does that now). This subscribes
+ *     directly to `ui.notify.alert` (the original workflow-sourced
+ *     subject) and hands off straight to `DeliveryStore.recordEvent`.
  *   - The operator's alert queue controls (`widget.queue.skip`, `.clear`,
  *     `.replay`) are answered here, because the queues they act on live in
  *     the overlays this service streams to (see events/alert-controls.ts).
  *   - `module.storage.*.changed` is pushed only to scenes whose widgets
  *     asked for that key (see scene/module-state.ts), not broadcast.
- *   - Every `widget.event` status report is a uniform
+ *   - `widget.event`'s `alert.lifecycle`/`instanceId === "alert-overlay"`
+ *     special case is gone — every status report is a uniform
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {

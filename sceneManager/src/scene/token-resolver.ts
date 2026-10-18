@@ -38,6 +38,8 @@ export function maskToken(token: string): string {
 
 /**
  * Resolves overlay tokens via the db-proxy with a 30s TTL cache.
+ * Ported from streamware/src/overlay/token-resolver.ts — resolver
+ * ownership moves to sceneManager, the logic itself is unchanged.
  *
  * Uniformity invariant (no enumeration oracle): revoked, unknown, and
  * transport-error cases all surface as `null` — callers cannot

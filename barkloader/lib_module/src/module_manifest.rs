@@ -564,8 +564,9 @@ pub struct ManifestWorkflow {
 /// A retired manifest surface, parsed only so that validation can reject it
 /// by name.
 ///
-/// `overlays[]` uploaded an entry file and wrote a ledger row, but no catalog
-/// registration or serving route exists for it, so nothing can render one. What the field was reaching for is now
+/// `overlays[]` is a streamware-era declaration: it uploaded an entry file and
+/// wrote a ledger row, but no catalog registration or serving route was ever
+/// built, so nothing could render one. What the field was reaching for is now
 /// scenes -- a scene composes module-provided widgets and is addressed by an
 /// overlay token minted in the UI, so a module contributes the widgets and the
 /// operator composes the overlay.
@@ -1498,7 +1499,7 @@ impl ModuleWidget {
     /// that the api/ service forwards to Convex as `module.widget.registered`.
     ///
     /// `directory` is the manifest's `assets` bundle path (trimmed) — that's
-    /// what sceneManager / Convex use to address widget files via the asset route.
+    /// what streamware / Convex use to address widget files via the asset route.
     /// `entry` is assets-relative (see `entry_relative_to_assets`); empty
     /// means the consumer falls back to `index.html`.
     /// `settings_schema` is the manifest's `settingsSchema` value serialized;
@@ -1680,8 +1681,9 @@ impl ManifestAction {
     /// carries the handler name and an empty call, which is the shape
     /// `workflow/app.go` writes for the handlers it registers by hand.
     ///
-    /// `type` is always written explicitly: the column default only fits
-    /// `function` actions, so relying on it mislabels every other variant.
+    /// `type` used to be omitted entirely, leaving every barkloader-installed
+    /// action on the column default - fine while `function` was the only
+    /// variant, wrong the moment it was not.
     pub fn to_input(
         &self,
         action_type: &str,

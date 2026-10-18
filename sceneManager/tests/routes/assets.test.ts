@@ -21,8 +21,8 @@ function get(path: string): { req: Request; url: URL } {
 }
 
 describe("handleStaticAssetRoute", () => {
-  // Widgets live in the bundled woofx3 module and are served from
-  // barkloader's repository, so this route does not special-case them
+  // Widgets moved to the bundled woofx3 module and are served from
+  // barkloader's repository, so this route no longer special-cases them
   // and nothing under a widgets/ path is staged for it to find.
   it("does not serve widget files", async () => {
     await withPublicDir(async (dir) => {

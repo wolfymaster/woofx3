@@ -20,6 +20,7 @@ import {
  * Uniform blank document: served byte-for-byte identically for an
  * invalid session AND for a valid session with an unknown instance id,
  * so the frame route leaks nothing about which failure occurred.
+ * Ported from streamware's `BLANK_FRAME_DOC` (design 5.2.11).
  */
 export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body></html>";
 
@@ -31,8 +32,9 @@ export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
 
 /** Absolute shim src — sceneManager serves it at a fixed top-level
  *  path regardless of how deep the frame URL is, so no relative-path
- *  arithmetic is needed (a relative `../assets/...` path would break
- *  whenever the frame-URL depth changes). */
+ *  arithmetic is needed (streamware used a relative `../assets/...`
+ *  path that depended on frame-URL depth; not worth the fragility
+ *  here). */
 export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
 
 /**
@@ -182,7 +184,8 @@ interface FrameTarget {
 /**
  * Build the injected scaffold block in the NORMATIVE order: (1) inline
  * boot payload, (2) classic shim script tag, (3) <base> pointing at
- * the widget asset root. The shim must stay a classic script (no async/
+ * the widget asset root. Ported unchanged from streamware's
+ * frame-assembler.ts — the shim must stay a classic script (no async/
  * defer): existing widgets read `window.widgetHost` at IIFE time, and
  * the script src must precede <base> so it resolves against the frame
  * URL, not the asset root.
@@ -203,7 +206,7 @@ function escapeHtmlAttribute(value: string): string {
 
 /**
  * Inject `scaffoldHtml` at the head-open position of an entry
- * document. Fallback rules: no <head> -> synthesize
+ * document. Fallback rules (ported unchanged): no <head> -> synthesize
  * one directly after <html>; neither -> inject at the very front
  * (after a doctype when present). A leading BOM is preserved in place.
  */
@@ -243,9 +246,10 @@ function defaultNonce(): string {
 }
 
 /**
- * Assembles widget frame documents. Module widget entry HTML and
- * resource base URL come from a single Barkloader call, which owns
- * version resolution.
+ * Assembles widget frame documents. Simplified from streamware's
+ * version: module widget entry HTML + resource base URL come from a
+ * single Barkloader call (which now owns version resolution) instead
+ * of a locally-duplicated `ModuleVersionResolver`.
  */
 export class FrameAssembler {
   private readonly generateNonce: () => string;

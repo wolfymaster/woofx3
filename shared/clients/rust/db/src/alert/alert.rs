@@ -5,7 +5,7 @@ pub struct Alert {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     /// Full AlertPayload envelope JSON
-    /// (`{ id, parameters, event }`) — same bytes delivered to overlays.
+    /// (`{ id, parameters, event }`) — same bytes streamware broadcasts.
     /// Persisted verbatim in `alerts.payload` (JSONB).
     #[prost(string, tag="3")]
     pub payload: ::prost::alloc::string::String,

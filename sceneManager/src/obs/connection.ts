@@ -1,8 +1,8 @@
 // Keeps sceneManager connected to OBS for as long as it runs.
 //
 // OBS is routinely started after sceneManager, closed mid-session, or
-// restarted, and none of those should leave sceneManager without OBS
-// control until it is restarted itself. This retries in the
+// restarted, and every one of those used to leave sceneManager without
+// OBS control until it was restarted itself. This retries in the
 // background with capped, jittered exponential backoff, and hands each new
 // session to `onConnected` so work that depends on the connection is redone.
 //

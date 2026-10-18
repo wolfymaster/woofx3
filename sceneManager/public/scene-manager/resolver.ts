@@ -1,10 +1,18 @@
-// Safe expression evaluator (tokenizer + recursive-descent parser): no
-// `eval`, no `new Function()`, no access to globals or the DOM, so
-// widget-supplied expressions never run as code in the parent page's
-// unsandboxed realm. `resolve()` substitutes `{expr}` segments in a
-// string; `evaluateExpression()` takes a bare expression, which is how
-// `event-queue.ts` scores a widget's `priorityExpr` against each
-// arriving `WidgetEvent`.
+// Safe expression evaluator, ported UNCHANGED (same grammar, same
+// tokenizer, same recursive-descent parser) from
+// streamware/ui/src/lib/resolver.ts. Originally built for `{expr}`
+// template substitution in alert text — that pipeline had no live
+// call site anywhere in streamware (dead code, never wired to a
+// widget). It's ported here because it turns out to be exactly the
+// right tool for a second, unrelated use: `event-queue.ts` evaluates
+// a widget's `priorityExpr` against each arriving `WidgetEvent` with
+// this same safe, sandboxed evaluator (no `eval`, no `new Function()`,
+// no access to globals or the DOM) rather than trusting arbitrary
+// widget-supplied code in the parent page's unsandboxed realm.
+//
+// Both use cases — template resolution and priority scoring — remain
+// available: `resolve()` for `{expr}` strings, `evaluateExpression()`
+// directly for a bare expression string (what `event-queue.ts` uses).
 
 export type ResolverContext = Record<string, unknown>;
 

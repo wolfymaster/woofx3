@@ -33,7 +33,8 @@ const _ = twirp.TwirpPackageMinVersion_8_1_0
 //
 // Update path:
 //   - Scene overlay's widgetHost.reportStatus(key, value) →
-//     sceneManager calls UpsertWidgetStatus here → dashboard sees
+//     streamware republishes to NATS module.widget.status.changed →
+//     api consumes and calls UpsertWidgetStatus here → dashboard sees
 //     the value via WIDGET_STATUS_CHANGED webhook.
 //
 // Read path:

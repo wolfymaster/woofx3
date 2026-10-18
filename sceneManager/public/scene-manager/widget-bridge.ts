@@ -1,7 +1,9 @@
 // P1 parent-side bridge — one `WidgetBridge` manages one sandboxed
-// widget iframe: the P1 handshake, storage and status.report, `queue`
-// config capture on `events.subscribe` (the widget's client-side
-// dispatch policy — see event-queue.ts) and the `event.complete` message.
+// widget iframe. Ported and extended from
+// streamware/ui/src/lib/widgetBridge.ts: the P1 handshake/storage/
+// status.report handling is unchanged; new here is `queue` config
+// capture on `events.subscribe` (the widget's client-side dispatch
+// policy — see event-queue.ts) and the `event.complete` message.
 //
 // The bridge validates every inbound postMessage against the iframe's
 // `contentWindow` identity AND the per-frame CSPRNG nonce; messages
@@ -406,7 +408,8 @@ function isEventQueueConfig(value: unknown): value is EventQueueConfig {
  * gate and the widget silently receives nothing forever.
  *
  * Only a SUBSEQUENT `load` means an in-frame navigation, where a fresh
- * handshake really is coming, hence the `loadCount > 1` guard.
+ * handshake really is coming. Ported from streamware's WidgetFrame.tsx,
+ * whose `loadCount > 1` guard this restores.
  */
 export function createFrameLoadHandler(bridge: Pick<WidgetBridge, "onFrameLoad">): () => void {
   let loadCount = 0;
