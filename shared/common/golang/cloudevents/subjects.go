@@ -164,11 +164,9 @@ const (
 
 	// DB-proxy overlay-token outbox patterns. Same publisher.go format:
 	// "db.{entityType}.{operation}.{appId}". Mint emits created.*;
-	// revoke / rotate emit updated.*. Streamware subscribes to updated.*
-	// to poison its token-resolution cache and close revoked sockets;
-	// the api projects both onto the OVERLAY_TOKEN_MINTED /
-	// OVERLAY_TOKEN_REVOKED webhook events (payloads never carry the
-	// plaintext token).
+	// revoke / rotate emit updated.*. The api projects both onto the
+	// OVERLAY_TOKEN_MINTED / OVERLAY_TOKEN_REVOKED webhook events
+	// (payloads never carry the plaintext token).
 	SubjectDbOverlayTokenCreatedPattern Subject = "db.overlay_token.created.*"
 	SubjectDbOverlayTokenUpdatedPattern Subject = "db.overlay_token.updated.*"
 

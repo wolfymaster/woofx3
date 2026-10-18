@@ -40,7 +40,7 @@ const _ = twirp.TwirpPackageMinVersion_8_1_0
 //     (status="revoked", revoked_at set) so operator bookkeeping and
 //     audit history survive rotation.
 //
-// ResolveOverlayToken is for engine-internal callers only (streamware
+// ResolveOverlayToken is for engine-internal callers only (sceneManager
 // resolves tokens through the db-proxy; the public api gateway never
 // resolves plaintext tokens). Revoked and unknown tokens both return a
 // uniform NOT_FOUND status with no distinguishing detail — callers

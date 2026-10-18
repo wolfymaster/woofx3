@@ -32,7 +32,7 @@ const _ = twirp.TwirpPackageMinVersion_8_1_0
 //
 // Replay path: the api gateway calls `GetAlert` to fetch the row,
 // re-publishes `payload` to the `ui.notify.alert` NATS subject (so
-// streamware broadcasts it to overlays exactly like the original
+// sceneManager delivers it to overlays exactly like the original
 // dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
 //
 // Lifecycle path: the scene manager reports each play's `playing` /
