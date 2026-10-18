@@ -69,6 +69,11 @@ reply is `{ ok, userId, queued: true, position, alreadyQueued }`; a user who
 is already waiting keeps their place instead of being queued twice. Sending
 some shoutouts directly would spend the 2 minutes the queue is counting on.
 
+The engine API's `twitchSendShoutout` (see
+[Dashboard Helix calls](#dashboard-helix-calls)) is the other direction: it
+is how the dashboard's queue sends the shoutout it has paced, so it calls
+Twitch at once and never queues.
+
 Only an engine whose Twitch link is its own, with no dashboard queue, sends
 directly (`queued: false`), where a refusal carries `rate_limited`. A
 dashboard that cannot be reached, or does not answer within 8 seconds, fails
@@ -221,7 +226,8 @@ only its message. The codes:
 Parameters use Helix's own names. The ids that name the broadcaster are
 always the linked broadcaster's and are filled in by the engine, so a method
 refuses them as parameters: the broadcaster is both `broadcaster_id` and
-`moderator_id`, and is `user_id` on a stream marker. Where the table below
+`moderator_id`, is `user_id` on a stream marker, `sender_id` on a chat
+message, and `from_broadcaster_id` on a shoutout. Where the table below
 shows a query parameter after `?`, the engine sets it. The target of a ban,
 an unban or a lookup is a parameter the caller gives. Only the shape of a
 parameter is checked: lengths, ranges and allowed values are Twitch's to
@@ -250,6 +256,10 @@ it answers.
 | `twitchBanUser(params)` | `POST /moderation/bans?broadcaster_id&moderator_id` | `{ user_id, duration?, reason? }`, sent as the body's `data`; a `duration` makes it a timeout | `twitch.moderation` |
 | `twitchUnbanUser(params)` | `DELETE /moderation/bans?broadcaster_id&moderator_id` | `{ user_id }` | `twitch.moderation` |
 | `twitchGetChatSettings()` | `GET /chat/settings?broadcaster_id&moderator_id` | none | `twitch.moderation` |
+| `twitchSendChatMessage(params)` | `POST /chat/messages` | body `{ message }`, sent with `broadcaster_id` and `sender_id` | `twitch.chat` |
+| `twitchSendChatAnnouncement(params)` | `POST /chat/announcements?broadcaster_id&moderator_id` | body `{ message, color? }` | `twitch.chat` |
+| `twitchSendShoutout(params)` | `POST /chat/shoutouts?from_broadcaster_id&moderator_id` | `{ to_broadcaster_id }` | `twitch.chat` |
+| `twitchGetChatters(params)` | `GET /chat/chatters?broadcaster_id&moderator_id` | `{ first?, after? }` | `twitch.chat` |
 | `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
 The token is the one the twitch service holds: the linked account's, from the

@@ -174,6 +174,38 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     broadcasterQuery: ["broadcaster_id", "moderator_id"],
     broadcasterBody: [],
   },
+  sendChatMessage: {
+    method: "POST",
+    path: "chat/messages",
+    params: { message: { type: "string", required: true } },
+    paramsIn: "body",
+    broadcasterQuery: [],
+    broadcasterBody: ["broadcaster_id", "sender_id"],
+  },
+  sendChatAnnouncement: {
+    method: "POST",
+    path: "chat/announcements",
+    params: { message: { type: "string", required: true }, color: { type: "string" } },
+    paramsIn: "body",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  sendShoutout: {
+    method: "POST",
+    path: "chat/shoutouts",
+    params: { to_broadcaster_id: { type: "string", required: true } },
+    paramsIn: "query",
+    broadcasterQuery: ["from_broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  getChatters: {
+    method: "GET",
+    path: "chat/chatters",
+    params: { first: { type: "integer" }, after: { type: "string" } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
 };
 
 export function isHelixOperationName(name: unknown): name is HelixOperationName {

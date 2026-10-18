@@ -3,12 +3,16 @@ import type {
   TwitchBanUserParams,
   TwitchCreateStreamMarkerParams,
   TwitchGetBlockedTermsParams,
+  TwitchGetChattersParams,
   TwitchGetGamesParams,
   TwitchGetUsersParams,
   TwitchHelixResult,
   TwitchModifyChannelInformationParams,
   TwitchRemoveBlockedTermParams,
   TwitchSearchCategoriesParams,
+  TwitchSendChatAnnouncementParams,
+  TwitchSendChatMessageParams,
+  TwitchSendShoutoutParams,
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "@woofx3/api";
@@ -194,5 +198,21 @@ export const twitchRoutes = routeModule({
 
   async twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult> {
     return requestHelix(this.nats, this.logger, "updateChatSettings", params);
+  },
+
+  async twitchSendChatMessage(params: TwitchSendChatMessageParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "sendChatMessage", params);
+  },
+
+  async twitchSendChatAnnouncement(params: TwitchSendChatAnnouncementParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "sendChatAnnouncement", params);
+  },
+
+  async twitchSendShoutout(params: TwitchSendShoutoutParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "sendShoutout", params);
+  },
+
+  async twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "getChatters", params);
   },
 });

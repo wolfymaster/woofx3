@@ -84,6 +84,18 @@ const FORWARDS: [RouteName, unknown[], { operation: string; params?: unknown }][
     [{ slow_mode: true, slow_mode_wait_time: 30 }],
     { operation: "updateChatSettings", params: { slow_mode: true, slow_mode_wait_time: 30 } },
   ],
+  ["twitchSendChatMessage", [{ message: "hi" }], { operation: "sendChatMessage", params: { message: "hi" } }],
+  [
+    "twitchSendChatAnnouncement",
+    [{ message: "hi", color: "blue" }],
+    { operation: "sendChatAnnouncement", params: { message: "hi", color: "blue" } },
+  ],
+  [
+    "twitchSendShoutout",
+    [{ to_broadcaster_id: "42" }],
+    { operation: "sendShoutout", params: { to_broadcaster_id: "42" } },
+  ],
+  ["twitchGetChatters", [{ first: 1000 }], { operation: "getChatters", params: { first: 1000 } }],
 ];
 
 describe("twitch routes", () => {
@@ -225,6 +237,7 @@ describe("twitch capabilities", () => {
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchStreamInfo);
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchAds);
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchModeration);
+    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchChat);
     const reachable: readonly string[] = RPC_METHODS;
     for (const name of Object.keys(twitchRoutes)) {
       expect(reachable).toContain(name);

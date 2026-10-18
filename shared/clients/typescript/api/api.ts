@@ -14,12 +14,16 @@ import type {
   TwitchBanUserParams,
   TwitchCreateStreamMarkerParams,
   TwitchGetBlockedTermsParams,
+  TwitchGetChattersParams,
   TwitchGetGamesParams,
   TwitchGetUsersParams,
   TwitchHelixResult,
   TwitchModifyChannelInformationParams,
   TwitchRemoveBlockedTermParams,
   TwitchSearchCategoriesParams,
+  TwitchSendChatAnnouncementParams,
+  TwitchSendChatMessageParams,
+  TwitchSendShoutoutParams,
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
@@ -1755,6 +1759,14 @@ export interface Woofx3EngineApi {
   twitchGetChatSettings(): Promise<TwitchHelixResult>;
   /** `PATCH /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
   twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/messages` as the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendChatMessage(params: TwitchSendChatMessageParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/announcements` for the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendChatAnnouncement(params: TwitchSendChatAnnouncementParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/shoutouts` from the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendShoutout(params: TwitchSendShoutoutParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/chatters` for the broadcaster. Requires the `twitch.chat` capability. */
+  twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires

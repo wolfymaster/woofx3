@@ -96,6 +96,30 @@ export interface TwitchUnbanUserParams {
   user_id: string;
 }
 
+/** `POST /helix/chat/messages`: a message in the broadcaster's chat, sent as the broadcaster. */
+export interface TwitchSendChatMessageParams {
+  message: string;
+}
+
+/** `POST /helix/chat/announcements`. */
+export interface TwitchSendChatAnnouncementParams {
+  message: string;
+  /** `primary`, `blue`, `green`, `orange` or `purple`; Twitch's default when absent. */
+  color?: string;
+}
+
+/** `POST /helix/chat/shoutouts`: Twitch's own shoutout of another channel, by its user id. */
+export interface TwitchSendShoutoutParams {
+  to_broadcaster_id: string;
+}
+
+/** `GET /helix/chat/chatters`: one page. */
+export interface TwitchGetChattersParams {
+  first?: number;
+  /** The previous page's `pagination.cursor`. */
+  after?: string;
+}
+
 /** `PATCH /helix/chat/settings`: the modes to change, by Helix's names. */
 export interface TwitchUpdateChatSettingsParams {
   emote_mode?: boolean;

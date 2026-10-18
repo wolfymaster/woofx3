@@ -100,6 +100,14 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchModeration: "twitch.moderation",
   /**
+   * The Broadcast controls' and Shoutouts widget's Helix calls, made and
+   * answered like `twitch.streamInfo`'s: `twitchSendChatMessage`,
+   * `twitchSendChatAnnouncement`, `twitchSendShoutout`, `twitchGetChatters`.
+   * Their user lookups are `twitchGetUsers`, which every engine with this id
+   * also serves (`twitch.moderation`).
+   */
+  twitchChat: "twitch.chat",
+  /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
    * place of `updateScene`. No longer served; declared so a client can
