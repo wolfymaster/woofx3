@@ -64,6 +64,26 @@ const FORWARDS: [RouteName, unknown[], { operation: string; params?: unknown }][
   ],
   ["twitchGetAdSchedule", [], { operation: "getAdSchedule" }],
   ["twitchSnoozeNextAd", [], { operation: "snoozeNextAd" }],
+  ["twitchGetUsers", [{ login: "spammer" }], { operation: "getUsers", params: { login: "spammer" } }],
+  [
+    "twitchGetBlockedTerms",
+    [{ first: 100, after: "c1" }],
+    { operation: "getBlockedTerms", params: { first: 100, after: "c1" } },
+  ],
+  ["twitchAddBlockedTerm", [{ text: "badword" }], { operation: "addBlockedTerm", params: { text: "badword" } }],
+  ["twitchRemoveBlockedTerm", [{ id: "t1" }], { operation: "removeBlockedTerm", params: { id: "t1" } }],
+  [
+    "twitchBanUser",
+    [{ user_id: "42", duration: 600 }],
+    { operation: "banUser", params: { user_id: "42", duration: 600 } },
+  ],
+  ["twitchUnbanUser", [{ user_id: "42" }], { operation: "unbanUser", params: { user_id: "42" } }],
+  ["twitchGetChatSettings", [], { operation: "getChatSettings" }],
+  [
+    "twitchUpdateChatSettings",
+    [{ slow_mode: true, slow_mode_wait_time: 30 }],
+    { operation: "updateChatSettings", params: { slow_mode: true, slow_mode_wait_time: 30 } },
+  ],
 ];
 
 describe("twitch routes", () => {
@@ -204,6 +224,7 @@ describe("twitch capabilities", () => {
   test("advertises the twitch capabilities, and every twitch route is reachable over RPC", () => {
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchStreamInfo);
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchAds);
+    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchModeration);
     const reachable: readonly string[] = RPC_METHODS;
     for (const name of Object.keys(twitchRoutes)) {
       expect(reachable).toContain(name);

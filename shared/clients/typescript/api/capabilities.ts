@@ -93,6 +93,13 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchAds: "twitch.ads",
   /**
+   * The Moderation widget's Helix calls, made and answered like
+   * `twitch.streamInfo`'s: `twitchGetUsers`, `twitchGetBlockedTerms`,
+   * `twitchAddBlockedTerm`, `twitchRemoveBlockedTerm`, `twitchBanUser`,
+   * `twitchUnbanUser`, `twitchGetChatSettings`, `twitchUpdateChatSettings`.
+   */
+  twitchModeration: "twitch.moderation",
+  /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
    * place of `updateScene`. No longer served; declared so a client can

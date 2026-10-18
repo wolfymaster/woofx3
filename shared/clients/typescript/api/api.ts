@@ -10,11 +10,18 @@ import type {
 } from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type {
+  TwitchAddBlockedTermParams,
+  TwitchBanUserParams,
   TwitchCreateStreamMarkerParams,
+  TwitchGetBlockedTermsParams,
   TwitchGetGamesParams,
+  TwitchGetUsersParams,
   TwitchHelixResult,
   TwitchModifyChannelInformationParams,
+  TwitchRemoveBlockedTermParams,
   TwitchSearchCategoriesParams,
+  TwitchUnbanUserParams,
+  TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
 import type {
   EventLogPage,
@@ -1732,6 +1739,22 @@ export interface Woofx3EngineApi {
   twitchGetAdSchedule(): Promise<TwitchHelixResult>;
   /** `POST /helix/channels/ads/schedule/snooze` for the broadcaster. Requires the `twitch.ads` capability. */
   twitchSnoozeNextAd(): Promise<TwitchHelixResult>;
+  /** `GET /helix/users`. Requires the `twitch.moderation` capability. */
+  twitchGetUsers(params: TwitchGetUsersParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchGetBlockedTerms(params: TwitchGetBlockedTermsParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchAddBlockedTerm(params: TwitchAddBlockedTermParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchRemoveBlockedTerm(params: TwitchRemoveBlockedTermParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchBanUser(params: TwitchBanUserParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchUnbanUser(params: TwitchUnbanUserParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchGetChatSettings(): Promise<TwitchHelixResult>;
+  /** `PATCH /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires

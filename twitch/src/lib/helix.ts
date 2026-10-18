@@ -10,8 +10,12 @@ type HelixMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 type ParamShape = { type: "string" | "integer" | "boolean" | "stringArray"; required?: true };
 
-/** Where a caller's parameters go in the Helix request. */
-type ParamPlacement = "query" | "body";
+/**
+ * Where a caller's parameters go in the Helix request: the query string, the
+ * JSON body, or the JSON body's `data` object, which is where Ban User takes
+ * them.
+ */
+type ParamPlacement = "query" | "body" | "bodyData";
 
 /**
  * One Helix endpoint, as the dashboard calls it. A caller sets only the
@@ -93,6 +97,81 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     params: {},
     paramsIn: "query",
     broadcasterQuery: ["broadcaster_id"],
+    broadcasterBody: [],
+  },
+  getUsers: {
+    method: "GET",
+    path: "users",
+    params: { id: { type: "string" }, login: { type: "string" } },
+    paramsIn: "query",
+    broadcasterQuery: [],
+    broadcasterBody: [],
+  },
+  getBlockedTerms: {
+    method: "GET",
+    path: "moderation/blocked_terms",
+    params: { first: { type: "integer" }, after: { type: "string" } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  addBlockedTerm: {
+    method: "POST",
+    path: "moderation/blocked_terms",
+    params: { text: { type: "string", required: true } },
+    paramsIn: "body",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  removeBlockedTerm: {
+    method: "DELETE",
+    path: "moderation/blocked_terms",
+    params: { id: { type: "string", required: true } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  banUser: {
+    method: "POST",
+    path: "moderation/bans",
+    params: {
+      user_id: { type: "string", required: true },
+      duration: { type: "integer" },
+      reason: { type: "string" },
+    },
+    paramsIn: "bodyData",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  unbanUser: {
+    method: "DELETE",
+    path: "moderation/bans",
+    params: { user_id: { type: "string", required: true } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  getChatSettings: {
+    method: "GET",
+    path: "chat/settings",
+    params: {},
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  updateChatSettings: {
+    method: "PATCH",
+    path: "chat/settings",
+    params: {
+      emote_mode: { type: "boolean" },
+      subscriber_mode: { type: "boolean" },
+      follower_mode: { type: "boolean" },
+      follower_mode_duration: { type: "integer" },
+      slow_mode: { type: "boolean" },
+      slow_mode_wait_time: { type: "integer" },
+    },
+    paramsIn: "body",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
     broadcasterBody: [],
   },
 };
@@ -198,14 +277,27 @@ export function buildHelixRequest(
   for (const name of declared.broadcasterBody) {
     body[name] = broadcasterId;
   }
+  const data: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(params)) {
-    if (declared.paramsIn === "query") {
-      query[name] = String(value);
-    } else {
-      body[name] = value;
+    switch (declared.paramsIn) {
+      case "query": {
+        query[name] = String(value);
+        break;
+      }
+      case "body": {
+        body[name] = value;
+        break;
+      }
+      case "bodyData": {
+        data[name] = value;
+        break;
+      }
     }
   }
-  const sendsBody = declared.paramsIn === "body" || declared.broadcasterBody.length > 0;
+  if (declared.paramsIn === "bodyData") {
+    body.data = data;
+  }
+  const sendsBody = declared.paramsIn !== "query" || declared.broadcasterBody.length > 0;
   return {
     method: declared.method,
     url: declared.path,

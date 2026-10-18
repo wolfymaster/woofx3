@@ -57,3 +57,53 @@ export interface TwitchModifyChannelInformationParams {
 export interface TwitchCreateStreamMarkerParams {
   description?: string;
 }
+
+/** `GET /helix/users`: one user, by id or by login. */
+export interface TwitchGetUsersParams {
+  id?: string;
+  login?: string;
+}
+
+/** `GET /helix/moderation/blocked_terms`: one page. */
+export interface TwitchGetBlockedTermsParams {
+  first?: number;
+  /** The previous page's `pagination.cursor`. */
+  after?: string;
+}
+
+/** `POST /helix/moderation/blocked_terms`. */
+export interface TwitchAddBlockedTermParams {
+  text: string;
+}
+
+/** `DELETE /helix/moderation/blocked_terms`. */
+export interface TwitchRemoveBlockedTermParams {
+  id: string;
+}
+
+/**
+ * `POST /helix/moderation/bans`: the fields of the body's `data`. A
+ * `duration` in seconds makes it a timeout.
+ */
+export interface TwitchBanUserParams {
+  user_id: string;
+  duration?: number;
+  reason?: string;
+}
+
+/** `DELETE /helix/moderation/bans`: lifts a ban or a timeout. */
+export interface TwitchUnbanUserParams {
+  user_id: string;
+}
+
+/** `PATCH /helix/chat/settings`: the modes to change, by Helix's names. */
+export interface TwitchUpdateChatSettingsParams {
+  emote_mode?: boolean;
+  subscriber_mode?: boolean;
+  follower_mode?: boolean;
+  /** Minutes. */
+  follower_mode_duration?: number;
+  slow_mode?: boolean;
+  /** Seconds. */
+  slow_mode_wait_time?: number;
+}

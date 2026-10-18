@@ -72,6 +72,80 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
     {},
     { method: "POST", url: "channels/ads/schedule/snooze", query: { broadcaster_id: BROADCASTER_ID } },
   ],
+  ["getUsers", { login: "spammer" }, { method: "GET", url: "users", query: { login: "spammer" } }],
+  ["getUsers", { id: "42" }, { method: "GET", url: "users", query: { id: "42" } }],
+  [
+    "getBlockedTerms",
+    { first: 100, after: "cursor-1" },
+    {
+      method: "GET",
+      url: "moderation/blocked_terms",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, first: "100", after: "cursor-1" },
+    },
+  ],
+  [
+    "addBlockedTerm",
+    { text: "badword" },
+    {
+      method: "POST",
+      url: "moderation/blocked_terms",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { text: "badword" },
+    },
+  ],
+  [
+    "removeBlockedTerm",
+    { id: "term-1" },
+    {
+      method: "DELETE",
+      url: "moderation/blocked_terms",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, id: "term-1" },
+    },
+  ],
+  [
+    "banUser",
+    { user_id: "42", duration: 600 },
+    {
+      method: "POST",
+      url: "moderation/bans",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { data: { user_id: "42", duration: 600 } },
+    },
+  ],
+  [
+    "banUser",
+    { user_id: "42", reason: "spam" },
+    {
+      method: "POST",
+      url: "moderation/bans",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { data: { user_id: "42", reason: "spam" } },
+    },
+  ],
+  [
+    "unbanUser",
+    { user_id: "42" },
+    {
+      method: "DELETE",
+      url: "moderation/bans",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, user_id: "42" },
+    },
+  ],
+  [
+    "getChatSettings",
+    {},
+    { method: "GET", url: "chat/settings", query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID } },
+  ],
+  [
+    "updateChatSettings",
+    { slow_mode: true, slow_mode_wait_time: 30, follower_mode: false },
+    {
+      method: "PATCH",
+      url: "chat/settings",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { slow_mode: true, slow_mode_wait_time: 30, follower_mode: false },
+    },
+  ],
 ];
 
 describe("buildHelixRequest", () => {
@@ -95,6 +169,13 @@ describe("validateHelixParams", () => {
     expect(() => validateHelixParams("createStreamMarker", { user_id: "someone-else" })).toThrow(
       'unknown parameter "user_id"'
     );
+  });
+
+  test("refuses the ids it fills in on the moderation operations", () => {
+    expect(() => validateHelixParams("banUser", { user_id: "42", moderator_id: "someone-else" })).toThrow(
+      'unknown parameter "moderator_id"'
+    );
+    expect(() => validateHelixParams("banUser", { data: { user_id: "42" } })).toThrow('unknown parameter "data"');
   });
 
   test("does not take inherited names for declared ones", () => {

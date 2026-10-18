@@ -218,10 +218,12 @@ only its message. The codes:
 | `timeout` | The twitch service did not answer within 10 seconds. Twitch may still have acted. |
 | `failed` | Anything else, such as Twitch not being reachable at all. |
 
-Parameters use Helix's own names. The ids that name the broadcaster
-(`broadcaster_id`, `moderator_id`, `user_id`, `sender_id`,
-`from_broadcaster_id`) are always the linked broadcaster's and are filled in
-by the engine; a method refuses them as parameters. Only the shape of a
+Parameters use Helix's own names. The ids that name the broadcaster are
+always the linked broadcaster's and are filled in by the engine, so a method
+refuses them as parameters: the broadcaster is both `broadcaster_id` and
+`moderator_id`, and is `user_id` on a stream marker. Where the table below
+shows a query parameter after `?`, the engine sets it. The target of a ban,
+an unban or a lookup is a parameter the caller gives. Only the shape of a
 parameter is checked: lengths, ranges and allowed values are Twitch's to
 enforce, and its refusal comes back as a `helix` result.
 
@@ -241,6 +243,14 @@ it answers.
 | `twitchCreateStreamMarker(params)` | `POST /streams/markers` | body `{ description? }`, sent with `user_id` | `twitch.streamInfo` |
 | `twitchGetAdSchedule()` | `GET /channels/ads?broadcaster_id` | none | `twitch.ads` |
 | `twitchSnoozeNextAd()` | `POST /channels/ads/schedule/snooze?broadcaster_id` | none | `twitch.ads` |
+| `twitchGetUsers(params)` | `GET /users` | `{ id?, login? }` | `twitch.moderation` |
+| `twitchGetBlockedTerms(params)` | `GET /moderation/blocked_terms?broadcaster_id&moderator_id` | `{ first?, after? }` | `twitch.moderation` |
+| `twitchAddBlockedTerm(params)` | `POST /moderation/blocked_terms?broadcaster_id&moderator_id` | body `{ text }` | `twitch.moderation` |
+| `twitchRemoveBlockedTerm(params)` | `DELETE /moderation/blocked_terms?broadcaster_id&moderator_id` | `{ id }` | `twitch.moderation` |
+| `twitchBanUser(params)` | `POST /moderation/bans?broadcaster_id&moderator_id` | `{ user_id, duration?, reason? }`, sent as the body's `data`; a `duration` makes it a timeout | `twitch.moderation` |
+| `twitchUnbanUser(params)` | `DELETE /moderation/bans?broadcaster_id&moderator_id` | `{ user_id }` | `twitch.moderation` |
+| `twitchGetChatSettings()` | `GET /chat/settings?broadcaster_id&moderator_id` | none | `twitch.moderation` |
+| `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
 The token is the one the twitch service holds: the linked account's, from the
 dashboard that linked it (see [Who renews the token](#who-renews-the-token)),

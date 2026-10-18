@@ -1,9 +1,16 @@
 import type {
+  TwitchAddBlockedTermParams,
+  TwitchBanUserParams,
   TwitchCreateStreamMarkerParams,
+  TwitchGetBlockedTermsParams,
   TwitchGetGamesParams,
+  TwitchGetUsersParams,
   TwitchHelixResult,
   TwitchModifyChannelInformationParams,
+  TwitchRemoveBlockedTermParams,
   TwitchSearchCategoriesParams,
+  TwitchUnbanUserParams,
+  TwitchUpdateChatSettingsParams,
 } from "@woofx3/api";
 import {
   HELIX_COMMAND,
@@ -155,5 +162,37 @@ export const twitchRoutes = routeModule({
 
   async twitchSnoozeNextAd(): Promise<TwitchHelixResult> {
     return requestHelix(this.nats, this.logger, "snoozeNextAd", undefined);
+  },
+
+  async twitchGetUsers(params: TwitchGetUsersParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "getUsers", params);
+  },
+
+  async twitchGetBlockedTerms(params: TwitchGetBlockedTermsParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "getBlockedTerms", params);
+  },
+
+  async twitchAddBlockedTerm(params: TwitchAddBlockedTermParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "addBlockedTerm", params);
+  },
+
+  async twitchRemoveBlockedTerm(params: TwitchRemoveBlockedTermParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "removeBlockedTerm", params);
+  },
+
+  async twitchBanUser(params: TwitchBanUserParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "banUser", params);
+  },
+
+  async twitchUnbanUser(params: TwitchUnbanUserParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "unbanUser", params);
+  },
+
+  async twitchGetChatSettings(): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "getChatSettings", undefined);
+  },
+
+  async twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "updateChatSettings", params);
   },
 });

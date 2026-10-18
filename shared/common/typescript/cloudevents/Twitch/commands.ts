@@ -43,7 +43,15 @@ export type HelixOperationName =
   | "modifyChannelInformation"
   | "createStreamMarker"
   | "getAdSchedule"
-  | "snoozeNextAd";
+  | "snoozeNextAd"
+  | "getUsers"
+  | "getBlockedTerms"
+  | "addBlockedTerm"
+  | "removeBlockedTerm"
+  | "banUser"
+  | "unbanUser"
+  | "getChatSettings"
+  | "updateChatSettings";
 
 export interface HelixCommandArgs {
   operation: HelixOperationName;
