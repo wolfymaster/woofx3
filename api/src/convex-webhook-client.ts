@@ -1,5 +1,4 @@
 import { createHmac, randomUUID } from "node:crypto";
-import type { SharedLogger } from "@woofx3/common/logging";
 import type {
   AlertContext,
   WebhookEnvelope,
@@ -7,6 +6,7 @@ import type {
   WebhookPayload,
 } from "@woofx3/common/cloudevents/Alert/events";
 import type { OBSCommand } from "@woofx3/common/cloudevents/Obs/commands";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 
 const SETTING_KEY_URL = "convex.webhook_url";

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { OPEN_REQUEST_GUARD_POLICY } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { hasBarkloaderBearer, parseBarkloaderWebhookAuth } from "../src/barkloader-webhook-auth";
 import type { ApiGateway } from "../src/gateway";
@@ -25,6 +26,7 @@ function start(barkloaderWebhookSecret: string | null) {
     health: () => ({ status: "ok" }) as never,
     logger: silentLogger,
     gateway: {} as ApiGateway,
+    requestGuard: OPEN_REQUEST_GUARD_POLICY,
     onProcessingCallback,
     barkloaderWebhookSecret,
   });
