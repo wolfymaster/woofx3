@@ -54,8 +54,25 @@ export interface Command {
    * chat is an action (`chat.reply`) rather than a kind of command, which is
    * what lets a command do anything a workflow step can. An empty array is a
    * command that only announces itself on `chat.command.<slug>`.
+   *
+   * Only a command with no workflow (see workflow_id) runs these. Linking a
+   * command to its workflow moves its actions into the workflow and leaves
+   * this empty.
    */
   actionsJson: string;
+  /**
+   * The stored workflow this command runs, or empty when it has none. The
+   * workflow's trigger has type "command": no event starts it, and the
+   * commander runs it by id once the command has matched and passed its
+   * checks. A command with no steps has no workflow.
+   */
+  workflowId: string;
+  /**
+   * The tasks of the workflow named by workflow_id, as that workflow stores
+   * them (its `steps`), so a reader of the command needs no second lookup.
+   * "[]" when the command has no workflow.
+   */
+  stepsJson: string;
 }
 
 /**
@@ -104,9 +121,15 @@ export interface CreateCommandRequest {
   usernames: string[];
   argumentPattern: string;
   /**
-   * See Command.actions_json.
+   * See Command.actions_json. Ignored when steps_json is set. A non-empty
+   * list becomes the command's workflow, its actions run in order.
    */
   actionsJson: string;
+  /**
+   * The tasks of the command's workflow, as a workflow stores them. A
+   * non-empty list creates the workflow and links the command to it.
+   */
+  stepsJson: string;
 }
 
 /**
@@ -123,9 +146,17 @@ export interface UpdateCommandRequest {
   usernames: string[];
   argumentPattern: string;
   /**
-   * See Command.actions_json.
+   * See Command.actions_json. Empty leaves the command's steps as they
+   * are; otherwise its actions, in order, replace the steps of its workflow.
+   * Ignored when steps_json is set.
    */
   actionsJson: string;
+  /**
+   * Replaces the tasks of the command's workflow, as a workflow stores them.
+   * A non-empty list creates the workflow when the command has none; an
+   * empty one deletes it. Absent leaves the steps to actions_json.
+   */
+  stepsJson?: string | null | undefined;
 }
 
 /**
@@ -433,6 +464,8 @@ export const Command = {
       usernames: [],
       argumentPattern: "",
       actionsJson: "",
+      workflowId: "",
+      stepsJson: "",
       ...msg,
     };
   },
@@ -486,6 +519,12 @@ export const Command = {
     }
     if (msg.actionsJson) {
       writer.writeString(22, msg.actionsJson);
+    }
+    if (msg.workflowId) {
+      writer.writeString(23, msg.workflowId);
+    }
+    if (msg.stepsJson) {
+      writer.writeString(24, msg.stepsJson);
     }
     return writer;
   },
@@ -550,6 +589,14 @@ export const Command = {
         }
         case 22: {
           msg.actionsJson = reader.readString();
+          break;
+        }
+        case 23: {
+          msg.workflowId = reader.readString();
+          break;
+        }
+        case 24: {
+          msg.stepsJson = reader.readString();
           break;
         }
         default: {
@@ -907,6 +954,7 @@ export const CreateCommandRequest = {
       usernames: [],
       argumentPattern: "",
       actionsJson: "",
+      stepsJson: "",
       ...msg,
     };
   },
@@ -950,6 +998,9 @@ export const CreateCommandRequest = {
     }
     if (msg.actionsJson) {
       writer.writeString(15, msg.actionsJson);
+    }
+    if (msg.stepsJson) {
+      writer.writeString(16, msg.stepsJson);
     }
     return writer;
   },
@@ -1008,6 +1059,10 @@ export const CreateCommandRequest = {
           msg.actionsJson = reader.readString();
           break;
         }
+        case 16: {
+          msg.stepsJson = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -1056,6 +1111,7 @@ export const UpdateCommandRequest = {
       usernames: [],
       argumentPattern: "",
       actionsJson: "",
+      stepsJson: undefined,
       ...msg,
     };
   },
@@ -1096,6 +1152,9 @@ export const UpdateCommandRequest = {
     }
     if (msg.actionsJson) {
       writer.writeString(12, msg.actionsJson);
+    }
+    if (msg.stepsJson != undefined) {
+      writer.writeString(13, msg.stepsJson);
     }
     return writer;
   },
@@ -1148,6 +1207,10 @@ export const UpdateCommandRequest = {
         }
         case 12: {
           msg.actionsJson = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.stepsJson = reader.readString();
           break;
         }
         default: {
@@ -1267,6 +1330,8 @@ export const CommandJSON = {
       usernames: [],
       argumentPattern: "",
       actionsJson: "",
+      workflowId: "",
+      stepsJson: "",
       ...msg,
     };
   },
@@ -1314,6 +1379,12 @@ export const CommandJSON = {
     }
     if (msg.actionsJson) {
       json["actionsJson"] = msg.actionsJson;
+    }
+    if (msg.workflowId) {
+      json["workflowId"] = msg.workflowId;
+    }
+    if (msg.stepsJson) {
+      json["stepsJson"] = msg.stepsJson;
     }
     return json;
   },
@@ -1374,6 +1445,14 @@ export const CommandJSON = {
     const _actionsJson_ = json["actionsJson"] ?? json["actions_json"];
     if (_actionsJson_) {
       msg.actionsJson = _actionsJson_;
+    }
+    const _workflowId_ = json["workflowId"] ?? json["workflow_id"];
+    if (_workflowId_) {
+      msg.workflowId = _workflowId_;
+    }
+    const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
+    if (_stepsJson_) {
+      msg.stepsJson = _stepsJson_;
     }
     return msg;
   },
@@ -1678,6 +1757,7 @@ export const CreateCommandRequestJSON = {
       usernames: [],
       argumentPattern: "",
       actionsJson: "",
+      stepsJson: "",
       ...msg,
     };
   },
@@ -1721,6 +1801,9 @@ export const CreateCommandRequestJSON = {
     }
     if (msg.actionsJson) {
       json["actionsJson"] = msg.actionsJson;
+    }
+    if (msg.stepsJson) {
+      json["stepsJson"] = msg.stepsJson;
     }
     return json;
   },
@@ -1777,6 +1860,10 @@ export const CreateCommandRequestJSON = {
     if (_actionsJson_) {
       msg.actionsJson = _actionsJson_;
     }
+    const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
+    if (_stepsJson_) {
+      msg.stepsJson = _stepsJson_;
+    }
     return msg;
   },
 };
@@ -1816,6 +1903,7 @@ export const UpdateCommandRequestJSON = {
       usernames: [],
       argumentPattern: "",
       actionsJson: "",
+      stepsJson: undefined,
       ...msg,
     };
   },
@@ -1856,6 +1944,9 @@ export const UpdateCommandRequestJSON = {
     }
     if (msg.actionsJson) {
       json["actionsJson"] = msg.actionsJson;
+    }
+    if (msg.stepsJson != undefined) {
+      json["stepsJson"] = msg.stepsJson;
     }
     return json;
   },
@@ -1907,6 +1998,10 @@ export const UpdateCommandRequestJSON = {
     const _actionsJson_ = json["actionsJson"] ?? json["actions_json"];
     if (_actionsJson_) {
       msg.actionsJson = _actionsJson_;
+    }
+    const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
+    if (_stepsJson_) {
+      msg.stepsJson = _stepsJson_;
     }
     return msg;
   },

@@ -54,7 +54,20 @@ type Command struct {
 	// chat is an action (`chat.reply`) rather than a kind of command, which is
 	// what lets a command do anything a workflow step can. An empty array is a
 	// command that only announces itself on `chat.command.<slug>`.
-	ActionsJson   string `protobuf:"bytes,22,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	//
+	// Only a command with no workflow (see workflow_id) runs these. Linking a
+	// command to its workflow moves its actions into the workflow and leaves
+	// this empty.
+	ActionsJson string `protobuf:"bytes,22,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	// The stored workflow this command runs, or empty when it has none. The
+	// workflow's trigger has type "command": no event starts it, and the
+	// commander runs it by id once the command has matched and passed its
+	// checks. A command with no steps has no workflow.
+	WorkflowId string `protobuf:"bytes,23,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	// The tasks of the workflow named by workflow_id, as that workflow stores
+	// them (its `steps`), so a reader of the command needs no second lookup.
+	// "[]" when the command has no workflow.
+	StepsJson     string `protobuf:"bytes,24,opt,name=steps_json,json=stepsJson,proto3" json:"steps_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -176,6 +189,20 @@ func (x *Command) GetArgumentPattern() string {
 func (x *Command) GetActionsJson() string {
 	if x != nil {
 		return x.ActionsJson
+	}
+	return ""
+}
+
+func (x *Command) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
+}
+
+func (x *Command) GetStepsJson() string {
+	if x != nil {
+		return x.StepsJson
 	}
 	return ""
 }
@@ -397,8 +424,12 @@ type CreateCommandRequest struct {
 	GroupIds        []string               `protobuf:"bytes,12,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
 	Usernames       []string               `protobuf:"bytes,13,rep,name=usernames,proto3" json:"usernames,omitempty"`
 	ArgumentPattern string                 `protobuf:"bytes,14,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
-	// See Command.actions_json.
-	ActionsJson   string `protobuf:"bytes,15,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	// See Command.actions_json. Ignored when steps_json is set. A non-empty
+	// list becomes the command's workflow, its actions run in order.
+	ActionsJson string `protobuf:"bytes,15,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	// The tasks of the command's workflow, as a workflow stores them. A
+	// non-empty list creates the workflow and links the command to it.
+	StepsJson     string `protobuf:"bytes,16,opt,name=steps_json,json=stepsJson,proto3" json:"steps_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -510,6 +541,13 @@ func (x *CreateCommandRequest) GetActionsJson() string {
 	return ""
 }
 
+func (x *CreateCommandRequest) GetStepsJson() string {
+	if x != nil {
+		return x.StepsJson
+	}
+	return ""
+}
+
 // Request to update an existing command
 type UpdateCommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -522,8 +560,14 @@ type UpdateCommandRequest struct {
 	GroupIds        []string               `protobuf:"bytes,9,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
 	Usernames       []string               `protobuf:"bytes,10,rep,name=usernames,proto3" json:"usernames,omitempty"`
 	ArgumentPattern string                 `protobuf:"bytes,11,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
-	// See Command.actions_json.
-	ActionsJson   string `protobuf:"bytes,12,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	// See Command.actions_json. Empty leaves the command's steps as they
+	// are; otherwise its actions, in order, replace the steps of its workflow.
+	// Ignored when steps_json is set.
+	ActionsJson string `protobuf:"bytes,12,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	// Replaces the tasks of the command's workflow, as a workflow stores them.
+	// A non-empty list creates the workflow when the command has none; an
+	// empty one deletes it. Absent leaves the steps to actions_json.
+	StepsJson     *string `protobuf:"bytes,13,opt,name=steps_json,json=stepsJson,proto3,oneof" json:"steps_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -628,6 +672,13 @@ func (x *UpdateCommandRequest) GetActionsJson() string {
 	return ""
 }
 
+func (x *UpdateCommandRequest) GetStepsJson() string {
+	if x != nil && x.StepsJson != nil {
+		return *x.StepsJson
+	}
+	return ""
+}
+
 // Request to delete a command
 type DeleteCommandRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -677,7 +728,7 @@ var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
 	"\n" +
-	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\x03\n" +
+	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbd\x04\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x03 \x01(\tR\acommand\x12\x1a\n" +
@@ -694,7 +745,11 @@ const file_command_proto_rawDesc = "" +
 	"\tgroup_ids\x18\x13 \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\x14 \x03(\tR\tusernames\x12)\n" +
 	"\x10argument_pattern\x18\x15 \x01(\tR\x0fargumentPattern\x12!\n" +
-	"\factions_json\x18\x16 \x01(\tR\vactionsJsonJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x0eapplication_idR\x04typeR\n" +
+	"\factions_json\x18\x16 \x01(\tR\vactionsJson\x12\x1f\n" +
+	"\vworkflow_id\x18\x17 \x01(\tR\n" +
+	"workflowId\x12\x1d\n" +
+	"\n" +
+	"steps_json\x18\x18 \x01(\tR\tstepsJsonJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x0eapplication_idR\x04typeR\n" +
 	"type_valueR\n" +
 	"created_by\"q\n" +
 	"\x11GetCommandRequest\x12\x18\n" +
@@ -708,7 +763,7 @@ const file_command_proto_rawDesc = "" +
 	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabledJ\x04\b\x01\x10\x02R\x0eapplication_id\"t\n" +
 	"\x14ListCommandsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xbf\x03\n" +
+	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xde\x03\n" +
 	"\x14CreateCommandRequest\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x1a\n" +
@@ -723,9 +778,11 @@ const file_command_proto_rawDesc = "" +
 	"\tgroup_ids\x18\f \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\r \x03(\tR\tusernames\x12)\n" +
 	"\x10argument_pattern\x18\x0e \x01(\tR\x0fargumentPattern\x12!\n" +
-	"\factions_json\x18\x0f \x01(\tR\vactionsJsonJ\x04\b\x01\x10\x02J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\b\x10\tR\x0eapplication_idR\x04typeR\n" +
+	"\factions_json\x18\x0f \x01(\tR\vactionsJson\x12\x1d\n" +
+	"\n" +
+	"steps_json\x18\x10 \x01(\tR\tstepsJsonJ\x04\b\x01\x10\x02J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\b\x10\tR\x0eapplication_idR\x04typeR\n" +
 	"type_valueR\n" +
-	"created_by\"\xd9\x02\n" +
+	"created_by\"\x8c\x03\n" +
 	"\x14UpdateCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
@@ -739,7 +796,10 @@ const file_command_proto_rawDesc = "" +
 	"\tusernames\x18\n" +
 	" \x03(\tR\tusernames\x12)\n" +
 	"\x10argument_pattern\x18\v \x01(\tR\x0fargumentPattern\x12!\n" +
-	"\factions_json\x18\f \x01(\tR\vactionsJsonJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\x04typeR\n" +
+	"\factions_json\x18\f \x01(\tR\vactionsJson\x12\"\n" +
+	"\n" +
+	"steps_json\x18\r \x01(\tH\x00R\tstepsJson\x88\x01\x01B\r\n" +
+	"\v_steps_jsonJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\x04typeR\n" +
 	"type_value\"&\n" +
 	"\x14DeleteCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id2\xfd\x02\n" +
@@ -806,6 +866,7 @@ func file_command_proto_init() {
 	}
 	file_common_proto_init()
 	file_command_proto_msgTypes[1].OneofWrappers = []any{}
+	file_command_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
