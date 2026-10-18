@@ -14,7 +14,7 @@ import type {
   ConfigSection,
 } from "@woofx3/api";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
-import { serializeActions } from "../routes/commands";
+import { serializeActions, serializeSteps } from "../routes/commands";
 import { validateWorkflowDefinition } from "../workflow/validate-definition";
 import { commandToBundle, workflowToBundle } from "./export";
 import { canonicalResourceId, sameJson } from "./schema";
@@ -576,12 +576,13 @@ function planCommands(ctx: PlanContext): PlannedStep[] {
     }
     try {
       serializeActions(cmd.actions);
+      serializeSteps(cmd.command, cmd.steps ?? []);
     } catch (err) {
       reasons.push(reason("invalid", err instanceof Error ? err.message : String(err), true));
     }
     reasons.push(
       ...privilegedReason(
-        cmd.actions.map((a) => a?.action).filter((a): a is string => !!a),
+        [...cmd.actions, ...(cmd.steps ?? [])].map((a) => a?.action).filter((a): a is string => !!a),
         state
       )
     );

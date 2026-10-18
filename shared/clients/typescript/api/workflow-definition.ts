@@ -31,9 +31,14 @@ export interface ConditionConfig {
 
 // Schedule cron grammar follows robfig/cron/v3 (5-field, no seconds).
 // Examples: "0 * * * *" (top of every hour), "*/15 * * * *" (every 15 min).
+//
+// A "command" trigger belongs to the workflow a chat command runs: nothing
+// subscribes it, and only its command starts it. `event` is the command's
+// `chat.command.<slug>`, which the run reads as its trigger event.
 export type TriggerConfig =
   | { type: "event"; event: string; conditions?: ConditionConfig[] }
-  | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] };
+  | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] }
+  | { type: "command"; event: string; conditions?: ConditionConfig[] };
 
 export interface AggregationConfig {
   strategy: "count" | "sum" | "threshold";

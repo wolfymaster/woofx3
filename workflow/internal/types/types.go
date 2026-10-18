@@ -20,6 +20,15 @@ type WorkflowDefinition struct {
 	Ephemeral bool `json:"-" yaml:"-"`
 }
 
+// TriggerTypeCommand is the trigger type of a workflow a chat command runs. No
+// registrar subscribes it: the command's commander starts it by id
+// (Engine.RunCommand) once the command has matched and passed its checks, so
+// the `chat.command.<slug>` event the same invocation announces cannot start
+// it a second time. Event names that subject, for the run's
+// `${trigger.data...}`. Must match commandTriggerType in
+// db/app/services/command_workflow.go.
+const TriggerTypeCommand = "command"
+
 type TriggerConfig struct {
 	Type string `json:"type" yaml:"type"`
 	// Event is the NATS subject this trigger listens for. The same value

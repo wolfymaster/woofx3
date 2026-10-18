@@ -75,5 +75,6 @@ func All() []*gormigrate.Migration {
 		AddSceneCompositions(),
 		AddSessionCompaction(),
 		AddActionSentence(),
+		AddCommandWorkflow(),
 	}
 }

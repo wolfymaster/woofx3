@@ -145,6 +145,22 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		}
 		a.casbin = casbinEnforcer
 		a.logger.Info("Casbin initialized successfully")
+
+		// Before serving, so the commander's first listing of commands
+		// already sees the workflow each one runs.
+		commands := svc.NewCommandService(
+			repository.NewCommandRepository(a.db),
+			repository.NewResourceReferenceRepository(a.db),
+			repository.NewCommandPermissionRepository(a.db),
+			repository.NewPermissionRepository(a.db),
+			repository.NewGroupRepository(a.db),
+			a.casbin,
+			a.eventPublisher,
+		)
+		linked, failed := commands.LinkCommandWorkflows(a.logger)
+		if linked > 0 || failed > 0 {
+			a.logger.Info("Linked commands to workflows", "linked", linked, "failed", failed)
+		}
 	}
 
 	return nil

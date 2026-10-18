@@ -30,6 +30,10 @@ type Command struct {
 	// contains the bare command word itself - see command.proto's field
 	// comment for the extraction rule.
 	ArgumentPattern string `gorm:"column:argument_pattern;type:varchar(255);not null;default:''"`
+	// WorkflowID is the stored workflow this command runs, nil when it has
+	// none. A linked command's steps live in that workflow, and Actions is
+	// "[]"; see command.proto's workflow_id comment.
+	WorkflowID *uuid.UUID `gorm:"column:workflow_id;type:uuid"`
 }
 
 func (Command) TableName() string {

@@ -210,6 +210,7 @@ function checkCommand(item: Record<string, unknown>, path: string, errors: Shape
       "visibility",
       "argumentPattern",
       "actions",
+      "steps",
       "groups",
       "usernames",
       "requires",
@@ -233,6 +234,17 @@ function checkCommand(item: Record<string, unknown>, path: string, errors: Shape
         errors.add(`${path}.actions[${index}]`, "must be an object");
       }
     });
+  }
+  if (item.steps !== undefined) {
+    if (!Array.isArray(item.steps)) {
+      errors.add(`${path}.steps`, "must be an array");
+    } else {
+      item.steps.forEach((step, index) => {
+        if (!isPlainObject(step)) {
+          errors.add(`${path}.steps[${index}]`, "must be an object");
+        }
+      });
+    }
   }
   checkStringArray(item.groups, `${path}.groups`, errors);
   if (item.usernames !== undefined) {

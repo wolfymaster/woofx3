@@ -23,6 +23,7 @@ export const RESERVED_SUBJECT_PREFIXES: readonly string[] = [
   "workflow.execute",
   "workflow.replay",
   "workflow.cancel",
+  "workflow.command.run",
   "action.execute",
   // EngineEventSubjectPrefixes
   "HEARTBEAT",

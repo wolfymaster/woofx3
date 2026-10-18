@@ -9,7 +9,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { asString, readRow } from "./outbox";
 import { subscribeProjections } from "./projection";
-import { parseActions } from "./routes/helpers";
+import { parseActions, parseSteps } from "./routes/helpers";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes command lifecycle events on
@@ -34,6 +34,8 @@ interface RawCommandRow {
   group_ids?: unknown;
   usernames?: unknown;
   argument_pattern?: unknown;
+  workflow_id?: unknown;
+  steps_json?: unknown;
 }
 
 const asNumber = (value: unknown): number => (typeof value === "number" ? value : 0);
@@ -59,6 +61,8 @@ function buildSnapshot(ce: Record<string, unknown>): CommandWebhookSnapshot | nu
     groupIds: asStringArray(row.group_ids),
     usernames: asStringArray(row.usernames),
     argumentPattern: asString(row.argument_pattern),
+    workflowId: asString(row.workflow_id),
+    steps: parseSteps(asString(row.steps_json)),
   };
 }
 

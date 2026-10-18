@@ -126,13 +126,14 @@ export function commandToBundle(
   state: Pick<EngineConfigState, "modules" | "actionOwners">
 ): ConfigBundleCommand {
   const requires = new Set<string>();
-  for (const action of cmd.actions) {
-    const owner = state.actionOwners.get(action.action);
+  for (const action of [...cmd.actions, ...cmd.steps]) {
+    const owner = action.action ? state.actionOwners.get(action.action) : undefined;
     if (owner && state.modules.has(owner)) {
       requires.add(owner);
     }
   }
   collectCanonicalRefs(cmd.actions, state.modules, requires);
+  collectCanonicalRefs(cmd.steps, state.modules, requires);
 
   const groups = cmd.groupIds.map((id) => groupNames.get(id)).filter((name): name is string => name !== undefined);
 
@@ -144,6 +145,7 @@ export function commandToBundle(
     visibility: cmd.visibility,
     argumentPattern: cmd.argumentPattern,
     actions: cmd.actions,
+    ...(cmd.steps.length > 0 ? { steps: cmd.steps } : {}),
     groups: [...groups].sort(),
     ...(includeMembers ? { usernames: [...cmd.usernames].sort() } : {}),
     requires: sortedRequires(requires),
