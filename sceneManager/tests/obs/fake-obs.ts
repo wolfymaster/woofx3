@@ -85,6 +85,13 @@ export function fakeObs(
         }
         return { sceneItemId: item.sceneItemId };
       }
+      case "GetSceneItemEnabled": {
+        const item = findSceneOrGroup(args.sceneName).items.find((i) => i.sceneItemId === args.sceneItemId);
+        if (!item) {
+          throw new ObsNotFound("No scene item found.");
+        }
+        return { sceneItemEnabled: item.sceneItemEnabled };
+      }
       case "SetSceneItemEnabled": {
         const item = findSceneOrGroup(args.sceneName).items.find((i) => i.sceneItemId === args.sceneItemId);
         if (!item) {
