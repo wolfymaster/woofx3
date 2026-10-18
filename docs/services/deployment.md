@@ -29,8 +29,9 @@ runs its services directly and is reached on their own ports.
 
 ## Everything else stays on loopback
 
-db-proxy and NATS have no authentication, and hosts such as Railway put every
-service in a project on one private network. So every other listener binds
+db-proxy has no authentication, NATS has none unless a token is configured (see
+[Message bus hardening](#message-bus-hardening)), and hosts such as Railway put
+every service in a project on one private network. So every other listener binds
 `127.0.0.1` by default:
 
 | Service | Setting | Default |
@@ -43,6 +44,59 @@ service in a project on one private network. So every other listener binds
 
 Set a host to `0.0.0.0` only where services run in separate network namespaces
 and must reach each other, as `docker-compose.dev.yml` does.
+
+## Message bus hardening
+
+The embedded NATS server (`services/nats`) has three opt-in settings. Each is
+off when unset, and the server then behaves exactly as it does without them.
+Each is a `.woofx3.json` key or its `WOOFX3_*` variable:
+
+| Key | Variable | Effect |
+|---|---|---|
+| `messagebusToken` | `WOOFX3_MESSAGEBUS_TOKEN` | Every client must present this token, on the TCP and the WebSocket listener. |
+| `messagebusTcpDisabled` | `WOOFX3_MESSAGEBUS_TCP_DISABLED` | `true` turns off the plain TCP listener (`messagebusServerListeningPort`, 4222 by default), leaving only the WebSocket one. |
+| `messagebusWebsocketSameOrigin` | `WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN` | `true` rejects a WebSocket upgrade whose `Origin` names a different host and port than the one it was sent to. |
+| `messagebusWebsocketAllowedOrigins` | `WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGINS` | A comma-separated list (`http://127.0.0.1:5173,https://app.example`): only upgrades from these origins are accepted. |
+
+A boolean the server cannot parse stops it at startup instead of running it with
+less protection than was asked for.
+
+**The token.** The same key and variable configure the server and every client,
+so one `WOOFX3_MESSAGEBUS_TOKEN` in the environment of the whole engine is
+enough. The clients send it only when it is not blank:
+
+| Client | Used by | Reads |
+|---|---|---|
+| Go, `shared/clients/golang/nats` | db, workflow | `WOOFX3_MESSAGEBUS_TOKEN` (`Config.Token`) |
+| TypeScript, `shared/clients/typescript/nats` | api, sceneManager, twitch, woofwoofwoof | `woofx3MessagebusToken` (also `messagebusToken` in api and sceneManager) |
+| Rust, `barkloader/app/src/services/nats.rs` | barkloader | `MESSAGEBUS_TOKEN`, then `WOOFX3_MESSAGEBUS_TOKEN` / `messagebusToken` |
+
+Turn the token on for the server and every service together: a client without
+it is refused as soon as the server requires it. `reward/` and `streamlabs/`
+connect to an external NATS service, not the engine's, and do not read it.
+
+**The TCP listener.** The engine's own services all connect over WebSocket
+(`messagebusUrl`, `ws://127.0.0.1:4225`). The TCP listener is still used by
+`docker-compose.dev.yml`, whose services connect to `nats://messagebus:4222`,
+and by the `nats` CLI bundled in `infra/docker`, so it stays on unless a
+deployment turns it off.
+
+**Origins.** A web page can open a WebSocket to any address, including
+`ws://127.0.0.1:4225` on the machine running the browser, and the browser always
+sends the page's `Origin` with it. With `messagebusWebsocketSameOrigin` on, the
+server refuses those upgrades. An upgrade with no `Origin` header is always
+accepted, and that is what the engine's clients send: the Go client (nats.go),
+the TypeScript client under Bun (`wsconnect`) and the Rust client (async-nats)
+send none, which their tests pin. No browser code connects to the bus, so
+same-origin breaks no engine client. The `Origin` header is enforced only by
+browsers; a native program can send any value, so this protects against web
+pages, not local processes, which the token is for.
+
+**Binding.** The default bind is unchanged. `messagebusHost` defaults to
+`127.0.0.1`, but an explicitly blank `messagebusHost` binds every interface
+(`0.0.0.0`). A packager shipping the engine to run on a user's machine should
+set `messagebusHost` to `127.0.0.1` explicitly, and should also set a token,
+disable TCP and turn same-origin on.
 
 ## Configuration
 

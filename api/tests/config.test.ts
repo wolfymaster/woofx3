@@ -79,3 +79,25 @@ describe("engine hosting", () => {
     expect(() => loadConfig()).toThrow("WOOFX3_HOSTING");
   });
 });
+
+describe("message bus token", () => {
+  test("is the token WOOFX3_MESSAGEBUS_TOKEN gives", () => {
+    withEnv({ WOOFX3_MESSAGEBUS_TOKEN: "s3cret" });
+
+    expect(loadConfig().nats.token).toBe("s3cret");
+  });
+
+  test("keeps a numeric token as text", () => {
+    withEnv({ WOOFX3_MESSAGEBUS_TOKEN: "12345" });
+
+    expect(loadConfig().nats.token).toBe("12345");
+  });
+
+  test("is unset when nothing sets it", () => {
+    delete process.env.WOOFX3_MESSAGEBUS_TOKEN;
+    delete process.env.MESSAGEBUS_TOKEN;
+    withEnv({});
+
+    expect(loadConfig().nats.token).toBeUndefined();
+  });
+});

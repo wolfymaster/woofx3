@@ -124,10 +124,16 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort i
 		Port:   cfg.Port,
 		NoLog:  cfg.NoLog,
 		NoSigs: cfg.NoSigs,
+		// Without a WebSocket auth block of its own, the WebSocket listener
+		// requires the same token as the TCP one.
+		Authorization: cfg.Token,
+		DontListen:    cfg.TCPDisabled,
 		Websocket: server.WebsocketOpts{
-			Host:  host,
-			Port:  wsPort,
-			NoTLS: true,
+			Host:           host,
+			Port:           wsPort,
+			NoTLS:          true,
+			SameOrigin:     cfg.WebSocketSameOrigin,
+			AllowedOrigins: cfg.WebSocketAllowedOrigins,
 		},
 	}
 	ns, err := server.NewServer(opts)
@@ -138,7 +144,15 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort i
 	if !ns.ReadyForConnections(5 * time.Second) {
 		return nil, &configError{msg: "NATS server not ready within timeout"}
 	}
-	logger.Info("NATS server started", "host", opts.Host, "port", opts.Port, "websocket_port", opts.Websocket.Port)
+	logger.Info("NATS server started",
+		"host", opts.Host,
+		"port", opts.Port,
+		"tcp_disabled", opts.DontListen,
+		"websocket_port", opts.Websocket.Port,
+		"token_required", opts.Authorization != "",
+		"websocket_same_origin", opts.Websocket.SameOrigin,
+		"websocket_allowed_origins", opts.Websocket.AllowedOrigins,
+	)
 	return ns, nil
 }
 

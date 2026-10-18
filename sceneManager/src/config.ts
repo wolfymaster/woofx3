@@ -25,6 +25,8 @@ export const SceneManagerEnvSchema = z.object({
   messagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
   messagebusNkey: z.string().optional(),
+  woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
+  messagebusToken: z.union([z.string(), z.number()]).optional(),
   woofx3ObsHost: z.string().default("127.0.0.1"),
   obsHost: z.string().optional(),
   woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
@@ -69,6 +71,7 @@ export interface SceneManagerRuntimeConfig {
     name: string;
     jwt?: string;
     nkeySeed?: string;
+    token?: string;
   };
 }
 
@@ -132,6 +135,12 @@ export function resolvePublicDir(metaDir: string, execDir: string = dirname(proc
   return candidates[candidates.length - 1] as string;
 }
 
+/** A setting's text, or undefined when it is unset or blank. */
+function nonBlank(value: unknown): string | undefined {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  return text === "" ? undefined : text;
+}
+
 export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
@@ -152,6 +161,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     : c.messagebusNkey
       ? String(c.messagebusNkey)
       : undefined;
+  const token = nonBlank(c.woofx3MessagebusToken) ?? nonBlank(c.messagebusToken);
 
   const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
   const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
@@ -185,6 +195,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
       name: "woofx3-scene-manager",
       jwt,
       nkeySeed,
+      token,
     },
   };
 }

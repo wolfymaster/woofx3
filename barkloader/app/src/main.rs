@@ -41,10 +41,13 @@ const MESSAGEBUS_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 /// gating on that -- the api's GET /ready, and so a provisioner waiting on a
 /// new engine -- waits forever. Retrying is what keeps a boot race from
 /// becoming a permanently degraded engine.
-async fn connect_messagebus(url: &str) -> Result<Arc<crate::services::nats::NatsService>> {
+async fn connect_messagebus(
+    url: &str,
+    token: Option<&str>,
+) -> Result<Arc<crate::services::nats::NatsService>> {
     let deadline = Instant::now() + MESSAGEBUS_WAIT;
     loop {
-        match crate::services::nats::NatsService::connect(url).await {
+        match crate::services::nats::NatsService::connect(url, token).await {
             Ok(nats) => return Ok(nats),
             Err(e) => {
                 if Instant::now() + MESSAGEBUS_RETRY_INTERVAL >= deadline {
@@ -91,8 +94,9 @@ async fn setup() -> Result<AppContext> {
 
         let messagebus_url =
             get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
+        let messagebus_token = crate::services::nats::configured_token();
         if !messagebus_url.is_empty() {
-            match connect_messagebus(&messagebus_url).await {
+            match connect_messagebus(&messagebus_url, messagebus_token.as_deref()).await {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
                     nats_raw_client = Some(nats.raw_client().clone());

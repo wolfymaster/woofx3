@@ -50,6 +50,7 @@ export interface ApiConfig {
     name: string;
     jwt?: string;
     nkeySeed?: string;
+    token?: string;
   };
 }
 
@@ -83,6 +84,8 @@ export const ApiEnvSchema = z
     messagebusJwt: z.string().optional(),
     woofx3MessagebusNkey: z.string().optional(),
     messagebusNkey: z.string().optional(),
+    woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
+    messagebusToken: z.union([z.string(), z.number()]).optional(),
     woofx3RootPath: z.string().optional(),
   })
   .passthrough();
@@ -120,6 +123,12 @@ export function resolveHosting(value: unknown): EngineHosting | null {
     throw new Error(`Config error: WOOFX3_HOSTING must be one of ${ENGINE_HOSTINGS.join(", ")}, got ${raw}`);
   }
   return hosting;
+}
+
+/** A setting's text, or undefined when it is unset or blank. */
+function nonBlank(value: unknown): string | undefined {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  return text === "" ? undefined : text;
 }
 
 export function loadConfig(): ApiConfig {
@@ -177,6 +186,7 @@ export function loadConfig(): ApiConfig {
       : config.messagebusNkey != null
         ? String(config.messagebusNkey)
         : undefined;
+  const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
 
   return {
     version,
@@ -198,6 +208,7 @@ export function loadConfig(): ApiConfig {
       name: "woofx3-api",
       jwt: messageBusJwt,
       nkeySeed: messageBusNkey,
+      token: messageBusToken,
     },
   };
 }
