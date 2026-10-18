@@ -116,18 +116,12 @@ function moduleZip(manifest: Record<string, unknown>, extra: Record<string, stri
 function addModuleListing(
   id: string,
   manifest: Record<string, unknown>,
-  options: Partial<FakeListing> & { version?: string; type?: string; edition?: unknown } = {}
+  options: Partial<FakeListing> & { version?: string; type?: string } = {}
 ): Uint8Array {
   const archive = options.archive ?? moduleZip(manifest, { "main.js": "export default 1;" });
   archives.set(id, archive);
   listings.set(id, {
-    listing: {
-      id,
-      type: options.type ?? "module",
-      name: `${id} name`,
-      version: options.version ?? "1.2.0",
-      ...(options.edition === undefined ? {} : { edition: options.edition }),
-    },
+    listing: { id, type: options.type ?? "module", name: `${id} name`, version: options.version ?? "1.2.0" },
     archive,
     acquireStatus: options.acquireStatus,
     download: options.download,
@@ -261,53 +255,6 @@ describe("installMarketplaceListing", () => {
     expect(h.webhooks).toEqual([]);
     expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([]);
     expect(seen.every((s) => s.authorization === null)).toBe(true);
-  });
-
-  test("records the listing and edition 1 on the module when the listing names no edition", async () => {
-    addModuleListing("obs_scenes", OBS_MANIFEST);
-    const h = host();
-
-    await install(h, "obs_scenes", APPROVED);
-
-    const upload = h.barkloaderUploads[0];
-    expect(upload.get("marketplace_listing_id")).toBe("obs_scenes");
-    expect(upload.get("marketplace_edition")).toBe("1");
-  });
-
-  test("records a later edition's own listing id and edition, under the unchanged key format", async () => {
-    const archive = addModuleListing(
-      "obs_scenes-v2",
-      { ...OBS_MANIFEST, version: "2.0.0" },
-      {
-        version: "2.0.0",
-        edition: 2,
-      }
-    );
-    const h = host();
-
-    const result = await install(h, "obs_scenes-v2", APPROVED);
-
-    const moduleKey = `obs_scenes-v2:2.0.0:${sha256(archive).slice(0, 7)}`;
-    expect(result).toEqual({ status: "installed", moduleKey });
-    const upload = h.barkloaderUploads[0];
-    expect(upload.get("module_key")).toBe(moduleKey);
-    expect(upload.get("marketplace_listing_id")).toBe("obs_scenes-v2");
-    expect(upload.get("marketplace_edition")).toBe("2");
-  });
-
-  test("refuses a listing whose edition is not a whole number of 1 or more", async () => {
-    for (const edition of [0, 1.5, "2", null]) {
-      addModuleListing("obs_scenes", OBS_MANIFEST, { edition });
-      const h = host();
-      if (edition === null) {
-        // null reads as absent, the same as a listing that predates editions.
-        await install(h, "obs_scenes", APPROVED);
-        expect(h.barkloaderUploads[0].get("marketplace_edition")).toBe("1");
-        continue;
-      }
-      await expect(install(h, "obs_scenes", APPROVED)).rejects.toThrow("invalid edition");
-      expect(h.barkloaderUploads).toEqual([]);
-    }
   });
 
   test("claims the listing with the buyer token, and sends it only where the marketplace accepts it", async () => {

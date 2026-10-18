@@ -29,34 +29,6 @@ export interface EngineModule {
    * has no manifest field. A consumer that never sees this sees no kinds.
    */
   manifest: Record<string, unknown> | null;
-  /** The marketplace listing the module was installed from; see `MarketplaceProvenance`. */
-  marketplaceListingId?: string;
-  marketplaceEdition?: number;
-}
-
-/**
- * Which marketplace listing, and which edition of it, an installed module came
- * from. Both are absent for a module that did not come from the marketplace
- * or was installed before the engine recorded it.
- */
-export interface MarketplaceProvenance {
-  marketplaceListingId?: string;
-  marketplaceEdition?: number;
-}
-
-/** The module row's marketplace provenance, with unset fields left out rather than null. */
-export function marketplaceProvenance(row: {
-  marketplaceListingId?: string | null;
-  marketplaceEdition?: number | null;
-}): MarketplaceProvenance {
-  const provenance: MarketplaceProvenance = {};
-  if (row.marketplaceListingId) {
-    provenance.marketplaceListingId = row.marketplaceListingId;
-  }
-  if (row.marketplaceEdition !== undefined && row.marketplaceEdition !== null) {
-    provenance.marketplaceEdition = row.marketplaceEdition;
-  }
-  return provenance;
 }
 
 function parseManifest(raw: string | undefined): Record<string, unknown> | null {
@@ -94,7 +66,6 @@ export async function listEngineModules(db: DbClient, logger: SharedLogger): Pro
       moduleId: m.moduleId ?? "",
       moduleKey: m.moduleKey ?? "",
       manifest: parseManifest(m.manifest),
-      ...marketplaceProvenance(m),
     }));
   logger.info("Listed engine modules", { count: result.length });
   return result;

@@ -41,13 +41,6 @@ export interface Module {
   author: string;
   isInstalled: boolean;
   iconUrl: string;
-  /**
-   * The marketplace listing an installed module came from, and that
-   * listing's edition. Absent for a module that did not come from the
-   * marketplace or was installed before the engine recorded it.
-   */
-  marketplaceListingId?: string;
-  marketplaceEdition?: number;
 }
 
 export interface ModuleSetting {
@@ -1041,9 +1034,6 @@ export interface EngineModuleSummary {
    * so a mirror that never reads this one sees no kinds.
    */
   manifest: Record<string, unknown> | null;
-  /** See `Module.marketplaceListingId`. */
-  marketplaceListingId?: string;
-  marketplaceEdition?: number;
 }
 
 // ==================== Stream / workflow response types ====================

@@ -147,7 +147,6 @@ export const marketplaceRoutes = routeModule({
       fileName: `${name}-${version}.zip`,
       clientId,
       moduleKey,
-      marketplace: { listingId, edition: listing.edition },
     });
     return { status: "installed", moduleKey };
   },
