@@ -67,7 +67,9 @@ type TriggerConfig struct {
 	// first, each starting once the one before it settles or pauses at a
 	// wait. Nil runs it alongside everything else, as soon as the event
 	// arrives. An event's alert triggers are ordered this way, so the alerts
-	// they raise queue up in the order the streamer arranged them.
+	// they raise queue up in the order the streamer arranged them. Only an
+	// event trigger is ordered; a command trigger's workflow is started by
+	// Engine.RunCommand, which ignores Order.
 	Order *int `json:"order,omitempty" yaml:"order,omitempty"`
 }
 
