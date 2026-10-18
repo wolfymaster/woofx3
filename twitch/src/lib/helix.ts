@@ -345,13 +345,7 @@ export function buildHelixRequest(
 ): HelixRequest {
   const declared = HELIX_OPERATIONS[operation];
   const query: Record<string, string | string[]> = {};
-  for (const name of declared.broadcasterQuery) {
-    query[name] = broadcasterId;
-  }
   const body: Record<string, unknown> = {};
-  for (const name of declared.broadcasterBody) {
-    body[name] = broadcasterId;
-  }
   const data: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(params)) {
     switch (declared.paramsIn) {
@@ -368,6 +362,14 @@ export function buildHelixRequest(
         break;
       }
     }
+  }
+  // Written after the caller's parameters, so the broadcaster's ids win even
+  // if an operation ever declared one of them as a parameter.
+  for (const name of declared.broadcasterQuery) {
+    query[name] = broadcasterId;
+  }
+  for (const name of declared.broadcasterBody) {
+    body[name] = broadcasterId;
   }
   if (declared.paramsIn === "bodyData") {
     body.data = data;

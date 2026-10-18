@@ -292,6 +292,14 @@ describe("buildHelixRequest", () => {
     });
   }
 
+  test("declares no parameter under a name the broadcaster's id fills", () => {
+    for (const [operation, declared] of Object.entries(HELIX_OPERATIONS)) {
+      const filled = new Set([...declared.broadcasterQuery, ...declared.broadcasterBody]);
+      const overlapping = Object.keys(declared.params).filter((name) => filled.has(name));
+      expect({ operation, overlapping }).toEqual({ operation, overlapping: [] });
+    }
+  });
+
   test("covers every declared operation", () => {
     const covered = new Set<string>(REQUESTS.map(([operation]) => operation));
     expect([...covered].sort()).toEqual(Object.keys(HELIX_OPERATIONS).sort());
