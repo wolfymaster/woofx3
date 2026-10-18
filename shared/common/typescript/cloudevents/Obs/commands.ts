@@ -36,6 +36,9 @@ export interface OBSCommand {
  *
  * Must match the commands built in barkloader/lib_sandbox/src/extensions/obs.rs.
  */
+/** Show a source, hide it, or flip whichever it is when the command runs. */
+export type SourceVisibility = "visible" | "hidden" | "toggle";
+
 export type ObsControlCommand =
   | { command: "switch_scene"; sceneName: string }
   | {
@@ -43,7 +46,7 @@ export type ObsControlCommand =
       /** The current program scene when absent. */
       sceneName?: string;
       sourceName: string;
-      visible: boolean;
+      visibility: SourceVisibility;
     }
   | { command: "set_input_mute"; inputName: string; muted: boolean }
   | {

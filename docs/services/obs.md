@@ -25,7 +25,7 @@ and typed in `shared/clients/typescript/module-sdk/src/function-ctx.d.ts`.
 | Function | Sends | Returns | Permission |
 |---|---|---|---|
 | `switchScene({ sceneName })` | `switch_scene` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
-| `setSourceVisibility({ sourceName, sceneName?, visible? })` | `set_source_visibility` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
+| `setSourceVisibility({ sourceName, sceneName?, visibility?, visible? })` | `set_source_visibility` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
 | `setInputMute({ inputName, muted? })` | `set_input_mute` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
 | `showBrowserSource({ sourceName, url, sceneName?, width?, height? })` | `show_browser_source` on `engine.obs.command` | `{ ok: true }` | `obs.control` |
 | `listScenes()`, `listSources()`, `listInputs()` | `{ list }` on `engine.obs.options` | the option list below | none |
@@ -38,7 +38,10 @@ Arguments are checked before anything is sent: names must be non-empty
 strings, `sceneName` may be absent or empty (the live program scene), and
 `visible` / `muted` default to true and accept `true`, `false`, `"true"` and
 `"false"`, since a value filled in from a step's parameters reaches the
-function as text. `showBrowserSource`'s `url` must be an absolute `http://` or
+function as text. `visibility` is `"visible"`, `"hidden"` or `"toggle"` and
+wins over `visible` when both are given; the scene manager resolves a toggle
+against what OBS shows when the command runs, so a source the streamer flipped
+by hand is flipped back. `showBrowserSource`'s `url` must be an absolute `http://` or
 `https://` URL (a browser source loads anything, and `file:` would put the
 streamer's own files on stream), and `width` / `height` must be whole numbers
 from 1 to 7680 / 4320, as numbers or text, defaulting to 1920 x 1080. A bad
@@ -137,7 +140,7 @@ A NATS request/reply subject. The request is a CloudEvent of type
 | `command` | Fields | OBS requests |
 |---|---|---|
 | `switch_scene` | `sceneName` | `SetCurrentProgramScene` |
-| `set_source_visibility` | `sourceName`, `visible`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetSceneItemList`, `GetGroupSceneItemList` per group when the source is not at the top level, `SetSceneItemEnabled` (on the group, for a source inside one) |
+| `set_source_visibility` | `sourceName`, `visibility` (`visible`, `hidden` or `toggle`), `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetSceneItemList`, `GetGroupSceneItemList` per group when the source is not at the top level, `GetSceneItemEnabled` for a toggle, `SetSceneItemEnabled` (on the group, for a source inside one) |
 | `set_input_mute` | `inputName`, `muted` | `SetInputMute` |
 | `show_browser_source` | `sourceName`, `url`, `width`, `height`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetInputSettings`; then `CreateInput` when there is no input by that name, or else `GetSceneItemList` (and `GetGroupSceneItemList` per group), `SetInputSettings` with `overlay: true`, and `SetSceneItemEnabled`, or `CreateSceneItem` when the source is not in the scene |
 
