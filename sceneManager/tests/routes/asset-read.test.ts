@@ -96,9 +96,15 @@ describe("handleAssetReadRoute", () => {
     expect(resp.status).toBe(404);
   });
 
-  it("404s a key outside the stored prefixes without reaching barkloader", async () => {
+  it("404s a key that names no engine file, or steps out of one, without reaching barkloader", async () => {
     const fetchFn = upstream();
-    for (const path of ["/assets/read/vendor/datastar.js", "/assets/read/media/token", "/assets/read/"]) {
+    for (const path of [
+      "/assets/read/vendor/datastar.js",
+      "/assets/read/media/token",
+      "/assets/read/",
+      "/assets/read/user/res-1",
+      "/assets/read/modules/woofx3%2F..%2Fother/v1/a.json",
+    ]) {
       const { req, url } = get(path);
       const resp = await handleAssetReadRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
       expect(resp.status).toBe(404);

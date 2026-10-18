@@ -1,5 +1,38 @@
 // ../shared/clients/typescript/module-sdk/dist/widget-assets.js
-var ENGINE_ASSET_PREFIXES = ["/assets/user/", "/assets/modules/"];
+function parseEngineAssetPath(path) {
+  const segments = path.split("/");
+  if (segments.length < 5 || segments[0] !== "" || segments[1] !== "assets") {
+    return null;
+  }
+  const decoded = [];
+  for (const segment of segments.slice(2)) {
+    let value;
+    try {
+      value = decodeURIComponent(segment);
+    } catch {
+      return null;
+    }
+    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
+      return null;
+    }
+    decoded.push(value);
+  }
+  const area = decoded[0];
+  if (area !== "user" && area !== "modules") {
+    return null;
+  }
+  return { area, owner: decoded[1], path };
+}
+function widgetMayRead(asset, moduleId) {
+  if (moduleId === "") {
+    return false;
+  }
+  return asset.area === "user" || asset.owner === moduleId;
+}
+var ASSET_READ_PREFIX = "/assets/read/";
+function assetReadPath(asset) {
+  return `${ASSET_READ_PREFIX}${asset.path.slice("/assets/".length)}`;
+}
 function engineAssetPath(ref, resourceBaseUrl) {
   let url;
   try {
@@ -10,7 +43,7 @@ function engineAssetPath(ref, resourceBaseUrl) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return null;
   }
-  return ENGINE_ASSET_PREFIXES.some((prefix) => url.pathname.startsWith(prefix)) ? url.pathname : null;
+  return parseEngineAssetPath(url.pathname)?.path ?? null;
 }
 // ../shared/clients/typescript/module-sdk/dist/widget-bindings.js
 var URL_ATTRIBUTES = ["src", "href", "poster"];
@@ -3701,7 +3734,6 @@ function placementsOf(loaded) {
 }
 
 // public/scene-manager/asset-loader.ts
-var ASSET_READ_PREFIX = "/assets/read/";
 var ASSET_RETAIN_MS = 60000;
 var MAX_DEPTH = 32;
 var ELEMENT_LOADED_TYPE = /^(image|video|audio|font)(\/|$)/;
@@ -3721,32 +3753,6 @@ function moduleIdOfWidget(canonicalId) {
   }
   const moduleId = canonicalId.slice(0, marker).split(":")[0] ?? "";
   return moduleId === "" ? null : moduleId;
-}
-function assetInScope(path, moduleId) {
-  if (moduleId === "") {
-    return false;
-  }
-  const segments = path.split("/");
-  if (segments[0] !== "" || segments[1] !== "assets" || segments.length < 5) {
-    return false;
-  }
-  const decoded = [];
-  for (const segment of segments.slice(2)) {
-    let value;
-    try {
-      value = decodeURIComponent(segment);
-    } catch {
-      return false;
-    }
-    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
-      return false;
-    }
-    decoded.push(value);
-  }
-  if (decoded[0] === "user") {
-    return true;
-  }
-  return decoded[0] === "modules" && decoded[1] === moduleId;
 }
 function readAheadAssetPaths(settings, pageOrigin) {
   const paths = new Set;
@@ -3804,14 +3810,14 @@ class AssetCache {
   }
   readAhead(paths, moduleId) {
     for (const path of paths) {
-      if (assetInScope(path, moduleId)) {
+      if (readable(path, moduleId)) {
         this.load(path).catch(() => {});
       }
     }
   }
   scopedTo(moduleId) {
     return (path) => {
-      if (!assetInScope(path, moduleId)) {
+      if (!readable(path, moduleId)) {
         return Promise.reject(new AssetLoadError("out_of_scope", path));
       }
       return this.load(path);
@@ -3820,7 +3826,11 @@ class AssetCache {
   async read(path) {
     let response;
     try {
-      response = await this.fetchFn(`${ASSET_READ_PREFIX}${path.slice("/assets/".length)}`, {
+      const asset = parseEngineAssetPath(path);
+      if (asset === null) {
+        throw new AssetLoadError("not_engine_asset", path);
+      }
+      response = await this.fetchFn(assetReadPath(asset), {
         credentials: "same-origin"
       });
     } catch (err) {
@@ -3843,6 +3853,10 @@ class AssetCache {
     }
     return { contentType: response.headers.get("Content-Type") ?? "", bytes };
   }
+}
+function readable(path, moduleId) {
+  const asset = parseEngineAssetPath(path);
+  return asset !== null && widgetMayRead(asset, moduleId);
 }
 
 // public/scene-manager/media-url.ts

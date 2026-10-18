@@ -349,6 +349,17 @@ describe("installWidgetHostShim — assets", () => {
     expect(h.sent("asset.load")).toHaveLength(0);
   });
 
+  it("rejects an empty reference instead of throwing, so callers need only a catch", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = host.assets.load("");
+    }).not.toThrow();
+    await expect(pending!).rejects.toMatchObject({ code: "not_engine_asset" });
+  });
+
   it("rejects with the host's reason", async () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;

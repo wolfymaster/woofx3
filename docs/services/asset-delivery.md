@@ -444,7 +444,9 @@ widget ─ host.assets.load(ref) ─> shim ─ asset.load {id, path} ─> overla
   reference outside `/assets/user/` and `/assets/modules/` is refused in the
   frame as `not_engine_asset`, and the widget may fetch it itself.
 - **Scope.** A widget reads any file in the asset library and its own
-  module's files (`/assets/modules/{its module}/...`), nothing else. The page
+  module's files (`/assets/modules/{its module}/...`), nothing else. The
+  rules are module-sdk's `parseEngineAssetPath` and `widgetMayRead`, which
+  the shim, the preview host, the page and the read route all use. The page
   decides, from the module the scene record (or the alert layout) names for
   the frame, never from what the widget claims. Each path segment is judged
   decoded, so an encoded separator or dot segment cannot step out.
