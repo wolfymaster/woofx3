@@ -12,8 +12,8 @@ import (
 // opaque JSONB `payload` the engine never inspects.
 //
 // `Payload` is the full AlertPayload envelope JSON
-// (`{ id, parameters, event }`) — same bytes streamware broadcasts
-// to overlay clients. Replay re-publishes this verbatim so the
+// (`{ id, parameters, event }`) — same bytes delivered to overlay
+// clients. Replay re-publishes this verbatim so the
 // downstream renderer treats it identically to the original
 // dispatch.
 //

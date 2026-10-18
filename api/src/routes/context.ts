@@ -27,6 +27,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
+import type { MarketplaceClient } from "../marketplace-client";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
@@ -66,6 +67,8 @@ export interface ApiOptions {
   version?: string;
   /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
   hosting?: EngineHosting | null;
+  /** The marketplace to install and read the catalog from; null or absent when it is turned off. */
+  marketplace?: MarketplaceClient | null;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -102,6 +105,7 @@ export class ApiRouteHost extends RpcTarget {
   protected logger: SharedLogger;
   protected version: string;
   protected hosting: EngineHosting | null;
+  protected marketplace: MarketplaceClient | null;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -386,6 +390,7 @@ export class ApiRouteHost extends RpcTarget {
     this.logger = opts.logger;
     this.version = opts.version ?? UNVERSIONED;
     this.hosting = opts.hosting ?? null;
+    this.marketplace = opts.marketplace ?? null;
   }
 }
 

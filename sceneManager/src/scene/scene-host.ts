@@ -70,9 +70,9 @@ export interface OverlayWidgetInstance {
    *
    * Placements are canonical-id references with no integrity check behind
    * them: nothing rewrites a scene when a module renames a widget. An
-   * unresolvable one used to render as a blank area, which is exactly what a
-   * widget with nothing to show looks like, so it went unnoticed until
-   * someone wondered why their alerts stopped.
+   * unresolvable one rendered as a blank area would look exactly like a
+   * widget with nothing to show, and go unnoticed until someone wondered
+   * why their alerts stopped.
    */
   resolved: boolean;
 }
@@ -170,9 +170,7 @@ export function parseWidgetCanonicalId(canonicalId: string): { moduleKey: string
 }
 
 /**
- * Scene host: token -> assembled scene config. Ported from
- * streamware/src/overlay/scene-host.ts — assembly logic unchanged,
- * only the file's home moved to sceneManager.
+ * Scene host: token -> assembled scene config.
  *
  * Assembly is read-only and derivation-only: stored `bundleUrl` values
  * are ignored (deprecation-logged once per canonical id) and every
