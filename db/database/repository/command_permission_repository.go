@@ -16,6 +16,11 @@ func NewCommandPermissionRepository(db *gorm.DB) *CommandPermissionRepository {
 	return &CommandPermissionRepository{db: db}
 }
 
+// WithDB returns a repository that runs on `db`, typically a transaction.
+func (r *CommandPermissionRepository) WithDB(db *gorm.DB) *CommandPermissionRepository {
+	return &CommandPermissionRepository{db: db}
+}
+
 // ReplaceGroups deletes every existing command_groups row for commandID and
 // inserts one row per groupID, in a single transaction.
 func (r *CommandPermissionRepository) ReplaceGroups(commandID uuid.UUID, groupIDs []uuid.UUID) error {
@@ -52,21 +57,39 @@ func (r *CommandPermissionRepository) ReplaceUsers(commandID uuid.UUID, username
 	})
 }
 
-func (r *CommandPermissionRepository) ListGroupIDs(commandID uuid.UUID) ([]uuid.UUID, error) {
-	var groupIDs []uuid.UUID
-	err := r.db.Model(&models.CommandGroup{}).
-		Where("command_id = ?", commandID).
-		Pluck("group_id", &groupIDs).Error
-	return groupIDs, err
+// GroupIDsByCommand is the groups granted each of commandIDs, in one query,
+// keyed by command id. A command with no group has no entry.
+func (r *CommandPermissionRepository) GroupIDsByCommand(commandIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	out := make(map[uuid.UUID][]uuid.UUID)
+	if len(commandIDs) == 0 {
+		return out, nil
+	}
+	var rows []models.CommandGroup
+	if err := r.db.Where("command_id IN ?", commandIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.CommandID] = append(out[row.CommandID], row.GroupID)
+	}
+	return out, nil
 }
 
-func (r *CommandPermissionRepository) ListUsernames(commandID uuid.UUID) ([]string, error) {
-	var usernames []string
-	err := r.db.Model(&models.CommandUser{}).
-		Where("command_id = ?", commandID).
-		Order("username ASC").
-		Pluck("username", &usernames).Error
-	return usernames, err
+// UsernamesByCommand is the users granted each of commandIDs, in one query,
+// keyed by command id, each list sorted by username. A command with no user
+// has no entry.
+func (r *CommandPermissionRepository) UsernamesByCommand(commandIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
+	out := make(map[uuid.UUID][]string)
+	if len(commandIDs) == 0 {
+		return out, nil
+	}
+	var rows []models.CommandUser
+	if err := r.db.Where("command_id IN ?", commandIDs).Order("username ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.CommandID] = append(out[row.CommandID], row.Username)
+	}
+	return out, nil
 }
 
 // DeleteBySourceCommand removes every command_groups/command_users row for a

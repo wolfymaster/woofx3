@@ -13,6 +13,11 @@ func NewPermissionRepository(db *gorm.DB) *PermissionRepository {
 	return &PermissionRepository{db: db}
 }
 
+// WithDB returns a repository that runs on `db`, typically a transaction.
+func (r *PermissionRepository) WithDB(db *gorm.DB) *PermissionRepository {
+	return &PermissionRepository{db: db}
+}
+
 // CRUD Operations
 func (r *PermissionRepository) Create(p *models.Permission) error {
 	return r.db.Create(r).Error

@@ -1,10 +1,17 @@
 package repository
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrCommandLinkChanged is returned when a command's workflow link is not the
+// one the caller read: another writer linked or unlinked it in between.
+var ErrCommandLinkChanged = errors.New("the command's workflow link changed while it was being written")
 
 // CommandRepository represents the db functions for Commands
 type CommandRepository struct {
@@ -29,6 +36,64 @@ func (r *CommandRepository) Update(cmd *models.Command) error {
 // Delete deletes a Command
 func (r *CommandRepository) Delete(cmd *models.Command) error {
 	return r.db.Delete(cmd).Error
+}
+
+// WithDB returns a repository that runs on `db`, typically a transaction.
+func (r *CommandRepository) WithDB(db *gorm.DB) *CommandRepository {
+	return &CommandRepository{db: db}
+}
+
+// LockByID reads a Command by ID and, on postgres, locks its row until the
+// transaction the repository runs on ends, so two writers of one command take
+// turns. SQLite has a single writer and needs no lock.
+func (r *CommandRepository) LockByID(id uuid.UUID) (*models.Command, error) {
+	var cmd models.Command
+	err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&cmd).Error
+	return &cmd, err
+}
+
+// LinkWorkflow links the command with id to workflowID, provided it links to
+// no workflow yet. ErrCommandLinkChanged when it already does.
+func (r *CommandRepository) LinkWorkflow(id, workflowID uuid.UUID) error {
+	result := r.db.Model(&models.Command{}).
+		Where("id = ? AND workflow_id IS NULL", id).
+		Update("workflow_id", workflowID)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCommandLinkChanged
+	}
+	return nil
+}
+
+// UnlinkWorkflow clears the command's link to workflowID. ErrCommandLinkChanged
+// when it links to some other workflow, or to none.
+func (r *CommandRepository) UnlinkWorkflow(id, workflowID uuid.UUID) error {
+	result := r.db.Model(&models.Command{}).
+		Where("id = ? AND workflow_id = ?", id, workflowID).
+		Update("workflow_id", nil)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCommandLinkChanged
+	}
+	return nil
+}
+
+// SetWorkflowError records why the command's actions could not become a
+// workflow; "" clears it.
+func (r *CommandRepository) SetWorkflowError(id uuid.UUID, reason string) error {
+	return r.db.Model(&models.Command{}).Where("id = ?", id).Update("workflow_error", reason).Error
+}
+
+// GetByWorkflowID retrieves the Command linked to a workflow, or
+// gorm.ErrRecordNotFound when no command runs it.
+func (r *CommandRepository) GetByWorkflowID(workflowID uuid.UUID) (*models.Command, error) {
+	var cmd models.Command
+	err := r.db.Where("workflow_id = ?", workflowID).First(&cmd).Error
+	return &cmd, err
 }
 
 // GetByID retrieves a Command by ID
