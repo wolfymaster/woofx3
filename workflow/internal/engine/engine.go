@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -900,6 +901,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		taskDef := executionOrder[i]
 
 		if skippedTasks[taskDef.ID] {
+			skipBranchesOfSkippedCondition(taskDef, skippedTasks)
 			taskExec := &types.TaskExecution{
 				TaskID:    taskDef.ID,
 				Status:    types.TaskStatusSkipped,
@@ -1244,6 +1246,22 @@ func (e *Engine[TServices]) settleCondition(
 	e.recordStep(execution, taskDef.ID, index, nil, taskExec)
 
 	e.logger.Info("Condition evaluated", "workflow", execution.WorkflowID, "task", taskDef.ID, "result", result, "disabled", disabled, "branch", branchTasks)
+}
+
+// skipBranchesOfSkippedCondition skips both branches of a condition that is
+// itself skipped. Such a condition never settles, so nothing else would skip
+// its branches, and they lie under a branch that was not taken.
+//
+// Every branch task is ordered after its condition (see DependencyGraph), so
+// marking them as the condition is passed reaches each before it runs, and
+// through them the branches of conditions nested deeper.
+func skipBranchesOfSkippedCondition(taskDef *types.TaskDefinition, skippedTasks map[string]bool) {
+	if taskDef.Type != "condition" {
+		return
+	}
+	for _, id := range slices.Concat(taskDef.OnTrue, taskDef.OnFalse) {
+		skippedTasks[id] = true
+	}
 }
 
 // skipDisabledTask completes a disabled non-condition task as skipped, with

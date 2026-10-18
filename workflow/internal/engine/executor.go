@@ -2,46 +2,182 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
+// DependencyGraph orders a run's tasks.
+//
+// A task waits for what it declares in `dependsOn`, and for two orderings a
+// condition implies whether or not they are declared:
+//
+//   - Every task a condition lists in `onTrue` or `onFalse` waits for that
+//     condition. A branch task that ran before its condition settled could not
+//     be skipped by it.
+//   - A task outside a condition's branches that waits for the condition, or
+//     for anything in its branches, waits for everything in its branches. This
+//     is what makes the step listed after a condition run after the branch the
+//     condition took, whichever of the branch's tasks it was chained from.
+//
+// A condition's branches include the branches of every condition listed in
+// them, at any depth, because a branch not taken skips all of that.
+//
+// The graph holds copies of the definition's tasks, in declaration order,
+// whose DependsOn lists every dependency enforced. Copies, so a run never
+// writes into the registered definition, and the full list, so planning that
+// reads DependsOn later (planConcurrentRun) sees the implied orderings too.
 type DependencyGraph struct {
-	tasks      map[string]*types.TaskDefinition
-	dependsOn  map[string][]string // task -> tasks it depends on
-	dependents map[string][]string // task -> tasks that depend on it
-	inDegree   map[string]int      // number of unresolved dependencies
+	tasks    []types.TaskDefinition
+	position map[string]int
 }
 
-func NewDependencyGraph(tasks []types.TaskDefinition) (*DependencyGraph, error) {
+func NewDependencyGraph(defTasks []types.TaskDefinition) (*DependencyGraph, error) {
 	g := &DependencyGraph{
-		tasks:      make(map[string]*types.TaskDefinition),
-		dependsOn:  make(map[string][]string),
-		dependents: make(map[string][]string),
-		inDegree:   make(map[string]int),
+		tasks:    make([]types.TaskDefinition, len(defTasks)),
+		position: make(map[string]int, len(defTasks)),
+	}
+	for i := range defTasks {
+		id := defTasks[i].ID
+		if _, seen := g.position[id]; seen {
+			return nil, fmt.Errorf("task id %s is used by more than one task", id)
+		}
+		g.position[id] = i
+		g.tasks[i] = defTasks[i]
+		g.tasks[i].DependsOn = nil
 	}
 
-	for i := range tasks {
-		task := &tasks[i]
-		g.tasks[task.ID] = task
-		g.dependsOn[task.ID] = task.DependsOn
-		g.inDegree[task.ID] = len(task.DependsOn)
-	}
-
-	for taskID, deps := range g.dependsOn {
-		for _, depID := range deps {
-			if _, exists := g.tasks[depID]; !exists {
-				return nil, fmt.Errorf("task %s depends on unknown task %s", taskID, depID)
+	for i := range defTasks {
+		for _, depID := range defTasks[i].DependsOn {
+			if _, exists := g.position[depID]; !exists {
+				return nil, fmt.Errorf("task %s depends on unknown task %s", defTasks[i].ID, depID)
 			}
-			g.dependents[depID] = append(g.dependents[depID], taskID)
+			g.addDependency(i, depID)
 		}
 	}
 
+	for i := range g.tasks {
+		condition := &g.tasks[i]
+		if condition.Type != "condition" {
+			continue
+		}
+		for _, memberID := range slices.Concat(condition.OnTrue, condition.OnFalse) {
+			member, exists := g.position[memberID]
+			if !exists {
+				return nil, fmt.Errorf("condition %s lists unknown task %s", condition.ID, memberID)
+			}
+			if member == i {
+				return nil, fmt.Errorf("condition %s lists itself in its own branch", condition.ID)
+			}
+			g.addDependency(member, condition.ID)
+		}
+	}
+
+	// Checked before following branches: a condition that waits on its own
+	// branch makes "everything in its branches" unbounded.
 	if cycle := g.detectCycle(); cycle != nil {
 		return nil, fmt.Errorf("circular dependency detected: %v", cycle)
 	}
 
+	g.orderAfterBranches()
 	return g, nil
+}
+
+func (g *DependencyGraph) addDependency(task int, depID string) {
+	if !slices.Contains(g.tasks[task].DependsOn, depID) {
+		g.tasks[task].DependsOn = append(g.tasks[task].DependsOn, depID)
+	}
+}
+
+// orderAfterBranches makes every task that follows a condition wait for all of
+// the condition's branches.
+//
+// A task inside the branches that declares a dependency on a follower keeps
+// it: that follower does not also wait for that task, since both orders cannot
+// hold. The author's declared order wins over the implied one.
+func (g *DependencyGraph) orderAfterBranches() {
+	for i := range g.tasks {
+		if g.tasks[i].Type != "condition" {
+			continue
+		}
+		under := g.underCondition(i)
+		if len(under) == 0 {
+			continue
+		}
+		inBranch := make(map[int]bool, len(under))
+		for _, member := range under {
+			inBranch[member] = true
+		}
+		conditionID := g.tasks[i].ID
+		for follower := range g.tasks {
+			if follower == i || inBranch[follower] || !g.followsCondition(follower, conditionID, inBranch) {
+				continue
+			}
+			for _, member := range under {
+				if !g.reaches(member, follower) {
+					g.addDependency(follower, g.tasks[member].ID)
+				}
+			}
+		}
+	}
+}
+
+// underCondition is every task in a condition's branches, nested conditions'
+// branches included, in declaration order.
+func (g *DependencyGraph) underCondition(condition int) []int {
+	seen := make(map[int]bool)
+	var visit func(condition int)
+	visit = func(condition int) {
+		for _, memberID := range slices.Concat(g.tasks[condition].OnTrue, g.tasks[condition].OnFalse) {
+			member := g.position[memberID]
+			if seen[member] {
+				continue
+			}
+			seen[member] = true
+			if g.tasks[member].Type == "condition" {
+				visit(member)
+			}
+		}
+	}
+	visit(condition)
+
+	under := make([]int, 0, len(seen))
+	for member := range seen {
+		under = append(under, member)
+	}
+	slices.Sort(under)
+	return under
+}
+
+func (g *DependencyGraph) followsCondition(task int, conditionID string, inBranch map[int]bool) bool {
+	for _, depID := range g.tasks[task].DependsOn {
+		if depID == conditionID || inBranch[g.position[depID]] {
+			return true
+		}
+	}
+	return false
+}
+
+// reaches reports whether task `from` waits, directly or transitively, for
+// task `to`.
+func (g *DependencyGraph) reaches(from int, to int) bool {
+	seen := make(map[int]bool)
+	stack := []int{from}
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, depID := range g.tasks[current].DependsOn {
+			dep := g.position[depID]
+			if dep == to {
+				return true
+			}
+			if !seen[dep] {
+				seen[dep] = true
+				stack = append(stack, dep)
+			}
+		}
+	}
+	return false
 }
 
 func (g *DependencyGraph) detectCycle() []string {
@@ -55,7 +191,7 @@ func (g *DependencyGraph) detectCycle() []string {
 		recStack[taskID] = true
 		path = append(path, taskID)
 
-		for _, depID := range g.dependsOn[taskID] {
+		for _, depID := range g.tasks[g.position[taskID]].DependsOn {
 			if !visited[depID] {
 				if cycle := dfs(depID); cycle != nil {
 					return cycle
@@ -80,9 +216,9 @@ func (g *DependencyGraph) detectCycle() []string {
 		return nil
 	}
 
-	for taskID := range g.tasks {
-		if !visited[taskID] {
-			if cycle := dfs(taskID); cycle != nil {
+	for i := range g.tasks {
+		if !visited[g.tasks[i].ID] {
+			if cycle := dfs(g.tasks[i].ID); cycle != nil {
 				return cycle
 			}
 		}
@@ -94,13 +230,14 @@ func (g *DependencyGraph) detectCycle() []string {
 func (g *DependencyGraph) GetReadyTasks(completed map[string]bool) []*types.TaskDefinition {
 	ready := make([]*types.TaskDefinition, 0)
 
-	for taskID, task := range g.tasks {
-		if completed[taskID] {
+	for i := range g.tasks {
+		task := &g.tasks[i]
+		if completed[task.ID] {
 			continue
 		}
 
 		allDepsComplete := true
-		for _, depID := range g.dependsOn[taskID] {
+		for _, depID := range task.DependsOn {
 			if !completed[depID] {
 				allDepsComplete = false
 				break
@@ -115,31 +252,39 @@ func (g *DependencyGraph) GetReadyTasks(completed map[string]bool) []*types.Task
 	return ready
 }
 
+// GetExecutionOrder is a topological order of the tasks in which, whenever
+// more than one task is ready, the one declared first goes first. So a
+// definition always runs in the same order, and tasks with no order between
+// them run in the order they are written.
 func (g *DependencyGraph) GetExecutionOrder() ([]*types.TaskDefinition, error) {
-	inDegree := make(map[string]int)
-	for k, v := range g.inDegree {
-		inDegree[k] = v
+	inDegree := make([]int, len(g.tasks))
+	dependents := make([][]int, len(g.tasks))
+	for i := range g.tasks {
+		inDegree[i] = len(g.tasks[i].DependsOn)
+		for _, depID := range g.tasks[i].DependsOn {
+			dep := g.position[depID]
+			dependents[dep] = append(dependents[dep], i)
+		}
 	}
 
-	queue := make([]string, 0)
-	for taskID, degree := range inDegree {
+	ready := make([]int, 0, len(g.tasks))
+	for i, degree := range inDegree {
 		if degree == 0 {
-			queue = append(queue, taskID)
+			ready = append(ready, i)
 		}
 	}
 
 	order := make([]*types.TaskDefinition, 0, len(g.tasks))
+	for len(ready) > 0 {
+		next := slices.Min(ready)
+		ready = slices.DeleteFunc(ready, func(i int) bool { return i == next })
 
-	for len(queue) > 0 {
-		taskID := queue[0]
-		queue = queue[1:]
+		order = append(order, &g.tasks[next])
 
-		order = append(order, g.tasks[taskID])
-
-		for _, depID := range g.dependents[taskID] {
-			inDegree[depID]--
-			if inDegree[depID] == 0 {
-				queue = append(queue, depID)
+		for _, dependent := range dependents[next] {
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				ready = append(ready, dependent)
 			}
 		}
 	}
@@ -156,6 +301,9 @@ func (g *DependencyGraph) TaskCount() int {
 }
 
 func (g *DependencyGraph) GetTask(id string) (*types.TaskDefinition, bool) {
-	task, ok := g.tasks[id]
-	return task, ok
+	position, ok := g.position[id]
+	if !ok {
+		return nil, false
+	}
+	return &g.tasks[position], true
 }

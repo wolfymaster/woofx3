@@ -23,10 +23,10 @@ Trigger condition evaluation (if conditions defined)
 WorkflowExecution created (UUID, status: running)
     |
     v
-DependencyGraph built from task dependsOn fields
+DependencyGraph built from dependsOn, plus the orderings onTrue/onFalse imply
     |
     v
-Topological sort -> execution order
+Topological sort, ties broken by declaration order -> execution order
     |
     v
 Tasks execute in order; independent adjacent ones run together:
@@ -44,6 +44,10 @@ Execution completed/failed
 
 Tasks declare dependencies via `dependsOn`. The engine builds a directed acyclic graph and performs a topological sort to determine execution order.
 
+A condition adds orderings of its own, so a branch behaves like the steps under an "if": every task in `onTrue` or `onFalse` waits for the condition, and a task outside the branches that depends on the condition, or on anything in them, waits for everything in them. See [condition](./tasks.md#condition).
+
+The order is deterministic. Whenever more than one task is ready, the one declared first in `tasks` goes first, so tasks with no order between them run in the order they are written, every run.
+
 ### Concurrency
 
 Adjacent tasks that do not depend on one another execute at the same time,
@@ -59,7 +63,8 @@ has a defined answer under concurrency:
   resume by index, so they cannot sit inside a set of tasks with no ordering
   between them.
 - It is a `condition` task, which decides which later tasks are skipped.
-- It declares `dependsOn` a task in the same run.
+- It depends on a task in the same run, whether by `dependsOn` or by an
+  ordering a condition implies.
 - It reads another run member's exports as `${otherTask.field}` **without**
   declaring `dependsOn`. Such a workflow works today only because the sorted
   order happened to put them in sequence; it keeps working, sequentially,
