@@ -112,7 +112,7 @@ const MEDIA_PROXY_TOKEN = /^[A-Za-z0-9_-]+\.(\d+)\.[0-9a-f]{64}$/;
 /**
  * When a media proxy URL stops working, in unix seconds, or null when `url`
  * is not one minted under `base` (a placement's `mediaProxyBase`). The page
- * reads the expiry to fetch fresh URLs before it passes (see index.ts). Only
+ * reads the expiry to fetch fresh URLs before it passes (see scene-sync.ts). Only
  * URLs under the placement's own proxy base count, so an external URL that
  * merely looks like a token never schedules a refresh.
  */
