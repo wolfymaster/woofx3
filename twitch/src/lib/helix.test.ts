@@ -75,7 +75,7 @@ async function refusalOf(promise: Promise<unknown>): Promise<TwitchApiError> {
 }
 
 /**
- * Each operation's request, exactly as the dashboard sends it to Helix today.
+ * Each operation's request, exactly as the dashboard sends it straight to Helix.
  * A row per operation, so an operation with no row fails the coverage test.
  */
 const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = [
