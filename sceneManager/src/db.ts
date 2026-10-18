@@ -87,6 +87,28 @@ export class DbClient {
     return scene.UpdateScene(req, this.config);
   }
 
+  /**
+   * Update the given fields of a scene row and leave the rest as stored: the
+   * db proxy reads a blank field, or a false flag, as unchanged.
+   */
+  async writeScene(fields: Partial<scene.UpdateSceneRequest> & { id: string }): Promise<scene.SceneResponse> {
+    return this.updateScene({
+      name: "",
+      description: "",
+      widgetsJson: "",
+      layoutJson: "",
+      behaviorsJson: "",
+      inputsJson: "",
+      draftWidgetsJson: "",
+      draftLayoutJson: "",
+      draftBehaviorsJson: "",
+      clearDraft: false,
+      editorStateJson: "",
+      clearEditorState: false,
+      ...fields,
+    });
+  }
+
   // Overlay-token resolution — engine-internal only. sceneManager is
   // the single resolver of plaintext tokens (streamware's role,
   // carried over); the api gateway never resolves them.
