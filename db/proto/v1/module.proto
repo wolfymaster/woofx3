@@ -79,11 +79,6 @@ message Module {
   string created_by_type = 10;
   string created_by_ref = 11;
   string module_key = 12;
-  // The marketplace listing this module was installed from, and that
-  // listing's edition. Unset for a module that did not come from the
-  // marketplace or was installed before the engine recorded it.
-  optional string marketplace_listing_id = 14;
-  optional int32 marketplace_edition = 15;
 }
 
 message ModuleFunction {
@@ -114,10 +109,6 @@ message CreateModuleRequest {
   string module_key = 8;
   // Manifest-local module id (manifest.json `id`). Required on install.
   string module_id = 9;
-  // Set together for an install from the marketplace; see Module. A request
-  // that leaves them unset keeps what an existing row of the same name has.
-  optional string marketplace_listing_id = 10;
-  optional int32 marketplace_edition = 11;
 }
 
 message CreateModuleFunctionRequest {

@@ -9,11 +9,10 @@
     "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "dependencies": {
+    "zod": "^3.24.0",
     "@woofx3/common": "file:../shared/common/typescript",
     "capnweb": "^0.4.0",
-    "fflate": "^0.8.3",
-    "protoscript": "^0.0.23",
-    "zod": "^3.24.0"
+    "protoscript": "^0.0.23"
   },
   "devDependencies": {
     "@types/bun": "latest",

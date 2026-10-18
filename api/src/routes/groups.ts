@@ -1,3 +1,4 @@
+import { routeModule } from "./context";
 import type {
   CreateGroupInput,
   GroupSnapshot,
@@ -6,7 +7,6 @@ import type {
   UpdateGroupInput,
 } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { routeModule } from "./context";
 
 function groupToSnapshot(g: {
   id: string;

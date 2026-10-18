@@ -1,9 +1,3 @@
-import { isWidgetSurface, parseFieldList } from "@woofx3/api/ui-schema";
-import { EngineEventType } from "@woofx3/api/webhooks";
-import type { SharedLogger } from "@woofx3/common/logging";
-import type NATSClient from "@woofx3/nats/src/client";
-import { asString } from "./outbox";
-import { subscribeProjections } from "./projection";
 import type {
   ActionDefinition,
   AssetDefinition,
@@ -33,6 +27,12 @@ import type {
   WidgetBehaviorKinds,
   WidgetDefinition,
 } from "./webhook-client";
+import { asString } from "./outbox";
+import { subscribeProjections } from "./projection";
+import { EngineEventType } from "@woofx3/api/webhooks";
+import { isWidgetSurface, parseFieldList } from "@woofx3/api/ui-schema";
+import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
 
 interface RawTrigger {
   id?: unknown;

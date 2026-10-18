@@ -1,5 +1,5 @@
-import type * as resource from "@woofx3/db/resource.pb";
 import { routeModule } from "./context";
+import type * as resource from "@woofx3/db/resource.pb";
 import { resolveSceneManagerUrl, timestampToIso } from "./helpers";
 
 /**
