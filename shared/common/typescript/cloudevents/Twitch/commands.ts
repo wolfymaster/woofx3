@@ -55,7 +55,11 @@ export type HelixOperationName =
   | "sendChatMessage"
   | "sendChatAnnouncement"
   | "sendShoutout"
-  | "getChatters";
+  | "getChatters"
+  | "getChatPins"
+  | "pinChatMessage"
+  | "unpinChatMessage"
+  | "createClip";
 
 export interface HelixCommandArgs {
   operation: HelixOperationName;

@@ -108,6 +108,14 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchChat: "twitch.chat",
   /**
+   * The Pins widget's Helix calls (Twitch beta), made and answered like
+   * `twitch.streamInfo`'s: `twitchGetChatPins`, `twitchPinChatMessage`,
+   * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
+   */
+  twitchPins: "twitch.pins",
+  /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
+  twitchClips: "twitch.clips",
+  /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
    * place of `updateScene`. No longer served; declared so a client can

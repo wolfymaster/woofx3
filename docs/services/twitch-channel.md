@@ -259,10 +259,14 @@ break that rule, and uses the same auth provider for its token.
 | `twitchBanUser(params)` | `POST /moderation/bans?broadcaster_id&moderator_id` | `{ user_id, duration?, reason? }`, sent as the body's `data`; a `duration` makes it a timeout | `twitch.moderation` |
 | `twitchUnbanUser(params)` | `DELETE /moderation/bans?broadcaster_id&moderator_id` | `{ user_id }` | `twitch.moderation` |
 | `twitchGetChatSettings()` | `GET /chat/settings?broadcaster_id&moderator_id` | none | `twitch.moderation` |
-| `twitchSendChatMessage(params)` | `POST /chat/messages` | body `{ message }`, sent with `broadcaster_id` and `sender_id` | `twitch.chat` |
+| `twitchSendChatMessage(params)` | `POST /chat/messages` | body `{ message, pin? }`, sent with `broadcaster_id` and `sender_id`; `pin` needs `twitch.pins` | `twitch.chat` |
 | `twitchSendChatAnnouncement(params)` | `POST /chat/announcements?broadcaster_id&moderator_id` | body `{ message, color? }` | `twitch.chat` |
 | `twitchSendShoutout(params)` | `POST /chat/shoutouts?from_broadcaster_id&moderator_id` | `{ to_broadcaster_id }` | `twitch.chat` |
 | `twitchGetChatters(params)` | `GET /chat/chatters?broadcaster_id&moderator_id` | `{ first?, after? }` | `twitch.chat` |
+| `twitchGetChatPins()` | `GET /chat/pins?broadcaster_id&moderator_id` (beta) | none | `twitch.pins` |
+| `twitchPinChatMessage(params)` | `PUT /chat/pins?broadcaster_id&moderator_id` (beta) | `{ message_id }` | `twitch.pins` |
+| `twitchUnpinChatMessage(params)` | `DELETE /chat/pins?broadcaster_id&moderator_id` (beta) | `{ message_id }` | `twitch.pins` |
+| `twitchCreateClip()` | `POST /clips?broadcaster_id` | none | `twitch.clips` |
 | `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
 The token is the one the twitch service holds: the linked account's, from the
