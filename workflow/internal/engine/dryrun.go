@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -13,8 +14,9 @@ import (
 // wait for an event that a preview will never cause would hold it forever.
 //
 // Its exports are those of a wait satisfied by nothing: `satisfied` is true
-// so the steps after it run, and there are no events to read. A delay has no
-// event to preview and completes the same way.
+// so the steps after it run, and there are no events to read, so `data` is
+// empty and its fields read as empty. A delay has no event to preview and
+// completes the same way.
 func (e *Engine[TServices]) completeDryRunWait(
 	execution *types.WorkflowExecution,
 	taskDef *types.TaskDefinition,
@@ -28,6 +30,7 @@ func (e *Engine[TServices]) completeDryRunWait(
 		"satisfied": true,
 		"timedOut":  false,
 		"events":    []any{},
+		"data":      expression.OpenRecord{},
 	}
 	if taskDef.Wait.Aggregation != nil {
 		exports["count"] = 0

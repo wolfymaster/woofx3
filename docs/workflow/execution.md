@@ -212,7 +212,7 @@ never told about a dry run.
 - **Waits** complete at once, recording what they would have waited for
   (`would wait for a channel.follow event for up to 2m0s`, or `would wait 10s`
   for a delay). Their exports read `satisfied: true`, `timedOut: false`, with
-  no events.
+  no events and an empty `data` whose fields resolve to empty.
 - **Sub-workflows** started by a dry run are dry runs too.
 - **Workflows triggered by a dry run.** A dry run's `workflow.run.*`
   lifecycle events carry the CloudEvents extension attribute `dryRun: true`,
@@ -429,7 +429,7 @@ Condition evaluation errors always fail the workflow regardless of `onError`.
 Wait task timeouts follow `onTimeout`:
 
 - `"fail"` (default): The workflow fails.
-- `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues.
+- `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues. With no event, its `data` is empty: a later `${<wait id>.data.<field>}` resolves to empty rather than failing.
 
 ## Concurrency
 

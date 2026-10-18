@@ -418,17 +418,22 @@ an error and not counted, rather than contributing a default, so a `sum` that ca
 find its number is reported instead of quietly behaving like a `count`; the wait
 keeps waiting for events that carry one.
 
+Every strategy keeps both `count` and `sum` current, whichever one decides the
+wait, so a `threshold` wait can still report how many events it saw and their
+total. A `count` needs no number: an event it cannot read one from still counts
+and adds nothing to `sum`.
+
 Wait tasks export aggregation results for downstream tasks:
 
 | Export | Type | Description |
 |--------|------|-------------|
 | `satisfied` | `boolean` | Whether the wait's event (or aggregation threshold) arrived. `true` for a delay that ran its course |
 | `timedOut` | `boolean` | Whether the wait ended at its timeout |
-| `count` | `number` | Events counted (aggregation waits) |
-| `sum` | `number` | Running sum (aggregation waits) |
+| `count` | `number` | Events counted (aggregation waits, every strategy) |
+| `sum` | `number` | Running total of the events' numbers (aggregation waits, every strategy) |
 | `events` | `Event[]` | All received events |
 | `lastEvent` | `Event` | The most recent received event, when there is one |
-| `data` | `object` | `lastEvent`'s data, when there is one |
+| `data` | `object` | `lastEvent`'s data. Empty when the wait ended without an event, and then any field read from it, such as `${pause.data.user}`, resolves to empty instead of failing |
 
 ---
 

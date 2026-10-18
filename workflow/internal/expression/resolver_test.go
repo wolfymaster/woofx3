@@ -168,3 +168,24 @@ func TestLazySourceLoadErrorFailsEveryReference(t *testing.T) {
 		t.Fatalf("embedded = %q, %v; want the token left in place", got, err)
 	}
 }
+
+func TestOpenRecordResolvesAnAbsentPathToNil(t *testing.T) {
+	r := NewResolver()
+	r.AddSource("pause", map[string]any{"data": OpenRecord{"user": "ana"}})
+	for expr, want := range map[string]any{
+		"${pause.data.user}":        "ana",
+		"${pause.data.amount}":      nil,
+		"${pause.data.user2.name}":  nil,
+		"${pause.data.amount || 5}": 5.0,
+	} {
+		got, err := r.ResolveString(expr)
+		if err != nil || got != want {
+			t.Errorf("%s = %v, %v; want %v", expr, got, err, want)
+		}
+	}
+	// Outside the open record a missing key still fails: it is a mistake in
+	// the expression, not an absent value.
+	if _, err := r.ResolveString("${pause.missing}"); err == nil {
+		t.Error("${pause.missing}: want an error")
+	}
+}
