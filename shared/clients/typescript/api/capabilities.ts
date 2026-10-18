@@ -88,6 +88,11 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchStreamInfo: "twitch.streamInfo",
   /**
+   * The Ad breaks widget's Helix calls, made and answered like
+   * `twitch.streamInfo`'s: `twitchGetAdSchedule`, `twitchSnoozeNextAd`.
+   */
+  twitchAds: "twitch.ads",
+  /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
    * place of `updateScene`. No longer served; declared so a client can

@@ -195,6 +195,8 @@ export const RPC_METHODS = [
   "twitchSearchCategories",
   "twitchModifyChannelInformation",
   "twitchCreateStreamMarker",
+  "twitchGetAdSchedule",
+  "twitchSnoozeNextAd",
   "dispatchFieldOptionsRequest",
   "getScenes",
   "getScene",

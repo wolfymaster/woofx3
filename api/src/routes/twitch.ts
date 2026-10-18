@@ -148,4 +148,12 @@ export const twitchRoutes = routeModule({
   async twitchCreateStreamMarker(params: TwitchCreateStreamMarkerParams): Promise<TwitchHelixResult> {
     return requestHelix(this.nats, this.logger, "createStreamMarker", params);
   },
+
+  async twitchGetAdSchedule(): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "getAdSchedule", undefined);
+  },
+
+  async twitchSnoozeNextAd(): Promise<TwitchHelixResult> {
+    return requestHelix(this.nats, this.logger, "snoozeNextAd", undefined);
+  },
 });

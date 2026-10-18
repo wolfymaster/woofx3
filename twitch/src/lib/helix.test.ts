@@ -106,6 +106,12 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
     {},
     { method: "POST", url: "streams/markers", query: {}, jsonBody: { user_id: BROADCASTER_ID } },
   ],
+  ["getAdSchedule", {}, { method: "GET", url: "channels/ads", query: { broadcaster_id: BROADCASTER_ID } }],
+  [
+    "snoozeNextAd",
+    {},
+    { method: "POST", url: "channels/ads/schedule/snooze", query: { broadcaster_id: BROADCASTER_ID } },
+  ],
 ];
 
 describe("buildHelixRequest", () => {

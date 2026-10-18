@@ -242,6 +242,8 @@ break that rule, and uses the same auth provider for its token.
 | `twitchSearchCategories(params)` | `GET /search/categories` | `{ query, first? }` | `twitch.streamInfo` |
 | `twitchModifyChannelInformation(params)` | `PATCH /channels?broadcaster_id` | body `{ title?, game_id?, tags? }`; `game_id: ""` clears the category | `twitch.streamInfo` |
 | `twitchCreateStreamMarker(params)` | `POST /streams/markers` | body `{ description? }`, sent with `user_id` | `twitch.streamInfo` |
+| `twitchGetAdSchedule()` | `GET /channels/ads?broadcaster_id` | none | `twitch.ads` |
+| `twitchSnoozeNextAd()` | `POST /channels/ads/schedule/snooze?broadcaster_id` | none | `twitch.ads` |
 
 The token is the one the twitch service holds: the linked account's, from the
 dashboard that linked it (see [Who renews the token](#who-renews-the-token)),
@@ -268,7 +270,7 @@ engine only carries the resulting events.
 | `getAdSchedule` / `snoozeNextAd` | twitch service, `twitchapi` commands (`twitch/src/lib/twitch.ts`) | Helix reads and snoozes on request over NATS |
 | Browser delivery | api (`StreamEventBroadcaster`) | Forwards the three `channel.ad_break.*` events to `subscribeStreamEvents` clients that ask for them, and to every client that names no types |
 | Triggers | `woofx3_twitch` platform module (woofx3-modules) | Declares the three events as workflow triggers |
-| Dashboard widget | woofx3-ui | Reads the schedule and snoozes through Helix from Convex actions, like its other Twitch widgets |
+| Dashboard widget | woofx3-ui | Reads the schedule and snoozes from Convex actions, through the engine's `twitchGetAdSchedule` and `twitchSnoozeNextAd` (see [Dashboard Helix calls](#dashboard-helix-calls)) or straight to Helix on an engine without `twitch.ads` |
 
 The api exposes no ad RPC: an engine API method named after one platform's
 feature would leak that platform into the generic surface every client sees.

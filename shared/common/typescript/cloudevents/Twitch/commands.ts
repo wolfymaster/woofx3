@@ -41,7 +41,9 @@ export type HelixOperationName =
   | "getGames"
   | "searchCategories"
   | "modifyChannelInformation"
-  | "createStreamMarker";
+  | "createStreamMarker"
+  | "getAdSchedule"
+  | "snoozeNextAd";
 
 export interface HelixCommandArgs {
   operation: HelixOperationName;

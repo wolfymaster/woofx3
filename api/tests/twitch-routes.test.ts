@@ -62,6 +62,8 @@ const FORWARDS: [RouteName, unknown[], { operation: string; params?: unknown }][
     [{ description: "clutch" }],
     { operation: "createStreamMarker", params: { description: "clutch" } },
   ],
+  ["twitchGetAdSchedule", [], { operation: "getAdSchedule" }],
+  ["twitchSnoozeNextAd", [], { operation: "snoozeNextAd" }],
 ];
 
 describe("twitch routes", () => {
@@ -199,8 +201,9 @@ describe("twitch route results", () => {
 });
 
 describe("twitch capabilities", () => {
-  test("advertises twitch.streamInfo, and every twitch route is reachable over RPC", () => {
+  test("advertises the twitch capabilities, and every twitch route is reachable over RPC", () => {
     expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchStreamInfo);
+    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchAds);
     const reachable: readonly string[] = RPC_METHODS;
     for (const name of Object.keys(twitchRoutes)) {
       expect(reachable).toContain(name);
