@@ -66,6 +66,12 @@ pub struct Command {
     /// "\[\]" when the command has no workflow.
     #[prost(string, tag="24")]
     pub steps_json: ::prost::alloc::string::String,
+    /// Why this command has no workflow when it should have one, or empty.
+    /// Either db-proxy could not turn its actions into a workflow (it then
+    /// keeps running actions_json, and the next start of db-proxy tries
+    /// again), or the workflow named by workflow_id no longer exists.
+    #[prost(string, tag="25")]
+    pub workflow_error: ::prost::alloc::string::String,
 }
 /// Request to get a single command by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

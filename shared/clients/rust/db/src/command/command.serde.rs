@@ -52,6 +52,9 @@ impl serde::Serialize for Command {
         if !self.steps_json.is_empty() {
             len += 1;
         }
+        if !self.workflow_error.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.Command", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -98,6 +101,9 @@ impl serde::Serialize for Command {
         if !self.steps_json.is_empty() {
             struct_ser.serialize_field("stepsJson", &self.steps_json)?;
         }
+        if !self.workflow_error.is_empty() {
+            struct_ser.serialize_field("workflowError", &self.workflow_error)?;
+        }
         struct_ser.end()
     }
 }
@@ -131,6 +137,8 @@ impl<'de> serde::Deserialize<'de> for Command {
             "workflowId",
             "steps_json",
             "stepsJson",
+            "workflow_error",
+            "workflowError",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -150,6 +158,7 @@ impl<'de> serde::Deserialize<'de> for Command {
             ActionsJson,
             WorkflowId,
             StepsJson,
+            WorkflowError,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -186,6 +195,7 @@ impl<'de> serde::Deserialize<'de> for Command {
                             "actionsJson" | "actions_json" => Ok(GeneratedField::ActionsJson),
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             "stepsJson" | "steps_json" => Ok(GeneratedField::StepsJson),
+                            "workflowError" | "workflow_error" => Ok(GeneratedField::WorkflowError),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -220,6 +230,7 @@ impl<'de> serde::Deserialize<'de> for Command {
                 let mut actions_json__ = None;
                 let mut workflow_id__ = None;
                 let mut steps_json__ = None;
+                let mut workflow_error__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -316,6 +327,12 @@ impl<'de> serde::Deserialize<'de> for Command {
                             }
                             steps_json__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::WorkflowError => {
+                            if workflow_error__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("workflowError"));
+                            }
+                            workflow_error__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Command {
@@ -334,6 +351,7 @@ impl<'de> serde::Deserialize<'de> for Command {
                     actions_json: actions_json__.unwrap_or_default(),
                     workflow_id: workflow_id__.unwrap_or_default(),
                     steps_json: steps_json__.unwrap_or_default(),
+                    workflow_error: workflow_error__.unwrap_or_default(),
                 })
             }
         }
