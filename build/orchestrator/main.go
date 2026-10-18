@@ -111,6 +111,12 @@ func main() {
 		}()
 	}
 
+	if err := bindServicesToOrchestratorLifetime(); err != nil {
+		// The services still run and still stop with the orchestrator; only
+		// an orchestrator that is killed outright leaves them behind.
+		logger.Warn("Services will outlive the orchestrator if it is killed", "error", err)
+	}
+
 	logger.Info("Starting services in dependency order", "count", len(orderedServices))
 	supervisor.StartInOrder(orderedServices)
 
@@ -506,9 +512,8 @@ func (s *Supervisor) signalStop(names []string) {
 			continue
 		}
 		s.logger.Info("Stopping service", "service", name)
-		if err := process.Signal(syscall.SIGTERM); err != nil {
-			// Windows cannot deliver SIGTERM; a kill is the only stop there.
-			s.logger.Warn("Could not signal service, killing it", "service", name, "error", err)
+		if err := process.RequestStop(); err != nil {
+			s.logger.Warn("Could not ask service to stop, killing it", "service", name, "error", err)
 			process.Kill()
 		}
 	}
