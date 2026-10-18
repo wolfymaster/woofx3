@@ -57,6 +57,7 @@ interface CommandSnapshot {
   command: string;            // without the "!" prefix
   workflowId: string;         // the workflow it runs; "" = no steps
   steps: TaskDefinition[];    // that workflow's tasks; [] without one
+  workflowError: string;      // why it has no workflow when it should; "" otherwise
   actions: ActionStep[];      // [] unless the command could not be linked (see below)
   cooldown: number;           // seconds, 0 = never throttle
   priority: number;
@@ -161,7 +162,17 @@ interface AvailableFunction {
   deleted with the command, and its trigger follows the command's name. Edit
   its steps through `updateCommand`; the workflow list in the UI leaves it
   out, and a config bundle carries its steps on the command rather than as a
-  workflow of its own.
+  workflow of its own, naming any workflow a step starts by name in the
+  command's `workflowRefs`, as a bundled workflow does. The workflow routes
+  (`updateWorkflow`, `setWorkflowEnabled`, `deleteWorkflow`) refuse a
+  command's workflow, and `createWorkflow` refuses a trigger of type
+  `"command"`; db-proxy refuses the same with `FailedPrecondition`. On
+  postgres, deleting the workflow row by any other path leaves the command
+  with no workflow rather than a link to nothing.
+- **A listing never shows steps it could not read.** A command whose stored
+  steps are unreadable is left out of `listCommands()` (and logged) rather
+  than listed with none, since saving an empty `steps` back deletes the
+  workflow.
 - **Group/user assignment writes are full-replace**, not incremental: the
   `groupIds`/`usernames` arrays on `createCommand`/`updateCommand` are the
   complete desired set each time, not a diff. Send the full array your form
@@ -353,6 +364,10 @@ interface GroupMemberAddedEvent {
   `argumentPattern` variables exactly as a chat message is. db-proxy's
   permission check applies; the command's cooldown does not. A run of the
   command's workflow reports through the usual `workflow.run.*` webhooks.
+  The command's own run is published before `chat.command.<slug>`: if it
+  fails, nothing was announced and the call can be retried. If only the
+  announcement fails, the call throws saying the steps already ran, since a
+  retry would run them again.
 
 ## Triggering workflows from commands
 
@@ -399,17 +414,24 @@ woofwoofwoof's commander handles a chat message in this order
 
 1. It matches the command word. A disabled command is not on the commander,
    so it never matches.
-2. It applies the cooldown. A throttled invocation is dropped whole.
-3. It checks who may run the command (visibility, roles, groups and users).
-   A refusal stops here.
-4. It publishes `chat.command.<slug>`, for any workflow listening to it.
+2. It checks who may run the command (visibility, roles, groups and users).
+   A refusal stops here, and does not spend the cooldown.
+3. It applies the cooldown. A throttled invocation is dropped whole.
+4. It publishes `chat.command.<slug>`, for any workflow listening to it. The
+   event is built once for the invocation.
 5. It runs the command: for a command with a workflow, it publishes
-   `workflow.command.execute` naming that workflow and carrying the same
-   invocation event, and the workflow engine runs that one workflow
-   (`Engine.RunCommand`) with `${trigger.data...}` reading the invocation.
+   `workflow.command.execute` naming that workflow and carrying that very
+   event (same `id`, `time`, `sessionId`, and the slug as `data.command`),
+   and the workflow engine runs that one workflow (`Engine.RunCommand`) with
+   `${trigger.data...}` reading it. The engine refuses an event whose type is
+   not the one the workflow's trigger names.
 
-Because every check comes before step 4, the event and the run happen
-together or not at all. The command's workflow has a trigger of type
+Every check comes before step 4, so a refused or throttled invocation does
+neither. Steps 4 and 5 are two separate publishes, though, not one: if the
+run's publish fails, workflows listening for the command have still run. The
+commander logs that and tells the chatter it could not run the command; a
+failed announcement is logged through the commander's publish-error hook.
+The command's workflow has a trigger of type
 `"command"` (`{"type": "command", "event": "chat.command.<slug>"}`), which no
 trigger registrar subscribes to anything, so the event of step 4 cannot start
 it as well: it runs once per invocation. The workflow's trigger conditions,
@@ -421,11 +443,14 @@ each command that still holds its own action list a workflow with those
 actions run in order, links the command to it and empties its list, one
 command per transaction (`LinkCommandWorkflows` in
 `db/app/services/command_service.go`). Running it again finds nothing to do.
-A command it cannot convert, such as one whose action list is unreadable, is
-logged and left as it was: woofwoofwoof keeps running its actions without a
-workflow by publishing `action.execute` (`Engine.RunActions`), which records
-no run history, and the next start tries again. Saving the command's steps
-also links it.
+Each conversion reads the command again, locked, inside its transaction, and
+links the workflow only if the command still links to none, so two db-proxies
+or two writers cannot give one command two workflows. A command it cannot
+convert, such as one whose action list is unreadable, is left as it was, with
+the reason in its `workflowError`: woofwoofwoof keeps running its actions
+without a workflow by publishing `action.execute` (`Engine.RunActions`),
+which records no run history, and the next start tries again. Saving the
+command's steps also links it, and clears `workflowError`.
 
 Anything else holding actions and no workflow can run them the same way,
 through the `runActions(input)` engine RPC.

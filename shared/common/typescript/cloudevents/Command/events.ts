@@ -2,6 +2,11 @@
 // updated, or deleted via the Api. Distinct from chat.command.<slug> in
 // Chat/commands.ts, which fires on invocation by a chat user.
 
+import type { CommandSnapshot } from "@woofx3/api/command";
+import type { ChatCommandEvent } from "../Chat/commands";
+
+export type { CommandSnapshot };
+
 export enum EventType {
   Created = "command.created",
   Updated = "command.updated",
@@ -12,51 +17,17 @@ export enum EventType {
   ExecuteWorkflow = "workflow.command.execute",
 }
 
-export interface CommandSnapshot {
-  id: string;
-  command: string;
-  /** The actions this command runs, in order. Shape: `ActionStep` in
-   *  shared/clients/typescript/api/api.ts -- the same shape a workflow step has. */
-  actions: Array<{
-    id?: string;
-    action: string;
-    function?: string;
-    parameters?: Record<string, unknown>;
-    $ref?: string;
-    dependsOn?: string[];
-  }>;
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: string;
-  groupIds: string[];
-  usernames: string[];
-  argumentPattern: string;
-  /** The workflow this command runs, by id; "" when it has none, and then it
-   *  runs `actions`. */
-  workflowId: string;
-  /** That workflow's tasks, as the workflow stores them. Empty without one. */
-  steps: object[];
-}
-
 /**
  * Run a command's workflow for one invocation. Sent only after the command
- * matched and passed its checks (cooldown, who may run it, enabled), which is
+ * matched and passed its checks (enabled, who may run it, cooldown), which is
  * why the engine does not check them again.
  */
 export interface CommandWorkflowExecution {
   workflowId: string;
-  /** The invocation's `chat.command.<slug>` event, which the run reads as its
-   *  trigger: `${trigger.data.chatter}` and the rest. */
-  event: {
-    id: string;
-    type: string;
-    source: string;
-    time: string;
-    platform?: string;
-    triggeredBy?: string;
-    data: Record<string, unknown>;
-  };
+  /** The invocation's `chat.command.<slug>` event, the very one announced on
+   *  that subject, which the run reads as its trigger: `${trigger.data.chatter}`
+   *  and the rest. */
+  event: ChatCommandEvent;
 }
 
 export interface CommandCreated {

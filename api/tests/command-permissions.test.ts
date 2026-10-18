@@ -18,13 +18,23 @@ function fakeLogger() {
 function recordingNats() {
   const published: string[] = [];
   const payloads: Array<{ subject: string; data: any }> = [];
+  const events: Array<{ subject: string; event: any }> = [];
+  /** Subjects whose publish fails, as a dropped bus connection would. */
+  const failing = new Set<string>();
   return {
     published,
     payloads,
+    events,
+    failing,
     client: {
-      publish: mock((subject: string, payload?: Uint8Array) => {
+      publish: mock(async (subject: string, payload?: Uint8Array) => {
+        if (failing.has(subject)) {
+          throw new Error("connection closed");
+        }
         published.push(subject);
-        payloads.push({ subject, data: payload ? JSON.parse(new TextDecoder().decode(payload)).data : undefined });
+        const event = payload ? JSON.parse(new TextDecoder().decode(payload)) : undefined;
+        events.push({ subject, event });
+        payloads.push({ subject, data: event?.data });
       }),
     },
   };
@@ -130,11 +140,51 @@ describe("executeCommand permission enforcement", () => {
 
     await api.executeCommand("hug", "wolfy", "bob");
 
-    expect(nats.published).toEqual(["chat.command.hug", "workflow.command.execute"]);
+    expect(nats.published).toEqual(["workflow.command.execute", "chat.command.hug"]);
     const run = nats.payloads.find((p) => p.subject === "workflow.command.execute");
     expect(run?.data.workflowId).toBe("wf-hug");
     expect(run?.data.event.type).toBe("chat.command.hug");
     expect(run?.data.event.data).toMatchObject({ command: "hug", chatter: "wolfy", text: "bob" });
+  });
+
+  // The run reads the announced event itself: same id, time and session, and
+  // the slug as data.command even when the command's name has capitals.
+  it("runs a mixed-case command's workflow on the exact event it announces", async () => {
+    const { api, nats } = makeApi({
+      getCommand: mock(async () => commandRow({ command: "Hug", actionsJson: "[]", workflowId: "wf-hug" })),
+    });
+
+    await api.executeCommand("Hug", "wolfy", "bob");
+
+    const announced = nats.events.find((p) => p.subject === "chat.command.hug")?.event;
+    const run = nats.events.find((p) => p.subject === "workflow.command.execute")?.event;
+    expect(announced).toBeDefined();
+    expect(run?.data.event).toEqual(announced);
+    expect(run?.data.event.data.command).toBe("hug");
+  });
+
+  it("announces nothing when the command's run cannot be published, so a retry announces once", async () => {
+    const { api, nats } = makeApi({
+      getCommand: mock(async () => commandRow({ command: "hug", actionsJson: "[]", workflowId: "wf-hug" })),
+    });
+    nats.failing.add("workflow.command.execute");
+
+    await expect(api.executeCommand("hug", "wolfy")).rejects.toThrow(/connection closed/);
+    expect(nats.published).toEqual([]);
+
+    nats.failing.clear();
+    await api.executeCommand("hug", "wolfy");
+    expect(nats.published).toEqual(["workflow.command.execute", "chat.command.hug"]);
+  });
+
+  it("says the steps already ran when only the announcement fails", async () => {
+    const { api, nats } = makeApi({
+      getCommand: mock(async () => commandRow({ command: "hug", actionsJson: "[]", workflowId: "wf-hug" })),
+    });
+    nats.failing.add("chat.command.hug");
+
+    await expect(api.executeCommand("hug", "wolfy")).rejects.toThrow(/ran its steps/);
+    expect(nats.published).toEqual(["workflow.command.execute"]);
   });
 
   it("only announces a command that has no actions", async () => {

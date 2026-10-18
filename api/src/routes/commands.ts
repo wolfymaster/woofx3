@@ -6,7 +6,7 @@ import type {
   TwitchAccessToken,
   UpdateCommandInput,
 } from "@woofx3/api";
-import type { TaskDefinition } from "@woofx3/api/workflow-definition";
+import { TRIGGER_TYPE_COMMAND, type TaskDefinition } from "@woofx3/api/workflow-definition";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import ActionEvents from "@woofx3/common/cloudevents/Action";
 import ChatCommandEvents from "@woofx3/common/cloudevents/Chat/commands";
@@ -29,6 +29,19 @@ const commandEvents = new CommandEvents("api");
 const chatCommandEvents = new ChatCommandEvents("api");
 const actionEvents = new ActionEvents("api");
 
+/** How many steps a command runs, for a listing that shows no detail. */
+function parseStepCount(stepsJson: string | undefined): number {
+  if (!stepsJson) {
+    return 0;
+  }
+  try {
+    const parsed = JSON.parse(stepsJson);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Serialize a command's actions for storage, refusing a list the engine could
  * not run.
@@ -37,19 +50,6 @@ const actionEvents = new ActionEvents("api");
  * a malformed step is a message that silently never arrives; refusing the save
  * puts the error in front of the person who can fix it.
  */
-/** How many steps a command runs, for a listing that shows no detail. */
-function parseActionCount(actionsJson: string | undefined): number {
-  if (!actionsJson) {
-    return 0;
-  }
-  try {
-    const parsed = JSON.parse(actionsJson);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-}
-
 export function serializeActions(actions: ActionStep[] | undefined): string {
   if (!actions || actions.length === 0) {
     return "[]";
@@ -80,12 +80,15 @@ export function serializeSteps(commandName: string, steps: TaskDefinition[]): st
   if (steps.length === 0) {
     return "[]";
   }
-  assertValidWorkflowDefinition({
-    id: "command",
-    name: `!${commandName}`,
-    trigger: { type: "command", event: `chat.command.${commandNameToSubjectSegment(commandName)}` },
-    tasks: steps,
-  });
+  assertValidWorkflowDefinition(
+    {
+      id: "command",
+      name: `!${commandName}`,
+      trigger: { type: TRIGGER_TYPE_COMMAND, event: `chat.command.${commandNameToSubjectSegment(commandName)}` },
+      tasks: steps,
+    },
+    { allowCommandTrigger: true }
+  );
   return JSON.stringify(steps);
 }
 
@@ -112,15 +115,29 @@ export const commandsRoutes = routeModule({
     const commands = await this.db.listCommands({
       includeDisabled: true,
     });
-    return commands.map((c) => commandToSnapshot(c));
+    // One command whose steps cannot be read is left out, rather than shown
+    // with none: saving that back would delete them (see parseSteps).
+    const snapshots: CommandSnapshot[] = [];
+    for (const c of commands) {
+      try {
+        snapshots.push(commandToSnapshot(c));
+      } catch (err) {
+        this.logger.error("Command left out of the listing", {
+          id: c.id,
+          command: c.command,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return snapshots;
   },
 
   async getAvailableCommands(_username?: string): Promise<{
     commands: Array<{
       id: string;
       name: string;
-      /** How many steps it runs. The list itself is on listCommands. */
-      actions: number;
+      /** How many steps it runs. The steps themselves are on listCommands. */
+      stepCount: number;
       cooldown: number;
       enabled: boolean;
     }>;
@@ -135,7 +152,7 @@ export const commandsRoutes = routeModule({
       commands: commands.map((cmd) => ({
         id: cmd.id,
         name: cmd.command,
-        actions: parseActionCount(cmd.workflowId ? cmd.stepsJson : cmd.actionsJson),
+        stepCount: parseStepCount(cmd.workflowId ? cmd.stepsJson : cmd.actionsJson),
         cooldown: cmd.cooldown,
         enabled: cmd.enabled,
       })),
@@ -150,9 +167,16 @@ export const commandsRoutes = routeModule({
    * cannot tell the two apart.
    *
    * Mirrors woofwoofwoof's dispatch on a chat match: the `chat.command.<slug>`
-   * event always, then the command's workflow, run by id, or the actions of a
-   * command that has none. Cooldown is not applied -- it throttles chat, and a
-   * caller of this API is already authorized by name.
+   * event always, and the command's workflow, run by id, or the actions of a
+   * command that has none, both reading that same event. Cooldown is not
+   * applied -- it throttles chat, and a caller of this API is already
+   * authorized by name.
+   *
+   * The two are separate publishes, and the command's own run goes first: when
+   * it fails, nothing has been announced, so the caller can retry without
+   * workflows listening for the command reacting twice. The reverse cannot be
+   * avoided -- once the run is published, a failed announcement means a retry
+   * runs the command's steps again -- so that failure says so.
    */
   async executeCommand(
     commandName: string,
@@ -190,51 +214,42 @@ export const commandsRoutes = routeModule({
     }
 
     const remainder = text.trim();
-    const eventData = {
-      args: remainder.length > 0 ? remainder.split(/\s+/) : [],
-      rawMessage: remainder.length > 0 ? `!${cmd.command} ${remainder}` : `!${cmd.command}`,
-      text: remainder,
-      variables: extractCommandVariables(parseCommandVariables(cmd.argumentPattern ?? ""), remainder),
-      chatter: username,
-      platform: "twitch" as const,
-    };
+    const event = chatCommandEvents.event(
+      cmd.command,
+      {
+        args: remainder.length > 0 ? remainder.split(/\s+/) : [],
+        rawMessage: remainder.length > 0 ? `!${cmd.command} ${remainder}` : `!${cmd.command}`,
+        text: remainder,
+        variables: extractCommandVariables(parseCommandVariables(cmd.argumentPattern ?? ""), remainder),
+        chatter: username,
+        platform: "twitch",
+      },
+      { platform: "twitch", triggeredBy: "dashboard" }
+    );
 
-    await this.publishEventTuple(chatCommandEvents.command(cmd.command, eventData));
-
-    const commandEvent = {
-      id: crypto.randomUUID(),
-      type: `chat.command.${commandNameToSubjectSegment(cmd.command)}`,
-      source: "api",
-      time: new Date().toISOString(),
-      data: { ...eventData, command: cmd.command },
-    };
-
+    const actions = cmd.workflowId ? [] : parseActions(cmd.actionsJson);
     if (cmd.workflowId) {
-      await this.publishEventTuple(
-        commandEvents.executeWorkflow({
-          workflowId: cmd.workflowId,
-          event: { ...commandEvent, platform: "twitch", triggeredBy: "dashboard" },
-        })
-      );
-      this.logger.info("Command executed", { commandName, username, workflowId: cmd.workflowId });
-      return {
-        success: true,
-        message: `Command "${commandName}" executed`,
-      };
+      await this.publishEventTuple(commandEvents.executeWorkflow({ workflowId: cmd.workflowId, event }));
+    } else if (actions.length > 0) {
+      await this.publishEventTuple(actionEvents.execute({ label: `command:${cmd.command}`, actions, event }));
     }
 
-    const actions = parseActions(cmd.actionsJson);
-    if (actions.length > 0) {
-      await this.publishEventTuple(
-        actionEvents.execute({
-          label: `command:${cmd.command}`,
-          actions,
-          event: commandEvent,
-        })
+    try {
+      await this.publishEventTuple(chatCommandEvents.encode(event));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Command "${commandName}" ran its steps, but announcing it failed, so workflows listening for it did not run; ` +
+          `running it again runs its steps again: ${detail}`
       );
     }
 
-    this.logger.info("Command executed", { commandName, username, actions: actions.length });
+    this.logger.info("Command executed", {
+      commandName,
+      username,
+      workflowId: cmd.workflowId || undefined,
+      actions: actions.length,
+    });
     return {
       success: true,
       message: `Command "${commandName}" executed`,

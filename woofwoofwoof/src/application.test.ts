@@ -38,6 +38,8 @@ function buildTestContext(options: {
   twitchRequestError?: Error;
   /** The permission model's answer; granted when omitted. */
   hasPermission?: () => Promise<{ code: string }>;
+  /** Topics whose publish rejects, as it does once the bus connection drops. */
+  failingTopics?: string[];
 }) {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
 
@@ -49,7 +51,10 @@ function buildTestContext(options: {
       subscribe: (eventType: string, handler: (msg: unknown) => void | Promise<void>) => {
         subscriptions.push({ eventType, handler });
       },
-      publish: (topic: string, data: Uint8Array) => {
+      publish: async (topic: string, data: Uint8Array) => {
+        if (options.failingTopics?.includes(topic)) {
+          throw new Error("connection closed");
+        }
         publishLog.push({ topic, data });
       },
       request: async (topic: string, data: Uint8Array, _opts?: unknown) => {
@@ -528,6 +533,33 @@ describe("WoofWoofWoof application", () => {
       chatter: "user1",
       platform: "twitch",
     });
+  });
+
+  // The run reads the announced event itself: one id, time and session, and
+  // the slug as data.command even when the command's name has capitals.
+  test("a mixed-case command's workflow runs on the exact event it announced", async () => {
+    const { base, chat } = await startWith(linkedCommand({ command: "Hug" }));
+    await chat({ json: () => ({ data: { message: "!Hug wolfy", chatterName: "user1" } }) });
+
+    const decode = (topic: string) => {
+      const entry = base.publishLog.find((p) => p.topic === topic);
+      if (!entry) {
+        throw new Error(`expected a ${topic} publish`);
+      }
+      return JSON.parse(new TextDecoder().decode(entry.data));
+    };
+    const announced = decode("chat.command.hug");
+    const run = decode("workflow.command.execute");
+    expect(run.data.event).toEqual(announced);
+    expect(run.data.event.data.command).toBe("hug");
+  });
+
+  test("tells the chatter when the command's workflow could not be run", async () => {
+    const { base, chat } = await startWith(linkedCommand(), { failingTopics: ["workflow.command.execute"] });
+    await chat({ json: () => ({ data: { message: "!hug wolfy", chatterName: "user1" } }) });
+
+    expect(topics(base)).toEqual(["chat.command.hug"]);
+    expect(base.chatSay.mock.calls.map((call) => call[1])).toEqual(["Could not run !hug: connection closed"]);
   });
 
   test("a command throttled by its cooldown runs no workflow", async () => {
