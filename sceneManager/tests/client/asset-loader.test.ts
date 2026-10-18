@@ -161,3 +161,26 @@ describe("AssetCache", () => {
     expect(fetchFn).not.toHaveBeenCalled();
   });
 });
+
+describe("AssetCache retention", () => {
+  const json = () => new Response("{}", { headers: { "Content-Type": "application/json" } });
+
+  it("serves asks within the retain window from one read", async () => {
+    const fetchFn = respond(json());
+    const cache = new AssetCache(fetchFn, 50);
+    await cache.load("/assets/user/res-1/anim.json");
+    await cache.load("/assets/user/res-1/anim.json");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets go of a file after the window, so the next ask reads it again", async () => {
+    const fetchFn = respond(json(), json());
+    const cache = new AssetCache(fetchFn, 5);
+    await cache.load("/assets/user/res-1/anim.json");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(cache.size()).toBe(0);
+    await cache.load("/assets/user/res-1/anim.json");
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+});
