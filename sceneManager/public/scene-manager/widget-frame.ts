@@ -3,12 +3,12 @@
 // sandbox, the nonce, the bridge and the teardown are the same everywhere and
 // a page supplies only where the frame comes from and what its bridge does.
 
+import { BROWSER_HOST, type PageHost } from "./page-host";
 import { createFrameLoadHandler, WidgetBridge, type WidgetBridgeCallbacks } from "./widget-bridge";
 
 /** A per-frame nonce: 128 random bits, base64url. Every protocol message in both directions carries it. */
-export function generateNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
+export function generateNonce(randomBytes: PageHost["randomBytes"] = BROWSER_HOST.randomBytes): string {
+  const bytes = randomBytes(16);
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -36,6 +36,9 @@ export interface WidgetFrameOptions {
   hidden?: boolean;
   /** Teardown the page needs beyond the frame's own (storage watches, say). */
   onUnmount?(): void;
+  /** Where the frame is made; the page's own document when absent. */
+  document?: Pick<Document, "createElement">;
+  host?: PageHost;
 }
 
 export interface WidgetFrame {
@@ -47,8 +50,9 @@ export interface WidgetFrame {
 }
 
 export function mountWidgetFrame(options: WidgetFrameOptions): WidgetFrame {
-  const nonce = generateNonce();
-  const iframe = document.createElement("iframe");
+  const host = options.host ?? BROWSER_HOST;
+  const nonce = generateNonce(host.randomBytes);
+  const iframe = (options.document ?? document).createElement("iframe");
   iframe.className = "widget-frame";
   if (options.hidden) {
     iframe.style.opacity = "0";
@@ -70,7 +74,8 @@ export function mountWidgetFrame(options: WidgetFrameOptions): WidgetFrame {
         }
         return mounted;
       },
-    })
+    }),
+    host.log
   );
   mounted = bridge;
   iframe.addEventListener("load", createFrameLoadHandler(bridge));

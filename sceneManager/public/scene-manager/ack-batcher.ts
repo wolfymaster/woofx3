@@ -7,6 +7,7 @@
 // load, while a lost `delivered` leaves it being sent to the page again.
 
 import { encodeAckBody } from "../../contract/overlay-stream";
+import { BROWSER_HOST, type PageHost } from "./page-host";
 
 /** Milliseconds to accumulate acks before posting them as one batch. */
 export const ACK_BATCH_WINDOW_MS = 250;
@@ -41,15 +42,16 @@ export function postAck(
   url: string,
   instanceIds: string[],
   retry: AckRetry = DEFAULT_ACK_RETRY,
+  host: PageHost = BROWSER_HOST,
   attempt = 1
 ): void {
   const again = (): void => {
     if (attempt >= retry.attempts) {
-      console.warn("[scene-manager] gave up acknowledging", { url, attempts: attempt });
+      host.log.warn("[scene-manager] gave up acknowledging", { url, attempts: attempt });
       return;
     }
     const delay = Math.min(retry.maxMs, retry.initialMs * 2 ** (attempt - 1));
-    setTimeout(() => postAck(fetchFn, url, instanceIds, retry, attempt + 1), delay);
+    host.timers.setTimeout(() => postAck(fetchFn, url, instanceIds, retry, host, attempt + 1), delay);
   };
   fetchFn(url, {
     method: "POST",
@@ -70,15 +72,17 @@ export interface AckBatcherOptions {
   windowMs?: number;
   fetchFn?: typeof fetch;
   retry?: AckRetry;
+  host?: PageHost;
 }
 
 /** Batches instanceIds per eventId within a short window before POSTing. */
 export class AckBatcher {
   private readonly pending = new Map<string, Set<string>>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timer: unknown = null;
   private readonly windowMs: number;
   private readonly fetchFn: typeof fetch;
   private readonly retry: AckRetry;
+  private readonly host: PageHost;
 
   constructor(
     private readonly endpoint: (eventId: string) => string,
@@ -90,6 +94,7 @@ export class AckBatcher {
     // invocation" in the browser.
     this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
     this.retry = options.retry ?? DEFAULT_ACK_RETRY;
+    this.host = options.host ?? BROWSER_HOST;
   }
 
   add(eventId: string, instanceId: string): void {
@@ -100,7 +105,7 @@ export class AckBatcher {
     }
     set.add(instanceId);
     if (this.timer === null) {
-      this.timer = setTimeout(() => this.flush(), this.windowMs);
+      this.timer = this.host.timers.setTimeout(() => this.flush(), this.windowMs);
     }
   }
 
@@ -115,7 +120,7 @@ export class AckBatcher {
     const batch = [...this.pending];
     this.pending.clear();
     for (const [eventId, instanceIds] of batch) {
-      postAck(this.fetchFn, this.endpoint(eventId), [...instanceIds], this.retry);
+      postAck(this.fetchFn, this.endpoint(eventId), [...instanceIds], this.retry, this.host);
     }
   }
 }

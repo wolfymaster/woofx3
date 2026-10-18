@@ -9,11 +9,11 @@
 
 import { encodePlacementBoot, type WidgetBehaviorState } from "@woofx3/module-sdk";
 import { declaresKind, NO_DECLARED_KINDS, PROFILES } from "@woofx3/scene/model";
-import { createDomRenderer, createScheduler, type Scheduler } from "@woofx3/scene/runtime";
+import { createDomRenderer, createScheduler, type Scheduler, type SchedulerClock } from "@woofx3/scene/runtime";
 import { earliestMediaProxyExpiry } from "../../contract/media-url";
 import { ackPath, type DeliveryFrame } from "../../contract/overlay-stream";
 import { type SceneConfig, themeOf, type WidgetPlacementConfig } from "../../contract/scene-config";
-import { AckBatcher, postAck } from "./ack-batcher";
+import { AckBatcher, DEFAULT_ACK_RETRY, postAck } from "./ack-batcher";
 import { AlertAreas } from "./alert-areas";
 import { AssetCache } from "./asset-loader";
 import { ConnectionStatus } from "./connection-status";
@@ -22,9 +22,9 @@ import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "./even
 import { SceneEventSource } from "./event-source";
 import { swapFrameIn } from "./frame-swap";
 import { ModuleStateCache } from "./module-state";
-import { PAGE_CLOCK } from "./page-clock";
+import type { PageHost } from "./page-host";
 import { transientOfPreviewLayout } from "./preview-layout";
-import { createReconnectCoordinator } from "./reconnect-coordinator";
+import type { ReconnectCoordinator } from "./reconnect-coordinator";
 import { applySceneBackground } from "./scene-background";
 import { compositionOfConfig, parseSnapshot } from "./scene-document";
 import { SceneSync, type SceneView } from "./scene-sync";
@@ -56,6 +56,12 @@ export interface OverlayEnv {
   fetch(url: string, init?: RequestInit): Promise<Response>;
   /** Show or hide the Disconnected banner. */
   renderConnected(connected: boolean): void;
+  /** Timers, warnings and randomness for every unit of the page (page-host.ts). */
+  host: PageHost;
+  /** What the scene's timeline plays on: the document timeline's clock (page-clock.ts). */
+  clock: SchedulerClock<unknown>;
+  /** How the overlays of this browser share reconnects and restarts (reconnect-coordinator.ts). */
+  coordinator: ReconnectCoordinator;
 }
 
 /**
@@ -90,19 +96,18 @@ export function createOverlay(env: OverlayEnv): void {
   // The editor's preview shows the draft; every other overlay what is published.
   const view: SceneView = new URLSearchParams(env.location.search).get("view") === "draft" ? "draft" : "published";
   const fetchFn = (url: string, init?: RequestInit) => env.fetch(url, init);
-  const timers = {
-    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
-    clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-    now: () => Date.now(),
-  };
+  const { host } = env;
+  const timers = host.timers;
 
   const bridges = new Set<WidgetBridge>();
-  const queueManager = new EventQueueManager();
+  const queueManager = new EventQueueManager(timers);
   const deliveredBatcher = new AckBatcher((eventId) => ackPath(sceneBase, eventId, "delivered"), {
     fetchFn: fetchFn as typeof fetch,
+    host,
   });
   const completedBatcher = new AckBatcher((eventId) => ackPath(sceneBase, eventId, "completed"), {
     fetchFn: fetchFn as typeof fetch,
+    host,
   });
 
   const moduleState = new ModuleStateCache(async (instanceId, key) => {
@@ -115,7 +120,7 @@ export function createOverlay(env: OverlayEnv): void {
     return body.value ?? null;
   });
 
-  const assets = new AssetCache({ pageOrigin: env.location.origin, fetchFn });
+  const assets = new AssetCache({ pageOrigin: env.location.origin, fetchFn, host });
 
   /** `moduleId` is the placement's, from the scene record. */
   function postStatus(instanceId: string, moduleId: string, report: WidgetStatusReportPayload): void {
@@ -161,7 +166,7 @@ export function createOverlay(env: OverlayEnv): void {
     return scheduler;
   }
 
-  const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state));
+  const relay = new BehaviorRelay((id, state) => contents.get(id)?.bridge?.sendBehavior(state), host.log);
 
   const alertAreas = new AlertAreas({
     document: env.document,
@@ -171,8 +176,10 @@ export function createOverlay(env: OverlayEnv): void {
     assets,
     postStatus,
     ackAlert: (kind, eventId, instanceId) =>
-      postAck(fetchFn as typeof fetch, ackPath(sceneBase, eventId, kind), [instanceId]),
+      postAck(fetchFn as typeof fetch, ackPath(sceneBase, eventId, kind), [instanceId], DEFAULT_ACK_RETRY, host),
     rendered: (instanceId) => playing().widgetRendered(instanceId),
+    clock: env.clock,
+    host,
   });
 
   const draft = new DraftPreview({
@@ -216,7 +223,7 @@ export function createOverlay(env: OverlayEnv): void {
       return earliest;
     },
     reload: () => env.location.reload(),
-    warn: (message, detail) => console.warn(message, detail),
+    warn: (message, detail) => host.log.warn(message, detail),
   });
 
   // The composition the page plays: placements from `configs`, everything
@@ -253,6 +260,8 @@ export function createOverlay(env: OverlayEnv): void {
       slot,
       instanceId: instance.id,
       bridges,
+      document: env.document,
+      host,
       hidden: swapping,
       src: (nonce) => frameSrc(instance, nonce, entrance),
       callbacks: ({ bridge }): WidgetBridgeCallbacks => {
@@ -279,7 +288,7 @@ export function createOverlay(env: OverlayEnv): void {
               queue: queueManager.register(
                 instance.id,
                 queue,
-                (item) => bridge().sendEvent(subId, toWidgetEvent(item)),
+                (item) => bridge().sendEvent(subId, toWidgetEvent(item, timers.now())),
                 // The widget never finished it. The page gives up on it, so the
                 // server must too: acknowledged as completed, or it would stay
                 // open and play again after the next reload.
@@ -360,11 +369,11 @@ export function createOverlay(env: OverlayEnv): void {
   scheduler = createScheduler({
     doc: composition,
     profile: PROFILES.scene,
-    clock: PAGE_CLOCK,
+    clock: env.clock,
     renderer,
     // Read at every plan, so it follows `configs` as the scene changes.
     declaredKinds: (id) => configs.get(id)?.behaviorKinds,
-    onSkipped: (skips) => console.warn("[scene-manager] scene behaviors skipped", skips),
+    onSkipped: (skips) => host.log.warn("[scene-manager] scene behaviors skipped", skips),
   });
 
   /**
@@ -512,7 +521,7 @@ export function createOverlay(env: OverlayEnv): void {
   // reload and let the shell be re-rendered.
   let serverBootId: string | null = null;
 
-  const coordinator = createReconnectCoordinator();
+  const coordinator = env.coordinator;
 
   // Reloading is how this page recovers from anything a live stream can't
   // fix: the shell re-renders the current scene config and re-mints the
@@ -531,6 +540,8 @@ export function createOverlay(env: OverlayEnv): void {
     url: new URL(`${sceneBase}/events`, env.location.href).toString(),
     fetchFn: fetchFn as typeof fetch,
     coordinator,
+    setTimer: (callback, ms) => timers.setTimeout(callback, ms),
+    clearTimer: (handle) => timers.clearTimeout(handle),
   });
   eventSource.start({
     onFrame: (frame: DeliveryFrame) => {
@@ -592,5 +603,6 @@ export function createOverlay(env: OverlayEnv): void {
     // its own next renewal, so this page reloads alone.
     onExpired: () => env.location.reload(),
     intervalMs: REFRESH_INTERVAL_MS,
+    setInterval: (callback, ms) => timers.setInterval(callback, ms),
   });
 }

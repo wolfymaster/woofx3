@@ -4,13 +4,13 @@
 // asset cache). Messages cross as `postMessage` would carry them: cloned,
 // asynchronously, with the sender's window as their source.
 
+import { PROTOCOL_VERSION } from "@woofx3/module-sdk";
 import {
   installWidgetHostShim,
   type ShimMessageEvent,
   type ShimParentWindow,
   type ShimWindow,
 } from "@woofx3/module-sdk/src/widget-host-shim";
-import { PROTOCOL_VERSION } from "@woofx3/module-sdk";
 import { AssetCache } from "../../public/scene-manager/asset-loader";
 import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "../../public/scene-manager/event-queue";
 import { ModuleStateCache } from "../../public/scene-manager/module-state";
@@ -113,7 +113,7 @@ export const realHarness: HarnessFactory = (options: HarnessOptions): HostHarnes
         queue: queues.register(
           INSTANCE_ID,
           queue,
-          (item) => bridge.sendEvent(subId, toWidgetEvent(item)),
+          (item) => bridge.sendEvent(subId, toWidgetEvent(item, Date.now())),
           () => {}
         ),
       };

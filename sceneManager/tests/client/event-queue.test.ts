@@ -247,16 +247,17 @@ describe("EventQueueManager — routing and lifecycle", () => {
 describe("toWidgetEvent", () => {
   const frame = { eventId: "e1", type: "channel.follow", key: "channel.follow" };
 
-  it("carries the delivery's type, id and value", () => {
-    const event = toWidgetEvent({ ...frame, value: { userName: "someone" } });
+  it("carries the delivery's type, id and value, stamped with the time given", () => {
+    const event = toWidgetEvent({ ...frame, value: { userName: "someone" } }, Date.UTC(2026, 9, 18, 12));
     expect(event.type).toBe("channel.follow");
     expect(event.eventId).toBe("e1");
     expect(event.data).toEqual({ userName: "someone" });
+    expect(event.time).toBe("2026-10-18T12:00:00.000Z");
   });
 
   it("passes a non-object value through as data untouched", () => {
-    expect(toWidgetEvent({ ...frame, value: 42 }).data).toBe(42);
-    expect(toWidgetEvent({ ...frame, value: null }).data).toBeNull();
+    expect(toWidgetEvent({ ...frame, value: 42 }, 0).data).toBe(42);
+    expect(toWidgetEvent({ ...frame, value: null }, 0).data).toBeNull();
   });
 });
 
