@@ -2,16 +2,16 @@ import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
-import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { encode } from "@woofx3/common/cloudevents/utils";
+import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as storage from "@woofx3/db/storage.pb";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
-import { type DbClient, DbError } from "./db-client";
+import { DbError, type DbClient } from "./db-client";
+import type { WebhookClient } from "./webhook-client";
 import { timestampFromDate, timestampToIso } from "./routes/helpers";
 import { decideOnStreamOnline } from "./stream-session-policy";
-import type { WebhookClient } from "./webhook-client";
 
 /**
  * Owns which stream session the system is in.

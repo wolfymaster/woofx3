@@ -1,7 +1,7 @@
+import { routeModule } from "./context";
 import type * as treat from "@woofx3/db/treat.pb";
 import type * as user from "@woofx3/db/user.pb";
 import * as protoscript from "protoscript";
-import { routeModule } from "./context";
 import { timestampFromDate } from "./helpers";
 
 export const userActionsRoutes = routeModule({

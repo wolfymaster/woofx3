@@ -28,7 +28,6 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
 import type { EventLogSelectionSource } from "../event-log-selection";
-import type { MarketplaceClient } from "../marketplace-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
@@ -65,8 +64,6 @@ export interface ApiOptions {
   logger: SharedLogger;
   /** The running release (`WOOFX3_VERSION`); "dev" for an unversioned build. */
   version?: string;
-  /** The marketplace to install from; null or absent when marketplace installs are turned off. */
-  marketplace?: MarketplaceClient | null;
   /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
   hosting?: EngineHosting | null;
 }
@@ -104,7 +101,6 @@ export class ApiRouteHost extends RpcTarget {
   protected apiUrl: string;
   protected logger: SharedLogger;
   protected version: string;
-  protected marketplace: MarketplaceClient | null;
   protected hosting: EngineHosting | null;
 
   protected getBarkloaderBaseUrl(): string {
@@ -389,7 +385,6 @@ export class ApiRouteHost extends RpcTarget {
     this.apiUrl = opts.apiUrl;
     this.logger = opts.logger;
     this.version = opts.version ?? UNVERSIONED;
-    this.marketplace = opts.marketplace ?? null;
     this.hosting = opts.hosting ?? null;
   }
 }
