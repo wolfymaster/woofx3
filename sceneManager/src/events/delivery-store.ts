@@ -25,6 +25,12 @@ interface OpenDelivery {
    * only: after a restart every page reloads and reports again.
    */
   startedAt: number | null;
+  /**
+   * Whether a page connected now has acknowledged queueing this delivery.
+   * The sweep sends only undelivered ones again. Cleared when a page
+   * subscribes, since a page that reloaded holds nothing it was sent before.
+   */
+  delivered: boolean;
 }
 
 /** An open delivery as a caller outside the store needs to see it. */
@@ -118,6 +124,7 @@ export class DeliveryStore {
         value: event.value,
         lastAttemptAt: 0,
         startedAt: null,
+        delivered: false,
       });
     }
     this.logger.info("delivery-store: hydrated open deliveries", { count: deliveries.length });
@@ -227,18 +234,29 @@ export class DeliveryStore {
         value: params.value,
         lastAttemptAt: Date.now(),
         startedAt: null,
+        delivered: false,
       });
       this.push(params.sceneId, { eventId, instanceId, type: params.type, key: params.key, value: params.value });
     }
     return eventId;
   }
 
-  /** Client acks receipt+enqueue for one or more instances of the same event. */
-  async ackDelivered(sceneId: string, eventId: string, instanceIds: string[]): Promise<void> {
+  /**
+   * A page queued these instances' deliveries of an event: the sweep stops
+   * sending them. Returns the instances whose delivery could not be recorded,
+   * so the page sends its ack again; they still count as delivered here.
+   */
+  async ackDelivered(sceneId: string, eventId: string, instanceIds: string[]): Promise<string[]> {
+    const failed: string[] = [];
     for (const instanceId of instanceIds) {
+      const delivery = this.open.get(sceneId)?.get(eventId)?.get(instanceId);
+      if (delivery) {
+        delivery.delivered = true;
+      }
       try {
         await this.db.recordSceneEventDelivery({ sceneEventId: eventId, instanceId });
       } catch (err) {
+        failed.push(instanceId);
         this.logger.warn("delivery-store: recordDelivery failed", {
           sceneId,
           eventId,
@@ -247,22 +265,30 @@ export class DeliveryStore {
         });
       }
     }
+    return failed;
   }
 
-  /** Client acks completion for one or more instances of the same event. */
   /**
    * A page finished an event on these instances. Returns the deliveries this
-   * closed, so the caller can record what finished. A delivery already closed
-   * -- cancelled by a skip, or acked by another page -- is not returned: its
-   * end has been recorded by whoever closed it.
+   * closed, so the caller can record what finished, and the instances whose
+   * completion could not be recorded: those stay open, and the page sends its
+   * ack again. A delivery already closed -- cancelled by a skip, or acked by
+   * another page -- is not returned: its end has been recorded by whoever
+   * closed it.
    */
-  async ackCompleted(sceneId: string, eventId: string, instanceIds: string[]): Promise<OpenDeliveryRef[]> {
+  async ackCompleted(
+    sceneId: string,
+    eventId: string,
+    instanceIds: string[]
+  ): Promise<{ closed: OpenDeliveryRef[]; failed: string[] }> {
     const closed: OpenDeliveryRef[] = [];
+    const failed: string[] = [];
     for (const instanceId of instanceIds) {
       const delivery = this.open.get(sceneId)?.get(eventId)?.get(instanceId);
       try {
         await this.db.recordSceneEventCompletion({ sceneEventId: eventId, instanceId });
       } catch (err) {
+        failed.push(instanceId);
         this.logger.warn("delivery-store: recordCompletion failed", {
           sceneId,
           eventId,
@@ -282,7 +308,7 @@ export class DeliveryStore {
         });
       }
     }
-    return closed;
+    return { closed, failed };
   }
 
   /**
@@ -300,6 +326,9 @@ export class DeliveryStore {
     sockets.add(controller);
 
     for (const delivery of this.openDeliveriesFor(sceneId)) {
+      // The page may be one that just reloaded, holding none of it: until it
+      // says it queued the delivery again, the sweep keeps sending it.
+      delivery.delivered = false;
       this.sendTo(controller, {
         eventId: delivery.eventId,
         instanceId: delivery.instanceId,
@@ -450,8 +479,8 @@ export class DeliveryStore {
   }
 
   /**
-   * Background sweep: re-push any delivery whose last attempt exceeds
-   * the redelivery threshold without a delivered ack. Server-driven
+   * Background sweep: re-push any undelivered delivery whose last attempt
+   * exceeds the redelivery threshold. Server-driven
    * "did the browser even see this" retry — distinct from and
    * unaware of the client-side per-widget retryTimeoutMs.
    */
@@ -476,7 +505,7 @@ export class DeliveryStore {
         continue;
       }
       for (const delivery of this.openDeliveriesFor(sceneId)) {
-        if (now - delivery.lastAttemptAt < REDELIVER_AFTER_MS) {
+        if (delivery.delivered || now - delivery.lastAttemptAt < REDELIVER_AFTER_MS) {
           continue;
         }
         delivery.lastAttemptAt = now;
