@@ -310,7 +310,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
 | `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. |
-| `missingText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field while it is required and has no value yet. Must be non-empty when present. |
+| `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it is required and has no value yet. Must be non-empty when present. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -675,6 +675,7 @@ Common fields:
 | `type` | string | yes | `function` or `native`; any other value is refused at install. Determines which other top-level field is required. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
+| `sentence` | string | no | One-line English template the UI renders for a configured step that runs this action, e.g. `"Add {step} to {target}"`; see [Action sentences](#action-sentences). Forwarded to the DB as `sentence` (`""` when absent). |
 | `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. The first entry places the action in the workflow builder's action picker; with none, the action is listed under its module. See [How the action picker reads an action's taxonomy](#how-the-action-picker-reads-an-action-s-taxonomy). |
 
@@ -724,6 +725,20 @@ The bundled `woofx3` module (`modules/woofx3/manifest.json`) declares its engine
 ```
 
 A later workflow step can then reference `${increment.next}` (where `increment` is that step's id) in any of its own field values, and the workflow builder's variable picker will offer `next` / `previous` / `step` with their declared descriptions.
+
+#### Action sentences
+
+An action's `sentence` is how the UI describes a configured step that runs it, so a collapsed step reads as one line of plain English. It uses the [trigger sentence](#trigger-sentences) grammar: each `{fieldId}` placeholder names a field in the action's own `schema`, and never a trigger field or an earlier step's output. For the increment action above, `"sentence": "Add {step} to {target}"` renders as "Add 5 to Deaths". The UI substitutes, in order of preference:
+
+- the value the user configured, or the option's label for a `select`
+- the field's short variable name when the value is taken from an earlier step or the trigger (`next` for `${increment.next}`)
+- the field's `missingText` (rendered as a warning) while a required field has no value yet
+
+`anyText` does not apply: an action field is never set to "any".
+
+A sentence is rejected at install, naming the action, when it is empty or only whitespace, when a brace is unbalanced, nested or encloses nothing, or when a placeholder is not the `id` of a field in the action's `schema`. The rules and their reasons are the trigger ones.
+
+Absent means the author declared none, and clients build a sentence from the action's name and its setting labels instead. An action with no settings can usually leave it out.
 
 ### Function entry (`functions[]`)
 
