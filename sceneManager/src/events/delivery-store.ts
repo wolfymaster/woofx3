@@ -320,8 +320,10 @@ export class DeliveryStore {
     for (const delivery of this.openDeliveriesFor(sceneId)) {
       (openSet[delivery.instanceId] ??= []).push(delivery.eventId);
       // The page may be one that just reloaded, holding none of it: until it
-      // says it queued the delivery again, the sweep keeps sending it.
+      // says it queued the delivery again, the sweep keeps sending it, from
+      // a full interval after this replay.
       delivery.delivered = false;
+      delivery.lastAttemptAt = Date.now();
       this.sendTo(controller, {
         eventId: delivery.eventId,
         instanceId: delivery.instanceId,
