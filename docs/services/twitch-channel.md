@@ -8,10 +8,11 @@ options source) asks it to act by sending a command on the `twitchapi` NATS
 subject. It validates the request against Twitch's rules, performs it with the
 linked account's token, and answers with the result or an error.
 
-The generic engine API has no Twitch methods. Twitch actions a streamer puts
-in a workflow come from the Twitch platform module, whose functions call
-`ctx.twitch` (see [Modules](#modules)), and the UI's dashboard widgets talk
-to Helix themselves.
+Twitch actions a streamer puts in a workflow come from the Twitch platform
+module, whose functions call `ctx.twitch` (see [Modules](#modules)). The
+dashboard's Twitch widgets make their Helix calls through the engine's Twitch
+methods when the engine advertises them, and straight to Helix otherwise (see
+[Dashboard Helix calls](#dashboard-helix-calls)).
 
 ## The `twitchapi` subject
 
@@ -34,6 +35,8 @@ message:
 | `rate_limited` | `shoutout` refused by Twitch's shoutout limit (one every 2 minutes, one per channel every 60 minutes), or an ad command refused with HTTP 429. |
 | `missing_scope` | An ad command whose scope the link does not carry. Relinking Twitch fixes it. |
 | `unauthorized` | An ad command whose token Twitch refused. |
+| `invalid_arguments` | `helix` refused its arguments before calling Twitch: an unknown operation, or a parameter the operation does not declare, is missing, or has the wrong type. |
+| `not_linked` | `helix` while no Twitch account is linked. The other commands answer this refusal with no code. |
 
 Only the commands below are served (`TWITCH_API_COMMANDS` in
 `twitch/src/lib/twitch.ts`); anything else is answered with
@@ -53,6 +56,7 @@ Only the commands below are served (`TWITCH_API_COMMANDS` in
 | `addChannelModerator` | `{ userId }` | `{ ok, userId }` | `channel:manage:moderators` |
 | `getAdSchedule` | none | see [Ad breaks](#twitchapi-ad-commands) | `channel:read:ads` |
 | `snoozeNextAd` | none | see [Ad breaks](#twitchapi-ad-commands) | `channel:manage:ads` |
+| `helix` | `{ operation, params? }` | `{ ok: true, body }` or `{ ok: false, status, body }`; see [Dashboard Helix calls](#dashboard-helix-calls) | per operation |
 
 ### Shoutouts are queued
 
@@ -166,8 +170,8 @@ A workflow step or command that names another module's action runs that
 module's code with that module's permissions, so an uploaded module doing so
 must declare every permission the other module declares, or it does not
 install.
-An undeclared call throws before anything is sent. Moderator changes and the
-ad commands are not reachable from modules at all.
+An undeclared call throws before anything is sent. Moderator changes, the
+ad commands and `helix` are not reachable from modules at all.
 
 A failed call throws an `Error` (Lua: raises a table `{ message, code? }`)
 with the twitch service's own message, so the rules above reach the module
@@ -186,6 +190,65 @@ unchanged. `code` is:
 A platform module exposes these to workflows as actions backed by functions,
 the same way `twitch.shoutout` is. See
 [Engine integrity](./engine-integrity.md).
+
+## Dashboard Helix calls
+
+The dashboard's Twitch widgets read Helix's responses themselves: Twitch's
+bodies, statuses and error messages decide what a widget shows. So the engine
+offers them the Helix calls themselves rather than reshaped results. Each
+engine API method performs one Helix call as the linked broadcaster and
+answers with what Twitch answered:
+
+```ts
+type TwitchHelixResult =
+  | { ok: true; body: unknown } // Helix's JSON body unchanged; null for a 204
+  | { ok: false; code: "helix"; error: string; status: number; body: string } // Twitch's error status and body
+  | { ok: false; code: "invalid_arguments" | "not_linked" | "unavailable" | "timeout" | "failed"; error: string };
+```
+
+A refusal is a result, never a thrown error, because an RPC error carries
+only its message. The codes:
+
+| `code` | When |
+|---|---|
+| `helix` | Twitch answered with an error status. `status` is Twitch's, `body` is Twitch's error body as it sent it (`{"error","status","message"}`), and `error` reads `Twitch answered <status>: <message>`. |
+| `invalid_arguments` | A parameter the method does not take, a missing required one, or a value of the wrong type. Nothing was sent to Twitch. |
+| `not_linked` | No Twitch account is linked to the engine. |
+| `unavailable` | The twitch service is not running. |
+| `timeout` | The twitch service did not answer within 10 seconds. Twitch may still have acted. |
+| `failed` | Anything else, such as Twitch not being reachable at all. |
+
+Parameters use Helix's own names. The ids that name the broadcaster
+(`broadcaster_id`, `moderator_id`, `user_id`, `sender_id`,
+`from_broadcaster_id`) are always the linked broadcaster's and are filled in
+by the engine; a method refuses them as parameters. Only the shape of a
+parameter is checked: lengths, ranges and allowed values are Twitch's to
+enforce, and its refusal comes back as a `helix` result.
+
+Each method is the api's request to the twitch service's `helix` command,
+which performs one operation from `HELIX_OPERATIONS` in
+`twitch/src/lib/helix.ts`. Every operation is sent once, reads included, as
+the dashboard's own Helix calls are: a 5xx or a failed connection is
+answered as it is, never retried, because Twitch may have sent the chat
+message or made the clip before failing. The one exception is a 401, which
+Twitch answers before acting: the token is renewed and the request sent one
+more time. The request bypasses Twurple's API client, whose retries would
+break that rule, and uses the same auth provider for its token.
+
+| Method | Helix call | Params | Capability |
+|---|---|---|---|
+| `twitchGetChannelInformation()` | `GET /channels?broadcaster_id` | none | `twitch.streamInfo` |
+| `twitchGetGames(params)` | `GET /games` | `{ id }` | `twitch.streamInfo` |
+| `twitchSearchCategories(params)` | `GET /search/categories` | `{ query, first? }` | `twitch.streamInfo` |
+| `twitchModifyChannelInformation(params)` | `PATCH /channels?broadcaster_id` | body `{ title?, game_id?, tags? }`; `game_id: ""` clears the category | `twitch.streamInfo` |
+| `twitchCreateStreamMarker(params)` | `POST /streams/markers` | body `{ description? }`, sent with `user_id` | `twitch.streamInfo` |
+
+The token is the one the twitch service holds: the linked account's, from the
+dashboard that linked it (see [Who renews the token](#who-renews-the-token)),
+with the scopes that link was granted. The broadcaster is the engine's
+broadcaster, which is the linked account unless `woofx3TwitchChannelName`
+names another channel; a call for another channel has no token to use and
+fails.
 
 ## Ad breaks
 

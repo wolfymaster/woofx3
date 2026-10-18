@@ -5,6 +5,7 @@ export * from "./config-bundle";
 export * from "./overlay-events";
 export * from "./rpc";
 export * from "./stream-events";
+export * from "./twitch-helix";
 export * from "./ui-schema";
 export * from "./webhooks";
 export * from "./workflow-definition";
