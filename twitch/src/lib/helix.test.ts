@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import type { HelixOperationName } from "@woofx3/common/cloudevents/Twitch/commands";
 import {
   buildHelixRequest,
@@ -36,15 +36,40 @@ function fakeAuth(): HelixAuth {
   };
 }
 
-/** A fetch that answers each request with the next of `answers`, and records what it was sent. */
+let fetchSpy: Mock<typeof fetch>;
+
+/** Fetch as `callTwitchApiRaw` calls it, without Bun's extra members on `typeof fetch`. */
+type FetchCall = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+/** Answer every fetch with `answer`. */
+function stubFetch(answer: FetchCall): void {
+  fetchSpy.mockImplementation(answer as typeof fetch);
+}
+
+beforeEach(() => {
+  fetchSpy = spyOn(globalThis, "fetch");
+  stubFetch(async () => {
+    throw new Error("fetch called without fetchAnswering");
+  });
+});
+
+afterEach(() => {
+  fetchSpy.mockRestore();
+});
+
+/**
+ * Answer each request fetch is sent with the next of `answers`, and record
+ * the requests. Mocks the global fetch, which Twurple's `callTwitchApiRaw`
+ * calls.
+ */
 function fetchAnswering(...answers: (Response | Error)[]) {
   const sent: Sent[] = [];
-  const fetchFn = async (url: string, init: RequestInit): Promise<Response> => {
+  stubFetch(async (input, init) => {
     sent.push({
-      url,
-      method: String(init.method),
-      headers: init.headers as Record<string, string>,
-      body: init.body === undefined ? undefined : JSON.parse(String(init.body)),
+      url: String(input),
+      method: String(init?.method),
+      headers: Object.fromEntries(new Headers(init?.headers).entries()),
+      body: init?.body == null ? undefined : JSON.parse(String(init.body)),
     });
     const answer = answers[sent.length - 1];
     if (answer === undefined) {
@@ -54,8 +79,8 @@ function fetchAnswering(...answers: (Response | Error)[]) {
       throw answer;
     }
     return answer;
-  };
-  return { fetchFn, sent };
+  });
+  return { sent };
 }
 
 function json(status: number, body: unknown): Response {
@@ -267,6 +292,14 @@ describe("buildHelixRequest", () => {
     });
   }
 
+  test("declares no parameter under a name the broadcaster's id fills", () => {
+    for (const [operation, declared] of Object.entries(HELIX_OPERATIONS)) {
+      const filled = new Set([...declared.broadcasterQuery, ...declared.broadcasterBody]);
+      const overlapping = Object.keys(declared.params).filter((name) => filled.has(name));
+      expect({ operation, overlapping }).toEqual({ operation, overlapping: [] });
+    }
+  });
+
   test("covers every declared operation", () => {
     const covered = new Set<string>(REQUESTS.map(([operation]) => operation));
     expect([...covered].sort()).toEqual(Object.keys(HELIX_OPERATIONS).sort());
@@ -329,9 +362,7 @@ describe("validateHelixParams", () => {
   });
 
   test("refuses with the invalid_arguments code", async () => {
-    const err = await refusalOf(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getGames" }, fetchAnswering().fetchFn)
-    );
+    const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getGames" }));
     expect(err.code).toBe("invalid_arguments");
   });
 });
@@ -339,58 +370,61 @@ describe("validateHelixParams", () => {
 describe("runHelixOperation", () => {
   test("sends the request as the broadcaster and answers with Helix's body unchanged", async () => {
     const body = { data: [{ broadcaster_id: BROADCASTER_ID, title: "Hi", game_id: "1", tags: [] }] };
-    const { fetchFn, sent } = fetchAnswering(json(200, body));
+    const { sent } = fetchAnswering(json(200, body));
 
-    const result = await runHelixOperation(
-      fakeAuth(),
-      BROADCASTER_ID,
-      { operation: "modifyChannelInformation", params: { title: "Hi" } },
-      fetchFn
-    );
+    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
+      operation: "modifyChannelInformation",
+      params: { title: "Hi" },
+    });
 
     expect(result).toEqual({ ok: true, body });
     expect(sent).toEqual([
       {
         url: `https://api.twitch.tv/helix/channels?broadcaster_id=${BROADCASTER_ID}`,
         method: "PATCH",
-        headers: { Authorization: "Bearer token-1", "Client-Id": "client-1", "Content-Type": "application/json" },
+        headers: {
+          accept: "application/json",
+          authorization: "Bearer token-1",
+          "client-id": "client-1",
+          "content-type": "application/json",
+        },
         body: { title: "Hi" },
       },
     ]);
   });
 
   test("encodes the query and sends no body for a read", async () => {
-    const { fetchFn, sent } = fetchAnswering(json(200, { data: [] }));
+    const { sent } = fetchAnswering(json(200, { data: [] }));
 
-    await runHelixOperation(
-      fakeAuth(),
-      BROADCASTER_ID,
-      { operation: "searchCategories", params: { query: "just chat & more", first: 10 } },
-      fetchFn
-    );
+    await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
+      operation: "searchCategories",
+      params: { query: "just chat & more", first: 10 },
+    });
 
     expect(sent[0]?.url).toBe("https://api.twitch.tv/helix/search/categories?query=just+chat+%26+more&first=10");
     expect(sent[0]?.body).toBeUndefined();
-    expect(sent[0]?.headers).toEqual({ Authorization: "Bearer token-1", "Client-Id": "client-1" });
+    expect(sent[0]?.headers).toEqual({
+      accept: "application/json",
+      authorization: "Bearer token-1",
+      "client-id": "client-1",
+    });
   });
 
   test("answers null for a response with no body", async () => {
-    const { fetchFn } = fetchAnswering(new Response(null, { status: 204 }));
+    fetchAnswering(new Response(null, { status: 204 }));
     expect(
-      await runHelixOperation(
-        fakeAuth(),
-        BROADCASTER_ID,
-        { operation: "modifyChannelInformation", params: { title: "x" } },
-        fetchFn
-      )
+      await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
+        operation: "modifyChannelInformation",
+        params: { title: "x" },
+      })
     ).toEqual({ ok: true, body: null });
   });
 
   test("answers Twitch's error status and body as a result, as Twitch sent it", async () => {
     const twitchBody = '{"error":"Not Found","status":404,"message":"stream not found"}';
-    const { fetchFn } = fetchAnswering(new Response(twitchBody, { status: 404 }));
+    fetchAnswering(new Response(twitchBody, { status: 404 }));
 
-    expect(await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, fetchFn)).toEqual({
+    expect(await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" })).toEqual({
       ok: false,
       status: 404,
       body: twitchBody,
@@ -398,89 +432,129 @@ describe("runHelixOperation", () => {
   });
 
   test("sends a write once when Twitch answers 5xx, and answers that status", async () => {
-    const { fetchFn, sent } = fetchAnswering(new Response("upstream failed", { status: 503 }), json(200, { data: [] }));
+    const { sent } = fetchAnswering(new Response("upstream failed", { status: 503 }), json(200, { data: [] }));
 
-    const result = await runHelixOperation(
-      fakeAuth(),
-      BROADCASTER_ID,
-      { operation: "createStreamMarker", params: { description: "clutch" } },
-      fetchFn
-    );
+    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
+      operation: "createStreamMarker",
+      params: { description: "clutch" },
+    });
 
     expect(result).toEqual({ ok: false, status: 503, body: "upstream failed" });
     expect(sent).toHaveLength(1);
   });
 
   test("sends a write once when the request fails in transit, and throws", async () => {
-    const { fetchFn, sent } = fetchAnswering(new TypeError("fetch failed"), json(200, { data: [] }));
+    const { sent } = fetchAnswering(new TypeError("fetch failed"), json(200, { data: [] }));
 
     await expect(
-      runHelixOperation(
-        fakeAuth(),
-        BROADCASTER_ID,
-        { operation: "modifyChannelInformation", params: { title: "x" } },
-        fetchFn
-      )
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "modifyChannelInformation", params: { title: "x" } })
     ).rejects.toThrow("fetch failed");
     expect(sent).toHaveLength(1);
   });
 
   test("sends a read once when Twitch answers 5xx", async () => {
-    const { fetchFn, sent } = fetchAnswering(new Response("", { status: 500 }), json(200, { data: [] }));
+    const { sent } = fetchAnswering(new Response("", { status: 500 }), json(200, { data: [] }));
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, fetchFn);
+    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" });
 
     expect(result).toEqual({ ok: false, status: 500, body: "" });
     expect(sent).toHaveLength(1);
   });
 
   test("renews the token and sends again once after a 401, which Twitch answers before acting", async () => {
-    const { fetchFn, sent } = fetchAnswering(
+    const { sent } = fetchAnswering(
       json(401, { error: "Unauthorized", status: 401, message: "Invalid OAuth token" }),
       json(200, { data: [{ id: "m1" }] })
     );
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, fetchFn);
+    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" });
 
     expect(result).toEqual({ ok: true, body: { data: [{ id: "m1" }] } });
-    expect(sent.map((request) => request.headers.Authorization)).toEqual(["Bearer token-1", "Bearer token-2"]);
+    expect(sent.map((request) => request.headers.authorization)).toEqual(["Bearer token-1", "Bearer token-2"]);
   });
 
   test("answers a second 401 as the result, without a third request", async () => {
     const unauthorized = '{"error":"Unauthorized","status":401,"message":"Missing scope: channel:manage:broadcast"}';
-    const { fetchFn, sent } = fetchAnswering(
+    const { sent } = fetchAnswering(
       new Response(unauthorized, { status: 401 }),
       new Response(unauthorized, { status: 401 })
     );
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, fetchFn);
+    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" });
 
     expect(result).toEqual({ ok: false, status: 401, body: unauthorized });
     expect(sent).toHaveLength(2);
   });
 
   test("throws for a success that is not JSON", async () => {
-    const { fetchFn } = fetchAnswering(new Response("<html>", { status: 200 }));
-    await expect(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, fetchFn)
-    ).rejects.toThrow("not JSON");
+    fetchAnswering(new Response("<html>", { status: 200 }));
+    await expect(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" })).rejects.toThrow(
+      "not JSON"
+    );
   });
 
   test("throws when there is no token for the broadcaster, without a request", async () => {
-    const { fetchFn, sent } = fetchAnswering();
+    const { sent } = fetchAnswering();
     const auth = { ...fakeAuth(), getAccessTokenForUser: async () => null };
 
-    await expect(
-      runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, fetchFn)
-    ).rejects.toThrow("no Twitch token");
+    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" })).rejects.toThrow(
+      "no Twitch token"
+    );
     expect(sent).toEqual([]);
   });
 
+  test("gives up on a request Twitch does not answer within the deadline", async () => {
+    const sent: AbortSignal[] = [];
+    stubFetch(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal;
+          sent.push(signal);
+          signal.addEventListener("abort", () => reject(signal.reason));
+        })
+    );
+
+    await expect(
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, 20)
+    ).rejects.toThrow("helix createStreamMarker: no answer within 0.02s; Twitch may still have acted");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.aborted).toBe(true);
+  });
+
+  test("gives up on a body Twitch does not finish sending within the deadline", async () => {
+    const endless = new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("{")) });
+    fetchAnswering(new Response(endless, { status: 200 }));
+
+    await expect(
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, 20)
+    ).rejects.toThrow("no answer within 0.02s");
+  });
+
+  test("counts the wait for a token against the deadline, and sends nothing after it", async () => {
+    const { sent } = fetchAnswering(json(200, { data: [] }));
+    const auth = { ...fakeAuth(), getAccessTokenForUser: () => new Promise<never>(() => {}) };
+
+    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, 20)).rejects.toThrow(
+      "no answer within 0.02s, before a request was sent"
+    );
+    expect(sent).toEqual([]);
+  });
+
+  test("counts the token renewal after a 401 against the same deadline", async () => {
+    const { sent } = fetchAnswering(new Response("", { status: 401 }), json(200, { data: [] }));
+    const auth = { ...fakeAuth(), refreshAccessTokenForUser: () => new Promise<never>(() => {}) };
+
+    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, 20)).rejects.toThrow(
+      "Twitch may still have acted"
+    );
+    expect(sent).toHaveLength(1);
+  });
+
   test("refuses an unknown or inherited operation without a request", async () => {
-    const { fetchFn, sent } = fetchAnswering();
+    const { sent } = fetchAnswering();
 
     for (const operation of ["deleteVideos", "toString"]) {
-      const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation }, fetchFn));
+      const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation }));
       expect(err.code).toBe("invalid_arguments");
     }
     expect(sent).toEqual([]);

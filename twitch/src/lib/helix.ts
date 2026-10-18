@@ -1,3 +1,4 @@
+import { callTwitchApiRaw } from "@twurple/api-call";
 import type { AuthProvider } from "@twurple/auth";
 import type {
   HelixCommandArgs,
@@ -5,6 +6,14 @@ import type {
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { TwitchApiError } from "./twitchApiError";
+
+// Twurple passes these straight to fetch and leaves declaring the ones a
+// caller uses to the caller.
+declare module "@twurple/api-call" {
+  interface TwitchApiCallFetchOptions {
+    signal?: AbortSignal;
+  }
+}
 
 type HelixMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -322,7 +331,8 @@ function describeShape(shape: ParamShape): string {
 export interface HelixRequest {
   method: HelixMethod;
   url: string;
-  query: Record<string, string>;
+  /** An array is sent as the key repeated once per value, as Helix takes a list. */
+  query: Record<string, string | string[]>;
   /** Absent for an operation that sends no body. */
   jsonBody?: Record<string, unknown>;
 }
@@ -334,19 +344,13 @@ export function buildHelixRequest(
   params: Record<string, string | number | boolean | string[]>
 ): HelixRequest {
   const declared = HELIX_OPERATIONS[operation];
-  const query: Record<string, string> = {};
-  for (const name of declared.broadcasterQuery) {
-    query[name] = broadcasterId;
-  }
+  const query: Record<string, string | string[]> = {};
   const body: Record<string, unknown> = {};
-  for (const name of declared.broadcasterBody) {
-    body[name] = broadcasterId;
-  }
   const data: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(params)) {
     switch (declared.paramsIn) {
       case "query": {
-        query[name] = String(value);
+        query[name] = Array.isArray(value) ? value : String(value);
         break;
       }
       case "body": {
@@ -358,6 +362,14 @@ export function buildHelixRequest(
         break;
       }
     }
+  }
+  // Written after the caller's parameters, so the broadcaster's ids win even
+  // if an operation ever declared one of them as a parameter.
+  for (const name of declared.broadcasterQuery) {
+    query[name] = broadcasterId;
+  }
+  for (const name of declared.broadcasterBody) {
+    body[name] = broadcasterId;
   }
   if (declared.paramsIn === "bodyData") {
     body.data = data;
@@ -382,62 +394,97 @@ function parseHelixArgs(args: unknown): { operation: HelixOperationName; params:
   return { operation, params };
 }
 
-const HELIX_BASE_URL = "https://api.twitch.tv/helix/";
+/**
+ * How long one operation may take in all: getting the token, the request, the
+ * renewal and resend after a 401, and reading Twitch's answer. Must stay below
+ * `TWITCH_HELIX_TIMEOUT_MS` (10s) in api/src/routes/twitch.ts, the api's wait
+ * for this service's reply, so the api hears why an operation failed instead
+ * of timing out on it; the rest of that wait is margin for the NATS round trip.
+ */
+export const HELIX_DEADLINE_MS = 8_000;
 
 /** What `runHelixOperation` needs of the twitch service's Twurple auth provider. */
 export type HelixAuth = Pick<AuthProvider, "clientId" | "getAccessTokenForUser" | "refreshAccessTokenForUser">;
 
-export type HelixFetch = (url: string, init: RequestInit) => Promise<Response>;
+/**
+ * `promise`'s outcome, or the signal's reason once it aborts first. Bounds a
+ * wait the signal cannot cancel, such as the dashboard auth provider asking
+ * the api for a token, which has a longer timeout of its own; that request
+ * carries on and still stores the token it gets.
+ */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
 
 /**
  * Perform one declared Helix operation with the broadcaster's token and
  * answer with Twitch's own result. Twitch answering with an error status is
  * a result (`ok: false`), so its status and reason reach the caller intact;
  * only a request refused before it is sent, or one that never got an answer,
- * throws.
+ * throws. The whole operation gives up after `deadlineMs`.
  *
- * Sent with a plain fetch rather than Twurple's API client, because that
- * client retries a 5xx or a network failure up to three times: a chat
- * message, ban or clip that Twitch carried out before failing would be
- * carried out again. Every operation, reads included, gets one attempt, as
- * the dashboard's own Helix calls do. The one exception is a 401, which
- * Twitch answers before acting: the token is renewed and the request sent
- * once more.
+ * Sent with Twurple's `callTwitchApiRaw`, which makes exactly one request,
+ * rather than its API client, because that client retries a 5xx or a network
+ * failure up to three times: a chat message, ban or clip that Twitch carried
+ * out before failing would be carried out again. Every operation, reads
+ * included, gets one attempt, as the dashboard's own Helix calls do. The one
+ * exception is a 401, which Twitch answers before acting: the token is renewed
+ * and the request sent once more.
  */
 export async function runHelixOperation(
   auth: HelixAuth,
   broadcasterId: string,
   args: unknown,
-  fetchFn: HelixFetch = fetch
+  deadlineMs: number = HELIX_DEADLINE_MS
 ): Promise<HelixCommandResult> {
   const { operation, params } = parseHelixArgs(args);
   const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
-  const search = new URLSearchParams(request.query).toString();
-  const url = `${HELIX_BASE_URL}${request.url}${search ? `?${search}` : ""}`;
+  // Not `AbortSignal.timeout`: in Bun 1.3 its timer stops for good once its
+  // last abort listener is removed, which every wait here does as it settles.
+  const deadline = new AbortController();
+  const timer = setTimeout(
+    () => deadline.abort(new DOMException(`helix ${operation} timed out`, "TimeoutError")),
+    deadlineMs
+  );
+  const signal = deadline.signal;
+  let sent = false;
   const send = (accessToken: string) => {
-    const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}`, "Client-Id": auth.clientId };
-    if (request.jsonBody !== undefined) {
-      headers["Content-Type"] = "application/json";
-    }
-    return fetchFn(url, {
-      method: request.method,
-      headers,
-      body: request.jsonBody === undefined ? undefined : JSON.stringify(request.jsonBody),
-    });
+    sent = true;
+    return untilAborted(
+      callTwitchApiRaw({ type: "helix", ...request }, auth.clientId, accessToken, undefined, { signal }),
+      signal
+    );
   };
 
-  const token = await auth.getAccessTokenForUser(broadcasterId);
-  if (!token) {
-    throw new Error(`helix ${operation}: there is no Twitch token for the broadcaster`);
-  }
-  let response = await send(token.accessToken);
-  if (response.status === 401 && auth.refreshAccessTokenForUser) {
-    await response.body?.cancel();
-    const renewed = await auth.refreshAccessTokenForUser(broadcasterId);
-    response = await send(renewed.accessToken);
+  let response: Response;
+  let text: string;
+  try {
+    const token = await untilAborted(auth.getAccessTokenForUser(broadcasterId), signal);
+    if (!token) {
+      throw new Error(`helix ${operation}: there is no Twitch token for the broadcaster`);
+    }
+    response = await send(token.accessToken);
+    if (response.status === 401 && auth.refreshAccessTokenForUser) {
+      await response.body?.cancel();
+      const renewed = await untilAborted(auth.refreshAccessTokenForUser(broadcasterId), signal);
+      response = await send(renewed.accessToken);
+    }
+    text = await untilAborted(response.text(), signal);
+  } catch (err) {
+    if (signal.aborted) {
+      const outcome = sent ? "; Twitch may still have acted" : ", before a request was sent";
+      throw new Error(`helix ${operation}: no answer within ${deadlineMs / 1000}s${outcome}`, { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 
-  const text = await response.text();
   if (!response.ok) {
     return { ok: false, status: response.status, body: text };
   }
@@ -446,7 +493,9 @@ export async function runHelixOperation(
   }
   try {
     return { ok: true, body: JSON.parse(text) };
-  } catch {
-    throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`);
+  } catch (err) {
+    throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`, {
+      cause: err,
+    });
   }
 }
