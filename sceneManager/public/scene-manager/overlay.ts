@@ -34,7 +34,10 @@ import { BehaviorRelay, entranceOf } from "./widget-behaviors";
 import type { WidgetBridge, WidgetBridgeCallbacks, WidgetStatusReportPayload } from "./widget-bridge";
 import { mountWidgetFrame } from "./widget-frame";
 
+/** Under `SESSION_TOKEN_TTL_SECONDS` (60 s, session-token.ts), so a session is renewed before it lapses. */
 const REFRESH_INTERVAL_MS = 50_000;
+/** A renewal that has not answered in this long counts as failed; the next tick tries again. */
+const REFRESH_TIMEOUT_MS = 10_000;
 
 /** What an overlay page runs in: the browser, on a real page. */
 export interface OverlayEnv {
@@ -127,7 +130,10 @@ export function createOverlay(env: OverlayEnv): void {
         value: report.value,
         ts: report.ts,
       }),
-    }).catch(() => {});
+    }).catch(() => {
+      // A status report is the widget's latest value, sent again on its next
+      // change; one lost to a dropped connection is superseded, not owed.
+    });
   }
 
   // What each placement on the page was last configured with, by id. The
@@ -401,8 +407,8 @@ export function createOverlay(env: OverlayEnv): void {
         playing().widgetRendered(next.id);
       },
       schedule: (callback, ms) => {
-        const timer = setTimeout(callback, ms);
-        return () => clearTimeout(timer);
+        const timer = timers.setTimeout(callback, ms);
+        return () => timers.clearTimeout(timer);
       },
     });
   }
@@ -579,6 +585,7 @@ export function createOverlay(env: OverlayEnv): void {
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: overlayToken }),
+        signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
       }),
     onHealth: (healthy) => status.set("session", healthy),
     // Each page of the scene holds the same cookie and finds it expired on
