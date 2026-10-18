@@ -977,6 +977,8 @@ A theme entry carries nothing else: any other property fails the install, so the
 
 `requires` maps module id to a semver range. A theme for another module's widget must name that module in `requires`.
 
+The marketplace keys on both of these definitions, so they are a contract with it and not only with the engine: a package it finds to have `themes` and no triggers, actions, functions, widgets, workflows or commands becomes a **theme** listing rather than a module one, and the module named in `requires` is what its storefront prompts a buyer to install first. Widening what a theme pack may contain, or making `requires` optional for a theme targeting another module, changes what the storefront shows and what it installs. `examples/theme-packs/README.md` is the author-facing version of this.
+
 #### Install-time validation
 
 The install fails, naming the offending field, when:

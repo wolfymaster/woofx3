@@ -56,6 +56,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { EventLogSelectionSource },
       { ApiGateway },
       { createHttpServer },
+      { MarketplaceClient },
       { initModuleHandlers },
       { initOverlayTokenHandlers },
       { initSceneHandlers },
@@ -92,6 +93,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./event-log-selection"),
       import("./gateway"),
       import("./http"),
+      import("./marketplace-client"),
       import("./module-event-handlers"),
       import("./overlay-token-handlers"),
       import("./scene-event-handlers"),
@@ -167,6 +169,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       apiUrl: config.apiUrl,
       logger,
       version: config.version,
+      marketplace: config.marketplace
+        ? new MarketplaceClient({ baseUrl: config.marketplace.url, downloadHosts: config.marketplace.downloadHosts })
+        : null,
     });
 
     // Barkloader readiness for GET /ready, from the heartbeats every service
