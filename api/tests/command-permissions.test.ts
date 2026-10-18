@@ -123,6 +123,20 @@ describe("executeCommand permission enforcement", () => {
     expect(dispatched?.data.event.data.variables).toEqual({ songTitle: "life is a highway" });
   });
 
+  it("runs a linked command's workflow by id, once, and none of its actions", async () => {
+    const { api, nats } = makeApi({
+      getCommand: mock(async () => commandRow({ command: "hug", actionsJson: "[]", workflowId: "wf-hug" })),
+    });
+
+    await api.executeCommand("hug", "wolfy", "bob");
+
+    expect(nats.published).toEqual(["chat.command.hug", "workflow.command.run"]);
+    const run = nats.payloads.find((p) => p.subject === "workflow.command.run");
+    expect(run?.data.workflowId).toBe("wf-hug");
+    expect(run?.data.event.type).toBe("chat.command.hug");
+    expect(run?.data.event.data).toMatchObject({ command: "hug", chatter: "wolfy", text: "bob" });
+  });
+
   it("only announces a command that has no actions", async () => {
     const { api, nats } = makeApi({
       getCommand: mock(async () => commandRow({ command: "raid", actionsJson: "[]" })),

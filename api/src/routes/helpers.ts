@@ -7,6 +7,7 @@ import type {
   WorkflowDefinition,
 } from "@woofx3/api";
 import type { SceneSnapshot } from "@woofx3/api/webhooks";
+import type { TaskDefinition } from "@woofx3/api/workflow-definition";
 import type * as command from "@woofx3/db/command.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as protoscript from "protoscript";
@@ -218,11 +219,29 @@ export function parseActions(actionsJson: string | undefined): ActionStep[] {
   }
 }
 
+/**
+ * A command's workflow tasks, decoded like its actions: unreadable JSON is no
+ * steps rather than a failed listing.
+ */
+export function parseSteps(stepsJson: string | undefined): TaskDefinition[] {
+  if (!stepsJson) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(stepsJson);
+    return Array.isArray(parsed) ? (parsed as TaskDefinition[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function commandToSnapshot(c: command.Command): CommandSnapshot {
   return {
     id: c.id,
     command: c.command,
     actions: parseActions(c.actionsJson),
+    workflowId: c.workflowId ?? "",
+    steps: parseSteps(c.stepsJson),
     cooldown: c.cooldown,
     priority: c.priority,
     enabled: c.enabled,

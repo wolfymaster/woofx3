@@ -101,8 +101,8 @@ func (e *Engine[TServices]) RunManual(req ManualRun) (ManualRunResult, error) {
 // from: the workflow's own trigger event type, the sample as its data, and the
 // request's id and correlation attributes.
 //
-// A workflow without an event trigger -- a scheduled one -- has no event type
-// to imitate, so its sample keeps the request's type.
+// A workflow with neither an event nor a command trigger -- a scheduled one --
+// has no event type to imitate, so its sample keeps the request's type.
 func sampleTriggerEvent(def *types.WorkflowDefinition, req ManualRun) (*types.Event, error) {
 	encoded, err := json.Marshal(req.TriggerData)
 	if err != nil {
@@ -113,7 +113,7 @@ func sampleTriggerEvent(def *types.WorkflowDefinition, req ManualRun) (*types.Ev
 	}
 
 	eventType := req.Request.Type
-	if def.Trigger != nil && def.Trigger.Type == "event" && def.Trigger.Event != "" {
+	if def.Trigger != nil && (def.Trigger.Type == "event" || def.Trigger.Type == types.TriggerTypeCommand) && def.Trigger.Event != "" {
 		eventType = def.Trigger.Event
 	}
 	eventTime := req.Request.Time

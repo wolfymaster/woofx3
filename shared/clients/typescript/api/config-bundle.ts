@@ -20,7 +20,7 @@
  * See docs/services/config-bundles.md.
  */
 import type { ActionStep, CommandVisibility } from "./api";
-import type { WorkflowDefinition } from "./workflow-definition";
+import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
 
 export const CONFIG_BUNDLE_FORMAT = "woofx3.config";
 export const CONFIG_BUNDLE_VERSION = 1;
@@ -76,7 +76,11 @@ export interface ConfigBundleCommand {
   priority: number;
   visibility: CommandVisibility;
   argumentPattern: string;
+  /** Actions run in order, for a command with no workflow; empty otherwise. */
   actions: ActionStep[];
+  /** The tasks of the command's workflow, when it has one. The workflow itself
+   *  is not among the bundle's workflows: it travels with its command. */
+  steps?: TaskDefinition[];
   groups: string[];
   usernames?: string[];
   requires: string[];

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
+	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/app/workers"
@@ -179,6 +181,14 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 	for i, id := range groupIDs {
 		groupIDStrs[i] = id.String()
 	}
+	wf, err := linkedWorkflow(s.repo.DB(), cmd)
+	if err != nil {
+		return nil, err
+	}
+	workflowID, stepsJSON := "", "[]"
+	if wf != nil {
+		workflowID, stepsJSON = wf.ID.String(), wf.Steps
+	}
 
 	return &client.Command{
 		Id:              cmd.ID.String(),
@@ -194,6 +204,8 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 		GroupIds:        groupIDStrs,
 		Usernames:       usernames,
 		ArgumentPattern: cmd.ArgumentPattern,
+		WorkflowId:      workflowID,
+		StepsJson:       stepsJSON,
 	}, nil
 }
 
@@ -228,6 +240,8 @@ func buildCommandChangeData(cmd *client.Command) map[string]any {
 		"argument_pattern": cmd.ArgumentPattern,
 		"created_by_type":  cmd.CreatedByType,
 		"created_by_ref":   cmd.CreatedByRef,
+		"workflow_id":      cmd.WorkflowId,
+		"steps_json":       cmd.StepsJson,
 	}
 }
 
@@ -282,10 +296,32 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		ArgumentPattern: cmd.ArgumentPattern,
 	}
 
-	if err := s.repo.Create(&m); err != nil {
+	steps := cmd.StepsJson
+	if strings.TrimSpace(steps) == "" {
+		chained, err := chainActions(m.Actions)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("actions_json", err.Error())
+		}
+		steps = chained
+	}
+
+	var change *commandWorkflowChange
+	err := s.repo.Transaction(func(tx *gorm.DB) error {
+		var err error
+		change, err = setCommandSteps(tx, &m, steps)
+		if err != nil {
+			return err
+		}
+		if err := tx.Create(&m).Error; err != nil {
+			return err
+		}
+		return change.announceIn(tx, s.publisher)
+	})
+	if err != nil {
 		return nil, err
 	}
 
+	change.syncEdges(s.refRepo)
 	s.syncCommandEdges(&m, m.Actions, m.CreatedByType, m.CreatedByRef)
 
 	if err := s.syncCommandPermissions(&m, cmd.GroupIds, cmd.Usernames); err != nil {
@@ -366,7 +402,6 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 
 	oldCommandName := m.Command
 	m.Command = req.Command
-	m.Actions = defaultActionsJSON(req.ActionsJson)
 	m.Cooldown = int(req.Cooldown)
 	m.Priority = int(req.Priority)
 	m.Enabled = req.Enabled
@@ -375,11 +410,33 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	}
 	m.ArgumentPattern = req.ArgumentPattern
 
-	err = s.repo.Update(m)
+	steps, err := updatedCommandSteps(req)
 	if err != nil {
 		return nil, err
 	}
 
+	var change *commandWorkflowChange
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		var err error
+		switch {
+		case steps != nil:
+			change, err = setCommandSteps(tx, m, *steps)
+		case oldCommandName != m.Command:
+			change, err = renameCommandWorkflow(tx, m)
+		}
+		if err != nil {
+			return err
+		}
+		if err := tx.Save(m).Error; err != nil {
+			return err
+		}
+		return change.announceIn(tx, s.publisher)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	change.syncEdges(s.refRepo)
 	s.syncCommandEdges(m, m.Actions, m.CreatedByType, m.CreatedByRef)
 
 	// A rename changes the "command/<name>" Casbin object string - clear the
@@ -421,10 +478,22 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 		return nil, err
 	}
 
-	err = s.repo.Delete(m)
+	var change *commandWorkflowChange
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		var err error
+		change, err = setCommandSteps(tx, m, "[]")
+		if err != nil {
+			return err
+		}
+		if err := tx.Delete(m).Error; err != nil {
+			return err
+		}
+		return change.announceIn(tx, s.publisher)
+	})
 	if err != nil {
 		return nil, err
 	}
+	change.syncEdges(s.refRepo)
 
 	if s.refRepo != nil {
 		if err := s.refRepo.DeleteEdgesBySource("command", m.ID); err != nil {
@@ -458,6 +527,85 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 	}
 
 	return res, nil
+}
+
+// updatedCommandSteps is what an update makes the command's steps: nil to
+// leave them as they are, or the tasks its workflow should hold. steps_json
+// wins; otherwise a non-empty actions_json (a writer that knows commands as
+// action lists) replaces them with those actions run in order.
+func updatedCommandSteps(req *client.UpdateCommandRequest) (*string, error) {
+	if req.StepsJson != nil {
+		steps := *req.StepsJson
+		return &steps, nil
+	}
+	if req.ActionsJson == "" {
+		return nil, nil
+	}
+	chained, err := chainActions(req.ActionsJson)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("actions_json", err.Error())
+	}
+	return &chained, nil
+}
+
+// LinkCommandWorkflows gives every command that still runs its own action
+// list a workflow holding those actions, run in order, and links the command
+// to it. db-proxy runs it on every start, so a database from before commands
+// had workflows is converted on upgrade, and running it again finds nothing
+// left to do.
+//
+// Each command is converted in a transaction of its own. One that fails is
+// logged and left exactly as it was: it keeps running its actions without a
+// workflow, and the next start tries it again.
+func (s *commandService) LinkCommandWorkflows(logger *slog.Logger) (linked int, failed int) {
+	commands, err := s.repo.GetUnlinked()
+	if err != nil {
+		logger.Error("List commands to link to workflows", "error", err)
+		return 0, 0
+	}
+	for _, cmd := range commands {
+		steps, err := chainActions(cmd.Actions)
+		if err == nil {
+			var count int
+			count, err = countSteps(steps)
+			if err == nil && count == 0 {
+				continue
+			}
+		}
+		var change *commandWorkflowChange
+		if err == nil {
+			err = s.repo.Transaction(func(tx *gorm.DB) error {
+				var err error
+				change, err = setCommandSteps(tx, cmd, steps)
+				if err != nil {
+					return err
+				}
+				if err := tx.Save(cmd).Error; err != nil {
+					return err
+				}
+				return change.announceIn(tx, s.publisher)
+			})
+		}
+		if err != nil {
+			logger.Warn("Command keeps running its actions without a workflow",
+				"command", cmd.Command, "id", cmd.ID, "error", err)
+			failed++
+			continue
+		}
+
+		linked++
+		change.syncEdges(s.refRepo)
+		s.syncCommandEdges(cmd, cmd.Actions, cmd.CreatedByType, cmd.CreatedByRef)
+		// The link is committed and the workflow announced. Without the command's
+		// own event the UI catches up at its next full sync of commands.
+		protoCmd, err := s.toProtoCommand(cmd)
+		if err != nil {
+			logger.Error("Read back a command linked to its workflow", "id", cmd.ID, "error", err)
+			continue
+		}
+		s.publishChange(protoCmd, "updated")
+	}
+	return linked, failed
 }
 
 func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enforcer, method string, request any) (bool, error) {

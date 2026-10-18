@@ -53,6 +53,25 @@ func (r *CommandRepository) GetByOrigin(createdByType, createdByRef, command str
 	return &cmd, err
 }
 
+// Transaction runs fn in one database transaction, committing when it
+// returns nil.
+func (r *CommandRepository) Transaction(fn func(tx *gorm.DB) error) error {
+	return r.db.Transaction(fn)
+}
+
+// DB is the connection the repository reads through, for a read that spans
+// commands and the rows they link to.
+func (r *CommandRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// GetUnlinked retrieves every Command that links to no workflow.
+func (r *CommandRepository) GetUnlinked() ([]*models.Command, error) {
+	var cmds []*models.Command
+	err := r.db.Where("workflow_id IS NULL").Find(&cmds).Error
+	return cmds, err
+}
+
 // GetAll retrieves all Commands
 func (r *CommandRepository) GetAll() ([]*models.Command, error) {
 	var cmds []*models.Command

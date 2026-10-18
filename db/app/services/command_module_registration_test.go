@@ -45,8 +45,12 @@ func TestCreateCommand_ModuleReRegistrationKeepsExistingRow(t *testing.T) {
 	if second.Id != first.Id {
 		t.Fatalf("re-registration changed the command id: %s -> %s", first.Id, second.Id)
 	}
-	if second.ActionsJson != edited || second.Cooldown != 30 {
-		t.Fatalf("re-registration overwrote the streamer's edits: actions=%s cooldown=%d", second.ActionsJson, second.Cooldown)
+	editedSteps, err := chainActions(edited)
+	if err != nil {
+		t.Fatalf("chain edited actions: %v", err)
+	}
+	if second.StepsJson != editedSteps || second.Cooldown != 30 {
+		t.Fatalf("re-registration overwrote the streamer's edits: steps=%s cooldown=%d", second.StepsJson, second.Cooldown)
 	}
 
 	all, err := f.svc.ListCommands(context.Background(), &client.ListCommandsRequest{})

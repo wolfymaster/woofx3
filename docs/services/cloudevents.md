@@ -187,12 +187,39 @@ A raid on this channel is published once, as `channel.raid`, from the `channel.r
 
 ---
 
+## Running a command's workflow
+
+`workflow.command.run` asks the workflow engine to run the workflow a chat
+command is linked to, for one invocation. Published by woofwoofwoof once a
+command has matched and passed its cooldown and permission checks, after it
+has announced the match on `chat.command.<slug>`, and by the engine api's
+`executeCommand`. The workflow service runs that one workflow
+(`Engine.RunCommand`), which must have a trigger of type `"command"`; its
+trigger conditions apply, nothing else is checked again.
+
+```jsonc
+// subject: "workflow.command.run"
+{
+  "workflowId": "3f1c…",
+  "event": {                     // the invocation; the run's ${trigger...}
+    "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...",
+    "platform": "twitch", "triggeredBy": "twitch",
+    "data": { "command": "hug", "chatter": "wolfy", "text": "", "args": [], "variables": {}, "rawMessage": "!hug", "platform": "twitch" }
+  }
+}
+```
+
+A workflow with a `"command"` trigger is never offered events, so the
+`chat.command.<slug>` event of the same invocation does not run it a second
+time. The subject is reserved: no workflow or module may publish it.
+
 ## Running actions without a workflow
 
 `action.execute` asks the workflow engine to run a list of actions that
-belongs to no workflow — a chat command's actions, or anything else with
-actions to run and nothing to hang them on. Published by the engine api's
-`runActions(input)` RPC and by woofwoofwoof when a chat command matches;
+belongs to no workflow — the actions of a chat command that has no workflow,
+or anything else with actions to run and nothing to hang them on. Published
+by the engine api's `runActions(input)` RPC and by woofwoofwoof when such a
+chat command matches;
 consumed by the workflow service, which runs them through the same executor,
 resolver and action handlers a workflow run uses.
 

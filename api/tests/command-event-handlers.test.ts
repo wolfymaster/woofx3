@@ -39,7 +39,19 @@ describe("parseCommandCreated", () => {
       groupIds: ["g1"],
       usernames: ["someone"],
       argumentPattern: "{query}",
+      workflowId: "",
+      steps: [],
     });
+  });
+
+  it("carries the workflow a linked command runs, and its steps", () => {
+    const steps = [{ id: "a", type: "wait", wait: { type: "delay", durationMs: 1000 } }];
+    const event = parseCommandCreated(
+      commandRow({ actions_json: "[]", workflow_id: "wf-1", steps_json: JSON.stringify(steps) })
+    );
+    expect(event?.command.workflowId).toBe("wf-1");
+    expect(event?.command.steps).toEqual(steps);
+    expect(event?.command.actions).toEqual([]);
   });
 
   it("drops a row without an id", () => {

@@ -539,7 +539,7 @@ async fn validate_theme_dependencies(
 ///
 /// The outbox stays open to the system module, which owns the `db.workflow.*`
 /// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
+const USER_RESERVED_EVENT_PREFIXES: [&str; 14] = [
     WEBHOOK_EVENT_PREFIX,
     "db.",
     "engine.",
@@ -552,6 +552,7 @@ const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
     "workflow.execute",
     "workflow.replay",
     "workflow.cancel",
+    "workflow.command.run",
     "action.execute",
 ];
 
@@ -3209,6 +3210,7 @@ mod tests {
             "workflow.execute",
             "workflow.replay",
             "workflow.cancel",
+            "workflow.command.run",
             "action.execute",
             "viewer.segment.entered",
             "viewer.segment.left",

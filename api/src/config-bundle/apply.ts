@@ -209,7 +209,7 @@ async function applyCommand(
   ];
   const input: CreateCommandInput = {
     command: targetName,
-    actions: cmd.actions,
+    ...(cmd.steps && cmd.steps.length > 0 ? { steps: cmd.steps } : { actions: cmd.actions }),
     cooldown: cmd.cooldown,
     priority: cmd.priority,
     enabled: cmd.enabled,

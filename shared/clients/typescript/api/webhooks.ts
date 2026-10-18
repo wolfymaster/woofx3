@@ -869,6 +869,10 @@ export interface CommandWebhookSnapshot {
   groupIds: string[];
   usernames: string[];
   argumentPattern: string;
+  /** The workflow this command runs, or "" when it has none. */
+  workflowId: string;
+  /** That workflow's tasks -- `TaskDefinition` in workflow-definition.ts. */
+  steps: object[];
 }
 
 export interface CommandCreatedEvent {

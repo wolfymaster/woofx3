@@ -15,11 +15,13 @@ same file; webhook event types live in `shared/clients/typescript/api/webhooks.t
 
 ## Concepts
 
-- **Command**: a `!name` chat trigger that runs an ordered list of
-  **actions** — the same actions a workflow step runs. Answering in chat is
-  the `woofx3:action:chat.reply` action; calling a module function is the
-  `function` action. A command with no actions still matches and still fires
-  its `chat.command.<slug>` event, which is what a trigger-only command is.
+- **Command**: a `!name` chat trigger that runs **steps**: a stored workflow
+  of its own, linked by `workflowId`, holding actions, conditions, waits and
+  pauses exactly as any workflow does. Answering in chat is the
+  `woofx3:action:chat.reply` action; calling a module function is the
+  `function` action. A command with no steps has no workflow; it still
+  matches and still fires its `chat.command.<slug>` event, which is what a
+  trigger-only command is. See "How a command runs its steps" below.
 - **Group**: a named role (e.g. "moderator", "vip"). Users are added to
   groups by username; commands are granted to one or more groups and/or
   specific usernames. This is the *only* permission concept the UI deals
@@ -53,7 +55,9 @@ listAvailableFunctions(): Promise<AvailableFunction[]>
 interface CommandSnapshot {
   id: string;
   command: string;            // without the "!" prefix
-  actions: ActionStep[];      // what it runs, in order; [] = trigger-only
+  workflowId: string;         // the workflow it runs; "" = no steps
+  steps: TaskDefinition[];    // that workflow's tasks; [] without one
+  actions: ActionStep[];      // [] unless the command could not be linked (see below)
   cooldown: number;           // seconds, 0 = never throttle
   priority: number;
   enabled: boolean;
@@ -65,7 +69,8 @@ interface CommandSnapshot {
 
 interface CreateCommandInput {
   command: string;
-  actions: ActionStep[];
+  steps?: TaskDefinition[];   // the workflow's tasks; wins over `actions`
+  actions?: ActionStep[];     // or actions to run in order, made into those tasks
   cooldown: number;
   priority?: number;          // defaults to 0
   enabled: boolean;
@@ -78,12 +83,14 @@ interface CreateCommandInput {
 
 // UpdateCommandInput is the same shape as CreateCommandInput minus
 // `correlationKey`'s create-only framing (it's still present, just echoed
-// on command.updated instead) - it's a full-replace update: every field is
-// required except the optional ones, so send (current snapshot ∪ changes),
-// not a sparse patch.
+// on command.updated instead) - it's a full-replace update of everything but
+// the steps: every field is required except the optional ones, so send
+// (current snapshot ∪ changes), not a sparse patch. The steps change only
+// when `steps` (or, failing that, `actions`) is given.
 interface UpdateCommandInput {
   command: string;
-  actions: ActionStep[];
+  steps?: TaskDefinition[];   // replaces the workflow's tasks; [] removes the workflow
+  actions?: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -95,7 +102,11 @@ interface UpdateCommandInput {
 }
 ```
 
-One action, which is one step of what a command does:
+`steps` are `TaskDefinition`s (`shared/clients/typescript/api/workflow-definition.ts`),
+ordered by `dependsOn` and branched by a condition's `onTrue`/`onFalse`, and
+are validated by the same rules a saved workflow is. `actions` is the
+simpler shape for a writer that has only actions to run in order, such as a
+module manifest's command:
 
 ```ts
 interface ActionStep {
@@ -110,7 +121,9 @@ interface ActionStep {
 
 Build these from the action catalog (`getActions()`), the same list the
 workflow builder offers. The engine refuses a command whose action names no
-handler, or whose `function` step names no function.
+handler, or whose `function` step names no function. Actions given this way
+become the workflow's tasks: each gets an id and the type `action`, and waits
+for the one before it unless it says otherwise.
 
 `listAvailableFunctions()` returns every function exposed by every installed
 module. A command reaches a function through a `function` action rather than
@@ -137,13 +150,18 @@ interface AvailableFunction {
   conflict resolution between commands (there's no scenario today where two
   commands can match the same invocation) — safe to omit / default to `0`
   in the UI unless a future ordering feature needs it.
-- **An empty `actions` array is a valid, intentional configuration**: the
+- **A command with no steps is a valid, intentional configuration**: the
   command matches, still fires the `chat.command.<name>` event (see
   "Triggering workflows from commands" below), and does nothing else. Don't
   add client-side validation that rejects it — it is how a trigger-only
-  command is built. The engine does validate each action it is given: a step
-  with no `action`, a `function` step with no `function`, or two steps
-  sharing an id are refused on save.
+  command is built. The engine does validate the steps it is given: an action
+  with no `action`, a `function` step with no `function`, two steps sharing an
+  id, or a `dependsOn` naming no step are refused on save.
+- **A command's workflow belongs to the command.** It is created, renamed and
+  deleted with the command, and its trigger follows the command's name. Edit
+  its steps through `updateCommand`; the workflow list in the UI leaves it
+  out, and a config bundle carries its steps on the command rather than as a
+  workflow of its own.
 - **Group/user assignment writes are full-replace**, not incremental: the
   `groupIds`/`usernames` arrays on `createCommand`/`updateCommand` are the
   complete desired set each time, not a diff. Send the full array your form
@@ -333,8 +351,8 @@ interface GroupMemberAddedEvent {
   `!<commandName> <text>` in chat — the command's actions run and
   `chat.command.<slug>` fires, with `text` parsed into `args` and
   `argumentPattern` variables exactly as a chat message is. db-proxy's
-  permission check applies; the command's cooldown does not. There is no
-  webhook for an invocation.
+  permission check applies; the command's cooldown does not. A run of the
+  command's workflow reports through the usual `workflow.run.*` webhooks.
 
 ## Triggering workflows from commands
 
@@ -374,19 +392,43 @@ A trigger-only command (empty `actions`, per the behavioral note above) is
 the intended way to author a command whose only purpose is to drive a
 workflow.
 
-### How a command's own actions run
+### How a command runs its steps
 
-The actions do not go through a workflow. woofwoofwoof gates the invocation
-(cooldown, permissions), publishes `chat.command.<slug>` as above, then
-publishes `action.execute` carrying the command's action list and that same
-event. The workflow engine runs it through its own executor
-(`Engine.RunActions`), in order, with the same action handlers a workflow
-step uses. The run is not recorded in run history: both the history row and
-the `workflow.run.*` lifecycle events are keyed by a workflow id, and there
-is no workflow here.
+woofwoofwoof's commander handles a chat message in this order
+(`Commands.process` in `woofwoofwoof/src/commands.ts`):
 
-Anything else holding actions and no workflow can do the same, through the
-`runActions(input)` engine RPC.
+1. It matches the command word. A disabled command is not on the commander,
+   so it never matches.
+2. It applies the cooldown. A throttled invocation is dropped whole.
+3. It checks who may run the command (visibility, roles, groups and users).
+   A refusal stops here.
+4. It publishes `chat.command.<slug>`, for any workflow listening to it.
+5. It runs the command: for a command with a workflow, it publishes
+   `workflow.command.run` naming that workflow and carrying the same
+   invocation event, and the workflow engine runs that one workflow
+   (`Engine.RunCommand`) with `${trigger.data...}` reading the invocation.
+
+Because every check comes before step 4, the event and the run happen
+together or not at all. The command's workflow has a trigger of type
+`"command"` (`{"type": "command", "event": "chat.command.<slug>"}`), which no
+trigger registrar subscribes to anything, so the event of step 4 cannot start
+it as well: it runs once per invocation. The workflow's trigger conditions,
+if any, still apply. A run is a normal workflow run, recorded in run history
+and reported on `workflow.run.*`.
+
+The engine links commands to workflows itself. On every start, db-proxy gives
+each command that still holds its own action list a workflow with those
+actions run in order, links the command to it and empties its list, one
+command per transaction (`LinkCommandWorkflows` in
+`db/app/services/command_service.go`). Running it again finds nothing to do.
+A command it cannot convert, such as one whose action list is unreadable, is
+logged and left as it was: woofwoofwoof keeps running its actions without a
+workflow by publishing `action.execute` (`Engine.RunActions`), which records
+no run history, and the next start tries again. Saving the command's steps
+also links it.
+
+Anything else holding actions and no workflow can run them the same way,
+through the `runActions(input)` engine RPC.
 
 ## Out of scope
 

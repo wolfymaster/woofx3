@@ -23,7 +23,7 @@ import type {
   TriggerDefinition,
   WidgetBehaviorKinds,
 } from "./webhooks";
-import type { WorkflowDefinition } from "./workflow-definition";
+import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
 
 // ==================== Modules ====================
 
@@ -346,15 +346,27 @@ export type CommandVisibility = "public" | "restricted";
 /**
  * Snapshot of a chat command as the engine stores it.
  *
- * A command runs `actions`, in order. Replying in chat is an action like any
- * other (`chat.reply`), which is what lets a command do anything a workflow
- * step can. An empty list is a command that only announces itself on
- * `chat.command.<slug>` for workflows to react to.
+ * A command with steps runs a stored workflow of its own, `workflowId`, whose
+ * tasks are `steps`: actions, conditions, waits and pauses, exactly as any
+ * workflow holds them. Its trigger has type "command", so only the command
+ * starts it, once it has matched and passed its cooldown and permission
+ * checks; the `chat.command.<slug>` event every invocation announces, for
+ * other workflows to react to, does not.
+ *
+ * A command with no workflow runs `actions`, in order, without one. That is a
+ * command the engine could not link to a workflow when it upgraded; it is
+ * linked when its steps are next saved. A command with neither only
+ * announces itself.
  */
 export interface CommandSnapshot {
   id: string;
   command: string;
+  /** Empty for a command with a workflow. */
   actions: ActionStep[];
+  /** The workflow this command runs, or "" when it has none. */
+  workflowId: string;
+  /** That workflow's tasks; empty without one. */
+  steps: TaskDefinition[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -386,7 +398,11 @@ export interface CommandSnapshot {
 
 export interface CreateCommandInput {
   command: string;
-  actions: ActionStep[];
+  /** The tasks the command's workflow runs. Takes precedence over `actions`;
+   *  either one non-empty creates the workflow. */
+  steps?: TaskDefinition[];
+  /** Actions to run in order, for a writer that has nothing but actions. */
+  actions?: ActionStep[];
   cooldown: number;
   priority?: number;
   enabled: boolean;
@@ -469,14 +485,20 @@ export interface AvailableFunction {
 }
 
 /**
- * Full-replace update; the engine's UpdateCommand proto requires every
- * field, so the contract mirrors that rather than offering partial
- * patches. Callers should send the merged result of (current snapshot ∪
- * user changes).
+ * Full-replace update of everything but the steps; the engine's UpdateCommand
+ * proto requires every other field, so the contract mirrors that rather than
+ * offering partial patches. Callers should send the merged result of (current
+ * snapshot ∪ user changes). The steps change only when `steps` or `actions` is
+ * given.
  */
 export interface UpdateCommandInput {
   command: string;
-  actions: ActionStep[];
+  /** Replaces the tasks of the command's workflow, creating it when the command
+   *  has none; an empty list removes it. Omit both this and `actions` to keep
+   *  the steps as they are. */
+  steps?: TaskDefinition[];
+  /** Actions to run in order, replacing the steps; ignored with `steps`. */
+  actions?: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
