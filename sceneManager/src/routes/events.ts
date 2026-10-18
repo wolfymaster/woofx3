@@ -1,4 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { type AckRefusal, encodeStreamFrame, KEEPALIVE_FRAME, parseAckBody } from "../../contract/overlay-stream";
 import { type AlertLifecycleWriter, alertReportTargets, updateAlertLifecycle } from "../events/alert-dispatch";
 import { handleStatusReport } from "../events/handlers";
 import type { HttpDeps } from "../http";
@@ -51,12 +52,16 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
         // sceneManager rather than resuming against the same one.
         // It also says which scene ops the overlay should be up to, so one
         // that missed some while its stream was down resyncs.
-        const hello = {
-          bootId: deps.bootId,
-          seq: deps.sceneDocuments.seqOf(sceneId, "published"),
-          draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
-        };
-        controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`));
+        controller.enqueue(
+          encoder.encode(
+            encodeStreamFrame({
+              kind: "hello",
+              bootId: deps.bootId,
+              seq: deps.sceneDocuments.seqOf(sceneId, "published"),
+              draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
+            })
+          )
+        );
         // A scene can sit idle far longer than any idle timeout on the
         // path: Bun.serve reaps a silent connection (see `idleTimeout`
         // in http.ts), and reverse proxies do the same. Without this
@@ -66,7 +71,7 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
         // no-ops (parseSseChunk), so a heartbeat costs nothing there.
         heartbeat = setInterval(() => {
           try {
-            controller.enqueue(encoder.encode(": keepalive\n\n"));
+            controller.enqueue(encoder.encode(KEEPALIVE_FRAME));
           } catch {
             // Already closed from the other end — stop pumping.
             if (heartbeat !== null) {
@@ -96,21 +101,6 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
   })();
 }
 
-interface AckBody {
-  instanceIds?: unknown;
-}
-
-function parseInstanceIds(body: unknown): string[] | null {
-  const b = body as AckBody;
-  if (!Array.isArray(b.instanceIds) || b.instanceIds.length === 0) {
-    return null;
-  }
-  if (!b.instanceIds.every((v): v is string => typeof v === "string" && v.length > 0)) {
-    return null;
-  }
-  return b.instanceIds;
-}
-
 /** `POST /scene/{sceneId}/events/{eventId}/delivered` — body
  *  `{ instanceIds: string[] }`, batched per the design note (a burst
  *  of events shouldn't mean a burst of single-item HTTP calls). */
@@ -123,7 +113,7 @@ export async function handleEventDeliveredRoute(
   if (!(await verifySession(req, sceneId, deps))) {
     return unauthorized();
   }
-  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  const instanceIds = parseAckBody(await req.json().catch(() => null));
   if (!instanceIds) {
     return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
   }
@@ -146,7 +136,7 @@ export async function handleEventStartedRoute(
   if (!(await verifySession(req, sceneId, deps))) {
     return unauthorized();
   }
-  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  const instanceIds = parseAckBody(await req.json().catch(() => null));
   if (!instanceIds) {
     return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
   }
@@ -189,7 +179,7 @@ export async function handleEventCompletedRoute(
   if (!(await verifySession(req, sceneId, deps))) {
     return unauthorized();
   }
-  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  const instanceIds = parseAckBody(await req.json().catch(() => null));
   if (!instanceIds) {
     return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
   }
@@ -205,7 +195,8 @@ export async function handleEventCompletedRoute(
  */
 function ackAnswer(failed: string[]): Response {
   if (failed.length > 0) {
-    return Response.json({ error: "unavailable", instanceIds: failed }, { status: 503 });
+    const refusal: AckRefusal = { error: "unavailable", instanceIds: failed };
+    return Response.json(refusal, { status: 503 });
   }
   return Response.json({ status: "ok" });
 }

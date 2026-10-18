@@ -17,6 +17,7 @@ import {
   type WidgetStatusReportPayload,
 } from "./widget-bridge";
 import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "./event-queue";
+import { ackPath } from "../../contract/overlay-stream";
 import { AckBatcher, postAck } from "./ack-batcher";
 import { startSessionRefresh } from "./session-refresh";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
@@ -144,8 +145,8 @@ function main(): void {
 
   const bridges = new Set<WidgetBridge>();
   const queueManager = new EventQueueManager();
-  const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
-  const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
+  const deliveredBatcher = new AckBatcher((eventId) => ackPath(sceneBase, eventId, "delivered"));
+  const completedBatcher = new AckBatcher((eventId) => ackPath(sceneBase, eventId, "completed"));
 
   const moduleState = new ModuleStateCache(async (instanceId, key) => {
     const url = `${sceneBase}/widget/${encodeURIComponent(instanceId)}/storage?key=${encodeURIComponent(key)}`;
@@ -180,9 +181,7 @@ function main(): void {
   // from these, and a quarter-second batch is long enough for an operator's
   // Skip to land on the alert that just ended.
   function postAlertAck(kind: "started" | "completed", eventId: string, instanceId: string): void {
-    postAck(globalThis.fetch.bind(globalThis), `${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, [
-      instanceId,
-    ]);
+    postAck(globalThis.fetch.bind(globalThis), ackPath(sceneBase, eventId, kind), [instanceId]);
   }
 
   // What each placement on the page was last configured with, by id. The

@@ -6,6 +6,8 @@
 // the delivery open, and an open delivery plays again after the next page
 // load, while a lost `delivered` leaves it being sent to the page again.
 
+import { encodeAckBody } from "../../contract/overlay-stream";
+
 /** Milliseconds to accumulate acks before posting them as one batch. */
 export const ACK_BATCH_WINDOW_MS = 250;
 
@@ -53,7 +55,7 @@ export function postAck(
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instanceIds }),
+    body: encodeAckBody(instanceIds),
   }).then(
     (response) => {
       if (!response.ok && retryable(response.status)) {

@@ -30,6 +30,7 @@ import {
 import { type ItemReply, SceneDocuments, type SceneLoader } from "../../src/scene/scene-documents";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 import type { FrameTheme } from "../../src/scene/widget-theme";
+import { eventAndData } from "../helpers/stream-frames";
 
 const SECRET = "test-barkloader-key";
 const EXTERNAL = "https://media.example.com/clips/a.png";
@@ -307,7 +308,7 @@ function documents(instances: OverlayWidgetInstance[], framed: OverlayWidgetInst
       () => state,
       async () => framed
     ),
-    { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+    { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["s1"] },
     logger(),
     { mediaProxy: proxy }
   );
@@ -492,7 +493,7 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
         () => state,
         async () => framedAgain[Math.min(attempts++, framedAgain.length - 1)]!
       ),
-      { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+      { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["s1"] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 1 }
     );
@@ -621,7 +622,7 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
           return [instance("added", { image: external() }, true)];
         }
       ),
-      { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+      { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["s1"] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 1 }
     );
