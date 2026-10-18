@@ -272,7 +272,8 @@ jobs:
       # run ends without tagging rather than failing. Its image stays in the
       # registry by digest alone. The tag is on the CHANGELOG.md commit, which
       # must sit directly on the commit the artifacts were built from and
-      # change nothing else but the capability table's Since values.
+      # change no file but CHANGELOG.md and the capability table
+      # (docs/services/engine-capabilities.md), whose Since values it records.
       - name: Check the release exists
         id: check
         env:
