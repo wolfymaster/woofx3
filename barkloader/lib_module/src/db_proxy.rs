@@ -88,11 +88,12 @@ pub struct ActionInputJson {
     pub action_type: String,
     pub call: String,
     pub params_schema: String,
-    /// `ConfigField`-shaped output declarations (JSON-encoded array) — see
-    /// `ManifestAction::outputs`. Empty/`"null"` means no declared outputs.
     /// JSON-encoded `DataShape` naming what the function hands back. "{}" when
     /// the manifest declared none — see `ManifestAction::returns`.
     pub returns: String,
+    /// The action's sentence template. "" when the manifest declared none -
+    /// see `ManifestAction::sentence`.
+    pub sentence: String,
     /// Open, multi-valued classification (dotted hierarchical strings, e.g.
     /// `platform.govee`, `function.lighting`). See
     /// `TriggerInputJson::taxonomy`.

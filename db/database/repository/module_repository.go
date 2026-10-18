@@ -332,19 +332,20 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 		a.Returns = "{}"
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.actions (id, name, description, call, params_schema, returns, created_by_type, created_by_ref, manifest_id, type, taxonomy, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.actions (id, name, description, call, params_schema, returns, sentence, created_by_type, created_by_ref, manifest_id, type, taxonomy, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			call = EXCLUDED.call,
 			params_schema = EXCLUDED.params_schema,
 			returns = EXCLUDED.returns,
+			sentence = EXCLUDED.sentence,
 			type = EXCLUDED.type,
 			taxonomy = EXCLUDED.taxonomy,
 			updated_at = NOW()
 		RETURNING id
-	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.Returns, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy).Scan(&result).Error
+	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.Returns, a.Sentence, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy).Scan(&result).Error
 	if err != nil {
 		return err
 	}

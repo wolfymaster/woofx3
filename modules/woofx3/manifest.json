@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -282,6 +282,7 @@
       "id": "chat.reply",
       "name": "Send chat message",
       "description": "Send one message to chat. Replying is an action like any other, so a chat command that answers is a command with this action on it.",
+      "sentence": "Send {message} in chat",
       "type": "native",
       "handler": "chat.reply",
       "schema": [
@@ -302,6 +303,7 @@
       "id": "alert",
       "name": "Alert",
       "description": "Play an on-stream alert: widgets placed on a canvas, shown on every alert widget with the target name on a running scene.",
+      "sentence": "Play an alert on the {target} alert widget",
       "type": "native",
       "handler": "alert",
       "schema": [
@@ -333,6 +335,7 @@
       "id": "scene.widget.visibility",
       "name": "Set widget visibility",
       "description": "Show or hide a widget on a scene, on every overlay showing that scene. The change is saved with the scene, so the widget stays that way until it is changed again.",
+      "sentence": "Show or hide {placementId} on {sceneId}",
       "type": "native",
       "handler": "scene.widget.visibility",
       "schema": [
@@ -382,6 +385,7 @@
       "id": "counter.increment",
       "name": "Increment counter",
       "description": "Add an amount to the counter, or its step when no amount is given.",
+      "sentence": "Add {amount} to {target}",
       "type": "function",
       "function": "counter.increment",
       "schema": [
@@ -433,6 +437,7 @@
       "id": "counter.decrement",
       "name": "Decrement counter",
       "description": "Take an amount away from the counter, or its step when no amount is given.",
+      "sentence": "Take {amount} from {target}",
       "type": "function",
       "function": "counter.decrement",
       "schema": [
@@ -484,6 +489,7 @@
       "id": "counter.set",
       "name": "Set counter",
       "description": "Set the counter to a number.",
+      "sentence": "Set {target} to {value}",
       "type": "function",
       "function": "counter.set",
       "schema": [
@@ -535,6 +541,7 @@
       "id": "counter.reset",
       "name": "Reset counter",
       "description": "Put the counter back to the value it starts at.",
+      "sentence": "Reset {target}",
       "type": "function",
       "function": "counter.reset",
       "schema": [
@@ -579,6 +586,7 @@
       "id": "timer.start",
       "name": "Start timer",
       "description": "Start the timer counting down, from where it was paused or, once it has run out, from its full duration.",
+      "sentence": "Start {target}",
       "type": "function",
       "function": "timer.start",
       "schema": [
@@ -628,6 +636,7 @@
       "id": "timer.pause",
       "name": "Pause timer",
       "description": "Stop the timer counting down, keeping the time it has left.",
+      "sentence": "Pause {target}",
       "type": "function",
       "function": "timer.pause",
       "schema": [
@@ -677,6 +686,7 @@
       "id": "timer.reset",
       "name": "Reset timer",
       "description": "Stop the timer and put it back to its full duration.",
+      "sentence": "Reset {target}",
       "type": "function",
       "function": "timer.reset",
       "schema": [
@@ -726,6 +736,7 @@
       "id": "timer.add",
       "name": "Add time to timer",
       "description": "Give the timer more time, or take time away with a negative number. A running timer that has run out starts counting down again.",
+      "sentence": "Add {seconds} seconds to {target}",
       "type": "function",
       "function": "timer.add",
       "schema": [
@@ -783,6 +794,7 @@
       "id": "timer.set",
       "name": "Set timer",
       "description": "Set how much time the timer has left, without starting or stopping it.",
+      "sentence": "Set {target} to {seconds} seconds left",
       "type": "function",
       "function": "timer.set",
       "schema": [
@@ -840,6 +852,7 @@
       "id": "timer.get",
       "name": "Read timer",
       "description": "How much time the timer has left and whether it is counting down, without changing it.",
+      "sentence": "Read {target}",
       "type": "function",
       "function": "timer.get",
       "schema": [
@@ -884,6 +897,7 @@
       "id": "queue.add",
       "name": "Add to queue",
       "description": "Put an entry at the back of the queue, unless it is full or the entry is already in line.",
+      "sentence": "Add {entry} to {target}",
       "type": "function",
       "function": "queue.add",
       "schema": [
@@ -945,6 +959,7 @@
       "id": "queue.next",
       "name": "Take next from queue",
       "description": "Take the entry at the front of the queue out of it.",
+      "sentence": "Take the next entry from {target}",
       "type": "function",
       "function": "queue.next",
       "schema": [
@@ -989,6 +1004,7 @@
       "id": "queue.remove",
       "name": "Remove from queue",
       "description": "Take an entry out of the queue, wherever it is in line.",
+      "sentence": "Remove {entry} from {target}",
       "type": "function",
       "function": "queue.remove",
       "schema": [
@@ -1045,6 +1061,7 @@
       "id": "queue.clear",
       "name": "Clear queue",
       "description": "Take every entry out of the queue.",
+      "sentence": "Clear {target}",
       "type": "function",
       "function": "queue.clear",
       "schema": [

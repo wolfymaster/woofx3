@@ -44,6 +44,13 @@ message Action {
   // Deliberately not called a schema: the engine treats a function result as
   // an opaque map[string]any and never validates it against this.
   string returns = 14;
+  // The module author's one-line English template for a configured step that
+  // runs this action, e.g. "Add {amount} to {counter}". Each `{fieldId}`
+  // names a field in params_schema; the UI substitutes the configured value,
+  // or that field's `missingText` while a required field is still empty.
+  // Validated at install: non-empty, braces balanced and unnested, every
+  // placeholder a declared field id. Empty means the author declared none.
+  string sentence = 15;
 }
 
 message ActionInput {
@@ -57,6 +64,7 @@ message ActionInput {
   reserved 8;                        // was: string output_schema, replaced by returns
   reserved "output_schema";
   string returns = 9;  // JSON string — see Action.returns
+  string sentence = 10;  // see Action.sentence
 }
 
 message RegisterActionsRequest {

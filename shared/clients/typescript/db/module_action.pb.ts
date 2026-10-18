@@ -55,6 +55,15 @@ export interface Action {
    * an opaque map[string]any and never validates it against this.
    */
   returns: string;
+  /**
+   * The module author's one-line English template for a configured step that
+   * runs this action, e.g. "Add {amount} to {counter}". Each `{fieldId}`
+   * names a field in params_schema; the UI substitutes the configured value,
+   * or that field's `missingText` while a required field is still empty.
+   * Validated at install: non-empty, braces balanced and unnested, every
+   * placeholder a declared field id. Empty means the author declared none.
+   */
+  sentence: string;
 }
 
 export interface ActionInput {
@@ -66,6 +75,7 @@ export interface ActionInput {
   type: string;
   taxonomy: string[];
   returns: string;
+  sentence: string;
 }
 
 export interface RegisterActionsRequest {
@@ -141,6 +151,7 @@ export const Action = {
       type: "",
       taxonomy: [],
       returns: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -184,6 +195,9 @@ export const Action = {
     }
     if (msg.returns) {
       writer.writeString(14, msg.returns);
+    }
+    if (msg.sentence) {
+      writer.writeString(15, msg.sentence);
     }
     return writer;
   },
@@ -242,6 +256,10 @@ export const Action = {
           msg.returns = reader.readString();
           break;
         }
+        case 15: {
+          msg.sentence = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -286,6 +304,7 @@ export const ActionInput = {
       type: "",
       taxonomy: [],
       returns: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -320,6 +339,9 @@ export const ActionInput = {
     }
     if (msg.returns) {
       writer.writeString(9, msg.returns);
+    }
+    if (msg.sentence) {
+      writer.writeString(10, msg.sentence);
     }
     return writer;
   },
@@ -364,6 +386,10 @@ export const ActionInput = {
         }
         case 9: {
           msg.returns = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.sentence = reader.readString();
           break;
         }
         default: {
@@ -691,6 +717,7 @@ export const ActionJSON = {
       type: "",
       taxonomy: [],
       returns: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -732,6 +759,9 @@ export const ActionJSON = {
     }
     if (msg.returns) {
       json["returns"] = msg.returns;
+    }
+    if (msg.sentence) {
+      json["sentence"] = msg.sentence;
     }
     return json;
   },
@@ -784,6 +814,10 @@ export const ActionJSON = {
     if (_returns_) {
       msg.returns = _returns_;
     }
+    const _sentence_ = json["sentence"];
+    if (_sentence_) {
+      msg.sentence = _sentence_;
+    }
     return msg;
   },
 };
@@ -819,6 +853,7 @@ export const ActionInputJSON = {
       type: "",
       taxonomy: [],
       returns: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -853,6 +888,9 @@ export const ActionInputJSON = {
     }
     if (msg.returns) {
       json["returns"] = msg.returns;
+    }
+    if (msg.sentence) {
+      json["sentence"] = msg.sentence;
     }
     return json;
   },
@@ -892,6 +930,10 @@ export const ActionInputJSON = {
     const _returns_ = json["returns"];
     if (_returns_) {
       msg.returns = _returns_;
+    }
+    const _sentence_ = json["sentence"];
+    if (_sentence_) {
+      msg.sentence = _sentence_;
     }
     return msg;
   },

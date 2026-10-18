@@ -143,6 +143,7 @@ func buildActionRegisteredData(modulePrefix, moduleKey, moduleName, version stri
 			"type":            a.Type,
 			"params_schema":   a.ParamsSchema,
 			"returns":         a.Returns,
+			"sentence":        a.Sentence,
 			"taxonomy":        parseTaxonomy(a.Taxonomy),
 			"created_by_type": a.CreatedByType,
 			"created_by_ref":  a.CreatedByRef,
@@ -251,6 +252,7 @@ func buildActionDeregisteredData(modulePrefix, moduleKey string, actions []*mode
 			"call":           a.Call,
 			"params_schema":  a.ParamsSchema,
 			"taxonomy":       parseTaxonomy(a.Taxonomy),
+			"sentence":       a.Sentence,
 			"created_by_ref": a.CreatedByRef,
 		}
 		if pk := projectionKeyFor(a.CreatedByType, a.CreatedByRef, "action", a.ManifestID); pk != "" {

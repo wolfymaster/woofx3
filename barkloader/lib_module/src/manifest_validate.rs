@@ -390,6 +390,7 @@ pub fn validate_with_provenance(
     validate_action_taxonomies(&manifest.actions)?;
     validate_field_lists(manifest)?;
     validate_trigger_sentences(&manifest.triggers)?;
+    validate_action_sentences(&manifest.actions)?;
     validate_themes(manifest, &module_id)?;
 
     // Pass 2: resolve references for kinds that have them.
@@ -2000,17 +2001,53 @@ fn validate_trigger_sentences(triggers: &[ManifestTrigger]) -> Result<()> {
         let Some(sentence) = &t.sentence else {
             continue;
         };
-        let label = format!("trigger #{i} ({}): `sentence`", t.id);
-        if sentence.trim().is_empty() {
-            return Err(anyhow!("{label} must be non-empty"));
-        }
-        let field_ids: HashSet<&str> = t.schema.iter().flatten().map(|f| f.id.trim()).collect();
-        for placeholder in sentence_placeholders(sentence).map_err(|e| anyhow!("{label}: {e}"))? {
-            if !field_ids.contains(placeholder) {
-                return Err(anyhow!(
-                    "{label}: placeholder {{{placeholder}}} names no field in this trigger's `schema`"
-                ));
-            }
+        validate_sentence(
+            sentence,
+            t.schema.iter().flatten(),
+            &format!("trigger #{i} ({}): `sentence`", t.id),
+            "trigger",
+        )?;
+    }
+    Ok(())
+}
+
+/// Validate every declared action `sentence` against its action's `schema`,
+/// by the same rules as `validate_trigger_sentences`. A placeholder names one
+/// of the action's own settings only: a value a step takes from an earlier
+/// step is still configured through one of those settings.
+fn validate_action_sentences(actions: &[ManifestAction]) -> Result<()> {
+    for (i, a) in actions.iter().enumerate() {
+        let Some(sentence) = &a.sentence else {
+            continue;
+        };
+        validate_sentence(
+            sentence,
+            a.schema.iter(),
+            &format!("action #{i} ({}): `sentence`", a.id),
+            "action",
+        )?;
+    }
+    Ok(())
+}
+
+/// Check one sentence template: non-empty, well-formed braces, and every
+/// placeholder the id of one of `fields`. `owner` names the kind that
+/// declares the sentence in the rejection message.
+fn validate_sentence<'a>(
+    sentence: &str,
+    fields: impl Iterator<Item = &'a ManifestConfigField>,
+    label: &str,
+    owner: &str,
+) -> Result<()> {
+    if sentence.trim().is_empty() {
+        return Err(anyhow!("{label} must be non-empty"));
+    }
+    let field_ids: HashSet<&str> = fields.map(|f| f.id.trim()).collect();
+    for placeholder in sentence_placeholders(sentence).map_err(|e| anyhow!("{label}: {e}"))? {
+        if !field_ids.contains(placeholder) {
+            return Err(anyhow!(
+                "{label}: placeholder {{{placeholder}}} names no field in this {owner}'s `schema`"
+            ));
         }
     }
     Ok(())
@@ -4585,6 +4622,70 @@ mod tests {
         let msg = bad_err(&m);
         assert!(msg.contains("trigger #0 (t1)"), "{msg}");
         assert!(msg.contains("{reward}"), "{msg}");
+    }
+
+    fn action_with_sentence(sentence: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f",
+                "sentence": {sentence},
+                "schema": [
+                    {{ "id": "counter", "label": "Counter", "type": "text" }},
+                    {{ "id": "amount", "label": "Amount", "type": "number" }}
+                ] }}]"#
+        ))
+    }
+
+    fn action_sentence_rejection(sentence: &str) -> String {
+        let msg = bad_err(&action_with_sentence(sentence));
+        assert!(msg.contains("action #0 (a1)"), "names the action: {msg}");
+        assert!(msg.contains("`sentence`"), "names the field: {msg}");
+        msg
+    }
+
+    #[test]
+    fn accepts_an_action_sentence_naming_declared_fields() {
+        validate(&action_with_sentence(r#""Add {amount} to {counter}""#)).expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_an_action_sentence_with_no_placeholders() {
+        validate(&action_with_sentence(r#""Reset every counter""#)).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_an_empty_action_sentence() {
+        let msg = action_sentence_rejection(r#""   ""#);
+        assert!(msg.contains("non-empty"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_malformed_braces_in_an_action_sentence() {
+        for (sentence, reason) in [
+            (r#""Add {amount to {counter}""#, "nested"),
+            (r#""Add amount} to {counter}""#, "unmatched"),
+            (r#""Add {amount""#, "unclosed"),
+            (r#""Add {} to {counter}""#, "empty placeholder"),
+        ] {
+            let msg = action_sentence_rejection(sentence);
+            assert!(msg.contains(reason), "{sentence}: {msg}");
+        }
+    }
+
+    #[test]
+    fn rejects_an_action_placeholder_naming_no_field() {
+        let msg = action_sentence_rejection(r#""Add {bits} to {counter}""#);
+        assert!(msg.contains("{bits}"), "names the placeholder: {msg}");
+        assert!(msg.contains("this action's `schema`"), "{msg}");
+    }
+
+    // A placeholder names the action's own settings, never a value from an
+    // earlier step or the trigger.
+    #[test]
+    fn rejects_an_action_placeholder_naming_a_step_variable() {
+        let msg = action_sentence_rejection(r#""Add {trigger.data.amount} to {counter}""#);
+        assert!(msg.contains("{trigger.data.amount}"), "{msg}");
     }
 
     fn trigger_field(wording: &str) -> ModuleManifest {

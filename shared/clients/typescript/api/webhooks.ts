@@ -192,6 +192,17 @@ export interface ActionDefinition {
    * with `parseDataShape` from `./ui-schema`.
    */
   returns?: string;
+  /**
+   * The module author's one-line English template for a configured step that
+   * runs this action, e.g. `"Add {amount} to {counter}"`. Each `{fieldId}`
+   * names a field in `paramsSchema`; render it by substituting the configured
+   * value (an option's label for a select), that field's `missingText` while
+   * a required field has no value, or the short variable name when the value
+   * comes from an earlier step. Barkloader guarantees at install that the
+   * braces are balanced and every placeholder names a field. Absent means the
+   * author declared none; build a sentence from the setting labels instead.
+   */
+  sentence?: string;
   createdByType: string;
   createdByRef: string;
 }

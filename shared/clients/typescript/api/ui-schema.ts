@@ -204,9 +204,8 @@ export interface ConfigField {
    */
   anyText?: string;
   /**
-   * Trigger config only — the words a trigger `sentence` shows in place of
-   * this field while it is required and has no value yet. Non-empty when
-   * present.
+   * The words a trigger or action `sentence` shows in place of this field
+   * while it is required and has no value yet. Non-empty when present.
    */
   missingText?: string;
 }
