@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1138,7 +1138,11 @@
           {
             "path": "CreatedByType",
             "type": "string",
-            "description": "USER for UI-authored workflows, MODULE for module-registered ones."
+            "description": "USER for UI-authored workflows, MODULE for module-registered ones.",
+            "options": [
+              { "value": "USER", "label": "Made in the dashboard" },
+              { "value": "MODULE", "label": "Added by a module" }
+            ]
           },
           {
             "path": "CreatedByRef",
@@ -1197,7 +1201,11 @@
           {
             "path": "CreatedByType",
             "type": "string",
-            "description": "USER for UI-authored workflows, MODULE for module-registered ones."
+            "description": "USER for UI-authored workflows, MODULE for module-registered ones.",
+            "options": [
+              { "value": "USER", "label": "Made in the dashboard" },
+              { "value": "MODULE", "label": "Added by a module" }
+            ]
           },
           {
             "path": "CreatedByRef",
@@ -1256,7 +1264,11 @@
           {
             "path": "CreatedByType",
             "type": "string",
-            "description": "USER for UI-authored workflows, MODULE for module-registered ones."
+            "description": "USER for UI-authored workflows, MODULE for module-registered ones.",
+            "options": [
+              { "value": "USER", "label": "Made in the dashboard" },
+              { "value": "MODULE", "label": "Added by a module" }
+            ]
           },
           {
             "path": "CreatedByRef",

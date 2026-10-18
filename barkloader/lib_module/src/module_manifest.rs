@@ -416,7 +416,26 @@ pub struct ManifestDataShapeField {
     /// each viewer of an `array`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// Every value the field can hold, each with the words a person reads for
+    /// it, when the set is known and closed (a subscription tier, who made a
+    /// workflow). Only on a `string` or `number` field, each value of that
+    /// type. A condition editor offers these instead of a free-text box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<ManifestDataShapeFieldOption>>,
 }
+
+/// One value a data-shape field can hold. `value` is what the payload
+/// carries, so it is a JSON string or number matching the field's `type`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestDataShapeFieldOption {
+    pub value: serde_json::Value,
+    pub label: String,
+}
+
+/// The `type` tokens a field may carry alongside `options`: a closed set is
+/// a set of scalars a condition can compare with `eq` or `in`.
+pub const DATA_SHAPE_OPTION_FIELD_TYPES: [&str; 2] = ["string", "number"];
 
 /// The accepted `identity` tokens for a data-shape field. Closed: each token
 /// is something the engine keys state by, so a new one needs engine support
