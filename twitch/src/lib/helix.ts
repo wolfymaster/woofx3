@@ -79,6 +79,22 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     broadcasterQuery: [],
     broadcasterBody: ["user_id"],
   },
+  getAdSchedule: {
+    method: "GET",
+    path: "channels/ads",
+    params: {},
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id"],
+    broadcasterBody: [],
+  },
+  snoozeNextAd: {
+    method: "POST",
+    path: "channels/ads/schedule/snooze",
+    params: {},
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id"],
+    broadcasterBody: [],
+  },
 };
 
 export function isHelixOperationName(name: unknown): name is HelixOperationName {

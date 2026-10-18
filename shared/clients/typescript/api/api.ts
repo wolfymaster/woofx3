@@ -1728,6 +1728,10 @@ export interface Woofx3EngineApi {
   twitchModifyChannelInformation(params: TwitchModifyChannelInformationParams): Promise<TwitchHelixResult>;
   /** `POST /helix/streams/markers` on the broadcaster's stream. Requires the `twitch.streamInfo` capability. */
   twitchCreateStreamMarker(params: TwitchCreateStreamMarkerParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/channels/ads` for the broadcaster. Requires the `twitch.ads` capability. */
+  twitchGetAdSchedule(): Promise<TwitchHelixResult>;
+  /** `POST /helix/channels/ads/schedule/snooze` for the broadcaster. Requires the `twitch.ads` capability. */
+  twitchSnoozeNextAd(): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires
