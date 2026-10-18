@@ -45,18 +45,32 @@ function git(...gitArgs) {
   return execFileSync("git", gitArgs, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-/** The ids a version of capabilities.ts declares, split by whether its engine advertises them. */
-function parseCapabilities(source) {
+/**
+ * The ids a version of capabilities.ts declares, split by whether its engine
+ * advertises them. Throws when the source does not parse, since a silent miss
+ * would record a wrong Since. Only the current file must have the
+ * UNADVERTISED_ENGINE_CAPABILITIES block; older tags may predate it.
+ */
+function parseCapabilities(source, { requireUnadvertised }) {
   const idsByKey = new Map();
   for (const [, key, id] of source.matchAll(new RegExp(`^\\s*(\\w+): "(${ID})",`, "gm"))) {
     idsByKey.set(key, id);
+  }
+  if (idsByKey.size === 0) {
+    throw new Error(`${CAPABILITIES} declares no capability ids this script can read`);
   }
   const unadvertised = new Set();
   const block = source.match(/export const UNADVERTISED_ENGINE_CAPABILITIES\b[\s\S]*?\]\);/);
   if (block) {
     for (const [, key] of block[0].matchAll(/ENGINE_CAPABILITIES\.(\w+)/g)) {
-      unadvertised.add(idsByKey.get(key));
+      const id = idsByKey.get(key);
+      if (id === undefined) {
+        throw new Error(`UNADVERTISED_ENGINE_CAPABILITIES names ${key}, which ENGINE_CAPABILITIES does not declare`);
+      }
+      unadvertised.add(id);
     }
+  } else if (requireUnadvertised) {
+    throw new Error(`${CAPABILITIES} has no UNADVERTISED_ENGINE_CAPABILITIES block this script can read`);
   }
   const declared = [...idsByKey.values()];
   return { declared, advertised: new Set(declared.filter((id) => !unadvertised.has(id))) };
@@ -80,7 +94,8 @@ function firstReleases(ids) {
     if (git("ls-tree", "--name-only", tag, "--", CAPABILITIES).trim() === "") {
       continue;
     }
-    for (const id of parseCapabilities(git("show", `${tag}:${CAPABILITIES}`)).advertised) {
+    for (const id of parseCapabilities(git("show", `${tag}:${CAPABILITIES}`), { requireUnadvertised: false })
+      .advertised) {
       if (ids.includes(id) && !since.has(id)) {
         since.set(id, tag);
       }
@@ -89,7 +104,9 @@ function firstReleases(ids) {
   return since;
 }
 
-const current = parseCapabilities(readFileSync(path.join(root, CAPABILITIES), "utf8"));
+const current = parseCapabilities(readFileSync(path.join(root, CAPABILITIES), "utf8"), {
+  requireUnadvertised: true,
+});
 const docPath = path.join(root, DOC);
 const doc = readFileSync(docPath, "utf8");
 
