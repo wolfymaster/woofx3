@@ -303,7 +303,7 @@ When it is set:
 
 | What | Setting | Resolves to |
 |---|---|---|
-| System database (SQLite) | `databaseUrl` / `WOOFX3_DATABASE_URL` | a relative `sqlite://` path under the data dir; its directory is created |
+| System database (SQLite) | `databaseUrl` / `WOOFX3_DATABASE_URL` | a relative `sqlite://` path under the data dir, its directory created; `sqlite:///C:/…` and `sqlite:///…` paths are used as given on every OS |
 | Module storage | `storagePath` / `WOOFX3_STORAGE_PATH` | a relative path under the data dir |
 | Installed modules (file provider) | `storage.file.destination`, `MODULES_DIR`, default `./modules` | a relative path under the data dir |
 | Module uploads in progress | `./uploads` | `<data dir>/uploads` |
