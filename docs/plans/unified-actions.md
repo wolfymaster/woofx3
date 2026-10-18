@@ -2,7 +2,6 @@
 
 The dashboard is moving to one step editor for chat commands, alerts, workflows and the macro pad. This page lists the engine side of that effort. Feature PRs for it target `release/unified-actions` in this repository and in woofx3-ui.
 
-- Plan with the decisions table: <https://claude.ai/artifact/EgRbADAL8PEhj4sxEALhWH>
 - UI plan: `docs/plans/unified-actions.md` in woofx3-ui
 
 ## Groundwork
