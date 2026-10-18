@@ -78,8 +78,10 @@ const CORS_HEADERS: Record<string, string> = {
   "Cross-Origin-Resource-Policy": "cross-origin",
 };
 
-// Upload grants are bearer capabilities carried in the URL, not cookies,
-// so allowing any origin to PUT grants nothing the token did not already.
+// Upload grants are bearer capabilities carried in the URL, not cookies, so
+// letting a cross-origin page PUT grants it nothing the token did not already.
+// Which origins may do so is the request guard's call, as on every route: any
+// origin while WOOFX3_ALLOWED_ORIGINS is unset, only the listed ones once set.
 const UPLOAD_CORS_HEADERS: Record<string, string> = {
   ...CORS_HEADERS,
   "Access-Control-Allow-Methods": UPLOAD_ALLOWED_METHODS,
