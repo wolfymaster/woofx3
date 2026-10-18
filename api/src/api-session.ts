@@ -1,4 +1,11 @@
-import type { ConfigBundle, ConfigImportOptions, RelayConfig, TwitchAccessToken, Woofx3EngineApi } from "@woofx3/api";
+import type {
+  ConfigBundle,
+  ConfigImportOptions,
+  MarketplaceInstallRequest,
+  RelayConfig,
+  TwitchAccessToken,
+  Woofx3EngineApi,
+} from "@woofx3/api";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 
@@ -43,6 +50,10 @@ export class ApiSession extends RpcTarget {
       moduleKey,
       ...ctx,
     });
+  }
+
+  async installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest) {
+    return this.api.installMarketplaceListing(listingId, request, { clientId: this.clientId });
   }
 
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
@@ -125,6 +136,9 @@ export const RPC_METHODS = [
   "getModule",
   "installModuleZip",
   "installModuleFromUrl",
+  "installMarketplaceListing",
+  "inspectMarketplaceListing",
+  "installMarketplaceBundle",
   "listEngineModules",
   "uninstallModule",
   "uninstallEngineModule",
