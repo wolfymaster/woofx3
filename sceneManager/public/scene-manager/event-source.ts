@@ -38,7 +38,7 @@ export interface SceneEventSink {
   onConnectionChange(connected: boolean): void;
   /** Server boot identity for the stream just opened, and the scene ops
    *  the page should be up to. The boot id changes across a sceneManager
-   *  restart; see index.ts for what that triggers. */
+   *  restart; see overlay.ts for what that triggers. */
   onHello?(bootId: string, seq: number, draftSeq: number): void;
   /** The scene changed: the ops for the next sequence number. */
   onSceneOps?(event: SceneOpsEvent): void;
