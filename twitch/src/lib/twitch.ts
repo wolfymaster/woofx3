@@ -1,6 +1,15 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
-import type { CreateMarkerArgs, TimeoutArgs, UpdateStreamArgs } from "@woofx3/common/cloudevents/Twitch/commands";
+import type {
+  CreateMarkerArgs,
+  HelixCommandResult,
+  TimeoutArgs,
+  UpdateStreamArgs,
+} from "@woofx3/common/cloudevents/Twitch/commands";
+import { runHelixOperation } from "./helix";
 import type { EnqueueShoutout } from "./shoutoutQueue";
+import { httpStatusOf, TwitchApiError } from "./twitchApiError";
+
+export { TwitchApiError, type TwitchApiErrorCode, twitchApiErrorCodeOf } from "./twitchApiError";
 
 /**
  * Each Twitch API method returns a plain data shape — the dispatcher in
@@ -221,50 +230,13 @@ export const TWITCH_API_COMMANDS = [
   "getUser",
   "getAdSchedule",
   "snoozeNextAd",
+  "helix",
 ] as const satisfies readonly (keyof TwitchApi)[];
 
 export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
   return (TWITCH_API_COMMANDS as readonly string[]).includes(command);
-}
-
-/**
- * A refusal a caller can act on without parsing the message: the dispatcher
- * sends `code` alongside the message in the `twitchapi.error` reply. Codes
- * are part of the `twitchapi` contract (docs/services/twitch-channel.md).
- */
-export class TwitchApiError extends Error {
-  constructor(
-    readonly code: TwitchApiErrorCode,
-    message: string
-  ) {
-    super(message);
-    this.name = "TwitchApiError";
-  }
-}
-
-/**
- * Why a Twitch call failed, in terms a caller can act on, so a caller can tell
- * "reconnect Twitch" from "wait and retry" without parsing messages. `failed`
- * is everything else; it stays in process and is never sent as a `code`.
- */
-export type TwitchApiErrorCode = "missing_scope" | "unauthorized" | "rate_limited" | "failed";
-
-/** The contract code a thrown error carries, if it is a TwitchApiError with an actionable code. */
-export function twitchApiErrorCodeOf(err: unknown): Exclude<TwitchApiErrorCode, "failed"> | undefined {
-  if (err instanceof TwitchApiError && err.code !== "failed") {
-    return err.code;
-  }
-  return undefined;
-}
-
-/** Twurple's HttpStatusCodeError, matched by shape so this file needs no import of its package. */
-function httpStatusOf(err: unknown): number | undefined {
-  if (err && typeof err === "object" && "statusCode" in err && typeof err.statusCode === "number") {
-    return err.statusCode;
-  }
-  return undefined;
 }
 
 const AD_SCOPE_MESSAGE = "reconnect Twitch to allow ad controls";
@@ -665,6 +637,16 @@ export default class TwitchApi {
       nextAdAt: normalizeHelixTime(row?.next_ad_at),
       serverNow: new Date().toISOString(),
     };
+  }
+
+  /**
+   * One declared Helix operation (`HELIX_OPERATIONS` in ./helix.ts), answered
+   * with Twitch's own result, for the dashboard's widgets: they read Helix's
+   * responses and reasons themselves, so this passes them through rather
+   * than reshaping them as the other commands do.
+   */
+  async helix(args: unknown): Promise<HelixCommandResult> {
+    return runHelixOperation(this.apiClient, this.broadcaster.id, args);
   }
 
   /**

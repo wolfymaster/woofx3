@@ -1,5 +1,6 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { HELIX_COMMAND } from "@woofx3/common/cloudevents/Twitch/commands";
 import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import { type SharedLogger, type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
@@ -382,7 +383,13 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
 
     if (!ctx.twitchApi) {
       if (isRequest) {
-        this.respondError(msg, "Twitch is not linked yet: the streamer has to connect Twitch first");
+        // Only `helix` carries a code here: every other command's contract,
+        // and `ctx.twitch`'s with it, documents this refusal as uncoded.
+        this.respondError(
+          msg,
+          "Twitch is not linked yet: the streamer has to connect Twitch first",
+          request.command === HELIX_COMMAND ? "not_linked" : undefined
+        );
       }
       return;
     }

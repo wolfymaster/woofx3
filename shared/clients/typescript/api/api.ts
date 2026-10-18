@@ -10,6 +10,13 @@ import type {
 } from "./config-bundle";
 import type { RegisterClientOptions } from "./rpc";
 import type {
+  TwitchCreateStreamMarkerParams,
+  TwitchGetGamesParams,
+  TwitchHelixResult,
+  TwitchModifyChannelInformationParams,
+  TwitchSearchCategoriesParams,
+} from "./twitch-helix";
+import type {
   EventLogPage,
   EventLogQuery,
   EventLogSelection,
@@ -1706,6 +1713,21 @@ export interface Woofx3EngineApi {
   // and stored on settings.user_id so the row is properly user-scoped.
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
+
+  // Twitch: each method performs one Helix call as the linked broadcaster
+  // and answers with Twitch's own result (see ./twitch-helix.ts). They never
+  // throw for a refusal; `ok: false` carries the reason.
+
+  /** `GET /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  twitchGetChannelInformation(): Promise<TwitchHelixResult>;
+  /** `GET /helix/games`. Requires the `twitch.streamInfo` capability. */
+  twitchGetGames(params: TwitchGetGamesParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/search/categories`. Requires the `twitch.streamInfo` capability. */
+  twitchSearchCategories(params: TwitchSearchCategoriesParams): Promise<TwitchHelixResult>;
+  /** `PATCH /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  twitchModifyChannelInformation(params: TwitchModifyChannelInformationParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/streams/markers` on the broadcaster's stream. Requires the `twitch.streamInfo` capability. */
+  twitchCreateStreamMarker(params: TwitchCreateStreamMarkerParams): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires

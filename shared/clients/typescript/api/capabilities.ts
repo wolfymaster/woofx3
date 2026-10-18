@@ -81,6 +81,13 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
   /**
+   * The Stream info widget's Helix calls, made by the engine as the linked
+   * broadcaster and answered with Twitch's own result:
+   * `twitchGetChannelInformation`, `twitchGetGames`, `twitchSearchCategories`,
+   * `twitchModifyChannelInformation`, `twitchCreateStreamMarker`.
+   */
+  twitchStreamInfo: "twitch.streamInfo",
+  /**
    * Editing a scene live with sceneManager over editor socket protocol 1:
    * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
    * place of `updateScene`. No longer served; declared so a client can

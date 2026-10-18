@@ -199,6 +199,31 @@ describe("TwitchApi before Twitch is linked", () => {
     expect(new TextDecoder().decode(payload)).toContain("not linked");
   });
 
+  test("codes the not-linked refusal for helix only, as the other commands' contract has no code for it", async () => {
+    reset();
+    const { ctx, handlers } = context(CREDENTIALS);
+    await new TwitchApiApplication().init(ctx);
+    const answer = async (command: string) => {
+      const respond = mock(() => true);
+      await handlers.get("twitchapi")?.({
+        reply: "inbox.1",
+        json: () => ({ command, args: { operation: "getChannelInformation" } }),
+        respond,
+      });
+      await Bun.sleep(0);
+      const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
+      return JSON.parse(new TextDecoder().decode(payload)) as { type: string; data: { error: string; code?: string } };
+    };
+
+    const helix = await answer("helix");
+    expect(helix.type).toBe("twitchapi.error");
+    expect(helix.data.code).toBe("not_linked");
+    expect(helix.data.error).toContain("not linked");
+
+    const other = await answer("getStreamInfo");
+    expect(other.data.code).toBeUndefined();
+  });
+
   // The sandbox's ctx.twitch and the chatbot publish the request without a
   // CloudEvent around it; it must reach the dispatcher all the same.
   test("reads a bare { command, args } request as well as a CloudEvent one", async () => {
