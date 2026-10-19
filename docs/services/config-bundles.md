@@ -71,7 +71,10 @@ reference it by, so those references survive the move unchanged).
 - A sub-workflow step's `workflow.workflowId` is blanked, and the target is
   recorded by name in `workflowRefs` (task id to workflow name). A step whose
   target no longer existed on the exporting engine is blanked with no entry.
-  Import refuses a bundle whose `workflowId` is not empty.
+  Import refuses a bundle whose `workflowId` is not empty. A command with
+  steps carries them the same way, with its own `workflowRefs`; importing it
+  waits on the workflows it starts, and is blocked when one is neither in the
+  bundle nor on the engine.
 - Names must be unique per section. Export fails, naming the duplicates, if
   two workflows (or groups, or commands) share one, since every reference to
   that name would be ambiguous.

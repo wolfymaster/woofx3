@@ -178,6 +178,13 @@ export const ENGINE_CAPABILITIES = {
    * field sources its form uses.
    */
   workflowWidgetVisibility: "workflow.widgetVisibility",
+  /** The values `${viewer.*}` can resolve in a workflow, for a condition editor: `listViewerFacts`. */
+  workflowViewerFacts: "workflow.viewerFacts",
+  /**
+   * Each item of a condition's list value (an `in` or `not_in` item, a
+   * `between` bound) is resolved, so it may be a `${...}` reference.
+   */
+  workflowConditionListReferences: "workflow.conditionListReferences",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

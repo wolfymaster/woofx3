@@ -62,6 +62,7 @@ interface RawAction {
   type?: unknown;
   params_schema?: unknown;
   returns?: unknown;
+  sentence?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -201,6 +202,11 @@ function mapAction(raw: RawAction): ActionDefinition {
   const returns = asString(raw.returns);
   if (returns !== "" && returns !== "{}") {
     def.returns = returns;
+  }
+  // As for a trigger's sentence: "" is the column default.
+  const sentence = asString(raw.sentence);
+  if (sentence !== "") {
+    def.sentence = sentence;
   }
   const canonicalId = asString(raw.canonical_id);
   if (canonicalId !== "") {

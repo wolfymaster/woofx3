@@ -1,5 +1,21 @@
 import { describe, expect, mock, test } from "bun:test";
-import { type AuthorizationResponse, type ChatSender, type CommandMatch, Commands } from "./commands";
+import ChatCommandEvents from "@woofx3/common/cloudevents/Chat/commands";
+import {
+  type AuthorizationResponse,
+  type ChatSender,
+  type CommandInvocation,
+  type CommandMatch,
+  type CommandPublisher,
+  Commands,
+} from "./commands";
+
+const chatCommandEvents = new ChatCommandEvents("test");
+
+/** What a publisher returns for `match`: its event, published successfully. */
+function emitted(match: CommandMatch): ReturnType<CommandPublisher> {
+  const { commandName, ...data } = match;
+  return { event: chatCommandEvents.event(commandName, { ...data, platform: "twitch" }), published: Promise.resolve() };
+}
 
 function makeChatClient() {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
@@ -78,6 +94,7 @@ describe("Commands", () => {
     const commands = new Commands(sender("#chan", makeChatClient()), {
       publisher: (match) => {
         published.push(match);
+        return emitted(match);
       },
     });
     commands.add("hello", "hi there");
@@ -94,7 +111,7 @@ describe("Commands", () => {
   });
 
   test("does not invoke the publisher for non-command chat", async () => {
-    const publisher = mock((_m: CommandMatch) => {});
+    const publisher = mock(emitted);
     const commands = new Commands(sender("#chan", makeChatClient()), { publisher });
     commands.add("hello", "hi");
     await commands.process("just chatting", "alice");
@@ -102,7 +119,7 @@ describe("Commands", () => {
   });
 
   test("does not invoke the publisher when authorization denies the command", async () => {
-    const publisher = mock((_m: CommandMatch) => {});
+    const publisher = mock(emitted);
     const commands = new Commands(sender("#chan", makeChatClient()), { publisher });
     commands.setAuth(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
     commands.add("secret", "classified");
@@ -129,6 +146,40 @@ describe("Commands", () => {
     expect(caught[0][1].commandName).toBe("hello");
   });
 
+  test("a publish that rejects later is reported through onPublishError", async () => {
+    const caught: unknown[] = [];
+    const commands = new Commands(sender("#chan", makeChatClient()), {
+      publisher: (match) => ({ ...emitted(match), published: Promise.reject(new Error("bus down")) }),
+      onPublishError: (err) => {
+        caught.push(err);
+      },
+    });
+    commands.add("hello", "hi");
+    const [out] = await commands.process("!hello", "alice");
+    await Promise.resolve();
+    expect(out).toBe("hi");
+    expect(caught.map((err) => (err as Error).message)).toEqual(["bus down"]);
+  });
+
+  test("the handler gets the very event the invocation announced", async () => {
+    const announced: string[] = [];
+    let handed: CommandInvocation | undefined;
+    const commands = new Commands(sender("#chan", makeChatClient()), {
+      publisher: (match) => {
+        const out = emitted(match);
+        announced.push(out.event.id);
+        return out;
+      },
+    });
+    commands.add("Hug", async (_text, _user, _vars, invocation) => {
+      handed = invocation;
+      return "";
+    });
+    await commands.process("!Hug wolfy", "alice");
+    expect(handed?.event?.id).toBe(announced[0]);
+    expect(handed?.event?.data.command).toBe("hug");
+  });
+
   test("resolves {template} variables in a string response", async () => {
     const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("greet", "hello {user}, you said: {argsText}");
@@ -138,7 +189,7 @@ describe("Commands", () => {
   });
 
   test("drops an invocation within the cooldown window and does not re-trigger the publisher", async () => {
-    const publisher = mock((_m: CommandMatch) => {});
+    const publisher = mock(emitted);
     const commands = new Commands(sender("#chan", makeChatClient()), { publisher });
     commands.add("roll", "you rolled a 20", { cooldownSeconds: 60 });
 
@@ -150,6 +201,19 @@ describe("Commands", () => {
     expect(secondMatched).toBe(false);
     expect(second).toBe("");
     expect(publisher).toHaveBeenCalledTimes(1);
+  });
+
+  test("a refused chatter does not spend the cooldown for everyone else", async () => {
+    const commands = new Commands(sender("#chan", makeChatClient()));
+    commands.setAuth(async (user): Promise<AuthorizationResponse> => ({ granted: user === "mod" }));
+    commands.add("title", "title changed", { cooldownSeconds: 60 });
+
+    const [refused, refusedMatched] = await commands.process("!title", "guest");
+    expect([refused, refusedMatched]).toEqual(["", false]);
+
+    const [out, matched] = await commands.process("!title", "mod");
+    expect(matched).toBe(true);
+    expect(out).toBe("title changed");
   });
 
   test("allows an invocation once the cooldown window has elapsed", async () => {

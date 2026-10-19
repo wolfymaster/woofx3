@@ -12,8 +12,8 @@ func NewWorkflowTask() TaskFactory {
 	}
 }
 
-func (t *WorkflowTask) Type() string {
-	return "workflow"
+func (t *WorkflowTask) Type() types.TaskType {
+	return types.TaskTypeWorkflow
 }
 
 func (t *WorkflowTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {

@@ -43,7 +43,10 @@ import type {
   TriggerDefinition,
   WidgetBehaviorKinds,
 } from "./webhooks";
-import type { WorkflowDefinition } from "./workflow-definition";
+import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
+import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
+
+export type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 
 // ==================== Modules ====================
 
@@ -324,27 +327,6 @@ export interface TwitchAccessToken {
 // ==================== Actions ====================
 
 /**
- * One action to run: the same shape a workflow step has, because it is the
- * same thing. `action` names the engine handler (`function`, `alert`,
- * `print`, ...); `function` carries the canonical function id when the
- * handler is `function`; `$ref` records which module action this came from,
- * for the reference graph.
- *
- * Parameters may contain `${trigger.data...}` expressions, resolved against
- * the event the actions run for.
- */
-export interface ActionStep {
-  /** Defaults to the step's position ("action-1", ...) when omitted. */
-  id?: string;
-  action: string;
-  function?: string;
-  parameters?: Record<string, unknown>;
-  $ref?: string;
-  /** Omit to run after the previous action; `[]` to run alongside it. */
-  dependsOn?: string[];
-}
-
-/**
  * A request to run actions that belong to no workflow.
  *
  * The run is not recorded and reports no lifecycle: both are keyed by a
@@ -366,54 +348,13 @@ export interface RunActionsInput {
 
 // ==================== Commands ====================
 
-/** "public" always allows any user; "restricted" requires the invoking user
- * to belong to one of groupIds or be listed in usernames. */
-export type CommandVisibility = "public" | "restricted";
-
-/**
- * Snapshot of a chat command as the engine stores it.
- *
- * A command runs `actions`, in order. Replying in chat is an action like any
- * other (`chat.reply`), which is what lets a command do anything a workflow
- * step can. An empty list is a command that only announces itself on
- * `chat.command.<slug>` for workflows to react to.
- */
-export interface CommandSnapshot {
-  id: string;
-  command: string;
-  actions: ActionStep[];
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: CommandVisibility;
-  groupIds: string[];
-  usernames: string[];
-  /**
-   * Optional "{variable}" placeholders declaring named arguments, e.g.
-   * "{songTitle}" or "{userA} {userB}" - `command` itself never contains
-   * braces, it's always the bare trigger word ("sr", "hug"). The extracted
-   * values reach the command's actions on the trigger event, as
-   * `${trigger.data.variables.songTitle}`.
-   *
-   * Extraction rule: exactly one variable captures the entire remainder of
-   * the message (not split on whitespace) - `!sr {songTitle}` against
-   * "!sr Life is a highway" yields `songTitle: "Life is a highway"`. More
-   * than one variable: every variable but the last consumes one
-   * whitespace-delimited token, and the last captures whatever remains -
-   * `!hug {userA} {userB}` against "!hug alice bob" yields
-   * `userA: "alice", userB: "bob"`.
-   *
-   * Each `{name}` must be a single word or dot-separated words
-   * (`^\w+(\.\w+)*$`) - no other characters are valid. The engine rejects
-   * `createCommand`/`updateCommand` calls with an invalid name in this
-   * pattern.
-   */
-  argumentPattern: string;
-}
-
 export interface CreateCommandInput {
   command: string;
-  actions: ActionStep[];
+  /** The tasks the command's workflow runs. Takes precedence over `actions`;
+   *  either one non-empty creates the workflow. */
+  steps?: TaskDefinition[];
+  /** Actions to run in order, for a writer that has nothing but actions. */
+  actions?: ActionStep[];
   cooldown: number;
   priority?: number;
   enabled: boolean;
@@ -496,14 +437,20 @@ export interface AvailableFunction {
 }
 
 /**
- * Full-replace update; the engine's UpdateCommand proto requires every
- * field, so the contract mirrors that rather than offering partial
- * patches. Callers should send the merged result of (current snapshot ∪
- * user changes).
+ * Full-replace update of everything but the steps; the engine's UpdateCommand
+ * proto requires every other field, so the contract mirrors that rather than
+ * offering partial patches. Callers should send the merged result of (current
+ * snapshot ∪ user changes). The steps change only when `steps` or `actions` is
+ * given.
  */
 export interface UpdateCommandInput {
   command: string;
-  actions: ActionStep[];
+  /** Replaces the tasks of the command's workflow, creating it when the command
+   *  has none; an empty list removes it. Omit both this and `actions` to keep
+   *  the steps as they are. */
+  steps?: TaskDefinition[];
+  /** Actions to run in order, replacing the steps; ignored with `steps`. */
+  actions?: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -859,6 +806,32 @@ export interface SceneEditorSession {
   path: string;
   /** How long `token` may be presented for; ask again to reconnect after. */
   expiresInSeconds: number;
+}
+
+/**
+ * One value a workflow can read as `${viewer.<path>}` about the viewer its
+ * triggering event names: the viewer's `id`, `platform` and `name`, and each
+ * active viewer fact, a fact `{owner}:fact:{slug}` at `{owner}.{slug}`.
+ *
+ * `${viewer.*}` holds values only when the trigger's `emits` marks exactly
+ * one `string` field with `identity: "viewer"`. A fact the viewer has no
+ * value for yet reads as null, as does `name` when neither the event nor the
+ * db knows it.
+ */
+export interface ViewerFact {
+  /** The path after `viewer.`, e.g. `"id"` or `"user.apple_mentions"`. */
+  path: string;
+  name: string;
+  /** Empty when the fact's author wrote none. */
+  description: string;
+  /** What the value is; a timestamp is epoch milliseconds, compared as a number. */
+  valueKind: "string" | "number" | "timestamp";
+  /**
+   * Whether a fact counts over the viewer's lifetime or the current stream
+   * session, in which case it reads the current session's value. Absent on
+   * `id`, `platform` and `name`, which are not facts.
+   */
+  window?: "lifetime" | "session";
 }
 
 /**
@@ -1814,6 +1787,12 @@ export interface Woofx3EngineApi {
    * partial.
    */
   getWorkflowHealth(): Promise<WorkflowHealth[]>;
+  /**
+   * Every value `${viewer.*}` can resolve in a workflow, in a stable order:
+   * `id`, `platform` and `name` first, then the active facts by path.
+   * Requires the `workflow.viewerFacts` capability.
+   */
+  listViewerFacts(): Promise<ViewerFact[]>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
   // command.created / command.updated / command.deleted webhooks on success)
@@ -2289,8 +2268,8 @@ export interface Woofx3EngineApi {
     commands: Array<{
       id: string;
       name: string;
-      /** How many actions it runs. The actions themselves are on listCommands. */
-      actions: number;
+      /** How many steps it runs. The steps themselves are on listCommands. */
+      stepCount: number;
       cooldown: number;
       enabled: boolean;
     }>;

@@ -204,9 +204,8 @@ export interface ConfigField {
    */
   anyText?: string;
   /**
-   * Trigger config only — the words a trigger `sentence` shows in place of
-   * this field while it is required and has no value yet. Non-empty when
-   * present.
+   * The words a trigger or action `sentence` shows in place of this field
+   * while it is required and has no value yet. Non-empty when present.
    */
   missingText?: string;
 }
@@ -313,6 +312,19 @@ export interface DataShapeField {
   anonymousWhen?: string;
   /** Path of a string field holding the identity's human-readable name. */
   displayName?: string;
+  /**
+   * Every value the field can hold, when the set is closed. Only on a
+   * `string` or `number` field, each value of that type; barkloader checks
+   * both at install.
+   */
+  options?: DataShapeFieldOption[];
+}
+
+export interface DataShapeFieldOption {
+  /** What the payload carries. */
+  value: string | number;
+  /** The words a person reads for it. */
+  label: string;
 }
 
 export interface DataShape {
@@ -328,6 +340,31 @@ export interface DataShape {
    */
   details?: string[];
   fields: DataShapeField[];
+}
+
+function isDataShapeFieldOption(raw: unknown): raw is DataShapeFieldOption {
+  if (typeof raw !== "object" || raw === null) {
+    return false;
+  }
+  const { value, label } = raw as { value?: unknown; label?: unknown };
+  return (typeof value === "string" || typeof value === "number") && typeof label === "string" && label.length > 0;
+}
+
+/**
+ * A field with its `options` kept only when each one is well formed. A list
+ * holding one malformed entry is dropped whole: offering the rest would hide
+ * a value the field can hold, and a picker missing a value is worse than a
+ * free-text box.
+ */
+function withWellFormedOptions(field: DataShapeField): DataShapeField {
+  if (field.options === undefined) {
+    return field;
+  }
+  const { options, ...rest } = field;
+  if (Array.isArray(options) && options.length > 0 && options.every(isDataShapeFieldOption)) {
+    return { ...rest, options: options.map(({ value, label }) => ({ value, label })) };
+  }
+  return rest;
 }
 
 /**
@@ -370,7 +407,7 @@ export function parseDataShape(raw: string | undefined | null): DataShape | unde
   if (valid.length === 0) {
     return undefined;
   }
-  const shape: DataShape = { fields: valid };
+  const shape: DataShape = { fields: valid.map(withWellFormedOptions) };
   const { summary, details } = parsed as { summary?: unknown; details?: unknown };
   if (typeof summary === "string" && summary.length > 0) {
     shape.summary = summary;

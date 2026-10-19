@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -42,6 +43,26 @@ func TestPlanResumeRestoresEarlierOutputs(t *testing.T) {
 	}
 	if exports["fetch"]["user"] != "x" {
 		t.Errorf("fetch outputs not restored: %v", exports)
+	}
+}
+
+// A wait recorded without an event resumes with its empty payload still open,
+// so the remaining steps read its fields as empty, as the original run did.
+func TestPlanResumeKeepsAnEventlessWaitsDataOpen(t *testing.T) {
+	order := []*types.TaskDefinition{typed("pause", "wait"), typed("alert", "action")}
+	steps := []ReplayStep{
+		{TaskID: "pause", Status: "success", Attempt: 1, Outputs: map[string]any{"timedOut": true, "data": map[string]any{}}},
+		{TaskID: "alert", Status: "failed", Attempt: 1},
+	}
+
+	_, exports, _, err := planResume(order, steps, "alert")
+	if err != nil {
+		t.Fatalf("planResume: %v", err)
+	}
+	resolver := expression.NewResolver()
+	resolver.AddSource("pause", exports["pause"])
+	if got, err := resolver.ResolveString("${pause.data.user}"); err != nil || got != nil {
+		t.Errorf("${pause.data.user} = %v, %v; want nil, nil", got, err)
 	}
 }
 

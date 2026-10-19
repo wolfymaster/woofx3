@@ -10,7 +10,7 @@ import (
 
 type Task interface {
 	Execute(ctx *TaskContext) (*types.TaskResult, error)
-	Type() string
+	Type() types.TaskType
 }
 
 type TaskContext struct {
@@ -50,16 +50,16 @@ type TaskFactory func(taskDef *types.TaskDefinition, params map[string]any) (Tas
 
 type TaskRegistry struct {
 	mu        sync.RWMutex
-	factories map[string]TaskFactory
+	factories map[types.TaskType]TaskFactory
 }
 
 func NewTaskRegistry() *TaskRegistry {
 	return &TaskRegistry{
-		factories: make(map[string]TaskFactory),
+		factories: make(map[types.TaskType]TaskFactory),
 	}
 }
 
-func (r *TaskRegistry) Register(taskType string, factory TaskFactory) error {
+func (r *TaskRegistry) Register(taskType types.TaskType, factory TaskFactory) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -83,15 +83,15 @@ func (r *TaskRegistry) Create(taskDef *types.TaskDefinition, params map[string]a
 	return factory(taskDef, params)
 }
 
-func (r *TaskRegistry) List() []string {
+func (r *TaskRegistry) List() []types.TaskType {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	types := make([]string, 0, len(r.factories))
+	taskTypes := make([]types.TaskType, 0, len(r.factories))
 	for t := range r.factories {
-		types = append(types, t)
+		taskTypes = append(taskTypes, t)
 	}
-	return types
+	return taskTypes
 }
 
 type ActionContext[TServices any] struct {

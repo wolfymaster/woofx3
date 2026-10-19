@@ -57,6 +57,10 @@ type runControl struct {
 	// run unwinds the way a cancelled one does, but nobody asked for it to
 	// stop, so it settles as failed rather than cancelled.
 	stopped bool
+	// queued marks a run begun ahead of its turn in an event's ordered queue
+	// (see executeInOrder). No goroutine runs its tasks yet, so whoever
+	// abandons it settles it.
+	queued bool
 
 	// viewer is the run's `${viewer.*}` source, kept beside the rest of the
 	// run's lifetime state so its steps share one read until a pause.
@@ -110,6 +114,25 @@ func (c *runControl) markStopped() bool {
 	return true
 }
 
+// startQueued takes a queued run off the queue so it can execute, or reports
+// that it was cancelled or abandoned first. The flags it checks are set before
+// abandonRun runs, so a run either starts here or is settled there, never both.
+func (c *runControl) startQueued() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.settled || c.cancelRequested || c.stopped {
+		return false
+	}
+	c.queued = false
+	return true
+}
+
+func (c *runControl) isQueued() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.queued
+}
+
 func (c *runControl) isSettled() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -135,12 +158,14 @@ func isTerminalStatus(status types.ExecutionStatus) bool {
 // Stop ends the engine, and it is not a request to cancel every run in flight,
 // which would record as cancelled runs nobody asked to stop. Stop gives runs
 // time to finish and abandons the rest one by one (see abandonRun).
-func (e *Engine[TServices]) registerRunLocked(executionID string, viewer *runViewer) {
+func (e *Engine[TServices]) registerRunLocked(executionID string, viewer *runViewer) *runControl {
 	if viewer == nil {
 		panic(fmt.Sprintf("engine: run %s registered without a viewer loader", executionID))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e.controls[executionID] = &runControl{ctx: ctx, cancel: cancel, viewer: viewer}
+	ctl := &runControl{ctx: ctx, cancel: cancel, viewer: viewer}
+	e.controls[executionID] = ctl
+	return ctl
 }
 
 func (e *Engine[TServices]) control(executionID string) *runControl {
@@ -218,13 +243,18 @@ func (e *Engine[TServices]) Cancel(executionID, reason string) (CancelResult, er
 // stopping; the run's control already says which. A run paused at a wait or
 // on a sub-workflow has no goroutine to notice, so it is claimed and settled
 // here. abandonChild is called for each sub-workflow a paused run was waiting
-// on, and may be nil when the caller deals with those runs itself.
+// on, and may be nil when the caller deals with those runs itself. A run
+// still queued for its turn has no goroutine either, and is settled here too.
 func (e *Engine[TServices]) abandonRun(execution *types.WorkflowExecution, ctl *runControl, abandonChild func(childID string)) {
 	// Cancelled before any wait is claimed. A wait is armed under the same lock
 	// the claim takes, and arming checks this context, so a run reaching a wait
 	// concurrently either is claimed below or refuses to pause.
 	ctl.cancel()
 
+	if ctl.isQueued() {
+		e.settleCancelled(execution)
+		return
+	}
 	if waits := e.claimWaits(execution.ID); len(waits) > 0 {
 		for _, w := range waits {
 			e.cancelPendingTask(execution, w.TaskID, w.CurrentIndex)

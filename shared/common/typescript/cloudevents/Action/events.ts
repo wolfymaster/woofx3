@@ -1,3 +1,5 @@
+import type { BaseEvent } from "../BaseEvent";
+
 // A request to run actions that belong to no workflow. The workflow engine
 // subscribes and runs them through its own executor (Engine.RunActions);
 // nothing else does, so this is the one way to run an action outside a
@@ -22,12 +24,7 @@ export interface ActionExecute {
   /** Names the run in the engine's logs, e.g. `command:hug`. */
   label: string;
   actions: ActionStep[];
-  /** What the actions resolve `${trigger.data...}` against. */
-  event: {
-    id: string;
-    type: string;
-    source: string;
-    time: string;
-    data: Record<string, unknown>;
-  };
+  /** What the actions resolve `${trigger.data...}` against: a whole
+   *  CloudEvent, such as the `chat.command.<slug>` event a command announced. */
+  event: BaseEvent<object>;
 }

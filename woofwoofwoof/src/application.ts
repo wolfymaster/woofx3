@@ -1,10 +1,10 @@
 import type { BarkloaderMessageResponse } from "@woofx3/barkloader";
 import type { ActionStep } from "@woofx3/common/cloudevents/Action";
-import { commandNameToSubjectSegment } from "@woofx3/common/cloudevents/slug";
 import { parseCommandVariables } from "@woofx3/common/templates/command-variables";
 import { EventType as ChatEventType, type SendMessageMessage } from "@woofx3/common/cloudevents/Chat";
 import {
   type CommandCreatedMessage,
+  type CommandSnapshot,
   type CommandDeletedMessage,
   EventType as CommandEventType,
   type CommandUpdatedMessage,
@@ -129,15 +129,21 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     const commander = new Commands(ctx.services.twitchChat, {
       publisher: (match) => {
-        const [subject, data] = ctx.events.ChatCommand().command(match.commandName, {
-          args: match.args,
-          rawMessage: match.rawMessage,
-          text: match.text,
-          variables: match.variables,
-          chatter: match.chatter,
-          platform: "twitch",
-        });
-        ctx.services.messageBus.client.publish(subject, data);
+        const chatCommand = ctx.events.ChatCommand();
+        const event = chatCommand.event(
+          match.commandName,
+          {
+            args: match.args,
+            rawMessage: match.rawMessage,
+            text: match.text,
+            variables: match.variables,
+            chatter: match.chatter,
+            platform: "twitch",
+          },
+          { platform: "twitch", triggeredBy: "twitch" }
+        );
+        const [subject, data] = chatCommand.encode(event);
+        return { event, published: ctx.services.messageBus.client.publish(subject, data) };
       },
       onPublishError: (err, match) => {
         ctx.logger.error("Failed to publish chat.command event", match.commandName, err);
@@ -522,10 +528,19 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
   // Register or replace a command on the commander, and remember it under
   // its engine id so a later `command.deleted` (id-only) can resolve back
-  // to the command name we registered.
+  // to the command name we registered. A disabled command is taken off the
+  // commander instead: it must not match at all, any more than one the
+  // startup listing left out.
   private applyCommand(ctx: Context, command: Command) {
     if (!ctx.commander) {
       throw new Error("Commander is undefined. This should never happen");
+    }
+
+    if (!command.enabled) {
+      ctx.commander.remove(command.command);
+      this.commandsByEngineId.set(command.id, command);
+      ctx.logger.info("disabled command", command.command);
+      return;
     }
 
     ctx.logger.info("applying command", command.command);
@@ -536,6 +551,46 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       variables,
     };
 
+    if (command.workflowId) {
+      // The commander calls this only once the command has matched and passed
+      // its permission and cooldown checks, and it has announced the match on
+      // chat.command.<slug> by then. The workflow's trigger has type
+      // "command", so that announcement cannot start it; this run is its one
+      // run, and it reads the very event that was announced.
+      //
+      // The announcement and this run are two separate publishes. If this one
+      // fails, workflows listening for the command have still run; the chatter
+      // is told, rather than left to guess why nothing happened.
+      const workflowId = command.workflowId;
+      ctx.commander.add(
+        command.command,
+        async (_text, _user, _vars, invocation) => {
+          if (!invocation?.event) {
+            ctx.logger.error("Command workflow not run: the invocation has no announced event", {
+              command: command.command,
+              workflowId,
+            });
+            return "";
+          }
+          const [topic, payload] = ctx.events.Command().executeWorkflow({ workflowId, event: invocation.event });
+          try {
+            await ctx.services.messageBus.client.publish(topic, payload);
+          } catch (err) {
+            ctx.logger.error("Failed to run command workflow", {
+              command: command.command,
+              workflowId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return failureReply(`run !${command.command}`, err);
+          }
+          return "";
+        },
+        commanderOpts
+      );
+      this.commandsByEngineId.set(command.id, command);
+      return;
+    }
+
     const actions = parseCommandActions(command, ctx);
     if (actions.length === 0) {
       // Nothing to run. The command still matches, and still announces itself
@@ -544,34 +599,17 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     } else {
       ctx.commander.add(
         command.command,
-        async (
-          text: string,
-          user?: string,
-          vars?: Record<string, unknown>,
-          invocation?: { rawMessage: string; args: string[] }
-        ) => {
-          // The same ChatCommandEventData the CloudEvent carries, so an action
-          // reading `${trigger.data.chatter}` sees what a workflow triggered by
-          // this command sees.
-          const eventData = {
-            command: command.command,
-            rawMessage: invocation?.rawMessage ?? text,
-            text,
-            args: invocation?.args ?? [],
-            variables: vars ?? {},
-            chatter: user ?? "",
-            platform: "twitch" as const,
-          };
+        async (_text, _user, _vars, invocation) => {
+          if (!invocation?.event) {
+            ctx.logger.error("Command actions not run: the invocation has no announced event", {
+              command: command.command,
+            });
+            return "";
+          }
           const [topic, payload] = ctx.events.Action().execute({
             label: `command:${command.command}`,
             actions,
-            event: {
-              id: crypto.randomUUID(),
-              type: `chat.command.${commandNameToSubjectSegment(command.command)}`,
-              source: "woofwoofwoof",
-              time: new Date().toISOString(),
-              data: eventData,
-            },
+            event: invocation.event,
           });
           try {
             await ctx.services.messageBus.client.publish(topic, payload);
@@ -625,22 +663,11 @@ function parseCommandActions(command: Command, ctx: Context): ActionStep[] {
   }
 }
 
-// Bridge the engine's CommandSnapshot (shared API shape) into the
-// protobuf Command shape that applyCommand expects. The two diverge only
-// in fields applyCommand doesn't read (createdAt, createdBy*); we fill
-// them with zero values so a round-trip stays type-safe.
-function snapshotToCommand(snapshot: {
-  id: string;
-  command: string;
-  actions: ActionStep[];
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: string;
-  groupIds: string[];
-  usernames: string[];
-  argumentPattern: string;
-}): Command {
+// Bridge the engine's CommandSnapshot into the protobuf Command shape that
+// applyCommand expects. The two diverge only in fields applyCommand doesn't
+// read (createdAt, createdBy*); we fill them with zero values so a round-trip
+// stays type-safe.
+function snapshotToCommand(snapshot: CommandSnapshot): Command {
   return {
     id: snapshot.id,
     command: snapshot.command,
@@ -655,5 +682,8 @@ function snapshotToCommand(snapshot: {
     groupIds: snapshot.groupIds,
     usernames: snapshot.usernames,
     argumentPattern: snapshot.argumentPattern,
+    workflowId: snapshot.workflowId ?? "",
+    stepsJson: JSON.stringify(snapshot.steps ?? []),
+    workflowError: snapshot.workflowError ?? "",
   };
 }

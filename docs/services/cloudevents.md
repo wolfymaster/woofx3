@@ -187,12 +187,42 @@ A raid on this channel is published once, as `channel.raid`, from the `channel.r
 
 ---
 
+## Running a command's workflow
+
+`workflow.command.execute` asks the workflow engine to run the workflow a chat
+command is linked to, for one invocation. Published by woofwoofwoof once a
+command has matched and passed its permission and cooldown checks, after it
+has announced the match on `chat.command.<slug>`, and by the engine api's
+`executeCommand` (which publishes it first, then the announcement). `event` is
+the announced `chat.command.<slug>` CloudEvent itself, not a copy: the same
+`id`, `time` and `sessionId`, with the command's slug as `data.command`. The
+workflow service runs that one workflow (`Engine.RunCommand`), which must have
+a trigger of type `"command"` whose `event` matches `event.type`; its trigger
+conditions apply, nothing else is checked again.
+
+```jsonc
+// subject: "workflow.command.execute"
+{
+  "workflowId": "3f1c…",
+  "event": {                     // the invocation; the run's ${trigger...}
+    "specversion": "1.0.0", "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...",
+    "sessionId": "...", "platform": "twitch", "triggeredBy": "twitch",
+    "data": { "command": "hug", "chatter": "wolfy", "text": "", "args": [], "variables": {}, "rawMessage": "!hug", "platform": "twitch" }
+  }
+}
+```
+
+A workflow with a `"command"` trigger is never offered events, so the
+`chat.command.<slug>` event of the same invocation does not run it a second
+time. The subject is reserved: no workflow or module may publish it.
+
 ## Running actions without a workflow
 
 `action.execute` asks the workflow engine to run a list of actions that
-belongs to no workflow — a chat command's actions, or anything else with
-actions to run and nothing to hang them on. Published by the engine api's
-`runActions(input)` RPC and by woofwoofwoof when a chat command matches;
+belongs to no workflow — the actions of a chat command that has no workflow,
+or anything else with actions to run and nothing to hang them on. Published
+by the engine api's `runActions(input)` RPC and by woofwoofwoof when such a
+chat command matches;
 consumed by the workflow service, which runs them through the same executor,
 resolver and action handlers a workflow run uses.
 

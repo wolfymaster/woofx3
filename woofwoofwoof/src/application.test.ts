@@ -38,6 +38,8 @@ function buildTestContext(options: {
   twitchRequestError?: Error;
   /** The permission model's answer; granted when omitted. */
   hasPermission?: () => Promise<{ code: string }>;
+  /** Topics whose publish rejects, as it does once the bus connection drops. */
+  failingTopics?: string[];
 }) {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
 
@@ -49,7 +51,10 @@ function buildTestContext(options: {
       subscribe: (eventType: string, handler: (msg: unknown) => void | Promise<void>) => {
         subscriptions.push({ eventType, handler });
       },
-      publish: (topic: string, data: Uint8Array) => {
+      publish: async (topic: string, data: Uint8Array) => {
+        if (options.failingTopics?.includes(topic)) {
+          throw new Error("connection closed");
+        }
         publishLog.push({ topic, data });
       },
       request: async (topic: string, data: Uint8Array, _opts?: unknown) => {
@@ -463,6 +468,147 @@ describe("WoofWoofWoof application", () => {
 
     expect(base.publishLog.find((p) => p.topic === "action.execute")).toBeUndefined();
     expect(base.publishLog.find((p) => p.topic === "chat.command.broken")).toBeDefined();
+  });
+
+  function linkedCommand(overrides: Partial<Command> = {}): Command {
+    return {
+      id: "c4",
+      command: "hug",
+      actionsJson: "[]",
+      workflowId: "wf-hug",
+      stepsJson: JSON.stringify([{ id: "a", type: "action", action: "chat.reply" }]),
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      createdAt: {} as never,
+      createdByType: "",
+      createdByRef: "",
+      visibility: "restricted",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "{target}",
+      ...overrides,
+    } as unknown as Command;
+  }
+
+  async function startWith(command: Command, options: Parameters<typeof buildTestContext>[0] = {}) {
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      ...options,
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [command] }),
+    });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+    return { base, chat: getChatHandler(base) };
+  }
+
+  function topics(base: { publishLog: { topic: string }[] }): string[] {
+    return base.publishLog.map((p) => p.topic);
+  }
+
+  test("a command with a workflow runs it by id, once, after announcing the match", async () => {
+    const { base, chat } = await startWith(linkedCommand());
+    await chat({ json: () => ({ data: { message: "!hug wolfy", chatterName: "user1" } }) });
+
+    // The announcement comes first and the run once; nothing runs the steps a
+    // second way.
+    expect(topics(base)).toEqual(["chat.command.hug", "workflow.command.execute"]);
+    const run = base.publishLog.find((p) => p.topic === "workflow.command.execute");
+    if (!run) {
+      throw new Error("expected a workflow.command.execute publish");
+    }
+    const payload = JSON.parse(new TextDecoder().decode(run.data)) as {
+      data: { workflowId: string; event: { type: string; platform: string; data: Record<string, unknown> } };
+    };
+    expect(payload.data.workflowId).toBe("wf-hug");
+    expect(payload.data.event.type).toBe("chat.command.hug");
+    expect(payload.data.event.platform).toBe("twitch");
+    expect(payload.data.event.data).toEqual({
+      command: "hug",
+      rawMessage: "!hug wolfy",
+      text: "wolfy",
+      args: ["wolfy"],
+      variables: { target: "wolfy" },
+      chatter: "user1",
+      platform: "twitch",
+    });
+  });
+
+  // The run reads the announced event itself: one id, time and session, and
+  // the slug as data.command even when the command's name has capitals.
+  test("a mixed-case command's workflow runs on the exact event it announced", async () => {
+    const { base, chat } = await startWith(linkedCommand({ command: "Hug" }));
+    await chat({ json: () => ({ data: { message: "!Hug wolfy", chatterName: "user1" } }) });
+
+    const decode = (topic: string) => {
+      const entry = base.publishLog.find((p) => p.topic === topic);
+      if (!entry) {
+        throw new Error(`expected a ${topic} publish`);
+      }
+      return JSON.parse(new TextDecoder().decode(entry.data));
+    };
+    const announced = decode("chat.command.hug");
+    const run = decode("workflow.command.execute");
+    expect(run.data.event).toEqual(announced);
+    expect(run.data.event.data.command).toBe("hug");
+  });
+
+  test("tells the chatter when the command's workflow could not be run", async () => {
+    const { base, chat } = await startWith(linkedCommand(), { failingTopics: ["workflow.command.execute"] });
+    await chat({ json: () => ({ data: { message: "!hug wolfy", chatterName: "user1" } }) });
+
+    expect(topics(base)).toEqual(["chat.command.hug"]);
+    expect(base.chatSay.mock.calls.map((call) => call[1])).toEqual(["Could not run !hug: connection closed"]);
+  });
+
+  test("a command throttled by its cooldown runs no workflow", async () => {
+    const { base, chat } = await startWith(linkedCommand({ cooldown: 60 }));
+    await chat({ json: () => ({ data: { message: "!hug", chatterName: "user1" } }) });
+    await chat({ json: () => ({ data: { message: "!hug", chatterName: "user2" } }) });
+
+    expect(topics(base).filter((t) => t === "workflow.command.execute")).toHaveLength(1);
+  });
+
+  test("a chatter who may not use the command runs no workflow", async () => {
+    const { base, chat } = await startWith(linkedCommand(), {
+      hasPermission: async () => ({ code: "PERMISSION_DENIED" }),
+    });
+    await chat({ json: () => ({ data: { message: "!hug", chatterName: "user1" } }) });
+
+    expect(topics(base)).not.toContain("workflow.command.execute");
+    expect(topics(base)).not.toContain("chat.command.hug");
+  });
+
+  test("a command switched off stops matching", async () => {
+    const { base, chat } = await startWith(linkedCommand());
+    const updated = base.subscriptions.find((s) => s.eventType === "command.updated");
+    if (!updated) {
+      throw new Error("expected a command.updated subscription");
+    }
+    await updated.handler({
+      json: () => ({
+        data: {
+          command: {
+            id: "c4",
+            command: "hug",
+            actions: [],
+            workflowId: "wf-hug",
+            steps: [],
+            cooldown: 0,
+            priority: 0,
+            enabled: false,
+            visibility: "public",
+            groupIds: [],
+            usernames: [],
+            argumentPattern: "",
+          },
+        },
+      }),
+    });
+    await chat({ json: () => ({ data: { message: "!hug", chatterName: "user1" } }) });
+
+    expect(topics(base)).toEqual([]);
   });
 
   test("Barkloader forwards outbound chat lines into Twitch when a command is present", async () => {

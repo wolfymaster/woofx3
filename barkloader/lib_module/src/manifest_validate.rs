@@ -32,13 +32,13 @@ use super::db_proxy_client::ModuleDbProxy;
 use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
     COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_DETAILS_MAX, DATA_SHAPE_FIELD_TYPES,
-    DATA_SHAPE_IDENTITIES, DATA_SHAPE_IDENTITY_FIELD_TYPES, DEADLINES_MAX_PENDING_CAP,
-    HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES, ManifestAction,
-    ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape,
-    ManifestDataShapeField, ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTheme,
-    ManifestTrigger, ManifestWidgetBehaviorKind, ManifestWorkflow, ModuleManifest, ModuleWidget,
-    SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE, WEBHOOK_EVENT_PREFIX,
-    WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
+    DATA_SHAPE_IDENTITIES, DATA_SHAPE_IDENTITY_FIELD_TYPES, DATA_SHAPE_OPTION_FIELD_TYPES,
+    DEADLINES_MAX_PENDING_CAP, HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
+    ManifestDataShape, ManifestDataShapeField, ManifestFunction, ManifestResourceKind,
+    ManifestSetting, ManifestTheme, ManifestTrigger, ManifestWidgetBehaviorKind, ManifestWorkflow,
+    ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE,
+    WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
@@ -390,6 +390,7 @@ pub fn validate_with_provenance(
     validate_action_taxonomies(&manifest.actions)?;
     validate_field_lists(manifest)?;
     validate_trigger_sentences(&manifest.triggers)?;
+    validate_action_sentences(&manifest.actions)?;
     validate_themes(manifest, &module_id)?;
 
     // Pass 2: resolve references for kinds that have them.
@@ -532,13 +533,14 @@ async fn validate_theme_dependencies(
 /// (`engine.obs.command`, `slobs`), call the Twitch API (`twitchapi`), speak in
 /// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
 /// `widget.queue.`), or run, replay or stop workflows and actions
-/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`).
+/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`,
+/// `workflow.command.execute`, `action.execute`).
 /// Must match the command prefixes in api/src/workflow/reserved-subjects.ts.
 /// See docs/services/engine-integrity.md.
 ///
 /// The outbox stays open to the system module, which owns the `db.workflow.*`
 /// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
+const USER_RESERVED_EVENT_PREFIXES: [&str; 14] = [
     WEBHOOK_EVENT_PREFIX,
     "db.",
     "engine.",
@@ -551,6 +553,7 @@ const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
     "workflow.execute",
     "workflow.replay",
     "workflow.cancel",
+    "workflow.command.execute",
     "action.execute",
 ];
 
@@ -1811,7 +1814,9 @@ fn validate_field_lists(manifest: &ModuleManifest) -> Result<()> {
         }
     }
     for (i, a) in manifest.actions.iter().enumerate() {
-        validate_field_list(&a.schema, &format!("action #{i} ({}): `schema`", a.id))?;
+        let context = format!("action #{i} ({}): `schema`", a.id);
+        validate_field_list(&a.schema, &context)?;
+        refuse_any_text(&a.schema, &context)?;
     }
     for (i, w) in manifest.widgets.iter().enumerate() {
         if let Some(fields) = &w.settings_schema {
@@ -1822,6 +1827,21 @@ fn validate_field_lists(manifest: &ModuleManifest) -> Result<()> {
         validate_field_list(&r.schema, &format!("resource #{i} ({}): `schema`", r.kind))?;
     }
     validate_settings(&manifest.settings)
+}
+
+/// `anyText` words a trigger field set to "any". A step's setting is never
+/// "any" - left empty it is unset, which `missingText` words - so on an action
+/// field it would be a promise the UI never keeps.
+fn refuse_any_text(fields: &[ManifestConfigField], context: &str) -> Result<()> {
+    for (i, field) in fields.iter().enumerate() {
+        if field.any_text.is_some() {
+            return Err(anyhow!(
+                "{context} field #{i} ({}): `anyText` applies only to trigger fields; an action field left empty is worded by `missingText`",
+                field.id.trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
@@ -1996,17 +2016,53 @@ fn validate_trigger_sentences(triggers: &[ManifestTrigger]) -> Result<()> {
         let Some(sentence) = &t.sentence else {
             continue;
         };
-        let label = format!("trigger #{i} ({}): `sentence`", t.id);
-        if sentence.trim().is_empty() {
-            return Err(anyhow!("{label} must be non-empty"));
-        }
-        let field_ids: HashSet<&str> = t.schema.iter().flatten().map(|f| f.id.trim()).collect();
-        for placeholder in sentence_placeholders(sentence).map_err(|e| anyhow!("{label}: {e}"))? {
-            if !field_ids.contains(placeholder) {
-                return Err(anyhow!(
-                    "{label}: placeholder {{{placeholder}}} names no field in this trigger's `schema`"
-                ));
-            }
+        validate_sentence(
+            sentence,
+            t.schema.iter().flatten(),
+            &format!("trigger #{i} ({}): `sentence`", t.id),
+            "trigger",
+        )?;
+    }
+    Ok(())
+}
+
+/// Validate every declared action `sentence` against its action's `schema`,
+/// by the same rules as `validate_trigger_sentences`. A placeholder names one
+/// of the action's own settings only: a value a step takes from an earlier
+/// step is still configured through one of those settings.
+fn validate_action_sentences(actions: &[ManifestAction]) -> Result<()> {
+    for (i, a) in actions.iter().enumerate() {
+        let Some(sentence) = &a.sentence else {
+            continue;
+        };
+        validate_sentence(
+            sentence,
+            a.schema.iter(),
+            &format!("action #{i} ({}): `sentence`", a.id),
+            "action",
+        )?;
+    }
+    Ok(())
+}
+
+/// Check one sentence template: non-empty, well-formed braces, and every
+/// placeholder the id of one of `fields`. `owner` names the kind that
+/// declares the sentence in the rejection message.
+fn validate_sentence<'a>(
+    sentence: &str,
+    fields: impl Iterator<Item = &'a ManifestConfigField>,
+    label: &str,
+    owner: &str,
+) -> Result<()> {
+    if sentence.trim().is_empty() {
+        return Err(anyhow!("{label} must be non-empty"));
+    }
+    let field_ids: HashSet<&str> = fields.map(|f| f.id.trim()).collect();
+    for placeholder in sentence_placeholders(sentence).map_err(|e| anyhow!("{label}: {e}"))? {
+        if !field_ids.contains(placeholder) {
+            return Err(anyhow!(
+                "{label}: placeholder {{{placeholder}}} names no field in this {owner}'s `schema`"
+            ));
         }
     }
     Ok(())
@@ -2304,6 +2360,7 @@ fn validate_data_shape(
         let path = field.path.trim();
         let field_context = format!("{context} field #{i} ({path})");
         validate_identity_annotation(field, &types_by_path, owner, &field_context)?;
+        validate_field_options(field, &field_context)?;
     }
     validate_alert_templates(shape, &types_by_path, owner, context)?;
     Ok(())
@@ -2449,6 +2506,70 @@ fn validate_identity_annotation(
         validate_sibling_reference(reference, "displayName", "string", types_by_path, context)?;
     }
     Ok(())
+}
+
+/// Check a field's `options`: a non-empty list of distinct values, each of
+/// the field's own type and each with a label. A value of another type could
+/// never equal what the payload carries, so a condition built from it would
+/// silently never match.
+fn validate_field_options(field: &ManifestDataShapeField, context: &str) -> Result<()> {
+    let Some(options) = field.options.as_deref() else {
+        return Ok(());
+    };
+    if !DATA_SHAPE_OPTION_FIELD_TYPES.contains(&field.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `options` requires `type` to be one of {}, not {:?}",
+            DATA_SHAPE_OPTION_FIELD_TYPES.join(", "),
+            field.field_type
+        ));
+    }
+    if options.is_empty() {
+        return Err(anyhow!(
+            "{context}: `options` must list at least one value; leave it out when the values are open"
+        ));
+    }
+    let mut seen: Vec<&serde_json::Value> = Vec::with_capacity(options.len());
+    for (i, option) in options.iter().enumerate() {
+        let matches_type = match field.field_type.as_str() {
+            "string" => option.value.is_string(),
+            "number" => option.value.is_number(),
+            _ => false,
+        };
+        if !matches_type {
+            return Err(anyhow!(
+                "{context}: option #{i} value {} is not a {}",
+                option.value,
+                field.field_type
+            ));
+        }
+        if option.label.trim().is_empty() {
+            return Err(anyhow!(
+                "{context}: option #{i} ({}) needs a non-empty `label`",
+                option.value
+            ));
+        }
+        if seen
+            .iter()
+            .any(|earlier| same_option_value(earlier, &option.value))
+        {
+            return Err(anyhow!(
+                "{context}: option value {} is listed twice",
+                option.value
+            ));
+        }
+        seen.push(&option.value);
+    }
+    Ok(())
+}
+
+/// Whether two option values are the same value to a comparison. Numbers are
+/// compared by value, so `1` and `1.0`, or `1e3` and `1000`, are one option
+/// however the manifest spells them.
+fn same_option_value(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 fn validate_sibling_reference(
@@ -3116,6 +3237,7 @@ mod tests {
             "workflow.execute",
             "workflow.replay",
             "workflow.cancel",
+            "workflow.command.execute",
             "action.execute",
             "viewer.segment.entered",
             "viewer.segment.left",
@@ -4213,6 +4335,103 @@ mod tests {
     }
 
     #[test]
+    fn accepts_options_on_a_string_and_a_number_field() {
+        validate(&trigger_emitting(
+            r#"
+            { "path": "tier", "type": "string",
+              "options": [{ "value": "1000", "label": "Tier 1" }, { "value": "2000", "label": "Tier 2" }] },
+            { "path": "level", "type": "number",
+              "options": [{ "value": 1, "label": "Low" }, { "value": 2.5, "label": "High" }] }"#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_options_on_returns() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "returns": { "fields": [{ "path": "status", "type": "string",
+                    "options": [{ "value": "added", "label": "Added" }] }] } }]"#,
+        );
+        validate(&m).expect("a returned value may have a closed set too");
+    }
+
+    #[test]
+    fn rejects_options_on_a_field_that_holds_no_scalar() {
+        let msg = emits_rejection(
+            r#"{ "path": "tags", "type": "array", "options": [{ "value": "a", "label": "A" }] }"#,
+        );
+        assert!(msg.contains("`options`"), "{msg}");
+        assert!(
+            msg.contains("string, number"),
+            "lists the accepted types: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_an_empty_options_list() {
+        let msg = emits_rejection(r#"{ "path": "tier", "type": "string", "options": [] }"#);
+        assert!(msg.contains("at least one value"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_option_of_another_type_than_its_field() {
+        let msg = emits_rejection(
+            r#"{ "path": "tier", "type": "string", "options": [{ "value": 1000, "label": "Tier 1" }] }"#,
+        );
+        assert!(msg.contains("tier"), "{msg}");
+        assert!(msg.contains("is not a string"), "{msg}");
+
+        let msg = emits_rejection(
+            r#"{ "path": "level", "type": "number", "options": [{ "value": "1", "label": "Low" }] }"#,
+        );
+        assert!(msg.contains("is not a number"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_option_without_a_label() {
+        let msg = emits_rejection(
+            r#"{ "path": "tier", "type": "string", "options": [{ "value": "1000", "label": " " }] }"#,
+        );
+        assert!(msg.contains("`label`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_a_repeated_option_value() {
+        let msg = emits_rejection(
+            r#"{ "path": "tier", "type": "string", "options": [
+                { "value": "1000", "label": "Tier 1" }, { "value": "1000", "label": "Tier one" }] }"#,
+        );
+        assert!(msg.contains("listed twice"), "{msg}");
+    }
+
+    // A number is one option however it is spelled.
+    #[test]
+    fn rejects_a_number_option_repeated_in_another_spelling() {
+        for (first, second) in [("1", "1.0"), ("1e3", "1000"), ("-0", "0")] {
+            let msg = emits_rejection(&format!(
+                r#"{{ "path": "level", "type": "number", "options": [
+                    {{ "value": {first}, "label": "One" }}, {{ "value": {second}, "label": "Also one" }}] }}"#
+            ));
+            assert!(msg.contains("listed twice"), "{first} and {second}: {msg}");
+        }
+    }
+
+    #[test]
+    fn rejects_an_unknown_key_on_an_option() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [{ "path": "tier", "type": "string",
+                    "options": [{ "value": "1000", "label": "Tier 1", "colour": "gold" }] }] } }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json)
+            .expect_err("an unknown option key must not parse");
+    }
+
+    #[test]
     fn accepts_a_viewer_identity_with_its_annotations() {
         validate(&trigger_emitting(
             r#"
@@ -4581,6 +4800,99 @@ mod tests {
         let msg = bad_err(&m);
         assert!(msg.contains("trigger #0 (t1)"), "{msg}");
         assert!(msg.contains("{reward}"), "{msg}");
+    }
+
+    fn action_with_sentence(sentence: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f",
+                "sentence": {sentence},
+                "schema": [
+                    {{ "id": "counter", "label": "Counter", "type": "text" }},
+                    {{ "id": "amount", "label": "Amount", "type": "number" }}
+                ] }}]"#
+        ))
+    }
+
+    fn action_sentence_rejection(sentence: &str) -> String {
+        let msg = bad_err(&action_with_sentence(sentence));
+        assert!(msg.contains("action #0 (a1)"), "names the action: {msg}");
+        assert!(msg.contains("`sentence`"), "names the field: {msg}");
+        msg
+    }
+
+    #[test]
+    fn accepts_an_action_sentence_naming_declared_fields() {
+        validate(&action_with_sentence(r#""Add {amount} to {counter}""#)).expect("validate ok");
+    }
+
+    fn action_field(extra: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f",
+                "sentence": "Add {{amount}}",
+                "schema": [{{ "id": "amount", "label": "Amount", "type": "number"{extra} }}] }}]"#
+        ))
+    }
+
+    // An optional field's missingText is what the sentence says when the step
+    // leaves it empty.
+    #[test]
+    fn accepts_missing_text_on_an_optional_action_field() {
+        validate(&action_field(r#", "missingText": "the counter's step""#)).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_any_text_on_an_action_field() {
+        for any_text in [r#""any amount""#, r#""""#] {
+            let msg = bad_err(&action_field(&format!(r#", "anyText": {any_text}"#)));
+            assert!(msg.contains("action #0 (a1)"), "names the action: {msg}");
+            assert!(
+                msg.contains("`anyText` applies only to trigger fields"),
+                "{msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_an_action_sentence_with_no_placeholders() {
+        validate(&action_with_sentence(r#""Reset every counter""#)).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_an_empty_action_sentence() {
+        let msg = action_sentence_rejection(r#""   ""#);
+        assert!(msg.contains("non-empty"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_malformed_braces_in_an_action_sentence() {
+        for (sentence, reason) in [
+            (r#""Add {amount to {counter}""#, "nested"),
+            (r#""Add amount} to {counter}""#, "unmatched"),
+            (r#""Add {amount""#, "unclosed"),
+            (r#""Add {} to {counter}""#, "empty placeholder"),
+        ] {
+            let msg = action_sentence_rejection(sentence);
+            assert!(msg.contains(reason), "{sentence}: {msg}");
+        }
+    }
+
+    #[test]
+    fn rejects_an_action_placeholder_naming_no_field() {
+        let msg = action_sentence_rejection(r#""Add {bits} to {counter}""#);
+        assert!(msg.contains("{bits}"), "names the placeholder: {msg}");
+        assert!(msg.contains("this action's `schema`"), "{msg}");
+    }
+
+    // A placeholder names the action's own settings, never a value from an
+    // earlier step or the trigger.
+    #[test]
+    fn rejects_an_action_placeholder_naming_a_step_variable() {
+        let msg = action_sentence_rejection(r#""Add {trigger.data.amount} to {counter}""#);
+        assert!(msg.contains("{trigger.data.amount}"), "{msg}");
     }
 
     fn trigger_field(wording: &str) -> ModuleManifest {

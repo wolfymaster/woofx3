@@ -108,6 +108,7 @@ func TestBuildActionRegisteredData(t *testing.T) {
 		Call:          "mod.send",
 		ParamsSchema:  "{}",
 		Taxonomy:      `["platform.govee","function.lighting"]`,
+		Sentence:      "Send {message}",
 		CreatedByType: "MODULE",
 		CreatedByRef:  "twitch",
 	}}
@@ -130,6 +131,18 @@ func TestBuildActionRegisteredData(t *testing.T) {
 	}
 	if got, want := row["taxonomy"], []string{"platform.govee", "function.lighting"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("taxonomy = %v, want %v", got, want)
+	}
+	if row["sentence"] != "Send {message}" {
+		t.Errorf("sentence = %v", row["sentence"])
+	}
+}
+
+func TestActionDeregisteredDataCarriesSentence(t *testing.T) {
+	actions := []*models.Action{{ID: uuid.New(), Name: "send", Sentence: "Send {message}"}}
+	data := buildActionDeregisteredData("p", "k", actions)
+	row := data["actions"].([]map[string]any)[0]
+	if row["sentence"] != "Send {message}" {
+		t.Errorf("sentence = %v", row["sentence"])
 	}
 }
 

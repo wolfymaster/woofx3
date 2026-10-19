@@ -40,6 +40,9 @@ impl serde::Serialize for Action {
         if !self.returns.is_empty() {
             len += 1;
         }
+        if !self.sentence.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Action", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -74,6 +77,9 @@ impl serde::Serialize for Action {
         if !self.returns.is_empty() {
             struct_ser.serialize_field("returns", &self.returns)?;
         }
+        if !self.sentence.is_empty() {
+            struct_ser.serialize_field("sentence", &self.sentence)?;
+        }
         struct_ser.end()
     }
 }
@@ -99,6 +105,7 @@ impl<'de> serde::Deserialize<'de> for Action {
             "type",
             "taxonomy",
             "returns",
+            "sentence",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -114,6 +121,7 @@ impl<'de> serde::Deserialize<'de> for Action {
             Type,
             Taxonomy,
             Returns,
+            Sentence,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -146,6 +154,7 @@ impl<'de> serde::Deserialize<'de> for Action {
                             "type" => Ok(GeneratedField::Type),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
                             "returns" => Ok(GeneratedField::Returns),
+                            "sentence" => Ok(GeneratedField::Sentence),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -176,6 +185,7 @@ impl<'de> serde::Deserialize<'de> for Action {
                 let mut r#type__ = None;
                 let mut taxonomy__ = None;
                 let mut returns__ = None;
+                let mut sentence__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -244,6 +254,12 @@ impl<'de> serde::Deserialize<'de> for Action {
                             }
                             returns__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Sentence => {
+                            if sentence__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sentence"));
+                            }
+                            sentence__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Action {
@@ -258,6 +274,7 @@ impl<'de> serde::Deserialize<'de> for Action {
                     r#type: r#type__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
                     returns: returns__.unwrap_or_default(),
+                    sentence: sentence__.unwrap_or_default(),
                 })
             }
         }
@@ -296,6 +313,9 @@ impl serde::Serialize for ActionInput {
         if !self.returns.is_empty() {
             len += 1;
         }
+        if !self.sentence.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.ActionInput", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -321,6 +341,9 @@ impl serde::Serialize for ActionInput {
         if !self.returns.is_empty() {
             struct_ser.serialize_field("returns", &self.returns)?;
         }
+        if !self.sentence.is_empty() {
+            struct_ser.serialize_field("sentence", &self.sentence)?;
+        }
         struct_ser.end()
     }
 }
@@ -341,6 +364,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
             "type",
             "taxonomy",
             "returns",
+            "sentence",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -353,6 +377,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
             Type,
             Taxonomy,
             Returns,
+            Sentence,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -382,6 +407,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                             "type" => Ok(GeneratedField::Type),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
                             "returns" => Ok(GeneratedField::Returns),
+                            "sentence" => Ok(GeneratedField::Sentence),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -409,6 +435,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                 let mut r#type__ = None;
                 let mut taxonomy__ = None;
                 let mut returns__ = None;
+                let mut sentence__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -459,6 +486,12 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                             }
                             returns__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Sentence => {
+                            if sentence__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sentence"));
+                            }
+                            sentence__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ActionInput {
@@ -470,6 +503,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                     r#type: r#type__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
                     returns: returns__.unwrap_or_default(),
+                    sentence: sentence__.unwrap_or_default(),
                 })
             }
         }

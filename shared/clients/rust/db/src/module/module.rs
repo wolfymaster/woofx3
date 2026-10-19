@@ -254,6 +254,14 @@ pub struct Action {
     /// an opaque map\[string\]any and never validates it against this.
     #[prost(string, tag="14")]
     pub returns: ::prost::alloc::string::String,
+    /// The module author's one-line English template for a configured step that
+    /// runs this action, e.g. "Add {amount} to {counter}". Each `{fieldId}`
+    /// names a field in params_schema; the UI substitutes the configured value,
+    /// or that field's `missingText` while a required field is still empty.
+    /// Validated at install: non-empty, braces balanced and unnested, every
+    /// placeholder a declared field id. Empty means the author declared none.
+    #[prost(string, tag="15")]
+    pub sentence: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ActionInput {
@@ -275,6 +283,9 @@ pub struct ActionInput {
     /// JSON string — see Action.returns
     #[prost(string, tag="9")]
     pub returns: ::prost::alloc::string::String,
+    /// see Action.sentence
+    #[prost(string, tag="10")]
+    pub sentence: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {

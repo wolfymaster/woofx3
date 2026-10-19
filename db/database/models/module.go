@@ -161,6 +161,11 @@ type Action struct {
 	// hands back. Replaces the ConfigField-shaped output_schema — see
 	// module_action.proto Action.returns.
 	Returns string `gorm:"column:returns;type:jsonb;not null;default:'{}'"`
+	// Sentence is the module author's one-line English template for a
+	// configured step that runs this action, e.g. "Add {amount} to {counter}",
+	// where each `{fieldId}` names a field in ParamsSchema. Empty means the
+	// author declared none. See module_action.proto Action.sentence.
+	Sentence string `gorm:"column:sentence;type:text;not null;default:''"`
 	// ArchivedAt is set when a module upgrade drops this action from the
 	// manifest. Archived rows stay resolvable by canonical id (existing
 	// workflows keep working) but are excluded from catalog listings.

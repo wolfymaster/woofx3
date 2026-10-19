@@ -12,6 +12,21 @@ describe("validateWorkflowDefinition", () => {
     expect(validateWorkflowDefinition(def)).toEqual({ ok: true, value: def });
   });
 
+  test("accepts a command trigger only when asked to", () => {
+    const def = {
+      id: "x",
+      name: "!hug",
+      trigger: { type: "command" as const, event: "chat.command.hug" },
+      tasks: [{ id: "t1", type: "action" as const, action: "print", parameters: { message: "hi" } }],
+    };
+    const refused = validateWorkflowDefinition(def);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.errors[0].path).toBe("trigger.type");
+    }
+    expect(validateWorkflowDefinition(def, { allowCommandTrigger: true }).ok).toBe(true);
+  });
+
   test("rejects missing trigger", () => {
     const r = validateWorkflowDefinition({ id: "x", name: "X", tasks: [] });
     expect(r.ok).toBe(false);

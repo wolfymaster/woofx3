@@ -63,6 +63,12 @@ func main() {
 				"databaseProxyUrl", cfg.DatabaseProxyURL,
 			)
 
+			turnTimeout, err := cfg.orderedTurnTimeout()
+			if err != nil {
+				return err
+			}
+			app.engine.SetOrderedTurnTimeout(turnTimeout)
+
 			// Database
 			httpClient := &http.Client{}
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)

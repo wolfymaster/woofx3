@@ -36,7 +36,7 @@ func (e *Engine[TServices]) SetViewerFacts(facts ViewerFacts) {
 // viewerTrigger is the trigger pattern a workflow's `${viewer.*}` is read
 // through, or "" for a workflow no event triggers.
 func viewerTrigger(wf *types.WorkflowDefinition) string {
-	if wf.Trigger == nil || wf.Trigger.Type != "event" {
+	if wf.Trigger == nil || (wf.Trigger.Type != types.TriggerTypeEvent && wf.Trigger.Type != types.TriggerTypeCommand) {
 		return ""
 	}
 	return wf.Trigger.Event

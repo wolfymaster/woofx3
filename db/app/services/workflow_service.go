@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 type workflowService struct {
 	workflowRepo  *repo.WorkflowRepository
+	commandRepo   *repo.CommandRepository
 	executionRepo *gorm.DB // no execution repository: models.WorkflowExecution helpers take this handle
 	publisher     *workers.EventPublisher
 	refRepo       *repo.ResourceReferenceRepository
@@ -27,6 +29,7 @@ type workflowService struct {
 
 func NewWorkflowService(
 	workflowRepo *repo.WorkflowRepository,
+	commandRepo *repo.CommandRepository,
 	db interface{},
 	publisher *workers.EventPublisher,
 	refRepo *repo.ResourceReferenceRepository,
@@ -38,6 +41,7 @@ func NewWorkflowService(
 
 	return &workflowService{
 		workflowRepo:  workflowRepo,
+		commandRepo:   commandRepo,
 		executionRepo: dbConn,
 		publisher:     publisher,
 		refRepo:       refRepo,
@@ -66,7 +70,41 @@ func (s *workflowService) syncWorkflowEdges(
 	}
 }
 
+// refuseCommandTrigger refuses a trigger of type "command" from the generic
+// workflow RPCs. Such a workflow is run only by its command, which creates,
+// renames and deletes it (setCommandSteps); one made here would be linked to
+// no command and never run.
+func refuseCommandTrigger(triggerJSON string) error {
+	var trigger struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal([]byte(triggerJSON), &trigger) != nil || trigger.Type != commandTriggerType {
+		return nil
+	}
+	return twirp.NewError(twirp.FailedPrecondition,
+		"a workflow with a command trigger belongs to a chat command; write the command's steps instead")
+}
+
+// refuseCommandWorkflow refuses to change or delete wf through the generic
+// workflow RPCs when it is a command's workflow: the command owns it, and
+// deleting it or changing its trigger would leave the command running
+// nothing, or running from its own announcement.
+func (s *workflowService) refuseCommandWorkflow(wf *models.WorkflowDefinition) error {
+	cmd, err := s.commandRepo.GetByWorkflowID(wf.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return twirp.InternalErrorWith(fmt.Errorf("find the command running workflow %s: %w", wf.ID, err))
+	}
+	return twirp.NewError(twirp.FailedPrecondition,
+		fmt.Sprintf("workflow %s runs the chat command !%s; change it through the command", wf.ID, cmd.Command))
+}
+
 func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.CreateWorkflowRequest) (*client.WorkflowResponse, error) {
+	if err := refuseCommandTrigger(req.TriggerJson); err != nil {
+		return nil, err
+	}
 	// `steps_json` and `trigger_json` are the canonical workflow
 	// definition. The typed `WorkflowStep` proto array was removed
 	// in favor of these JSON columns, which the engine reads directly.
@@ -179,6 +217,12 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 	if err != nil {
 		return nil, twirp.NotFoundError("workflow not found")
 	}
+	if err := s.refuseCommandWorkflow(wf); err != nil {
+		return nil, err
+	}
+	if err := refuseCommandTrigger(req.TriggerJson); err != nil {
+		return nil, err
+	}
 
 	// Update fields. Patch semantics: scalar fields with non-zero values
 	// overwrite; zero values are treated as "not set" (legacy contract
@@ -239,6 +283,9 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 	wf, err := s.workflowRepo.GetByID(id)
 	if err != nil {
 		return nil, twirp.NotFoundError("workflow not found")
+	}
+	if err := s.refuseCommandWorkflow(wf); err != nil {
+		return nil, err
 	}
 
 	workflowID := wf.ID.String()

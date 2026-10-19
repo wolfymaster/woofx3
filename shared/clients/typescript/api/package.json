@@ -15,6 +15,7 @@
     "./twitch-helix": "./twitch-helix.ts",
     "./webhooks": "./webhooks.ts",
     "./client": "./client.ts",
+    "./command": "./command.ts",
     "./config-bundle": "./config-bundle.ts",
     "./google-fonts": "./google-fonts.ts",
     "./marketplace-catalog": "./marketplace-catalog.ts",

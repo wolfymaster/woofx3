@@ -554,3 +554,36 @@ func TestReconcile_AStaleListCannotOverwriteAFresherLifecycleLoad(t *testing.T) 
 		t.Errorf("registered = %v, want the fresh wf-1", registry.List())
 	}
 }
+
+// A stored workflow whose step graph no run could build (here a condition
+// branch naming a step that was since deleted) loads as an error in its health
+// rather than failing startup, and the workflows beside it still load.
+func TestLoad_StoredWorkflowWithAnUnbuildableGraphIsReportedNotFatal(t *testing.T) {
+	logger := &countingLogger{}
+	eng := engine.New[AppServices](logger)
+	stale := storedWorkflow("stale-branch")
+	stale.StepsJson = `[{"id":"c1","type":"condition","onTrue":["deleted"]}]`
+	good := storedWorkflow("good")
+	good.StepsJson = `[{"id":"t1","type":"log"}]`
+	db := &fakeWorkflowDB{workflows: []*dbv1.Workflow{stale, good}}
+	manager := NewWorkflowManager(logger, eng, db)
+
+	if err := manager.LoadWorkflowsFromDB(context.Background()); err != nil {
+		t.Fatalf("LoadWorkflowsFromDB: %v", err)
+	}
+
+	byID := map[string]WorkflowHealth{}
+	for _, entry := range manager.Health().Snapshot() {
+		byID[entry.WorkflowID] = entry
+	}
+	got := byID["stale-branch"]
+	if got.Status != WorkflowHealthError || !strings.Contains(got.Reason, "condition c1 lists unknown task deleted") {
+		t.Errorf("stale-branch = %+v, want an error naming the missing branch step", got)
+	}
+	if _, err := eng.GetWorkflow("stale-branch"); err == nil {
+		t.Error("the unbuildable workflow was registered")
+	}
+	if _, err := eng.GetWorkflow("good"); err != nil {
+		t.Errorf("the good workflow did not load: %v", err)
+	}
+}

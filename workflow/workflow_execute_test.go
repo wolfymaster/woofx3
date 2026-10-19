@@ -234,3 +234,33 @@ func TestNativeActionDryRunSentences(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleCommandExecuteEvent(t *testing.T) {
+	t.Run("refuses a payload that is not JSON", func(t *testing.T) {
+		logger := &executeEventLogger{}
+		app := &WorkflowApp{logger: logger}
+
+		app.handleCommandExecuteEvent(fakeMsg{subject: "workflow.command.execute", data: []byte("not json")})
+
+		if len(logger.errors) != 1 {
+			t.Fatalf("expected one error, got %v", logger.errors)
+		}
+	})
+
+	// An event-triggered workflow named by a command run is refused, so a stale
+	// or forged link cannot make an event's workflow run outside its trigger.
+	t.Run("refuses a workflow that is not a command's", func(t *testing.T) {
+		app := conditionalWorkflowApp(t)
+		logger := app.logger.(*executeEventLogger)
+
+		app.handleCommandExecuteEvent(fakeMsg{
+			subject: "workflow.command.execute",
+			data: []byte(`{"id":"r1","data":{"workflowId":"wf-raid","event":` +
+				`{"id":"e1","type":"chat.command.hug","source":"woofwoofwoof","data":{"chatter":"wolfy"}}}}`),
+		})
+
+		if len(logger.errors) != 1 {
+			t.Fatalf("expected one error, got %v", logger.errors)
+		}
+	})
+}
