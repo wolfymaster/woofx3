@@ -16,12 +16,13 @@
 // ask usually finds them already here.
 
 import {
-  type WidgetAssetErrorCode,
   assetReadPath,
   engineAssetPath,
   parseEngineAssetPath,
+  type WidgetAssetErrorCode,
   widgetMayRead,
 } from "@woofx3/module-sdk";
+import { BROWSER_HOST, type PageHost } from "./page-host";
 
 /**
  * How long a file read stays here after it arrives: long enough for the ask a
@@ -110,6 +111,7 @@ export interface AssetCacheOptions {
   fetchFn?: (url: string, init: RequestInit) => Promise<Response>;
   /** How long a read is held after it arrives; `ASSET_RETAIN_MS` by default. */
   retainMs?: number;
+  host?: PageHost;
 }
 
 export class AssetCache {
@@ -117,6 +119,7 @@ export class AssetCache {
   private readonly pageOrigin: string;
   private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response>;
   private readonly retainMs: number;
+  private readonly host: PageHost;
 
   constructor(options: AssetCacheOptions) {
     this.pageOrigin = options.pageOrigin;
@@ -125,6 +128,7 @@ export class AssetCache {
     // in the browser, before any request is sent.
     this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
     this.retainMs = options.retainMs ?? ASSET_RETAIN_MS;
+    this.host = options.host ?? BROWSER_HOST;
   }
 
   /** The file at `path`, read once for every ask while it is held. */
@@ -140,7 +144,7 @@ export class AssetCache {
         this.entries.delete(path);
       }
     };
-    reading.then(() => setTimeout(forget, this.retainMs), forget);
+    reading.then(() => this.host.timers.setTimeout(forget, this.retainMs), forget);
     return reading;
   }
 
@@ -191,21 +195,21 @@ export class AssetCache {
         credentials: "same-origin",
       });
     } catch (err) {
-      console.warn("[scene-manager] asset read failed", { path }, err);
+      this.host.log.warn("[scene-manager] asset read failed", { path }, err);
       throw new AssetLoadError("unavailable", path);
     }
     if (response.status === 404) {
       throw new AssetLoadError("not_found", path);
     }
     if (!response.ok) {
-      console.warn("[scene-manager] asset read refused", { path, status: response.status });
+      this.host.log.warn("[scene-manager] asset read refused", { path, status: response.status });
       throw new AssetLoadError("unavailable", path);
     }
     let bytes: ArrayBuffer;
     try {
       bytes = await response.arrayBuffer();
     } catch (err) {
-      console.warn("[scene-manager] asset read cut short", { path }, err);
+      this.host.log.warn("[scene-manager] asset read cut short", { path }, err);
       throw new AssetLoadError("unavailable", path);
     }
     return { contentType: response.headers.get("Content-Type") ?? "", bytes };

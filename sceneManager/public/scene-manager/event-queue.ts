@@ -13,6 +13,7 @@
 // before giving up and advancing) and `maxInFlight`.
 
 import type { EventQueueConfig, WidgetEvent } from "@woofx3/module-sdk";
+import { BROWSER_HOST, type PageTimers } from "./page-host";
 import { evaluateExpression } from "./resolver";
 
 export interface QueuedEvent {
@@ -76,14 +77,15 @@ class FinishedEvents {
 
 class InstanceQueue {
   private readonly pending: PendingItem[] = [];
-  private readonly inFlight = new Map<string, { item: PendingItem; timer: ReturnType<typeof setTimeout> | null }>();
+  private readonly inFlight = new Map<string, { item: PendingItem; timer: unknown }>();
 
   constructor(
     private readonly config: EventQueueConfig,
     private readonly finished: FinishedEvents,
     private readonly deliver: DeliverFn,
     private readonly onTimeout: TimeoutFn,
-    private readonly onCancel: CancelFn
+    private readonly onCancel: CancelFn,
+    private readonly timers: PageTimers
   ) {}
 
   enqueue(item: QueuedEvent): void {
@@ -119,7 +121,7 @@ class InstanceQueue {
   dispose(): void {
     for (const { timer } of this.inFlight.values()) {
       if (timer) {
-        clearTimeout(timer);
+        this.timers.clearTimeout(timer);
       }
     }
     this.pending.length = 0;
@@ -145,7 +147,7 @@ class InstanceQueue {
   complete(eventId: string): void {
     const timer = this.inFlight.get(eventId)?.timer;
     if (timer) {
-      clearTimeout(timer);
+      this.timers.clearTimeout(timer);
     }
     if (this.inFlight.delete(eventId)) {
       this.finished.add(eventId);
@@ -169,7 +171,7 @@ class InstanceQueue {
       const flying = this.inFlight.get(eventId);
       if (flying) {
         if (flying.timer) {
-          clearTimeout(flying.timer);
+          this.timers.clearTimeout(flying.timer);
         }
         this.inFlight.delete(eventId);
         this.onCancel(eventId);
@@ -210,9 +212,9 @@ class InstanceQueue {
         // Subscription gone — not a transient failure worth retrying.
         continue;
       }
-      let timer: ReturnType<typeof setTimeout> | null = null;
+      let timer: unknown = null;
       if (this.config.retryTimeoutMs) {
-        timer = setTimeout(() => {
+        timer = this.timers.setTimeout(() => {
           this.inFlight.delete(item.eventId);
           this.finished.add(item.eventId);
           this.onTimeout(item.eventId);
@@ -248,6 +250,9 @@ export class EventQueueManager {
   private readonly live = new Map<string, Set<Registration>>();
   private readonly finished = new Map<string, FinishedEvents>();
 
+  /** Each queue's timeouts run on `timers`; the browser's when absent. */
+  constructor(private readonly timers: PageTimers = BROWSER_HOST.timers) {}
+
   register(
     instanceId: string,
     config: EventQueueConfig | undefined,
@@ -260,7 +265,7 @@ export class EventQueueManager {
       finished = new FinishedEvents();
       this.finished.set(instanceId, finished);
     }
-    const queue = new InstanceQueue(config ?? {}, finished, deliver, onTimeout, onCancel);
+    const queue = new InstanceQueue(config ?? {}, finished, deliver, onTimeout, onCancel, this.timers);
     const registration: Registration = { instanceId, queue };
     const previous = this.current.get(instanceId);
     this.current.set(instanceId, registration);
@@ -340,11 +345,11 @@ export class EventQueueManager {
 }
 
 /** Map a queued delivery onto the SDK's `WidgetEvent` shape. */
-export function toWidgetEvent(item: QueuedEvent): WidgetEvent {
+export function toWidgetEvent(item: QueuedEvent, nowMs: number): WidgetEvent {
   return {
     type: item.type,
     source: "scene-manager",
-    time: new Date().toISOString(),
+    time: new Date(nowMs).toISOString(),
     data: item.value,
     eventId: item.eventId,
   };

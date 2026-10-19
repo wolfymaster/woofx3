@@ -17,18 +17,19 @@
 // File reads (`asset.load`) are answered by the page's AssetCache
 // (asset-loader.ts), limited to what the frame's module may read.
 
-import { AssetLoadError, type LoadedAsset } from "./asset-loader";
 import {
-  WIDGET_PROTOCOL,
-  PROTOCOL_VERSION,
-  parseWidgetToHostMessage,
   type EventQueueConfig,
   type HostToWidgetMessage,
+  PROTOCOL_VERSION,
+  parseWidgetToHostMessage,
+  WIDGET_PROTOCOL,
   type WidgetBehaviorState,
   type WidgetCapability,
   type WidgetEvent,
   type WidgetMessageBody,
 } from "@woofx3/module-sdk";
+import { AssetLoadError, type LoadedAsset } from "./asset-loader";
+import { BROWSER_HOST, type PageLog } from "./page-host";
 
 /**
  * A widget's `status.report`. It names no module, and nothing a frame says
@@ -94,7 +95,8 @@ export class WidgetBridge {
   constructor(
     private readonly instanceId: string,
     private readonly nonce: string,
-    private readonly callbacks: WidgetBridgeCallbacks
+    private readonly callbacks: WidgetBridgeCallbacks,
+    private readonly log: PageLog = BROWSER_HOST.log
   ) {}
 
   attach(iframe: HTMLIFrameElement): void {
@@ -314,7 +316,7 @@ export class WidgetBridge {
       },
       (err: unknown) => {
         if (!(err instanceof AssetLoadError)) {
-          console.warn("[scene-manager] asset load failed unexpectedly", { path }, err);
+          this.log.warn("[scene-manager] asset load failed unexpectedly", { path }, err);
         }
         if (generation === this.documentGeneration) {
           this.post({ type: "asset.error", id, code: err instanceof AssetLoadError ? err.code : "unavailable" });

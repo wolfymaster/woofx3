@@ -27,7 +27,7 @@ import {
 } from "@woofx3/scene/runtime";
 import type { AssetCache } from "./asset-loader";
 import type { QueuedEvent } from "./event-queue";
-import { PAGE_CLOCK } from "./page-clock";
+import type { PageHost, PageLog } from "./page-host";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
 import type { WidgetBridge, WidgetStatusReportPayload } from "./widget-bridge";
 import { mountWidgetFrame } from "./widget-frame";
@@ -58,6 +58,8 @@ export interface AlertPlayerOptions<TElement extends RenderElement<TElement>, TH
   stage: TElement;
   doc: CompositionDocument;
   clock: SchedulerClock<THandle>;
+  /** Where a behavior the widget protocol cannot carry is reported; the console when absent. */
+  log?: PageLog;
   /**
    * Put a widget's frame in its slot. `entrance` is the widget's own
    * entrance, to mark the frame with from boot (see `entranceOf`).
@@ -84,7 +86,7 @@ export function playAlert<TElement extends RenderElement<TElement>, THandle>(
   const { doc } = options;
   const frames = new Map<NodeId, AlertFrame>();
   const subscribed = new Set<NodeId>();
-  const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state));
+  const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state), options.log);
   let scheduler: Scheduler | null = null;
   let stopped = false;
 
@@ -167,6 +169,11 @@ export interface AlertWidgetOptions {
   assets: AssetCache;
   /** The alert delivered as `eventId` is over; the queue may start the next. */
   onFinished(eventId: string): void;
+  /** Where the alert's stage and frames are made: the page's document. */
+  document: Document;
+  /** What alerts play on (page-clock.ts). */
+  clock: SchedulerClock<unknown>;
+  host: PageHost;
 }
 
 export class AlertWidget {
@@ -202,8 +209,8 @@ export class AlertWidget {
   play(item: QueuedEvent): boolean {
     const delivery = parseDelivery(item.value);
     if (!delivery) {
-      console.warn("[scene-manager] malformed alert delivery; skipping", { eventId: item.eventId });
-      setTimeout(() => this.opts.onFinished(item.eventId), 0);
+      this.opts.host.log.warn("[scene-manager] malformed alert delivery; skipping", { eventId: item.eventId });
+      this.opts.host.timers.setTimeout(() => this.opts.onFinished(item.eventId), 0);
       return true;
     }
     this.run(item.eventId, delivery);
@@ -225,7 +232,7 @@ export class AlertWidget {
     const { element } = this.opts;
     const canvas = canvasOf(delivery.layout);
 
-    const stage = document.createElement("div");
+    const stage = this.opts.document.createElement("div");
     stage.className = "alert-stage";
     stage.style.width = `${canvas.width}px`;
     stage.style.height = `${canvas.height}px`;
@@ -236,7 +243,7 @@ export class AlertWidget {
     const alertEvent: WidgetEvent = {
       type: "alert",
       source: "scene-manager",
-      time: new Date().toISOString(),
+      time: new Date(this.opts.host.timers.now()).toISOString(),
       data: delivery.event,
       eventId,
     };
@@ -249,11 +256,12 @@ export class AlertWidget {
       stage.remove();
     };
     this.playing.set(eventId, tearDown);
-    player = playAlert<HTMLElement, ReturnType<typeof setTimeout>>({
-      document,
+    player = playAlert<HTMLElement, unknown>({
+      document: this.opts.document,
       stage,
       doc: delivery.layout,
-      clock: PAGE_CLOCK,
+      clock: this.opts.clock,
+      log: this.opts.host.log,
       mountFrame: (slot, widgetId, entrance, facts) =>
         this.mountFrame(eventId, alertEvent, delivery.layout, slot, widgetId, entrance, facts),
       onFinished: () => {
@@ -280,6 +288,8 @@ export class AlertWidget {
       slot,
       instanceId,
       bridges,
+      document: this.opts.document,
+      host: this.opts.host,
       // The frame document inlines the placement, so the fragment carries only
       // the entrance it is marked with from boot.
       src: (nonce) =>

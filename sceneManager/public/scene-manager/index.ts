@@ -3,6 +3,9 @@
 
 import type { SceneConfig } from "../../contract/scene-config";
 import { createOverlay } from "./overlay";
+import { PAGE_CLOCK } from "./page-clock";
+import { BROWSER_HOST } from "./page-host";
+import { createReconnectCoordinator } from "./reconnect-coordinator";
 
 declare global {
   interface Window {
@@ -44,6 +47,9 @@ function main(): void {
     framed: window.parent !== window,
     fetch: (url, init) => fetch(url, init),
     renderConnected,
+    host: BROWSER_HOST,
+    clock: PAGE_CLOCK,
+    coordinator: createReconnectCoordinator(),
   });
 }
 

@@ -2,17 +2,20 @@
 // each playing the alerts delivered to it one at a time through its queue,
 // and acknowledging each as it starts and finishes.
 
+import type { SchedulerClock } from "@woofx3/scene/runtime";
 import { AlertWidget, type AlertWidgetOptions } from "./alert-widget";
 import type { AssetCache } from "./asset-loader";
 import type { EventQueueManager, QueueRegistration } from "./event-queue";
+import { PAGE_CLOCK } from "./page-clock";
+import { BROWSER_HOST, type PageHost } from "./page-host";
 import type { WidgetBridge, WidgetStatusReportPayload } from "./widget-bridge";
 
 /** What the page plays an area's alerts with: an `AlertWidget`. */
 export type AlertArea = Pick<AlertWidget, "play" | "stop" | "dispose" | "readAhead">;
 
 export interface AlertAreasDeps {
-  /** Where an area's element is made. */
-  document: Pick<Document, "createElement">;
+  /** Where an area's element, and its alerts' stages and frames, are made. */
+  document: Document;
   /** `/scene/{sceneId}`. */
   sceneBase: string;
   bridges: Set<WidgetBridge>;
@@ -30,6 +33,9 @@ export interface AlertAreasDeps {
   rendered(instanceId: string): void;
   /** Builds an area's player; an `AlertWidget` unless a test stands one in. */
   createArea?(options: AlertWidgetOptions): AlertArea;
+  /** What alerts play on; the page clock (page-clock.ts) when absent. */
+  clock?: SchedulerClock<unknown>;
+  host?: PageHost;
 }
 
 export class AlertAreas {
@@ -56,6 +62,9 @@ export class AlertAreas {
       bridges: deps.bridges,
       postStatus: deps.postStatus,
       assets: deps.assets,
+      document: deps.document,
+      clock: deps.clock ?? PAGE_CLOCK,
+      host: deps.host ?? BROWSER_HOST,
       onFinished: (eventId) => {
         if (registration !== null) {
           deps.queues.complete(registration, eventId);
