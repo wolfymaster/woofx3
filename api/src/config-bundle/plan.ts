@@ -14,7 +14,7 @@ import type {
   ConfigSection,
 } from "@woofx3/api";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
-import { serializeActions } from "../routes/commands";
+import { serializeActions, serializeSteps } from "../routes/commands";
 import { validateWorkflowDefinition } from "../workflow/validate-definition";
 import { commandToBundle, workflowToBundle } from "./export";
 import { canonicalResourceId, sameJson } from "./schema";
@@ -477,6 +477,38 @@ function workflowContent(wf: ConfigBundleWorkflow, workflowRefs: Record<string, 
   return { enabled: wf.enabled, definition, workflowRefs };
 }
 
+/**
+ * The names sub-workflow targets will have here, task id to name. A target
+ * that is neither in the bundle nor here, or whose own import is blocked,
+ * blocks the item that starts it, with the reason added to `reasons`.
+ */
+function resolveWorkflowRefs(
+  workflowRefs: Record<string, string>,
+  destinations: PlanContext["workflowDestinations"],
+  inBundle: ReadonlySet<string>,
+  onEngine: ReadonlySet<string>,
+  reasons: ConfigImportReason[]
+): Record<string, string> {
+  const resolved: Record<string, string> = {};
+  for (const [taskId, target] of Object.entries(workflowRefs)) {
+    const destination = resolveName(target, destinations, inBundle, onEngine);
+    if (!destination) {
+      reasons.push(
+        reason(
+          "unknown_workflow",
+          `Step "${taskId}" starts workflow "${target}", which is neither in the bundle nor here.`,
+          true
+        )
+      );
+    } else if ("blocked" in destination) {
+      reasons.push(reason("dependency_blocked", `Step "${taskId}" starts ${destination.blocked}.`, true));
+    } else {
+      resolved[taskId] = destination.name;
+    }
+  }
+  return resolved;
+}
+
 function planWorkflows(ctx: PlanContext): PlannedStep[] {
   const { bundle, state, policy, versions, sections } = ctx;
   const byName = new Map(state.workflows.map((w) => [w.name, w]));
@@ -509,23 +541,7 @@ function planWorkflows(ctx: PlanContext): PlannedStep[] {
     }
     reasons.push(...privilegedReason(actions, state));
 
-    const resolvedRefs: Record<string, string> = {};
-    for (const [taskId, target] of Object.entries(wf.workflowRefs)) {
-      const destination = resolveName(target, ctx.workflowDestinations, inBundle, onEngine);
-      if (!destination) {
-        reasons.push(
-          reason(
-            "unknown_workflow",
-            `Step "${taskId}" starts workflow "${target}", which is neither in the bundle nor here.`,
-            true
-          )
-        );
-      } else if ("blocked" in destination) {
-        reasons.push(reason("dependency_blocked", `Step "${taskId}" starts ${destination.blocked}.`, true));
-      } else {
-        resolvedRefs[taskId] = destination.name;
-      }
-    }
+    const resolvedRefs = resolveWorkflowRefs(wf.workflowRefs, ctx.workflowDestinations, inBundle, onEngine, reasons);
 
     const content = workflowContent(wf, resolvedRefs);
     const decision = decide<EngineWorkflow>(
@@ -552,18 +568,31 @@ function planWorkflows(ctx: PlanContext): PlannedStep[] {
   });
 }
 
-/** What makes two commands the same, apart from their word and who they grant by name. */
-function commandContent(cmd: ConfigBundleCommand, groups: string[]): unknown {
-  const { command: _command, requires: _requires, usernames: _usernames, ...content } = cmd;
-  return { ...content, groups: [...groups].sort() };
+/**
+ * What makes two commands the same, apart from their word and who they grant
+ * by name, with sub-workflow targets given as the names they have on this
+ * engine.
+ */
+function commandContent(cmd: ConfigBundleCommand, groups: string[], workflowRefs: Record<string, string>): unknown {
+  const {
+    command: _command,
+    requires: _requires,
+    usernames: _usernames,
+    workflowRefs: _workflowRefs,
+    ...content
+  } = cmd;
+  return { ...content, groups: [...groups].sort(), ...(cmd.steps && cmd.steps.length > 0 ? { workflowRefs } : {}) };
 }
 
 function planCommands(ctx: PlanContext): PlannedStep[] {
   const { bundle, state, policy, versions, sections, applyMembers } = ctx;
   const byWord = new Map(state.commands.map((c) => [c.command.toLowerCase(), c]));
   const groupNames = new Map(state.groups.map((g) => [g.id, g.name]));
+  const workflowNames = new Map(state.workflows.map((w) => [w.id, w.name]));
   const inBundle = new Set(sections.has("groups") ? bundle.groups.map((g) => g.name) : []);
   const onEngine = new Set(state.groups.map((g) => g.name));
+  const workflowsInBundle = new Set(sections.has("workflows") ? bundle.workflows.map((w) => w.name) : []);
+  const workflowsOnEngine = new Set(state.workflows.map((w) => w.name));
 
   return bundle.commands.map((cmd) => {
     const reasons = moduleReasons(cmd.requires, versions, state);
@@ -576,12 +605,13 @@ function planCommands(ctx: PlanContext): PlannedStep[] {
     }
     try {
       serializeActions(cmd.actions);
+      serializeSteps(cmd.command, cmd.steps ?? []);
     } catch (err) {
       reasons.push(reason("invalid", err instanceof Error ? err.message : String(err), true));
     }
     reasons.push(
       ...privilegedReason(
-        cmd.actions.map((a) => a?.action).filter((a): a is string => !!a),
+        [...cmd.actions, ...(cmd.steps ?? [])].map((a) => a?.action).filter((a): a is string => !!a),
         state
       )
     );
@@ -600,7 +630,15 @@ function planCommands(ctx: PlanContext): PlannedStep[] {
       }
     }
 
-    const content = commandContent(cmd, resolvedGroups);
+    const resolvedRefs = resolveWorkflowRefs(
+      cmd.workflowRefs ?? {},
+      ctx.workflowDestinations,
+      workflowsInBundle,
+      workflowsOnEngine,
+      reasons
+    );
+
+    const content = commandContent(cmd, resolvedGroups, resolvedRefs);
     const wantedUsernames = applyMembers ? (cmd.usernames ?? []) : [];
     const decision = decide<EngineCommand>(
       cmd.command,
@@ -611,12 +649,12 @@ function planCommands(ctx: PlanContext): PlannedStep[] {
         if (existing === null) {
           return { existing, owned: false, identical: false };
         }
-        const current = commandToBundle(existing, groupNames, false, state);
+        const current = commandToBundle(existing, groupNames, workflowNames, false, state);
         return {
           existing,
           owned: existing.userOwned,
           identical:
-            sameJson(content, commandContent(current, current.groups)) &&
+            sameJson(content, commandContent(current, current.groups, current.workflowRefs ?? {})) &&
             sortedDifference(wantedUsernames, existing.usernames).length === 0,
         };
       },

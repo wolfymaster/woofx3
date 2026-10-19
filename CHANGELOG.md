@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.36.0](https://github.com/wolfymaster/woofx3/compare/v0.35.0...v0.36.0) (2026-10-19)
+
+### Features
+
+* **api:** list the values ${viewer.*} can resolve ([ea885fc](https://github.com/wolfymaster/woofx3/commit/ea885fcfcbf19fdf147fb358ce5ea5ad23f8b6f6))
+* **api:** return an action's sentence to the dashboard ([941dc02](https://github.com/wolfymaster/woofx3/commit/941dc02c629e55d4b7e145295707778fbc18fcf8))
+* **barkloader:** let actions declare the sentence that describes them ([7221ffb](https://github.com/wolfymaster/woofx3/commit/7221ffb929d16b7b38322aec8dfcde7a976b9c0a))
+* **barkloader:** let emitted fields list their known values ([37f027c](https://github.com/wolfymaster/woofx3/commit/37f027c414b3a5a0d33214a73ae79e9a06f48f62))
+* **commands:** run each chat command's steps as a stored workflow ([e28b19f](https://github.com/wolfymaster/woofx3/commit/e28b19f785069fd7f2570c3dd4d11f4db5eae736))
+* **db:** store the sentence an action declares ([d546ef2](https://github.com/wolfymaster/woofx3/commit/d546ef2026b32612365866ce19e7c91a848cc83e))
+* **woofx3:** describe bundled actions with sentences ([2968a7b](https://github.com/wolfymaster/woofx3/commit/2968a7b3dde796867c4c40a083f919fee33b9770))
+* **woofx3:** file bundled actions by purpose, not as system ([a0405f4](https://github.com/wolfymaster/woofx3/commit/a0405f4685c2f901f437af1f0bef8b96631fb80b))
+
+### Bug Fixes
+
+* **workflow:** keep wait count and sum current, empty data after a timeout ([019764b](https://github.com/wolfymaster/woofx3/commit/019764b18ea5b9e7ba1924930b15fbf2abaf2bc7))
+* **workflow:** resolve references inside a condition's list value ([857bcb5](https://github.com/wolfymaster/woofx3/commit/857bcb5bc25d53bb49e8fa48925368713c17c30d))
+* **workflow:** run condition branches like a step list ([c9edec4](https://github.com/wolfymaster/woofx3/commit/c9edec491c34dff5bde8aefa80adc0021304a68d))
+
 ## [0.35.0](https://github.com/wolfymaster/woofx3/compare/v0.34.2...v0.35.0) (2026-10-18)
 
 ### Features

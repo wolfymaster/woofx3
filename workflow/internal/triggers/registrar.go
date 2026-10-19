@@ -23,16 +23,16 @@ type Registrar interface {
 
 // CompositeRegistrar routes to a type-specific registrar based on trigger.Type.
 type CompositeRegistrar struct {
-	byType map[string]Registrar
+	byType map[types.TriggerType]Registrar
 }
 
 func NewCompositeRegistrar() *CompositeRegistrar {
-	return &CompositeRegistrar{byType: make(map[string]Registrar)}
+	return &CompositeRegistrar{byType: make(map[types.TriggerType]Registrar)}
 }
 
 // Register associates a trigger type with its registrar. Panics on duplicate
 // type since that always indicates a wiring bug.
-func (c *CompositeRegistrar) Set(triggerType string, r Registrar) {
+func (c *CompositeRegistrar) Set(triggerType types.TriggerType, r Registrar) {
 	if _, exists := c.byType[triggerType]; exists {
 		panic(fmt.Sprintf("triggers: duplicate registrar for type %q", triggerType))
 	}

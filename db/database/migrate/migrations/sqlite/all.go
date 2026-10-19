@@ -69,5 +69,9 @@ func All() []*gormigrate.Migration {
 		AddSceneCompositions(),
 		AddSessionCompaction(),
 		AddModuleMarketplaceProvenance(),
+		AddActionSentence(),
+		AddCommandWorkflow(),
+		SplitAlertWorkflows(),
+		AddCommandWorkflowError(),
 	}
 }

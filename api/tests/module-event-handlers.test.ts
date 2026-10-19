@@ -298,6 +298,23 @@ describe("parseModuleActionRegistered", () => {
     const result = parseModuleActionRegistered(ce);
     expect(result.event.actions[0]).not.toHaveProperty("projectionKey");
   });
+
+  test("carries a declared sentence and omits the empty column default", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        actions: [
+          { id: "uuid-a", name: "increment", sentence: "Add {amount} to {counter}" },
+          { id: "uuid-b", name: "reset", sentence: "" },
+        ],
+      },
+    };
+
+    const result = parseModuleActionRegistered(ce);
+
+    expect(result.event.actions[0]?.sentence).toBe("Add {amount} to {counter}");
+    expect(result.event.actions[1]).not.toHaveProperty("sentence");
+  });
 });
 
 describe("parseModuleWidgetRegistered", () => {

@@ -141,7 +141,7 @@ func (r *WorkflowRegistry) GetByEvent(event string) []*types.WorkflowDefinition 
 
 	var matched []*types.WorkflowDefinition
 	for _, wf := range r.workflows {
-		if wf.Trigger == nil || wf.Trigger.Type != "event" {
+		if wf.Trigger == nil || wf.Trigger.Type != types.TriggerTypeEvent {
 			continue
 		}
 		if eventmatch.Matches(wf.Trigger.Event, event) {

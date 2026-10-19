@@ -6,6 +6,7 @@ import type {
   WorkflowMutationResult,
 } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { TRIGGER_TYPE_COMMAND } from "@woofx3/api/workflow-definition";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
@@ -13,6 +14,23 @@ import { requestWorkflowHealth } from "../workflow-health-emitter";
 import { routeModule } from "./context";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
 import type { WorkflowItem } from "./types";
+
+/**
+ * Refuse to change or delete a chat command's workflow here: its command owns
+ * it, and writes it with the command's steps. db-proxy refuses the same; this
+ * says so before the round trip, in words a streamer can act on.
+ */
+function assertNotCommandWorkflow(wf: workflow.Workflow): void {
+  let trigger: { type?: unknown } | null = null;
+  try {
+    trigger = JSON.parse(wf.triggerJson || "null");
+  } catch {
+    // An unreadable trigger is not a command's; the update replaces it.
+  }
+  if (trigger?.type === TRIGGER_TYPE_COMMAND) {
+    throw new Error(`"${wf.name}" is a chat command's steps; change it from the command instead`);
+  }
+}
 
 export const workflowsRoutes = routeModule({
   async getWorkflows(query?: { enabled?: boolean; page?: number; pageSize?: number }): Promise<{
@@ -117,6 +135,7 @@ export const workflowsRoutes = routeModule({
       this.logger.warn("Workflow not found for update", { id });
       return null;
     }
+    assertNotCommandWorkflow(existing);
 
     const response = await this.db.updateWorkflow({
       id,
@@ -159,6 +178,10 @@ export const workflowsRoutes = routeModule({
 
   async deleteWorkflow(id: string, correlationKey?: string): Promise<boolean> {
     this.logger.info("Deleting workflow", { id });
+    const existing = await this.db.findWorkflow({ id });
+    if (existing) {
+      assertNotCommandWorkflow(existing);
+    }
     const deleted = await this.db.tryDeleteWorkflow({ id });
     this.logger.info("Workflow deleted", { id, success: deleted });
     if (deleted) {
@@ -177,6 +200,7 @@ export const workflowsRoutes = routeModule({
     correlationKey?: string
   ): Promise<{ id: string; isEnabled: boolean }> {
     const existing = await this.db.getWorkflow({ id });
+    assertNotCommandWorkflow(existing);
     // Toggle enabled without rewriting the workflow definition —
     // pass the existing JSON columns through unchanged.
     const response = await this.db.updateWorkflow({

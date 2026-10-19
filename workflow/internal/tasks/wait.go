@@ -16,6 +16,10 @@ const (
 	OnTimeoutContinue = "continue"
 	OnTimeoutFail     = "fail"
 
+	AggregateCount     = "count"
+	AggregateSum       = "sum"
+	AggregateThreshold = "threshold"
+
 	// MinWaitTimeout is the shortest timeout an event wait accepts. A number in
 	// a definition's timeout is read as nanoseconds, so `30000` meant as thirty
 	// seconds is 30µs; refusing anything under a second turns that mistake into
@@ -59,6 +63,13 @@ func ValidateWaitConfig(cfg *types.WaitConfig) error {
 	}
 	if cfg.Type == WaitTypeAggregation && cfg.Aggregation == nil {
 		return fmt.Errorf("aggregation wait requires an aggregation config")
+	}
+	if cfg.Aggregation != nil {
+		switch cfg.Aggregation.Strategy {
+		case AggregateCount, AggregateSum, AggregateThreshold:
+		default:
+			return fmt.Errorf("unknown aggregation strategy %q (expected %q, %q or %q)", cfg.Aggregation.Strategy, AggregateCount, AggregateSum, AggregateThreshold)
+		}
 	}
 	if cfg.DurationMs != 0 {
 		return fmt.Errorf("durationMs only applies to a delay wait")
@@ -121,8 +132,8 @@ func NewWaitTask() TaskFactory {
 	}
 }
 
-func (t *WaitTask) Type() string {
-	return "wait"
+func (t *WaitTask) Type() types.TaskType {
+	return types.TaskTypeWait
 }
 
 func (t *WaitTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {
@@ -196,9 +207,8 @@ func (t *WaitTask) ProcessEvent(event *types.Event, waitState *types.WaitState, 
 		return false, nil
 	}
 
-	waitState.ReceivedEvents = append(waitState.ReceivedEvents, event)
-
 	if waitState.Aggregation == nil {
+		waitState.ReceivedEvents = append(waitState.ReceivedEvents, event)
 		waitState.Satisfied = true
 		return true, nil
 	}
@@ -243,30 +253,35 @@ func (t *WaitTask) processAggregation(event *types.Event, waitState *types.WaitS
 		return false, nil
 	}
 
+	// Every strategy keeps both count and sum current, since a wait exports
+	// both whatever decides it. Only sum and threshold are decided by a number,
+	// so only they refuse an event without one, which then adds to neither and
+	// is not received: it is not in the wait's events, and never becomes its
+	// lastEvent or data. Count still counts it and adds nothing to the sum.
+	value, err := t.extractNumericValue(event, waitState)
+	if err != nil && (agg.Strategy == AggregateSum || agg.Strategy == AggregateThreshold) {
+		return false, err
+	}
+	waitState.ReceivedEvents = append(waitState.ReceivedEvents, event)
+	agg.Count++
+	if err == nil {
+		agg.Sum += value
+	}
+
 	switch agg.Strategy {
-	case "count":
-		agg.Count++
+	case AggregateCount:
 		if float64(agg.Count) >= agg.Threshold {
 			waitState.Satisfied = true
 			return true, nil
 		}
 
-	case "sum":
-		value, err := t.extractNumericValue(event, waitState)
-		if err != nil {
-			return false, err
-		}
-		agg.Sum += value
+	case AggregateSum:
 		if agg.Sum >= agg.Threshold {
 			waitState.Satisfied = true
 			return true, nil
 		}
 
-	case "threshold":
-		value, err := t.extractNumericValue(event, waitState)
-		if err != nil {
-			return false, err
-		}
+	case AggregateThreshold:
 		if value >= agg.Threshold {
 			waitState.Satisfied = true
 			return true, nil
@@ -353,7 +368,25 @@ func (t *WaitTask) GetExports(waitState *types.WaitState) map[string]any {
 		lastEvent := waitState.ReceivedEvents[len(waitState.ReceivedEvents)-1]
 		exports["lastEvent"] = lastEvent
 		exports["data"] = lastEvent.Data
+	} else {
+		exports["data"] = expression.OpenRecord{}
 	}
 
 	return exports
+}
+
+// RestoreWaitExports returns a wait's recorded exports as a run reads them.
+// A wait that ended without an event exports an empty, open `data`, so a later
+// `${wait.data.x}` reads as empty rather than failing; recording it as JSON
+// keeps the emptiness but not the openness, which this puts back.
+func RestoreWaitExports(recorded map[string]any) map[string]any {
+	if _, hasEvent := recorded["lastEvent"]; hasEvent {
+		return recorded
+	}
+	restored := make(map[string]any, len(recorded)+1)
+	for key, value := range recorded {
+		restored[key] = value
+	}
+	restored["data"] = expression.OpenRecord{}
+	return restored
 }

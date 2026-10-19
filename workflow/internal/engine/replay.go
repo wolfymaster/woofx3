@@ -166,6 +166,7 @@ func planResume(
 
 	for _, task := range order[:start] {
 		if skipped[task.ID] {
+			skipBranchesOfSkippedCondition(task, skipped)
 			continue
 		}
 
@@ -177,6 +178,7 @@ func planResume(
 		switch record.Status {
 		case string(types.TaskStatusSkipped):
 			skipped[task.ID] = true
+			skipBranchesOfSkippedCondition(task, skipped)
 			continue
 		case string(types.TaskStatusSuccess):
 		default:
@@ -184,10 +186,14 @@ func planResume(
 		}
 
 		if len(record.Outputs) > 0 {
-			exports[task.ID] = record.Outputs
+			if task.Type == types.TaskTypeWait {
+				exports[task.ID] = tasks.RestoreWaitExports(record.Outputs)
+			} else {
+				exports[task.ID] = record.Outputs
+			}
 		}
 
-		if task.Type == "condition" {
+		if task.Type == types.TaskTypeCondition {
 			result, ok := record.Outputs["result"].(bool)
 			if !ok {
 				return 0, nil, nil, fmt.Errorf("condition %q has no recorded result, so the branch it took is unknown", task.ID)

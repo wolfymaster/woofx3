@@ -1,7 +1,12 @@
 import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefinition } from "@woofx3/api";
 // The module itself rather than the package index: the index also loads the
 // RPC client and its dependencies, which a value import would pull in.
-import { WAIT_DELAY_MAX_MS, WAIT_DELAY_MIN_MS, WAIT_TIMEOUT_MIN_MS } from "@woofx3/api/workflow-definition";
+import {
+  TRIGGER_TYPE_COMMAND,
+  WAIT_DELAY_MAX_MS,
+  WAIT_DELAY_MIN_MS,
+  WAIT_TIMEOUT_MIN_MS,
+} from "@woofx3/api/workflow-definition";
 import { publishedEventTypeProblem } from "./reserved-subjects";
 
 export interface ValidationError {
@@ -169,7 +174,16 @@ function validateWait(wait: unknown, prefix: string, errors: ValidationError[]):
   validateConditions(w.conditions as ConditionConfig[] | undefined, `${prefix}.conditions`, errors);
 }
 
-export function validateWorkflowDefinition(input: unknown): ValidationResult {
+export interface ValidationOptions {
+  /**
+   * Accept a trigger of type "command". Only the command path sets it: such a
+   * workflow belongs to a chat command, which writes it with its steps, and
+   * one saved as a workflow of its own would run for no command.
+   */
+  allowCommandTrigger?: boolean;
+}
+
+export function validateWorkflowDefinition(input: unknown, options: ValidationOptions = {}): ValidationResult {
   const errors: ValidationError[] = [];
 
   if (!input || typeof input !== "object") {
@@ -186,7 +200,12 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
 
   if (!def.trigger || typeof def.trigger !== "object") {
     errors.push({ path: "trigger", message: "required object" });
-  } else if (def.trigger.type === "event") {
+  } else if (def.trigger.type === TRIGGER_TYPE_COMMAND && !options.allowCommandTrigger) {
+    errors.push({
+      path: "trigger.type",
+      message: "a command trigger belongs to a chat command; save the command's steps instead",
+    });
+  } else if (def.trigger.type === "event" || def.trigger.type === TRIGGER_TYPE_COMMAND) {
     if (typeof def.trigger.event !== "string" || def.trigger.event.length === 0) {
       errors.push({ path: "trigger.event", message: "required string" });
     }
@@ -203,7 +222,7 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
     }
     validateConditions(def.trigger.conditions, "trigger.conditions", errors);
   } else {
-    errors.push({ path: "trigger.type", message: 'must be "event" or "schedule"' });
+    errors.push({ path: "trigger.type", message: 'must be "event", "schedule" or "command"' });
   }
 
   if (!Array.isArray(def.tasks) || def.tasks.length === 0) {
@@ -283,8 +302,8 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
  * reach the client as workflow health instead, once the engine tries to load
  * the saved workflow.
  */
-export function assertValidWorkflowDefinition(input: unknown): WorkflowDefinition {
-  const result = validateWorkflowDefinition(input);
+export function assertValidWorkflowDefinition(input: unknown, options: ValidationOptions = {}): WorkflowDefinition {
+  const result = validateWorkflowDefinition(input, options);
   if (!result.ok) {
     throw new Error(`Invalid workflow definition: ${result.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`);
   }

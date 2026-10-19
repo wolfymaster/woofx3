@@ -57,7 +57,14 @@ type Action struct {
 	//
 	// Deliberately not called a schema: the engine treats a function result as
 	// an opaque map[string]any and never validates it against this.
-	Returns       string `protobuf:"bytes,14,opt,name=returns,proto3" json:"returns,omitempty"`
+	Returns string `protobuf:"bytes,14,opt,name=returns,proto3" json:"returns,omitempty"`
+	// The module author's one-line English template for a configured step that
+	// runs this action, e.g. "Add {amount} to {counter}". Each `{fieldId}`
+	// names a field in params_schema; the UI substitutes the configured value,
+	// or that field's `missingText` while a required field is still empty.
+	// Validated at install: non-empty, braces balanced and unnested, every
+	// placeholder a declared field id. Empty means the author declared none.
+	Sentence      string `protobuf:"bytes,15,opt,name=sentence,proto3" json:"sentence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -169,6 +176,13 @@ func (x *Action) GetReturns() string {
 	return ""
 }
 
+func (x *Action) GetSentence() string {
+	if x != nil {
+		return x.Sentence
+	}
+	return ""
+}
+
 type ActionInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -178,7 +192,8 @@ type ActionInput struct {
 	ManifestId    string                 `protobuf:"bytes,5,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
 	Type          string                 `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
 	Taxonomy      []string               `protobuf:"bytes,7,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
-	Returns       string                 `protobuf:"bytes,9,opt,name=returns,proto3" json:"returns,omitempty"` // JSON string — see Action.returns
+	Returns       string                 `protobuf:"bytes,9,opt,name=returns,proto3" json:"returns,omitempty"`    // JSON string — see Action.returns
+	Sentence      string                 `protobuf:"bytes,10,opt,name=sentence,proto3" json:"sentence,omitempty"` // see Action.sentence
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -265,6 +280,13 @@ func (x *ActionInput) GetTaxonomy() []string {
 func (x *ActionInput) GetReturns() string {
 	if x != nil {
 		return x.Returns
+	}
+	return ""
+}
+
+func (x *ActionInput) GetSentence() string {
+	if x != nil {
+		return x.Sentence
 	}
 	return ""
 }
@@ -477,7 +499,7 @@ var File_module_action_proto protoreflect.FileDescriptor
 
 const file_module_action_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\xd5\x02\n" +
+	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\xf1\x02\n" +
 	"\x06Action\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
@@ -491,7 +513,8 @@ const file_module_action_proto_rawDesc = "" +
 	"manifestId\x12\x12\n" +
 	"\x04type\x18\v \x01(\tR\x04type\x12\x1a\n" +
 	"\btaxonomy\x18\f \x03(\tR\btaxonomy\x12\x18\n" +
-	"\areturns\x18\x0e \x01(\tR\areturnsJ\x04\b\r\x10\x0eR\routput_schema\"\xfc\x01\n" +
+	"\areturns\x18\x0e \x01(\tR\areturns\x12\x1a\n" +
+	"\bsentence\x18\x0f \x01(\tR\bsentenceJ\x04\b\r\x10\x0eR\routput_schema\"\x98\x02\n" +
 	"\vActionInput\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
@@ -501,7 +524,9 @@ const file_module_action_proto_rawDesc = "" +
 	"manifestId\x12\x12\n" +
 	"\x04type\x18\x06 \x01(\tR\x04type\x12\x1a\n" +
 	"\btaxonomy\x18\a \x03(\tR\btaxonomy\x12\x18\n" +
-	"\areturns\x18\t \x01(\tR\areturnsJ\x04\b\b\x10\tR\routput_schema\"\xa2\x02\n" +
+	"\areturns\x18\t \x01(\tR\areturns\x12\x1a\n" +
+	"\bsentence\x18\n" +
+	" \x01(\tR\bsentenceJ\x04\b\b\x10\tR\routput_schema\"\xa2\x02\n" +
 	"\x16RegisterActionsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

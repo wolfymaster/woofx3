@@ -32,9 +32,11 @@ export const triggersRoutes = routeModule({
 
   async getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]> {
     const rows = await this.db.listActions(createdByType, createdByRef);
-    return rows.map((row) => {
-      const projectionKey = moduleProjectionKey(row, "action");
-      return projectionKey ? { ...row, projectionKey } : row;
+    // As for triggers: an empty `sentence` is the column default.
+    return rows.map(({ sentence, ...rest }) => {
+      const definition = sentence ? { ...rest, sentence } : rest;
+      const projectionKey = moduleProjectionKey(definition, "action");
+      return projectionKey ? { ...definition, projectionKey } : definition;
     });
   },
 });

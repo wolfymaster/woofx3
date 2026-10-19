@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { ConfigBundle, Woofx3EngineApi } from "@woofx3/api";
+import type { ConfigBundle, TaskDefinition, Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
 import { MAX_CONFIG_BUNDLE_BYTES, MAX_CONFIG_SECTION_ITEMS } from "../src/config-bundle/schema";
@@ -442,6 +442,124 @@ describe("round trip into an empty engine", () => {
     const plan = await session.previewImport(text as unknown as ConfigBundle);
 
     expect(plan.summary.create).toBe(5);
+  });
+});
+
+describe("a command with a workflow", () => {
+  const steps: TaskDefinition[] = [
+    {
+      id: "check",
+      type: "condition",
+      conditions: [{ field: "${trigger.data.chatter}", operator: "eq", value: "wolfy" }],
+      onTrue: ["pause"],
+    },
+    { id: "pause", type: "wait", dependsOn: ["check"], wait: { type: "delay", durationMs: 1000 } },
+  ];
+
+  function engineWithLinkedCommand(): FakeEngineDb {
+    const db = new FakeEngineDb();
+    const wf = workflowRow(db, {
+      name: "!hug",
+      triggerJson: JSON.stringify({ type: "command", event: "chat.command.hug" }),
+      stepsJson: JSON.stringify(steps),
+    });
+    db.commands.push({
+      id: "src-cmd-hug",
+      command: "hug",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      visibility: "public",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
+      actionsJson: "[]",
+      workflowId: wf.id,
+      stepsJson: JSON.stringify(steps),
+      createdByType: "USER",
+    });
+    return db;
+  }
+
+  it("carries its steps on the command, not as a workflow of its own", async () => {
+    const { api } = makeApi(engineWithLinkedCommand());
+
+    const bundle = await api.exportConfig();
+
+    expect(bundle.workflows).toEqual([]);
+    expect(bundle.commands[0].steps).toEqual(steps);
+    expect(bundle.commands[0].actions).toEqual([]);
+  });
+
+  it("imports its steps as the steps of the new command", async () => {
+    const { api: source } = makeApi(engineWithLinkedCommand());
+    const bundle = await source.exportConfig();
+
+    const target = emptyEngine();
+    const result = await makeApi(target).session.importConfig(bundle);
+
+    expect(result.summary.created).toBe(1);
+    expect(JSON.parse(target.commands[0].stepsJson)).toEqual(steps);
+  });
+});
+
+describe("a command whose step starts a workflow", () => {
+  function engineWithSubWorkflowCommand(): FakeEngineDb {
+    const db = new FakeEngineDb();
+    const thank = workflowRow(db, { name: "Thank follower" });
+    const steps = [{ id: "thank", type: "workflow", workflow: { workflowId: thank.id } }];
+    const own = workflowRow(db, {
+      name: "!hype",
+      triggerJson: JSON.stringify({ type: "command", event: "chat.command.hype" }),
+      stepsJson: JSON.stringify(steps),
+    });
+    db.commands.push({
+      id: "src-cmd-hype",
+      command: "hype",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      visibility: "public",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
+      actionsJson: "[]",
+      workflowId: own.id,
+      stepsJson: JSON.stringify(steps),
+      createdByType: "USER",
+    });
+    return db;
+  }
+
+  it("exports the target by name, not by this engine's id", async () => {
+    const bundle = await makeApi(engineWithSubWorkflowCommand()).api.exportConfig();
+
+    expect(bundle.commands[0].steps?.[0].workflow?.workflowId).toBe("");
+    expect(bundle.commands[0].workflowRefs).toEqual({ thank: "Thank follower" });
+  });
+
+  it("imports the step pointed at the target's id on the new engine", async () => {
+    const bundle = await makeApi(engineWithSubWorkflowCommand()).api.exportConfig();
+    const target = emptyEngine();
+
+    const result = await makeApi(target).session.importConfig(bundle);
+
+    expect(result.summary.failed).toBe(0);
+    const thank = target.workflows.find((w) => w.name === "Thank follower");
+    expect(thank).toBeDefined();
+    expect(JSON.parse(target.commands[0].stepsJson)[0].workflow.workflowId).toBe(thank.id);
+
+    const again = await makeApi(target).session.importConfig(bundle);
+    expect(again.summary.skipped).toBe(2);
+  });
+
+  it("is blocked when the target is neither in the bundle nor on the engine", async () => {
+    const bundle = await makeApi(engineWithSubWorkflowCommand()).api.exportConfig({ include: ["commands"] });
+
+    const plan = await makeApi(emptyEngine()).session.previewImport(bundle);
+
+    expect(plan.items[0].action).toBe("conflict");
+    expect(plan.items[0].reasons.map((r) => r.code)).toContain("unknown_workflow");
   });
 });
 

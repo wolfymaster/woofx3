@@ -174,8 +174,11 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	})
 	a.scheduleReg.Start()
 	composite := triggers.NewCompositeRegistrar()
-	composite.Set("event", eventReg)
-	composite.Set("schedule", a.scheduleReg)
+	composite.Set(types.TriggerTypeEvent, eventReg)
+	composite.Set(types.TriggerTypeSchedule, a.scheduleReg)
+	// Nothing to subscribe: a command's commander runs its workflow by id
+	// (handleCommandExecuteEvent).
+	composite.Set(types.TriggerTypeCommand, triggers.NoopRegistrar{})
 	a.engine.Registry().SetRegistrar(composite)
 	a.engine.Registry().SetLogger(a.logger)
 
@@ -244,6 +247,13 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		a.handleWorkflowReplayEvent(msg)
 	}); err != nil {
 		a.logger.Error("Failed to subscribe to workflow replay events", "error", err)
+	}
+
+	// "Run this command's workflow", from whoever matched the command.
+	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowCommandExecute), func(msg natsclient.Msg) {
+		a.handleCommandExecuteEvent(msg)
+	}); err != nil {
+		return fmt.Errorf("subscribe to %s: %w", cloudevents.SubjectWorkflowCommandExecute, err)
 	}
 
 	// "Run these actions now", from a caller that has actions and no workflow.
@@ -568,6 +578,47 @@ func (a *WorkflowApp) handleActionExecuteEvent(msg natsclient.Msg) {
 	a.logger.Info("Running actions on request",
 		"label", message.Data.Label,
 		"actions", len(message.Data.Actions),
+		"execution", executionID)
+}
+
+// commandExecuteMessage asks for the workflow a chat command is linked to to run.
+//
+// Decoded into a typed shape rather than through validateCloudEvent, like
+// actionExecuteMessage: the command's own event travels whole inside it,
+// because that event, not this envelope, is what the run reads as its trigger.
+type commandExecuteMessage struct {
+	ID   string `json:"id"`
+	Data struct {
+		WorkflowID string       `json:"workflowId"`
+		Event      *types.Event `json:"event"`
+	} `json:"data"`
+}
+
+// handleCommandExecuteEvent runs a command's workflow for one invocation.
+func (a *WorkflowApp) handleCommandExecuteEvent(msg natsclient.Msg) {
+	var message commandExecuteMessage
+	if err := json.Unmarshal(msg.Data(), &message); err != nil {
+		a.logger.Error("Invalid command run event", "error", err, "subject", msg.Subject())
+		return
+	}
+
+	// A workflow missing from the registry is the usual failure: deleted,
+	// refused when it was registered, or not loaded yet after a restart.
+	outcome, executionID, err := a.engine.RunCommand(engine.CommandRun{
+		WorkflowID: message.Data.WorkflowID,
+		Event:      message.Data.Event,
+	})
+	if err != nil {
+		a.logger.Error("Failed to run command workflow",
+			"workflow_id", message.Data.WorkflowID,
+			"event_id", message.ID,
+			"error", err)
+		return
+	}
+
+	a.logger.Info("Running command workflow",
+		"workflow_id", message.Data.WorkflowID,
+		"outcome", outcome,
 		"execution", executionID)
 }
 

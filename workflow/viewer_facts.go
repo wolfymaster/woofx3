@@ -270,7 +270,7 @@ func (s *factSubscriptions) sync(patterns []string) map[string]error {
 }
 
 func factTrigger(pattern string) *types.TriggerConfig {
-	return &types.TriggerConfig{Type: "event", Event: pattern}
+	return &types.TriggerConfig{Type: types.TriggerTypeEvent, Event: pattern}
 }
 
 func sortedKeys(set map[string]struct{}) []string {

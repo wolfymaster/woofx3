@@ -33,6 +33,7 @@ var CommandSubjectPrefixes = []string{
 	"workflow.execute",
 	"workflow.replay",
 	"workflow.cancel",
+	"workflow.command.execute",
 	"action.execute",
 }
 

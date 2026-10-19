@@ -7,6 +7,7 @@ import type {
   WorkflowDefinition,
 } from "@woofx3/api";
 import type { SceneSnapshot } from "@woofx3/api/webhooks";
+import type { TaskDefinition } from "@woofx3/api/workflow-definition";
 import type * as command from "@woofx3/db/command.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as protoscript from "protoscript";
@@ -218,11 +219,39 @@ export function parseActions(actionsJson: string | undefined): ActionStep[] {
   }
 }
 
+/**
+ * A command's workflow tasks, decoded from the JSON its workflow stores.
+ *
+ * Unlike its actions, unreadable steps throw rather than decode to none. A
+ * command's steps are written back whole, and an empty list deletes its
+ * workflow: a snapshot that showed none would let any caller that saves it
+ * unchanged delete steps it never saw. So a reader fails for that command,
+ * and says why, instead.
+ */
+export function parseSteps(stepsJson: string | undefined): TaskDefinition[] {
+  if (!stepsJson) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stepsJson);
+  } catch (err) {
+    throw new Error(`Command steps are not readable JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("Command steps are not a list");
+  }
+  return parsed as TaskDefinition[];
+}
+
 export function commandToSnapshot(c: command.Command): CommandSnapshot {
   return {
     id: c.id,
     command: c.command,
     actions: parseActions(c.actionsJson),
+    workflowId: c.workflowId ?? "",
+    steps: parseSteps(c.stepsJson),
+    workflowError: c.workflowError ?? "",
     cooldown: c.cooldown,
     priority: c.priority,
     enabled: c.enabled,

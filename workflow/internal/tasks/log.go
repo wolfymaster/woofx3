@@ -23,8 +23,8 @@ func NewLogTask() TaskFactory {
 	}
 }
 
-func (t *LogTask) Type() string {
-	return "log"
+func (t *LogTask) Type() types.TaskType {
+	return types.TaskTypeLog
 }
 
 func (t *LogTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {

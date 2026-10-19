@@ -133,8 +133,8 @@ func TestSumWithNoFieldAndNoConventionalKeyFails(t *testing.T) {
 	}
 }
 
-// Counting needs no field at all, so it must not go looking for one.
-func TestCountIgnoresTheFieldEntirely(t *testing.T) {
+// Counting needs no number: an event without one still counts.
+func TestCountNeedsNoNumber(t *testing.T) {
 	task, state := aggregationWait(t, &types.AggregationConfig{
 		Strategy:  "count",
 		Threshold: 3,
@@ -239,5 +239,72 @@ func TestFloatAmountsAreSummed(t *testing.T) {
 	}
 	if state.Aggregation.Sum != 2.5 {
 		t.Errorf("Sum = %v, want 2.5", state.Aggregation.Sum)
+	}
+}
+
+// A wait exports both count and sum, so each strategy keeps both current,
+// not only the one it decides by.
+func TestEveryStrategyKeepsCountAndSumCurrent(t *testing.T) {
+	for _, strategy := range []string{"count", "sum", "threshold"} {
+		task, state := aggregationWait(t, &types.AggregationConfig{
+			Strategy:  strategy,
+			Field:     "data.bits",
+			Threshold: 1000,
+		})
+		for _, bits := range []int{100, 250} {
+			if _, err := processCheer(t, task, state, map[string]any{"bits": bits}); err != nil {
+				t.Fatalf("%s: ProcessEvent: %v", strategy, err)
+			}
+		}
+		if state.Aggregation.Count != 2 || state.Aggregation.Sum != 350 {
+			t.Errorf("%s: count = %d, sum = %v, want 2 and 350", strategy, state.Aggregation.Count, state.Aggregation.Sum)
+		}
+		exports := task.GetExports(state)
+		if exports["count"] != 2 || exports["sum"] != 350.0 {
+			t.Errorf("%s: exports count = %v, sum = %v, want 2 and 350", strategy, exports["count"], exports["sum"])
+		}
+	}
+}
+
+// An event a count cannot read a number from still counts; it adds nothing to
+// the sum rather than failing the wait.
+func TestCountAddsNothingToTheSumForAnEventWithoutANumber(t *testing.T) {
+	task, state := aggregationWait(t, &types.AggregationConfig{
+		Strategy:  "count",
+		Field:     "data.bits",
+		Threshold: 5,
+	})
+	if _, err := processCheer(t, task, state, map[string]any{"bits": 40}); err != nil {
+		t.Fatalf("ProcessEvent: %v", err)
+	}
+	if _, err := processCheer(t, task, state, map[string]any{"message": "no bits"}); err != nil {
+		t.Fatalf("ProcessEvent: %v", err)
+	}
+	if state.Aggregation.Count != 2 || state.Aggregation.Sum != 40 {
+		t.Errorf("count = %d, sum = %v, want 2 and 40", state.Aggregation.Count, state.Aggregation.Sum)
+	}
+}
+
+// A sum or threshold refuses an event it cannot read a number from, and that
+// event adds to neither total.
+func TestAnEventRefusedForItsNumberIsNotCounted(t *testing.T) {
+	for _, strategy := range []string{"sum", "threshold"} {
+		task, state := aggregationWait(t, &types.AggregationConfig{
+			Strategy:  strategy,
+			Field:     "data.bits",
+			Threshold: 1000,
+		})
+		if _, err := processCheer(t, task, state, map[string]any{"message": "no bits"}); err == nil {
+			t.Fatalf("%s: want an error for an event without the field", strategy)
+		}
+		if state.Aggregation.Count != 0 || state.Aggregation.Sum != 0 {
+			t.Errorf("%s: count = %d, sum = %v, want 0 and 0", strategy, state.Aggregation.Count, state.Aggregation.Sum)
+		}
+		if len(state.ReceivedEvents) != 0 {
+			t.Errorf("%s: received %d events, want the refused one left out", strategy, len(state.ReceivedEvents))
+		}
+		if last, ok := task.GetExports(state)["lastEvent"]; ok {
+			t.Errorf("%s: lastEvent = %v, want none", strategy, last)
+		}
 	}
 }
