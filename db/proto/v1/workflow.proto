@@ -145,6 +145,10 @@ message ExecutionStep {
     // order is derived from the dependency graph and changes when the workflow
     // is edited.
     int32 step_index = 13;
+    // The step row's own id: one row per (execution, step, attempt).
+    string id = 14;
+    google.protobuf.Timestamp created_at = 15;
+    google.protobuf.Timestamp updated_at = 16;
 }
 
 // Request to create a new workflow
