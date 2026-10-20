@@ -28,7 +28,7 @@ import {
   withDeadline,
 } from "./control";
 
-const requestSchema = z.object({ list: z.enum(OBS_OPTIONS_LISTS) }).strict();
+const requestSchema = z.strictObject({ list: z.enum(OBS_OPTIONS_LISTS) });
 
 /**
  * Input kinds that only carry audio, across OBS's platforms. Listed ahead of

@@ -6,7 +6,7 @@ import type { RuntimeEnvResult } from "./config";
 import { createRuntime } from "./runtime";
 import type { Service } from "./service";
 
-const emptyEnvSchema = z.object({}).passthrough();
+const emptyEnvSchema = z.looseObject({});
 
 type TestContext = {
   services: ServicesRegistry;
@@ -385,7 +385,7 @@ describe("Env and config injection by type", () => {
     const { app, context } = createMockApplication();
     const runtime = createRuntime({
       application: app,
-      envSchema: z.object({ appName: z.string(), port: z.number(), other: z.string().optional() }).passthrough(),
+      envSchema: z.looseObject({ appName: z.string(), port: z.number(), other: z.string().optional() }),
       initialBackoffMs: 50,
       runtimeEnv: () => ({
         config,

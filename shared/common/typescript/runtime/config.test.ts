@@ -95,7 +95,7 @@ describe("Config loading from file and environment", () => {
   });
 
   test("loadRuntimeEnv with empty rootDir still includes process.env and produces config", () => {
-    const schema = z.record(z.union([z.string(), z.number(), z.boolean()]));
+    const schema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
     const result = loadRuntimeEnv({ rootDir: process.cwd(), schema });
     expect(result.config).toBeDefined();
     expect(result.getConfig).toBeDefined();

@@ -45,29 +45,25 @@ const webUrl = z.string().refine((value) => {
 }, "must be an absolute http:// or https:// URL");
 
 // Mirrors ObsControlCommand in shared/common/typescript/cloudevents/Obs/commands.ts.
-// `.strict()` so a misspelled field is refused rather than silently ignored:
+// Strict objects, so a misspelled field is refused rather than silently ignored:
 // `visibile: false` must not read as a command with no visibility.
 const commandSchema = z.discriminatedUnion("command", [
-  z.object({ command: z.literal("switch_scene"), sceneName: nonEmptyName }).strict(),
-  z
-    .object({
-      command: z.literal("set_source_visibility"),
-      sceneName: z.string().optional(),
-      sourceName: nonEmptyName,
-      visible: z.boolean(),
-    })
-    .strict(),
-  z.object({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }).strict(),
-  z
-    .object({
-      command: z.literal("show_browser_source"),
-      sceneName: z.string().optional(),
-      sourceName: nonEmptyName,
-      url: webUrl,
-      width: z.number().int().min(1).max(BROWSER_SOURCE_MAX_WIDTH),
-      height: z.number().int().min(1).max(BROWSER_SOURCE_MAX_HEIGHT),
-    })
-    .strict(),
+  z.strictObject({ command: z.literal("switch_scene"), sceneName: nonEmptyName }),
+  z.strictObject({
+    command: z.literal("set_source_visibility"),
+    sceneName: z.string().optional(),
+    sourceName: nonEmptyName,
+    visible: z.boolean(),
+  }),
+  z.strictObject({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }),
+  z.strictObject({
+    command: z.literal("show_browser_source"),
+    sceneName: z.string().optional(),
+    sourceName: nonEmptyName,
+    url: webUrl,
+    width: z.number().int().min(1).max(BROWSER_SOURCE_MAX_WIDTH),
+    height: z.number().int().min(1).max(BROWSER_SOURCE_MAX_HEIGHT),
+  }),
 ]);
 
 export type ParsedObsCommand = { ok: true; command: ObsControlCommand } | { ok: false; error: string };

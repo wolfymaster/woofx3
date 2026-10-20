@@ -19,7 +19,7 @@
     "jose": "^5.9.6",
     "obs-websocket-js": "^5.0.6",
     "ot-json0": "1.1.0",
-    "zod": "^3.24.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@msgpack/msgpack": "^2.8.0",
