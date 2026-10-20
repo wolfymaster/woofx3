@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "bun run build:shim && bun run src/server.ts",
-    "dev": "bun run build:shim && bun run --watch src/server.ts",
+    "start": "bun run build:client && bun run src/server.ts",
+    "dev": "bun run build:client && bun run --watch src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "build:client": "bun run build:shim && bun build public/scene-manager/index.ts --outdir public/scene-manager --format esm --target browser && bun build public/scene-manager/composition-preview-page.ts --outdir public/scene-manager --format esm --target browser",
