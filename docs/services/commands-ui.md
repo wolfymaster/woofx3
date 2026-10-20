@@ -279,9 +279,11 @@ interface UpdateGroupInput {
 
 ## Webhook callbacks
 
-The engine POSTs these to your registered `callbackUrl` (same delivery
-mechanism as `workflow.created`/`scene.created` — CloudEvents 1.0 envelope,
-`event.type` matches `EngineEventType`, narrow on it for the payload). All
+The engine POSTs these to your registered `callbackUrl`, and pushes them on
+any engine event stream subscription you hold (same delivery mechanism as
+`workflow.created`/`scene.created` — CloudEvents 1.0 envelope, `event.type`
+matches `EngineEventType`, narrow on it for the payload; see
+[Engine callbacks](./engine-callbacks.md)). All
 of them are **optional to handle** — nothing breaks if you ignore them and
 just call `listCommands()`/`listGroups()` on a timer or on page load instead,
 but handling them is what lets you avoid polling and reflect changes made
