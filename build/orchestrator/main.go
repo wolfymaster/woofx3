@@ -77,6 +77,14 @@ func main() {
 		fatalExit(sharedLogger, reporter, "Failed to load configuration", err)
 	}
 
+	workDir, err := os.Getwd()
+	if err != nil {
+		fatalExit(sharedLogger, reporter, "Failed to get the working directory", err)
+	}
+	if err := copyLegacyData(workDir, woofx3config.DataDir(), logger); err != nil {
+		fatalExit(sharedLogger, reporter, "Failed to copy existing engine data into the data directory", err)
+	}
+
 	var serviceIO childIO
 	if options.statusToStdout {
 		serviceIO.outputDirectory = logging.ResolveLogDirectory(logDirectory)

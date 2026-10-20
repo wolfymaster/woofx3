@@ -317,6 +317,16 @@ its own working directory and write somewhere different. Rust
 services also accept `logDir` from `.woofx3.json` in place of `WOOFX3_LOG_DIR`,
 as they do without a data directory.
 
+An engine that ran without a data directory keeps its state when one is set.
+Before starting any service, the orchestrator copies `data/` (the system
+database and module storage) and `modules/` (installed modules) from its
+working directory into the data directory, each only when it is not there yet.
+The originals stay in place, so unsetting `WOOFX3_DATA_DIR` goes back to them,
+and a directory already in the data directory is never overwritten. Each copy
+is renamed into place once complete, so one that is cut short is redone on the
+next start. Logs, uploads in progress and caches are not copied. Services run
+without the orchestrator get no copy.
+
 The helpers are `ResolveDataPath` (Go, `common/config`, re-exported by `common/runtime`), `resolveDataPath`
 (TypeScript, `@woofx3/common/runtime`) and `resolve_data_path` (Rust,
 `woofx3_runtime`); the shared loggers apply the log rule themselves.
