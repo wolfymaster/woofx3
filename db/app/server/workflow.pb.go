@@ -396,7 +396,11 @@ type ExecutionStep struct {
 	// Position in the execution order this run used. Recorded because that
 	// order is derived from the dependency graph and changes when the workflow
 	// is edited.
-	StepIndex     int32 `protobuf:"varint,13,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
+	StepIndex int32 `protobuf:"varint,13,opt,name=step_index,json=stepIndex,proto3" json:"step_index,omitempty"`
+	// The step row's own id: one row per (execution, step, attempt).
+	Id            string                 `protobuf:"bytes,14,opt,name=id,proto3" json:"id,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -506,6 +510,27 @@ func (x *ExecutionStep) GetStepIndex() int32 {
 		return x.StepIndex
 	}
 	return 0
+}
+
+func (x *ExecutionStep) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ExecutionStep) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *ExecutionStep) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
 }
 
 // Request to create a new workflow
@@ -1943,7 +1968,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06R\x0eapplication_id\"\x9f\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06R\x0eapplication_id\"\xa5\x04\n" +
 	"\rExecutionStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -1960,7 +1985,12 @@ const file_workflow_proto_rawDesc = "" +
 	"inputsJson\x12!\n" +
 	"\foutputs_json\x18\f \x01(\tR\voutputsJson\x12\x1d\n" +
 	"\n" +
-	"step_index\x18\r \x01(\x05R\tstepIndexJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x06inputsR\aoutputs\"\xfd\x04\n" +
+	"step_index\x18\r \x01(\x05R\tstepIndex\x12\x0e\n" +
+	"\x02id\x18\x0e \x01(\tR\x02id\x129\n" +
+	"\n" +
+	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x06inputsR\aoutputs\"\xfd\x04\n" +
 	"\x15CreateWorkflowRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x18\n" +
@@ -2184,54 +2214,56 @@ var file_workflow_proto_depIdxs = []int32{
 	2,  // 9: workflow.WorkflowExecution.steps:type_name -> workflow.ExecutionStep
 	27, // 10: workflow.ExecutionStep.started_at:type_name -> google.protobuf.Timestamp
 	27, // 11: workflow.ExecutionStep.completed_at:type_name -> google.protobuf.Timestamp
-	23, // 12: workflow.CreateWorkflowRequest.variables:type_name -> workflow.CreateWorkflowRequest.VariablesEntry
-	28, // 13: workflow.WorkflowResponse.status:type_name -> common.ResponseStatus
-	0,  // 14: workflow.WorkflowResponse.workflow:type_name -> workflow.Workflow
-	24, // 15: workflow.UpdateWorkflowRequest.variables:type_name -> workflow.UpdateWorkflowRequest.VariablesEntry
-	28, // 16: workflow.ListWorkflowsResponse.status:type_name -> common.ResponseStatus
-	0,  // 17: workflow.ListWorkflowsResponse.workflows:type_name -> workflow.Workflow
-	25, // 18: workflow.ExecuteWorkflowRequest.inputs:type_name -> workflow.ExecuteWorkflowRequest.InputsEntry
-	28, // 19: workflow.ExecuteWorkflowResponse.status:type_name -> common.ResponseStatus
-	26, // 20: workflow.ExecuteWorkflowResponse.outputs:type_name -> workflow.ExecuteWorkflowResponse.OutputsEntry
-	28, // 21: workflow.WorkflowExecutionResponse.status:type_name -> common.ResponseStatus
-	1,  // 22: workflow.WorkflowExecutionResponse.execution:type_name -> workflow.WorkflowExecution
-	27, // 23: workflow.ListWorkflowExecutionsRequest.from:type_name -> google.protobuf.Timestamp
-	27, // 24: workflow.ListWorkflowExecutionsRequest.to:type_name -> google.protobuf.Timestamp
-	28, // 25: workflow.ListWorkflowExecutionsResponse.status:type_name -> common.ResponseStatus
-	1,  // 26: workflow.ListWorkflowExecutionsResponse.executions:type_name -> workflow.WorkflowExecution
-	27, // 27: workflow.RecordWorkflowRunRequest.started_at:type_name -> google.protobuf.Timestamp
-	27, // 28: workflow.UpdateWorkflowRunStatusRequest.completed_at:type_name -> google.protobuf.Timestamp
-	27, // 29: workflow.RecordWorkflowRunStepRequest.started_at:type_name -> google.protobuf.Timestamp
-	27, // 30: workflow.RecordWorkflowRunStepRequest.completed_at:type_name -> google.protobuf.Timestamp
-	3,  // 31: workflow.WorkflowService.CreateWorkflow:input_type -> workflow.CreateWorkflowRequest
-	4,  // 32: workflow.WorkflowService.GetWorkflow:input_type -> workflow.GetWorkflowRequest
-	6,  // 33: workflow.WorkflowService.UpdateWorkflow:input_type -> workflow.UpdateWorkflowRequest
-	7,  // 34: workflow.WorkflowService.DeleteWorkflow:input_type -> workflow.DeleteWorkflowRequest
-	8,  // 35: workflow.WorkflowService.ListWorkflows:input_type -> workflow.ListWorkflowsRequest
-	10, // 36: workflow.WorkflowService.ExecuteWorkflow:input_type -> workflow.ExecuteWorkflowRequest
-	12, // 37: workflow.WorkflowService.GetWorkflowExecution:input_type -> workflow.GetWorkflowExecutionRequest
-	14, // 38: workflow.WorkflowService.ListWorkflowExecutions:input_type -> workflow.ListWorkflowExecutionsRequest
-	19, // 39: workflow.WorkflowService.CancelWorkflowExecution:input_type -> workflow.CancelWorkflowExecutionRequest
-	16, // 40: workflow.WorkflowService.RecordWorkflowRun:input_type -> workflow.RecordWorkflowRunRequest
-	17, // 41: workflow.WorkflowService.UpdateWorkflowRunStatus:input_type -> workflow.UpdateWorkflowRunStatusRequest
-	18, // 42: workflow.WorkflowService.RecordWorkflowRunStep:input_type -> workflow.RecordWorkflowRunStepRequest
-	5,  // 43: workflow.WorkflowService.CreateWorkflow:output_type -> workflow.WorkflowResponse
-	5,  // 44: workflow.WorkflowService.GetWorkflow:output_type -> workflow.WorkflowResponse
-	5,  // 45: workflow.WorkflowService.UpdateWorkflow:output_type -> workflow.WorkflowResponse
-	28, // 46: workflow.WorkflowService.DeleteWorkflow:output_type -> common.ResponseStatus
-	9,  // 47: workflow.WorkflowService.ListWorkflows:output_type -> workflow.ListWorkflowsResponse
-	11, // 48: workflow.WorkflowService.ExecuteWorkflow:output_type -> workflow.ExecuteWorkflowResponse
-	13, // 49: workflow.WorkflowService.GetWorkflowExecution:output_type -> workflow.WorkflowExecutionResponse
-	15, // 50: workflow.WorkflowService.ListWorkflowExecutions:output_type -> workflow.ListWorkflowExecutionsResponse
-	28, // 51: workflow.WorkflowService.CancelWorkflowExecution:output_type -> common.ResponseStatus
-	13, // 52: workflow.WorkflowService.RecordWorkflowRun:output_type -> workflow.WorkflowExecutionResponse
-	13, // 53: workflow.WorkflowService.UpdateWorkflowRunStatus:output_type -> workflow.WorkflowExecutionResponse
-	28, // 54: workflow.WorkflowService.RecordWorkflowRunStep:output_type -> common.ResponseStatus
-	43, // [43:55] is the sub-list for method output_type
-	31, // [31:43] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	27, // 12: workflow.ExecutionStep.created_at:type_name -> google.protobuf.Timestamp
+	27, // 13: workflow.ExecutionStep.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 14: workflow.CreateWorkflowRequest.variables:type_name -> workflow.CreateWorkflowRequest.VariablesEntry
+	28, // 15: workflow.WorkflowResponse.status:type_name -> common.ResponseStatus
+	0,  // 16: workflow.WorkflowResponse.workflow:type_name -> workflow.Workflow
+	24, // 17: workflow.UpdateWorkflowRequest.variables:type_name -> workflow.UpdateWorkflowRequest.VariablesEntry
+	28, // 18: workflow.ListWorkflowsResponse.status:type_name -> common.ResponseStatus
+	0,  // 19: workflow.ListWorkflowsResponse.workflows:type_name -> workflow.Workflow
+	25, // 20: workflow.ExecuteWorkflowRequest.inputs:type_name -> workflow.ExecuteWorkflowRequest.InputsEntry
+	28, // 21: workflow.ExecuteWorkflowResponse.status:type_name -> common.ResponseStatus
+	26, // 22: workflow.ExecuteWorkflowResponse.outputs:type_name -> workflow.ExecuteWorkflowResponse.OutputsEntry
+	28, // 23: workflow.WorkflowExecutionResponse.status:type_name -> common.ResponseStatus
+	1,  // 24: workflow.WorkflowExecutionResponse.execution:type_name -> workflow.WorkflowExecution
+	27, // 25: workflow.ListWorkflowExecutionsRequest.from:type_name -> google.protobuf.Timestamp
+	27, // 26: workflow.ListWorkflowExecutionsRequest.to:type_name -> google.protobuf.Timestamp
+	28, // 27: workflow.ListWorkflowExecutionsResponse.status:type_name -> common.ResponseStatus
+	1,  // 28: workflow.ListWorkflowExecutionsResponse.executions:type_name -> workflow.WorkflowExecution
+	27, // 29: workflow.RecordWorkflowRunRequest.started_at:type_name -> google.protobuf.Timestamp
+	27, // 30: workflow.UpdateWorkflowRunStatusRequest.completed_at:type_name -> google.protobuf.Timestamp
+	27, // 31: workflow.RecordWorkflowRunStepRequest.started_at:type_name -> google.protobuf.Timestamp
+	27, // 32: workflow.RecordWorkflowRunStepRequest.completed_at:type_name -> google.protobuf.Timestamp
+	3,  // 33: workflow.WorkflowService.CreateWorkflow:input_type -> workflow.CreateWorkflowRequest
+	4,  // 34: workflow.WorkflowService.GetWorkflow:input_type -> workflow.GetWorkflowRequest
+	6,  // 35: workflow.WorkflowService.UpdateWorkflow:input_type -> workflow.UpdateWorkflowRequest
+	7,  // 36: workflow.WorkflowService.DeleteWorkflow:input_type -> workflow.DeleteWorkflowRequest
+	8,  // 37: workflow.WorkflowService.ListWorkflows:input_type -> workflow.ListWorkflowsRequest
+	10, // 38: workflow.WorkflowService.ExecuteWorkflow:input_type -> workflow.ExecuteWorkflowRequest
+	12, // 39: workflow.WorkflowService.GetWorkflowExecution:input_type -> workflow.GetWorkflowExecutionRequest
+	14, // 40: workflow.WorkflowService.ListWorkflowExecutions:input_type -> workflow.ListWorkflowExecutionsRequest
+	19, // 41: workflow.WorkflowService.CancelWorkflowExecution:input_type -> workflow.CancelWorkflowExecutionRequest
+	16, // 42: workflow.WorkflowService.RecordWorkflowRun:input_type -> workflow.RecordWorkflowRunRequest
+	17, // 43: workflow.WorkflowService.UpdateWorkflowRunStatus:input_type -> workflow.UpdateWorkflowRunStatusRequest
+	18, // 44: workflow.WorkflowService.RecordWorkflowRunStep:input_type -> workflow.RecordWorkflowRunStepRequest
+	5,  // 45: workflow.WorkflowService.CreateWorkflow:output_type -> workflow.WorkflowResponse
+	5,  // 46: workflow.WorkflowService.GetWorkflow:output_type -> workflow.WorkflowResponse
+	5,  // 47: workflow.WorkflowService.UpdateWorkflow:output_type -> workflow.WorkflowResponse
+	28, // 48: workflow.WorkflowService.DeleteWorkflow:output_type -> common.ResponseStatus
+	9,  // 49: workflow.WorkflowService.ListWorkflows:output_type -> workflow.ListWorkflowsResponse
+	11, // 50: workflow.WorkflowService.ExecuteWorkflow:output_type -> workflow.ExecuteWorkflowResponse
+	13, // 51: workflow.WorkflowService.GetWorkflowExecution:output_type -> workflow.WorkflowExecutionResponse
+	15, // 52: workflow.WorkflowService.ListWorkflowExecutions:output_type -> workflow.ListWorkflowExecutionsResponse
+	28, // 53: workflow.WorkflowService.CancelWorkflowExecution:output_type -> common.ResponseStatus
+	13, // 54: workflow.WorkflowService.RecordWorkflowRun:output_type -> workflow.WorkflowExecutionResponse
+	13, // 55: workflow.WorkflowService.UpdateWorkflowRunStatus:output_type -> workflow.WorkflowExecutionResponse
+	28, // 56: workflow.WorkflowService.RecordWorkflowRunStep:output_type -> common.ResponseStatus
+	45, // [45:57] is the sub-list for method output_type
+	33, // [33:45] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_workflow_proto_init() }
