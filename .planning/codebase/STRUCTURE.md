@@ -31,8 +31,7 @@ woofx3/                          # Root monorepo
 ├── process-compose.yml          # Service Orchestration
 ├── Caddyfile                    # Reverse Proxy Config
 ├── mise.toml                    # Pinned Toolchains
-├── biome.json                   # Code Formatter Config
-└── axogen.config.ts             # Environment Generator
+└── biome.json                   # Code Formatter Config
 ```
 
 ## Service Directory Structure
@@ -198,7 +197,6 @@ wooflow/
 | `process-compose.yml` | Service orchestration |
 | `mise.toml` | Pinned toolchains |
 | `biome.json` | Code formatting rules |
-| `axogen.config.ts` | Environment variable generation |
 | `Caddyfile` | Reverse proxy configuration |
 | `.env.vault` | Encrypted environment variables |
 
