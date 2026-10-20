@@ -16,9 +16,6 @@
       "!modules",
       "!barkloader/lib_module/fixtures",
       "!barkloader/perf",
-      "!sceneManager/public/scene-manager/index.js",
-      "!sceneManager/public/scene-manager/composition-preview-page.js",
-      "!sceneManager/public/widget-host-shim.js",
       "!shared/clients/typescript/module-sdk/dist"
     ]
   },
