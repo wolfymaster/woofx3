@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AssetCache, readAheadAssetPaths } from "../../public/scene-manager/asset-loader";
+import { AssetCache, readAheadAssetPaths } from "../page/asset-loader";
 
 const ORIGIN = "http://scene.test";
 

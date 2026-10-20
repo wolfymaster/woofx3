@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { type SceneManagerRuntimeConfig, validateConfig } from "../src/config";
-import { WIDGET_HOST_SHIM_FILE } from "../src/scene/frame-assembler";
 
 // The shim is a build output, absent from a checkout that has not built it;
 // validation checks it is there, so the config points at a directory that has one.

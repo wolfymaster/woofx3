@@ -13,6 +13,7 @@ import {
   stableModuleKey,
   storedWidgetId,
 } from "@woofx3/scene/model";
+import { selectedThemeId } from "../../contract/scene-config";
 import { frameDocumentUrl, UNAVAILABLE_VERSION } from "./frame-catalog";
 import type {
   OverlaySceneLayout,
@@ -22,7 +23,6 @@ import type {
   StoredColumn,
 } from "./scene-host";
 import type { WidgetCatalog } from "./widget-catalog";
-import { selectedThemeId } from "./widget-theme";
 
 export class SceneRowReader {
   private readonly bundleUrlWarned = new Set<string>();

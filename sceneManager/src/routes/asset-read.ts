@@ -24,7 +24,7 @@ function storagePathOf(url: URL): string {
 /**
  * `GET /assets/read/{key}`: the bytes of the stored file `/assets/{key}`
  * names, for an overlay page to hand a widget that asked for them (see
- * public/scene-manager/asset-loader.ts).
+ * @woofx3/widget-host's page/asset-loader.ts).
  *
  * `/assets/{key}` answers with a redirect to presigned storage, which an
  * `<img>` follows without asking anyone. A script reading the bytes cannot:

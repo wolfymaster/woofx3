@@ -16,7 +16,7 @@ import type { WidgetBehaviorState } from "@woofx3/module-sdk";
 import type { BehaviorId, CompositionDocument, NodeId } from "@woofx3/scene/model";
 import { isHostKind, sameValue } from "@woofx3/scene/model";
 import type { DelegatedBehavior, DelegateRequest } from "@woofx3/scene/runtime";
-import { BROWSER_HOST, type PageLog } from "./page-host";
+import { BROWSER_HOST, type PageLog } from "@woofx3/widget-host/page";
 
 /**
  * What the widget is told for a delegation, or null for one the protocol

@@ -10,19 +10,27 @@
 import { encodePlacementBoot, type WidgetBehaviorState } from "@woofx3/module-sdk";
 import { declaresKind, NO_DECLARED_KINDS, PROFILES } from "@woofx3/scene/model";
 import { createDomRenderer, createScheduler, type Scheduler, type SchedulerClock } from "@woofx3/scene/runtime";
+import {
+  AssetCache,
+  EventQueueManager,
+  mountWidgetFrame,
+  type PageHost,
+  type QueueRegistration,
+  toWidgetEvent,
+  type WidgetBridge,
+  type WidgetBridgeCallbacks,
+  type WidgetStatusReportPayload,
+} from "@woofx3/widget-host/page";
 import { earliestMediaProxyExpiry } from "../../contract/media-url";
 import { ackPath, type DeliveryFrame } from "../../contract/overlay-stream";
 import { type SceneConfig, themeOf, type WidgetPlacementConfig } from "../../contract/scene-config";
 import { AckBatcher, DEFAULT_ACK_RETRY, postAck } from "./ack-batcher";
 import { AlertAreas } from "./alert-areas";
-import { AssetCache } from "./asset-loader";
 import { ConnectionStatus } from "./connection-status";
 import { DraftPreview } from "./draft-preview";
-import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "./event-queue";
 import { SceneEventSource } from "./event-source";
 import { swapFrameIn } from "./frame-swap";
 import { ModuleStateCache } from "./module-state";
-import type { PageHost } from "./page-host";
 import { transientOfPreviewLayout } from "./preview-layout";
 import type { ReconnectCoordinator } from "./reconnect-coordinator";
 import { applySceneBackground } from "./scene-background";
@@ -31,8 +39,6 @@ import { SceneSync, type SceneView } from "./scene-sync";
 import { planSceneUpdate, settingsUpdate } from "./scene-update";
 import { startSessionRefresh } from "./session-refresh";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
-import type { WidgetBridge, WidgetBridgeCallbacks, WidgetStatusReportPayload } from "./widget-bridge";
-import { mountWidgetFrame } from "./widget-frame";
 
 /** Under `SESSION_TOKEN_TTL_SECONDS` (60 s, session-token.ts), so a session is renewed before it lapses. */
 const REFRESH_INTERVAL_MS = 50_000;

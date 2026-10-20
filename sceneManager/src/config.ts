@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
-import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
 
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),

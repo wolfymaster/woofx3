@@ -17,7 +17,7 @@ export interface StatusReport {
 /**
  * Record a widget's status report. Every report, the built-in alert
  * widget's included, is a uniform `widget_status` upsert: queueing is the
- * browser's per-widget policy (`public/scene-manager/event-queue.ts`), so
+ * browser's per-widget policy (`@woofx3/widget-host`'s `page/event-queue.ts`), so
  * no report is routed anywhere by its key.
  */
 export async function handleStatusReport(db: DbClient, logger: Logger, report: StatusReport): Promise<void> {

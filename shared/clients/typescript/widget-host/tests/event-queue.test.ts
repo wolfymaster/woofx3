@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { EventQueueManager, toWidgetEvent } from "../../public/scene-manager/event-queue";
+import { EventQueueManager, toWidgetEvent } from "../page/event-queue";
 
 function item(eventId: string, value: unknown = null) {
   return { eventId, type: "widget.event", key: "count", value };

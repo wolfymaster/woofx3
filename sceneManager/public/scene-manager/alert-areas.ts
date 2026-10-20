@@ -3,12 +3,17 @@
 // and acknowledging each as it starts and finishes.
 
 import type { SchedulerClock } from "@woofx3/scene/runtime";
+import {
+  type AssetCache,
+  BROWSER_HOST,
+  type EventQueueManager,
+  type PageHost,
+  type QueueRegistration,
+  type WidgetBridge,
+  type WidgetStatusReportPayload,
+} from "@woofx3/widget-host/page";
 import { AlertWidget, type AlertWidgetOptions } from "./alert-widget";
-import type { AssetCache } from "./asset-loader";
-import type { EventQueueManager, QueueRegistration } from "./event-queue";
 import { PAGE_CLOCK } from "./page-clock";
-import { BROWSER_HOST, type PageHost } from "./page-host";
-import type { WidgetBridge, WidgetStatusReportPayload } from "./widget-bridge";
 
 /** What the page plays an area's alerts with: an `AlertWidget`. */
 export type AlertArea = Pick<AlertWidget, "play" | "stop" | "dispose" | "readAhead">;

@@ -63,6 +63,7 @@ jobs:
             shared/clients/typescript/nats \
             shared/clients/typescript/twitch \
             shared/clients/typescript/module-sdk \
+            shared/clients/typescript/widget-host \
             ${{ matrix.service }}
           do
             echo "::group::bun install ($dir)"
@@ -97,4 +98,17 @@ jobs:
 
       - name: Test
         working-directory: ${{ matrix.service }}
+        run: bun test
+
+      # The overlay page's frame and bridge code lives in its own package, so
+      # the author preview can host widgets with it too; it is checked with
+      # the service that serves it.
+      - name: Type check the widget-host package
+        if: matrix.service == 'sceneManager'
+        working-directory: shared/clients/typescript/widget-host
+        run: bun run typecheck
+
+      - name: Test the widget-host package
+        if: matrix.service == 'sceneManager'
+        working-directory: shared/clients/typescript/widget-host
         run: bun test

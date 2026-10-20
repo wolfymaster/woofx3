@@ -15,6 +15,8 @@ import {
   NO_DECLARED_KINDS,
 } from "@woofx3/scene/model";
 import { fitCanvas, isPreviewMessage, type PreviewProblem, type PreviewReport } from "@woofx3/scene/runtime";
+import { AssetCache, mountWidgetFrame, type WidgetBridge } from "@woofx3/widget-host/page";
+import { replaceMediaUrls } from "../../contract/media-url";
 import {
   createCompositionPreview,
   type FrameResolution,
@@ -23,12 +25,8 @@ import {
   type PreviewFrameMeta,
   type PreviewFrameSpec,
 } from "./composition-preview";
-import { AssetCache } from "./asset-loader";
-import { replaceMediaUrls } from "../../contract/media-url";
 import { PAGE_CLOCK } from "./page-clock";
 import { startSessionRefresh } from "./session-refresh";
-import type { WidgetBridge } from "./widget-bridge";
-import { mountWidgetFrame } from "./widget-frame";
 
 /** Must match the routes in sceneManager's routes/composition-preview.ts. */
 const FRAMES_PATH = "/preview/composition/frames";

@@ -11,10 +11,14 @@ import {
   type ShimParentWindow,
   type ShimWindow,
 } from "@woofx3/module-sdk/src/widget-host-shim";
-import { AssetCache } from "../../public/scene-manager/asset-loader";
-import { EventQueueManager, type QueueRegistration, toWidgetEvent } from "../../public/scene-manager/event-queue";
+import {
+  AssetCache,
+  EventQueueManager,
+  type QueueRegistration,
+  toWidgetEvent,
+  WidgetBridge,
+} from "@woofx3/widget-host/page";
 import { ModuleStateCache } from "../../public/scene-manager/module-state";
-import { WidgetBridge } from "../../public/scene-manager/widget-bridge";
 import {
   drain,
   type HarnessFactory,

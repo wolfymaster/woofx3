@@ -1,8 +1,8 @@
 // P1 — `woofx3.widget` v1: the widget <-> scene-manager postMessage
 // protocol. The widget side is implemented by `widget-host-shim.ts`
 // (built to a classic-script IIFE and injected into every assembled
-// widget frame); the parent side is the scene manager's widget bridge
-// (sceneManager/public/scene-manager/widget-bridge.ts). Both sides import
+// widget frame); the parent side is the widget host's bridge
+// (shared/clients/typescript/widget-host/page/widget-bridge.ts). Both sides import
 // these types — this file is the single source of truth for the wire
 // shape.
 //
@@ -11,8 +11,8 @@
 // carrying its `supportedVersions`. Unknown message `type`s are
 // ignored by both sides (forward compatibility).
 
-import { isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
 import { isWidgetAssetErrorCode, type WidgetAssetErrorCode } from "./widget-assets";
+import { isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
 import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";

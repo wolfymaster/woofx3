@@ -8,7 +8,7 @@
 // failing either check are silently dropped.
 //
 // Module storage (`storage.get`/`storage.subscribe`) is answered by the
-// page's ModuleStateCache (module-state.ts) for scene placements, through
+// overlay page's ModuleStateCache (the scene manager's module-state.ts) for scene placements, through
 // the `storage` callbacks. Alert and preview widgets are given none: their
 // `init` leaves "storage" out, `storage.get` answers `null`, and
 // subscriptions never fire. Which module's storage is read is the page's
