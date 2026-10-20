@@ -1,6 +1,9 @@
 import type {
   ConfigBundle,
   ConfigImportOptions,
+  EngineEventSubscribeOptions,
+  EngineEventSubscriber,
+  EngineRequestAnswer,
   MarketplaceInstallRequest,
   RelayConfig,
   StreamEventSubscriber,
@@ -64,6 +67,16 @@ export class ApiSession extends RpcTarget {
   /** The session is the registration's key, so a second call replaces the first. */
   async subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]) {
     return this.api.subscribeStreamEvents(callback, types, { session: this });
+  }
+
+  /** Keyed on the session like `subscribeStreamEvents`; the client id decides what it receives. */
+  async subscribeEngineEvents(callback: EngineEventSubscriber, options?: EngineEventSubscribeOptions) {
+    return this.api.subscribeEngineEvents(callback, options, { session: this, clientId: this.clientId });
+  }
+
+  /** A client answers only the requests sent to it, so the session supplies its client id. */
+  async answerEngineRequest(requestId: string, answer: EngineRequestAnswer) {
+    return this.api.answerEngineRequest(requestId, answer, { clientId: this.clientId });
   }
 
   async setRelayConfig(config: RelayConfig | null) {
@@ -273,6 +286,8 @@ export const RPC_METHODS = [
   "cancelWorkflow",
   "subscribeTriggerChanges",
   "subscribeStreamEvents",
+  "subscribeEngineEvents",
+  "answerEngineRequest",
   "listEvents",
   "getEventLogSettings",
   "setEventLogSelection",

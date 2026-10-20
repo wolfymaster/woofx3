@@ -191,6 +191,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     }
 
     const engineEventStream = new EngineEventStream(logger);
+    api.setEngineEventStream(engineEventStream);
     const webhookClient = new WebhookClient(db, logger, engineEventStream);
     api.setWebhookClient(webhookClient);
     try {

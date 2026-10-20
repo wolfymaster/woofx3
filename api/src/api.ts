@@ -1,3 +1,4 @@
+import type { EngineEventStream } from "./engine-event-stream";
 import type { EventLogSelectionSource } from "./event-log-selection";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
 import { type ApiOptions, ApiRouteHost } from "./routes/context";
@@ -54,6 +55,10 @@ export class Api extends ApiRouteHost {
 
   setEventLogSelectionSource(source: EventLogSelectionSource): void {
     this.eventLogSelection = source;
+  }
+
+  setEngineEventStream(stream: EngineEventStream): void {
+    this.engineEventStream = stream;
   }
 }
 
