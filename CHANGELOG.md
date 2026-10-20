@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.0](https://github.com/wolfymaster/woofx3/compare/v0.36.0...v0.37.0) (2026-10-20)
+
+### Features
+
+* **orchestrator:** copy existing data into a new data directory ([e97fba9](https://github.com/wolfymaster/woofx3/commit/e97fba903d1463b6c54afecdf44452c4533a1485))
+
+### Bug Fixes
+
+* **deps:** upgrade the root zod to 4.6.6 ([1efe20a](https://github.com/wolfymaster/woofx3/commit/1efe20a8cc03fedfbce168d8c2702290f992da2f))
+* **deps:** upgrade zod to 4 in api, sceneManager, woofwoofwoof and runtime ([a3b4c64](https://github.com/wolfymaster/woofx3/commit/a3b4c647edd94e083c9ade7e90718f619f7ca351))
+* twitch/package.json & twitch/package-lock.json to reduce vulnerabilities ([a34593c](https://github.com/wolfymaster/woofx3/commit/a34593c3e3534e7602dd366604da826e77e841fd))
+
 ## [0.36.0](https://github.com/wolfymaster/woofx3/compare/v0.35.0...v0.36.0) (2026-10-19)
 
 ### Features
