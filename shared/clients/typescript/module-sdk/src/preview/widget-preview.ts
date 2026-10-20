@@ -1,9 +1,7 @@
-// Mock `widgetHost` implementation for offline widget development.
-//
-// Widget authors can install it inside their own bundle for unit tests
-// (`createMockHost(...).install()`), or use the bundled
-// `widget-preview.html` harness (which loads any widget URL with this
-// shim already wired up).
+// Mock `widgetHost` implementation for unit-testing widget code: install it
+// inside a test (`createMockHost(...).install()`) and drive the widget
+// through it. To see a widget run in a browser against the real host, use
+// the widget-host package's preview server.
 //
 // It behaves as a widget's host does on stream: the widget host shim talking
 // to the scene manager's overlay page. Storage is seen only once watched, a
@@ -32,10 +30,6 @@ import {
   widgetMayRead,
 } from "../widget-assets";
 import { type EventQueueConfig, WIDGET_CAPABILITIES, type WidgetCapability } from "../widget-protocol";
-
-/** Re-exported so the preview harness can apply a widget's setting bindings
- *  the way the widget host shim does. */
-export { applySettingBindings } from "../widget-bindings";
 
 export interface MockHostOptions {
   /** Module id surfaced as `widgetHost.moduleId`. */

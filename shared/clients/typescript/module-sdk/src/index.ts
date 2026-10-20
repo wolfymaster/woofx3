@@ -6,8 +6,8 @@
 // JS function authors reference the ctx surface via a triple-slash:
 //   /// <reference types="@woofx3/module-sdk/function-ctx" />
 //
-// The widget preview helper (mock host for offline development) lives
-// at "@woofx3/module-sdk/preview" — see preview/widget-preview.ts.
+// The mock host for unit-testing widgets lives at
+// "@woofx3/module-sdk/preview" — see preview/widget-preview.ts.
 
 export type {
   DeliveredWidgetEvent,
