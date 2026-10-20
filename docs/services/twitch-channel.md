@@ -282,6 +282,84 @@ broadcaster, which is the linked account unless `woofx3TwitchChannelName`
 names another channel; a call for another channel has no token to use and
 fails.
 
+## Device login
+
+An engine with no dashboard to run Twitch OAuth for it (an engine in local
+mode, under the desktop app) links Twitch itself with Twitch's
+[Device Code Grant](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
+The streamer is shown a short code and a Twitch page to enter it on; the
+engine waits for them to approve and stores the token. Engines advertise it
+with the `twitch.deviceLogin` capability.
+
+### The public Twitch app
+
+A device login uses the engine's **public** Twitch app, named by
+`WOOFX3_TWITCH_PUBLIC_CLIENT_ID` (`woofx3TwitchPublicClientId` in
+`.woofx3.json`). It is a client id and nothing else: a public app has no
+secret, so nothing secret ships with an engine that runs on a streamer's own
+machine. It is separate from the confidential app
+(`WOOFX3_TWITCH_CLIENT_ID` and `WOOFX3_TWITCH_CLIENT_SECRET`), which has a
+secret and cannot be used for a device login. The value must be letters and
+digits; anything else stops the api at startup. Without it the device login
+methods answer `not_configured` and do nothing else.
+
+The woofx3 public Twitch app must be registered in the Twitch developer
+console with the **Public** client type. Twitch refreshes a confidential
+app's tokens only with its secret, which an engine does not have, so a device
+login made with one would stop working when its first token expired.
+
+### The methods
+
+```ts
+startTwitchDeviceLogin(scopes?: string[]): Promise<TwitchDeviceLoginStartResult>;
+getTwitchDeviceLogin(loginId: string): Promise<TwitchDeviceLoginStateResult>;
+cancelTwitchDeviceLogin(loginId: string): Promise<{ cancelled: boolean }>;
+```
+
+The types are in `shared/clients/typescript/api/twitch-device-login.ts`; the
+logins are `TwitchDeviceLogins` (`api/src/twitch-device-login.ts`).
+
+- `startTwitchDeviceLogin` asks Twitch for a device code and answers
+  `{ ok: true, login: { loginId, userCode, verificationUri, expiresAt } }`.
+  The client shows `userCode` and `verificationUri`, and nothing more: the
+  engine polls Twitch itself. `scopes` defaults to the engine's own set,
+  `TWITCH_ENGINE_SCOPES` (`shared/clients/typescript/twitch/scopes.ts`), which
+  matches the scopes a dashboard's Twitch connect asks for. A refusal is a
+  result, not an error: `not_configured`, `invalid_scopes` (an empty list or
+  a name that is not a Twitch scope), or `failed` (Twitch refused or could not
+  be reached).
+- `getTwitchDeviceLogin` answers the login's `status`: `pending`, `linked`
+  (with the linked account's `userId` and `login`), `expired`, `denied` or
+  `failed`, with a `reason` for every ending other than `linked`. `not_found`
+  means the engine has no login by that id.
+- `cancelTwitchDeviceLogin` stops the login and forgets it.
+
+An engine has one Twitch link, so it runs one login at a time: starting a
+login replaces the one before it, which stops polling and is forgotten. A
+finished login's outcome can be read until the next login starts.
+
+### Polling
+
+The engine polls `POST /oauth2/token` every `interval` seconds Twitch gave.
+A `slow_down` answer adds five seconds to the interval for the rest of the
+login. While Twitch cannot be reached or answers with a 5xx the login stays
+`pending`, its `reason` says why, and the engine retries with a backoff capped
+at a minute. The login ends `expired` when Twitch says so or its `expiresAt`
+passes, `denied` when the streamer refuses, and `failed` on any other
+refusal. Each poll is a timer the login owns: it stops when the login ends,
+is cancelled or replaced, or the api shuts down.
+
+### Linking
+
+When Twitch issues the token, the engine validates it (`GET /oauth2/validate`)
+to learn the linked user, and refuses one issued to any other app. It then
+stores it the way `setTwitchToken` stores a token: the `twitch_token` setting,
+then `setting.integration.token.updated`, so a waiting twitch service connects
+and a connected one reloads. The stored token has its refresh token and no
+`clientId`, so its strategy is `engineRefresh`, and its `publicClientId`
+names the public app that refreshes it (see
+[Who renews the token](#who-renews-the-token)).
+
 ## Ad breaks
 
 Mid-roll ads are the break viewers notice most. The engine gives a creator
@@ -358,9 +436,26 @@ holds it decides how the token is renewed:
   api service on the `engine.twitch.token` NATS subject
   (`DashboardAuthProvider`, `shared/clients/typescript/twitch`), and need no
   Twitch app credentials of their own.
-- **Any other token** is renewed by the engine itself, with its own Twitch app
-  (`WOOFX3_TWITCH_CLIENT_ID` and `WOOFX3_TWITCH_CLIENT_SECRET`), for an engine
-  run without a dashboard. The auth provider refreshes in the background and
+- **A token from a device login** (see [Device login](#device-login)) was
+  issued to the engine's public Twitch app and carries that app's id as
+  `publicClientId`, and its refresh token. A public app has no secret, and
+  Twitch makes its refresh tokens single-use: each refresh returns a new one
+  and the old one stops working. If two services refreshed the same token,
+  the second would spend a refresh token the first had already spent, and the
+  link would be lost. So the api service alone refreshes it
+  (`TwitchTokenSource.publicToken`), with the client id and no secret, and
+  writes the new access and refresh tokens together, as one `twitch_token`
+  value, before it hands the access token out. The twitch service and
+  woofwoofwoof ask the api service for it on `engine.twitch.token`, exactly as
+  for a dashboard's token. When Twitch refuses the refresh token, every ask
+  answers "link Twitch again", and the api service does not try that refresh
+  token again; the twitch service then cannot connect and reports not ready.
+  A refresh that cannot be stored is kept in memory and written again on the
+  next ask, because the refresh token in the stored row is already spent.
+- **Any other token** is renewed by the engine itself, with its own
+  confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID` and
+  `WOOFX3_TWITCH_CLIENT_SECRET`), for an engine run without a dashboard. The
+  auth provider refreshes in the background and
   writes each refresh back to `twitch_token`. It does not do so when the
   stored token has changed since it was loaded (different refresh token, or a
   later obtainment time): that is a relink the service has not applied yet,

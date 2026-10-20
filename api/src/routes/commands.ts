@@ -369,25 +369,11 @@ export const commandsRoutes = routeModule({
       throw new Error("A Twitch token from a dashboard needs the session's client id to renew it");
     }
     const stored = fromDashboard ? { ...token, dashboardClientId: context?.clientId } : token;
-    await this.db.setSetting("twitch_token", JSON.stringify(stored), engineUserId);
+    await this.storeTwitchToken(stored, engineUserId);
     this.logger.info("Twitch token written to settings", {
       twitchUserId: token.userId,
       engineUserId: engineUserId ?? "(unscoped)",
     });
-
-    // Notify in-process consumers (woofwoofwoof, future bots) that the
-    // integration token was rewritten so they can reload their
-    // RefreshingAuthProvider and pick up new scopes without a service
-    // restart. Best-effort — the row is already persisted, so a missed
-    // event just means a delayed pickup.
-    try {
-      await this.publishEvent("setting.integration.token.updated", {
-        integration: "twitch",
-      });
-    } catch (err) {
-      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
-    }
-
     return { ok: true };
   },
 

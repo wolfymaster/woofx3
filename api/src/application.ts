@@ -1,6 +1,7 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
+import type { Api } from "./api";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
 import type { EventCatalog } from "./event-catalog";
@@ -39,6 +40,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   private gaugeSampler: StreamGaugeSampler | null = null;
   private eventCatalog: EventCatalog | null = null;
   private eventLogSelection: EventLogSelectionSource | null = null;
+  private api: Api | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -173,7 +175,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       marketplace: config.marketplace
         ? new MarketplaceClient({ baseUrl: config.marketplace.url, downloadHosts: config.marketplace.downloadHosts })
         : null,
+      twitchPublicClientId: config.twitchPublicClientId,
     });
+    this.api = api;
 
     // Barkloader readiness for GET /ready, from the heartbeats every service
     // publishes. Without NATS nothing arrives, and /ready stays not-ready.
@@ -325,6 +329,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   }
 
   async terminate(): Promise<void> {
+    this.api?.twitchDeviceLogins.stop();
+    this.api = null;
     this.gaugeSampler?.stop();
     this.gaugeSampler = null;
     this.eventCatalog?.stop();

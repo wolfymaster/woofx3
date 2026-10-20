@@ -29,6 +29,7 @@ import { subscriptionsRoutes } from "./subscriptions";
 import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { triggersRoutes } from "./triggers";
 import { twitchRoutes } from "./twitch";
+import { twitchDeviceLoginRoutes } from "./twitch-device-login";
 import { userActionsRoutes } from "./user-actions";
 import { viewerFactsRoutes } from "./viewer-facts";
 import { workflowsRoutes } from "./workflows";
@@ -66,7 +67,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof moduleOAuthRoutes &
   typeof relayRoutes &
   typeof viewerFactsRoutes &
-  typeof twitchRoutes;
+  typeof twitchRoutes &
+  typeof twitchDeviceLoginRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -129,6 +131,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(moduleOAuthRoutes),
     instrumentRoutes(relayRoutes),
     instrumentRoutes(viewerFactsRoutes),
-    instrumentRoutes(twitchRoutes)
+    instrumentRoutes(twitchRoutes),
+    instrumentRoutes(twitchDeviceLoginRoutes)
   );
 }
