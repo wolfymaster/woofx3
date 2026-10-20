@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { selectStrategy } from "./token-strategy";
+import { publicClientIdOf, selectStrategy } from "./token-strategy";
 
 const ENGINE_TOKEN = {
   userId: "42",
@@ -33,5 +33,18 @@ describe("selectStrategy", () => {
 
   test("does not look at dashboardClientId", () => {
     expect(selectStrategy({ ...ENGINE_TOKEN, dashboardClientId: "dash-client" })).toBe("engineRefresh");
+  });
+});
+
+describe("publicClientIdOf", () => {
+  test("names the public app that issued a device login's token", () => {
+    expect(publicClientIdOf({ ...ENGINE_TOKEN, publicClientId: "public-app" })).toBe("public-app");
+  });
+
+  test("is null for any other token", () => {
+    expect(publicClientIdOf(ENGINE_TOKEN)).toBeNull();
+    expect(publicClientIdOf({ ...ENGINE_TOKEN, publicClientId: "" })).toBeNull();
+    // A dashboard's token is the dashboard's to renew, whatever else it holds.
+    expect(publicClientIdOf({ ...ENGINE_TOKEN, clientId: "dashboard-app", publicClientId: "public-app" })).toBeNull();
   });
 });

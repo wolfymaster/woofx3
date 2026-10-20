@@ -362,3 +362,38 @@ describe("a token not from a dashboard", () => {
     await expect(client.init()).rejects.toThrow("no Twitch app credentials");
   });
 });
+
+describe("a token from the engine's public Twitch app", () => {
+  const FROM_DEVICE_LOGIN = {
+    accessToken: "a1",
+    refreshToken: "r1",
+    scope: ["chat:read"],
+    expiresIn: 3600,
+    obtainmentTimestamp: Date.now(),
+    userId: "42",
+    publicClientId: "public-app",
+  };
+
+  test("is served by a provider that asks the api service, never refreshed here", async () => {
+    const requestToken = mock(async () => ({ ...FROM_DEVICE_LOGIN, refreshToken: null, clientId: "public-app" }));
+    const client = new TwitchClient({ getSetting: createGetSetting(JSON.stringify(FROM_DEVICE_LOGIN)), requestToken });
+    const provider = await client.init({
+      clientId: "own-app",
+      clientSecret: "secret",
+      redirectUri: "http://localhost",
+    });
+
+    expect(provider.clientId).toBe("public-app");
+    expect(lastRefreshingAuthCredentials).toBeUndefined();
+    const served = await provider.getAnyAccessToken();
+    expect(served.accessToken).toBe("a1");
+    // The single-use refresh token stays with the api service.
+    expect(served.refreshToken).toBeNull();
+    expect(requestToken).not.toHaveBeenCalled();
+  });
+
+  test("needs a way to ask the api service", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(JSON.stringify(FROM_DEVICE_LOGIN)) });
+    await expect(client.init()).rejects.toThrow("no requestToken");
+  });
+});

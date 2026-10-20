@@ -5,7 +5,9 @@
  *   refresh token and the app secret, so the engine asks that dashboard for a
  *   new token instead of refreshing.
  * - `engineRefresh`: the engine's own Twitch app issued it, and the engine
- *   refreshes it with its own app credentials.
+ *   refreshes it itself. A token from the engine's public app (a device
+ *   login, see `publicClientIdOf`) is refreshed by the api service alone; one
+ *   from a confidential app is refreshed with that app's credentials.
  *
  * Both the api service (`api/src/twitch-token-source.ts`) and the Twitch
  * client (`./index.ts`) pick the strategy with `selectStrategy`, so they can
@@ -27,4 +29,22 @@ export function selectStrategy(stored: object): TokenStrategy {
     return "dashboard";
   }
   return "engineRefresh";
+}
+
+/**
+ * The client id of the engine's public Twitch app when that app issued the
+ * stored token (a device login), or null for any other token.
+ *
+ * Such a token is `engineRefresh`, but its refresh tokens are single-use: if
+ * two services refreshed it, the second would spend a refresh token the first
+ * had already spent and lose the link. So the api service alone refreshes it,
+ * and every other service asks the api service for the current access token,
+ * as it does for a dashboard's.
+ */
+export function publicClientIdOf(stored: object): string | null {
+  if (selectStrategy(stored) !== "engineRefresh") {
+    return null;
+  }
+  const { publicClientId } = stored as { publicClientId?: unknown };
+  return typeof publicClientId === "string" && publicClientId !== "" ? publicClientId : null;
 }
