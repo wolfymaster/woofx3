@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Widget preview</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #14141a;
+    --panel: #1d1d24;
+    --line: #2a2a35;
+    --fg: #e6e6e6;
+    --muted: #8d8d97;
+    --accent: #7ad7ff;
+    --problem: #ff8a5b;
+    --status: #9be89b;
+    --event: #b48cff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, sans-serif; }
+  #app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  #stage-area { overflow: auto; padding: 16px; background: repeating-conic-gradient(#1a1a20 0% 25%, #101014 0% 50%) 0 0 / 24px 24px; }
+  #stage { position: relative; outline: 1px dashed var(--line); }
+  #stage .widget-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; }
+  #panel { display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); min-height: 0; }
+  #controls { overflow: auto; flex: 0 1 auto; max-height: 65vh; }
+  section { padding: 12px; border-bottom: 1px solid var(--line); }
+  h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .field { display: block; margin: 0 0 8px; }
+  .field > span { display: block; margin-bottom: 2px; color: #ccc; }
+  .field > small { display: block; color: var(--muted); }
+  .field.toggle { display: flex; align-items: center; gap: 8px; }
+  .field.toggle > span { margin: 0; }
+  input, select, textarea { width: 100%; padding: 4px 6px; background: #11111a; color: var(--fg); border: 1px solid #333; border-radius: 3px; font: inherit; }
+  input[type="checkbox"] { width: auto; }
+  textarea { font-family: ui-monospace, monospace; min-height: 64px; resize: vertical; }
+  button { margin-top: 4px; padding: 6px 10px; background: var(--accent); color: #000; border: 0; border-radius: 3px; cursor: pointer; font-weight: 600; }
+  button.ghost { background: var(--line); color: var(--fg); }
+  .muted { color: var(--muted); margin: 0; }
+  #problem { display: none; padding: 12px; color: var(--problem); white-space: pre-wrap; border-bottom: 1px solid var(--line); }
+  #problem.shown { display: block; }
+  #storage-entries { margin: 0 0 8px; padding: 0; list-style: none; font-family: ui-monospace, monospace; }
+  #log-area { display: flex; flex-direction: column; flex: 1 1 0; min-height: 120px; }
+  #log-area header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  #log-area header h2 { margin: 0; }
+  #log { flex: 1; overflow: auto; margin: 0; padding: 8px 12px; list-style: none; font: 12px/1.4 ui-monospace, monospace; background: #0a0a10; }
+  #log li { padding: 2px 0; border-bottom: 1px dashed #1f1f29; white-space: pre-wrap; word-break: break-word; }
+  #log .status { color: var(--status); }
+  #log .event { color: var(--event); }
+  #log .asset { color: var(--accent); }
+  #log .settings, #log .frame { color: var(--muted); }
+  #log .problem { color: var(--problem); }
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage-area"><div id="stage"></div></main>
+  <aside id="panel">
+    <div id="problem" role="alert"></div>
+    <div id="controls">
+      <section>
+        <h2 id="module-name">Widget</h2>
+        <div class="row">
+          <label class="field"><span>Widget</span><select id="widget"></select></label>
+          <label class="field"><span>Surface</span><select id="surface"></select></label>
+        </div>
+        <div class="row">
+          <label class="field"><span>Width</span><input id="width" type="number" min="1" value="640"></label>
+          <label class="field"><span>Height</span><input id="height" type="number" min="1" value="360"></label>
+        </div>
+      </section>
+      <section>
+        <h2>Settings</h2>
+        <form id="settings-form"><div id="settings"></div><button type="submit">Apply</button></form>
+      </section>
+      <section>
+        <h2>Module storage</h2>
+        <ul id="storage-entries"></ul>
+        <form id="storage-form">
+          <label class="field"><span>Key</span><input id="storage-key" required></label>
+          <label class="field"><span>Value (JSON)</span><textarea id="storage-value">0</textarea></label>
+          <button type="submit">Set</button>
+        </form>
+      </section>
+      <section>
+        <h2>Fire event</h2>
+        <form id="event-form">
+          <label class="field"><span>Type</span><input id="event-type" value="alert" required></label>
+          <label class="field"><span>Data (JSON)</span><textarea id="event-data">{ "userName": "alice" }</textarea></label>
+          <button type="submit">Fire</button>
+        </form>
+      </section>
+    </div>
+    <div id="log-area">
+      <header><h2>Log</h2><button id="clear-log" class="ghost" type="button">Clear</button></header>
+      <ul id="log"></ul>
+    </div>
+  </aside>
+</div>
+<!-- Must match PAGE_SCRIPT_PATH in protocol.ts. -->
+<script type="module" src="/preview.js"></script>
+</body>
+</html>
