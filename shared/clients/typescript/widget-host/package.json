@@ -11,9 +11,6 @@
     "./frame": "./frame/index.ts",
     "./page": "./page/index.ts"
   },
-  "dependencies": {
-    "@woofx3/module-sdk": "file:../module-sdk"
-  },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5.0.0"
