@@ -86,10 +86,11 @@ import {
   type SchedulerClock,
   type TransientOverrides,
 } from "@woofx3/scene/runtime";
+import { type SettingsReads, settingsUpdate } from "@woofx3/widget-host/page";
 import { type FrameSwap, swapFrameIn } from "./frame-swap";
 import { createPreviewClock, type PreviewClock } from "./preview-clock";
 import type { WidgetPlacementConfig } from "../../contract/scene-config";
-import { planSceneUpdate, type SettingsReads, settingsUpdate } from "./scene-update";
+import { planSceneUpdate } from "./scene-update";
 import { BehaviorRelay, behaviorStateOf, entranceOf } from "./widget-behaviors";
 
 /** How often the playhead is reported while playing. */

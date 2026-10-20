@@ -4,5 +4,6 @@
 export * from "./asset-loader";
 export * from "./event-queue";
 export * from "./page-host";
+export * from "./settings-update";
 export * from "./widget-bridge";
 export * from "./widget-frame";

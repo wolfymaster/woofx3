@@ -15,5 +15,5 @@
     "allowImportingTsExtensions": false,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["frame", "page", "tests"]
+  "include": ["frame", "page", "preview", "tests"]
 }

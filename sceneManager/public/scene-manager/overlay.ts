@@ -16,6 +16,7 @@ import {
   mountWidgetFrame,
   type PageHost,
   type QueueRegistration,
+  settingsUpdate,
   toWidgetEvent,
   type WidgetBridge,
   type WidgetBridgeCallbacks,
@@ -36,7 +37,7 @@ import type { ReconnectCoordinator } from "./reconnect-coordinator";
 import { applySceneBackground } from "./scene-background";
 import { compositionOfConfig, parseSnapshot } from "./scene-document";
 import { SceneSync, type SceneView } from "./scene-sync";
-import { planSceneUpdate, settingsUpdate } from "./scene-update";
+import { planSceneUpdate } from "./scene-update";
 import { startSessionRefresh } from "./session-refresh";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
 

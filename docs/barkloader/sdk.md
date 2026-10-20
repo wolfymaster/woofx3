@@ -4,8 +4,9 @@
 authors. Without it, the runtime objects the engine injects into your
 code (`ctx` for functions, `window.widgetHost` for widgets) are
 unstructured `any` in your editor — you write blind. With it, you get
-autocomplete, hover hints, type-checked widget code, and a local
-preview harness for UI iteration.
+autocomplete, hover hints, type-checked widget code, and a mock host
+for unit tests. A local preview server for widget UI ships beside it,
+in the widget-host package (see [Local widget preview](#local-widget-preview)).
 
 ## Why a package
 
@@ -238,8 +239,8 @@ what it draws from them. Hosts older than this call don't have it; check
 reloads as above. The built-in counter, timer and text widgets work this way.
 
 A change of theme always swaps the widget, because the theme is applied
-before it runs. In the preview harness, **Send to running widget** applies a
-settings change through the bindings the same way.
+before it runs. The [local preview](#local-widget-preview) applies a settings
+change the same way, patching it in or loading a fresh copy, and logs which.
 
 ### Fonts
 
@@ -301,7 +302,7 @@ sound.addEventListener("error", () => {
 });
 ```
 
-`host.theme` is `null` for a widget without a contract. Widget code is the same for every theme: with no theme selected, or one that is missing or no longer fits, every value is the contract default. `createMockHost({ theme })` in the preview helper lets you try a theme offline.
+`host.theme` is `null` for a widget without a contract. Widget code is the same for every theme: with no theme selected, or one that is missing or no longer fits, every value is the contract default. `createMockHost({ theme })` in the mock host lets a test try a theme; the [local preview](#local-widget-preview) renders the contract defaults.
 
 ### Playing in an alert
 
@@ -379,16 +380,28 @@ upstream NATS subjects), see [Widget event channel](../services/widget-events.md
 
 ## Local widget preview
 
-Iterate on a widget without running streamware:
+Iterate on a module's widgets without running the engine:
 
 ```bash
-open shared/clients/typescript/module-sdk/src/preview/widget-preview.html?widget=file:///$PWD/index.html
+bun shared/clients/typescript/widget-host/preview/cli.ts path/to/my-module
+# previewing My Module (2 widgets) at http://127.0.0.1:4400/
 ```
 
-The harness loads your bundle inside a mock `widgetHost`, gives you UI
-controls to fire events and mutate storage, and surfaces every
-`reportStatus` call in real time. Phase B of the SDK, see
-`src/preview/README.md` in the package.
+The preview hosts each widget the way an overlay hosts it installed: the frame
+document the engine builds from your entry, under the same sandbox and policy,
+booting the real widget host shim, with your files served under the path
+`widgetHost.getResourceUrl` and `widgetHost.assets.load` resolve. The page
+around the frame answers it with the overlay's own bridge and event queue. So
+a widget that fetches, reaches into its parent, or reads another module's
+files fails here as it would on stream.
+
+The page builds the settings form from your `settingsSchema` and applies an
+edit as an overlay does (see [Live settings](#live-settings)). You choose the
+surface, a scene or inside an alert, set module storage, and fire events; every
+`reportStatus`, event completion and file read is logged. The widget reloads
+whenever a file in the module's folder changes. A themeable widget renders with
+its contract defaults; there is no asset library, no installed theme and no
+linked resource. Details are in `shared/clients/typescript/widget-host/README.md`.
 
 ## Where to look
 

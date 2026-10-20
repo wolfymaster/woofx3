@@ -9,7 +9,6 @@
     "dist/",
     "src/function-ctx.d.ts",
     "src/function-ctx.lua",
-    "src/preview/widget-preview.html",
     "README.md"
   ],
   "exports": {
@@ -23,7 +22,6 @@
       "types": "./dist/preview/widget-preview.d.ts",
       "import": "./dist/preview/widget-preview.js"
     },
-    "./preview.html": "./src/preview/widget-preview.html",
     "./widget-host-shim.iife.js": "./dist/widget-host-shim.iife.js"
   },
   "scripts": {

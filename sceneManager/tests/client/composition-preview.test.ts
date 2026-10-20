@@ -13,6 +13,7 @@ import {
   type RenderElement,
   type RenderStyle,
 } from "@woofx3/scene/runtime";
+import type { SettingsReads } from "@woofx3/widget-host/page";
 import {
   createCompositionPreview,
   type FrameResolution,
@@ -26,7 +27,6 @@ import {
   SESSION_EXPIRED_DETAIL,
 } from "../../public/scene-manager/composition-preview-page";
 import { SWAP_TIMEOUT_MS } from "../../public/scene-manager/frame-swap";
-import type { SettingsReads } from "../../public/scene-manager/scene-update";
 
 class FakeAnimation implements RenderAnimation {
   startTime: CSSNumberish | null = null;
