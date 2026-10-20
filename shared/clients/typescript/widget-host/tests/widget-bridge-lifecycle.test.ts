@@ -1,11 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { PROTOCOL_VERSION, WIDGET_PROTOCOL } from "@woofx3/module-sdk";
-import { AssetLoadError, type LoadedAsset } from "../../public/scene-manager/asset-loader";
-import {
-  createFrameLoadHandler,
-  WidgetBridge,
-  type WidgetBridgeCallbacks,
-} from "../../public/scene-manager/widget-bridge";
+import { AssetLoadError, type LoadedAsset } from "../page/asset-loader";
+import { createFrameLoadHandler, WidgetBridge, type WidgetBridgeCallbacks } from "../page/widget-bridge";
 
 describe("createFrameLoadHandler", () => {
   it("ignores the first load so it cannot wipe a completed handshake", () => {

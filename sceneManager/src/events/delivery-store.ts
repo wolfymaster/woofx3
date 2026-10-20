@@ -52,7 +52,7 @@ function safeParseJson(value: string): unknown {
  * Durable, at-least-once scene event delivery — the transactional-
  * outbox pipeline described in scene_event.proto. Distinct from the browser's own per-widget dispatch
  * policy (retry timeout / max-in-flight / priority — see
- * public/scene-manager/event-queue.ts): this class only answers "did
+ * @woofx3/widget-host's page/event-queue.ts): this class only answers "did
  * the browser session see this event, and did each widget it fanned
  * out to finish handling it."
  *

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ServerMessage } from "@woofx3/api/scene-editor";
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
+import type { FrameTheme } from "@woofx3/widget-host/frame";
 import {
   earliestMediaProxyExpiry,
   externalMediaUrl,
@@ -29,7 +30,6 @@ import {
 } from "../../src/scene/media-proxy";
 import { type ItemReply, SceneDocuments, type SceneLoader } from "../../src/scene/scene-documents";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
-import type { FrameTheme } from "../../src/scene/widget-theme";
 import { eventAndData } from "../helpers/stream-frames";
 
 const SECRET = "test-barkloader-key";

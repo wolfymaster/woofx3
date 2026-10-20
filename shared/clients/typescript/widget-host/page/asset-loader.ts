@@ -4,7 +4,7 @@
 // A widget's frame is sandboxed with an opaque origin, so a stored file's
 // presigned storage URL refuses its script (no CORS headers). The page reads
 // the file instead, from the engine's read route on its own origin (see
-// src/routes/asset-read.ts), and posts the bytes into the frame through the
+// the scene manager's src/routes/asset-read.ts), and posts the bytes into the frame through the
 // bridge. Deciding what a widget may read happens here, because the page
 // knows each frame's module from the scene record and never from the widget:
 // any file in the asset library, and its own module's files (the rules are

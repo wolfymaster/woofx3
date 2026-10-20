@@ -41,6 +41,12 @@ export function themeOf(settings: Record<string, unknown>): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** The theme canonical id a placement's settings select, if any. */
+export function selectedThemeId(settings: Record<string, unknown>): string | undefined {
+  const id = themeOf(settings);
+  return id === "" ? undefined : id;
+}
+
 /** The page's config for a snapshot: placements in stacking order. A
  *  placement with no meta is left out until its meta arrives. */
 export function configOfSnapshot(snapshot: SceneSnapshot): SceneConfig {

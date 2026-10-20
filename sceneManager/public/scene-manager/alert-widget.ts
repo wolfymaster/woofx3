@@ -25,12 +25,16 @@ import {
   type Scheduler,
   type SchedulerClock,
 } from "@woofx3/scene/runtime";
-import type { AssetCache } from "./asset-loader";
-import type { QueuedEvent } from "./event-queue";
-import type { PageHost, PageLog } from "./page-host";
+import {
+  type AssetCache,
+  mountWidgetFrame,
+  type PageHost,
+  type PageLog,
+  type QueuedEvent,
+  type WidgetBridge,
+  type WidgetStatusReportPayload,
+} from "@woofx3/widget-host/page";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
-import type { WidgetBridge, WidgetStatusReportPayload } from "./widget-bridge";
-import { mountWidgetFrame } from "./widget-frame";
 
 /** The slice of the server's `AlertDelivery` the page needs. */
 export interface AlertDelivery {

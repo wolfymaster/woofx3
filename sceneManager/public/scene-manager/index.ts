@@ -1,10 +1,10 @@
 // The overlay page's entry: reads what the shell rendered into the page and
 // starts the overlay (overlay.ts) in this browser.
 
+import { BROWSER_HOST } from "@woofx3/widget-host/page";
 import type { SceneConfig } from "../../contract/scene-config";
 import { createOverlay } from "./overlay";
 import { PAGE_CLOCK } from "./page-clock";
-import { BROWSER_HOST } from "./page-host";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
 
 declare global {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { EventQueueManager, type QueuedEvent } from "@woofx3/widget-host/page";
 import { type AlertArea, AlertAreas } from "../../public/scene-manager/alert-areas";
 import type { AlertWidgetOptions } from "../../public/scene-manager/alert-widget";
-import { EventQueueManager, type QueuedEvent } from "../../public/scene-manager/event-queue";
 
 class FakeElement {
   className = "";

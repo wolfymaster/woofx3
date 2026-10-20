@@ -34,11 +34,15 @@ readonly GO_MODULES=(
 )
 readonly RUST_ROOTS=(barkloader shared/common/rust/logging shared/common/rust/runtime)
 readonly TS_SERVICES=(api twitch woofwoofwoof sceneManager)
+# Shared packages with their own type check and tests, as the CI jobs of the
+# services that use them run them.
+readonly TS_PACKAGES=(shared/clients/typescript/widget-host)
 # Installed before any TS check: services resolve these by relative path.
 readonly TS_SHARED_DIRS=(
   shared/common/typescript
   shared/clients/typescript/api shared/clients/typescript/db shared/clients/typescript/nats
   shared/clients/typescript/twitch shared/clients/typescript/module-sdk
+  shared/clients/typescript/widget-host
 )
 
 quick=false
@@ -66,16 +70,17 @@ select_target() {
 }
 
 select_all() {
-  local module root service
+  local module root service package
   for module in "${GO_MODULES[@]}"; do select_target "go:$module"; done
   for root in "${RUST_ROOTS[@]}"; do select_target "rust:$root"; done
   select_target "ts:shared/common/typescript"
   for service in "${TS_SERVICES[@]}"; do select_target "ts:$service"; done
+  for package in "${TS_PACKAGES[@]}"; do select_target "ts:$package"; done
 }
 
 # Maps one repository path to the check targets that cover it.
 select_for_path() {
-  local path="$1" module root service
+  local path="$1" module root service package
   case "$path" in
     shared/common/golang/* | shared/clients/golang/*)
       for module in "${GO_MODULES[@]}"; do select_target "go:$module"; done
@@ -94,6 +99,7 @@ select_for_path() {
         select_target "ts:shared/common/typescript"
       fi
       for service in "${TS_SERVICES[@]}"; do select_target "ts:$service"; done
+      for package in "${TS_PACKAGES[@]}"; do select_target "ts:$package"; done
       return
       ;;
   esac

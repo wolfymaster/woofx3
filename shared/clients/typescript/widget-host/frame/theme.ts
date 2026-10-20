@@ -1,6 +1,6 @@
 import { isWidgetTheme, type WidgetTheme } from "@woofx3/module-sdk";
-import type { CspDirectives } from "../routes/security-headers";
-import { themeOf } from "../../contract/scene-config";
+import type { CspDirectives } from "./csp";
+import { escapeHtmlAttribute } from "./html";
 
 /**
  * A widget's theme as barkloader resolves it for one frame: what the widget
@@ -29,12 +29,6 @@ export function parseFrameTheme(raw: unknown): FrameTheme | null {
     fallback: raw.fallback,
     stylesheetUrl: typeof stylesheetUrl === "string" && stylesheetUrl.length > 0 ? stylesheetUrl : null,
   };
-}
-
-/** The theme canonical id a placement's settings select, if any. */
-export function selectedThemeId(settings: Record<string, unknown>): string | undefined {
-  const id = themeOf(settings);
-  return id === "" ? undefined : id;
 }
 
 /** What `host.theme` carries: the frame theme without the stylesheet. */
@@ -88,10 +82,6 @@ export function buildThemeStyle(theme: FrameTheme): string {
   return `<style data-woofx3-theme>:root { ${declarations.join(" ")} }</style>`;
 }
 
-function escapeHtmlAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
 /**
  * Link the theme stylesheet at the end of the entry document's head, after
  * the widget's own styles, so a theme's rules win over the defaults they
@@ -130,11 +120,11 @@ export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
  * or `@import` could otherwise reach any host, carrying whatever its
  * selectors can read off the page; nothing a theme ships is a script, so
  * scripts are left as they were. Connections are closed for every frame,
- * themed or not (`FRAME_DIRECTIVES` in frame-assembler.ts). External media a
+ * themed or not (`FRAME_DIRECTIVES` in document.ts). External media a
  * placement's settings name reaches the frame through the engine's media
- * proxy (see media-proxy.ts), so it needs no outside host here either.
+ * proxy (the scene manager's media-proxy.ts), so it needs no outside host here either.
  *
- * Only picker-shaped settings (`{ source: "url", url }`, see media-url.ts) are
+ * Only picker-shaped settings (`{ source: "url", url }`, see the scene manager's media-url.ts) are
  * proxied, so a themeable widget cannot load external media that arrives any
  * other way: a URL in a bare string setting, or one in event data other than
  * a Twitch CDN image. That is a deliberate limit, not an oversight: listing

@@ -5,12 +5,11 @@
 
 import { describe, expect, it } from "bun:test";
 import type { RenderAnimation, RenderStyle } from "@woofx3/scene/runtime";
+import { generateNonce, type PageHost } from "@woofx3/widget-host/page";
 import { encodeStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
 import type { SceneConfig } from "../../contract/scene-config";
 import { createOverlay, type OverlayEnv } from "../../public/scene-manager/overlay";
-import type { PageHost } from "../../public/scene-manager/page-host";
 import type { ReconnectCoordinator } from "../../public/scene-manager/reconnect-coordinator";
-import { generateNonce } from "../../public/scene-manager/widget-frame";
 
 class FakeAnimation implements RenderAnimation {
   startTime: CSSNumberish | null = null;

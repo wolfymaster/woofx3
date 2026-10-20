@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { WidgetBridge, WidgetBridgeCallbacks } from "../../public/scene-manager/widget-bridge";
-import { generateNonce, mountWidgetFrame } from "../../public/scene-manager/widget-frame";
+import type { WidgetBridge, WidgetBridgeCallbacks } from "../page/widget-bridge";
+import { generateNonce, mountWidgetFrame } from "../page/widget-frame";
 
 interface FakeIframe {
   className: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { EventQueueManager } from "../../public/scene-manager/event-queue";
+import { EventQueueManager } from "../page/event-queue";
 
 function item(eventId: string) {
   return { eventId, type: "alert", key: "alert-1", value: null };

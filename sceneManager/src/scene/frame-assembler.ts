@@ -1,22 +1,20 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { contentSecurityPolicy, type CspDirectives, withDirectives } from "../routes/security-headers";
-import { parseWidgetCanonicalId } from "@woofx3/scene/model";
 import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
-import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import { parseWidgetCanonicalId } from "@woofx3/scene/model";
+import {
+  FRAME_DOCUMENT_HEADERS,
+  type FrameSource,
+  frameDocument,
+  hostTheme,
+  parseFrameTheme,
+  type WidgetFrameBoot,
+} from "@woofx3/widget-host/frame";
+import { selectedThemeId } from "../../contract/scene-config";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
+import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
-import {
-  type FrameTheme,
-  buildThemeStyle,
-  hostTheme,
-  injectThemeStylesheet,
-  originOf,
-  parseFrameTheme,
-  selectedThemeId,
-  themeCspDirectives,
-} from "./widget-theme";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -25,44 +23,11 @@ import {
  */
 export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body></html>";
 
-/** The widget host shim's file name under sceneManager's public directory. */
-export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
-
-/** Absolute shim src: sceneManager serves it at a fixed top-level path,
- *  so it resolves the same however deep the frame URL is. */
-export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
-
-/**
- * The directives every widget frame is served with, laid over any theme's so
- * a theme can never relax them:
- *
- * - `connect-src 'none'`: widget code is end-user code, and a frame that
- *   could `fetch`, open a socket or beacon could send whatever it is shown
- *   anywhere. What a widget needs from the network it asks the host for over
- *   the bridge (storage, events, `assets.load`), and elements still load
- *   media by URL under their own directives.
- * - `sandbox allow-scripts`: the same sandbox the pages give the iframe, so a
- *   frame document opened on its own, outside any page, still runs with an
- *   opaque origin rather than on the origin that holds overlay sessions.
- */
-export const FRAME_DIRECTIVES: CspDirectives = {
-  "connect-src": ["'none'"],
-  sandbox: ["allow-scripts"],
-};
-
-const FRAME_HEADERS: Record<string, string> = {
-  "Content-Type": "text/html; charset=utf-8",
-  "Referrer-Policy": "no-referrer",
-  "Cache-Control": "no-store",
-};
+const FRAME_HEADERS: Record<string, string> = { ...FRAME_DOCUMENT_HEADERS, "Cache-Control": "no-store" };
 
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
-export interface BarkloaderFrameInfo {
-  entryHtml: string;
-  resourceBaseUrl: string;
-  /** `null` for a widget that declares no theme contract. */
-  theme: FrameTheme | null;
+export interface BarkloaderFrameInfo extends FrameSource {
   /** Ids of the widget's `font` settings. */
   fontSettings: string[];
 }
@@ -158,22 +123,8 @@ export interface FrameAssemblerOptions {
   mediaProxy?: MediaProxy;
 }
 
-/**
- * The boot payload a cacheable frame document inlines: the widget's half.
- * The placement's half (`WidgetPlacementBoot`) arrives in the fragment.
- */
-export type WidgetFrameBoot = Omit<WidgetBootPayload, "nonce" | "instanceId" | "settings" | "linkedResources">;
-
 /** A frame document whose URL carries its current version never changes. */
 const CACHED_FRAME_CACHE_CONTROL = "public, max-age=31536000, immutable";
-
-export interface FrameScaffold {
-  boot: WidgetBootPayload | WidgetFrameBoot;
-  baseHref: string;
-  /** Variables and asset slots of a themeable widget, set before any of
-   *  the widget's own styles or scripts. */
-  theme?: FrameTheme | null;
-}
 
 /** What a frame is assembled for: a scene placement, or one widget of an alert layout. */
 interface FrameTarget {
@@ -183,63 +134,6 @@ interface FrameTarget {
   widgetCanonicalId: string;
   settings: Record<string, unknown>;
   surface: WidgetSurface;
-}
-
-/**
- * Build the injected scaffold block in the NORMATIVE order: (1) inline
- * boot payload, (2) classic shim script tag, (3) <base> pointing at
- * the widget asset root. The shim must stay a classic script (no async/
- * defer): existing widgets read `window.widgetHost` at IIFE time, and
- * the script src must precede <base> so it resolves against the frame
- * URL, not the asset root.
- */
-export function buildFrameScaffold(scaffold: FrameScaffold): string {
-  const bootJson = JSON.stringify(scaffold.boot).replace(/</g, "\\u003c");
-  return (
-    `<script>window.__WOOFX3_WIDGET_BOOT__ = ${bootJson};</script>` +
-    `<script src="${SHIM_SRC}"></script>` +
-    `<base href="${escapeHtmlAttribute(scaffold.baseHref)}">` +
-    (scaffold.theme ? buildThemeStyle(scaffold.theme) : "")
-  );
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-/**
- * Inject `scaffoldHtml` at the head-open position of an entry
- * document. Fallback rules (ported unchanged): no <head> -> synthesize
- * one directly after <html>; neither -> inject at the very front
- * (after a doctype when present). A leading BOM is preserved in place.
- */
-export function injectFrameScaffold(entryHtml: string, scaffoldHtml: string): string {
-  let bom = "";
-  let html = entryHtml;
-  if (html.charCodeAt(0) === 0xfeff) {
-    bom = "﻿";
-    html = html.slice(1);
-  }
-
-  const headOpen = /<head(?:\s[^>]*)?>/i.exec(html);
-  if (headOpen) {
-    const at = headOpen.index + headOpen[0].length;
-    return bom + html.slice(0, at) + scaffoldHtml + html.slice(at);
-  }
-
-  const htmlOpen = /<html(?:\s[^>]*)?>/i.exec(html);
-  if (htmlOpen) {
-    const at = htmlOpen.index + htmlOpen[0].length;
-    return bom + html.slice(0, at) + "<head>" + scaffoldHtml + "</head>" + html.slice(at);
-  }
-
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
-  if (doctype) {
-    const at = doctype[0].length;
-    return bom + html.slice(0, at) + scaffoldHtml + html.slice(at);
-  }
-
-  return bom + scaffoldHtml + html;
 }
 
 function defaultNonce(): string {
@@ -432,32 +326,13 @@ export class FrameAssembler {
     return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
   }
 
-  /** The entry document with the scaffold, theme stylesheet and policy. */
   private render(
     frameInfo: BarkloaderFrameInfo,
     boot: WidgetBootPayload | WidgetFrameBoot,
     cacheControl: string
   ): Response {
-    const theme = frameInfo.theme;
-    const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
-    let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
-    // Every widget that opted into themes runs under the theme policy, themed
-    // or not, so a theme can never be the thing that changes what loads.
-    const themeDirectives: CspDirectives = theme
-      ? themeCspDirectives([
-          originOf(frameInfo.resourceBaseUrl),
-          ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
-        ])
-      : {};
-    if (theme?.stylesheetUrl) {
-      assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
-    }
-    const headers: Record<string, string> = {
-      ...FRAME_HEADERS,
-      "Cache-Control": cacheControl,
-      "Content-Security-Policy": contentSecurityPolicy(withDirectives(themeDirectives, FRAME_DIRECTIVES)),
-    };
-    return new Response(assembled, { status: 200, headers });
+    const { html, headers } = frameDocument(frameInfo, boot);
+    return new Response(html, { status: 200, headers: { ...headers, "Cache-Control": cacheControl } });
   }
 
   private async loadFrameInfo(

@@ -1,6 +1,6 @@
 // Client-side, per-widget-instance dispatch policy: one queue per
 // registered widget instance, configured by that widget. This is
-// distinct from `delivery-store.ts` on the backend: that guarantees
+// distinct from the scene manager's `delivery-store.ts`: that guarantees
 // the browser session eventually sees every event at least once; this
 // decides which iframe gets it, in what order, and how many at once.
 //
@@ -13,8 +13,8 @@
 // before giving up and advancing) and `maxInFlight`.
 
 import type { EventQueueConfig, WidgetEvent } from "@woofx3/module-sdk";
+import { evaluateExpression } from "./expression";
 import { BROWSER_HOST, type PageTimers } from "./page-host";
-import { evaluateExpression } from "./resolver";
 
 export interface QueuedEvent {
   eventId: string;
@@ -41,7 +41,7 @@ const DEFAULT_MAX_IN_FLIGHT = 1;
 /**
  * How many finished event ids an instance remembers. The server sends every
  * open delivery again when the stream reconnects, and an undelivered one
- * again every few seconds (see delivery-store.ts), so a delivery that is
+ * again every few seconds (the scene manager's delivery-store.ts), so a delivery that is
  * still queued, still playing, or whose ack is in flight can arrive twice.
  * Remembering it is what keeps one alert from playing twice.
  */
