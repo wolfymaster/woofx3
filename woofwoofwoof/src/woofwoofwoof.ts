@@ -98,8 +98,9 @@ const runtime = createRuntime({
       onClose: () => {
         logger.warn("Barkloader connection closed");
       },
-      onError: () => {
-        logger.warn("Barkloader connection error");
+      onError: (event) => {
+        const detail = event as Event & { message?: string };
+        logger.warn("Barkloader connection error", { type: detail.type, message: detail.message });
       },
       maxRetries: Infinity,
       onReconnectAttempt: (attempt) => {
