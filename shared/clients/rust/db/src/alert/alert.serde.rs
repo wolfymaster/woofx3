@@ -317,10 +317,7 @@ impl serde::Serialize for AlertHourCount {
         if self.hour != 0 {
             len += 1;
         }
-        if !self.status.is_empty() {
-            len += 1;
-        }
-        if self.unconfirmed {
+        if self.outcome != 0 {
             len += 1;
         }
         if self.count != 0 {
@@ -330,11 +327,10 @@ impl serde::Serialize for AlertHourCount {
         if self.hour != 0 {
             struct_ser.serialize_field("hour", &self.hour)?;
         }
-        if !self.status.is_empty() {
-            struct_ser.serialize_field("status", &self.status)?;
-        }
-        if self.unconfirmed {
-            struct_ser.serialize_field("unconfirmed", &self.unconfirmed)?;
+        if self.outcome != 0 {
+            let v = AlertOutcome::try_from(self.outcome)
+                .map_err(|_| serde::ser::Error::custom(format!("Invalid variant {}", self.outcome)))?;
+            struct_ser.serialize_field("outcome", &v)?;
         }
         if self.count != 0 {
             #[allow(clippy::needless_borrow)]
@@ -352,16 +348,14 @@ impl<'de> serde::Deserialize<'de> for AlertHourCount {
     {
         const FIELDS: &[&str] = &[
             "hour",
-            "status",
-            "unconfirmed",
+            "outcome",
             "count",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Hour,
-            Status,
-            Unconfirmed,
+            Outcome,
             Count,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -385,8 +379,7 @@ impl<'de> serde::Deserialize<'de> for AlertHourCount {
                     {
                         match value {
                             "hour" => Ok(GeneratedField::Hour),
-                            "status" => Ok(GeneratedField::Status),
-                            "unconfirmed" => Ok(GeneratedField::Unconfirmed),
+                            "outcome" => Ok(GeneratedField::Outcome),
                             "count" => Ok(GeneratedField::Count),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -408,8 +401,7 @@ impl<'de> serde::Deserialize<'de> for AlertHourCount {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut hour__ = None;
-                let mut status__ = None;
-                let mut unconfirmed__ = None;
+                let mut outcome__ = None;
                 let mut count__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
@@ -421,17 +413,11 @@ impl<'de> serde::Deserialize<'de> for AlertHourCount {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
-                        GeneratedField::Status => {
-                            if status__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("status"));
+                        GeneratedField::Outcome => {
+                            if outcome__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("outcome"));
                             }
-                            status__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::Unconfirmed => {
-                            if unconfirmed__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("unconfirmed"));
-                            }
-                            unconfirmed__ = Some(map_.next_value()?);
+                            outcome__ = Some(map_.next_value::<AlertOutcome>()? as i32);
                         }
                         GeneratedField::Count => {
                             if count__.is_some() {
@@ -445,13 +431,98 @@ impl<'de> serde::Deserialize<'de> for AlertHourCount {
                 }
                 Ok(AlertHourCount {
                     hour: hour__.unwrap_or_default(),
-                    status: status__.unwrap_or_default(),
-                    unconfirmed: unconfirmed__.unwrap_or_default(),
+                    outcome: outcome__.unwrap_or_default(),
                     count: count__.unwrap_or_default(),
                 })
             }
         }
         deserializer.deserialize_struct("alert.AlertHourCount", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for AlertOutcome {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let variant = match self {
+            Self::Unspecified => "ALERT_OUTCOME_UNSPECIFIED",
+            Self::Completed => "ALERT_OUTCOME_COMPLETED",
+            Self::Failed => "ALERT_OUTCOME_FAILED",
+            Self::Skipped => "ALERT_OUTCOME_SKIPPED",
+            Self::Replayed => "ALERT_OUTCOME_REPLAYED",
+            Self::InFlight => "ALERT_OUTCOME_IN_FLIGHT",
+            Self::Unconfirmed => "ALERT_OUTCOME_UNCONFIRMED",
+        };
+        serializer.serialize_str(variant)
+    }
+}
+impl<'de> serde::Deserialize<'de> for AlertOutcome {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "ALERT_OUTCOME_UNSPECIFIED",
+            "ALERT_OUTCOME_COMPLETED",
+            "ALERT_OUTCOME_FAILED",
+            "ALERT_OUTCOME_SKIPPED",
+            "ALERT_OUTCOME_REPLAYED",
+            "ALERT_OUTCOME_IN_FLIGHT",
+            "ALERT_OUTCOME_UNCONFIRMED",
+        ];
+
+        struct GeneratedVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = AlertOutcome;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, "expected one of: {:?}", &FIELDS)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                i32::try_from(v)
+                    .ok()
+                    .and_then(|x| x.try_into().ok())
+                    .ok_or_else(|| {
+                        serde::de::Error::invalid_value(serde::de::Unexpected::Signed(v), &self)
+                    })
+            }
+
+            fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                i32::try_from(v)
+                    .ok()
+                    .and_then(|x| x.try_into().ok())
+                    .ok_or_else(|| {
+                        serde::de::Error::invalid_value(serde::de::Unexpected::Unsigned(v), &self)
+                    })
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "ALERT_OUTCOME_UNSPECIFIED" => Ok(AlertOutcome::Unspecified),
+                    "ALERT_OUTCOME_COMPLETED" => Ok(AlertOutcome::Completed),
+                    "ALERT_OUTCOME_FAILED" => Ok(AlertOutcome::Failed),
+                    "ALERT_OUTCOME_SKIPPED" => Ok(AlertOutcome::Skipped),
+                    "ALERT_OUTCOME_REPLAYED" => Ok(AlertOutcome::Replayed),
+                    "ALERT_OUTCOME_IN_FLIGHT" => Ok(AlertOutcome::InFlight),
+                    "ALERT_OUTCOME_UNCONFIRMED" => Ok(AlertOutcome::Unconfirmed),
+                    _ => Err(serde::de::Error::unknown_variant(value, FIELDS)),
+                }
+            }
+        }
+        deserializer.deserialize_any(GeneratedVisitor)
     }
 }
 impl serde::Serialize for AlertResponse {
@@ -704,12 +775,18 @@ impl serde::Serialize for CountAlertsByHourResponse {
         if !self.counts.is_empty() {
             len += 1;
         }
+        if self.truncated {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.CountAlertsByHourResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
         }
         if !self.counts.is_empty() {
             struct_ser.serialize_field("counts", &self.counts)?;
+        }
+        if self.truncated {
+            struct_ser.serialize_field("truncated", &self.truncated)?;
         }
         struct_ser.end()
     }
@@ -723,12 +800,14 @@ impl<'de> serde::Deserialize<'de> for CountAlertsByHourResponse {
         const FIELDS: &[&str] = &[
             "status",
             "counts",
+            "truncated",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Status,
             Counts,
+            Truncated,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -752,6 +831,7 @@ impl<'de> serde::Deserialize<'de> for CountAlertsByHourResponse {
                         match value {
                             "status" => Ok(GeneratedField::Status),
                             "counts" => Ok(GeneratedField::Counts),
+                            "truncated" => Ok(GeneratedField::Truncated),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -773,6 +853,7 @@ impl<'de> serde::Deserialize<'de> for CountAlertsByHourResponse {
             {
                 let mut status__ = None;
                 let mut counts__ = None;
+                let mut truncated__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Status => {
@@ -787,11 +868,18 @@ impl<'de> serde::Deserialize<'de> for CountAlertsByHourResponse {
                             }
                             counts__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Truncated => {
+                            if truncated__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("truncated"));
+                            }
+                            truncated__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CountAlertsByHourResponse {
                     status: status__,
                     counts: counts__.unwrap_or_default(),
+                    truncated: truncated__.unwrap_or_default(),
                 })
             }
         }

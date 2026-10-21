@@ -22,6 +22,70 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// What an alert counts as. db-proxy owns the rule from status to outcome:
+// `timed_out` is FAILED, and `replayed` (an operator replayed it as a row of
+// its own) is neither a success nor a failure.
+type AlertOutcome int32
+
+const (
+	AlertOutcome_ALERT_OUTCOME_UNSPECIFIED AlertOutcome = 0
+	AlertOutcome_ALERT_OUTCOME_COMPLETED   AlertOutcome = 1
+	AlertOutcome_ALERT_OUTCOME_FAILED      AlertOutcome = 2
+	AlertOutcome_ALERT_OUTCOME_SKIPPED     AlertOutcome = 3
+	AlertOutcome_ALERT_OUTCOME_REPLAYED    AlertOutcome = 4
+	AlertOutcome_ALERT_OUTCOME_IN_FLIGHT   AlertOutcome = 5
+	AlertOutcome_ALERT_OUTCOME_UNCONFIRMED AlertOutcome = 6
+)
+
+// Enum value maps for AlertOutcome.
+var (
+	AlertOutcome_name = map[int32]string{
+		0: "ALERT_OUTCOME_UNSPECIFIED",
+		1: "ALERT_OUTCOME_COMPLETED",
+		2: "ALERT_OUTCOME_FAILED",
+		3: "ALERT_OUTCOME_SKIPPED",
+		4: "ALERT_OUTCOME_REPLAYED",
+		5: "ALERT_OUTCOME_IN_FLIGHT",
+		6: "ALERT_OUTCOME_UNCONFIRMED",
+	}
+	AlertOutcome_value = map[string]int32{
+		"ALERT_OUTCOME_UNSPECIFIED": 0,
+		"ALERT_OUTCOME_COMPLETED":   1,
+		"ALERT_OUTCOME_FAILED":      2,
+		"ALERT_OUTCOME_SKIPPED":     3,
+		"ALERT_OUTCOME_REPLAYED":    4,
+		"ALERT_OUTCOME_IN_FLIGHT":   5,
+		"ALERT_OUTCOME_UNCONFIRMED": 6,
+	}
+)
+
+func (x AlertOutcome) Enum() *AlertOutcome {
+	p := new(AlertOutcome)
+	*p = x
+	return p
+}
+
+func (x AlertOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AlertOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_alert_proto_enumTypes[0].Descriptor()
+}
+
+func (AlertOutcome) Type() protoreflect.EnumType {
+	return &file_alert_proto_enumTypes[0]
+}
+
+func (x AlertOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AlertOutcome.Descriptor instead.
+func (AlertOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{0}
+}
+
 type Alert struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -623,14 +687,15 @@ func (x *ListAlertsResponse) GetOffset() int32 {
 	return 0
 }
 
-// Counts the alerts created in `hours` whole hours from `since`, by hour,
-// status and whether the alert is unconfirmed. `since` is on the hour, and
-// `hours` is 1 to 168; anything else is INVALID_ARGUMENT.
+// Counts the alerts created in `hours` whole hours from `since`, by hour and
+// outcome. `since` is on the hour, and `hours` is 1 to 168 (must match
+// MaxAlertCountHours in database/repository/alert_repository.go); anything
+// else is INVALID_ARGUMENT.
 //
-// An alert is unconfirmed when its status is not settled (completed, failed,
-// timed_out, skipped, replayed) and it was last written before
-// `unconfirmed_before`: nothing has reported on it for long enough that no
-// report is coming. The caller chooses the bound, since it owns the clock.
+// An alert still on its way is UNCONFIRMED, rather than IN_FLIGHT, when it
+// was last written before `unconfirmed_before`: nothing has reported on it
+// for long enough that no report is coming. The caller chooses the bound,
+// since it owns the clock.
 type CountAlertsByHourRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Since             *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=since,proto3" json:"since,omitempty"`
@@ -692,14 +757,13 @@ func (x *CountAlertsByHourRequest) GetUnconfirmedBefore() *timestamppb.Timestamp
 }
 
 // How many alerts created in hour `hour` of the window (0 is the hour that
-// starts at `since`) hold `status`. Only combinations with a count above
-// zero are listed.
+// starts at `since`) count as `outcome`. Only pairs with a count above zero
+// are listed.
 type AlertHourCount struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Hour          int32                  `protobuf:"varint,1,opt,name=hour,proto3" json:"hour,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	Unconfirmed   bool                   `protobuf:"varint,3,opt,name=unconfirmed,proto3" json:"unconfirmed,omitempty"`
-	Count         int64                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	Outcome       AlertOutcome           `protobuf:"varint,2,opt,name=outcome,proto3,enum=alert.AlertOutcome" json:"outcome,omitempty"`
+	Count         int64                  `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -741,18 +805,11 @@ func (x *AlertHourCount) GetHour() int32 {
 	return 0
 }
 
-func (x *AlertHourCount) GetStatus() string {
+func (x *AlertHourCount) GetOutcome() AlertOutcome {
 	if x != nil {
-		return x.Status
+		return x.Outcome
 	}
-	return ""
-}
-
-func (x *AlertHourCount) GetUnconfirmed() bool {
-	if x != nil {
-		return x.Unconfirmed
-	}
-	return false
+	return AlertOutcome_ALERT_OUTCOME_UNSPECIFIED
 }
 
 func (x *AlertHourCount) GetCount() int64 {
@@ -762,10 +819,14 @@ func (x *AlertHourCount) GetCount() int64 {
 	return 0
 }
 
+// `truncated` is true when the window starts before the alert retention
+// horizon (EVENT_DETAIL_RETENTION_PERIOD): settled alerts older than it have
+// been pruned, so the earliest hours count only those still on their way.
 type CountAlertsByHourResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	Counts        []*AlertHourCount      `protobuf:"bytes,2,rep,name=counts,proto3" json:"counts,omitempty"`
+	Truncated     bool                   `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -812,6 +873,13 @@ func (x *CountAlertsByHourResponse) GetCounts() []*AlertHourCount {
 		return x.Counts
 	}
 	return nil
+}
+
+func (x *CountAlertsByHourResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
 }
 
 type UpdateAlertStatusRequest struct {
@@ -970,20 +1038,28 @@ const file_alert_proto_rawDesc = "" +
 	"\x18CountAlertsByHourRequest\x120\n" +
 	"\x05since\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x14\n" +
 	"\x05hours\x18\x02 \x01(\x05R\x05hours\x12I\n" +
-	"\x12unconfirmed_before\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x11unconfirmedBefore\"t\n" +
+	"\x12unconfirmed_before\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x11unconfirmedBefore\"i\n" +
 	"\x0eAlertHourCount\x12\x12\n" +
-	"\x04hour\x18\x01 \x01(\x05R\x04hour\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12 \n" +
-	"\vunconfirmed\x18\x03 \x01(\bR\vunconfirmed\x12\x14\n" +
-	"\x05count\x18\x04 \x01(\x03R\x05count\"z\n" +
+	"\x04hour\x18\x01 \x01(\x05R\x04hour\x12-\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2\x13.alert.AlertOutcomeR\aoutcome\x12\x14\n" +
+	"\x05count\x18\x03 \x01(\x03R\x05count\"\x98\x01\n" +
 	"\x19CountAlertsByHourResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12-\n" +
-	"\x06counts\x18\x02 \x03(\v2\x15.alert.AlertHourCountR\x06counts\"B\n" +
+	"\x06counts\x18\x02 \x03(\v2\x15.alert.AlertHourCountR\x06counts\x12\x1c\n" +
+	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"B\n" +
 	"\x18UpdateAlertStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\"$\n" +
 	"\x12DeleteAlertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\xd5\x04\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id*\xd7\x01\n" +
+	"\fAlertOutcome\x12\x1d\n" +
+	"\x19ALERT_OUTCOME_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ALERT_OUTCOME_COMPLETED\x10\x01\x12\x18\n" +
+	"\x14ALERT_OUTCOME_FAILED\x10\x02\x12\x19\n" +
+	"\x15ALERT_OUTCOME_SKIPPED\x10\x03\x12\x1a\n" +
+	"\x16ALERT_OUTCOME_REPLAYED\x10\x04\x12\x1b\n" +
+	"\x17ALERT_OUTCOME_IN_FLIGHT\x10\x05\x12\x1d\n" +
+	"\x19ALERT_OUTCOME_UNCONFIRMED\x10\x062\xd5\x04\n" +
 	"\fAlertService\x12>\n" +
 	"\vCreateAlert\x12\x19.alert.CreateAlertRequest\x1a\x14.alert.AlertResponse\x128\n" +
 	"\bGetAlert\x12\x16.alert.GetAlertRequest\x1a\x14.alert.AlertResponse\x12P\n" +
@@ -1007,59 +1083,62 @@ func file_alert_proto_rawDescGZIP() []byte {
 	return file_alert_proto_rawDescData
 }
 
+var file_alert_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_alert_proto_goTypes = []any{
-	(*Alert)(nil),                       // 0: alert.Alert
-	(*CreateAlertRequest)(nil),          // 1: alert.CreateAlertRequest
-	(*GetAlertRequest)(nil),             // 2: alert.GetAlertRequest
-	(*GetAlertByEnvelopeIdRequest)(nil), // 3: alert.GetAlertByEnvelopeIdRequest
-	(*UpdateAlertLifecycleRequest)(nil), // 4: alert.UpdateAlertLifecycleRequest
-	(*AlertResponse)(nil),               // 5: alert.AlertResponse
-	(*ListAlertsRequest)(nil),           // 6: alert.ListAlertsRequest
-	(*ListAlertsResponse)(nil),          // 7: alert.ListAlertsResponse
-	(*CountAlertsByHourRequest)(nil),    // 8: alert.CountAlertsByHourRequest
-	(*AlertHourCount)(nil),              // 9: alert.AlertHourCount
-	(*CountAlertsByHourResponse)(nil),   // 10: alert.CountAlertsByHourResponse
-	(*UpdateAlertStatusRequest)(nil),    // 11: alert.UpdateAlertStatusRequest
-	(*DeleteAlertRequest)(nil),          // 12: alert.DeleteAlertRequest
-	(*timestamppb.Timestamp)(nil),       // 13: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),              // 14: common.ResponseStatus
+	(AlertOutcome)(0),                   // 0: alert.AlertOutcome
+	(*Alert)(nil),                       // 1: alert.Alert
+	(*CreateAlertRequest)(nil),          // 2: alert.CreateAlertRequest
+	(*GetAlertRequest)(nil),             // 3: alert.GetAlertRequest
+	(*GetAlertByEnvelopeIdRequest)(nil), // 4: alert.GetAlertByEnvelopeIdRequest
+	(*UpdateAlertLifecycleRequest)(nil), // 5: alert.UpdateAlertLifecycleRequest
+	(*AlertResponse)(nil),               // 6: alert.AlertResponse
+	(*ListAlertsRequest)(nil),           // 7: alert.ListAlertsRequest
+	(*ListAlertsResponse)(nil),          // 8: alert.ListAlertsResponse
+	(*CountAlertsByHourRequest)(nil),    // 9: alert.CountAlertsByHourRequest
+	(*AlertHourCount)(nil),              // 10: alert.AlertHourCount
+	(*CountAlertsByHourResponse)(nil),   // 11: alert.CountAlertsByHourResponse
+	(*UpdateAlertStatusRequest)(nil),    // 12: alert.UpdateAlertStatusRequest
+	(*DeleteAlertRequest)(nil),          // 13: alert.DeleteAlertRequest
+	(*timestamppb.Timestamp)(nil),       // 14: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),              // 15: common.ResponseStatus
 }
 var file_alert_proto_depIdxs = []int32{
-	13, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
-	13, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
-	13, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
-	13, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
-	13, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
-	14, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
-	0,  // 6: alert.AlertResponse.alert:type_name -> alert.Alert
-	14, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
-	0,  // 8: alert.ListAlertsResponse.alerts:type_name -> alert.Alert
-	13, // 9: alert.CountAlertsByHourRequest.since:type_name -> google.protobuf.Timestamp
-	13, // 10: alert.CountAlertsByHourRequest.unconfirmed_before:type_name -> google.protobuf.Timestamp
-	14, // 11: alert.CountAlertsByHourResponse.status:type_name -> common.ResponseStatus
-	9,  // 12: alert.CountAlertsByHourResponse.counts:type_name -> alert.AlertHourCount
-	1,  // 13: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
-	2,  // 14: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
-	3,  // 15: alert.AlertService.GetAlertByEnvelopeId:input_type -> alert.GetAlertByEnvelopeIdRequest
-	6,  // 16: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
-	8,  // 17: alert.AlertService.CountAlertsByHour:input_type -> alert.CountAlertsByHourRequest
-	11, // 18: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
-	4,  // 19: alert.AlertService.UpdateAlertLifecycle:input_type -> alert.UpdateAlertLifecycleRequest
-	12, // 20: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
-	5,  // 21: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
-	5,  // 22: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
-	5,  // 23: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
-	7,  // 24: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
-	10, // 25: alert.AlertService.CountAlertsByHour:output_type -> alert.CountAlertsByHourResponse
-	5,  // 26: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
-	5,  // 27: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
-	14, // 28: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	14, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
+	14, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
+	14, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
+	14, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
+	15, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
+	1,  // 6: alert.AlertResponse.alert:type_name -> alert.Alert
+	15, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
+	1,  // 8: alert.ListAlertsResponse.alerts:type_name -> alert.Alert
+	14, // 9: alert.CountAlertsByHourRequest.since:type_name -> google.protobuf.Timestamp
+	14, // 10: alert.CountAlertsByHourRequest.unconfirmed_before:type_name -> google.protobuf.Timestamp
+	0,  // 11: alert.AlertHourCount.outcome:type_name -> alert.AlertOutcome
+	15, // 12: alert.CountAlertsByHourResponse.status:type_name -> common.ResponseStatus
+	10, // 13: alert.CountAlertsByHourResponse.counts:type_name -> alert.AlertHourCount
+	2,  // 14: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
+	3,  // 15: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
+	4,  // 16: alert.AlertService.GetAlertByEnvelopeId:input_type -> alert.GetAlertByEnvelopeIdRequest
+	7,  // 17: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
+	9,  // 18: alert.AlertService.CountAlertsByHour:input_type -> alert.CountAlertsByHourRequest
+	12, // 19: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
+	5,  // 20: alert.AlertService.UpdateAlertLifecycle:input_type -> alert.UpdateAlertLifecycleRequest
+	13, // 21: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
+	6,  // 22: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
+	6,  // 23: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
+	6,  // 24: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
+	8,  // 25: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
+	11, // 26: alert.AlertService.CountAlertsByHour:output_type -> alert.CountAlertsByHourResponse
+	6,  // 27: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
+	6,  // 28: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
+	15, // 29: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
+	22, // [22:30] is the sub-list for method output_type
+	14, // [14:22] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_alert_proto_init() }
@@ -1073,13 +1152,14 @@ func file_alert_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_alert_proto_rawDesc), len(file_alert_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_alert_proto_goTypes,
 		DependencyIndexes: file_alert_proto_depIdxs,
+		EnumInfos:         file_alert_proto_enumTypes,
 		MessageInfos:      file_alert_proto_msgTypes,
 	}.Build()
 	File_alert_proto = out.File

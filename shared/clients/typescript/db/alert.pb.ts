@@ -16,6 +16,20 @@ import * as common from "./common.pb";
 //                 Types                  //
 //========================================//
 
+/**
+ * What an alert counts as. db-proxy owns the rule from status to outcome:
+ * `timed_out` is FAILED, and `replayed` (an operator replayed it as a row of
+ * its own) is neither a success nor a failure.
+ */
+export type AlertOutcome =
+  | "ALERT_OUTCOME_UNSPECIFIED"
+  | "ALERT_OUTCOME_COMPLETED"
+  | "ALERT_OUTCOME_FAILED"
+  | "ALERT_OUTCOME_SKIPPED"
+  | "ALERT_OUTCOME_REPLAYED"
+  | "ALERT_OUTCOME_IN_FLIGHT"
+  | "ALERT_OUTCOME_UNCONFIRMED";
+
 export interface Alert {
   id: string;
   /**
@@ -151,14 +165,15 @@ export interface ListAlertsResponse {
 }
 
 /**
- * Counts the alerts created in `hours` whole hours from `since`, by hour,
- * status and whether the alert is unconfirmed. `since` is on the hour, and
- * `hours` is 1 to 168; anything else is INVALID_ARGUMENT.
+ * Counts the alerts created in `hours` whole hours from `since`, by hour and
+ * outcome. `since` is on the hour, and `hours` is 1 to 168 (must match
+ * MaxAlertCountHours in database/repository/alert_repository.go); anything
+ * else is INVALID_ARGUMENT.
  *
- * An alert is unconfirmed when its status is not settled (completed, failed,
- * timed_out, skipped, replayed) and it was last written before
- * `unconfirmed_before`: nothing has reported on it for long enough that no
- * report is coming. The caller chooses the bound, since it owns the clock.
+ * An alert still on its way is UNCONFIRMED, rather than IN_FLIGHT, when it
+ * was last written before `unconfirmed_before`: nothing has reported on it
+ * for long enough that no report is coming. The caller chooses the bound,
+ * since it owns the clock.
  */
 export interface CountAlertsByHourRequest {
   since: protoscript.Timestamp;
@@ -168,19 +183,24 @@ export interface CountAlertsByHourRequest {
 
 /**
  * How many alerts created in hour `hour` of the window (0 is the hour that
- * starts at `since`) hold `status`. Only combinations with a count above
- * zero are listed.
+ * starts at `since`) count as `outcome`. Only pairs with a count above zero
+ * are listed.
  */
 export interface AlertHourCount {
   hour: number;
-  status: string;
-  unconfirmed: boolean;
+  outcome: AlertOutcome;
   count: bigint;
 }
 
+/**
+ * `truncated` is true when the window starts before the alert retention
+ * horizon (EVENT_DETAIL_RETENTION_PERIOD): settled alerts older than it have
+ * been pruned, so the earliest hours count only those still on their way.
+ */
 export interface CountAlertsByHourResponse {
   status: common.ResponseStatus;
   counts: AlertHourCount[];
+  truncated: boolean;
 }
 
 export interface UpdateAlertStatusRequest {
@@ -524,6 +544,80 @@ export function createAlertService<Context>(service: AlertService<Context>) {
 //========================================//
 //        Protobuf Encode / Decode        //
 //========================================//
+
+export const AlertOutcome = {
+  ALERT_OUTCOME_UNSPECIFIED: "ALERT_OUTCOME_UNSPECIFIED",
+  ALERT_OUTCOME_COMPLETED: "ALERT_OUTCOME_COMPLETED",
+  ALERT_OUTCOME_FAILED: "ALERT_OUTCOME_FAILED",
+  ALERT_OUTCOME_SKIPPED: "ALERT_OUTCOME_SKIPPED",
+  ALERT_OUTCOME_REPLAYED: "ALERT_OUTCOME_REPLAYED",
+  ALERT_OUTCOME_IN_FLIGHT: "ALERT_OUTCOME_IN_FLIGHT",
+  ALERT_OUTCOME_UNCONFIRMED: "ALERT_OUTCOME_UNCONFIRMED",
+  /**
+   * @private
+   */
+  _fromInt: function (i: number): AlertOutcome {
+    switch (i) {
+      case 0: {
+        return "ALERT_OUTCOME_UNSPECIFIED";
+      }
+      case 1: {
+        return "ALERT_OUTCOME_COMPLETED";
+      }
+      case 2: {
+        return "ALERT_OUTCOME_FAILED";
+      }
+      case 3: {
+        return "ALERT_OUTCOME_SKIPPED";
+      }
+      case 4: {
+        return "ALERT_OUTCOME_REPLAYED";
+      }
+      case 5: {
+        return "ALERT_OUTCOME_IN_FLIGHT";
+      }
+      case 6: {
+        return "ALERT_OUTCOME_UNCONFIRMED";
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as AlertOutcome;
+      }
+    }
+  },
+  /**
+   * @private
+   */
+  _toInt: function (i: AlertOutcome): number {
+    switch (i) {
+      case "ALERT_OUTCOME_UNSPECIFIED": {
+        return 0;
+      }
+      case "ALERT_OUTCOME_COMPLETED": {
+        return 1;
+      }
+      case "ALERT_OUTCOME_FAILED": {
+        return 2;
+      }
+      case "ALERT_OUTCOME_SKIPPED": {
+        return 3;
+      }
+      case "ALERT_OUTCOME_REPLAYED": {
+        return 4;
+      }
+      case "ALERT_OUTCOME_IN_FLIGHT": {
+        return 5;
+      }
+      case "ALERT_OUTCOME_UNCONFIRMED": {
+        return 6;
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as number;
+      }
+    }
+  },
+} as const;
 
 export const Alert = {
   /**
@@ -1418,8 +1512,7 @@ export const AlertHourCount = {
   initialize: function (msg?: Partial<AlertHourCount>): AlertHourCount {
     return {
       hour: 0,
-      status: "",
-      unconfirmed: false,
+      outcome: AlertOutcome._fromInt(0),
       count: 0n,
       ...msg,
     };
@@ -1435,14 +1528,11 @@ export const AlertHourCount = {
     if (msg.hour) {
       writer.writeInt32(1, msg.hour);
     }
-    if (msg.status) {
-      writer.writeString(2, msg.status);
-    }
-    if (msg.unconfirmed) {
-      writer.writeBool(3, msg.unconfirmed);
+    if (msg.outcome && AlertOutcome._toInt(msg.outcome)) {
+      writer.writeEnum(2, AlertOutcome._toInt(msg.outcome));
     }
     if (msg.count) {
-      writer.writeInt64String(4, msg.count.toString() as any);
+      writer.writeInt64String(3, msg.count.toString() as any);
     }
     return writer;
   },
@@ -1462,14 +1552,10 @@ export const AlertHourCount = {
           break;
         }
         case 2: {
-          msg.status = reader.readString();
+          msg.outcome = AlertOutcome._fromInt(reader.readEnum());
           break;
         }
         case 3: {
-          msg.unconfirmed = reader.readBool();
-          break;
-        }
-        case 4: {
           msg.count = BigInt(reader.readInt64String());
           break;
         }
@@ -1513,6 +1599,7 @@ export const CountAlertsByHourResponse = {
     return {
       status: common.ResponseStatus.initialize(),
       counts: [],
+      truncated: false,
       ...msg,
     };
   },
@@ -1533,6 +1620,9 @@ export const CountAlertsByHourResponse = {
         msg.counts as any,
         AlertHourCount._writeMessage,
       );
+    }
+    if (msg.truncated) {
+      writer.writeBool(3, msg.truncated);
     }
     return writer;
   },
@@ -1555,6 +1645,10 @@ export const CountAlertsByHourResponse = {
           const m = AlertHourCount.initialize();
           reader.readMessage(m, AlertHourCount._readMessage);
           msg.counts.push(m);
+          break;
+        }
+        case 3: {
+          msg.truncated = reader.readBool();
           break;
         }
         default: {
@@ -1716,6 +1810,80 @@ export const DeleteAlertRequest = {
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
+
+export const AlertOutcomeJSON = {
+  ALERT_OUTCOME_UNSPECIFIED: "ALERT_OUTCOME_UNSPECIFIED",
+  ALERT_OUTCOME_COMPLETED: "ALERT_OUTCOME_COMPLETED",
+  ALERT_OUTCOME_FAILED: "ALERT_OUTCOME_FAILED",
+  ALERT_OUTCOME_SKIPPED: "ALERT_OUTCOME_SKIPPED",
+  ALERT_OUTCOME_REPLAYED: "ALERT_OUTCOME_REPLAYED",
+  ALERT_OUTCOME_IN_FLIGHT: "ALERT_OUTCOME_IN_FLIGHT",
+  ALERT_OUTCOME_UNCONFIRMED: "ALERT_OUTCOME_UNCONFIRMED",
+  /**
+   * @private
+   */
+  _fromInt: function (i: number): AlertOutcome {
+    switch (i) {
+      case 0: {
+        return "ALERT_OUTCOME_UNSPECIFIED";
+      }
+      case 1: {
+        return "ALERT_OUTCOME_COMPLETED";
+      }
+      case 2: {
+        return "ALERT_OUTCOME_FAILED";
+      }
+      case 3: {
+        return "ALERT_OUTCOME_SKIPPED";
+      }
+      case 4: {
+        return "ALERT_OUTCOME_REPLAYED";
+      }
+      case 5: {
+        return "ALERT_OUTCOME_IN_FLIGHT";
+      }
+      case 6: {
+        return "ALERT_OUTCOME_UNCONFIRMED";
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as AlertOutcome;
+      }
+    }
+  },
+  /**
+   * @private
+   */
+  _toInt: function (i: AlertOutcome): number {
+    switch (i) {
+      case "ALERT_OUTCOME_UNSPECIFIED": {
+        return 0;
+      }
+      case "ALERT_OUTCOME_COMPLETED": {
+        return 1;
+      }
+      case "ALERT_OUTCOME_FAILED": {
+        return 2;
+      }
+      case "ALERT_OUTCOME_SKIPPED": {
+        return 3;
+      }
+      case "ALERT_OUTCOME_REPLAYED": {
+        return 4;
+      }
+      case "ALERT_OUTCOME_IN_FLIGHT": {
+        return 5;
+      }
+      case "ALERT_OUTCOME_UNCONFIRMED": {
+        return 6;
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as number;
+      }
+    }
+  },
+} as const;
 
 export const AlertJSON = {
   /**
@@ -2475,8 +2643,7 @@ export const AlertHourCountJSON = {
   initialize: function (msg?: Partial<AlertHourCount>): AlertHourCount {
     return {
       hour: 0,
-      status: "",
-      unconfirmed: false,
+      outcome: AlertOutcome._fromInt(0),
       count: 0n,
       ...msg,
     };
@@ -2492,11 +2659,8 @@ export const AlertHourCountJSON = {
     if (msg.hour) {
       json["hour"] = msg.hour;
     }
-    if (msg.status) {
-      json["status"] = msg.status;
-    }
-    if (msg.unconfirmed) {
-      json["unconfirmed"] = msg.unconfirmed;
+    if (msg.outcome && AlertOutcomeJSON._toInt(msg.outcome)) {
+      json["outcome"] = msg.outcome;
     }
     if (msg.count) {
       json["count"] = String(msg.count);
@@ -2512,13 +2676,9 @@ export const AlertHourCountJSON = {
     if (_hour_) {
       msg.hour = protoscript.parseNumber(_hour_);
     }
-    const _status_ = json["status"];
-    if (_status_) {
-      msg.status = _status_;
-    }
-    const _unconfirmed_ = json["unconfirmed"];
-    if (_unconfirmed_) {
-      msg.unconfirmed = _unconfirmed_;
+    const _outcome_ = json["outcome"];
+    if (_outcome_) {
+      msg.outcome = AlertOutcome._fromInt(_outcome_);
     }
     const _count_ = json["count"];
     if (_count_) {
@@ -2555,6 +2715,7 @@ export const CountAlertsByHourResponseJSON = {
     return {
       status: common.ResponseStatusJSON.initialize(),
       counts: [],
+      truncated: false,
       ...msg,
     };
   },
@@ -2574,6 +2735,9 @@ export const CountAlertsByHourResponseJSON = {
     }
     if (msg.counts?.length) {
       json["counts"] = msg.counts.map(AlertHourCountJSON._writeMessage);
+    }
+    if (msg.truncated) {
+      json["truncated"] = msg.truncated;
     }
     return json;
   },
@@ -2596,6 +2760,10 @@ export const CountAlertsByHourResponseJSON = {
         AlertHourCountJSON._readMessage(m, item);
         msg.counts.push(m);
       }
+    }
+    const _truncated_ = json["truncated"];
+    if (_truncated_) {
+      msg.truncated = _truncated_;
     }
     return msg;
   },
