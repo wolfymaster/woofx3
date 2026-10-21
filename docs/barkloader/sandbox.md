@@ -198,6 +198,11 @@ segment. `settings` comes from the host's `SettingsClient` trait — in producti
 declared type; a `NoopSettingsClient` (used in tests and builtin invocations without a
 live db-proxy) returns an empty map.
 
+`setSetting(key, value)` refuses the keys only the streamer sets: the tokens
+`ctx.oauth` keeps (`oauth.<id>`), a `url` setting, whose origin `ctx.http` may reach,
+and a `resource_ref` setting, whose instance the module may then read and run
+(`resource_access.rs`).
+
 `compareAndSetSetting(key, expected, value)` writes only while the setting still
 holds `expected` and answers `{ swapped, current }`. `HttpSettingsClient` compares
 `expected` with the stored value as the module reads it, then has db-proxy
