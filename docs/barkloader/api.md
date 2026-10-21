@@ -43,7 +43,7 @@ Install failures after the HTTP response are **logged**; the client does not rec
 
 **Upload limits:**
 
-The archive is counted as it streams in and refused with 413 past `max_archive_bytes`. Extraction then counts the bytes each entry really inflates to, not the sizes the archive declares, and install fails (through the usual failed-install notification) when a limit is crossed. Rollback unpacks the stored archive under the same limits.
+The archive is counted as it streams in and refused with 413 past `max_archive_bytes`. Extraction then counts the bytes each entry really inflates to, not the sizes the archive declares, and install fails (through the usual failed-install notification) when a limit is crossed. A request may carry only one `file` field (a second is refused with 400), and its text and unrecognised fields share a 64 KiB budget. Rollback unpacks the stored archive under the same limits.
 
 | Variable | Default | Limit |
 |----------|---------|-------|
@@ -59,8 +59,8 @@ Values must be positive integers; anything else stops barkloader at startup. Ins
 
 | Code | Condition |
 |------|-----------|
-| 400 | Missing `file` field, invalid file, unrecognized format, or a body cut short |
-| 413 | The archive, or a text field, is over its size limit |
+| 400 | Missing or repeated `file` field, invalid file, unrecognized format, or a body cut short |
+| 413 | The archive, a text field, or the other form fields together are over its size limit |
 | 500 | Storage or processing failure |
 
 Error body:
