@@ -61,6 +61,8 @@ All configuration is via environment variables with sensible defaults.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BARKLOADER_PORT` | `9653` | HTTP/WebSocket server port |
+| `WOOFX3_BARKLOADER_KEY` | required | Engine secret; callers send it as `Authorization: Bearer` (see [API -- Authentication](./api.md#authentication)) |
+| `WOOFX3_BARKLOADER_ALLOWED_HOST` | unset | One more `Host` value accepted besides loopback, as `host` or `host:port` |
 | `MODULES_DIR` | `modules` | Directory for stored module files |
 | `REPOSITORY_TYPE` | `file` | Storage backend (`file` or `s3`) |
 | `RUST_LOG` | `info` | Log level filter |
@@ -94,6 +96,7 @@ import BarkloaderClient from "@woofx3/barkloader";
 
 const client = new BarkloaderClient({
   wsUrl: "ws://localhost:9653/ws",
+  key: process.env.WOOFX3_BARKLOADER_KEY!, // sent as Authorization: Bearer
   onOpen: () => console.log("connected"),
   onClose: () => console.log("disconnected"),
   onError: (err) => console.error(err),
