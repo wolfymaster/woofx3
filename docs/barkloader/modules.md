@@ -870,10 +870,16 @@ manifest's `commands[]` entry above). Dotted variable names (`"{user.name}"`) bu
 nested objects. See `modules/platform/spotify/functions/song_request.js` (**woofx3-modules**) for a
 worked example.
 
-To reply to the chat command, `return ctx.response(success, message)` and put a
-`chat.reply` action after the function's step that reads `${<id>.message}`, rather
-than calling `ctx.chat.sendMessage(...)` directly — see
-[`ctx.response`](./sandbox.md#ctxresponse).
+To reply to the chat command, `return ctx.success(message)` and put a "Send chat
+message" (`chat.reply`) action after the function's step that reads
+`${<id>.message}` — see [`ctx.success` and `ctx.failure`](./sandbox.md#ctxsuccess-and-ctxfailure).
+
+**Migrating from `ctx.chat`.** Functions can no longer post to chat themselves:
+`ctx.chat.sendMessage(text)` no longer exists, and calling it throws because
+`ctx.chat` is undefined. Replace the call with `return ctx.success(text)` and add
+a "Send chat message" step after the function's step that posts
+`${<stepId>.message}`. The streamer can then reword, condition or remove the
+reply in the workflow.
 
 ### Workflow entry (`workflows[]`)
 
