@@ -16,7 +16,7 @@ function fakeLogger() {
 
 const BARKLOADER_KEY = "test-barkloader-key-0123456789abcdef";
 
-describe("HttpBarkloaderFrameClient — logging on failure", () => {
+describe("HttpBarkloaderFrameClient — authentication", () => {
   it("authenticates to barkloader with the engine secret", async () => {
     const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
     const fetchFn = mock(async (_url: string, _init?: RequestInit) =>
@@ -33,7 +33,9 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const [, init] = fetchFn.mock.calls[0]!;
     expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${BARKLOADER_KEY}`);
   });
+});
 
+describe("HttpBarkloaderFrameClient — logging on failure", () => {
   it("logs and returns null on a non-OK response (was previously silent)", async () => {
     const warn = mock((_message: string, _meta?: unknown) => {});
     const logger = { debug: () => {}, info: () => {}, warn, error: () => {} } as any;
