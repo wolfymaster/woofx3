@@ -16,6 +16,7 @@ on:
   push:
     branches: [main, master, release]
     paths:
+      - "connectors/**"
       - "twitch/**"
       - "woofwoofwoof/**"
       - "sceneManager/**"
@@ -26,6 +27,7 @@ on:
       - ".github/workflows/service-checks.yml"
   pull_request:
     paths:
+      - "connectors/**"
       - "twitch/**"
       - "woofwoofwoof/**"
       - "sceneManager/**"
@@ -44,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [twitch, woofwoofwoof, sceneManager]
+        service: [connectors, twitch, woofwoofwoof, sceneManager]
     steps:
       - uses: actions/checkout@v4
 

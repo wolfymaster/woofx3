@@ -50,6 +50,7 @@ readonly ENGINE_BUN_DIRS=(
   shared/clients/typescript/twitch
   shared/clients/typescript/module-sdk
   api
+  connectors
   twitch
   woofwoofwoof
   sceneManager
@@ -107,7 +108,7 @@ task_dir() {
 ports_for_slot() {
   local slot="$1"
   if [ "$slot" -eq 0 ]; then
-    API_PORT=5050 DB_PORT=5555 BARKLOADER_PORT=9653 NATS_PORT=4222 NATS_WS_PORT=4225 SCENE_PORT=9101 UI_PORT=5173
+    API_PORT=5050 DB_PORT=5555 BARKLOADER_PORT=9653 NATS_PORT=4222 NATS_WS_PORT=4225 SCENE_PORT=9101 CONNECTORS_PORT=9102 UI_PORT=5173
     return
   fi
   local base=$((20000 + 100 * slot))
@@ -117,6 +118,7 @@ ports_for_slot() {
   NATS_PORT=$((base + 3))
   NATS_WS_PORT=$((base + 4))
   SCENE_PORT=$((base + 5))
+  CONNECTORS_PORT=$((base + 6))
   UI_PORT=$((base + 10))
 }
 
@@ -158,6 +160,7 @@ write_engine_config() {
   "woofx3SceneManagerPort": "$SCENE_PORT",
   "sceneManagerUrl": "http://127.0.0.1:$SCENE_PORT",
   "sceneManagerTokenSecret": "$(random_hex)",
+  "woofx3ConnectorsPort": "$CONNECTORS_PORT",
   "twitchChannelName": "",
   "twitchClientId": "",
   "twitchClientSecret": ""
@@ -178,6 +181,7 @@ WOOFX3_BARKLOADER_PORT=$BARKLOADER_PORT
 WOOFX3_MESSAGEBUS_PORT=$NATS_PORT
 WOOFX3_MESSAGEBUS_WEBSOCKET_PORT=$NATS_WS_PORT
 WOOFX3_SCENE_MANAGER_PORT=$SCENE_PORT
+WOOFX3_CONNECTORS_PORT=$CONNECTORS_PORT
 WOOFX3_UI_PORT=$UI_PORT
 EOF
 }
