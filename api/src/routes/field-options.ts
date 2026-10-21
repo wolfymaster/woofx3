@@ -1,6 +1,7 @@
 import type { FieldOptionsReference } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { fieldOptionsDescriptorFor, parseFieldOptionsReference, parseStoredManifest } from "../field-options-reference";
+import { fieldOptionsDescriptorFor, parseFieldOptionsReference } from "../field-options-reference";
+import { parseStoredManifestJson } from "../stored-manifest";
 import { routeModule } from "./context";
 
 /**
@@ -41,7 +42,7 @@ export const fieldOptionsRoutes = routeModule({
     }
     const parsed = parseFieldOptionsReference(reference);
     const installed = await this.db.findModuleByModuleId(parsed.moduleId);
-    const manifest = installed ? parseStoredManifest(installed.manifest) : null;
+    const manifest = installed ? parseStoredManifestJson(installed.manifest, this.logger, parsed.moduleId) : null;
     if (installed === null || manifest === null) {
       throw new Error(`dispatchFieldOptionsRequest: module "${parsed.moduleId}" is not installed`);
     }

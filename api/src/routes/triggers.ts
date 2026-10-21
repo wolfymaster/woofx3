@@ -1,5 +1,5 @@
 import type { WorkflowCatalog } from "@woofx3/api";
-import type { ActionDefinition, TriggerDefinition } from "@woofx3/api/webhooks";
+import { type ActionDefinition, type TriggerDefinition, WEBHOOK_TRANSPORT } from "@woofx3/api/webhooks";
 import type * as module_action from "@woofx3/db/module_action.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import { routeModule } from "./context";
@@ -39,9 +39,6 @@ function actionDefinition({ sentence, ...rest }: module_action.Action): ActionDe
   const projectionKey = moduleProjectionKey(definition, "action");
   return projectionKey ? { ...definition, projectionKey } : definition;
 }
-
-/** The manifest trigger `type` for one fired by inbound HTTP through its module's handler. */
-const WEBHOOK_TRANSPORT = "webhook";
 
 export const triggersRoutes = routeModule({
   async getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]> {

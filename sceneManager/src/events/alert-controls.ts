@@ -129,7 +129,7 @@ export async function readAlertQueue(deps: AlertQueueReadDeps): Promise<AlertQue
  * each with the earliest start any page reported for it.
  */
 function queueEntries(deliveries: OpenDeliveryRef[]): Map<string, AlertQueueEntry> {
-  const entries = new Map<string, AlertQueueEntry>();
+  const tracked = new Map<string, { alertId: string; envelopeId: string; startedAtMs: number | null }>();
   for (const delivery of deliveries) {
     const [target] = alertReportTargets([delivery]);
     if (!target) {
@@ -138,19 +138,22 @@ function queueEntries(deliveries: OpenDeliveryRef[]): Map<string, AlertQueueEntr
     // A delivery without a row id is keyed apart from every row, as
     // alertReportTargets keys it: its envelope may have rows of its own.
     const key = target.rowId ? `row:${target.rowId}` : `envelope:${target.envelopeId}`;
-    const startedAt = delivery.startedAt;
-    const existing = entries.get(key);
+    const existing = tracked.get(key);
     if (!existing) {
-      entries.set(key, {
-        alertId: target.rowId,
-        envelopeId: target.envelopeId,
-        ...(startedAt !== null ? { startedAt: new Date(startedAt).toISOString() } : {}),
-      });
+      tracked.set(key, { alertId: target.rowId, envelopeId: target.envelopeId, startedAtMs: delivery.startedAt });
       continue;
     }
-    if (startedAt !== null && (existing.startedAt === undefined || Date.parse(existing.startedAt) > startedAt)) {
-      existing.startedAt = new Date(startedAt).toISOString();
+    if (delivery.startedAt !== null && (existing.startedAtMs === null || existing.startedAtMs > delivery.startedAt)) {
+      existing.startedAtMs = delivery.startedAt;
     }
+  }
+  const entries = new Map<string, AlertQueueEntry>();
+  for (const [key, { alertId, envelopeId, startedAtMs }] of tracked) {
+    entries.set(key, {
+      alertId,
+      envelopeId,
+      ...(startedAtMs !== null ? { startedAt: new Date(startedAtMs).toISOString() } : {}),
+    });
   }
   return entries;
 }

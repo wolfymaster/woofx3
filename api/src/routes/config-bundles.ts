@@ -48,7 +48,7 @@ export const configBundlesRoutes = routeModule({
   async exportConfig(options?: ConfigExportOptions): Promise<ConfigBundle> {
     const { include, includeMembers = false } = parseExportOptions(options);
     const sections = parseSections(include);
-    const state = await readEngineConfig(this.db, { members: includeMembers && sections.has("groups") });
+    const state = await readEngineConfig(this.db, { members: includeMembers && sections.has("groups") }, this.logger);
     const bundle = buildConfigBundle(state, {
       sections,
       includeMembers,
@@ -69,7 +69,7 @@ export const configBundlesRoutes = routeModule({
     const { include, onConflict, applyMembers } = parseImportOptions(options);
     const sections = parseSections(include);
     const policy = parseConflictPolicy(onConflict);
-    const state = await readEngineConfig(this.db, { members: parsed.includeMembers });
+    const state = await readEngineConfig(this.db, { members: parsed.includeMembers }, this.logger);
     return planImport(parsed, state, { policy, sections, applyMembers: applyMembers === true }).plan;
   },
 
@@ -87,7 +87,7 @@ export const configBundlesRoutes = routeModule({
     const { include, onConflict, applyMembers } = parseImportOptions(options);
     const sections = parseSections(include);
     const policy = parseConflictPolicy(onConflict);
-    const state = await readEngineConfig(this.db, { members: parsed.includeMembers });
+    const state = await readEngineConfig(this.db, { members: parsed.includeMembers }, this.logger);
     const planned = planImport(parsed, state, { policy, sections, applyMembers: applyMembers === true });
 
     // Route modules are typed against the host alone (see routeModule), but

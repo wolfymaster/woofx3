@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"regexp"
@@ -887,7 +888,8 @@ func TestListAlertsFiltersByWorkflowRun(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				resp, err := svc.ListAlerts(context.Background(), &client.ListAlertsRequest{WorkflowId: tc.workflowID})
 				if tc.wantCode != "" {
-					if twerr, ok := err.(twirp.Error); !ok || twerr.Code() != tc.wantCode {
+					var twerr twirp.Error
+					if !errors.As(err, &twerr) || twerr.Code() != tc.wantCode {
 						t.Fatalf("err = %v, want %s", err, tc.wantCode)
 					}
 					return

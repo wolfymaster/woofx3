@@ -3,10 +3,12 @@ import type * as alert from "@woofx3/db/alert.pb";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import {
   alertSnapshotFromRow,
+  rfc3339FromString,
   rfc3339FromTimestamp,
   runSnapshotFromRow,
   stepSnapshotFromRow,
 } from "../src/stored-snapshots";
+import { parseRunRecorded, parseRunStepRecorded } from "../src/workflow-run-handlers";
 
 const UNSET = { seconds: 0n, nanos: 0 };
 /** 2026-10-20T12:00:00Z */
@@ -219,5 +221,77 @@ describe("stepSnapshotFromRow", () => {
 
   test("refuses a step without its row id", () => {
     expect(() => stepSnapshotFromRow("run-1", stepRow({ id: "" }))).toThrow("a step of run run-1 has no id");
+  });
+});
+
+describe("rfc3339FromString", () => {
+  const cases: Array<{ name: string; value: string; want: string }> = [
+    { name: "whole seconds", value: "2026-10-20T12:00:00Z", want: "2026-10-20T12:00:00.000000000Z" },
+    { name: "trimmed fraction", value: "2026-10-20T12:00:00.5Z", want: "2026-10-20T12:00:00.500000000Z" },
+    { name: "nanosecond precision", value: "2026-10-20T12:00:00.123456789Z", want: "2026-10-20T12:00:00.123456789Z" },
+    { name: "positive offset", value: "2026-10-20T14:00:00.25+02:00", want: "2026-10-20T12:00:00.250000000Z" },
+    {
+      name: "negative offset crossing midnight",
+      value: "2026-10-19T20:30:00-04:00",
+      want: "2026-10-20T00:30:00.000000000Z",
+    },
+  ];
+  for (const { name, value, want } of cases) {
+    test(name, () => {
+      expect(rfc3339FromString(value)).toBe(want);
+    });
+  }
+
+  for (const value of ["", "yesterday", "2026-10-20 12:00:00Z", "2026-10-20T12:00:00", "2026-13-40T12:00:00Z"]) {
+    test(`refuses ${JSON.stringify(value)}`, () => {
+      expect(() => rfc3339FromString(value)).toThrow("not an RFC 3339 timestamp");
+    });
+  }
+});
+
+describe("a stored row and its callback", () => {
+  // The Go encoder writes the row's zone and trims trailing zeros; the same
+  // instant must still reach clients as one string.
+  test("give a run the same snapshot", () => {
+    const stored = runSnapshotFromRow(runRow());
+    const callback = parseRunRecorded({
+      data: {
+        id: "run-1",
+        workflow_id: "wf-1",
+        status: "completed",
+        triggered_by: "twitch",
+        trigger_event: '{"type":"channel.raid"}',
+        started_at: "2026-10-20T14:00:00+02:00",
+        completed_at: "2026-10-20T12:00:05Z",
+        created_at: "2026-10-20T12:00:00Z",
+        updated_at: "2026-10-20T12:00:05.0Z",
+      },
+    }).event?.run;
+
+    expect(callback).toEqual(stored);
+  });
+
+  test("give a step the same snapshot", () => {
+    const stored = stepSnapshotFromRow("run-1", stepRow());
+    const callback = parseRunStepRecorded({
+      data: {
+        id: "step-1",
+        execution_id: "run-1",
+        task_id: "say-hi",
+        name: "Say hi",
+        status: "success",
+        attempt: 2,
+        step_index: 1,
+        inputs: '{"text":"hi"}',
+        outputs: '{"sent":true}',
+        duration_ms: 1000,
+        started_at: "2026-10-20T12:00:00Z",
+        completed_at: "2026-10-20T12:00:01.000Z",
+        created_at: "2026-10-20T12:00:01Z",
+        updated_at: "2026-10-20T14:00:01+02:00",
+      },
+    }).event?.step;
+
+    expect(callback).toEqual(stored);
   });
 });

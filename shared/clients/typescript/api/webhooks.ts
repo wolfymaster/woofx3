@@ -92,6 +92,10 @@ export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventT
 // Event payloads
 // ---------------------------------------------------------------------------
 
+/** Values of `TriggerDefinition.transport`. */
+export const EVENTBUS_TRANSPORT = "eventbus";
+export const WEBHOOK_TRANSPORT = "webhook";
+
 export interface TriggerDefinition {
   id: string;
   /** Canonical id `{moduleId}:trigger:{event}`. Populated on

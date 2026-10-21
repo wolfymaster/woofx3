@@ -90,7 +90,7 @@ describe("parseRunUpdated", () => {
     expect(event?.type).toBe(EngineEventType.WORKFLOW_RUN_UPDATED);
     expect(event?.run.status).toBe("failed");
     expect(event?.run.error).toBe("boom");
-    expect(event?.run.completedAt).toBe("2026-09-17T08:50:00Z");
+    expect(event?.run.completedAt).toBe("2026-09-17T08:50:00.000000000Z");
   });
 });
 

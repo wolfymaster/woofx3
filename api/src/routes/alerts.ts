@@ -18,7 +18,7 @@ import { routeModule } from "./context";
  * Short enough that an operator pressing Skip mid-raid hears back while the
  * raid is still on.
  */
-const ALERT_QUEUE_TIMEOUT_MS = 5_000;
+export const ALERT_QUEUE_TIMEOUT_MS = 5_000;
 
 /**
  * A replay makes several db round trips before it answers. The scene manager
@@ -41,7 +41,8 @@ async function requestAlertControl<T extends { ok: boolean; reason?: string }>(
   subject: string,
   body: Record<string, unknown>,
   unanswered: T,
-  timeout: number
+  timeout: number,
+  read: (reply: unknown) => T = readControlResult
 ): Promise<T> {
   if (!nats) {
     throw new Error("NATS client not available");
@@ -57,7 +58,19 @@ async function requestAlertControl<T extends { ok: boolean; reason?: string }>(
     logger.warn("alert control unanswered", { subject, reason });
     return { ...unanswered, reason };
   }
-  return JSON.parse(new TextDecoder().decode(data)) as T;
+  return read(JSON.parse(new TextDecoder().decode(data)));
+}
+
+/**
+ * A control's answer, checked down to the envelope every control shares. The
+ * result-specific counters are the scene manager's to get right; a reply that
+ * is not even an `{ ok }` object is refused here.
+ */
+function readControlResult<T extends { ok: boolean; reason?: string }>(reply: unknown): T {
+  if (typeof reply !== "object" || reply === null || typeof (reply as { ok?: unknown }).ok !== "boolean") {
+    throw new Error("the scene manager answered an alert control with an unreadable reply");
+  }
+  return reply as T;
 }
 
 /** `query.limit` checked against ALERT_LIST_MAX_LIMIT; a value out of range is a caller bug, not a request to clamp. */
@@ -82,10 +95,11 @@ function listOffset(offset: number | undefined): number {
 }
 
 function isQueueEntry(value: unknown): value is AlertQueueEntry {
-  const entry = value as Partial<AlertQueueEntry> | null;
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const entry = value as Partial<AlertQueueEntry>;
   return (
-    typeof entry === "object" &&
-    entry !== null &&
     typeof entry.alertId === "string" &&
     typeof entry.envelopeId === "string" &&
     (entry.startedAt === undefined || typeof entry.startedAt === "string")
@@ -98,19 +112,25 @@ function isQueueEntry(value: unknown): value is AlertQueueEntry {
  * control shares, so a refusal is given empty lists here; anything else
  * without valid lists is an answer this api cannot read.
  */
-function readQueueState(reply: AlertQueueState): AlertQueueState {
-  if (!reply.ok) {
-    return { ok: false, playing: [], waiting: [], reason: reply.reason ?? "no reason given" };
+function readQueueState(reply: unknown): AlertQueueState {
+  const unreadable = () => new Error("the scene manager answered widget.queue.state with an unreadable queue");
+  if (typeof reply !== "object" || reply === null) {
+    throw unreadable();
   }
-  if (
-    !Array.isArray(reply.playing) ||
-    !Array.isArray(reply.waiting) ||
-    !reply.playing.every(isQueueEntry) ||
-    !reply.waiting.every(isQueueEntry)
-  ) {
-    throw new Error("the scene manager answered widget.queue.state with an unreadable queue");
+  const { ok, reason, playing, waiting } = reply as Record<string, unknown>;
+  if (ok === false) {
+    if (typeof reason !== "string") {
+      throw unreadable();
+    }
+    return { ok: false, playing: [], waiting: [], reason };
   }
-  return { ok: true, playing: reply.playing, waiting: reply.waiting };
+  if (ok !== true || !Array.isArray(playing) || !Array.isArray(waiting)) {
+    throw unreadable();
+  }
+  if (!playing.every(isQueueEntry) || !waiting.every(isQueueEntry)) {
+    throw unreadable();
+  }
+  return { ok: true, playing, waiting };
 }
 
 export const alertsRoutes = routeModule({
@@ -122,15 +142,15 @@ export const alertsRoutes = routeModule({
   },
 
   async getAlertQueue(): Promise<AlertQueueState> {
-    const reply = await requestAlertControl<AlertQueueState>(
+    return requestAlertControl<AlertQueueState>(
       this.nats,
       this.logger,
       "widget.queue.state",
       {},
       { ok: false, playing: [], waiting: [] },
-      ALERT_QUEUE_TIMEOUT_MS
+      ALERT_QUEUE_TIMEOUT_MS,
+      readQueueState
     );
-    return readQueueState(reply);
   },
 
   async replayAlert(id: string): Promise<AlertReplayResult> {

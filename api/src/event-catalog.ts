@@ -1,4 +1,5 @@
 import { parseDataShape } from "@woofx3/api/ui-schema";
+import { EVENTBUS_TRANSPORT } from "@woofx3/api/webhooks";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { Trigger } from "@woofx3/db/module_trigger.pb";
@@ -34,8 +35,6 @@ export type EventCatalogListener = (events: ReadonlyMap<string, LoggedEvent>) =>
  * install registers each of its triggers separately, so these arrive in bursts.
  */
 const TRIGGER_CHANGE_SUBJECT = "db.module.trigger.>";
-
-const EVENTBUS_TRANSPORT = "eventbus";
 
 const SHARED_CHAT_PREFIX = "channel.shared";
 

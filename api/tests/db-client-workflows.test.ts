@@ -69,6 +69,15 @@ describe.each(Object.keys(found) as Lookup[])("DbClient.%s", (name) => {
     });
   }
 
+  test("fails on an envelope that is not OK", async () => {
+    const failed = { status: { code: "INTERNAL" as const, message: "db down" } };
+    respondWith(
+      protobuf(name === "findWorkflow" ? WorkflowResponse.encode(failed) : WorkflowExecutionResponse.encode(failed))
+    );
+
+    await expect(lookup(new DbClient("http://db.test"), name)).rejects.toBeInstanceOf(DbError);
+  });
+
   test("still fails on any other error", async () => {
     respondWith(twirpError(500, "internal"));
 
