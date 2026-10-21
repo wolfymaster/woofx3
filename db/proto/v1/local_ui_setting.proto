@@ -23,10 +23,10 @@ service LocalUISettingService {
   // Stores a value under the next revision. With `expected_revision`, the
   // write is refused unless it matches the stored revision, and the response
   // carries the stored row with `conflict` true.
-  rpc SetLocalUISetting(SetLocalUISettingRequest) returns (WriteLocalUISettingResponse);
+  rpc SetLocalUISetting(SetLocalUISettingRequest) returns (SetLocalUISettingResponse);
   // Turns a setting into a tombstone under the next revision, conditional on
   // `expected_revision` like a set. A key never written gets a tombstone too.
-  rpc DeleteLocalUISetting(DeleteLocalUISettingRequest) returns (WriteLocalUISettingResponse);
+  rpc DeleteLocalUISetting(DeleteLocalUISettingRequest) returns (DeleteLocalUISettingResponse);
   // Every row, tombstones included, with a revision greater than
   // `after_revision`, oldest revision first, one page at a time.
   rpc ListLocalUISettingChanges(ListLocalUISettingChangesRequest) returns (ListLocalUISettingChangesResponse);
@@ -79,11 +79,18 @@ message DeleteLocalUISettingRequest {
   optional int64 expected_revision = 3;
 }
 
-message WriteLocalUISettingResponse {
+message SetLocalUISettingResponse {
   common.ResponseStatus status = 1;
   // Without `conflict`, the row as written, its revision the new one. With
   // it, the stored row that refused the write, a tombstone included; absent
   // when the key was never written.
+  LocalUISetting setting = 2;
+  bool conflict = 3;
+}
+
+message DeleteLocalUISettingResponse {
+  common.ResponseStatus status = 1;
+  // As on SetLocalUISettingResponse; the row is the tombstone when written.
   LocalUISetting setting = 2;
   bool conflict = 3;
 }
