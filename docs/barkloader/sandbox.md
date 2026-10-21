@@ -178,8 +178,8 @@ how a manifest declares these values and how they get registered at install time
 Neither runtime provides a host-visible logging facility on its own — QuickJS has no
 `console` (rquickjs doesn't even offer a `console` cargo feature in the version this
 project pins), and the Lua sandbox strips `print` and has no `io`
-([Globals and isolation](#globals-and-isolation)). `ctx.log` is the only way a module function can emit a log line; both adapters
-build it as a namespace on `ctx` (`build_log_namespace` in
+([Globals and isolation](#globals-and-isolation)). `ctx.log` is the only way a module
+function can emit a log line; both adapters build it as a namespace on `ctx` (`build_log_namespace` in
 `barkloader/lib_sandbox/src/runtime/quickjs.rs`, and the equivalent inline block in
 `barkloader/lib_sandbox/src/runtime/lua.rs`), forwarding to the host's `log` crate:
 
