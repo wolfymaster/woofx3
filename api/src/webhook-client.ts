@@ -1,7 +1,8 @@
-import type { CallbackEvent, EngineRequest } from "@woofx3/api/webhooks";
+import type { CallbackEvent, EngineRequest, RequestEnvelope } from "@woofx3/api/webhooks";
 import { makeCallbackEnvelope, makeRequestEnvelope } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
+import type { EngineEventStream } from "./engine-event-stream";
 
 // Re-export the shared webhook types so existing engine-side importers
 // (./webhook-client) keep working without churn. External clients should
@@ -47,18 +48,45 @@ interface RegisteredInstance {
   callbackToken: string;
 }
 
+/**
+ * How long the engine waits for a client to answer a request, over either
+ * transport, and for a callback URL to accept an event.
+ */
+const CALLBACK_TIMEOUT_MS = 5_000;
+
+/**
+ * The engine's one path to its clients. Every engine event and request goes
+ * through here: the envelope is built once, then delivered over two
+ * transports, a POST to each client's callback URL and a push to each of its
+ * event stream subscriptions (`EngineEventStream`).
+ *
+ * Events go both ways: a client that has a callback URL and a subscription
+ * gets each one on both, and is idempotent on the envelope id. A request goes
+ * one way, chosen per client: its callback URL when it registered one, else
+ * its newest event stream subscription.
+ */
 export class WebhookClient {
   private instances: RegisteredInstance[] = [];
-  private readonly timeoutMs = 5_000;
+  private readonly timeoutMs = CALLBACK_TIMEOUT_MS;
 
   constructor(
     private db: DbClient,
-    private logger: SharedLogger
+    private logger: SharedLogger,
+    private stream: EngineEventStream
   ) {}
 
-  /** Engine client ids of the dashboards with a callback URL. */
+  /**
+   * Engine client ids that can be asked a request: those with a callback URL,
+   * then those reachable only over the event stream.
+   */
   clientIds(): string[] {
-    return this.instances.map((instance) => instance.clientId);
+    const ids = this.instances.map((instance) => instance.clientId);
+    for (const clientId of this.stream.clientIds()) {
+      if (!ids.includes(clientId)) {
+        ids.push(clientId);
+      }
+    }
+    return ids;
   }
 
   async refreshCallbackUrls(): Promise<void> {
@@ -82,25 +110,22 @@ export class WebhookClient {
 
   async send(event: CallbackEvent, targetClientId?: string): Promise<void> {
     const eventType = event.type;
-
-    if (this.instances.length === 0) {
-      this.logger.warn("WebhookClient.send called but no callback instances registered", { eventType, targetClientId });
-      return;
-    }
-
     const envelope = makeCallbackEnvelope(event);
+    const streamed = this.stream.publish(envelope, targetClientId);
 
     let targets = this.instances;
     if (targetClientId) {
       targets = this.instances.filter((i) => i.clientId === targetClientId);
-      if (targets.length === 0) {
-        this.logger.warn("WebhookClient.send: target clientId not found among registered instances", {
+    }
+    if (targets.length === 0) {
+      if (streamed === 0) {
+        this.logger.warn("WebhookClient.send: no callback URL or event stream subscription to deliver to", {
           eventType,
-          targetClientId,
-          registeredClients: this.instances.map((i) => i.clientId),
+          targetClientId: targetClientId ?? "broadcast",
+          registeredClients: this.clientIds(),
         });
-        return;
       }
+      return;
     }
 
     this.logger.info("WebhookClient dispatching event to callback instances", {
@@ -108,6 +133,7 @@ export class WebhookClient {
       envelopeId: envelope.id,
       targetClientId: targetClientId ?? "broadcast",
       instanceCount: targets.length,
+      streamed,
       targets: targets.map((i) => i.instanceName),
     });
 
@@ -123,16 +149,26 @@ export class WebhookClient {
   }
 
   /**
-   * Send a request to one dashboard and return its answer, the parsed JSON
-   * response body. Unlike `send`, a request is not retried and does not fail
-   * quietly: the caller is waiting on the answer, so a missing dashboard, a
-   * non-2xx status or a body that is not JSON rejects.
+   * Send a request to one client and return its answer: the parsed JSON
+   * response body of its callback URL, or the body it answers with on its
+   * event stream when it has no callback URL. Unlike `send`, a request is not
+   * retried and does not fail quietly: the caller is waiting on the answer,
+   * so a client that is reachable neither way, a refusal (a non-2xx status,
+   * or `ok: false`), a timeout or an HTTP body that is not JSON rejects.
    */
   async request(request: EngineRequest, targetClientId: string): Promise<unknown> {
+    const envelope = makeRequestEnvelope(request);
     const instance = this.instances.find((i) => i.clientId === targetClientId);
-    if (!instance) {
-      throw new Error(`no registered dashboard with client id ${targetClientId}`);
+    if (instance) {
+      return this.requestOverHttp(instance, envelope);
     }
+    if (this.stream.hasSubscriber(targetClientId)) {
+      return this.stream.request(envelope, targetClientId, this.timeoutMs);
+    }
+    throw new Error(`no registered dashboard with client id ${targetClientId}`);
+  }
+
+  private async requestOverHttp(instance: RegisteredInstance, envelope: RequestEnvelope): Promise<unknown> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -143,11 +179,11 @@ export class WebhookClient {
       const response = await fetch(instance.callbackUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify(makeRequestEnvelope(request)),
+        body: JSON.stringify(envelope),
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new Error(`${request.type}: dashboard answered HTTP ${response.status}`);
+        throw new Error(`${envelope.type}: dashboard answered HTTP ${response.status}`);
       }
       return await response.json();
     } finally {

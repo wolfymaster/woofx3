@@ -10,6 +10,7 @@ import type { ApiRouteHost } from "./context";
 import { dashboardRoutes } from "./dashboard";
 import { dashboardStatsRoutes } from "./dashboard-stats";
 import { engineRoutes } from "./engine";
+import { engineEventsRoutes } from "./engine-events";
 import { eventsRoutes } from "./events";
 import { fieldOptionsRoutes } from "./field-options";
 import { groupsRoutes } from "./groups";
@@ -38,6 +39,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof subscriptionsRoutes &
   typeof triggerSubscriptionRoutes &
   typeof streamEventsRoutes &
+  typeof engineEventsRoutes &
   typeof workflowsExecutionRoutes &
   typeof actionsRoutes &
   typeof commandsRoutes &
@@ -101,6 +103,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(subscriptionsRoutes),
     instrumentRoutes(triggerSubscriptionRoutes),
     instrumentRoutes(streamEventsRoutes),
+    instrumentRoutes(engineEventsRoutes),
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),

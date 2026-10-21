@@ -110,6 +110,7 @@ describe("the RPC surface a client sees", () => {
       "setAuthInvalidate",
       "setStreamEventBroadcaster",
       "setEventLogSelectionSource",
+      "setEngineEventStream",
       "initSubscriptions",
       "handleProcessingCallback",
     ].sort();

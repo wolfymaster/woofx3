@@ -8,6 +8,7 @@ import type {
   ConfigImportPlan,
   ConfigImportResult,
 } from "./config-bundle";
+import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
 import type { RegisterClientOptions } from "./rpc";
 import type {
@@ -2497,6 +2498,22 @@ export interface Woofx3EngineApi {
    *  that connects late or reconnects has missed the gap and should re-read
    *  point-in-time state rather than assume a continuous stream. */
   subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]): Promise<void>;
+
+  /** Push this client's engine events to the caller for the life of the
+   *  session: the `CallbackEnvelope`s its callback URL would be sent, and the
+   *  requests the engine needs it to answer (see `EngineEventFrame`). A client
+   *  with a callback URL gets each event both ways; it is idempotent on the
+   *  envelope `id`. Calling again on the same session replaces the previous
+   *  subscription.
+   *
+   *  Delivery is at most once, in order, with no replay; `seq` shows a gap.
+   *  See docs/services/engine-callbacks.md. */
+  subscribeEngineEvents(callback: EngineEventSubscriber, options?: EngineEventSubscribeOptions): Promise<void>;
+
+  /** Answer a request pushed on this session's engine event stream, by its
+   *  envelope `id`. Rejects when no such request is waiting for this client:
+   *  it timed out, was answered already, or was sent to another client. */
+  answerEngineRequest(requestId: string, answer: EngineRequestAnswer): Promise<void>;
 
   /** Read the engine's event log, newest first; see `EventLogQuery`. The
    *  history behind `subscribeStreamEvents`: a client reads a page on load and

@@ -27,6 +27,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
+import type { EngineEventStream } from "../engine-event-stream";
 import type { MarketplaceClient } from "../marketplace-client";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { RelayCredentialSource } from "../relay-credential-source";
@@ -85,6 +86,7 @@ export class ApiRouteHost extends RpcTarget {
   }>();
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
+  protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
   protected authInvalidate: (() => void) | null = null;
   /**

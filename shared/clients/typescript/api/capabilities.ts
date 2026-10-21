@@ -60,6 +60,12 @@ export const ENGINE_CAPABILITIES = {
    * see HOSTING_ENGINE_CAPABILITIES.
    */
   engineLocalMode: "engine.localMode",
+  /**
+   * The engine event stream over the capnweb session: `subscribeEngineEvents`
+   * pushes the webhook envelopes and engine requests, and `answerEngineRequest`
+   * answers a request. A client with no callback URL is asked over it.
+   */
+  engineEventStream: "engine.eventStream",
   /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
   configBundles: "config.bundles",
   /**
