@@ -1,5 +1,5 @@
 use lib_sandbox::host::{HttpClient, HttpRequest};
-use lib_sandbox::net;
+use lib_sandbox::net::{self, Refusal};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -10,44 +10,69 @@ use tracing::warn;
 /// Redirects a module's request may follow, as reqwest's default allows.
 const MAX_REDIRECTS: usize = 10;
 
-/// What happens when module code reaches a destination its module was not
-/// granted (see `lib_sandbox::net`).
+/// What happens when module code reaches a destination outside its grants
+/// (see `lib_sandbox::net`). Private and local addresses are a separate rule
+/// (`HttpPolicy::allow_private`) that this mode never relaxes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpPolicyMode {
-    /// Log the destination and send the request anyway, so modules written
-    /// before host permissions can be found and updated before `Enforce`.
-    Log,
     /// Refuse the request with `permission_denied`.
     Enforce,
+    /// Log the destination and send the request anyway: an explicit opt-in so
+    /// an operator can find and update modules written before host
+    /// permissions.
+    Log,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PolicyError {
+    #[error("WOOFX3_MODULE_HTTP must be enforce or log, not {0:?}")]
+    Mode(String),
+    #[error("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE must be true or false, not {0:?}")]
+    AllowPrivate(String),
+}
+
+/// The two egress rules for module requests, parsed once at startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HttpPolicy {
+    /// The grant rule: what happens to a destination the module was not
+    /// granted.
     pub mode: HttpPolicyMode,
-    /// Let module code reach loopback, private and link-local addresses: for
-    /// a self-hosted engine whose modules talk to its own network. Never set
-    /// on a managed engine, where those addresses are the engine's own
-    /// services and its host's metadata endpoint.
+    /// The private-address rule: let module code reach loopback, private and
+    /// link-local addresses, for a self-hosted engine whose modules talk to
+    /// its own network. Never set on a managed engine, where those addresses
+    /// are the engine's own services and its host's metadata endpoint. When
+    /// false these addresses are refused in every mode.
     pub allow_private: bool,
 }
 
 impl HttpPolicy {
-    /// `WOOFX3_MODULE_HTTP` (`log`, the default, or `enforce`) and
-    /// `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` (`true` to allow).
-    pub fn from_settings(mode: &str, allow_private: &str) -> Result<Self, String> {
+    /// `WOOFX3_MODULE_HTTP` (`enforce`, the default, or `log`) and
+    /// `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` (`false`, the default, or `true`).
+    /// Any other value is an error, so a typo never weakens the policy.
+    pub fn from_settings(mode: &str, allow_private: &str) -> Result<Self, PolicyError> {
         let mode = match mode.trim() {
-            "" | "log" => HttpPolicyMode::Log,
-            "enforce" => HttpPolicyMode::Enforce,
-            other => {
-                return Err(format!(
-                    "WOOFX3_MODULE_HTTP must be log or enforce, not {other:?}"
-                ));
-            }
+            "" | "enforce" => HttpPolicyMode::Enforce,
+            "log" => HttpPolicyMode::Log,
+            other => return Err(PolicyError::Mode(other.to_string())),
+        };
+        let allow_private = match allow_private.trim() {
+            "" | "false" => false,
+            "true" => true,
+            other => return Err(PolicyError::AllowPrivate(other.to_string())),
         };
         Ok(Self {
             mode,
-            allow_private: allow_private.trim() == "true",
+            allow_private,
         })
+    }
+
+    /// Whether `refusal` stops the request. Only the grant rule follows the
+    /// mode; a URL that is not http(s) or names a private address never goes.
+    fn enforces(&self, refusal: &Refusal) -> bool {
+        match refusal {
+            Refusal::Unreachable(_) | Refusal::PrivateAddress(_) => true,
+            Refusal::Ungranted(_) => self.mode == HttpPolicyMode::Enforce,
+        }
     }
 }
 
@@ -64,34 +89,37 @@ impl ReqwestHttpClient {
         let client = reqwest::Client::builder()
             // Followed here instead, so each hop is checked like the first.
             .redirect(reqwest::redirect::Policy::none())
-            .dns_resolver(Arc::new(GuardedResolver { policy }))
+            .dns_resolver(Arc::new(GuardedResolver {
+                allow_private: policy.allow_private,
+            }))
             .build()
             .expect("reqwest client with a custom resolver and no redirects always builds");
         Self { client, policy }
     }
 
-    /// Why this request may not go to `url`, logged; an error only when the
-    /// policy enforces.
+    /// Why this request may not go to `url`, logged; an error when the policy
+    /// enforces that refusal.
     fn check(
         &self,
         module_id: &str,
         grants: &HashSet<String>,
         url: &reqwest::Url,
     ) -> Result<(), String> {
-        let Some(reason) = net::refusal(grants, url, self.policy.allow_private) else {
+        let Some(refusal) = net::refusal(grants, url, self.policy.allow_private) else {
             return Ok(());
         };
+        let enforced = self.policy.enforces(&refusal);
         warn!(
             "ctx.http to an ungranted destination module={} host={} enforced={} reason={}",
             module_id,
             url.host_str().unwrap_or(""),
-            self.policy.mode == HttpPolicyMode::Enforce,
-            reason
+            enforced,
+            refusal
         );
-        match self.policy.mode {
-            HttpPolicyMode::Log => Ok(()),
-            HttpPolicyMode::Enforce => Err(format!("permission_denied: ctx.http: {reason}")),
+        if enforced {
+            return Err(format!("permission_denied: ctx.http: {refusal}"));
         }
+        Ok(())
     }
 }
 
@@ -213,32 +241,31 @@ async fn into_value(response: reqwest::Response) -> Result<Value, String> {
 /// granted host could still resolve to the engine's own network, by mistake
 /// or because its owner pointed it there. Checking here, rather than before
 /// sending, means the address checked is the address connected to.
+/// Private addresses are refused whatever the grant mode, unless the engine
+/// allows them.
 struct GuardedResolver {
-    policy: HttpPolicy,
+    allow_private: bool,
 }
 
 impl reqwest::dns::Resolve for GuardedResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
-        let policy = self.policy;
+        let allow_private = self.allow_private;
         Box::pin(async move {
             let host = name.as_str().to_string();
             let addrs: Vec<SocketAddr> =
                 tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
-            if !policy.allow_private
+            if !allow_private
                 && let Some(addr) = addrs.iter().find(|addr| net::is_restricted_ip(addr.ip()))
             {
                 warn!(
-                    "ctx.http host resolves to a private or local address host={} address={} enforced={}",
+                    "ctx.http host resolves to a private or local address host={} address={}",
                     host,
-                    addr.ip(),
-                    policy.mode == HttpPolicyMode::Enforce
+                    addr.ip()
                 );
-                if policy.mode == HttpPolicyMode::Enforce {
-                    return Err(format!(
-                        "permission_denied: ctx.http: {host} resolves to a private or local address"
-                    )
-                    .into());
-                }
+                return Err(format!(
+                    "permission_denied: ctx.http: {host} resolves to a private or local address"
+                )
+                .into());
             }
             let addrs: reqwest::dns::Addrs = Box::new(addrs.into_iter());
             Ok(addrs)
@@ -251,14 +278,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_policy_logs_by_default_and_enforces_when_asked() {
-        let default = HttpPolicy::from_settings("", "").unwrap();
-        assert_eq!(default.mode, HttpPolicyMode::Log);
-        assert!(!default.allow_private);
-        let strict = HttpPolicy::from_settings("enforce", "true").unwrap();
-        assert_eq!(strict.mode, HttpPolicyMode::Enforce);
-        assert!(strict.allow_private);
-        assert!(HttpPolicy::from_settings("strict", "").is_err());
+    fn the_policy_enforces_by_default_and_rejects_unknown_values() {
+        let policy = |mode, allow_private| HttpPolicy {
+            mode,
+            allow_private,
+        };
+        let cases: &[(&str, &str, Result<HttpPolicy, PolicyError>)] = &[
+            ("", "", Ok(policy(HttpPolicyMode::Enforce, false))),
+            (
+                "enforce",
+                "false",
+                Ok(policy(HttpPolicyMode::Enforce, false)),
+            ),
+            (
+                " enforce ",
+                " true ",
+                Ok(policy(HttpPolicyMode::Enforce, true)),
+            ),
+            ("log", "", Ok(policy(HttpPolicyMode::Log, false))),
+            ("log", "true", Ok(policy(HttpPolicyMode::Log, true))),
+            ("strict", "", Err(PolicyError::Mode("strict".to_string()))),
+            (
+                "enforced",
+                "",
+                Err(PolicyError::Mode("enforced".to_string())),
+            ),
+            ("Log", "", Err(PolicyError::Mode("Log".to_string()))),
+            ("", "yes", Err(PolicyError::AllowPrivate("yes".to_string()))),
+            ("", "1", Err(PolicyError::AllowPrivate("1".to_string()))),
+            (
+                "",
+                "True",
+                Err(PolicyError::AllowPrivate("True".to_string())),
+            ),
+            (
+                "",
+                "flase",
+                Err(PolicyError::AllowPrivate("flase".to_string())),
+            ),
+        ];
+        for (mode, allow_private, expected) in cases {
+            assert_eq!(
+                &HttpPolicy::from_settings(mode, allow_private),
+                expected,
+                "mode={mode:?} allow_private={allow_private:?}"
+            );
+        }
     }
 
     fn grants(entries: &[&str]) -> HashSet<String> {
@@ -303,5 +368,54 @@ mod tests {
             })
         });
         assert!(result.unwrap_err().contains("private or local"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn logging_still_refuses_a_private_address_literal() {
+        let client = ReqwestHttpClient::new(HttpPolicy {
+            mode: HttpPolicyMode::Log,
+            allow_private: false,
+        });
+        let grants = grants(&[]);
+        for url in [
+            "http://127.0.0.1:5555/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://[::ffff:127.0.0.1]:9/",
+        ] {
+            let result = tokio::task::block_in_place(|| {
+                client.request(HttpRequest {
+                    module_id: "mymod",
+                    grants: &grants,
+                    url,
+                    method: "GET",
+                    opts: Value::Null,
+                })
+            });
+            let error = result.unwrap_err();
+            assert!(error.starts_with("permission_denied:"), "{url}: {error}");
+            assert!(error.contains("private or local"), "{url}: {error}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_resolver_refuses_private_answers_whatever_the_mode() {
+        use reqwest::dns::Resolve;
+        use std::str::FromStr;
+
+        let resolver = GuardedResolver {
+            allow_private: false,
+        };
+        let name = reqwest::dns::Name::from_str("localhost").unwrap();
+        let error = match resolver.resolve(name).await {
+            Ok(_) => panic!("localhost resolved for a module"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("private or local"), "{error}");
+
+        let permissive = GuardedResolver {
+            allow_private: true,
+        };
+        let name = reqwest::dns::Name::from_str("localhost").unwrap();
+        assert!(permissive.resolve(name).await.is_ok());
     }
 }

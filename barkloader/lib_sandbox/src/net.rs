@@ -161,22 +161,46 @@ fn in_prefix_v6(bits: u128, network: u128, prefix: u8) -> bool {
     bits & mask == network & mask
 }
 
+/// Why module code may not reach a URL. The host's HTTP client refuses
+/// `Unreachable` and `PrivateAddress` whatever its policy; what it does with
+/// `Ungranted` depends on the policy and on the request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// Not an `http` or `https` URL with a host and port.
+    Unreachable(String),
+    /// An IP literal in a restricted range, on an engine that does not allow
+    /// private destinations.
+    PrivateAddress(String),
+    /// A destination outside the invocation's grants.
+    Ungranted(String),
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Refusal::Unreachable(reason)
+            | Refusal::PrivateAddress(reason)
+            | Refusal::Ungranted(reason) => f.write_str(reason),
+        }
+    }
+}
+
 /// Why module code may not reach `url`, or None when its grants allow it.
 /// `granted` is the invocation's grant set: declared permissions plus the
 /// `origin:` grants of its `url` settings.
-pub fn refusal(granted: &HashSet<String>, url: &Url, allow_private: bool) -> Option<String> {
+pub fn refusal(granted: &HashSet<String>, url: &Url, allow_private: bool) -> Option<Refusal> {
     let destination = match Destination::of(url) {
         Ok(destination) => destination,
-        Err(reason) => return Some(reason),
+        Err(reason) => return Some(Refusal::Unreachable(reason)),
     };
     if !allow_private
         && let Some(ip) = destination.ip
         && is_restricted_ip(ip)
     {
-        return Some(format!(
+        return Some(Refusal::PrivateAddress(format!(
             "{} is a private or local address",
             destination.host
-        ));
+        )));
     }
     if granted.contains(&destination.origin_grant()) {
         return None;
@@ -186,15 +210,15 @@ pub fn refusal(granted: &HashSet<String>, url: &Url, allow_private: bool) -> Opt
         return None;
     }
     if declared {
-        return Some(format!(
+        return Some(Refusal::Ungranted(format!(
             "{} is declared for https on port 443 only, not {}://…:{}",
             destination.host, destination.scheme, destination.port
-        ));
+        )));
     }
-    Some(format!(
+    Some(Refusal::Ungranted(format!(
         "{} is not a host this module declares (\"{NET_PERMISSION_PREFIX}{}\" in its manifest's permissions) or a URL setting holds",
         destination.host, destination.host
-    ))
+    )))
 }
 
 struct Destination {
@@ -244,7 +268,7 @@ mod tests {
     }
 
     fn refused(granted: &[&str], url: &str) -> Option<String> {
-        refusal(&grants(granted), &Url::parse(url).unwrap(), false)
+        refusal(&grants(granted), &Url::parse(url).unwrap(), false).map(|r| r.to_string())
     }
 
     #[test]
@@ -325,12 +349,15 @@ mod tests {
     fn a_private_address_is_refused_unless_the_engine_allows_it() {
         let grant = origin_grant("http://192.168.1.20:8123").unwrap();
         let url = Url::parse("http://192.168.1.20:8123/api").unwrap();
-        assert!(
-            refusal(&grants(&[&grant]), &url, false)
-                .unwrap()
-                .contains("private or local")
-        );
+        assert!(matches!(
+            refusal(&grants(&[&grant]), &url, false),
+            Some(Refusal::PrivateAddress(_))
+        ));
         assert_eq!(refusal(&grants(&[&grant]), &url, true), None);
+        assert!(matches!(
+            refusal(&grants(&[]), &url, true),
+            Some(Refusal::Ungranted(_))
+        ));
         assert!(
             refused(&[], "http://127.0.0.1:8080/")
                 .unwrap()
