@@ -614,8 +614,12 @@ pub use test_support::FakeDbProxyClient;
 mod test_support {
     use super::*;
     use anyhow::anyhow;
+    use serde_json::Value;
     use std::collections::HashSet;
     use std::sync::Mutex;
+
+    /// The row id the fake's `create_module` gives a new module row.
+    pub const FAKE_DB_RECORD_ID: &str = "fake-db-record-id";
 
     /// In-memory `ModuleDbProxy` for install-saga tests: records every
     /// call in order, and fails whichever calls are named in `fail_on` —
@@ -655,6 +659,10 @@ mod test_support {
         /// `(resource_type, manifest_id)` for every archive or delete by
         /// manifest id, in order.
         removed_resources: Mutex<Vec<(String, String)>>,
+        /// Module rows as the db would hold them, oldest first, as the
+        /// `module` of a `GetModuleByName` response: seeded ones and the one
+        /// `create_module` writes.
+        module_rows: Mutex<Vec<Value>>,
     }
 
     impl FakeDbProxyClient {
@@ -679,6 +687,7 @@ mod test_support {
                 installed_version: Mutex::new(None),
                 created_modules: Mutex::new(Vec::new()),
                 removed_resources: Mutex::new(Vec::new()),
+                module_rows: Mutex::new(Vec::new()),
             }
         }
 
@@ -714,6 +723,16 @@ mod test_support {
                 .lock()
                 .expect("installed_version mutex poisoned")
                 .replace(response_body);
+            self
+        }
+
+        /// Seeds a module row an earlier install left, as the `module` of a
+        /// `GetModuleByName` response.
+        pub fn with_module_row(self, row: Value) -> Self {
+            self.module_rows
+                .lock()
+                .expect("module_rows mutex poisoned")
+                .push(row);
             self
         }
 
@@ -835,8 +854,8 @@ mod test_support {
     impl ModuleDbProxy for FakeDbProxyClient {
         async fn create_module(
             &self,
-            _display_name: &str,
-            _module_id: &str,
+            display_name: &str,
+            module_id: &str,
             version: &str,
             manifest_json: &str,
             _archive_key: &str,
@@ -860,7 +879,27 @@ mod test_support {
                 .lock()
                 .expect("provenance mutex poisoned")
                 .replace(provenance);
-            Ok("fake-db-record-id".to_string())
+            let mut rows = self.module_rows.lock().expect("module_rows mutex poisoned");
+            let row_id = match rows.iter_mut().find(|row| row["module_id"] == module_id) {
+                Some(row) => {
+                    row["name"] = Value::from(display_name);
+                    row["version"] = Value::from(version);
+                    row["module_key"] = Value::from(module_key);
+                    row["id"].as_str().unwrap_or_default().to_string()
+                }
+                None => {
+                    rows.push(serde_json::json!({
+                        "id": FAKE_DB_RECORD_ID,
+                        "module_id": module_id,
+                        "name": display_name,
+                        "version": version,
+                        "module_key": module_key,
+                        "created_by_type": "CLIENT",
+                    }));
+                    FAKE_DB_RECORD_ID.to_string()
+                }
+            };
+            Ok(row_id)
         }
 
         async fn delete_module(&self, _module_name: &str) -> Result<()> {
@@ -876,9 +915,15 @@ mod test_support {
                 .clone())
         }
 
-        async fn get_module_by_name(&self, _name: &str) -> Result<Option<String>> {
+        /// Resolves `name` like the db's GetModuleByName: against the
+        /// module_id or the name column, oldest row first.
+        async fn get_module_by_name(&self, name: &str) -> Result<Option<String>> {
             self.record("get_module_by_name")?;
-            Ok(None)
+            let rows = self.module_rows.lock().expect("module_rows mutex poisoned");
+            Ok(rows
+                .iter()
+                .find(|row| row["module_id"] == name || row["name"] == name)
+                .map(|row| serde_json::json!({ "module": row }).to_string()))
         }
 
         async fn register_triggers(

@@ -142,6 +142,7 @@ async fn rollback_db_install(
     manifest_module_key: &str,
     composite_module_key: &str,
     module_name: &str,
+    db_record_id: &str,
     preexisting_command_ids: &std::collections::HashSet<String>,
 ) {
     if let Err(e) =
@@ -154,11 +155,75 @@ async fn rollback_db_install(
     }
     delete_commands_created_by_install(db_proxy, manifest_module_key, preexisting_command_ids)
         .await;
+    if !name_resolves_to_installed_row(db_proxy, module_name, manifest_module_key, db_record_id)
+        .await
+    {
+        return;
+    }
     if let Err(e) = db_proxy.delete_module(module_name).await {
         warn!("rollback: delete_module({}) failed: {}", module_name, e);
     } else {
         info!("rollback: removed module row for {}", module_name);
     }
+}
+
+/// Whether `DeleteModule(module_name)` would delete the row this install
+/// created (`db_record_id`, holding `module_id`). The db resolves a module
+/// name against both the name and the module_id column, so a name that is
+/// also another module's id can resolve to that module's row; the rollback
+/// then leaves its own row in place (logged) rather than delete another
+/// module.
+async fn name_resolves_to_installed_row(
+    db_proxy: &dyn ModuleDbProxy,
+    module_name: &str,
+    module_id: &str,
+    db_record_id: &str,
+) -> bool {
+    let body = match db_proxy.get_module_by_name(module_name).await {
+        Ok(Some(body)) => body,
+        Ok(None) => {
+            info!("rollback: no module row named {} to remove", module_name);
+            return false;
+        }
+        Err(e) => {
+            warn!(
+                "rollback: look up module row {} failed, leaving it in place: {}",
+                module_name, e
+            );
+            return false;
+        }
+    };
+    let row = match serde_json::from_str::<ModuleRowBody>(&body) {
+        Ok(parsed) => parsed.module,
+        Err(e) => {
+            warn!(
+                "rollback: read module row {} failed, leaving it in place: {}",
+                module_name, e
+            );
+            return false;
+        }
+    };
+    if row.id != db_record_id || row.module_id != module_id {
+        warn!(
+            "rollback: module name {} resolves to row {} of module {:?}, not this install's row {} of {}; leaving it in place",
+            module_name, row.id, row.module_id, db_record_id, module_id
+        );
+        return false;
+    }
+    true
+}
+
+/// The identity of a module row in a `GetModuleByName` response.
+#[derive(Debug, Deserialize)]
+struct ModuleRowBody {
+    module: ModuleRowIdentity,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModuleRowIdentity {
+    id: String,
+    #[serde(default)]
+    module_id: String,
 }
 
 /// The installed version of a module as the db holds it before an install
@@ -168,6 +233,8 @@ async fn rollback_db_install(
 #[derive(Debug, Clone, Deserialize)]
 struct PreviousInstall {
     name: String,
+    /// Empty for a row written before module_id was recorded.
+    #[serde(default)]
     module_id: String,
     module_key: String,
     version: String,
@@ -254,17 +321,35 @@ impl PreviousInstall {
 /// failed lookup fails the install before it writes anything: without it
 /// there is no telling whether a failure later must restore a working
 /// version or remove a new one.
+///
+/// A row named `name` with no module_id is the installed version too:
+/// CreateModule adopts such a row (written before module_id was recorded),
+/// so a failed install over it is an upgrade to restore, not a fresh
+/// install to delete.
 async fn fetch_previous_install(
     db_proxy: &dyn ModuleDbProxy,
     module_id: &str,
+    name: &str,
 ) -> Result<Option<PreviousInstall>> {
-    let Some(body) = db_proxy
+    if let Some(body) = db_proxy
         .get_module_by_module_id(module_id)
         .await
         .map_err(|e| anyhow!("look up installed module {}: {}", module_id, e))?
+    {
+        return PreviousInstall::from_response(module_id, &body).map(Some);
+    }
+    let Some(body) = db_proxy
+        .get_module_by_name(name)
+        .await
+        .map_err(|e| anyhow!("look up installed module named {}: {}", name, e))?
     else {
         return Ok(None);
     };
+    let row = serde_json::from_str::<ModuleRowBody>(&body)
+        .map_err(|e| anyhow!("read installed module named {}: {}", name, e))?;
+    if !row.module.module_id.is_empty() {
+        return Ok(None);
+    }
     PreviousInstall::from_response(module_id, &body).map(Some)
 }
 
@@ -423,11 +508,13 @@ async fn restore_previous_install(
         .await;
     }
 
+    // `module_key`, not `previous.module_id`: a legacy row has none, and
+    // the failed install already stamped it with `module_key`.
     let (provenance, client_id) = previous.provenance();
     db_proxy
         .create_module(
             &previous.name,
-            &previous.module_id,
+            module_key,
             &previous.version,
             &previous.manifest,
             &previous.archive_key,
@@ -1415,7 +1502,7 @@ pub async fn run_install_with_provenance<R: Repository>(
     // Taken before any db write: whether a version is installed decides how
     // a failure is compensated, and it is what a success is diffed against.
     let previous = match db_proxy {
-        Some(proxy) => fetch_previous_install(proxy, module_key).await?,
+        Some(proxy) => fetch_previous_install(proxy, module_key, &manifest.name).await?,
         None => None,
     };
 
@@ -1467,9 +1554,9 @@ pub async fn run_install_with_provenance<R: Repository>(
             // CreateModule is the first db write; until it succeeds this
             // install has written nothing to undo, and the module row the
             // db holds, if any, is not this install's.
-            if state.db_record_id.is_none() {
+            let Some(db_record_id) = state.db_record_id.clone() else {
                 return Err(e);
-            }
+            };
             let Some(previous) = previous else {
                 warn!(
                     "install failed for module {} ({}): rolling back db state: {}",
@@ -1480,6 +1567,7 @@ pub async fn run_install_with_provenance<R: Repository>(
                     module_key,
                     composite_module_key,
                     &manifest.name,
+                    &db_record_id,
                     &preexisting_command_ids,
                 )
                 .await;
@@ -1914,6 +2002,7 @@ mod tests {
                 "delete_background_tasks_by_module_id",
                 "delete_workflows_by_module",
                 "list_commands_by_module",
+                "get_module_by_name",
                 "delete_module",
             ]
         );
@@ -1942,6 +2031,12 @@ mod tests {
     /// trigger `t_old` where `fault_test_manifest` declares `t1`, and the
     /// same function and action.
     fn previous_version_body(id: &str) -> String {
+        serde_json::json!({ "module": previous_version_row(id) }).to_string()
+    }
+
+    /// The module row of version 0.9.0 of `id`, as `previous_version_body`
+    /// describes it.
+    fn previous_version_row(id: &str) -> serde_json::Value {
         let manifest = serde_json::json!({
             "id": id,
             "name": "Test Mod",
@@ -1951,28 +2046,112 @@ mod tests {
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }]
         });
         serde_json::json!({
-            "module": {
-                "id": "row-1",
-                "name": "Test Mod",
-                "module_id": id,
-                "module_key": PREVIOUS_MODULE_KEY,
-                "version": "0.9.0",
-                "manifest": manifest.to_string(),
-                "archive_key": "archives/fault-mod-up-0.9.0.zip",
-                "state": "active",
-                "created_by_type": "CLIENT",
-                "created_by_ref": "client-1",
-                "functions": [{
-                    "manifest_id": "f1",
-                    "name": "F1",
-                    "file_name": "f1.lua",
-                    "file_key": "modules/fault-mod-up/0000000/functions/f1.lua",
-                    "entry_point": "",
-                    "runtime": "lua"
-                }]
-            }
+            "id": "row-1",
+            "name": "Test Mod",
+            "module_id": id,
+            "module_key": PREVIOUS_MODULE_KEY,
+            "version": "0.9.0",
+            "manifest": manifest.to_string(),
+            "archive_key": "archives/fault-mod-up-0.9.0.zip",
+            "state": "active",
+            "created_by_type": "CLIENT",
+            "created_by_ref": "client-1",
+            "functions": [{
+                "manifest_id": "f1",
+                "name": "F1",
+                "file_name": "f1.lua",
+                "file_key": "modules/fault-mod-up/0000000/functions/f1.lua",
+                "entry_point": "",
+                "runtime": "lua"
+            }]
         })
-        .to_string()
+    }
+
+    #[tokio::test]
+    async fn failed_fresh_install_leaves_the_module_whose_id_is_its_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-evil");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        // Another module whose manifest id is this upload's display name:
+        // the db resolves DeleteModule("Test Mod") to that module's row.
+        let db_proxy = FakeDbProxyClient::failing_on(["register_actions"]).with_module_row(
+            serde_json::json!({
+                "id": "victim-row",
+                "module_id": manifest.name,
+                "name": "Victim",
+                "module_key": "victim:1.0.0:0000000",
+                "version": "1.0.0",
+                "created_by_type": "CLIENT",
+            }),
+        );
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-evil.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("install should fail when register_actions fails");
+
+        let calls = db_proxy.calls();
+        assert!(
+            !calls.iter().any(|c| c == "delete_module"),
+            "the rollback must not delete a row it did not create: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|c| c == "delete_triggers_by_module_id"),
+            "the rollback must still remove what this install registered: {calls:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_upgrade_of_a_legacy_row_restores_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-up");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        // A row written before module_id was recorded, found by name only.
+        let mut legacy = previous_version_row("fault-mod-up");
+        legacy["module_id"] = serde_json::Value::from("");
+        let db_proxy = FakeDbProxyClient::failing_on(["register_actions"]).with_module_row(legacy);
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-up.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("install should fail when register_actions fails");
+
+        let calls = db_proxy.calls();
+        assert!(
+            !calls.iter().any(|c| c == "delete_module"),
+            "a failed upgrade of a legacy row must not delete it: {calls:?}"
+        );
+        assert_eq!(
+            db_proxy.created_modules().last(),
+            Some(&(PREVIOUS_MODULE_KEY.to_string(), "0.9.0".to_string())),
+            "the legacy row must be rewritten back to its version"
+        );
     }
 
     #[tokio::test]
@@ -2016,6 +2195,7 @@ mod tests {
                 "delete_background_tasks_by_module_id",
                 "delete_workflows_by_module",
                 "list_commands_by_module",
+                "get_module_by_name",
                 "delete_module",
             ],
             "rollback_db_install's exact compensating sequence must run after a fresh install fails past CreateModule"
