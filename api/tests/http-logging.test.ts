@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { OPEN_REQUEST_GUARD_POLICY } from "@woofx3/common/http/request-guard";
+import { OPEN_REQUEST_GUARD_POLICY, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
+
+const ALLOWLIST_POLICY: RequestGuardPolicy = {
+  allowedHosts: null,
+  allowedOrigins: [{ kind: "exact", origin: "https://app.example" }],
+};
 
 const SECRET = "s3cr3t-value";
 
@@ -80,6 +85,28 @@ describe("api RPC logging", () => {
     const base = start([]);
     const res = await fetch(`${base}/api`, { method: "POST", body: BATCH, headers: { origin: "https://app.example" } });
     expect(res.headers.get("access-control-allow-methods")).toBe("POST, OPTIONS");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("batch responses echo an allowed origin and vary on it", async () => {
+    server = createHttpServer({
+      port: 0,
+      hostname: "127.0.0.1",
+      readiness: async () => ({ ready: true }) as never,
+      health: () => ({ status: "ok" }) as never,
+      logger: capturingLogger([]),
+      gateway: new FakeGateway() as unknown as ApiGateway,
+      requestGuard: ALLOWLIST_POLICY,
+      onProcessingCallback: async () => {},
+      barkloaderWebhookSecret: null,
+    });
+    const res = await fetch(`http://127.0.0.1:${server.port}/api`, {
+      method: "POST",
+      body: BATCH,
+      headers: { origin: "https://app.example" },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.example");
+    expect(res.headers.get("vary")).toContain("Origin");
   });
 
   test("WebSocket frames are logged by size only", async () => {
