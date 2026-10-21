@@ -19,6 +19,10 @@ import (
 // that means to end -- the longest built on purpose is a handful of hops --
 // and bounds what a loop can do (chat messages sent, values changed) before
 // it is stopped.
+//
+// It must match the platform gateway's MaxWorkflowChainRuns (generated from
+// shared/common/contracts/gen/templates/platformgateway.go.tmpl), which bounds
+// the chain a gateway request carries.
 const MaxWorkflowChain = 8
 
 // LoopError is a run refused because the chain of runs leading to it is too
