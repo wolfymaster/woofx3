@@ -1012,6 +1012,56 @@ export interface AlertListPage {
   offset: number;
 }
 
+/** Hours `getAlertOverview` covers when the caller names none. */
+export const ALERT_OVERVIEW_DEFAULT_HOURS = 24;
+/** The longest window `getAlertOverview` covers: a week. */
+export const ALERT_OVERVIEW_MAX_HOURS = 7 * 24;
+/** The width of one `AlertOverview` bucket, and the alignment of `hourStart`. */
+export const ALERT_OVERVIEW_BUCKET_MS = 60 * 60 * 1000;
+
+/**
+ * What an alert counts as in an overview. `failed` takes `timed_out` too.
+ * `replayed` is neither a success nor a failure: an operator superseded that
+ * row, and the replay is a row of its own. `inFlight` is still on its way;
+ * `unconfirmed` was on its way but nothing has reported on it for long
+ * enough that no report is coming.
+ */
+export type AlertOutcome = "completed" | "failed" | "skipped" | "replayed" | "inFlight" | "unconfirmed";
+
+/** Alerts by outcome; `total` counts them all. */
+export type AlertOverviewTotals = { total: number } & Record<AlertOutcome, number>;
+
+/** One hour of an overview: the alerts created in it, and how many of those failed. */
+export interface AlertOverviewBucket {
+  /** Epoch milliseconds, on the hour. */
+  start: number;
+  total: number;
+  failed: number;
+}
+
+/**
+ * How alerts have gone lately, as `getAlertOverview` answers: totals by
+ * outcome over the window, and one bucket per hour, oldest first.
+ *
+ * The window is `hours` whole hours from `since` (epoch milliseconds), ending
+ * with the hour that starts at the caller's `hourStart`. Alerts are placed by
+ * when the engine recorded them.
+ */
+export interface AlertOverview {
+  hours: number;
+  since: number;
+  /** Always ALERT_OVERVIEW_BUCKET_MS. */
+  bucketMs: number;
+  /**
+   * Whether the counts cover only part of the window. Always false from the
+   * engine, which counts every alert in it; present so every overview has
+   * one shape, whoever counted it.
+   */
+  truncated: boolean;
+  totals: AlertOverviewTotals;
+  buckets: AlertOverviewBucket[];
+}
+
 /**
  * One alert in the overlays' queue. `alertId` is its recorded row
  * (`AlertSnapshot.id`), or "" for a delivery queued before deliveries carried
@@ -2406,6 +2456,16 @@ export interface Woofx3EngineApi {
    * Requires the `alerts.history` capability.
    */
   listAlerts(query?: AlertListQuery): Promise<AlertListPage>;
+
+  /**
+   * How alerts have gone over the `windowHours` hours (1 to
+   * ALERT_OVERVIEW_MAX_HOURS, ALERT_OVERVIEW_DEFAULT_HOURS when omitted)
+   * ending with the hour that starts at `hourStart`, epoch milliseconds on
+   * the hour. The caller passes the start of its current hour, so the
+   * arguments change once an hour. Anything out of range is refused, not
+   * clamped. Requires the `alerts.overview` capability.
+   */
+  getAlertOverview(hourStart: number, windowHours?: number): Promise<AlertOverview>;
 
   /**
    * What the open overlays are playing now and what waits behind it, as the

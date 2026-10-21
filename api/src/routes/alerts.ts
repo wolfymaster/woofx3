@@ -4,6 +4,7 @@ import {
   type AlertClearResult,
   type AlertListPage,
   type AlertListQuery,
+  type AlertOverview,
   type AlertQueueEntry,
   type AlertQueueState,
   type AlertReplayResult,
@@ -11,8 +12,10 @@ import {
 } from "@woofx3/api";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { ALERT_UNCONFIRMED_AFTER_MS, buildAlertOverview, overviewWindow } from "../alert-overview";
 import { alertSnapshotFromRow } from "../stored-snapshots";
 import { routeModule } from "./context";
+import { timestampFromDate } from "./helpers";
 
 /**
  * Short enough that an operator pressing Skip mid-raid hears back while the
@@ -139,6 +142,16 @@ export const alertsRoutes = routeModule({
     const offset = listOffset(query.offset);
     const page = await this.db.listAlerts({ limit, offset, workflowId: query.workflowId ?? "" });
     return { alerts: page.alerts.map(alertSnapshotFromRow), totalCount: page.totalCount, limit, offset };
+  },
+
+  async getAlertOverview(hourStart: number, windowHours?: number): Promise<AlertOverview> {
+    const { since, hours } = overviewWindow(hourStart, windowHours);
+    const counts = await this.db.countAlertsByHour({
+      since: timestampFromDate(new Date(since)),
+      hours,
+      unconfirmedBefore: timestampFromDate(new Date(this.clock() - ALERT_UNCONFIRMED_AFTER_MS)),
+    });
+    return buildAlertOverview(since, hours, counts);
   },
 
   async getAlertQueue(): Promise<AlertQueueState> {

@@ -228,7 +228,7 @@ it twice. A refused replay is not remembered.
 
 #### Reading the alert log and queue
 
-Two reads let a dashboard show alerts without following the `alert.*` callbacks.
+Three reads let a dashboard show alerts without following the `alert.*` callbacks.
 
 `listAlerts({ limit?, offset?, workflowId? })` pages the alert log, newest first: every
 alert the engine dispatched, as the row db-proxy keeps for it, each in the snapshot shape
@@ -237,8 +237,31 @@ digits). `limit` is 1 to 500 (default 50), and a value outside that is refused r
 clamped. `workflowId` narrows the log to the alerts one workflow run fired. `totalCount`
 counts every alert the query matches. The log is stored, not held in memory: it survives
 restarts, and it reaches back as far as db-proxy's cleanup keeps settled alerts (see
-[Analytics: retention](./analytics.md#retention)). A dashboard that needs counts by
-outcome or by hour builds them from these snapshots, as it would from the callbacks.
+[Analytics: retention](./analytics.md#retention)).
+
+`getAlertOverview(hourStart, windowHours?)` counts the log instead of paging it: totals by
+outcome over a window, and one bucket per hour. The window is `windowHours` whole hours (1
+to 168, default 24) ending with the hour that starts at `hourStart`, which must be epoch
+milliseconds on the hour; anything else is refused rather than clamped. A caller passes the
+start of its current hour, so its arguments change once an hour. An alert falls in the hour
+the engine recorded it. The answer is `{ hours, since, bucketMs, truncated, totals,
+buckets }`, where `since` is the window's first hour, `bucketMs` is one hour, each bucket is
+`{ start, total, failed }`, and `truncated` is always false: the engine counts every alert
+in the window.
+
+`totals` counts each alert once by its outcome:
+
+| Outcome | Statuses |
+|---------|----------|
+| `completed` | `completed` |
+| `failed` | `failed`, `timed_out` |
+| `skipped` | `skipped` |
+| `replayed` | `replayed`: an operator replayed it, and the replay is its own row |
+| `inFlight` | any other status (`sent`, `dispatched`, `playing`, ...) |
+| `unconfirmed` | as `inFlight`, but nothing has reported on it for 15 minutes, so no report is coming |
+
+db-proxy counts the rows (`AlertService.CountAlertsByHour`) through the `created_at` index,
+and the api turns the counts into outcomes with the engine's clock.
 
 `getAlertQueue()` answers what is on screen now. The api asks the scene manager with a
 `widget.queue.state` request, and it answers from the same open deliveries and page

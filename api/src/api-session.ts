@@ -279,6 +279,7 @@ export const RPC_METHODS = [
   "skipCurrentAlert",
   "clearAlertQueue",
   "listAlerts",
+  "getAlertOverview",
   "getAlertQueue",
   "getObsStatus",
   "listViewerFacts",

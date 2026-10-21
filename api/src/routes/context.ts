@@ -81,6 +81,8 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** Epoch milliseconds now; `Date.now` when absent. */
+  clock?: () => number;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -121,6 +123,7 @@ export class ApiRouteHost extends RpcTarget {
   protected version: string;
   protected hosting: EngineHosting | null;
   protected marketplace: MarketplaceClient | null;
+  protected readonly clock: () => number;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -432,6 +435,7 @@ export class ApiRouteHost extends RpcTarget {
     this.version = opts.version ?? UNVERSIONED;
     this.hosting = opts.hosting ?? null;
     this.marketplace = opts.marketplace ?? null;
+    this.clock = opts.clock ?? (() => Date.now());
   }
 }
 

@@ -32,6 +32,8 @@ export const ENGINE_CAPABILITIES = {
   alertsHistory: "alerts.history",
   /** What the open overlays are playing and what waits behind it: `getAlertQueue`. */
   alertsQueueState: "alerts.queueState",
+  /** Alert totals by outcome and per-hour counts over a window of up to a week: `getAlertOverview`. */
+  alertsOverview: "alerts.overview",
   /**
    * Upload grants that admit exactly the declared length: `requestUploadUrl`
    * requires `size`, `requestPosterUploadUrl` takes it, every grant's headers
