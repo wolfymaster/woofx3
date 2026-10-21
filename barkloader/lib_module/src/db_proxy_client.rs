@@ -97,7 +97,7 @@ pub trait ModuleDbProxy: Send + Sync {
         assets: Vec<AssetInputJson>,
     ) -> Result<()>;
 
-    // cleanup / delete-by-module-id (used by cleanup_old_version and rollback)
+    // cleanup / delete-by-module-id (used by a failed fresh install's rollback)
     async fn delete_triggers_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
     async fn delete_actions_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
     async fn delete_widgets_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
@@ -647,6 +647,14 @@ mod test_support {
         settings: Mutex<std::collections::BTreeMap<String, String>>,
         /// Resource instances as the db would hold them.
         instances: Mutex<Vec<ResourceInstanceJson>>,
+        /// What `get_module_by_module_id` answers: the installed version's
+        /// `GetModuleByModuleId` response body, if any.
+        installed_version: Mutex<Option<String>>,
+        /// `(module_key, version)` for every `create_module`, in order.
+        created_modules: Mutex<Vec<(String, String)>>,
+        /// `(resource_type, manifest_id)` for every archive or delete by
+        /// manifest id, in order.
+        removed_resources: Mutex<Vec<(String, String)>>,
     }
 
     impl FakeDbProxyClient {
@@ -668,6 +676,9 @@ mod test_support {
                 installed: Mutex::new(Vec::new()),
                 settings: Mutex::new(Default::default()),
                 instances: Mutex::new(Vec::new()),
+                installed_version: Mutex::new(None),
+                created_modules: Mutex::new(Vec::new()),
+                removed_resources: Mutex::new(Vec::new()),
             }
         }
 
@@ -694,6 +705,30 @@ mod test_support {
                 .expect("installed mutex poisoned")
                 .extend(modules);
             self
+        }
+
+        /// Seeds the installed version `get_module_by_module_id` reports, as
+        /// a `GetModuleByModuleId` response body.
+        pub fn with_installed_version(self, response_body: String) -> Self {
+            self.installed_version
+                .lock()
+                .expect("installed_version mutex poisoned")
+                .replace(response_body);
+            self
+        }
+
+        pub fn created_modules(&self) -> Vec<(String, String)> {
+            self.created_modules
+                .lock()
+                .expect("created_modules mutex poisoned")
+                .clone()
+        }
+
+        pub fn removed_resources(&self) -> Vec<(String, String)> {
+            self.removed_resources
+                .lock()
+                .expect("removed_resources mutex poisoned")
+                .clone()
         }
 
         /// Seeds a setting value an earlier install or the streamer left.
@@ -777,6 +812,13 @@ mod test_support {
                 .clone()
         }
 
+        fn record_removed(&self, resource_type: &str, manifest_id: &str) {
+            self.removed_resources
+                .lock()
+                .expect("removed_resources mutex poisoned")
+                .push((resource_type.to_string(), manifest_id.to_string()));
+        }
+
         fn record(&self, method: &'static str) -> Result<()> {
             self.calls
                 .lock()
@@ -795,16 +837,20 @@ mod test_support {
             &self,
             _display_name: &str,
             _module_id: &str,
-            _version: &str,
+            version: &str,
             manifest_json: &str,
             _archive_key: &str,
             _functions: &[CreateModuleFunctionJson],
-            _module_key: &str,
+            module_key: &str,
             _client_id: &str,
             provenance: InstallProvenance,
             marketplace: Option<&MarketplaceOrigin>,
         ) -> Result<String> {
             self.record("create_module")?;
+            self.created_modules
+                .lock()
+                .expect("created_modules mutex poisoned")
+                .push((module_key.to_string(), version.to_string()));
             *self.marketplace.lock().expect("marketplace mutex poisoned") = marketplace.cloned();
             self.stored_manifest
                 .lock()
@@ -823,7 +869,11 @@ mod test_support {
 
         async fn get_module_by_module_id(&self, _module_id: &str) -> Result<Option<String>> {
             self.record("get_module_by_module_id")?;
-            Ok(None)
+            Ok(self
+                .installed_version
+                .lock()
+                .expect("installed_version mutex poisoned")
+                .clone())
         }
 
         async fn get_module_by_name(&self, _name: &str) -> Result<Option<String>> {
@@ -977,19 +1027,23 @@ mod test_support {
         async fn archive_resource_by_manifest_id(
             &self,
             _module_id: &str,
-            _resource_type: &str,
-            _manifest_id: &str,
+            resource_type: &str,
+            manifest_id: &str,
         ) -> Result<()> {
-            self.record("archive_resource_by_manifest_id")
+            self.record("archive_resource_by_manifest_id")?;
+            self.record_removed(resource_type, manifest_id);
+            Ok(())
         }
 
         async fn delete_resource_by_manifest_id(
             &self,
             _module_id: &str,
-            _resource_type: &str,
-            _manifest_id: &str,
+            resource_type: &str,
+            manifest_id: &str,
         ) -> Result<()> {
-            self.record("delete_resource_by_manifest_id")
+            self.record("delete_resource_by_manifest_id")?;
+            self.record_removed(resource_type, manifest_id);
+            Ok(())
         }
 
         async fn get_trigger_event_by_canonical_id(&self, _canonical_id: &str) -> Result<String> {

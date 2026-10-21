@@ -1835,6 +1835,45 @@ Multipart upload → temp dir
 
 The HTTP **200** response is returned when the upload is accepted; install runs in a **background task**. If install fails, the error is logged (check server logs).
 
+### Upgrades and failed installs
+
+A module is identified by its manifest `id`. Installing an archive whose `id` is
+already installed upgrades that module in place; its `name` is display only and
+may change between versions. A `name` another installed module already uses is
+refused (`AlreadyExists` from the db proxy), so an upload cannot take over
+another module's row, and with it that module's functions, settings, secrets and
+storage. A row written before module ids were recorded (empty `module_id`) is
+adopted by the first install whose `name` matches it.
+
+An upgrade never removes anything the installed version registered until every
+install step has succeeded:
+
+1. Before any database write, the installer reads the installed version (its
+   manifest, module key, version, functions and provenance). If it cannot be
+   read, the install fails without writing anything.
+2. The steps run in order. `CreateModule` rewrites the module row and its
+   functions in one database transaction, so it lands whole or not at all.
+3. On success, resources the installed version declared and the new manifest
+   does not are archived (background tasks are deleted), and commands the new
+   manifest dropped are deleted.
+4. On failure after `CreateModule`:
+   - an **upgrade** is restored: the commands the install created and the
+     resources only the new manifest declares are removed, then the module row
+     and its functions are rewritten to the installed version. Resources both
+     versions declare keep the definitions the failed install registered.
+     If the restore itself fails, the install error says so.
+   - a **fresh install** is removed: its triggers, actions, widgets, background
+     tasks, workflows, the commands it created and its module row.
+
+   A failure at or before `CreateModule` has written nothing and compensates
+   nothing.
+
+Uploading with `force=true` only allows overwriting a version whose archive
+already exists; the install itself follows the same steps.
+
+A bundled module whose upgrade fails at boot therefore stays installed at its
+previous version.
+
 ### SafeTempDir
 
 Temp directories are wrapped in `SafeTempDir`, which cleans up on drop with safety guards:

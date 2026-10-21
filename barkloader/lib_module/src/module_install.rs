@@ -1,11 +1,12 @@
 use anyhow::{Result, anyhow};
 use lib_repository::Repository;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use super::canonical_id::CanonicalId;
-use super::db_proxy::{CreateModuleFunctionJson, MarketplaceOrigin};
+use super::db_proxy::{CreateModuleFunctionJson, MarketplaceOrigin, ModuleFunctionRecord};
 use super::db_proxy_client::ModuleDbProxy;
 use super::manifest_validate::{
     self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest, SystemOnlyActions,
@@ -19,27 +20,23 @@ use super::module_manifest::{
 use super::resource_kind_ref;
 use super::theme::InstalledModule;
 
+/// Deletes every trigger, action, widget, background task and workflow
+/// registered under `module_name`. Only a failed fresh install calls it,
+/// when everything under that id is its own.
+///
 /// `module_name` is the version-free manifest id — the value stored as
 /// `created_by_ref`, and what every delete-by-module-id call matches on.
-/// `module_key` is the composite `{id}:{version}:{hash}` being replaced;
-/// it never participates in matching and is carried only so the
-/// deregistration events name the exact version that went away.
+/// `module_key` is the composite `{id}:{version}:{hash}` that failed; it
+/// never participates in matching and is carried only so the deregistration
+/// events name the exact version that went away.
 ///
-/// Commands are deliberately left in place. A module's command is the
-/// streamer's to edit once it exists, so reinstalling re-registers it onto
-/// the same row (the db service keeps an existing module command rather than
-/// inserting a second) and `prune_removed_commands` drops only the commands
-/// the new manifest no longer declares.
-pub async fn cleanup_old_version(
+/// Commands are left to `delete_commands_created_by_install`, which keeps
+/// any an earlier install left behind.
+async fn delete_registered_resources(
+    proxy: &dyn ModuleDbProxy,
     module_name: &str,
     module_key: &str,
-    db_proxy: Option<&dyn ModuleDbProxy>,
 ) -> Result<()> {
-    let proxy = match db_proxy {
-        Some(p) => p,
-        None => return Ok(()),
-    };
-
     proxy
         .delete_triggers_by_module_id(module_name, module_key)
         .await?;
@@ -134,11 +131,12 @@ async fn delete_commands_created_by_install(
     }
 }
 
-/// Compensating cleanup for a half-completed install. Called when any db-side
-/// step after `create_module` fails so the next install attempt doesn't trip
-/// the `modules_name_key` unique constraint. Each step is best-effort — a
-/// cleanup error is logged and suppressed so the original install error
-/// surfaces to the caller.
+/// Compensating cleanup for a half-completed fresh install: no earlier version
+/// of the module existed, so everything registered under its id is this
+/// install's and goes, row included, and the next attempt doesn't trip the
+/// `modules_name_key` unique constraint. Each step is best-effort — a cleanup
+/// error is logged and suppressed so the original install error surfaces to
+/// the caller. An upgrade is compensated by `restore_previous_install`.
 async fn rollback_db_install(
     db_proxy: &dyn ModuleDbProxy,
     manifest_module_key: &str,
@@ -147,10 +145,10 @@ async fn rollback_db_install(
     preexisting_command_ids: &std::collections::HashSet<String>,
 ) {
     if let Err(e) =
-        cleanup_old_version(manifest_module_key, composite_module_key, Some(db_proxy)).await
+        delete_registered_resources(db_proxy, manifest_module_key, composite_module_key).await
     {
         warn!(
-            "rollback: cleanup_old_version({}) failed: {}",
+            "rollback: delete_registered_resources({}) failed: {}",
             manifest_module_key, e
         );
     }
@@ -163,17 +161,111 @@ async fn rollback_db_install(
     }
 }
 
-/// Extracts `module.manifest` (the raw manifest JSON string stored at
-/// install time) from a `GetModuleByModuleId`/`GetModuleByName` Twirp JSON
-/// response body. Returns `None` if the shape doesn't match — treated the
-/// same as "no previous install" by callers.
-fn extract_stored_manifest_json(module_response_json: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(module_response_json).ok()?;
-    value
-        .get("module")?
-        .get("manifest")?
-        .as_str()
-        .map(|s| s.to_string())
+/// The installed version of a module as the db holds it before an install
+/// touches anything: what a failed upgrade is restored to, and what a
+/// successful one is diffed against to archive the resources it dropped.
+/// Field names are the proto names Twirp's JSON uses.
+#[derive(Debug, Clone, Deserialize)]
+struct PreviousInstall {
+    name: String,
+    module_id: String,
+    module_key: String,
+    version: String,
+    #[serde(default)]
+    manifest: String,
+    #[serde(default)]
+    archive_key: String,
+    #[serde(default)]
+    created_by_type: String,
+    #[serde(default)]
+    created_by_ref: String,
+    #[serde(default)]
+    marketplace_listing_id: Option<String>,
+    #[serde(default)]
+    marketplace_edition: Option<i32>,
+    #[serde(default)]
+    functions: Vec<ModuleFunctionRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreviousInstallBody {
+    module: PreviousInstall,
+}
+
+impl PreviousInstall {
+    /// Parses a `GetModuleByModuleId` Twirp JSON response body.
+    fn from_response(module_id: &str, body: &str) -> Result<Self> {
+        serde_json::from_str::<PreviousInstallBody>(body)
+            .map(|parsed| parsed.module)
+            .map_err(|e| anyhow!("read installed module {}: {}", module_id, e))
+    }
+
+    /// The manifest this version was installed from, or `None` when it
+    /// cannot be parsed (logged): there is then nothing to diff against.
+    fn parsed_manifest(&self) -> Option<ModuleManifest> {
+        match serde_json::from_str(&self.manifest) {
+            Ok(manifest) => Some(manifest),
+            Err(e) => {
+                warn!(
+                    "stored manifest of {} {} does not parse: {}",
+                    self.module_id, self.version, e
+                );
+                None
+            }
+        }
+    }
+
+    /// The provenance and installing client the row was stamped with, so a
+    /// restore stamps it the same way (see `db_proxy::create_module`).
+    fn provenance(&self) -> (InstallProvenance, &str) {
+        if self.created_by_type == "SYSTEM" {
+            (InstallProvenance::System, "")
+        } else {
+            (InstallProvenance::User, self.created_by_ref.as_str())
+        }
+    }
+
+    fn marketplace(&self) -> Option<MarketplaceOrigin> {
+        match (&self.marketplace_listing_id, self.marketplace_edition) {
+            (Some(listing_id), Some(edition)) => Some(MarketplaceOrigin {
+                listing_id: listing_id.clone(),
+                edition,
+            }),
+            _ => None,
+        }
+    }
+
+    fn function_rows(&self) -> Vec<CreateModuleFunctionJson> {
+        self.functions
+            .iter()
+            .map(|f| CreateModuleFunctionJson {
+                manifest_id: f.manifest_id.clone(),
+                name: f.name.clone(),
+                file_name: f.file_name.clone(),
+                file_key: f.file_key.clone(),
+                entry_point: f.entry_point.clone(),
+                runtime: f.runtime.clone(),
+            })
+            .collect()
+    }
+}
+
+/// The installed version of `module_id`, or `None` for a fresh install. A
+/// failed lookup fails the install before it writes anything: without it
+/// there is no telling whether a failure later must restore a working
+/// version or remove a new one.
+async fn fetch_previous_install(
+    db_proxy: &dyn ModuleDbProxy,
+    module_id: &str,
+) -> Result<Option<PreviousInstall>> {
+    let Some(body) = db_proxy
+        .get_module_by_module_id(module_id)
+        .await
+        .map_err(|e| anyhow!("look up installed module {}: {}", module_id, e))?
+    else {
+        return Ok(None);
+    };
+    PreviousInstall::from_response(module_id, &body).map(Some)
 }
 
 /// Diffs two manifests' declared resource ids, kind by kind, and returns
@@ -248,49 +340,37 @@ fn removed_manifest_ids(old: &ModuleManifest, new: &ModuleManifest) -> Vec<(&'st
     out
 }
 
-/// Fetches the previously installed version of this module (by stable
-/// manifest id) and, for every trigger/action/widget/function/
-/// background_task that existed in that version but is absent from
-/// `new_manifest`: archives it (background_task is hard-deleted instead
-/// — see `db_proxy::delete_resource_by_manifest_id`'s doc comment for
-/// why that one kind is safe to delete outright). Archiving keeps a
-/// removed resource resolvable by canonical id, so any workflow or
-/// command that already references it keeps working, while hiding it
-/// from catalog listings going forward. A fresh install (no previous
-/// version, or an unparseable stored manifest) is a no-op.
+/// Removes the resources `previous` declared that `new_manifest` does not,
+/// once the install of `new_manifest` has succeeded: see
+/// `remove_resources`. A previous version whose stored manifest does not
+/// parse is left as it is.
 async fn prune_removed_resources(
     db_proxy: &dyn ModuleDbProxy,
     module_key: &str,
+    previous: &PreviousInstall,
     new_manifest: &ModuleManifest,
 ) {
-    let prev_response = match db_proxy.get_module_by_module_id(module_key).await {
-        Ok(Some(body)) => body,
-        Ok(None) => return,
-        Err(e) => {
-            warn!(
-                "prune_removed_resources: lookup failed for {}: {}",
-                module_key, e
-            );
-            return;
-        }
-    };
-
-    let Some(prev_manifest_json) = extract_stored_manifest_json(&prev_response) else {
+    let Some(prev_manifest) = previous.parsed_manifest() else {
         return;
     };
+    let removed = removed_manifest_ids(&prev_manifest, new_manifest);
+    remove_resources(db_proxy, module_key, removed, "dropped from manifest").await;
+}
 
-    let prev_manifest: ModuleManifest = match serde_json::from_str(&prev_manifest_json) {
-        Ok(m) => m,
-        Err(e) => {
-            warn!(
-                "prune_removed_resources: failed to parse stored manifest for {}: {}",
-                module_key, e
-            );
-            return;
-        }
-    };
-
-    for (resource_type, manifest_id) in removed_manifest_ids(&prev_manifest, new_manifest) {
+/// Archives each `(resource_type, manifest_id)` (background_task is
+/// hard-deleted instead — see `db_proxy::delete_resource_by_manifest_id`'s
+/// doc comment for why that one kind is safe to delete outright).
+/// Archiving keeps a removed resource resolvable by canonical id, so any
+/// workflow or command that already references it keeps working, while
+/// hiding it from catalog listings going forward. Best-effort: a failure is
+/// logged and the rest still go.
+async fn remove_resources(
+    db_proxy: &dyn ModuleDbProxy,
+    module_key: &str,
+    resources: Vec<(&'static str, String)>,
+    reason: &str,
+) {
+    for (resource_type, manifest_id) in resources {
         let result = if resource_type == "background_task" {
             db_proxy
                 .delete_resource_by_manifest_id(module_key, resource_type, &manifest_id)
@@ -302,16 +382,68 @@ async fn prune_removed_resources(
         };
         if let Err(e) = result {
             warn!(
-                "prune_removed_resources: failed to remove {} {} for {}: {}",
-                resource_type, manifest_id, module_key, e
+                "failed to remove {} {} for {} ({}): {}",
+                resource_type, manifest_id, module_key, reason, e
             );
         } else {
             info!(
-                "Removed {} '{}' from module {} (dropped from manifest)",
-                resource_type, manifest_id, module_key
+                "Removed {} '{}' from module {} ({})",
+                resource_type, manifest_id, module_key, reason
             );
         }
     }
+}
+
+/// Compensates a failed upgrade by putting `previous` back: the commands the
+/// install created and the resources only the new manifest declares are
+/// removed, and the module row and its functions are rewritten to the
+/// previous version (the db replaces a module in one transaction, so this
+/// lands whole or not at all). Nothing the previous version registered is
+/// deleted. Resources both versions declare keep the definitions the failed
+/// install registered for them.
+///
+/// Returns an error when the row cannot be restored: the module is then left
+/// on the half-installed version, which the caller must report.
+async fn restore_previous_install(
+    db_proxy: &dyn ModuleDbProxy,
+    module_key: &str,
+    previous: &PreviousInstall,
+    new_manifest: &ModuleManifest,
+    preexisting_command_ids: &std::collections::HashSet<String>,
+) -> Result<()> {
+    delete_commands_created_by_install(db_proxy, module_key, preexisting_command_ids).await;
+    if let Some(prev_manifest) = previous.parsed_manifest() {
+        let added = removed_manifest_ids(new_manifest, &prev_manifest);
+        remove_resources(
+            db_proxy,
+            module_key,
+            added,
+            "rolled back with a failed upgrade",
+        )
+        .await;
+    }
+
+    let (provenance, client_id) = previous.provenance();
+    db_proxy
+        .create_module(
+            &previous.name,
+            &previous.module_id,
+            &previous.version,
+            &previous.manifest,
+            &previous.archive_key,
+            &previous.function_rows(),
+            &previous.module_key,
+            client_id,
+            provenance,
+            previous.marketplace().as_ref(),
+        )
+        .await
+        .map_err(|e| anyhow!("restore {} {}: {}", previous.module_id, previous.version, e))?;
+    info!(
+        "rollback: restored module {} to {}",
+        previous.module_id, previous.module_key
+    );
+    Ok(())
 }
 
 /// Mutable state threaded through a single install's step execution:
@@ -1163,7 +1295,6 @@ pub async fn run_install<R: Repository>(
     repository: &R,
     archive_key: &str,
     db_proxy: Option<&dyn ModuleDbProxy>,
-    cleanup_old: bool,
     composite_module_key: &str,
     client_id: &str,
 ) -> Result<()> {
@@ -1173,7 +1304,6 @@ pub async fn run_install<R: Repository>(
         repository,
         archive_key,
         db_proxy,
-        cleanup_old,
         composite_module_key,
         client_id,
         InstallProvenance::User,
@@ -1193,6 +1323,12 @@ pub async fn run_install<R: Repository>(
 ///
 /// `marketplace` is the listing the archive came from, recorded on the module
 /// row; `None` for any other install.
+///
+/// An install never removes anything the installed version registered until
+/// every step has succeeded: resources the new manifest drops are archived
+/// after it. A failed upgrade restores the installed version
+/// (`restore_previous_install`); a failed fresh install removes what it
+/// registered (`rollback_db_install`).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_install_with_provenance<R: Repository>(
     manifest: &ModuleManifest,
@@ -1200,7 +1336,6 @@ pub async fn run_install_with_provenance<R: Repository>(
     repository: &R,
     archive_key: &str,
     db_proxy: Option<&dyn ModuleDbProxy>,
-    cleanup_old: bool,
     composite_module_key: &str,
     client_id: &str,
     provenance: InstallProvenance,
@@ -1277,14 +1412,12 @@ pub async fn run_install_with_provenance<R: Repository>(
         None => None,
     };
 
-    if let (Some(proxy), false) = (db_proxy, cleanup_old) {
-        // Diff against the previously installed version (if any) and
-        // prune anything the new manifest no longer declares, before
-        // registering what it does declare. This is what makes an
-        // upgrade converge to exactly the new manifest's resource set
-        // instead of only ever adding/updating.
-        prune_removed_resources(proxy, module_key, manifest).await;
-    }
+    // Taken before any db write: whether a version is installed decides how
+    // a failure is compensated, and it is what a success is diffed against.
+    let previous = match db_proxy {
+        Some(proxy) => fetch_previous_install(proxy, module_key).await?,
+        None => None,
+    };
 
     let mut state = SagaState {
         manifest,
@@ -1318,10 +1451,6 @@ pub async fn run_install_with_provenance<R: Repository>(
             .map(|row| row.id)
             .collect();
 
-        if cleanup_old {
-            cleanup_old_version(module_key, composite_module_key, Some(proxy)).await?;
-        }
-
         // Saga-style install: every step after `CreateModule` must be
         // paired with a compensating cleanup if the install fails
         // partway through. Run the whole plan inside one async block so
@@ -1335,21 +1464,51 @@ pub async fn run_install_with_provenance<R: Repository>(
         .await;
 
         if let Err(e) = install_result {
+            // CreateModule is the first db write; until it succeeds this
+            // install has written nothing to undo, and the module row the
+            // db holds, if any, is not this install's.
+            if state.db_record_id.is_none() {
+                return Err(e);
+            }
+            let Some(previous) = previous else {
+                warn!(
+                    "install failed for module {} ({}): rolling back db state: {}",
+                    manifest.name, composite_module_key, e
+                );
+                rollback_db_install(
+                    proxy,
+                    module_key,
+                    composite_module_key,
+                    &manifest.name,
+                    &preexisting_command_ids,
+                )
+                .await;
+                return Err(e);
+            };
             warn!(
-                "install failed for module {} ({}): rolling back db state: {}",
-                manifest.name, composite_module_key, e
+                "upgrade of module {} to {} failed: restoring {}: {}",
+                manifest.name, composite_module_key, previous.module_key, e
             );
-            rollback_db_install(
+            if let Err(restore) = restore_previous_install(
                 proxy,
                 module_key,
-                composite_module_key,
-                &manifest.name,
+                &previous,
+                manifest,
                 &preexisting_command_ids,
             )
-            .await;
+            .await
+            {
+                error!("rollback: {}", restore);
+                return Err(anyhow!(
+                    "{e}; the previous version could not be restored: {restore}"
+                ));
+            }
             return Err(e);
         }
 
+        if let Some(previous) = &previous {
+            prune_removed_resources(proxy, module_key, previous, manifest).await;
+        }
         prune_removed_commands(proxy, module_key, manifest).await;
     } else {
         warn!(
@@ -1413,7 +1572,6 @@ mod tests {
             &repo,
             "archives/woofx3.zip",
             Some(&db_proxy),
-            false,
             &mid,
             "",
             InstallProvenance::System,
@@ -1456,7 +1614,6 @@ mod tests {
             &repo,
             "archives/cozy.zip",
             Some(&db_proxy),
-            false,
             &mid,
             "client-1",
             InstallProvenance::User,
@@ -1492,7 +1649,6 @@ mod tests {
             &repo,
             "archives/woofx3.zip",
             Some(&db_proxy),
-            false,
             &mid,
             "",
         )
@@ -1532,7 +1688,6 @@ mod tests {
             &repo,
             "archives/om.zip",
             Some(&db_proxy),
-            false,
             &mid,
             "",
         )
@@ -1607,7 +1762,6 @@ mod tests {
             &repo,
             "archives/fault-mod-1.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -1676,7 +1830,6 @@ mod tests {
             &repo,
             "archives/fault-mod-wf.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -1736,7 +1889,6 @@ mod tests {
             &repo,
             "archives/fault-mod-wf-2.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -1769,8 +1921,62 @@ mod tests {
         assert!(!calls.contains(&"register_command".to_string()));
     }
 
+    fn fault_test_files(manifest_json: &[u8]) -> Vec<ModuleFile> {
+        vec![
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
+                manifest_json.to_vec(),
+            ),
+            ModuleFile::new(
+                "functions/f1.lua".into(),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
+                b"return 1".to_vec(),
+            ),
+        ]
+    }
+
+    const PREVIOUS_MODULE_KEY: &str = "fault-mod-up:0.9.0:0000000";
+
+    /// The `GetModuleByModuleId` body for version 0.9.0 of `id`: it declares
+    /// trigger `t_old` where `fault_test_manifest` declares `t1`, and the
+    /// same function and action.
+    fn previous_version_body(id: &str) -> String {
+        let manifest = serde_json::json!({
+            "id": id,
+            "name": "Test Mod",
+            "version": "0.9.0",
+            "triggers": [{ "id": "t_old", "name": "T old", "type": "eventbus" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }]
+        });
+        serde_json::json!({
+            "module": {
+                "id": "row-1",
+                "name": "Test Mod",
+                "module_id": id,
+                "module_key": PREVIOUS_MODULE_KEY,
+                "version": "0.9.0",
+                "manifest": manifest.to_string(),
+                "archive_key": "archives/fault-mod-up-0.9.0.zip",
+                "state": "active",
+                "created_by_type": "CLIENT",
+                "created_by_ref": "client-1",
+                "functions": [{
+                    "manifest_id": "f1",
+                    "name": "F1",
+                    "file_name": "f1.lua",
+                    "file_key": "modules/fault-mod-up/0000000/functions/f1.lua",
+                    "entry_point": "",
+                    "runtime": "lua"
+                }]
+            }
+        })
+        .to_string()
+    }
+
     #[tokio::test]
-    async fn install_failure_after_create_module_triggers_full_rollback() {
+    async fn failed_fresh_install_after_create_module_removes_the_new_module() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = FileRepository::new(FileRepositoryConfig {
             destination: dir.path().to_path_buf(),
@@ -1778,18 +1984,7 @@ mod tests {
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = fault_test_manifest("fault-mod-2");
-        let files = vec![
-            ModuleFile::new(
-                "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
-                manifest_json.clone(),
-            ),
-            ModuleFile::new(
-                "functions/f1.lua".into(),
-                ModuleFileKind::PROGRAM(ModuleValidProgramKind::Lua),
-                b"return 1".to_vec(),
-            ),
-        ];
+        let files = fault_test_files(&manifest_json);
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::failing_on(["register_actions"]);
@@ -1799,7 +1994,6 @@ mod tests {
             &repo,
             "archives/fault-mod-2.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -1824,8 +2018,185 @@ mod tests {
                 "list_commands_by_module",
                 "delete_module",
             ],
-            "rollback_db_install's exact compensating sequence must run after any post-CreateModule failure"
+            "rollback_db_install's exact compensating sequence must run after a fresh install fails past CreateModule"
         );
+    }
+
+    #[tokio::test]
+    async fn failed_upgrade_restores_the_previous_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-up");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on(["register_actions"])
+            .with_installed_version(previous_version_body("fault-mod-up"));
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-up.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("install should fail when register_actions fails");
+        assert!(err.to_string().contains("register_actions"), "got: {err}");
+
+        let calls = db_proxy.calls();
+        for destructive in [
+            "delete_module",
+            "delete_triggers_by_module_id",
+            "delete_actions_by_module_id",
+            "delete_widgets_by_module_id",
+            "delete_background_tasks_by_module_id",
+            "delete_workflows_by_module",
+        ] {
+            assert!(
+                !calls.iter().any(|c| c == destructive),
+                "a failed upgrade must not call {destructive}: {calls:?}"
+            );
+        }
+        assert_eq!(
+            db_proxy.created_modules(),
+            vec![
+                (mid.clone(), "1.0.0".to_string()),
+                (PREVIOUS_MODULE_KEY.to_string(), "0.9.0".to_string()),
+            ],
+            "the module row must be rewritten back to the previous version"
+        );
+        assert_eq!(
+            db_proxy
+                .stored_manifest()
+                .as_deref()
+                .map(|m| m.contains("t_old")),
+            Some(true),
+            "the restored row must carry the previous manifest"
+        );
+        // Only what the failed install added goes; t_old, which only the
+        // previous version declares, is never pruned by a failed install.
+        assert_eq!(
+            db_proxy.removed_resources(),
+            vec![("trigger".to_string(), "t1".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_upgrade_archives_dropped_resources_after_every_step() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-up");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy =
+            FakeDbProxyClient::new().with_installed_version(previous_version_body("fault-mod-up"));
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-up.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect("upgrade should succeed");
+
+        assert_eq!(
+            db_proxy.removed_resources(),
+            vec![("trigger".to_string(), "t_old".to_string())]
+        );
+        let calls = db_proxy.calls();
+        let archived = calls
+            .iter()
+            .position(|c| c == "archive_resource_by_manifest_id")
+            .expect("t_old was archived");
+        let last_step = calls
+            .iter()
+            .rposition(|c| c == "register_actions")
+            .expect("register_actions ran");
+        assert!(
+            archived > last_step,
+            "dropped resources must be archived only after the install succeeded: {calls:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_create_module_compensates_nothing() {
+        // The db refuses CreateModule when the manifest's name belongs to
+        // another module. That module's row is not this install's to
+        // remove, so nothing may be deleted by name or by id.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-taken");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on(["create_module"]);
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-taken.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("install should fail when create_module fails");
+
+        let calls = db_proxy.calls();
+        assert_eq!(
+            calls.last().map(String::as_str),
+            Some("create_module"),
+            "nothing may run after a refused CreateModule: {calls:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_install_whose_previous_version_cannot_be_read_writes_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-lookup");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on(["get_module_by_module_id"]);
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-lookup.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("install should fail when the installed version cannot be read");
+        assert!(
+            err.to_string().contains("look up installed module"),
+            "got: {err}"
+        );
+        assert!(!db_proxy.calls().iter().any(|c| c == "create_module"));
     }
 
     fn two_command_manifest(id: &str) -> (ModuleManifest, Vec<u8>) {
@@ -1893,7 +2264,6 @@ mod tests {
             &repo,
             "archives/cmd-mod-1.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            true,
             &mid,
             "",
         )
@@ -1933,7 +2303,6 @@ mod tests {
             &repo,
             "archives/cmd-mod-2.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -1964,7 +2333,6 @@ mod tests {
             &repo,
             "archives/cmd-mod-3.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -2013,7 +2381,6 @@ mod tests {
             &repo,
             "archives/cmd-actions.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -2073,7 +2440,6 @@ mod tests {
             &repo,
             "archives/fault-mod-3.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            false,
             &mid,
             "",
         )
@@ -2197,7 +2563,6 @@ mod tests {
             &repo,
             "archives/test-mod/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2260,7 +2625,6 @@ mod tests {
             &repo,
             "archives/wm/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2339,7 +2703,6 @@ mod tests {
             &repo,
             "archives/neonpack/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2377,7 +2740,6 @@ mod tests {
             &repo,
             "archives/neonpack/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2434,7 +2796,6 @@ mod tests {
             &repo,
             "archives/am/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2491,7 +2852,6 @@ mod tests {
             &repo,
             "archives/wm2/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2561,7 +2921,6 @@ mod tests {
             &repo,
             "archives/wm3/1.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2644,7 +3003,6 @@ mod tests {
             &repo,
             "archives/om/2.0.0.zip",
             None,
-            false,
             &mid,
             "",
         )
@@ -2729,7 +3087,6 @@ mod link_resource_settings_tests {
             &repo,
             "archives/hype_board.zip",
             Some(db_proxy as &dyn ModuleDbProxy),
-            true,
             &key,
             "",
         )

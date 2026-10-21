@@ -412,7 +412,6 @@ async fn upload_handler(
                 &module_plan,
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
-                force,
                 &computed_module_key,
                 &upload_client_id,
                 marketplace.as_ref(),
@@ -970,7 +969,6 @@ async fn rollback_handler(
             &module_plan,
             &archive_key,
             Some(db_proxy_url),
-            false, // not force — go through the diff-aware upgrade path, same as any install
             &composite_module_key,
             "",
             // The archive names no listing; the row keeps the one it has.
