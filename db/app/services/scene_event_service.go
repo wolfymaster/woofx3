@@ -56,7 +56,6 @@ func (s *sceneEventService) RecordSceneEvent(ctx context.Context, req *client.Re
 	}
 
 	row := &models.SceneEvent{
-		ID:         uuid.New(),
 		SceneID:    sceneID,
 		Type:       req.Type,
 		Key:        req.Key,

@@ -5,16 +5,33 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )
 
 type ModuleRepository struct {
-	db *gorm.DB
+	db  *gorm.DB
+	ids database.IDSource
 }
 
-func NewModuleRepository(db *gorm.DB) *ModuleRepository {
-	return &ModuleRepository{db: db}
+func NewModuleRepository(db *gorm.DB, ids database.IDSource) *ModuleRepository {
+	return &ModuleRepository{db: db, ids: ids}
+}
+
+// WithDB returns the repository over db, typically a transaction.
+func (r *ModuleRepository) WithDB(db *gorm.DB) *ModuleRepository {
+	return &ModuleRepository{db: db, ids: r.ids}
+}
+
+// rowID is the id a hand-written INSERT binds: the caller's, or a new one
+// from ids. Raw SQL does not run the create callback that assigns ids to
+// gorm creates (database.RegisterIDAssignment).
+func rowID(ids database.IDSource, id uuid.UUID) uuid.UUID {
+	if id != uuid.Nil {
+		return id
+	}
+	return ids.NewUUID()
 }
 
 func (r *ModuleRepository) Create(m *models.Module) error {
@@ -105,7 +122,7 @@ func (r *ModuleRepository) UpsertFunction(f *models.ModuleFunction) error {
 			entry_point = EXCLUDED.entry_point,
 			runtime = EXCLUDED.runtime
 		RETURNING id
-	`, f.ID, f.ModuleID, f.ManifestID, f.Name, f.FileName, f.FileKey, f.EntryPoint, f.Runtime).Scan(&result).Error
+	`, rowID(r.ids, f.ID), f.ModuleID, f.ManifestID, f.Name, f.FileName, f.FileKey, f.EntryPoint, f.Runtime).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -164,7 +181,7 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 			handler = EXCLUDED.handler,
 			updated_at = NOW()
 		RETURNING id
-	`, t.ID, t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.Sentence, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.Transport, t.Handler).Scan(&result).Error
+	`, rowID(r.ids, t.ID), t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.Sentence, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.Transport, t.Handler).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -345,7 +362,7 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 			taxonomy = EXCLUDED.taxonomy,
 			updated_at = NOW()
 		RETURNING id
-	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.Returns, a.Sentence, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy).Scan(&result).Error
+	`, rowID(r.ids, a.ID), a.Name, a.Description, a.Call, a.ParamsSchema, a.Returns, a.Sentence, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -438,7 +455,7 @@ func (r *ModuleRepository) UpsertAsset(a *models.Asset) error {
 			content_type = EXCLUDED.content_type,
 			updated_at = NOW()
 		RETURNING id
-	`, a.ID, a.Name, a.Description, a.ManifestPath, a.RepositoryKey, a.Kind, a.ContentType,
+	`, rowID(r.ids, a.ID), a.Name, a.Description, a.ManifestPath, a.RepositoryKey, a.Kind, a.ContentType,
 		a.CreatedByType, a.CreatedByRef, a.ManifestID).Scan(&result).Error
 	if err != nil {
 		return err
@@ -517,7 +534,7 @@ func (r *ModuleRepository) UpsertModuleResource(res *models.ModuleResource) erro
 			current_version = EXCLUDED.current_version,
 			updated_at = NOW()
 		RETURNING id
-	`, res.ID, res.ModuleID, res.ResourceType, res.ResourceID, res.ManifestID, res.ResourceName, res.OriginalVersion, res.CurrentVersion).Scan(&result).Error
+	`, rowID(r.ids, res.ID), res.ModuleID, res.ResourceType, res.ResourceID, res.ManifestID, res.ResourceName, res.OriginalVersion, res.CurrentVersion).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -574,7 +591,7 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 			behavior_kinds = EXCLUDED.behavior_kinds,
 			updated_at = NOW()
 		RETURNING id
-	`, w.ID, w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surfaces, w.HostsSurface, w.Taxonomy, w.BehaviorKinds, w.CreatedByType, w.CreatedByRef, w.ManifestID).Scan(&result).Error
+	`, rowID(r.ids, w.ID), w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surfaces, w.HostsSurface, w.Taxonomy, w.BehaviorKinds, w.CreatedByType, w.CreatedByRef, w.ManifestID).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -658,7 +675,7 @@ func (r *ModuleRepository) UpsertBackgroundTask(t *models.BackgroundTask) error 
 			schedule = EXCLUDED.schedule,
 			updated_at = NOW()
 		RETURNING id
-	`, t.ID, t.Name, t.Description, t.Function, t.Schedule, t.CreatedByType, t.CreatedByRef, t.ManifestID).Scan(&result).Error
+	`, rowID(r.ids, t.ID), t.Name, t.Description, t.Function, t.Schedule, t.CreatedByType, t.CreatedByRef, t.ManifestID).Scan(&result).Error
 	if err != nil {
 		return err
 	}

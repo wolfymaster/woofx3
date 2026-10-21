@@ -128,7 +128,6 @@ func (s *resourceService) CreateFolder(ctx context.Context, req *client.CreateFo
 
 	now := time.Now().UTC()
 	row := &models.Resource{
-		ID:        uuid.New(),
 		ParentID:  parentID,
 		IsFolder:  true,
 		Name:      name,

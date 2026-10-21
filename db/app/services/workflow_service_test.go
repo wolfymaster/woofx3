@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
+	"github.com/wolfymaster/woofx3/db/database"
 	"gorm.io/gorm"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
@@ -20,6 +21,9 @@ func newWorkflowTestService(t *testing.T) client.WorkflowService {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
 	}
 	// One connection: each new :memory: connection is a separate database.
 	sqlDB, err := db.DB()
@@ -54,7 +58,7 @@ func newWorkflowTestService(t *testing.T) client.WorkflowService {
 			t.Fatalf("schema: %v", err)
 		}
 	}
-	return NewWorkflowService(repo.NewWorkflowRepository(db), repo.NewCommandRepository(db), db, nil, nil)
+	return NewWorkflowService(repo.NewWorkflowRepository(db, database.RandomIDs{}), repo.NewCommandRepository(db), db, nil, nil)
 }
 
 func createWorkflow(t *testing.T, svc client.WorkflowService, req *client.CreateWorkflowRequest) *client.Workflow {

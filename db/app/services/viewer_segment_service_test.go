@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -681,8 +682,8 @@ func TestAFactRevisionRacingAppliesLeavesMembershipConsistent(t *testing.T) {
 // facts; registering the trigger again refills them, silently.
 func TestATriggerDroppedAndRestoredRefillsItsSegmentsSilently(t *testing.T) {
 	forEachFactDialect(t, func(t *testing.T, svc *viewerFactService, db *gorm.DB) {
-		modules := NewModuleService(repo.NewModuleRepository(db), repo.NewResourceReferenceRepository(db), repo.NewModuleResourceInstanceRepository(db), nil)
-		modules.SetSegmentReconciler(NewSegmentReconciler(repo.NewViewerFactRepository(db), repo.NewViewerSegmentRepository(db), repo.NewModuleRepository(db)))
+		modules := NewModuleService(repo.NewModuleRepository(db, database.RandomIDs{}), repo.NewResourceReferenceRepository(db), repo.NewModuleResourceInstanceRepository(db), nil)
+		modules.SetSegmentReconciler(NewSegmentReconciler(repo.NewViewerFactRepository(db), repo.NewViewerSegmentRepository(db), repo.NewModuleRepository(db, database.RandomIDs{})))
 		// The module repository's trigger writes are Postgres SQL, so on
 		// SQLite the trigger rows are written directly and the reconciler the
 		// module service would run after them is run by hand.

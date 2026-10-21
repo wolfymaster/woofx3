@@ -19,12 +19,17 @@ import (
 )
 
 // InitializeDB opens the system database using the dialector matching the URL
-// scheme (postgresql:// / postgres:// → Postgres; sqlite:// → SQLite).
+// scheme (postgresql:// / postgres:// → Postgres; sqlite:// → SQLite). Each
+// dialect has its own migration chain under database/migrate/migrations.
 //
-// Note: gormigrate SQL under database/migrate is still Postgres-dialect. SQLite
-// is suitable for GORM usage and tests; running those migrations against
-// SQLite will fail until dual-dialect migrations exist.
-func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
+// New rows get their ids from `ids` (see RegisterIDAssignment), the same way
+// on both dialects.
+//
+// Hand-written SQL in the repositories names tables without a schema and is
+// written once for both dialects. On Postgres that relies on the default
+// search_path resolving them to the `public` schema the migrations create
+// them in; a deployment with another search_path is not supported.
+func InitializeDB(dsn string, slogger *slog.Logger, ids IDSource) (*gorm.DB, error) {
 	parsed, err := ParseDatabaseURL(dsn)
 	if err != nil {
 		return nil, err
@@ -44,14 +49,22 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 		},
 	}
 
+	var db *gorm.DB
 	switch parsed.Dialect {
 	case DialectPostgres:
-		return openPostgres(parsed.DriverDSN, gormCfg, slogger)
+		db, err = openPostgres(parsed.DriverDSN, gormCfg, slogger)
 	case DialectSQLite:
-		return openSQLite(parsed.DriverDSN, gormCfg, slogger)
+		db, err = openSQLite(parsed.DriverDSN, gormCfg, slogger)
 	default:
 		return nil, fmt.Errorf("unhandled database dialect %q", parsed.Dialect)
 	}
+	if err != nil {
+		return nil, err
+	}
+	if err := RegisterIDAssignment(db, ids); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func openPostgres(dsn string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm.DB, error) {

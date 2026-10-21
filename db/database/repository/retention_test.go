@@ -70,7 +70,7 @@ func TestPruneSettledRunsKeepsRunningAndRecentRunsAndDropsSteps(t *testing.T) {
 	if err := db.Exec(`PRAGMA foreign_keys = OFF`).Error; err != nil {
 		t.Fatalf("disable foreign keys: %v", err)
 	}
-	runs := NewWorkflowRepository(db)
+	runs := NewWorkflowRepository(db, database.RandomIDs{})
 	cutoff := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	old := cutoff.Add(-time.Hour)
 	recent := cutoff.Add(time.Hour)

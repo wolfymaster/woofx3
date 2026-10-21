@@ -8,11 +8,12 @@ import (
 	middleware "github.com/wolfymaster/woofx3/db/app/middleware"
 	svc "github.com/wolfymaster/woofx3/db/app/services"
 	types "github.com/wolfymaster/woofx3/db/app/types"
+	"github.com/wolfymaster/woofx3/db/database"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
 func WorkflowRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
-	workflowRepository := repo.NewWorkflowRepository(app.Db)
+	workflowRepository := repo.NewWorkflowRepository(app.Db, database.RandomIDs{})
 	refRepository := repo.NewResourceReferenceRepository(app.Db)
 	workflowService := svc.NewWorkflowService(workflowRepository, repo.NewCommandRepository(app.Db), app.Db, app.EventPublisher, refRepository)
 	workflowHandler := client.NewWorkflowServiceServer(

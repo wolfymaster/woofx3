@@ -22,6 +22,9 @@ func openCleanupDb(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
+	}
 	sqlDB, err := db.DB()
 	if err != nil {
 		t.Fatalf("sql db: %v", err)
@@ -74,7 +77,7 @@ func TestCleanupCompactsEndedSessionsBeforePruningThem(t *testing.T) {
 		Facts:      repository.NewViewerFactRepository(db),
 		UserEvents: events,
 		Alerts:     repository.NewAlertRepository(db),
-		Workflows:  repository.NewWorkflowRepository(db),
+		Workflows:  repository.NewWorkflowRepository(db, database.RandomIDs{}),
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)), Config{
 		CleanupInterval:       time.Hour,
 		RetentionPeriod:       7 * 24 * time.Hour,
@@ -113,7 +116,7 @@ func TestCleanupRefusesANonPositiveDetailRetention(t *testing.T) {
 		repos: CleanupRepositories{
 			UserEvents: repository.NewUserEventRepository(db),
 			Alerts:     repository.NewAlertRepository(db),
-			Workflows:  repository.NewWorkflowRepository(db),
+			Workflows:  repository.NewWorkflowRepository(db, database.RandomIDs{}),
 		},
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
 		eventDetailPruneBatch: 10,

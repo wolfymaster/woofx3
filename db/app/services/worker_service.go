@@ -10,6 +10,7 @@ import (
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
 )
@@ -78,7 +79,7 @@ func (s *WorkerService) initializeWorkers() error {
 		Facts:      repository.NewViewerFactRepository(s.db),
 		UserEvents: repository.NewUserEventRepository(s.db),
 		Alerts:     repository.NewAlertRepository(s.db),
-		Workflows:  repository.NewWorkflowRepository(s.db),
+		Workflows:  repository.NewWorkflowRepository(s.db, database.RandomIDs{}),
 	}, s.logger, workersConfig)
 	s.metricsWorker = workers.NewMetricsWorker(eventCache, s.logger, 30*time.Second)
 	s.eventCache = eventCache

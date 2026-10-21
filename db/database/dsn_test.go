@@ -99,7 +99,7 @@ func TestInitializeDB_SQLiteCreatesItsDirectoryUnderDataDir(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv(runtime.DataDirEnv, dataDir)
 
-	db, err := InitializeDB("sqlite://./data/woofx3.db", discardLogger())
+	db, err := InitializeDB("sqlite://./data/woofx3.db", discardLogger(), RandomIDs{})
 	if err != nil {
 		t.Fatalf("InitializeDB: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestInitializeDB_SQLiteOutsideTheDataDirGetsNoDirectoryMade(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 
 	// Opening may fail or not; only whether a directory was made matters.
-	_, _ = InitializeDB("sqlite://"+filepath.Join(missing, "woofx3.db"), discardLogger())
+	_, _ = InitializeDB("sqlite://"+filepath.Join(missing, "woofx3.db"), discardLogger(), RandomIDs{})
 
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Errorf("directory outside the data dir was created (stat err = %v)", err)
@@ -139,7 +139,7 @@ func TestParseDatabaseURL_Rejects(t *testing.T) {
 }
 
 func TestInitializeDB_SQLiteMemory(t *testing.T) {
-	db, err := InitializeDB("sqlite:///:memory:", discardLogger())
+	db, err := InitializeDB("sqlite:///:memory:", discardLogger(), RandomIDs{})
 	if err != nil {
 		t.Fatalf("InitializeDB: %v", err)
 	}
