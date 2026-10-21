@@ -424,6 +424,10 @@ new token to the `twitch_token` setting and publishes
 
 If the relink is to a different Twitch account and no channel is configured,
 the broadcaster itself changes, so the service reconnects from scratch.
+It also reconnects from scratch when the new token is renewed differently
+from the one it loaded (see [Who renews the token](#who-renews-the-token)):
+a token the api service serves and one the confidential app refreshes need
+different auth providers, so a token swap cannot cover the change.
 
 ### Who renews the token
 

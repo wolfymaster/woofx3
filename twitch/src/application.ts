@@ -120,8 +120,10 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * and its scopes), and every EventSub subscription is requested again so
    * one refused for a missing scope gets its retry.
    *
-   * A relink to a different Twitch account changes the broadcaster, which a
-   * token swap cannot cover, so that case reconnects from scratch.
+   * A relink to a different Twitch account changes the broadcaster, and one
+   * to a token renewed another way (from the api service instead of with the
+   * confidential app, or the reverse) needs a different auth provider.
+   * Neither is covered by a token swap, so both reconnect from scratch.
    */
   private async relink(ctx: TwitchApiContext): Promise<void> {
     const client = this.twitchClient;
@@ -129,9 +131,13 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     if (!client || !eventBus) {
       return;
     }
-    const { userChanged } = await client.reloadToken();
-    if (userChanged && !ctx.config.getConfig("woofx3TwitchChannelName")) {
-      ctx.logger.info("twitch: Twitch was relinked to a different account; reconnecting");
+    const { userChanged, providerChanged } = await client.reloadToken();
+    const broadcasterChanged = userChanged && !ctx.config.getConfig("woofx3TwitchChannelName");
+    if (providerChanged || broadcasterChanged) {
+      ctx.logger.info("twitch: Twitch was relinked with a token this connection cannot take; reconnecting", {
+        providerChanged,
+        broadcasterChanged,
+      });
       eventBus.disconnect();
       this.adBreakScheduler?.stop();
       this.adBreakScheduler = null;
