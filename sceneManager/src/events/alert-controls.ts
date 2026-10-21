@@ -1,4 +1,10 @@
-import type { AlertClearResult, AlertReplayResult, AlertSkipResult } from "@woofx3/api";
+import type {
+  AlertClearResult,
+  AlertQueueEntry,
+  AlertQueueState,
+  AlertReplayResult,
+  AlertSkipResult,
+} from "@woofx3/api";
 import type { Logger } from "@woofx3/common/runtime";
 import { ALERT_EVENT_TYPE, ALERT_SURFACE } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
@@ -17,12 +23,18 @@ import type { DeliveryStore, OpenDeliveryRef } from "./delivery-store";
 export const ALERT_SKIP_SUBJECT = "widget.queue.skip";
 export const ALERT_CLEAR_SUBJECT = "widget.queue.clear";
 export const ALERT_REPLAY_SUBJECT = "widget.queue.replay";
+export const ALERT_QUEUE_STATE_SUBJECT = "widget.queue.state";
 
 export const NO_OVERLAY_OPEN = "no overlay is open";
 
-export interface AlertQueueDeps {
-  db: AlertLifecycleWriter;
+/** What reading the queue needs: the open scenes, their alert widgets and their open deliveries. */
+export interface AlertQueueReadDeps {
   host: Pick<OverlayHost, "loadSceneById">;
+  deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "openDeliveriesByInstance">;
+}
+
+export interface AlertQueueDeps extends AlertQueueReadDeps {
+  db: AlertLifecycleWriter;
   deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "openDeliveriesByInstance" | "cancel">;
   logger: Logger;
 }
@@ -91,6 +103,59 @@ export async function clearQueuedAlerts(deps: AlertQueueDeps): Promise<AlertClea
 }
 
 /**
+ * What the open overlays are playing and what waits behind it, read from the
+ * same open deliveries and page reports that skip and clear act on: `playing`
+ * is what a Skip at this moment would end, and `waiting` what a Clear would
+ * drop.
+ *
+ * An alert counts once however many alert widgets show it, and an alert
+ * playing on one widget while still queued on another is listed as playing.
+ */
+export async function readAlertQueue(deps: AlertQueueReadDeps): Promise<AlertQueueState> {
+  const alertWidgets = await loadAlertWidgets(deps);
+  if (!alertWidgets) {
+    return { ok: false, playing: [], waiting: [], reason: NO_OVERLAY_OPEN };
+  }
+  const playingNow = queueEntries(chooseAlerts(alertWidgets, playing, deps.deliveryStore));
+  const waitingNow = queueEntries(chooseAlerts(alertWidgets, waiting, deps.deliveryStore));
+  for (const key of playingNow.keys()) {
+    waitingNow.delete(key);
+  }
+  return { ok: true, playing: [...playingNow.values()], waiting: [...waitingNow.values()] };
+}
+
+/**
+ * The distinct alerts among some deliveries, keyed by the alert they play,
+ * each with the earliest start any page reported for it.
+ */
+function queueEntries(deliveries: OpenDeliveryRef[]): Map<string, AlertQueueEntry> {
+  const entries = new Map<string, AlertQueueEntry>();
+  for (const delivery of deliveries) {
+    const [target] = alertReportTargets([delivery]);
+    if (!target) {
+      continue;
+    }
+    // A delivery without a row id is keyed apart from every row, as
+    // alertReportTargets keys it: its envelope may have rows of its own.
+    const key = target.rowId ? `row:${target.rowId}` : `envelope:${target.envelopeId}`;
+    const startedAt = delivery.startedAt;
+    const existing = entries.get(key);
+    if (!existing) {
+      entries.set(key, {
+        alertId: target.rowId,
+        envelopeId: target.envelopeId,
+        ...(startedAt !== null ? { startedAt: new Date(startedAt).toISOString() } : {}),
+      });
+      continue;
+    }
+    if (startedAt !== null && (existing.startedAt === undefined || Date.parse(existing.startedAt) > startedAt)) {
+      existing.startedAt = new Date(startedAt).toISOString();
+    }
+  }
+  return entries;
+}
+
+/**
  * The alert widgets each open scene has now, by scene id; null when no
  * overlay is open.
  *
@@ -98,7 +163,7 @@ export async function clearQueuedAlerts(deps: AlertQueueDeps): Promise<AlertClea
  * edit after it was recorded) waits for a widget no page registers, so it is
  * neither playing nor queued and is left out of both the cancel and the count.
  */
-async function loadAlertWidgets(deps: AlertQueueDeps): Promise<Map<string, Set<string>> | null> {
+async function loadAlertWidgets(deps: AlertQueueReadDeps): Promise<Map<string, Set<string>> | null> {
   const sceneIds = deps.deliveryStore.connectedSceneIds();
   if (sceneIds.length === 0) {
     return null;
@@ -132,18 +197,7 @@ async function cancelAlerts(
   choose: Chooser,
   deps: AlertQueueDeps
 ): Promise<number> {
-  const plan: Cancellation[] = [];
-  for (const [sceneId, instanceIds] of alertWidgets) {
-    for (const [instanceId, open] of deps.deliveryStore.openDeliveriesByInstance(sceneId, ALERT_EVENT_TYPE)) {
-      if (!instanceIds.has(instanceId)) {
-        continue;
-      }
-      const chosen = choose(open);
-      if (chosen.length > 0) {
-        plan.push({ sceneId, instanceId, deliveries: chosen });
-      }
-    }
-  }
+  const plan = planAlerts(alertWidgets, choose, deps.deliveryStore);
 
   const writes: Promise<void>[] = [];
   for (const cancellation of plan) {
@@ -156,6 +210,35 @@ async function cancelAlerts(
   }
   await Promise.all(writes);
   return targets.length;
+}
+
+/** Each alert widget's chosen open deliveries, skipping widgets nothing was chosen on. */
+function planAlerts(
+  alertWidgets: Map<string, Set<string>>,
+  choose: Chooser,
+  deliveryStore: AlertQueueReadDeps["deliveryStore"]
+): Cancellation[] {
+  const plan: Cancellation[] = [];
+  for (const [sceneId, instanceIds] of alertWidgets) {
+    for (const [instanceId, open] of deliveryStore.openDeliveriesByInstance(sceneId, ALERT_EVENT_TYPE)) {
+      if (!instanceIds.has(instanceId)) {
+        continue;
+      }
+      const chosen = choose(open);
+      if (chosen.length > 0) {
+        plan.push({ sceneId, instanceId, deliveries: chosen });
+      }
+    }
+  }
+  return plan;
+}
+
+function chooseAlerts(
+  alertWidgets: Map<string, Set<string>>,
+  choose: Chooser,
+  deliveryStore: AlertQueueReadDeps["deliveryStore"]
+): OpenDeliveryRef[] {
+  return planAlerts(alertWidgets, choose, deliveryStore).flatMap((widget) => widget.deliveries);
 }
 
 /**

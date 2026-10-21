@@ -1,4 +1,5 @@
 import {
+  type DeclaredResourceKind,
   MODULE_FILE_TEXT_LIMIT_BYTES,
   type ModuleFileContent,
   type ModuleFileEntry,
@@ -22,6 +23,7 @@ import {
   sendAlreadyInstalled,
   sendInstallFailed,
 } from "../module-install";
+import { declaredResourceKinds } from "../resource-kinds";
 import { routeModule } from "./context";
 
 /**
@@ -594,6 +596,10 @@ export const modulesRoutes = routeModule({
       canonicalId,
       requestContext: { clientId: context.clientId, moduleKey: "" },
     });
+  },
+
+  async listResourceKinds(): Promise<DeclaredResourceKind[]> {
+    return declaredResourceKinds(await this.db.listModules(), this.logger);
   },
 
   /**

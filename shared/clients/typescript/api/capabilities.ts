@@ -28,6 +28,10 @@ export const ENGINE_CAPABILITIES = {
    * still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`.
    */
   alertsQueueControls: "alerts.queueControls",
+  /** The engine's recorded alerts, newest first, by page or by workflow run: `listAlerts`. */
+  alertsHistory: "alerts.history",
+  /** What the open overlays are playing and what waits behind it: `getAlertQueue`. */
+  alertsQueueState: "alerts.queueState",
   /**
    * Upload grants that admit exactly the declared length: `requestUploadUrl`
    * requires `size`, `requestPosterUploadUrl` takes it, every grant's headers
@@ -78,6 +82,8 @@ export const ENGINE_CAPABILITIES = {
   modulesOAuth: "modules.oauth",
   /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
   modulesFiles: "modules.files",
+  /** Every resource kind the installed modules' manifests declare: `listResourceKinds`. */
+  modulesResourceKinds: "modules.resourceKinds",
   /**
    * Installing from the marketplace by listing id, with the engine fetching
    * and verifying the archive itself: `installMarketplaceListing`,
@@ -187,6 +193,10 @@ export const ENGINE_CAPABILITIES = {
   workflowWidgetVisibility: "workflow.widgetVisibility",
   /** The values `${viewer.*}` can resolve in a workflow, for a condition editor: `listViewerFacts`. */
   workflowViewerFacts: "workflow.viewerFacts",
+  /** One recorded run with its steps' inputs, outputs and timings, and the alerts it fired: `getWorkflowRun`. */
+  workflowRunDetail: "workflow.runDetail",
+  /** The triggers, actions and module functions a workflow can use, in one read: `getWorkflowCatalog`. */
+  workflowCatalog: "workflow.catalog",
   /**
    * Each item of a condition's list value (an `in` or `not_in` item, a
    * `between` bound) is resolved, so it may be a `${...}` reference.
