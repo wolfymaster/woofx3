@@ -83,7 +83,11 @@ interface CallbackReply {
  * Why `url` cannot be a client's callback URL, or null when it can. The
  * engine POSTs every event there with the client's callback token, so only
  * https is allowed, or plain http to this machine; credentials in the URL and
- * fragments are refused as well.
+ * fragments are refused as well. The https host is not checked against private
+ * or link-local ranges: only an admitted registrant (first client, or one
+ * holding the registration token) can set a callback URL, and it is trusted to
+ * choose where its own events go. A name check alone could not stop a DNS name
+ * that resolves to such an address anyway.
  */
 export function callbackUrlRefusal(url: string): string | null {
   let parsed: URL;
