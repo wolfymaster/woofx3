@@ -75,10 +75,10 @@ class BunWebSocketAdapter {
 
   send(data: string | ArrayBuffer): void {
     try {
-      const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
+      // Only the size: a message carries client secrets, registration
+      // tokens and every RPC's arguments and results.
       this.logger.debug("Sending WebSocket message", {
         size: typeof data === "string" ? data.length : data.byteLength,
-        preview: dataStr.substring(0, 200), // First 200 chars for preview
       });
       this.bunWs.send(data);
     } catch (error) {
@@ -97,10 +97,8 @@ class BunWebSocketAdapter {
   // Called by Bun's websocket.message handler
   dispatchMessage(data: string | ArrayBuffer): void {
     try {
-      const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
       this.logger.debug("Received WebSocket message", {
         size: typeof data === "string" ? data.length : data.byteLength,
-        preview: dataStr.substring(0, 200), // First 200 chars for preview
       });
 
       const listeners = this.listeners.get("message");
@@ -211,12 +209,12 @@ export function createHttpServer(deps: HttpDeps) {
 
         const startTime = Date.now();
         try {
-          const reqBody = await req.clone().text();
+          // Never the bodies: they carry client secrets, registration tokens
+          // and every RPC's arguments and results.
           logger.info("HTTP batch RPC request", {
             method: req.method,
             path: url.pathname,
-            bodyLength: reqBody.length,
-            bodyPreview: reqBody.substring(0, 500),
+            contentLength: req.headers.get("content-length"),
           });
           const response = await newHttpBatchRpcResponse(req, gateway, {
             onSendError(error: Error) {
@@ -229,14 +227,11 @@ export function createHttpServer(deps: HttpDeps) {
             headers: { ...requestGuard.corsOriginHeaders(req), ...BATCH_CORS_HEADERS },
           } as any);
           const duration = Date.now() - startTime;
-          const responseBody = await response.clone().text();
           logger.info("HTTP batch RPC request completed", {
             method: req.method,
             path: url.pathname,
             status: response.status,
             duration: `${duration}ms`,
-            bodyLength: responseBody.length,
-            bodyPreview: responseBody.substring(0, 500),
           });
           return response;
         } catch (err) {
