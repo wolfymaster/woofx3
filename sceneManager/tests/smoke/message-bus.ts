@@ -42,6 +42,16 @@ async function binary(scratch: string): Promise<string | { reason: string }> {
   return out;
 }
 
+/**
+ * This process's environment without its WOOFX3_ settings. The bus refuses a
+ * WOOFX3_ variable it does not know, and the test run carries others (this
+ * suite's own WOOFX3_MESSAGEBUS_BIN, a worktree's slot settings), so it is
+ * given only the ones set here.
+ */
+function inheritedEnv(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("WOOFX3_")));
+}
+
 async function listening(port: number): Promise<boolean> {
   try {
     const conn = await Bun.connect({ hostname: "127.0.0.1", port, socket: { data() {} } });
@@ -68,10 +78,11 @@ export async function startMessageBus(): Promise<MessageBusStart> {
     proc = Bun.spawn([bin, "-conf", conf], {
       cwd: scratch,
       env: {
-        ...process.env,
+        ...inheritedEnv(),
         ROOT_PATH: scratch,
         WOOFX3_MESSAGEBUS_HOST: "127.0.0.1",
-        WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT: "-1",
+        // WebSocket only, as the scene manager connects; no TCP port to collide on.
+        WOOFX3_MESSAGEBUS_TCP_DISABLED: "true",
         WOOFX3_MESSAGEBUS_WEBSOCKET_PORT: String(wsPort),
       },
       stdout: "ignore",
