@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { alertsRoutes } from "../src/routes/alerts";
+import { ALERT_QUEUE_TIMEOUT_MS, alertsRoutes } from "../src/routes/alerts";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
@@ -200,12 +200,17 @@ describe("getAlertQueue", () => {
 
       expect(await call(nats, "getAlertQueue")).toEqual(expected);
       expect(requests.map((r) => [r.subject, r.body])).toEqual([["widget.queue.state", {}]]);
+      expect(requests[0]!.timeout).toBe(ALERT_QUEUE_TIMEOUT_MS);
     });
   }
 
   const unreadable: Array<[string, unknown]> = [
     ["no lists", { ok: true }],
     ["an entry without an envelope id", { ok: true, playing: [{ alertId: "row-a" }], waiting: [] }],
+    ["a null reply", null],
+    ["a refusal without a reason", { ok: false, playing: [], waiting: [] }],
+    ["a refusal whose reason is not text", { ok: false, reason: 5 }],
+    ["an ok that is not a boolean", { ok: "yes", playing: [], waiting: [] }],
     ["a start that is not text", { ok: true, playing: [{ alertId: "", envelopeId: "e", startedAt: 5 }], waiting: [] }],
   ];
   for (const [name, answer] of unreadable) {
