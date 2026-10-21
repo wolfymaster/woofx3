@@ -38,8 +38,14 @@ const BATCH_CORS_HEADERS: Record<string, string> = {
 };
 
 /** The events the adapter raises, in the shapes capnweb reads off them. */
-type SocketEvent = { data: string | ArrayBuffer } | { code?: number; reason?: string } | { error: Error };
-type SocketListener = (event: SocketEvent) => void;
+type SocketEvents = {
+  message: { data: string | ArrayBuffer };
+  close: { code?: number; reason?: string };
+  // capnweb subscribes to "error", but Bun reports socket failures through
+  // `close` only, so the adapter never raises it.
+  error: { error: Error };
+};
+type SocketListeners = { [K in keyof SocketEvents]: Set<(event: SocketEvents[K]) => void> };
 
 /**
  * Adapter to make Bun's ServerWebSocket compatible with the standard WebSocket interface
@@ -48,7 +54,7 @@ type SocketListener = (event: SocketEvent) => void;
  * Frames are never logged: they carry RPC arguments, credentials included.
  */
 class BunWebSocketAdapter {
-  private listeners: Map<string, Set<SocketListener>> = new Map();
+  private listeners: SocketListeners = { message: new Set(), close: new Set(), error: new Set() };
   private bunWs: ServerWebSocket<unknown>;
   private logger: SharedLogger;
 
@@ -68,15 +74,12 @@ class BunWebSocketAdapter {
     return BunWebSocketAdapter.OPEN;
   }
 
-  addEventListener(type: string, listener: SocketListener): void {
-    if (!this.listeners.has(type)) {
-      this.listeners.set(type, new Set());
-    }
-    this.listeners.get(type)!.add(listener);
+  addEventListener<K extends keyof SocketEvents>(type: K, listener: (event: SocketEvents[K]) => void): void {
+    this.listeners[type].add(listener);
   }
 
-  removeEventListener(type: string, listener: SocketListener): void {
-    this.listeners.get(type)?.delete(listener);
+  removeEventListener<K extends keyof SocketEvents>(type: K, listener: (event: SocketEvents[K]) => void): void {
+    this.listeners[type].delete(listener);
   }
 
   send(data: string | ArrayBuffer): void {
@@ -101,8 +104,8 @@ class BunWebSocketAdapter {
     try {
       this.logger.debug("Received WebSocket message", { bytes: frameBytes(data) });
 
-      const listeners = this.listeners.get("message");
-      if (listeners) {
+      const listeners = this.listeners.message;
+      if (listeners.size > 0) {
         const event = { data };
         for (const listener of listeners) {
           try {
@@ -127,23 +130,9 @@ class BunWebSocketAdapter {
 
   // Called by Bun's websocket.close handler
   dispatchClose(code?: number, reason?: string): void {
-    const listeners = this.listeners.get("close");
-    if (listeners) {
-      const event = { code, reason };
-      for (const listener of listeners) {
-        listener(event);
-      }
-    }
-  }
-
-  // Called by Bun's websocket.error handler
-  dispatchError(error: Error): void {
-    const listeners = this.listeners.get("error");
-    if (listeners) {
-      const event = { error };
-      for (const listener of listeners) {
-        listener(event);
-      }
+    const event = { code, reason };
+    for (const listener of this.listeners.close) {
+      listener(event);
     }
   }
 }
@@ -222,7 +211,11 @@ export function createHttpServer(deps: HttpDeps) {
 
         const startTime = Date.now();
         try {
-          const rpcResponse = await newHttpBatchRpcResponse(req, gateway, {
+          // Measured, not the client-declared Content-Length (absent when chunked,
+          // arbitrary when lying). capnweb reads the whole body as text anyway.
+          const requestBody = await req.text();
+          const batchRequest = new Request(req.url, { method: req.method, headers: req.headers, body: requestBody });
+          const rpcResponse = await newHttpBatchRpcResponse(batchRequest, gateway, {
             onSendError(error: Error) {
               logger.error("RPC method error", {
                 error: error.message,
@@ -248,7 +241,7 @@ export function createHttpServer(deps: HttpDeps) {
             path: url.pathname,
             status: response.status,
             durationMs: Date.now() - startTime,
-            requestBytes: Number(req.headers.get("content-length") ?? 0),
+            requestBytes: Buffer.byteLength(requestBody),
             responseBytes: responseBody.byteLength,
           });
           return response;
