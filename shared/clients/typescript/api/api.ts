@@ -370,13 +370,13 @@ export interface TwitchAccessToken {
  * The linked Twitch account as `getTwitchLink` describes it: who it is and
  * what it may do, never its tokens.
  */
-export interface TwitchLinkInfo {
+export interface TwitchLinkedAccount {
   /** The broadcaster's Twitch user id. */
   userId: string;
   /**
-   * The account's login, display name and avatar, from Helix. Null when the
-   * engine could not ask Twitch (the twitch service is not running, or
-   * Twitch refused); the link itself is still there.
+   * The account's login, display name and avatar (an `https:` URL), from
+   * Helix. Null when the engine could not ask Twitch (the twitch service is
+   * not running, or Twitch refused); the link itself is still there.
    */
   login: string | null;
   displayName: string | null;
@@ -393,6 +393,15 @@ export interface TwitchLinkInfo {
    */
   authFailedAt: number | null;
 }
+
+/**
+ * `getTwitchLink`'s answer. `revision` is the link's current revision, the
+ * one `twitch.link.changed` deliveries are ordered by: a consumer that read
+ * this ignores any delivery at or below it.
+ */
+export type TwitchLinkInfo =
+  | { linked: false; revision: number }
+  | ({ linked: true; revision: number } & TwitchLinkedAccount);
 
 // ==================== Actions ====================
 
@@ -2111,11 +2120,11 @@ export interface Woofx3EngineApi {
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
   /**
-   * The linked Twitch account, or null when none is linked. Every change to
-   * the link sends a `twitch.link.changed` webhook. Requires the
-   * `twitch.linkRead` capability.
+   * The linked Twitch account, or `linked: false`. Every change to the link
+   * sends a `twitch.link.changed` webhook with a higher `revision`. Requires
+   * the `twitch.linkRead` capability.
    */
-  getTwitchLink(): Promise<TwitchLinkInfo | null>;
+  getTwitchLink(): Promise<TwitchLinkInfo>;
 
   // Twitch device login: the engine links Twitch itself with its public
   // Twitch app (see ./twitch-device-login.ts). Requires the

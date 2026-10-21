@@ -1,7 +1,7 @@
 import {
   type EngineRequest,
   EngineRequestType,
-  type TwitchLinkChangedEvent,
+  type TwitchLinkStatus,
   type TwitchTokenGrant,
   type TwitchTokenRequestedResponse,
 } from "@woofx3/api/webhooks";
@@ -60,7 +60,7 @@ export type StoredPublicToken = PublicClientToken & { userId: string; publicClie
 export type PublicClientRefresher = Pick<TwitchOAuthClient, "refresh">;
 
 /** The linked account as the stored row and this source know it: no profile, and never a token. */
-export interface StoredTwitchLink {
+export interface StoredTwitchLinkAccount {
   userId: string;
   scopes: string[];
   /** Milliseconds since the epoch; null when the token does not expire. */
@@ -69,8 +69,14 @@ export interface StoredTwitchLink {
   authFailedAt: number | null;
 }
 
+/** The link at one revision; `account` is null when nothing is linked. */
+export interface StoredTwitchLink {
+  revision: number;
+  account: StoredTwitchLinkAccount | null;
+}
+
 /** A change to the link, as the `twitch.link.changed` webhook carries it. */
-export type TwitchLinkChange = Omit<TwitchLinkChangedEvent, "type">;
+export type TwitchLinkChange = { revision: number } & TwitchLinkStatus;
 
 export interface TwitchTokenSourceOptions {
   db: Pick<DbClient, "getSetting" | "setSetting">;
@@ -125,6 +131,11 @@ export class TwitchTokenSource implements TwitchCredentials {
    * memory is enough: after a restart the next renewal finds out again.
    */
   private authFailedAt: number | null = null;
+  /**
+   * The link's revision: raised on every change, and never below the clock,
+   * so it keeps rising across a restart (a restart starts at the clock).
+   */
+  private revision: number;
   /** The tail of the `twitch_token` writes, each started once the one before it settled. */
   private writes: Promise<void> = Promise.resolve();
   private readonly db: TwitchTokenSourceOptions["db"];
@@ -141,6 +152,7 @@ export class TwitchTokenSource implements TwitchCredentials {
     this.publicClient = opts.publicClient;
     this.onLinkChanged = opts.onLinkChanged;
     this.now = opts.now ?? (() => Date.now());
+    this.revision = this.now();
   }
 
   /**
@@ -154,7 +166,7 @@ export class TwitchTokenSource implements TwitchCredentials {
     await this.serialized(async () => {
       await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(stored), engineUserId);
       this.authFailedAt = null;
-      this.onLinkChanged({ linked: true, userId: stored.userId, authFailedAt: null });
+      this.announce({ linked: true, userId: stored.userId, authFailedAt: null });
     });
   }
 
@@ -163,32 +175,43 @@ export class TwitchTokenSource implements TwitchCredentials {
     await this.serialized(async () => {
       await this.db.setSetting(TWITCH_TOKEN_SETTING, "");
       this.authFailedAt = null;
-      this.onLinkChanged({ linked: false, userId: null, authFailedAt: null });
+      this.announce({ linked: false });
     });
   }
 
   /**
-   * The linked account, or null when there is none. Throws when the stored
-   * row names no user or no scopes: it cannot be described, and linking
-   * Twitch again replaces it.
+   * The link and its revision, read in the write queue so the two agree.
+   * Throws when the stored row names no user or no scopes: it cannot be
+   * described, and linking Twitch again replaces it.
    */
-  async link(): Promise<StoredTwitchLink | null> {
-    const stored = await this.read();
-    if (!stored) {
-      return null;
-    }
-    const { userId, scope, expiresIn, obtainmentTimestamp } = stored;
-    if (typeof userId !== "string" || userId === "") {
-      throw new Error("twitch_token names no Twitch user; link Twitch again");
-    }
-    if (!Array.isArray(scope) || !scope.every((s) => typeof s === "string")) {
-      throw new Error("twitch_token has no scope list; link Twitch again");
-    }
-    const expiresAt =
-      typeof expiresIn === "number" && typeof obtainmentTimestamp === "number"
-        ? obtainmentTimestamp + expiresIn * 1000
-        : null;
-    return { userId, scopes: scope, expiresAt, authFailedAt: this.authFailedAt };
+  async link(): Promise<StoredTwitchLink> {
+    return this.serialized(async () => {
+      const stored = await this.read();
+      if (!stored) {
+        return { revision: this.revision, account: null };
+      }
+      const { userId, scope, expiresIn, obtainmentTimestamp } = stored;
+      if (typeof userId !== "string" || userId === "") {
+        throw new Error("twitch_token names no Twitch user; link Twitch again");
+      }
+      if (!isScopeList(scope)) {
+        throw new Error("twitch_token has no scope list; link Twitch again");
+      }
+      const expiresAt =
+        typeof expiresIn === "number" && typeof obtainmentTimestamp === "number"
+          ? obtainmentTimestamp + expiresIn * 1000
+          : null;
+      return {
+        revision: this.revision,
+        account: { userId, scopes: scope, expiresAt, authFailedAt: this.authFailedAt },
+      };
+    });
+  }
+
+  /** Raise the revision and tell the listener. Called in the write queue, after the write. */
+  private announce(status: TwitchLinkStatus): void {
+    this.revision = Math.max(this.revision + 1, this.now());
+    this.onLinkChanged({ revision: this.revision, ...status });
   }
 
   /**
@@ -202,19 +225,24 @@ export class TwitchTokenSource implements TwitchCredentials {
       if (!stored || stored.accessToken !== refused.accessToken || this.authFailedAt !== null) {
         return;
       }
-      const at = this.now();
-      this.authFailedAt = at;
-      this.onLinkChanged({ linked: true, userId, authFailedAt: at });
+      this.authFailedAt = this.now();
+      this.announce({ linked: true, userId, authFailedAt: this.authFailedAt });
     });
   }
 
-  /** Clear a recorded refusal once the link renews again, and announce that it works. */
-  private markRenewed(userId: string): void {
-    if (this.authFailedAt === null) {
+  /**
+   * After a renewal's write: announce it when it changed what the link
+   * describes (another account, other scopes) or brought a refused link
+   * back. A dashboard answers with whatever account it links now, which can
+   * differ from the one it linked before.
+   */
+  private noteRenewal(before: Record<string, unknown>, after: { userId: string; scope: string[] }): void {
+    const sameAccount = before.userId === after.userId && sameScopes(before.scope, after.scope);
+    if (sameAccount && this.authFailedAt === null) {
       return;
     }
     this.authFailedAt = null;
-    this.onLinkChanged({ linked: true, userId, authFailedAt: null });
+    this.announce({ linked: true, userId: after.userId, authFailedAt: null });
   }
 
   async helix(): Promise<HelixCredentials | string> {
@@ -348,10 +376,11 @@ export class TwitchTokenSource implements TwitchCredentials {
     return this.serialized(async () => {
       const stored = await this.read();
       const storedRefreshToken = stored && typeof stored.refreshToken === "string" ? stored.refreshToken : null;
-      if (storedRefreshToken !== spentRefreshToken) {
+      if (!stored || storedRefreshToken !== spentRefreshToken) {
         return false;
       }
       await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(next));
+      this.noteRenewal(stored, next);
       return true;
     });
   }
@@ -466,7 +495,7 @@ export class TwitchTokenSource implements TwitchCredentials {
         return false;
       }
       await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(renewed));
-      this.markRenewed(renewed.userId);
+      this.noteRenewal(stored, renewed);
       return true;
     });
     if (!saved) {
@@ -517,6 +546,19 @@ function asDashboardToken(stored: Record<string, unknown>): StoredDashboardToken
     return "twitch_token came from a dashboard but its grant is incomplete; relink Twitch from the dashboard";
   }
   return { ...grant, dashboardClientId: stored.dashboardClientId };
+}
+
+function isScopeList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((s) => typeof s === "string");
+}
+
+/** Whether two stored scope lists grant the same scopes, in any order. */
+function sameScopes(a: unknown, b: unknown): boolean {
+  if (!isScopeList(a) || !isScopeList(b) || a.length !== b.length) {
+    return false;
+  }
+  const granted = new Set(a);
+  return b.every((s) => granted.has(s));
 }
 
 function asGrant(value: Record<string, unknown>): TwitchTokenGrant | null {

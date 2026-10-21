@@ -15,6 +15,9 @@ const TOKEN = {
   userId: "42",
 };
 
+/** The engine's clock, which stands still; the link's revisions start here. */
+const CLOCK = 1_792_670_400_000;
+
 const HELIX_USER = {
   id: "42",
   login: "streamer",
@@ -58,6 +61,7 @@ function engine(opts: {
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
+    clock: () => CLOCK,
     ...opts.twitch,
   });
   const sent: CallbackEvent[] = [];
@@ -84,10 +88,10 @@ function linkEvents(sent: CallbackEvent[]) {
 }
 
 describe("getTwitchLink", () => {
-  test("is null while no account is linked", async () => {
+  test("is not linked while no account is linked", async () => {
     const { rpc, helixAsked } = engine({});
 
-    expect(await rpc.getTwitchLink()).toBeNull();
+    expect(await rpc.getTwitchLink()).toEqual({ linked: false, revision: CLOCK });
     expect(helixAsked).toEqual([]);
   });
 
@@ -98,6 +102,8 @@ describe("getTwitchLink", () => {
     const link = await rpc.getTwitchLink();
 
     expect(link).toEqual({
+      linked: true,
+      revision: CLOCK + 1,
       userId: "42",
       login: "streamer",
       displayName: "Streamer",
@@ -135,6 +141,18 @@ describe("getTwitchLink", () => {
     expect(await rpc.getTwitchLink()).toMatchObject({ login: "streamer" });
     expect(helixAsked).toHaveLength(2);
   });
+
+  test("asks Helix again once the link changes, so a relinked account shows its new name", async () => {
+    const { rpc, helixAsked, setHelix } = engine({});
+    await rpc.setTwitchToken(TOKEN);
+    await rpc.getTwitchLink();
+
+    setHelix({ ok: true, body: { data: [{ ...HELIX_USER, login: "renamed", display_name: "Renamed" }] } });
+    await rpc.setTwitchToken(TOKEN);
+
+    expect(await rpc.getTwitchLink()).toMatchObject({ login: "renamed", displayName: "Renamed" });
+    expect(helixAsked).toHaveLength(2);
+  });
 });
 
 describe("twitch.link.changed", () => {
@@ -145,9 +163,16 @@ describe("twitch.link.changed", () => {
     await rpc.deleteTwitchToken();
 
     expect(linkEvents(sent)).toEqual([
-      { type: EngineEventType.TWITCH_LINK_CHANGED, linked: true, userId: "42", authFailedAt: null },
-      { type: EngineEventType.TWITCH_LINK_CHANGED, linked: false, userId: null, authFailedAt: null },
+      {
+        type: EngineEventType.TWITCH_LINK_CHANGED,
+        revision: CLOCK + 1,
+        linked: true,
+        userId: "42",
+        authFailedAt: null,
+      },
+      { type: EngineEventType.TWITCH_LINK_CHANGED, revision: CLOCK + 2, linked: false },
     ]);
+    expect((await rpc.getTwitchLink()).revision).toBe(CLOCK + 2);
   });
 
   test("is sent when a device login links an account", async () => {
@@ -190,7 +215,13 @@ describe("twitch.link.changed", () => {
 
     expect(state).toMatchObject({ ok: true, state: { status: "linked" } });
     expect(linkEvents(sent)).toEqual([
-      { type: EngineEventType.TWITCH_LINK_CHANGED, linked: true, userId: "42", authFailedAt: null },
+      {
+        type: EngineEventType.TWITCH_LINK_CHANGED,
+        revision: CLOCK + 1,
+        linked: true,
+        userId: "42",
+        authFailedAt: null,
+      },
     ]);
   });
 });

@@ -82,6 +82,8 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** Epoch milliseconds now; `Date.now` when absent. */
+  clock?: () => number;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -124,6 +126,7 @@ export class ApiRouteHost extends RpcTarget {
   protected version: string;
   protected hosting: EngineHosting | null;
   protected marketplace: MarketplaceClient | null;
+  protected readonly clock: () => number;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -228,9 +231,16 @@ export class ApiRouteHost extends RpcTarget {
     );
   }
 
-  /** Announces a change to the Twitch link. Best effort: a reader that missed it reads `getTwitchLink`. */
-  private emitTwitchLinkWebhook(change: TwitchLinkChange): void {
-    void this.emitWebhook({ type: EngineEventType.TWITCH_LINK_CHANGED, ...change }, { twitchUserId: change.userId });
+  /**
+   * Forgets the old account's profile and announces the change. The webhook
+   * is best effort: a reader that missed it reads `getTwitchLink`.
+   */
+  private onTwitchLinkChanged(change: TwitchLinkChange): void {
+    this.twitchProfiles.forget();
+    void this.emitWebhook(
+      { type: EngineEventType.TWITCH_LINK_CHANGED, ...change },
+      { revision: change.revision, twitchUserId: change.linked ? change.userId : null }
+    );
   }
 
   /**
@@ -416,9 +426,10 @@ export class ApiRouteHost extends RpcTarget {
       dashboard: () => this.webhookClient,
       ownClientId: opts.twitchClientId ?? null,
       publicClient: twitchOAuth,
-      onLinkChanged: (change) => this.emitTwitchLinkWebhook(change),
+      onLinkChanged: (change) => this.onTwitchLinkChanged(change),
+      now: opts.clock,
     });
-    this.twitchProfiles = new TwitchProfiles({ logger: opts.logger });
+    this.twitchProfiles = new TwitchProfiles({ logger: opts.logger, now: opts.clock });
     this.twitchDeviceLogins = new TwitchDeviceLogins({
       clientId: opts.twitchPublicClientId ?? null,
       oauth: twitchOAuth,
@@ -442,6 +453,7 @@ export class ApiRouteHost extends RpcTarget {
     this.version = opts.version ?? UNVERSIONED;
     this.hosting = opts.hosting ?? null;
     this.marketplace = opts.marketplace ?? null;
+    this.clock = opts.clock ?? (() => Date.now());
   }
 }
 

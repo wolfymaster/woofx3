@@ -1459,20 +1459,27 @@ export interface UISettingChangedEvent {
 }
 
 /**
+ * The engine's Twitch link as `twitch.link.changed` carries it: linked to a
+ * user, or not linked. `authFailedAt` is as `TwitchLinkInfo.authFailedAt`.
+ */
+export type TwitchLinkStatus = { linked: false } | { linked: true; userId: string; authFailedAt: number | null };
+
+/**
  * Fired whenever the engine's Twitch link changes: an account is linked
  * (`setTwitchToken`, a device login), it is unlinked (`deleteTwitchToken`),
- * renewing its token is refused so it stops working, or a refused link
- * renews again. A notification: `getTwitchLink` is the record, and carries
- * the account's login and display name.
+ * a renewal brings a different account or scopes, renewing its token is
+ * refused so it stops working, or a refused link renews again. A
+ * notification: `getTwitchLink` is the record, and carries the account's
+ * login and display name.
+ *
+ * `revision` rises with every change and is shared with `getTwitchLink`, so
+ * a consumer drops any delivery whose revision is not above the one it
+ * holds; callback URL deliveries can arrive out of order.
  */
-export interface TwitchLinkChangedEvent {
+export type TwitchLinkChangedEvent = {
   type: typeof EngineEventType.TWITCH_LINK_CHANGED;
-  linked: boolean;
-  /** The linked account's Twitch user id; null when `linked` is false. */
-  userId: string | null;
-  /** As `TwitchLinkInfo.authFailedAt`; null when `linked` is false. */
-  authFailedAt: number | null;
-}
+  revision: number;
+} & TwitchLinkStatus;
 
 /**
  * Discriminated union of every event the engine can deliver via webhook.

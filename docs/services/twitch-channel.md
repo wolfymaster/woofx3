@@ -368,21 +368,23 @@ announced.
 ## Reading the link
 
 ```ts
-getTwitchLink(): Promise<TwitchLinkInfo | null>;
+getTwitchLink(): Promise<TwitchLinkInfo>;
 ```
 
-`getTwitchLink` describes the linked account, however it was linked, and is
-null when none is. Engines advertise it with the `twitch.linkRead` capability.
-It never returns a token: it answers the account's `userId`, the `scopes` the
-token was granted, `expiresAt` (when the current access token expires, null
-when it does not) and `authFailedAt`.
+`getTwitchLink` describes the linked account, however it was linked. Engines
+advertise it with the `twitch.linkRead` capability. With nothing linked it
+answers `{ linked: false, revision }`. Otherwise it answers `linked: true` with
+the account's `userId`, the `scopes` the token was granted, `expiresAt` (when
+the current access token expires, null when it does not), `authFailedAt` and
+`revision`. It never returns a token.
 
 `login`, `displayName` and `profileImageUrl` come from Helix
 (`GET /helix/users`, asked through the twitch service as the linked
 broadcaster) and are kept for an hour (`TwitchProfiles`,
-`api/src/twitch-profiles.ts`). When the twitch service is not running or
-Twitch refuses, they are null and the next read asks again; the link itself
-is still described.
+`api/src/twitch-profiles.ts`), or until the link next changes. Concurrent reads
+share one Helix call. `profileImageUrl` is only ever an `https:` URL. When the
+twitch service is not running or Twitch refuses, the three are null and the
+next read asks again; the link itself is still described.
 
 `authFailedAt` is when renewing the token was refused: Twitch refused a device
 login's refresh token, or the dashboard that sent the token answered
@@ -394,13 +396,25 @@ is refused. A token the twitch service refreshes with the engine's own
 confidential app is renewed in that service, so its failures do not set it.
 
 Every change to the link sends a `twitch.link.changed` webhook
-(`TwitchLinkChangedEvent` in `@woofx3/api/webhooks`), on the event stream
-like every other: an account linked (`setTwitchToken`, a device login), the
-link removed (`deleteTwitchToken`), renewal refused, and a refused link
-renewing again. It carries `linked`, `userId` and `authFailedAt`, and is sent
-after the `twitch_token` write it describes, in the order of the writes
-(`TwitchTokenSource`). It is a notification delivered best effort:
+(`TwitchLinkChangedEvent` in `@woofx3/api/webhooks`), on the event stream like
+every other:
+
+- an account linked (`setTwitchToken`, a device login);
+- the link removed (`deleteTwitchToken`);
+- a renewal that brings another account or other scopes (a dashboard answers
+  with whatever account it links now);
+- a renewal refused, and a refused link renewing again.
+
+It carries `{ linked: true, userId, authFailedAt }` or `{ linked: false }`, and
+a `revision`. It is sent after the `twitch_token` write it describes, in the
+order of the writes (`TwitchTokenSource`), and it is best effort:
 `getTwitchLink` is the record.
+
+`revision` rises with every change, and `getTwitchLink` answers the current
+one. Callback URL deliveries can arrive out of order, so a consumer keeps the
+highest revision it has applied and drops any delivery at or below it. The
+revision is never below the api's clock in milliseconds, so it keeps rising
+across a restart, which starts it at the clock.
 
 ## Ad breaks
 
