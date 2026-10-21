@@ -10,8 +10,8 @@ import { join, resolve } from "node:path";
 import { OPEN_REQUEST_GUARD_POLICY } from "@woofx3/common/http/request-guard";
 import SceneManager from "../../src/application";
 import type { SceneManagerRuntimeConfig } from "../../src/config";
-import { createFakeDb, type FakeDb } from "./fake-db";
 import { type FakeBarkloader, startFakeBarkloader } from "./fake-barkloader";
+import { createFakeDb, type FakeDb } from "./fake-db";
 
 export interface LogLine {
   level: "debug" | "info" | "warn" | "error";
@@ -58,6 +58,7 @@ export async function bootSceneManager(busUrl: string, options: { port?: number 
     publicDir: resolve(import.meta.dir, "../../public"),
     fontCacheDir: join(scratch, "fonts"),
     databaseProxyUrl: "http://127.0.0.1:1",
+    dbProxyToken: "smoke-db-proxy-token-0123456789abcdef",
     barkloaderUrl: barkloader.url,
     mediaProxySecret: "smoke-media-secret-0123456789abcdef",
     requestGuard: OPEN_REQUEST_GUARD_POLICY,

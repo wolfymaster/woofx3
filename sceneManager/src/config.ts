@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { dataDir, loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
 
@@ -30,6 +31,7 @@ export const SceneManagerEnvSchema = z.object({
   // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  woofx3DbProxyToken: z.string().optional(),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -41,6 +43,8 @@ export interface SceneManagerRuntimeConfig {
   /** Where Google Fonts families are kept once fetched (see google-font-cache.ts). */
   fontCacheDir: string;
   databaseProxyUrl: string;
+  /** Service token db-proxy requires of every caller. */
+  dbProxyToken: string;
   barkloaderUrl: string;
   /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
   mediaProxySecret: string;
@@ -77,6 +81,7 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   // URLs with barkloaderKey: a guessable secret lets anyone forge either.
   assertSecret("sceneManagerTokenSecret", config.tokenSecret);
   assertSecret("barkloaderKey", config.mediaProxySecret);
+  assertSecret(DB_PROXY_TOKEN_CONFIG_KEY, config.dbProxyToken);
   if (!config.barkloaderUrl) {
     throw new Error("sceneManager: barkloaderUrl must not be empty (WOOFX3_BARKLOADER_URL)");
   }
@@ -163,6 +168,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : undefined;
 
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
+  const dbProxyToken = String(c.woofx3DbProxyToken ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
   const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
   const requestGuard = parseRequestGuardPolicy({
@@ -179,6 +185,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     // The cache is written at runtime, so it follows the data directory when there is one.
     fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
+    dbProxyToken,
     barkloaderUrl,
     mediaProxySecret,
     requestGuard,

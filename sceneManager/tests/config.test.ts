@@ -19,6 +19,7 @@ const valid: SceneManagerRuntimeConfig = {
   publicDir,
   fontCacheDir: "/tmp/fonts",
   databaseProxyUrl: "http://127.0.0.1:9000",
+  dbProxyToken: "db-proxy-token-0123456789abcdef0123456789",
   barkloaderUrl: "http://127.0.0.1:9653",
   mediaProxySecret: "media-secret-0123456789abcdef0123456789",
   requestGuard: OPEN_REQUEST_GUARD_POLICY,
@@ -51,6 +52,9 @@ describe("validateConfig secrets", () => {
     ["mediaProxySecret", "barkloaderKey", ""],
     ["mediaProxySecret", "barkloaderKey", "CHANGE_ME"],
     ["mediaProxySecret", "barkloaderKey", "short-secret"],
+    ["dbProxyToken", "dbProxyToken", ""],
+    ["dbProxyToken", "dbProxyToken", "CHANGE_ME"],
+    ["dbProxyToken", "dbProxyToken", "short-secret"],
   ] as const) {
     it(`refuses ${field} = "${value}"`, () => {
       expect(() => validateConfig({ ...valid, [field]: value })).toThrow(setting);
