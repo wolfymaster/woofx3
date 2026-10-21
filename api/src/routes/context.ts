@@ -25,6 +25,13 @@ import {
   type StoredRelayConfig,
 } from "@woofx3/common/cloudevents/Relay/relay";
 import { encode } from "@woofx3/common/cloudevents/utils";
+import {
+  INTEGRATION_ENABLED_UPDATED_SUBJECT,
+  INTEGRATION_TOKEN_UPDATED_SUBJECT,
+  type IntegrationEnabledUpdated,
+  type IntegrationId,
+  integrationEnabledSettingKey,
+} from "@woofx3/common/integrations/integration-settings";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
@@ -226,18 +233,50 @@ export class ApiRouteHost extends RpcTarget {
   }
 
   /**
-   * Write the linked Twitch account's token and tell the services that hold
-   * one to reload it (`setting.integration.token.updated`). `engineUserId`
-   * scopes the row to the engine user who linked it, when known.
+   * Write the linked Twitch account's token, mark the integration enabled and
+   * tell the services that hold one to reload it. `engineUserId` scopes the
+   * row to the engine user who linked it, when known.
+   *
+   * Linking again re-enables, so a Convex re-registration (which calls
+   * setTwitchToken) switches a disabled integration back on.
    */
   protected async storeTwitchToken(stored: object, engineUserId?: string): Promise<void> {
     await this.twitchToken.store(stored, engineUserId);
-    // Best effort: the row is already written, so a missed event only delays
-    // the pickup until the services next read it.
+    await this.writeIntegrationEnabled("twitch", true);
+    await this.announceIntegrationChanged("twitch", true);
+  }
+
+  /**
+   * Record whether an integration should run. The token and this row are two
+   * writes, not one transaction: an adapter runs while it is connected AND
+   * enabled, and the host's 60 s reconcile heals a missed event or a crash
+   * between the writes. Throws when the row is not stored, so the RPC fails
+   * rather than reporting a link the host will not act on.
+   */
+  protected async writeIntegrationEnabled(id: IntegrationId, enabled: boolean): Promise<void> {
+    const key = integrationEnabledSettingKey(id);
+    if (!(await this.db.trySetSetting(key, String(enabled)))) {
+      throw new Error(`could not store ${key}`);
+    }
+  }
+
+  /**
+   * Engine `settings` writes publish no event of their own. The enabled event
+   * goes first so a listener that reacts to the token event already sees the
+   * new flag. Each publish is best effort: the rows are written, so a missed
+   * event only delays the pickup until the next reconcile.
+   */
+  protected async announceIntegrationChanged(id: IntegrationId, enabled: boolean): Promise<void> {
+    const payload: IntegrationEnabledUpdated = { integration: id, enabled };
+    await this.publishBestEffort(INTEGRATION_ENABLED_UPDATED_SUBJECT, payload);
+    await this.publishBestEffort(INTEGRATION_TOKEN_UPDATED_SUBJECT, { integration: id });
+  }
+
+  private async publishBestEffort(subject: string, payload: Record<string, unknown>): Promise<void> {
     try {
-      await this.publishEvent("setting.integration.token.updated", { integration: "twitch" });
+      await this.publishEvent(subject, payload);
     } catch (err) {
-      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
+      this.logger.warn(`Failed to publish ${subject}`, { err });
     }
   }
 
