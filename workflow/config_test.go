@@ -117,6 +117,8 @@ func TestRunRetentionFromEnv(t *testing.T) {
 		{name: "zero retention is refused", env: map[string]string{"WOOFX3_WORKFLOW_RUN_RETENTION": "0s"}, wantErr: true},
 		{name: "negative sweep interval is refused", env: map[string]string{"WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL": "-1s"}, wantErr: true},
 		{name: "negative cap is refused", env: map[string]string{"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS": "-1"}, wantErr: true},
+		{name: "zero cap is refused", env: map[string]string{"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS": "0"}, wantErr: true},
+		{name: "a cap that is not a number is refused", env: map[string]string{"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS": "lots"}, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

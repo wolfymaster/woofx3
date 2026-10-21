@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/wolfymaster/woofx3/clients/nats"
@@ -37,9 +38,10 @@ type WorkflowEnvConfig struct {
 	// RunSweepInterval is how often settled runs are evicted, as a Go
 	// duration. Unset means engine.DefaultRunSweepInterval.
 	RunSweepInterval string `env:"WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL"`
-	// MaxSettledRuns caps how many settled runs stay in memory. Unset means
-	// engine.DefaultMaxSettledRuns.
-	MaxSettledRuns int `env:"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS"`
+	// MaxSettledRuns caps how many settled runs stay in memory, as a decimal
+	// integer. It is a string so an explicit "0" is refused rather than read
+	// as unset. Unset means engine.DefaultMaxSettledRuns.
+	MaxSettledRuns string `env:"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS"`
 	nats.Config
 }
 
@@ -72,15 +74,30 @@ func (c *WorkflowEnvConfig) runRetention() (engine.RetentionConfig, error) {
 	if err != nil {
 		return engine.RetentionConfig{}, err
 	}
-	if c.MaxSettledRuns < 0 {
-		return engine.RetentionConfig{}, fmt.Errorf("WOOFX3_WORKFLOW_MAX_SETTLED_RUNS must not be negative, got %d", c.MaxSettledRuns)
+	maxSettled, err := positiveInt("WOOFX3_WORKFLOW_MAX_SETTLED_RUNS", c.MaxSettledRuns, retention.MaxSettledRuns)
+	if err != nil {
+		return engine.RetentionConfig{}, err
 	}
 	retention.RetentionTTL = ttl
 	retention.SweepInterval = interval
-	if c.MaxSettledRuns > 0 {
-		retention.MaxSettledRuns = c.MaxSettledRuns
-	}
+	retention.MaxSettledRuns = maxSettled
 	return retention, nil
+}
+
+// positiveInt parses the decimal integer in value, read from the variable
+// key, or returns fallback when value is unset.
+func positiveInt(key, value string, fallback int) (int, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a whole number: %w", key, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive, got %d", key, parsed)
+	}
+	return parsed, nil
 }
 
 // positiveDuration parses the Go duration in value, read from the variable
