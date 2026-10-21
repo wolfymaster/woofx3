@@ -99,7 +99,7 @@ export class ApiRouteHost extends RpcTarget {
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
-  protected authInvalidate: (() => void) | null = null;
+  protected authInvalidate: ((clientId: string) => void) | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,
    * so capnweb never offers it to a client.
