@@ -35,9 +35,6 @@ const (
 	// registrar at workflow-creation time.
 	SubjectChatCommandPattern Subject = "chat.command.*"
 
-	// Slobs / OBS events
-	SubjectSlobs Subject = "slobs"
-
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 

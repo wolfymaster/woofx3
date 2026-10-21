@@ -3,7 +3,7 @@ import type { DbClient } from "../db";
 
 /**
  * Wire shape a widget's `status.report` (P1) arrives as after the
- * browser scene-manager forwards it (the `OverlayWidgetEvent` shape).
+ * browser scene-manager forwards it.
  */
 export interface StatusReport {
   moduleId: string;
@@ -15,11 +15,10 @@ export interface StatusReport {
 }
 
 /**
- * Every status report, including the built-in alert widget's, is a
- * uniform `widget_status` upsert with no per-key routing: queueing is
- * the browser's per-widget client-side policy (see
- * `public/scene-manager/event-queue.ts`), not something a status report
- * drives here.
+ * Record a widget's status report. Every report, the built-in alert
+ * widget's included, is a uniform `widget_status` upsert: queueing is the
+ * browser's per-widget policy (`@woofx3/widget-host`'s `page/event-queue.ts`), so
+ * no report is routed anywhere by its key.
  */
 export async function handleStatusReport(db: DbClient, logger: Logger, report: StatusReport): Promise<void> {
   if (!report.instanceId || !report.key) {

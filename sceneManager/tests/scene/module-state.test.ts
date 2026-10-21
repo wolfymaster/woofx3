@@ -2,11 +2,12 @@ import { describe, expect, it, mock } from "bun:test";
 import {
   linkedResources,
   listSettingRows,
-  MODULE_STATE_EVENT,
   type ModuleStateDb,
   ModuleStateWatch,
   storageModuleFor,
 } from "../../src/scene/module-state";
+import type { StreamFrame } from "../../contract/overlay-stream";
+import { eventAndData } from "../helpers/stream-frames";
 
 const logger = {
   debug: mock(() => undefined),
@@ -42,8 +43,8 @@ function fakeScenes(connected: string[]) {
   return {
     pushed,
     connectedSceneIds: () => connected,
-    broadcast: (sceneId: string, event: string, data: unknown) => {
-      pushed.push({ sceneId, event, data });
+    broadcast: (sceneId: string, frame: StreamFrame) => {
+      pushed.push({ sceneId, ...eventAndData(frame) });
     },
   };
 }
@@ -164,7 +165,7 @@ describe("ModuleStateWatch.publish", () => {
     expect(scenes.pushed).toEqual([
       {
         sceneId: "scene-1",
-        event: MODULE_STATE_EVENT,
+        event: "module-state",
         data: { moduleId: "woofx3", key: COUNTER_KEY, value: { value: 5, reached: {} } },
       },
     ]);
@@ -248,7 +249,7 @@ describe("ModuleStateWatch.resourceUpdated", () => {
     expect(scenes.pushed).toEqual([
       {
         sceneId: "scene-1",
-        event: MODULE_STATE_EVENT,
+        event: "module-state",
         data: {
           moduleId: "woofx3",
           key: COUNTER_RESOURCE,
@@ -322,7 +323,7 @@ describe("ModuleStateWatch list settings", () => {
     expect(scenes.pushed).toEqual([
       {
         sceneId: "scene-1",
-        event: MODULE_STATE_EVENT,
+        event: "module-state",
         data: { moduleId: WHEEL, key: "setting:items", value: [{ label: "Pizza" }, { label: "Tacos" }] },
       },
     ]);

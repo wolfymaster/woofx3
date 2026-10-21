@@ -7,7 +7,7 @@ import {
   MAX_PREVIEW_WIDGETS,
   PREVIEW_SESSION_COOKIE,
 } from "../../src/routes/composition-preview";
-import { MAX_DRAFT_BODY_BYTES } from "../../src/routes/scene";
+import { BODY_LIMITS } from "../../src/routes/http-kit";
 import { MediaProxy } from "../../src/scene/media-proxy";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 import { SessionTokenService } from "../../src/scene/session-token";
@@ -83,7 +83,7 @@ describe("GET /preview/composition", () => {
     const others = [
       "",
       "ovl_abc",
-      await tokens.mint({ sceneId: "alert-1" }),
+      await tokens.mint({ sceneId: "alert-1", authAt: 0 }),
       await tokens.mintEditor({ sceneId: "alert-1" }),
       await tokens.mintPreviewSession(),
     ];
@@ -107,7 +107,7 @@ describe("POST /preview/composition/session/refresh", () => {
     expect(renewed.status).toBe(200);
     expect(await tokens.verifyPreviewSession(sessionOf(renewed))).toBe(true);
 
-    for (const cookie of [null, await tokens.mintPreview(), await tokens.mint({ sceneId: "s1" })]) {
+    for (const cookie of [null, await tokens.mintPreview(), await tokens.mint({ sceneId: "s1", authAt: 0 })]) {
       const refused = await handleCompositionPreviewRefreshRoute(
         post("/preview/composition/session/refresh", cookie),
         deps().deps
@@ -168,7 +168,7 @@ describe("POST /preview/composition/frames", () => {
 
   it("refuses without the preview session, before reading the body", async () => {
     const { deps: d, framePlacements } = deps();
-    for (const cookie of [null, await tokens.mint({ sceneId: "s1" }), await tokens.mintPreview()]) {
+    for (const cookie of [null, await tokens.mint({ sceneId: "s1", authAt: 0 }), await tokens.mintPreview()]) {
       const response = await handleCompositionPreviewFramesRoute(post("/preview/composition/frames", cookie, "[]"), d);
       expect(response.status).toBe(401);
     }
@@ -191,7 +191,7 @@ describe("POST /preview/composition/frames", () => {
       expect(response.status).toBe(400);
     }
     const huge = await handleCompositionPreviewFramesRoute(
-      post("/preview/composition/frames", session, "x".repeat(MAX_DRAFT_BODY_BYTES + 1)),
+      post("/preview/composition/frames", session, "x".repeat(BODY_LIMITS.placements + 1)),
       d
     );
     expect(huge.status).toBe(413);

@@ -1,7 +1,7 @@
 /**
- * Server-rendered HTML shell for `GET /scene/{sceneId}`. This is the
- * whole client surface besides the vendored data-star bundle and the
- * small scene-manager client script (see `public/scene-manager/`).
+ * Server-rendered HTML shell for `GET /scene/{sceneId}`: the whole page
+ * besides the vendored data-star bundle and the overlay client script
+ * (`public/scene-manager/`).
  */
 export interface SceneShellConfig {
   scene: unknown;

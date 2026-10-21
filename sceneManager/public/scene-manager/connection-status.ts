@@ -2,11 +2,10 @@
 //
 // Two independent signals report on sceneManager's reachability: the
 // SSE stream (event-source.ts) and the periodic session refresh
-// (index.ts). Before this, each toggled the banner directly, so they
-// could disagree -- the stream could reconnect and clear the banner
-// while refresh was still failing, or refresh could succeed and clear
-// a banner the stream had legitimately raised. Whichever fired last
-// won, and a stale verdict could sit on screen for a full refresh
+// (session-refresh.ts, started in overlay.ts). Were each to toggle the
+// banner itself, they could disagree -- the stream reconnecting and
+// clearing the banner while refresh still fails -- and whichever fired
+// last would win, leaving a stale verdict on screen for a full refresh
 // interval.
 //
 // Here both report into one place and the banner shows unless every

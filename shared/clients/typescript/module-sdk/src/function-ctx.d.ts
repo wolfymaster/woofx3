@@ -529,13 +529,18 @@ export interface CtxObsExtension {
   /** Make a scene the live program scene. Needs `obs.control`. */
   switchScene(args: { sceneName: string }): { ok: true };
   /**
-   * Show or hide a source in a scene, the live program scene when `sceneName`
-   * is absent or empty. `visible` defaults to true and also accepts "true" and
-   * "false". Needs `obs.control`.
+   * Show, hide or toggle a source in a scene, the live program scene when
+   * `sceneName` is absent or empty. `visibility` is "visible", "hidden" or
+   * "toggle"; a toggle flips whatever OBS shows when the call runs. Without
+   * `visibility`, `visible` (true by default, also "true" and "false") says
+   * which; `visibility` wins when both are given. Needs `obs.control`.
    */
-  setSourceVisibility(args: { sourceName: string; sceneName?: string; visible?: boolean | "true" | "false" }): {
-    ok: true;
-  };
+  setSourceVisibility(args: {
+    sourceName: string;
+    sceneName?: string;
+    visibility?: "visible" | "hidden" | "toggle";
+    visible?: boolean | "true" | "false";
+  }): { ok: true };
   /**
    * Mute or unmute an audio input. `muted` defaults to true and also accepts
    * "true" and "false". Needs `obs.control`.

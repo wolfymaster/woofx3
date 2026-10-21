@@ -307,16 +307,45 @@ fn switch_scene(name: &str, args: &Map<String, Value>) -> Result<Value, HostErro
 fn set_source_visibility(name: &str, args: &Map<String, Value>) -> Result<Value, HostError> {
     let source_name = required_string(name, args, "sourceName")?;
     let scene_name = optional_string(name, args, "sceneName")?;
-    let visible = optional_bool(name, args, "visible", true)?;
+    let visibility = source_visibility(name, args)?;
     let mut command = json!({
         "command": "set_source_visibility",
         "sourceName": source_name,
-        "visible": visible,
+        "visibility": visibility,
     });
     if let Some(scene_name) = scene_name.filter(|scene| !scene.is_empty()) {
         command["sceneName"] = Value::String(scene_name);
     }
     Ok(command)
+}
+
+/// `visibility` is "visible", "hidden" or "toggle", which the scene manager
+/// resolves against what OBS shows when the command runs. Without it,
+/// `visible` (true by default) is read as "visible" or "hidden"; `visibility`
+/// wins when both are given.
+fn source_visibility(name: &str, args: &Map<String, Value>) -> Result<&'static str, HostError> {
+    let refused = |got: Option<&Value>| {
+        invalid(
+            name,
+            "visibility",
+            "\"visible\", \"hidden\" or \"toggle\"",
+            got,
+        )
+    };
+    match args.get("visibility") {
+        None | Some(Value::Null) => Ok(if optional_bool(name, args, "visible", true)? {
+            "visible"
+        } else {
+            "hidden"
+        }),
+        Some(Value::String(text)) => match text.as_str() {
+            "visible" => Ok("visible"),
+            "hidden" => Ok("hidden"),
+            "toggle" => Ok("toggle"),
+            _ => Err(refused(args.get("visibility"))),
+        },
+        other => Err(refused(other)),
+    }
 }
 
 fn set_input_mute(name: &str, args: &Map<String, Value>) -> Result<Value, HostError> {
@@ -589,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn set_source_visibility_defaults_visible_and_leaves_off_an_absent_scene() {
+    fn set_source_visibility_reads_visible_as_visible_or_hidden_and_leaves_off_an_absent_scene() {
         let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
@@ -623,16 +652,45 @@ mod tests {
         assert_eq!(
             data,
             vec![
-                json!({ "command": "set_source_visibility", "sourceName": "Cam", "visible": true }),
-                json!({ "command": "set_source_visibility", "sourceName": "Cam", "visible": false }),
+                json!({ "command": "set_source_visibility", "sourceName": "Cam", "visibility": "visible" }),
+                json!({ "command": "set_source_visibility", "sourceName": "Cam", "visibility": "hidden" }),
                 json!({
                     "command": "set_source_visibility",
                     "sourceName": "Cam",
                     "sceneName": "Game",
-                    "visible": false
+                    "visibility": "hidden"
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn set_source_visibility_sends_a_visibility_and_prefers_it_over_visible() {
+        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let ext = ObsExtension::new(nats.clone());
+
+        for args in [
+            json!({ "sourceName": "Cam", "visibility": "toggle" }),
+            json!({ "sourceName": "Cam", "visibility": "hidden", "visible": true }),
+        ] {
+            call(&ext, "setSourceVisibility", &control(), args).unwrap();
+        }
+        let sent: Vec<Value> = nats
+            .sent()
+            .into_iter()
+            .map(|(_, e, _)| e["data"]["visibility"].clone())
+            .collect();
+        assert_eq!(sent, vec![json!("toggle"), json!("hidden")]);
+
+        let err = call(
+            &ext,
+            "setSourceVisibility",
+            &control(),
+            json!({ "sourceName": "Cam", "visibility": "flip" }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code.as_deref(), Some(INVALID_ARGUMENTS));
+        assert_eq!(nats.sent().len(), 2, "a refused call reaches nothing");
     }
 
     #[test]

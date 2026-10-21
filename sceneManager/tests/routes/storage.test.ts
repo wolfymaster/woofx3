@@ -1,12 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { corsHeadersFor } from "../../src/http";
-import {
-  handleStorageAssetRoute,
-  handleUploadRoute,
-  isStorageAssetPath,
-  isUploadPath,
-  MAX_UPLOAD_BYTES,
-} from "../../src/routes/storage";
+import { corsHeadersFor, routeOf } from "../../src/http";
+import { handleStorageAssetRoute, handleUploadRoute, MAX_UPLOAD_BYTES } from "../../src/routes/storage";
 
 const BARKLOADER_URL = "http://barkloader.test/";
 
@@ -26,13 +20,13 @@ function upstream(response: Response) {
   return mock(async (_input: string | URL | Request, _init?: RequestInit) => response);
 }
 
-describe("isStorageAssetPath", () => {
-  it("claims repository keys and leaves sceneManager's own files alone", () => {
-    expect(isStorageAssetPath("/assets/modules/m1/abc123/assets/bell.mp3")).toBe(true);
-    expect(isStorageAssetPath("/assets/user/res-1/photo.png")).toBe(true);
-    expect(isStorageAssetPath("/assets/vendor/datastar.js")).toBe(false);
-    expect(isStorageAssetPath("/assets/widget-host-shim.js")).toBe(false);
-    expect(isStorageAssetPath("/assets/modulesx/m1/a.png")).toBe(false);
+describe("routes for stored files", () => {
+  it("answer module and library files, and nothing else under /assets/ but the static catch-all", () => {
+    expect(routeOf("/assets/modules/m1/abc123/assets/bell.mp3")).toBe("/assets/modules/*");
+    expect(routeOf("/assets/user/res-1/photo.png")).toBe("/assets/user/*");
+    expect(routeOf("/assets/vendor/datastar.js")).toBe("/assets/*");
+    expect(routeOf("/assets/widget-host-shim.js")).toBe("/assets/*");
+    expect(routeOf("/assets/modulesx/m1/a.png")).toBe("/assets/*");
   });
 });
 
@@ -77,22 +71,6 @@ describe("handleStorageAssetRoute", () => {
     expect(fetchFn.mock.calls[0]![0]).toBe("http://barkloader.test/assets/user/res-1/my%20file.png");
   });
 
-  it("404s a non-GET request without reaching barkloader", async () => {
-    const fetchFn = upstream(new Response("unreachable"));
-    const url = new URL("http://scene.test/assets/user/res-1/photo.png");
-
-    const resp = await handleStorageAssetRoute(
-      new Request(url, { method: "POST" }),
-      url,
-      BARKLOADER_URL,
-      logger,
-      fetchFn as never
-    );
-
-    expect(resp.status).toBe(404);
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
   it("answers 502 when barkloader is unreachable", async () => {
     const fetchFn = mock(async (_input: string | URL | Request, _init?: RequestInit): Promise<Response> => {
       throw new Error("connection refused");
@@ -112,13 +90,12 @@ function put(path: string, body: BodyInit | null, headers: Record<string, string
   return { req: new Request(url, { method: "PUT", body, headers }), url };
 }
 
-describe("isUploadPath", () => {
-  it("claims exactly one token segment under /assets/upload/", () => {
-    expect(isUploadPath(UPLOAD_PATH)).toBe(true);
-    expect(isUploadPath("/assets/upload/")).toBe(false);
-    expect(isUploadPath("/assets/upload/a/b")).toBe(false);
-    expect(isUploadPath("/assets/user/res-1/photo.png")).toBe(false);
-    expect(isStorageAssetPath(UPLOAD_PATH)).toBe(false);
+describe("the upload route", () => {
+  it("answers exactly one grant segment", () => {
+    expect(routeOf(UPLOAD_PATH)).toBe("/assets/upload/:grant");
+    expect(routeOf("/assets/upload/")).toBe("/assets/*");
+    expect(routeOf("/assets/upload/a/b")).toBe("/assets/*");
+    expect(routeOf("/assets/user/res-1/photo.png")).toBe("/assets/user/*");
   });
 });
 
@@ -199,18 +176,6 @@ describe("handleUploadRoute", () => {
     const resp = await handleUploadRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
 
     expect(resp.status).toBe(413);
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("answers 405 for any method but PUT without reaching barkloader", async () => {
-    const fetchFn = upstream(new Response("unreachable"));
-    const url = new URL(`http://scene.test${UPLOAD_PATH}`);
-
-    for (const method of ["GET", "POST", "DELETE", "PATCH"]) {
-      const resp = await handleUploadRoute(new Request(url, { method }), url, BARKLOADER_URL, logger, fetchFn as never);
-      expect(resp.status).toBe(405);
-      expect(resp.headers.get("Allow")).toBe("PUT, OPTIONS");
-    }
     expect(fetchFn).not.toHaveBeenCalled();
   });
 

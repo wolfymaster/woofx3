@@ -1,20 +1,20 @@
 import type { Logger } from "@woofx3/common/runtime";
-import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
-import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
+import { parseWidgetCanonicalId } from "@woofx3/scene/model";
+import {
+  FRAME_DOCUMENT_HEADERS,
+  type FrameSource,
+  frameDocument,
+  hostTheme,
+  parseFrameTheme,
+  type WidgetFrameBoot,
+} from "@woofx3/widget-host/frame";
+import { selectedThemeId } from "../../contract/scene-config";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
+import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
-import { type OverlayHost, parseWidgetCanonicalId } from "./scene-host";
-import {
-  type FrameTheme,
-  buildThemeStyle,
-  hostTheme,
-  injectThemeStylesheet,
-  originOf,
-  parseFrameTheme,
-  selectedThemeId,
-  themeContentSecurityPolicy,
-} from "./widget-theme";
+import type { OverlayHost } from "./scene-host";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -23,40 +23,11 @@ import {
  */
 export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body></html>";
 
-/** Capabilities advertised in every boot payload. */
-export const FRAME_CAPABILITIES = ["storage", "events", "status", "settings"] as const;
-
-/** The widget host shim's file name under sceneManager's public directory. */
-export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
-
-/** Absolute shim src — sceneManager serves it at a fixed top-level
- *  path regardless of how deep the frame URL is, so no relative-path
- *  arithmetic is needed (a relative `../assets/...` path would break
- *  whenever the frame-URL depth changes). */
-export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
-
-/**
- * Every widget frame's policy on connections: none. Widget code is end-user
- * code, and a frame that could `fetch`, open a socket or beacon could send
- * whatever it is shown anywhere. What a widget needs from the network it asks
- * the host for over the bridge (storage, events, `assets.load`), and elements
- * still load media by URL under their own directives.
- */
-export const FRAME_CONNECT_POLICY = "connect-src 'none'";
-
-const FRAME_HEADERS: Record<string, string> = {
-  "Content-Type": "text/html; charset=utf-8",
-  "Referrer-Policy": "no-referrer",
-  "Cache-Control": "no-store",
-};
+const FRAME_HEADERS: Record<string, string> = { ...FRAME_DOCUMENT_HEADERS, "Cache-Control": "no-store" };
 
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
-export interface BarkloaderFrameInfo {
-  entryHtml: string;
-  resourceBaseUrl: string;
-  /** `null` for a widget that declares no theme contract. */
-  theme: FrameTheme | null;
+export interface BarkloaderFrameInfo extends FrameSource {
   /** Ids of the widget's `font` settings. */
   fontSettings: string[];
 }
@@ -152,22 +123,8 @@ export interface FrameAssemblerOptions {
   mediaProxy?: MediaProxy;
 }
 
-/**
- * The boot payload a cacheable frame document inlines: the widget's half.
- * The placement's half (`WidgetPlacementBoot`) arrives in the fragment.
- */
-export type WidgetFrameBoot = Omit<WidgetBootPayload, "nonce" | "instanceId" | "settings" | "linkedResources">;
-
 /** A frame document whose URL carries its current version never changes. */
 const CACHED_FRAME_CACHE_CONTROL = "public, max-age=31536000, immutable";
-
-export interface FrameScaffold {
-  boot: WidgetBootPayload | WidgetFrameBoot;
-  baseHref: string;
-  /** Variables and asset slots of a themeable widget, set before any of
-   *  the widget's own styles or scripts. */
-  theme?: FrameTheme | null;
-}
 
 /** What a frame is assembled for: a scene placement, or one widget of an alert layout. */
 interface FrameTarget {
@@ -179,63 +136,6 @@ interface FrameTarget {
   surface: WidgetSurface;
 }
 
-/**
- * Build the injected scaffold block in the NORMATIVE order: (1) inline
- * boot payload, (2) classic shim script tag, (3) <base> pointing at
- * the widget asset root. The shim must stay a classic script (no async/
- * defer): existing widgets read `window.widgetHost` at IIFE time, and
- * the script src must precede <base> so it resolves against the frame
- * URL, not the asset root.
- */
-export function buildFrameScaffold(scaffold: FrameScaffold): string {
-  const bootJson = JSON.stringify(scaffold.boot).replace(/</g, "\\u003c");
-  return (
-    `<script>window.__WOOFX3_WIDGET_BOOT__ = ${bootJson};</script>` +
-    `<script src="${SHIM_SRC}"></script>` +
-    `<base href="${escapeHtmlAttribute(scaffold.baseHref)}">` +
-    (scaffold.theme ? buildThemeStyle(scaffold.theme) : "")
-  );
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-/**
- * Inject `scaffoldHtml` at the head-open position of an entry
- * document. Fallback rules: no <head> -> synthesize
- * one directly after <html>; neither -> inject at the very front
- * (after a doctype when present). A leading BOM is preserved in place.
- */
-export function injectFrameScaffold(entryHtml: string, scaffoldHtml: string): string {
-  let bom = "";
-  let html = entryHtml;
-  if (html.charCodeAt(0) === 0xfeff) {
-    bom = "﻿";
-    html = html.slice(1);
-  }
-
-  const headOpen = /<head(?:\s[^>]*)?>/i.exec(html);
-  if (headOpen) {
-    const at = headOpen.index + headOpen[0].length;
-    return bom + html.slice(0, at) + scaffoldHtml + html.slice(at);
-  }
-
-  const htmlOpen = /<html(?:\s[^>]*)?>/i.exec(html);
-  if (htmlOpen) {
-    const at = htmlOpen.index + htmlOpen[0].length;
-    return bom + html.slice(0, at) + "<head>" + scaffoldHtml + "</head>" + html.slice(at);
-  }
-
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
-  if (doctype) {
-    const at = doctype[0].length;
-    return bom + html.slice(0, at) + scaffoldHtml + html.slice(at);
-  }
-
-  return bom + scaffoldHtml + html;
-}
-
 function defaultNonce(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -243,9 +143,9 @@ function defaultNonce(): string {
 }
 
 /**
- * Assembles widget frame documents. Module widget entry HTML and
- * resource base URL come from a single Barkloader call, which owns
- * version resolution.
+ * Assembles widget frame documents. A module widget's entry HTML and
+ * resource base URL come from one barkloader call, which owns resolving
+ * the module's installed version.
  */
 export class FrameAssembler {
   private readonly generateNonce: () => string;
@@ -295,11 +195,12 @@ export class FrameAssembler {
       });
     }
     const boot: WidgetFrameBoot = {
-      v: 1,
+      v: PROTOCOL_VERSION,
       moduleId,
       widgetCanonicalId,
       surface: "scene",
-      capabilities: [...FRAME_CAPABILITIES],
+      // What the host may offer; `init` says what this frame gets.
+      capabilities: [...WIDGET_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: frameInfo.theme ? hostTheme(frameInfo.theme) : null,
       ...frameFonts(frameInfo),
@@ -395,14 +296,15 @@ export class FrameAssembler {
 
     const linkedResources = await this.loadLinkedResources(target.moduleId);
     const boot: WidgetBootPayload = {
-      v: 1,
+      v: PROTOCOL_VERSION,
       nonce,
       instanceId: target.instanceId,
       moduleId: target.moduleId,
       widgetCanonicalId: target.widgetCanonicalId,
       surface: target.surface,
       settings: this.bootSettings(target.settings, frameInfo),
-      capabilities: [...FRAME_CAPABILITIES],
+      // What the host may offer; `init` says what this frame gets.
+      capabilities: [...WIDGET_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
       theme: theme ? hostTheme(theme) : null,
       linkedResources,
@@ -424,32 +326,13 @@ export class FrameAssembler {
     return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
   }
 
-  /** The entry document with the scaffold, theme stylesheet and policy. */
   private render(
     frameInfo: BarkloaderFrameInfo,
     boot: WidgetBootPayload | WidgetFrameBoot,
     cacheControl: string
   ): Response {
-    const theme = frameInfo.theme;
-    const scaffold = buildFrameScaffold({ boot, baseHref: frameInfo.resourceBaseUrl, theme });
-    let assembled = injectFrameScaffold(frameInfo.entryHtml, scaffold);
-    const headers: Record<string, string> = {
-      ...FRAME_HEADERS,
-      "Cache-Control": cacheControl,
-      "Content-Security-Policy": FRAME_CONNECT_POLICY,
-    };
-    if (theme) {
-      if (theme.stylesheetUrl) {
-        assembled = injectThemeStylesheet(assembled, theme.stylesheetUrl);
-      }
-      // Every widget that opted into themes runs under the policy, themed or
-      // not, so a theme can never be the thing that changes what loads.
-      headers["Content-Security-Policy"] = `${themeContentSecurityPolicy([
-        originOf(frameInfo.resourceBaseUrl),
-        ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
-      ])}; ${FRAME_CONNECT_POLICY}`;
-    }
-    return new Response(assembled, { status: 200, headers });
+    const { html, headers } = frameDocument(frameInfo, boot);
+    return new Response(html, { status: 200, headers: { ...headers, "Cache-Control": cacheControl } });
   }
 
   private async loadFrameInfo(

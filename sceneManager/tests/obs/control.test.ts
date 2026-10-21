@@ -12,8 +12,9 @@ describe("parseObsControlCommand", () => {
   it("accepts each command in its documented shape", () => {
     for (const data of [
       { command: "switch_scene", sceneName: "Raid" },
-      { command: "set_source_visibility", sourceName: "Confetti", visible: true },
-      { command: "set_source_visibility", sceneName: "Main", sourceName: "Confetti", visible: false },
+      { command: "set_source_visibility", sourceName: "Confetti", visibility: "visible" },
+      { command: "set_source_visibility", sceneName: "Main", sourceName: "Confetti", visibility: "hidden" },
+      { command: "set_source_visibility", sourceName: "Confetti", visibility: "toggle" },
       { command: "set_input_mute", inputName: "Mic/Aux", muted: true },
       {
         command: "show_browser_source",
@@ -42,16 +43,22 @@ describe("parseObsControlCommand", () => {
   });
 
   it("refuses a visibility command that does not say which way", () => {
-    const parsed = parseObsControlCommand({ command: "set_source_visibility", sourceName: "Confetti" });
-    expect(parsed.ok ? "" : parsed.error).toContain("visible");
+    for (const data of [
+      { command: "set_source_visibility", sourceName: "Confetti" },
+      { command: "set_source_visibility", sourceName: "Confetti", visibility: "flip" },
+      { command: "set_source_visibility", sourceName: "Confetti", visible: true },
+    ]) {
+      const parsed = parseObsControlCommand(data);
+      expect(parsed.ok ? "" : parsed.error).toContain("visibility");
+    }
   });
 
   it("refuses a misspelled field rather than ignoring it", () => {
     const parsed = parseObsControlCommand({
       command: "set_source_visibility",
       sourceName: "Confetti",
-      visible: true,
-      visibile: false,
+      visibility: "visible",
+      visibilty: "hidden",
     });
     expect(parsed.ok).toBe(false);
   });
@@ -99,7 +106,7 @@ describe("executeObsControlCommand", () => {
       command: "set_source_visibility",
       sceneName: "Main",
       sourceName: "Confetti",
-      visible: true,
+      visibility: "visible",
     });
     expect(reply).toEqual({ ok: true });
     expect(all[0].items[1].sceneItemEnabled).toBe(true);
@@ -112,7 +119,7 @@ describe("executeObsControlCommand", () => {
       command: "set_source_visibility",
       sceneName: "BRB",
       sourceName: "Confetti",
-      visible: true,
+      visibility: "visible",
     });
     expect(reply).toEqual({ ok: false, error: 'scene "BRB" does not exist in OBS' });
   });
@@ -123,10 +130,21 @@ describe("executeObsControlCommand", () => {
     const reply = await executeObsControlCommand(obs.client, {
       command: "set_source_visibility",
       sourceName: "Camera",
-      visible: false,
+      visibility: "hidden",
     });
     expect(reply).toEqual({ ok: true });
     expect(all[0].items[0].sceneItemEnabled).toBe(false);
+  });
+
+  it("toggles a source to the opposite of what OBS shows now, each time", async () => {
+    const all = scenes();
+    const obs = fakeObs(all, "Main");
+    const toggle = { command: "set_source_visibility", sourceName: "Camera", visibility: "toggle" } as const;
+    const before = all[0].items[0].sceneItemEnabled;
+    expect(await executeObsControlCommand(obs.client, toggle)).toEqual({ ok: true });
+    expect(all[0].items[0].sceneItemEnabled).toBe(!before);
+    expect(await executeObsControlCommand(obs.client, toggle)).toEqual({ ok: true });
+    expect(all[0].items[0].sceneItemEnabled).toBe(before);
   });
 
   it("names a source that is not in the scene", async () => {
@@ -134,7 +152,7 @@ describe("executeObsControlCommand", () => {
     const reply = await executeObsControlCommand(obs.client, {
       command: "set_source_visibility",
       sourceName: "Confetti",
-      visible: true,
+      visibility: "visible",
     });
     expect(reply).toEqual({
       ok: false,
@@ -318,7 +336,7 @@ describe("sources inside groups", () => {
     const reply = await executeObsControlCommand(obs.client, {
       command: "set_source_visibility",
       sourceName: "Confetti",
-      visible: true,
+      visibility: "visible",
     });
     expect(reply).toEqual({ ok: true });
     expect(alerts.items[0].sceneItemEnabled).toBe(true);

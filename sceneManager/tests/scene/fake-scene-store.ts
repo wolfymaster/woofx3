@@ -3,6 +3,7 @@
 
 import type { SceneLoader, ScenePersister, SceneWrite } from "../../src/scene/scene-documents";
 import type { EditableScene, OverlaySceneState, OverlayWidgetInstance, SceneVersion } from "../../src/scene/scene-host";
+import { parseWidgetCanonicalId, placementOfStored, stableCanonicalId, storedWidgetId } from "@woofx3/scene/model";
 
 export interface SceneRow {
   id: string;
@@ -57,28 +58,27 @@ export function frameUrlOf(widget: string, version = ""): string {
   return version === "" ? `/frames/${widget}` : `/frames/${widget}?v=${version}`;
 }
 
-/** A stored placement parsed and framed as OverlayHost does, or null for one it drops. */
+/**
+ * A stored placement parsed and framed as OverlayHost does, or null for one it
+ * drops: the same codec (`placementOfStored`) and id rules, so the documents
+ * built from this store are the ones the real loader builds.
+ */
 export function instanceOf(stored: Record<string, unknown>, frameVersion = ""): OverlayWidgetInstance | null {
   const id = typeof stored.id === "string" ? stored.id : "";
-  const widget = typeof stored.widgetCanonicalId === "string" ? stored.widgetCanonicalId : "";
-  const [moduleId, kind, manifestId] = widget.split(":");
-  if (!id || kind !== "widget" || !moduleId || !manifestId) {
+  const widget = stableCanonicalId(storedWidgetId(stored));
+  const parsed = widget === null ? null : parseWidgetCanonicalId(widget);
+  if (!id || widget === null || parsed === null) {
     return null;
   }
-  const position = (stored.position ?? {}) as Record<string, unknown>;
-  const size = (stored.size ?? {}) as Record<string, unknown>;
-  const num = (value: unknown) => (typeof value === "number" ? value : 0);
+  const placement = placementOfStored(stored, "");
   return {
     id,
     widgetCanonicalId: widget,
-    moduleId,
-    manifestId,
-    position: { x: num(position.x), y: num(position.y), width: num(size.width), height: num(size.height) },
-    settings:
-      typeof stored.settings === "object" && stored.settings !== null
-        ? (stored.settings as Record<string, unknown>)
-        : {},
-    visible: stored.visible !== false,
+    moduleId: parsed.moduleKey,
+    manifestId: parsed.manifestId,
+    position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+    settings: placement.settings,
+    visible: placement.visible,
     stored,
     hostsSurface: "",
     frameUrl: frameUrlOf(widget, frameVersion),

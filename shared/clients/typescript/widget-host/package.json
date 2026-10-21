@@ -1,0 +1,21 @@
+{
+  "name": "@woofx3/widget-host",
+  "version": "0.1.0",
+  "description": "The host side of a woofx3 widget: the frame document a widget runs in, the page code that mounts its frame and answers the widget host shim, and a preview server that hosts a module's widgets from its folder",
+  "type": "module",
+  "bin": {
+    "woofx3-widget-preview": "./preview/cli.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "exports": {
+    "./frame": "./frame/index.ts",
+    "./page": "./page/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

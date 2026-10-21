@@ -402,3 +402,70 @@ func TestSceneService_NamesAreUniquePerKind(t *testing.T) {
 		t.Fatalf("keeping its own name: %v", err)
 	}
 }
+
+func countSceneBackups(t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var n int64
+	if err := db.Model(&models.SceneBackup{}).Count(&n).Error; err != nil {
+		t.Fatalf("count backups: %v", err)
+	}
+	return n
+}
+
+func TestSceneService_CreateSceneBackups_StoresEveryBackupAsGiven(t *testing.T) {
+	svc, _, _, db := newSceneSvc(t)
+	sceneID := uuid.New()
+	_, err := svc.CreateSceneBackups(context.Background(), &client.CreateSceneBackupsRequest{
+		SceneId: sceneID.String(),
+		Backups: []*client.SceneBackup{
+			{Version: "draft", Column: "widgets", Reason: "unreadable_column", Content: "not json {"},
+			{Version: "published", Column: "widgets", Reason: "unreadable_placements", Content: `[{"id":7}]`},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create backups: %v", err)
+	}
+	var rows []models.SceneBackup
+	if err := db.Order("version").Find(&rows).Error; err != nil {
+		t.Fatalf("read backups: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("stored %d backups, want 2", len(rows))
+	}
+	if rows[0].SceneID != sceneID || rows[0].Content != "not json {" || rows[0].SourceColumn != "widgets" {
+		t.Errorf("draft backup stored as %+v", rows[0])
+	}
+	if rows[1].Reason != models.SceneBackupReasonUnreadablePlacements || rows[1].Content != `[{"id":7}]` {
+		t.Errorf("published backup stored as %+v", rows[1])
+	}
+}
+
+func TestSceneService_CreateSceneBackups_RefusesAnUnknownValueAndStoresNothing(t *testing.T) {
+	svc, _, _, db := newSceneSvc(t)
+	for name, backup := range map[string]*client.SceneBackup{
+		"version": {Version: "staging", Column: "widgets", Reason: "unreadable_column"},
+		"column":  {Version: "draft", Column: "inputs", Reason: "unreadable_column"},
+		"reason":  {Version: "draft", Column: "widgets", Reason: "tidy"},
+	} {
+		_, err := svc.CreateSceneBackups(context.Background(), &client.CreateSceneBackupsRequest{
+			SceneId: uuid.NewString(),
+			Backups: []*client.SceneBackup{{Version: "draft", Column: "layout", Reason: "unreadable_column"}, backup},
+		})
+		if err == nil {
+			t.Errorf("an unknown %s was accepted", name)
+		}
+	}
+	if n := countSceneBackups(t, db); n != 0 {
+		t.Errorf("stored %d backups from refused requests", n)
+	}
+}
+
+func TestSceneService_CreateSceneBackups_NeedsASceneAndABackup(t *testing.T) {
+	svc, _, _, _ := newSceneSvc(t)
+	if _, err := svc.CreateSceneBackups(context.Background(), &client.CreateSceneBackupsRequest{SceneId: "nope"}); err == nil {
+		t.Error("a malformed scene id was accepted")
+	}
+	if _, err := svc.CreateSceneBackups(context.Background(), &client.CreateSceneBackupsRequest{SceneId: uuid.NewString()}); err == nil {
+		t.Error("a request with no backups was accepted")
+	}
+}

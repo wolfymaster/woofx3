@@ -11,13 +11,9 @@ import {
   normalizeComposition,
   type PlacementDocument,
   STRICT_REGISTRY,
+  stableCanonicalId,
 } from "@woofx3/scene/model";
-import {
-  type OverlayWidgetDefinition,
-  type OverlayWidgetInstance,
-  parseWidgetCanonicalId,
-  stableModuleKeyFrom,
-} from "./scene-host";
+import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "./scene-host";
 
 /** The scene-event `type` an alert is recorded and delivered under. */
 export const ALERT_EVENT_TYPE = "alert";
@@ -198,12 +194,11 @@ function admit(
       reject(invalid);
       continue;
     }
-    const parsed = parseWidgetCanonicalId(storedCanonicalId);
-    if (!parsed) {
+    const widgetCanonicalId = stableCanonicalId(storedCanonicalId);
+    if (widgetCanonicalId === null) {
       reject("not a widget canonical id");
       continue;
     }
-    const widgetCanonicalId = `${stableModuleKeyFrom(parsed.moduleKey)}:widget:${parsed.manifestId}`;
     const definition = byCanonicalId.get(widgetCanonicalId);
     if (!definition) {
       reject("no such widget");

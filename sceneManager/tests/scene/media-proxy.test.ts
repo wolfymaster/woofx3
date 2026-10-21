@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ServerMessage } from "@woofx3/api/scene-editor";
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
+import type { FrameTheme } from "@woofx3/widget-host/frame";
 import {
   earliestMediaProxyExpiry,
   externalMediaUrl,
@@ -13,10 +14,10 @@ import {
   parseMediaUrls,
   replaceMediaUrls,
   rewriteExternalMedia,
-} from "../../public/scene-manager/media-url";
+} from "../../contract/media-url";
 import { applyOps, type PlacementMeta } from "../../public/scene-manager/scene-document";
-import { corsHeadersFor, type HttpDeps } from "../../src/http";
-import { handleMediaProxyRoute, isMediaProxyPath } from "../../src/routes/media";
+import { corsHeadersFor, type HttpDeps, routeOf } from "../../src/http";
+import { handleMediaProxyRoute } from "../../src/routes/media";
 import { handleSceneDraftConfigRoute } from "../../src/routes/scene";
 import { FrameAssembler } from "../../src/scene/frame-assembler";
 import { FrameCatalog } from "../../src/scene/frame-catalog";
@@ -29,7 +30,7 @@ import {
 } from "../../src/scene/media-proxy";
 import { type ItemReply, SceneDocuments, type SceneLoader } from "../../src/scene/scene-documents";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
-import type { FrameTheme } from "../../src/scene/widget-theme";
+import { eventAndData } from "../helpers/stream-frames";
 
 const SECRET = "test-barkloader-key";
 const EXTERNAL = "https://media.example.com/clips/a.png";
@@ -307,7 +308,7 @@ function documents(instances: OverlayWidgetInstance[], framed: OverlayWidgetInst
       () => state,
       async () => framed
     ),
-    { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+    { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["s1"] },
     logger(),
     { mediaProxy: proxy }
   );
@@ -492,7 +493,7 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
         () => state,
         async () => framedAgain[Math.min(attempts++, framedAgain.length - 1)]!
       ),
-      { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+      { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["s1"] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 1 }
     );
@@ -621,7 +622,7 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
           return [instance("added", { image: external() }, true)];
         }
       ),
-      { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["s1"] },
+      { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["s1"] },
       logger(),
       { mediaProxy: proxy, reframeRetryMs: 1 }
     );
@@ -781,9 +782,9 @@ describe("handleMediaProxyRoute", () => {
   const path = new URL(EXTERNAL_PROXIED).pathname;
 
   it("matches only a single token segment under the media path", () => {
-    expect(isMediaProxyPath(path)).toBe(true);
-    expect(isMediaProxyPath("/assets/media/")).toBe(false);
-    expect(isMediaProxyPath("/assets/media/a/b")).toBe(false);
+    expect(routeOf(path)).toBe("/assets/media/:token");
+    expect(routeOf("/assets/media/")).toBe("/assets/*");
+    expect(routeOf("/assets/media/a/b")).toBe("/assets/*");
   });
 
   it("grants no cross-origin reads", () => {
@@ -833,11 +834,5 @@ describe("handleMediaProxyRoute", () => {
     );
     expect(resp.status).toBe(503);
     expect(resp.headers.get("Retry-After")).toBe("5");
-  });
-
-  it("refuses methods other than GET", async () => {
-    const url = new URL(`http://scene.test${path}`);
-    const resp = await handleMediaProxyRoute(new Request(url, { method: "POST" }), url, "http://b", logger());
-    expect(resp.status).toBe(405);
   });
 });

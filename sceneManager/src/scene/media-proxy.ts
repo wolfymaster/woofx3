@@ -1,11 +1,6 @@
 import { createHmac } from "node:crypto";
-import { externalMediaUrls, MEDIA_PROXY_PATH, replaceMediaUrls } from "../../public/scene-manager/media-url";
-import type {
-  PlacementDocument,
-  PlacementMeta,
-  SceneDocument,
-  SceneSnapshot,
-} from "../../public/scene-manager/scene-document";
+import { externalMediaUrls, MEDIA_PROXY_PATH, replaceMediaUrls } from "../../contract/media-url";
+import type { PlacementDocument, PlacementMeta, SceneDocument, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import type { BarkloaderFrameInfo } from "./frame-assembler";
 
 /**

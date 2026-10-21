@@ -156,6 +156,13 @@ export const ENGINE_CAPABILITIES = {
    */
   scenesBehaviors: "scenes.behaviors",
   /**
+   * Stored scene data sceneManager cannot read is reported and can be
+   * repaired: the editor socket's `not_found` refusal and its welcome carry
+   * `unread` (`@woofx3/api/scene-editor`), and `repairScene` sets what cannot
+   * be read aside in the db's `scene_backups` before writing back the rest.
+   */
+  scenesRepair: "scenes.repair",
+  /**
    * Alert compositions stored in the engine: `listAlertCompositions`,
    * `getAlertComposition`, `createAlertComposition`,
    * `updateAlertComposition`, `deleteAlertComposition`, editing one with

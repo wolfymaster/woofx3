@@ -212,7 +212,7 @@
 ---needs none.
 ---@class CtxObsExtension
 ---@field switchScene fun(args: { sceneName: string }): { ok: boolean }
----@field setSourceVisibility fun(args: { sourceName: string, sceneName?: string, visible?: boolean|string }): { ok: boolean }
+---@field setSourceVisibility fun(args: { sourceName: string, sceneName?: string, visibility?: "visible"|"hidden"|"toggle", visible?: boolean|string }): { ok: boolean }
 ---@field setInputMute fun(args: { inputName: string, muted?: boolean|string }): { ok: boolean }
 ---@field showBrowserSource fun(args: { sourceName: string, url: string, sceneName?: string, width?: integer|string, height?: integer|string }): { ok: boolean }
 ---@field listScenes fun(): { value: string, label: string, group?: string }[]

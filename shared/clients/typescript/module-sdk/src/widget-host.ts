@@ -1,8 +1,8 @@
 // Public widget-host contract — the surface every widget bundle sees on
-// `window.widgetHost` once the host shell injects it. This file is the
-// SINGLE SOURCE OF TRUTH for the contract; streamware (the live host
-// implementation) imports these types and provides the runtime
-// (`createWidgetHost` factory, the `/ws/module-state` transport, etc.).
+// `window.widgetHost`. This file is the SINGLE SOURCE OF TRUTH for the
+// contract: the widget host shim (`widget-host-shim.ts`) implements it in
+// each widget frame, talking to the scene manager's overlay page, and the
+// SDK's mock host (`preview/widget-preview.ts`) implements it for tests.
 //
 // External authors install `@woofx3/module-sdk` and reference these types
 // from their TS / JS / JSDoc / Lua-via-stub code. Internal modules in
@@ -11,14 +11,14 @@
 // Anything in this file is part of the public API surface. Breaking
 // changes require a major version bump.
 
-import type { EventQueueConfig } from "./widget-protocol";
+import type { EventQueueConfig, WidgetCapability } from "./widget-protocol";
 
 /**
  * Module-storage read surface scoped to the widget's owning module.
  *
- * Backed by streamware's local cache of `module.storage.changed` events,
- * so reads are synchronous (no fetch round-trip) and subscriptions fire
- * with the cached value at attach time when one is known.
+ * Answered by the overlay page's module-state cache, which loads a key when
+ * a widget subscribes to it and is kept current by the engine's storage
+ * change events.
  */
 export interface WidgetHostStorage {
   /**
@@ -31,9 +31,9 @@ export interface WidgetHostStorage {
 
   /**
    * Register `cb` for every subsequent change to `(moduleId, key)`.
-   * Returns an unsubscribe function. The callback fires once at
-   * subscription time with the cached value when one exists, then on
-   * every subsequent change.
+   * Returns an unsubscribe function. The callback fires once the host has
+   * read the key's current value (`null` when it holds none), then on every
+   * subsequent change.
    *
    * `"setting:" + id` reads one of the module's `list` settings instead of
    * its storage: the rows, an array of objects keyed by the setting's
@@ -117,16 +117,16 @@ export type WidgetSurface = "scene" | "alert";
 export interface WidgetEvent {
   /** Event type, e.g. `"alert"`. */
   type: string;
-  /** CloudEvent source (e.g. `"twitch"`, `"streamware"`). */
+  /** Who handed the event to the widget, e.g. `"scene-manager"`. */
   source: string;
   /** RFC3339 timestamp from the underlying CloudEvent. */
   time: string;
   /** Event payload — opaque at this boundary. Widgets parse based on
    *  the documented schema for `type`. */
   data: unknown;
-  /** Host-assigned id for this specific delivery, unique per delivery
-   *  attempt (a redelivered/retried event gets a fresh id). Echoed
-   *  back on `event.complete`; also the correlation key for the
+  /** Host-assigned id for this delivery, kept when the host sends it again
+   *  (after a reconnect, say), so a widget is never handed one event twice.
+   *  Echoed back on `event.complete`; also the correlation key for the
    *  server-side durable-delivery log. */
   eventId: string;
 }
@@ -197,9 +197,8 @@ export interface WidgetTheme {
 /**
  * The injected `window.widgetHost` object — the only API a widget
  * bundle interacts with. The contract is host-agnostic so the same
- * widget code works inside streamware's iframe sandbox, a future
- * Convex-served preview, a tauri shell — anywhere a host implements
- * this interface.
+ * widget code works in the overlay's sandboxed frames, the SDK's mock
+ * host, or anywhere else a host implements this interface.
  */
 export interface WidgetHost {
   /** Per-instance settings resolved by the scene editor from the
@@ -226,6 +225,13 @@ export interface WidgetHost {
   /** Module id this widget belongs to. Surfaced so widgets can scope
    *  storage calls without the shell having to bind it. */
   readonly moduleId: string;
+
+  /**
+   * What the host gives this frame, to feature-detect on: an alert's widget
+   * has no `"storage"`, say, and its storage reads answer `null`. Final once
+   * the handshake is done; before it, what the host may offer.
+   */
+  readonly capabilities: readonly WidgetCapability[];
 
   /** Stable per-placement instance id from `WidgetInstance.id`.
    *  Carried on every status report so the engine / dashboard can
@@ -261,6 +267,22 @@ export interface WidgetHost {
   onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void;
 
   /**
+   * Redraw from the settings whenever they change, instead of being
+   * reloaded: from the first call on, every change to the placement's
+   * settings is applied in place, `host.settings` is updated, and `handler`
+   * runs with the new settings after the bindings have been applied. For a
+   * widget whose script uses a setting no binding can show (a text template
+   * filled with a live value, say), this is what makes an edit in the scene
+   * editor show at once. Returns an unsubscribe; the widget keeps being
+   * updated in place for as long as its document lives.
+   *
+   * Hosts older than this call do not have it: check
+   * `typeof host.onSettingsChange === "function"`, and without it the
+   * widget is reloaded on a change, as before.
+   */
+  onSettingsChange(handler: (settings: Readonly<Record<string, unknown>>) => void): () => void;
+
+  /**
    * Report a per-widget status update — counters, timer state, goal
    * progress, anything the widget wants to surface to the engine and
    * dashboard. Best-effort: silently dropped when no transport is
@@ -284,9 +306,9 @@ export interface WidgetHost {
 
 // ── Host-side types (for embedders, not widget authors) ──────────────
 //
-// The interfaces below are exported because streamware (the live host
-// implementation) consumes them from this package. Widget authors
-// generally don't need them — `WidgetHost` is enough.
+// The interfaces below are exported for hosts that embed widgets (the
+// scene manager's overlay page). Widget authors generally don't need
+// them — `WidgetHost` is enough.
 
 /**
  * Stream of `module.storage.changed` events that the host shell

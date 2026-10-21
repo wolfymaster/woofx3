@@ -119,17 +119,18 @@ return increment
 
 ## Local widget preview (no engine required)
 
-Iterate on widget UI without running streamware:
+Preview a module's widgets from its folder, against the real host an
+overlay uses, with the widget-host package's dev server:
 
 ```bash
-# From your widget bundle's directory:
-open node_modules/@woofx3/module-sdk/src/preview/widget-preview.html?widget=file://$PWD/index.html
+bun shared/clients/typescript/widget-host/preview/cli.ts path/to/my-module
 ```
 
-The harness loads your bundle inside a mock host, gives you UI controls
-to fire events / mutate storage / inspect status reports, and surfaces
-your `console.log` calls in a side panel. See
-`src/preview/README.md` for the full preview workflow.
+It builds each widget's frame as the engine does, lets you edit settings,
+set module storage and fire events, logs what the widget reports, and
+reloads it when a file changes. See
+`shared/clients/typescript/widget-host/README.md`. For unit tests, the mock
+host in `src/preview/` stands in for the host without a browser.
 
 ## Layout
 
@@ -139,8 +140,7 @@ src/
 ├── function-ctx.d.ts       ctx types for JS function authors
 ├── function-ctx.lua        LuaCATS annotations for Lua function authors
 └── preview/
-    ├── widget-preview.ts   programmatic mock-host shim
-    └── widget-preview.html standalone harness page
+    └── widget-preview.ts   mock host for unit tests
 tests/
 └── function-ctx-drift.test.ts  scans Rust source, fails on drift
 ```

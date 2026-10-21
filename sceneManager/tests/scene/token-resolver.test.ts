@@ -1,5 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
-import { maskToken, OverlayTokenResolver, OVERLAY_TOKEN_CACHE_TTL_MS } from "../../src/scene/token-resolver";
+import {
+  maskToken,
+  OVERLAY_TOKEN_CACHE_MAX,
+  OVERLAY_TOKEN_CACHE_TTL_MS,
+  OverlayTokenResolver,
+} from "../../src/scene/token-resolver";
 import type { OverlayTokenDb } from "../../src/scene/token-resolver";
 
 function fakeLogger() {
@@ -140,5 +145,63 @@ describe("OverlayTokenResolver", () => {
     const resolver = new OverlayTokenResolver(null, fakeLogger());
     const result = await resolver.resolve("ovl_nodb");
     expect(result).toBeNull();
+  });
+});
+
+describe("OverlayTokenResolver cache bound", () => {
+  function resolverAt(clock: { t: number }) {
+    const db: OverlayTokenDb = {
+      resolveOverlayToken: async ({ token }) => (token === "real" ? okResponse("s1") : notFoundResponse()),
+    };
+    return new OverlayTokenResolver(db, fakeLogger(), { now: () => clock.t });
+  }
+
+  it("holds no more than its bound, however many unknown tokens arrive", async () => {
+    const clock = { t: 0 };
+    const resolver = resolverAt(clock);
+    for (let i = 0; i < OVERLAY_TOKEN_CACHE_MAX + 50; i++) {
+      await resolver.resolve(`made-up-${i}`);
+    }
+    expect(resolver.cacheSize()).toBe(OVERLAY_TOKEN_CACHE_MAX);
+  });
+
+  it("drops expired entries before live ones, and keeps a token that was looked up again", async () => {
+    const clock = { t: 0 };
+    const resolver = resolverAt(clock);
+    await resolver.resolve("real");
+    for (let i = 0; i < OVERLAY_TOKEN_CACHE_MAX - 1; i++) {
+      await resolver.resolve(`old-${i}`);
+    }
+    clock.t = OVERLAY_TOKEN_CACHE_TTL_MS + 1;
+    await resolver.resolve("real");
+    await resolver.resolve("new");
+    expect(resolver.cacheSize()).toBe(2);
+    expect(await resolver.resolve("real")).toEqual({ sceneId: "s1" });
+  });
+});
+
+describe("OverlayTokenResolver and a revocation during a lookup", () => {
+  it("does not cache an answer asked for before the cache was poisoned", async () => {
+    let answer: (() => void) | null = null;
+    let calls = 0;
+    const db: OverlayTokenDb = {
+      resolveOverlayToken: async () => {
+        calls += 1;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+          });
+          return okResponse("s1");
+        }
+        return notFoundResponse();
+      },
+    };
+    const resolver = new OverlayTokenResolver(db, fakeLogger());
+    const first = resolver.resolve("tok");
+    await Promise.resolve();
+    resolver.invalidateAll();
+    answer!();
+    expect(await first).toEqual({ sceneId: "s1" });
+    expect(await resolver.resolve("tok")).toBeNull();
   });
 });

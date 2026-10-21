@@ -184,7 +184,8 @@ describe("installWidgetHostShim — boot + handshake", () => {
     expect(hello.nonce).toBe(NONCE);
     expect(hello.instanceId).toBe("inst-1");
     expect(hello.sdkVersion).toBe(SDK_VERSION);
-    expect(hello.wants).toEqual(["storage", "events", "status", "assets"]);
+    expect(hello.wants).toEqual(["storage", "events", "status", "settings", "assets"]);
+    expect("moduleId" in hello).toBe(false);
   });
 
   it("re-posts hello every 250ms until init arrives, then stops", async () => {
@@ -231,6 +232,17 @@ describe("installWidgetHostShim — boot + handshake", () => {
     // A late init must not flush the dropped queue.
     h.deliver(initMsg());
     expect(h.sent("status.report").length).toBe(0);
+  });
+});
+
+describe("installWidgetHostShim — capabilities", () => {
+  it("reports what the boot payload offers until init says what the frame gets", () => {
+    const h = makeHarness(makeBoot({ capabilities: ["storage", "events", "status", "bogus"] }));
+    const host = install(h)!;
+    expect(host.capabilities).toEqual(["storage", "events", "status"]);
+
+    h.deliver(fromParent({ type: "init", settings: {}, capabilities: ["events", "status", "assets"] }));
+    expect(host.capabilities).toEqual(["events", "status", "assets"]);
   });
 });
 
@@ -349,6 +361,17 @@ describe("installWidgetHostShim — assets", () => {
     expect(h.sent("asset.load")).toHaveLength(0);
   });
 
+  it("rejects an empty reference instead of throwing, so callers need only a catch", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = host.assets.load("");
+    }).not.toThrow();
+    await expect(pending!).rejects.toMatchObject({ code: "not_engine_asset" });
+  });
+
   it("rejects with the host's reason", async () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
@@ -416,6 +439,25 @@ describe("installWidgetHostShim — settings", () => {
     expect(copy).toEqual({ label: "watchers", accent: "#fff" });
     await Promise.resolve();
     expect(h.sent("settings.reads").at(-1)).toMatchObject({ all: true });
+  });
+
+  it("tells the host once that the widget redraws itself, and reports no reads after", async () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    void host.settings.label;
+    const seen: unknown[] = [];
+    host.onSettingsChange((settings) => seen.push(settings.label));
+    host.onSettingsChange(() => {});
+    void host.settings.accent;
+    await Promise.resolve();
+    expect(h.sent("settings.reads")).toEqual([expect.objectContaining({ keys: [], all: false, handles: true })]);
+
+    h.deliver(fromParent({ type: "settings.changed", settings: { label: "followers" } }));
+    expect(seen).toEqual(["followers"]);
+    expect(host.settings.label).toBe("followers");
+    await Promise.resolve();
+    expect(h.sent("settings.reads")).toHaveLength(1);
   });
 
   it("holds the report until init, like every other message", async () => {
@@ -619,6 +661,23 @@ describe("installWidgetHostShim — events", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it("completes an event whose handler throws, so later events are not held behind it", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    host.onEvent(
+      () => {
+        throw new Error("widget bug");
+      },
+      { autoComplete: false }
+    );
+    const subId = h.sent("events.subscribe")[0]!.subId as string;
+    expect(() => h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent() }))).not.toThrow();
+
+    expect(h.sent("event.complete")).toEqual([expect.objectContaining({ subId, eventId: "evt-1" })]);
+  });
+
   it("passes queue config through on events.subscribe", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
@@ -723,7 +782,35 @@ describe("installWidgetHostShim — status reporting", () => {
   });
 });
 
+describe("installWidgetHostShim — flushing the queue at init", () => {
+  it("sends the rest when one queued message cannot be posted", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    host.reportStatus("first", 1);
+    host.reportStatus("second", 2);
+    const realPost = h.parent.postMessage.bind(h.parent);
+    h.parent.postMessage = (message: unknown, origin: string) => {
+      if ((message as { key?: string }).key === "first") {
+        throw new DOMException("could not be cloned", "DataCloneError");
+      }
+      realPost(message, origin);
+    };
+
+    expect(() => h.deliver(initMsg())).not.toThrow();
+    expect(h.sent("status.report").map((m) => m.key)).toEqual(["second"]);
+  });
+});
+
 describe("installWidgetHostShim — inbound validation", () => {
+  it("accepts a newer host's init.reject, so an older shim stops saying hello", async () => {
+    const h = makeHarness(makeBoot());
+    install(h);
+    h.deliver({ ...fromParent({ type: "init.reject", reason: "too old", supportedVersions: [2] }), v: 2 });
+    const before = h.sent("hello").length;
+    await sleep(600);
+    expect(h.sent("hello").length).toBe(before);
+  });
+
   it("ignores messages with a wrong nonce", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;

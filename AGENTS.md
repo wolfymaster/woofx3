@@ -31,7 +31,7 @@ Languages: **TypeScript (Bun)** on edges/integrations; **Rust** and **Go** for h
 
 ### Running, building, and linting
 
-- **TypeScript/Bun projects** (e.g., `streamlabs/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
+- **TypeScript/Bun projects** (e.g., `sceneManager/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
 - **Go projects** (e.g., `wooflow/`): Run `go run main.go` or `go build`
 - **Rust projects** (e.g., `barkloader/`): Run `cargo build` / `cargo test`
 - **Database migrations**: Use `make migrate-up` / `make migrate-down` (requires Go)

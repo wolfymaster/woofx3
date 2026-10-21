@@ -160,7 +160,7 @@ a resolver what session it is in.
 
 ### It is stamped centrally
 
-Every event factory — Alert, Chat, Command, Module, Obs, Slobs and Twitch —
+Every event factory — Alert, Chat, Command, Module, Obs and Twitch —
 routes through the same `Event()` in
 `shared/common/typescript/cloudevents/BaseEvent.ts`, which already defaults
 `specversion`, `time`, `id` and `source`. The session is defaulted there, not in
