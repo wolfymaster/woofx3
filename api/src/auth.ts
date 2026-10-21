@@ -1,71 +1,80 @@
+import { createHash } from "node:crypto";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 
-export interface AuthResult {
-  valid: boolean;
-  description: string | null;
-  callbackUrl: string | null;
-  callbackToken: string | null;
-}
+/** How long an accepted pair of credentials is trusted without asking db-proxy again. */
+export const CLIENT_AUTH_CACHE_TTL_MS = 60_000;
+
+/**
+ * What db-proxy said about a pair of credentials. A failure to ask it is not
+ * a verdict: `validate` throws instead, so a transient outage is never
+ * mistaken for credentials that will never work.
+ */
+export type ClientAuthVerdict = { kind: "accepted"; description: string } | { kind: "refused" };
 
 interface CacheEntry {
-  result: AuthResult;
+  verdict: ClientAuthVerdict & { kind: "accepted" };
   expiresAt: number;
 }
 
 export class ClientAuth {
+  /**
+   * Accepted credentials only, keyed by the client id and a hash of the
+   * secret presented, so a cached success never admits another secret and a
+   * wrong secret never changes the answer for the right one. Refusals are not
+   * cached: each costs one db-proxy call, and caching one would let anyone
+   * who knows a client id lock that client out.
+   */
   private cache = new Map<string, CacheEntry>();
-  private readonly ttlMs = 60_000;
 
   constructor(
-    private db: DbClient,
-    private logger: SharedLogger
+    private db: Pick<DbClient, "validateClient">,
+    private logger: SharedLogger,
+    private now: () => number = () => Date.now()
   ) {}
 
-  async validate(clientId: string, clientSecret: string): Promise<AuthResult> {
+  /** Throws when db-proxy cannot be asked or answers with anything but a verdict. */
+  async validate(clientId: string, clientSecret: string): Promise<ClientAuthVerdict> {
     if (!clientId || !clientSecret) {
-      return { valid: false, description: null, callbackUrl: null, callbackToken: null };
+      return { kind: "refused" };
     }
 
-    const now = Date.now();
-    const cached = this.cache.get(clientId);
+    const key = cacheKey(clientId, clientSecret);
+    const now = this.now();
+    const cached = this.cache.get(key);
     if (cached && cached.expiresAt > now) {
-      return cached.result;
+      return cached.verdict;
     }
 
+    let resp: Awaited<ReturnType<DbClient["validateClient"]>>;
     try {
-      const resp = await this.db.validateClient(clientId, clientSecret);
-      if (resp.status?.code === "OK" && resp.client) {
-        const result: AuthResult = {
-          valid: true,
-          description: resp.client.description,
-          callbackUrl: resp.client.callbackUrl,
-          callbackToken: resp.client.callbackToken,
-        };
-        this.cache.set(clientId, { result, expiresAt: now + this.ttlMs });
-        this.logger.info("Auth: Client validated", { clientId, description: resp.client.description });
-        return result;
-      }
+      resp = await this.db.validateClient(clientId, clientSecret);
     } catch (err) {
-      this.logger.warn("Auth: Client validation failed", {
-        clientId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      throw new Error(
+        `could not validate client credentials with db-proxy: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
-
-    const invalid: AuthResult = {
-      valid: false,
-      description: null,
-      callbackUrl: null,
-      callbackToken: null,
-    };
-    this.cache.set(clientId, { result: invalid, expiresAt: now + this.ttlMs });
-    this.logger.warn("Auth: Invalid client credentials", { clientId });
-    return invalid;
+    const code = resp.status?.code;
+    if (code === "OK" && resp.client) {
+      const verdict = { kind: "accepted", description: resp.client.description } as const;
+      this.cache.set(key, { verdict, expiresAt: now + CLIENT_AUTH_CACHE_TTL_MS });
+      this.logger.info("Auth: Client validated", { clientId, description: resp.client.description });
+      return verdict;
+    }
+    if (code === "NOT_FOUND") {
+      this.logger.warn("Auth: Invalid client credentials", { clientId });
+      return { kind: "refused" };
+    }
+    throw new Error(`db-proxy answered client validation with ${code ?? "no status"}`);
   }
 
   invalidateCache(): void {
     this.cache.clear();
     this.logger.debug("Client auth cache invalidated");
   }
+}
+
+function cacheKey(clientId: string, clientSecret: string): string {
+  const secretHash = createHash("sha256").update(clientSecret).digest("hex");
+  return `${clientId}:${secretHash}`;
 }

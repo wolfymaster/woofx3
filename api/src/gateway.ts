@@ -79,13 +79,13 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   }
 
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
-    const result = await this.auth.validate(clientId, clientSecret);
-    if (!result.valid) {
+    const verdict = await this.auth.validate(clientId, clientSecret);
+    if (verdict.kind === "refused") {
       throw new AuthenticationRefused("Invalid client credentials");
     }
     this.logger.info("Authenticated client", {
       clientId,
-      description: result.description,
+      description: verdict.description,
     });
     return new ApiSession(this.api, clientId);
   }
