@@ -1,4 +1,4 @@
-use lib_sandbox::host::{HttpClient, HttpRequest};
+use lib_sandbox::host::{Enforcement, HttpClient, HttpRequest};
 use lib_sandbox::net::{self, Refusal};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -67,11 +67,14 @@ impl HttpPolicy {
     }
 
     /// Whether `refusal` stops the request. Only the grant rule follows the
-    /// mode; a URL that is not http(s) or names a private address never goes.
-    fn enforces(&self, refusal: &Refusal) -> bool {
+    /// mode, and only for requests that defer to it; a URL that is not
+    /// http(s) or names a private address never goes.
+    fn enforces(&self, refusal: &Refusal, enforcement: Enforcement) -> bool {
         match refusal {
             Refusal::Unreachable(_) | Refusal::PrivateAddress(_) => true,
-            Refusal::Ungranted(_) => self.mode == HttpPolicyMode::Enforce,
+            Refusal::Ungranted(_) => {
+                enforcement == Enforcement::Always || self.mode == HttpPolicyMode::Enforce
+            }
         }
     }
 }
@@ -103,12 +106,13 @@ impl ReqwestHttpClient {
         &self,
         module_id: &str,
         grants: &HashSet<String>,
+        enforcement: Enforcement,
         url: &reqwest::Url,
     ) -> Result<(), String> {
         let Some(refusal) = net::refusal(grants, url, self.policy.allow_private) else {
             return Ok(());
         };
-        let enforced = self.policy.enforces(&refusal);
+        let enforced = self.policy.enforces(&refusal, enforcement);
         warn!(
             "ctx.http to an ungranted destination module={} host={} enforced={} reason={}",
             module_id,
@@ -142,7 +146,7 @@ impl HttpClient for ReqwestHttpClient {
 
         Handle::current().block_on(async {
             for _ in 0..=MAX_REDIRECTS {
-                self.check(request.module_id, request.grants, &url)?;
+                self.check(request.module_id, request.grants, request.enforcement, &url)?;
                 let response = send(&self.client, &url, &method, &headers, &body).await?;
                 let status = response.status();
                 let location = status
@@ -344,6 +348,7 @@ mod tests {
                 url: "https://evil.example.com/steal",
                 method: "GET",
                 opts: Value::Null,
+                enforcement: Enforcement::Policy,
             })
         });
         let error = result.unwrap_err();
@@ -365,6 +370,7 @@ mod tests {
                 url: "http://127.0.0.1:9/",
                 method: "GET",
                 opts: Value::Null,
+                enforcement: Enforcement::Policy,
             })
         });
         assert!(result.unwrap_err().contains("private or local"));
@@ -389,6 +395,7 @@ mod tests {
                     url,
                     method: "GET",
                     opts: Value::Null,
+                    enforcement: Enforcement::Policy,
                 })
             });
             let error = result.unwrap_err();
