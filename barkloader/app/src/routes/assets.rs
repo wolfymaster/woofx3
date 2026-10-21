@@ -37,6 +37,7 @@ const DOCUMENT_CONTENT_TYPES: &[&str] =
 const SERVABLE_CONTENT_TYPES: &[(&str, &str)] = &[
     ("html", "text/html; charset=utf-8"),
     ("js", "application/javascript; charset=utf-8"),
+    ("mjs", "application/javascript; charset=utf-8"),
     ("css", "text/css; charset=utf-8"),
     ("json", "application/json"),
     ("xml", "application/xml"),
@@ -355,6 +356,7 @@ mod tests {
         let cases = [
             ("a.html", "text/html; charset=utf-8"),
             ("a.js", "application/javascript; charset=utf-8"),
+            ("a.mjs", "application/javascript; charset=utf-8"),
             ("a.css", "text/css; charset=utf-8"),
             ("a.json", "application/json"),
             ("a.png", "image/png"),
@@ -395,7 +397,6 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = file_backed_repo(dir.path()).await;
         seed(&repo, "user/res-1/page.html", b"<script>1</script>").await;
-        seed(&repo, "modules/m1/abc/doc.html", b"<p>hi</p>").await;
 
         let resp = get_asset(repo, "/assets/user/res-1/page.html").await;
         assert_eq!(resp.status(), 200);
