@@ -38,28 +38,30 @@ export function overviewWindow(hourStart: unknown, windowHours: unknown): { sinc
   return { since, hours };
 }
 
-/** What an alert in `status` counts as; `unconfirmed` is db-proxy's verdict on one still on its way. */
-export function outcomeOf(status: string, unconfirmed: boolean): AlertOutcome {
-  switch (status) {
-    case "completed":
-      return "completed";
-    case "failed":
-    case "timed_out":
-      return "failed";
-    case "skipped":
-      return "skipped";
-    case "replayed":
-      return "replayed";
-    default:
-      return unconfirmed ? "unconfirmed" : "inFlight";
+/** db-proxy's outcomes, as the api names them. db-proxy owns the rule from status to outcome. */
+const OUTCOMES: Record<Exclude<alert.AlertOutcome, "ALERT_OUTCOME_UNSPECIFIED">, AlertOutcome> = {
+  ALERT_OUTCOME_COMPLETED: "completed",
+  ALERT_OUTCOME_FAILED: "failed",
+  ALERT_OUTCOME_SKIPPED: "skipped",
+  ALERT_OUTCOME_REPLAYED: "replayed",
+  ALERT_OUTCOME_IN_FLIGHT: "inFlight",
+  ALERT_OUTCOME_UNCONFIRMED: "unconfirmed",
+};
+
+/** db-proxy's outcome as the api names it; refuses one this build does not know. */
+export function outcomeFromProto(outcome: alert.AlertOutcome): AlertOutcome {
+  const named = (OUTCOMES as Record<string, AlertOutcome | undefined>)[outcome];
+  if (named === undefined) {
+    throw new Error(`db-proxy counted alerts with outcome ${outcome}, which this api does not know`);
   }
+  return named;
 }
 
 /** The overview of a window from db-proxy's per-hour counts. */
 export function buildAlertOverview(
   since: number,
   hours: number,
-  counts: readonly alert.AlertHourCount[]
+  { counts, truncated }: { counts: readonly alert.AlertHourCount[]; truncated: boolean }
 ): AlertOverview {
   const buckets = Array.from({ length: hours }, (_, index) => ({
     start: since + index * ALERT_OVERVIEW_BUCKET_MS,
@@ -75,13 +77,13 @@ export function buildAlertOverview(
     skipped: 0,
     replayed: 0,
   };
-  for (const { hour, status, unconfirmed, count } of counts) {
+  for (const { hour, outcome: counted, count } of counts) {
     const bucket = buckets[hour];
     if (!Number.isInteger(hour) || bucket === undefined) {
       throw new Error(`db-proxy counted alerts in hour ${hour} of a ${hours}-hour window`);
     }
     const n = Number(count);
-    const outcome = outcomeOf(status, unconfirmed);
+    const outcome = outcomeFromProto(counted);
     totals.total += n;
     totals[outcome] += n;
     bucket.total += n;
@@ -89,5 +91,5 @@ export function buildAlertOverview(
       bucket.failed += n;
     }
   }
-  return { hours, since, bucketMs: ALERT_OVERVIEW_BUCKET_MS, truncated: false, totals, buckets };
+  return { hours, since, bucketMs: ALERT_OVERVIEW_BUCKET_MS, truncated, totals, buckets };
 }

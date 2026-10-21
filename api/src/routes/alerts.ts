@@ -146,12 +146,12 @@ export const alertsRoutes = routeModule({
 
   async getAlertOverview(hourStart: number, windowHours?: number): Promise<AlertOverview> {
     const { since, hours } = overviewWindow(hourStart, windowHours);
-    const counts = await this.db.countAlertsByHour({
+    const counted = await this.db.countAlertsByHour({
       since: timestampFromDate(new Date(since)),
       hours,
       unconfirmedBefore: timestampFromDate(new Date(this.clock() - ALERT_UNCONFIRMED_AFTER_MS)),
     });
-    return buildAlertOverview(since, hours, counts);
+    return buildAlertOverview(since, hours, counted);
   },
 
   async getAlertQueue(): Promise<AlertQueueState> {

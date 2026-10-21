@@ -6,7 +6,12 @@ import {
   supportedEngineCapabilities,
 } from "@woofx3/api";
 import type * as alert from "@woofx3/db/alert.pb";
-import { ALERT_UNCONFIRMED_AFTER_MS, buildAlertOverview, outcomeOf, overviewWindow } from "../src/alert-overview";
+import {
+  ALERT_UNCONFIRMED_AFTER_MS,
+  buildAlertOverview,
+  outcomeFromProto,
+  overviewWindow,
+} from "../src/alert-overview";
 import { RPC_METHODS } from "../src/api-session";
 import { alertsRoutes } from "../src/routes/alerts";
 
@@ -14,30 +19,29 @@ const HOUR = 60 * 60 * 1000;
 /** 2026-10-22T12:00:00Z. */
 const HOUR_START = 1_792_670_400_000;
 
-function count(hour: number, status: string, n: number, unconfirmed = false): alert.AlertHourCount {
-  return { hour, status, unconfirmed, count: BigInt(n) };
+function count(hour: number, outcome: alert.AlertOutcome, n: number): alert.AlertHourCount {
+  return { hour, outcome, count: BigInt(n) };
 }
 
-describe("outcomeOf", () => {
-  const cases: [string, boolean, AlertOutcome][] = [
-    ["completed", false, "completed"],
-    ["failed", false, "failed"],
-    ["timed_out", false, "failed"],
-    ["skipped", false, "skipped"],
-    ["replayed", false, "replayed"],
-    ["sent", false, "inFlight"],
-    ["dispatched", false, "inFlight"],
-    ["playing", false, "inFlight"],
-    ["pending", false, "inFlight"],
-    ["playing", true, "unconfirmed"],
-    ["a status this build does not know", false, "inFlight"],
-    ["a status this build does not know", true, "unconfirmed"],
+describe("outcomeFromProto", () => {
+  const cases: [alert.AlertOutcome, AlertOutcome][] = [
+    ["ALERT_OUTCOME_COMPLETED", "completed"],
+    ["ALERT_OUTCOME_FAILED", "failed"],
+    ["ALERT_OUTCOME_SKIPPED", "skipped"],
+    ["ALERT_OUTCOME_REPLAYED", "replayed"],
+    ["ALERT_OUTCOME_IN_FLIGHT", "inFlight"],
+    ["ALERT_OUTCOME_UNCONFIRMED", "unconfirmed"],
   ];
-  for (const [status, unconfirmed, outcome] of cases) {
-    test(`${status}${unconfirmed ? " (unconfirmed)" : ""} -> ${outcome}`, () => {
-      expect(outcomeOf(status, unconfirmed)).toBe(outcome);
+  for (const [outcome, named] of cases) {
+    test(`${outcome} -> ${named}`, () => {
+      expect(outcomeFromProto(outcome)).toBe(named);
     });
   }
+
+  test("refuses an outcome this build does not know", () => {
+    expect(() => outcomeFromProto("ALERT_OUTCOME_UNSPECIFIED")).toThrow("does not know");
+    expect(() => outcomeFromProto(9 as unknown as alert.AlertOutcome)).toThrow("does not know");
+  });
 });
 
 describe("overviewWindow", () => {
@@ -71,15 +75,18 @@ describe("overviewWindow", () => {
 describe("buildAlertOverview", () => {
   test("totals every outcome and buckets each hour, oldest first", () => {
     const since = HOUR_START - 2 * HOUR;
-    const overview = buildAlertOverview(since, 3, [
-      count(0, "completed", 4),
-      count(0, "timed_out", 1),
-      count(1, "failed", 2),
-      count(1, "replayed", 1),
-      count(2, "playing", 3),
-      count(2, "playing", 2, true),
-      count(2, "skipped", 1),
-    ]);
+    const overview = buildAlertOverview(since, 3, {
+      counts: [
+        count(0, "ALERT_OUTCOME_COMPLETED", 4),
+        count(0, "ALERT_OUTCOME_FAILED", 1),
+        count(1, "ALERT_OUTCOME_FAILED", 2),
+        count(1, "ALERT_OUTCOME_REPLAYED", 1),
+        count(2, "ALERT_OUTCOME_IN_FLIGHT", 3),
+        count(2, "ALERT_OUTCOME_UNCONFIRMED", 2),
+        count(2, "ALERT_OUTCOME_SKIPPED", 1),
+      ],
+      truncated: false,
+    });
 
     expect(overview).toEqual({
       hours: 3,
@@ -96,7 +103,7 @@ describe("buildAlertOverview", () => {
   });
 
   test("an empty window is all zeros, with a bucket for every hour", () => {
-    const overview = buildAlertOverview(HOUR_START, 2, []);
+    const overview = buildAlertOverview(HOUR_START, 2, { counts: [], truncated: false });
 
     expect(overview.totals.total).toBe(0);
     expect(overview.buckets).toEqual([
@@ -105,9 +112,14 @@ describe("buildAlertOverview", () => {
     ]);
   });
 
+  test("carries db-proxy's word that retention truncated the window", () => {
+    expect(buildAlertOverview(HOUR_START, 1, { counts: [], truncated: true }).truncated).toBe(true);
+  });
+
   test("refuses a count outside the window", () => {
-    expect(() => buildAlertOverview(HOUR_START, 2, [count(2, "completed", 1)])).toThrow("hour 2 of a 2-hour window");
-    expect(() => buildAlertOverview(HOUR_START, 2, [count(-1, "completed", 1)])).toThrow("hour -1");
+    const outside = (hour: number) => ({ counts: [count(hour, "ALERT_OUTCOME_COMPLETED", 1)], truncated: false });
+    expect(() => buildAlertOverview(HOUR_START, 2, outside(2))).toThrow("hour 2 of a 2-hour window");
+    expect(() => buildAlertOverview(HOUR_START, 2, outside(-1))).toThrow("hour -1");
   });
 });
 
@@ -119,7 +131,7 @@ describe("getAlertOverview", () => {
       db: {
         async countAlertsByHour(req: alert.CountAlertsByHourRequest) {
           requests.push(req);
-          return counts;
+          return { counts, truncated: false };
         },
       },
     };
@@ -131,7 +143,7 @@ describe("getAlertOverview", () => {
 
   test("asks db-proxy for the window, with the unconfirmed bound from the engine's clock", async () => {
     const now = HOUR_START + 20 * 60 * 1000;
-    const { requests, run } = overviewRoute([count(23, "completed", 2)], now);
+    const { requests, run } = overviewRoute([count(23, "ALERT_OUTCOME_COMPLETED", 2)], now);
 
     const overview = (await run(HOUR_START)) as { totals: { completed: number }; buckets: unknown[] };
 

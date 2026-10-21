@@ -246,8 +246,10 @@ milliseconds on the hour; anything else is refused rather than clamped. A caller
 start of its current hour, so its arguments change once an hour. An alert falls in the hour
 the engine recorded it. The answer is `{ hours, since, bucketMs, truncated, totals,
 buckets }`, where `since` is the window's first hour, `bucketMs` is one hour, each bucket is
-`{ start, total, failed }`, and `truncated` is always false: the engine counts every alert
-in the window.
+`{ start, total, failed }`, and `truncated` says the window starts before the alert
+retention horizon (`EVENT_DETAIL_RETENTION_PERIOD`, a week by default): settled alerts
+older than that have been pruned, so the earliest hours count only alerts still on their
+way.
 
 `totals` counts each alert once by its outcome:
 
@@ -260,8 +262,9 @@ in the window.
 | `inFlight` | any other status (`sent`, `dispatched`, `playing`, ...) |
 | `unconfirmed` | as `inFlight`, but nothing has reported on it for 15 minutes, so no report is coming |
 
-db-proxy counts the rows (`AlertService.CountAlertsByHour`) through the `created_at` index,
-and the api turns the counts into outcomes with the engine's clock.
+db-proxy groups the window's rows by hour and outcome in SQL
+(`AlertService.CountAlertsByHour`) and owns the rule from status to outcome above. The api
+supplies the 15-minute bound from its clock.
 
 `getAlertQueue()` answers what is on screen now. The api asks the scene manager with a
 `widget.queue.state` request, and it answers from the same open deliveries and page

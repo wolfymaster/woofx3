@@ -513,10 +513,12 @@ export class DbClient {
     return { alerts: response.alerts ?? [], totalCount: Number(response.totalCount ?? 0) };
   }
 
-  async countAlertsByHour(req: alert.CountAlertsByHourRequest): Promise<alert.AlertHourCount[]> {
+  async countAlertsByHour(
+    req: alert.CountAlertsByHourRequest
+  ): Promise<{ counts: alert.AlertHourCount[]; truncated: boolean }> {
     const response = await alert.CountAlertsByHour(req, this.config);
     unwrapVoid("countAlertsByHour", response);
-    return response.counts ?? [];
+    return { counts: response.counts ?? [], truncated: response.truncated ?? false };
   }
 
   // `replayed` is the only status UpdateAlertStatus accepts.

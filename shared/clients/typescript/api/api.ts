@@ -1014,7 +1014,10 @@ export interface AlertListPage {
 
 /** Hours `getAlertOverview` covers when the caller names none. */
 export const ALERT_OVERVIEW_DEFAULT_HOURS = 24;
-/** The longest window `getAlertOverview` covers: a week. */
+/**
+ * The longest window `getAlertOverview` covers: a week. Must match
+ * MaxAlertCountHours in db/database/repository/alert_repository.go.
+ */
 export const ALERT_OVERVIEW_MAX_HOURS = 7 * 24;
 /** The width of one `AlertOverview` bucket, and the alignment of `hourStart`. */
 export const ALERT_OVERVIEW_BUCKET_MS = 60 * 60 * 1000;
@@ -1053,9 +1056,10 @@ export interface AlertOverview {
   /** Always ALERT_OVERVIEW_BUCKET_MS. */
   bucketMs: number;
   /**
-   * Whether the counts cover only part of the window. Always false from the
-   * engine, which counts every alert in it; present so every overview has
-   * one shape, whoever counted it.
+   * Whether the counts cover only part of the window. From the engine: the
+   * window starts before its alert retention horizon, so settled alerts in
+   * the earliest hours have been pruned and only those still on their way
+   * are counted there.
    */
   truncated: boolean;
   totals: AlertOverviewTotals;
