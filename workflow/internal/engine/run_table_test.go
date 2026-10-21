@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -311,6 +312,40 @@ func TestSettledRunsAreEvictedAfterTheirRetention(t *testing.T) {
 
 	if held := e.runs.executions(); len(held) != 0 {
 		t.Fatalf("engine still holds %d settled runs after their retention", len(held))
+	}
+}
+
+func TestStartSweepsSettledRunsUntilItsContextEnds(t *testing.T) {
+	e, clock, watch := newRetentionEngine(t, "channel.follow")
+	retention := DefaultRetentionConfig()
+	retention.SweepInterval = 5 * time.Millisecond
+	if err := e.SetRetention(retention); err != nil {
+		t.Fatalf("SetRetention: %v", err)
+	}
+	const runs = 5
+	for i := 0; i < runs; i++ {
+		fireEvent(t, e, "channel.follow", i)
+	}
+	waitUntil(t, func() bool { return watch.count() == runs })
+	clock.Advance(retention.RetentionTTL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan error, 1)
+	go func() { started <- e.Start(ctx) }()
+
+	waitUntil(t, func() bool { return len(e.runs.executions()) == 0 })
+	if err := e.SetRetention(retention); !errors.Is(err, ErrRetentionAfterStart) {
+		t.Fatalf("SetRetention after Start returned %v, want ErrRetentionAfterStart", err)
+	}
+	cancel()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after its context ended")
 	}
 }
 

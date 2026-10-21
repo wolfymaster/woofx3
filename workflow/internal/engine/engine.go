@@ -70,9 +70,11 @@ type Engine[TServices any] struct {
 	taskRegistry     *tasks.TaskRegistry
 	actionRegistry   *tasks.ActionRegistry[TServices]
 	runs             *runTable
-	// retention bounds how long settled runs stay in runs; the sweep in Start
-	// applies it.
-	retention RetentionConfig
+	// retentionMu guards retention and started: SetRetention is refused once
+	// Start has read the retention, so the sweep never sees it change.
+	retentionMu sync.Mutex
+	retention   RetentionConfig
+	started     bool
 	// now is the engine's clock for run retention, injected so tests can age
 	// settled runs without waiting.
 	now                  func() time.Time
@@ -107,6 +109,10 @@ type Engine[TServices any] struct {
 // one still executing when Stop ran out of patience, or one paused at a wait,
 // which nothing in a stopped engine would ever resume.
 var errEngineStopped = errors.New("engine stopped")
+
+// ErrRetentionAfterStart is returned by SetRetention once Start has begun,
+// because Start reads the retention once and would never apply the new value.
+var ErrRetentionAfterStart = errors.New("run retention must be set before the engine starts")
 
 const (
 	// DefaultStopDrainTimeout is how long Stop lets executing runs finish on
@@ -2237,11 +2243,16 @@ func (e *Engine[TServices]) GetExecution(id string) (*types.WorkflowExecution, e
 	return exec, nil
 }
 
-// SetRetention sets how long settled runs are kept in memory. Call it before
-// Start, which reads it once.
+// SetRetention sets how long settled runs are kept in memory. It returns
+// ErrRetentionAfterStart once Start has begun.
 func (e *Engine[TServices]) SetRetention(retention RetentionConfig) error {
 	if err := retention.Validate(); err != nil {
 		return err
+	}
+	e.retentionMu.Lock()
+	defer e.retentionMu.Unlock()
+	if e.started {
+		return ErrRetentionAfterStart
 	}
 	e.retention = retention
 	return nil
@@ -2251,8 +2262,13 @@ func (e *Engine[TServices]) SetRetention(retention RetentionConfig) error {
 // goroutines of their own; what Start owns is the sweep that evicts settled
 // runs, so the sweep ends with the engine.
 func (e *Engine[TServices]) Start(ctx context.Context) error {
+	e.retentionMu.Lock()
+	e.started = true
+	sweepInterval := e.retention.SweepInterval
+	e.retentionMu.Unlock()
+
 	e.logger.Info("Workflow engine started")
-	ticker := time.NewTicker(e.retention.SweepInterval)
+	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
 	for {
 		select {
