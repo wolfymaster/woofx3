@@ -16,7 +16,7 @@
 //! checks the addresses a host name resolves to with `is_restricted_ip`.
 
 use std::collections::HashSet;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use url::{Host, Url};
 
 /// Prefix of a permission naming a host `ctx.http` may reach.
@@ -67,33 +67,98 @@ pub fn origin_grant(value: &str) -> Option<String> {
     Some(destination.origin_grant())
 }
 
+/// IPv4 ranges module code may reach only on an engine that allows private
+/// destinations: the IANA special-purpose ranges that are not globally
+/// routable, plus multicast and reserved space. `(network, prefix length)`.
+const RESTRICTED_V4: &[(Ipv4Addr, u8)] = &[
+    // "This network"; 0.x.x.x reaches the local host on Linux.
+    (Ipv4Addr::new(0, 0, 0, 0), 8),
+    (Ipv4Addr::new(10, 0, 0, 0), 8),
+    // Carrier-grade NAT.
+    (Ipv4Addr::new(100, 64, 0, 0), 10),
+    (Ipv4Addr::new(127, 0, 0, 0), 8),
+    // Link-local, which holds cloud metadata services.
+    (Ipv4Addr::new(169, 254, 0, 0), 16),
+    (Ipv4Addr::new(172, 16, 0, 0), 12),
+    // IETF protocol assignments.
+    (Ipv4Addr::new(192, 0, 0, 0), 24),
+    (Ipv4Addr::new(192, 168, 0, 0), 16),
+    // Benchmarking.
+    (Ipv4Addr::new(198, 18, 0, 0), 15),
+    // Multicast.
+    (Ipv4Addr::new(224, 0, 0, 0), 4),
+    // Reserved.
+    (Ipv4Addr::new(240, 0, 0, 0), 4),
+    (Ipv4Addr::new(255, 255, 255, 255), 32),
+];
+
+/// IPv6 ranges refused outright. `(network, prefix length)`.
+const RESTRICTED_V6: &[(Ipv6Addr, u8)] = &[
+    (Ipv6Addr::UNSPECIFIED, 128),
+    (Ipv6Addr::LOCALHOST, 128),
+    // Unique local.
+    (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),
+    // Link-local.
+    (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0), 10),
+    // Multicast.
+    (Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0), 8),
+];
+
+/// IPv6 ranges that carry an IPv4 address, which decides for them:
+/// `(network, prefix length, bit offset of the IPv4 address from the right)`.
+const EMBEDDED_V4: &[(Ipv6Addr, u8, u32)] = &[
+    // IPv4-compatible, ::/96 (deprecated, still routed by some stacks).
+    (Ipv6Addr::UNSPECIFIED, 96, 0),
+    // IPv4-mapped, ::ffff:0:0/96.
+    (Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0), 96, 0),
+    // NAT64, 64:ff9b::/96.
+    (Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96, 0),
+    // 6to4, 2002::/16: the IPv4 address follows the prefix.
+    (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16, 80),
+];
+
 /// Whether module code may reach this IP address only on an engine that allows
-/// private destinations: loopback, private, link-local (which holds cloud
-/// metadata services), unspecified, and their IPv6 counterparts.
+/// private destinations (see `RESTRICTED_V4`, `RESTRICTED_V6` and
+/// `EMBEDDED_V4`). An IPv6 address carrying an IPv4 one is restricted when
+/// that IPv4 address is.
 pub fn is_restricted_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                // Carrier-grade NAT, 100.64.0.0/10.
-                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64)
+            let bits = u32::from(v4);
+            RESTRICTED_V4
+                .iter()
+                .any(|&(network, prefix)| in_prefix_v4(bits, u32::from(network), prefix))
         }
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_restricted_ip(IpAddr::V4(v4));
+            let bits = u128::from(v6);
+            if RESTRICTED_V6
+                .iter()
+                .any(|&(network, prefix)| in_prefix_v6(bits, u128::from(network), prefix))
+            {
+                return true;
             }
-            let first = v6.segments()[0];
-            v6.is_loopback()
-                || v6.is_unspecified()
-                // Unique local, fc00::/7.
-                || (first & 0xFE00) == 0xFC00
-                // Link-local, fe80::/10.
-                || (first & 0xFFC0) == 0xFE80
+            EMBEDDED_V4
+                .iter()
+                .find(|&&(network, prefix, _)| in_prefix_v6(bits, u128::from(network), prefix))
+                .is_some_and(|&(_, _, offset)| {
+                    // Truncating keeps exactly the 32 bits at `offset`.
+                    let v4 = Ipv4Addr::from((bits >> offset) as u32);
+                    is_restricted_ip(IpAddr::V4(v4))
+                })
         }
     }
+}
+
+/// Whether `bits` lies in `network`/`prefix`. A prefix of 0 matches all.
+fn in_prefix_v4(bits: u32, network: u32, prefix: u8) -> bool {
+    let mask = u32::MAX.checked_shl(32 - u32::from(prefix)).unwrap_or(0);
+    bits & mask == network & mask
+}
+
+/// Whether `bits` lies in `network`/`prefix`. A prefix of 0 matches all.
+fn in_prefix_v6(bits: u128, network: u128, prefix: u8) -> bool {
+    let mask = u128::MAX.checked_shl(128 - u32::from(prefix)).unwrap_or(0);
+    bits & mask == network & mask
 }
 
 /// Why module code may not reach `url`, or None when its grants allow it.
@@ -284,24 +349,62 @@ mod tests {
     }
 
     #[test]
-    fn restricted_addresses_cover_local_private_and_metadata_ranges() {
-        for ip in [
-            "127.0.0.1",
-            "10.1.2.3",
-            "172.16.0.1",
-            "192.168.0.1",
-            "169.254.169.254",
-            "0.0.0.0",
-            "100.64.0.1",
-            "::1",
-            "fd00::1",
-            "fe80::1",
-            "::ffff:127.0.0.1",
-        ] {
-            assert!(is_restricted_ip(ip.parse().unwrap()), "{ip}");
-        }
-        for ip in ["8.8.8.8", "35.186.224.25", "2606:4700::6810:84e5"] {
-            assert!(!is_restricted_ip(ip.parse().unwrap()), "{ip}");
+    fn restricted_addresses_cover_every_special_purpose_range() {
+        let cases: &[(&str, bool)] = &[
+            // One address per IPv4 range, and its nearest public neighbour.
+            ("0.1.2.3", true),
+            ("1.0.0.1", false),
+            ("10.1.2.3", true),
+            ("11.0.0.1", false),
+            ("100.64.0.1", true),
+            ("100.127.255.254", true),
+            ("100.128.0.1", false),
+            ("127.0.0.1", true),
+            ("127.255.255.254", true),
+            ("169.254.169.254", true),
+            ("169.255.0.1", false),
+            ("172.16.0.1", true),
+            ("172.31.255.254", true),
+            ("172.32.0.1", false),
+            ("192.0.0.170", true),
+            ("192.0.1.1", false),
+            ("192.168.0.1", true),
+            ("198.18.0.1", true),
+            ("198.19.255.254", true),
+            ("198.20.0.1", false),
+            ("224.0.0.251", true),
+            ("239.255.255.250", true),
+            ("240.0.0.1", true),
+            ("255.255.255.255", true),
+            ("8.8.8.8", false),
+            ("35.186.224.25", false),
+            // IPv6 ranges.
+            ("::", true),
+            ("::1", true),
+            ("fc00::1", true),
+            ("fd00::1", true),
+            ("fe80::1", true),
+            ("febf::1", true),
+            ("fec0::1", false),
+            ("ff02::1", true),
+            ("2606:4700::6810:84e5", false),
+            // IPv6 carrying an IPv4 address follows that address.
+            ("::ffff:127.0.0.1", true),
+            ("::ffff:169.254.169.254", true),
+            ("::ffff:8.8.8.8", false),
+            ("::127.0.0.1", true),
+            ("::10.0.0.1", true),
+            ("::8.8.8.8", false),
+            ("64:ff9b::127.0.0.1", true),
+            ("64:ff9b::a9fe:a9fe", true),
+            ("64:ff9b::8.8.8.8", false),
+            ("2002:7f00:1::", true),
+            ("2002:a9fe:a9fe::1", true),
+            ("2002:c0a8:101::", true),
+            ("2002:808:808::", false),
+        ];
+        for &(ip, restricted) in cases {
+            assert_eq!(is_restricted_ip(ip.parse().unwrap()), restricted, "{ip}");
         }
     }
 }
