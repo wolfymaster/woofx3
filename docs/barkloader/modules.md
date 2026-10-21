@@ -1842,15 +1842,19 @@ already installed upgrades that module in place; its `name` is display only and
 may change between versions. A `name` another installed module already uses is
 refused (`AlreadyExists` from the db proxy), so an upload cannot take over
 another module's row, and with it that module's functions, settings, secrets and
-storage. A row written before module ids were recorded (empty `module_id`) is
-adopted by the first install whose `name` matches it.
+storage. A `name` equal to another installed module's `id` is refused the same
+way, because the db proxy resolves a module name against both. A row written
+before module ids were recorded (empty `module_id`) is adopted by the first
+install whose `name` matches it.
 
 An upgrade never removes anything the installed version registered until every
 install step has succeeded:
 
 1. Before any database write, the installer reads the installed version (its
-   manifest, module key, version, functions and provenance). If it cannot be
-   read, the install fails without writing anything.
+   manifest, module key, version, functions and provenance): the row holding
+   the manifest `id`, or else a row with no module id that the install will
+   adopt by `name`. If it cannot be read, or its provenance is not one an
+   install writes, the install fails without writing anything.
 2. The steps run in order. `CreateModule` rewrites the module row and its
    functions in one database transaction, so it lands whole or not at all.
 3. On success, resources the installed version declared and the new manifest
@@ -1863,7 +1867,9 @@ install step has succeeded:
      versions declare keep the definitions the failed install registered.
      If the restore itself fails, the install error says so.
    - a **fresh install** is removed: its triggers, actions, widgets, background
-     tasks, workflows, the commands it created and its module row.
+     tasks, workflows, the commands it created and its module row. The row is
+     deleted only when its name resolves to the row this install created;
+     otherwise it is left in place and the rollback logs why.
 
    A failure at or before `CreateModule` has written nothing and compensates
    nothing.
