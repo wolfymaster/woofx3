@@ -1712,8 +1712,9 @@ calling module. It **reads** (`get`, `list`, `run`) the instances it owns, and t
 ones the streamer linked to it: the value of one of its
 [`resource_ref` settings](#linking-a-resource). Module code cannot write a
 `resource_ref` setting (`ctx.module.setSetting` and `compareAndSetSetting` refuse
-it), and a canonical id held in any other setting is not a link, so a link is
-always the streamer's choice. The rule lives in
+it), and a canonical id held in any other setting is not a link, so at run time a
+link is either the streamer's pick or what the module's manifest `create` set at
+install (which can reuse an instance that already exists). The rule lives in
 `barkloader/lib_sandbox/src/resource_access.rs`.
 
 `ctx.resources.run` is how a module drives a resource another module provides. The
