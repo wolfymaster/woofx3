@@ -576,7 +576,10 @@ async fn built_in_group_ids(db_proxy_url: &str, names: &[&str]) -> Result<Vec<St
         return Err(anyhow!("ListGroups failed {}: {}", status, text));
     }
 
-    let text = response.text().await.unwrap_or_default();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| anyhow!("read ListGroups response: {}", e))?;
     let body: ListGroupsBody =
         serde_json::from_str(&text).map_err(|e| anyhow!("parse ListGroups response: {}", e))?;
     resolve_built_in_group_ids(&body.groups, names)
