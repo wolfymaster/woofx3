@@ -54,7 +54,7 @@ function storedCommand(overrides: Partial<Command> = {}): Command {
   };
 }
 
-async function start(options: { commands?: () => Command[] } = {}) {
+async function start(options: { commands?: () => Command[] | Promise<Command[]> } = {}) {
   const subscriptions = new Map<string, Handler>();
   const published: { topic: string; data: Uint8Array }[] = [];
   const twitchRequests: string[] = [];
@@ -77,7 +77,7 @@ async function start(options: { commands?: () => Command[] } = {}) {
   // The real client, so its lookup by id runs against a fake listing.
   const commands = options.commands ?? (() => []);
   const db = Object.assign(new DatabaseClient("http://db-proxy.invalid"), {
-    listCommands: mock(async () => ({ status: { code: "OK" as const, message: "" }, commands: commands() })),
+    listCommands: mock(async () => ({ status: { code: "OK" as const, message: "" }, commands: await commands() })),
     hasPermission: mock(async () => ({ code: "PERMISSION_DENIED" as const, message: "" })),
     listGroups: mock(async () => ({
       status: { code: "OK" as const, message: "" },
@@ -266,5 +266,43 @@ describe("woofwoofwoof's chat trust boundary", () => {
     await chat("twitch", { message: "!cuddle", chatterName: "viewer", chatterId: "v-1" });
 
     expect(topics(published).filter((t) => t.startsWith("chat.command."))).toEqual(["chat.command.cuddle"]);
+  });
+
+  test("two events for one command apply db-proxy's answers in the order the events arrived", async () => {
+    let stored = [storedCommand()];
+    let releaseFirst = () => {};
+    let firstLookupStarted = () => {};
+    const firstLookup = new Promise<void>((resolve) => {
+      firstLookupStarted = resolve;
+    });
+    let lookups = 0;
+    const { chat, deliver, published } = await start({
+      commands: () => {
+        lookups++;
+        const answer = stored;
+        // Lookup 1 is the startup load; lookup 2, the first reload's, answers
+        // only after the second event has had its chance to reload.
+        if (lookups !== 2) {
+          return answer;
+        }
+        firstLookupStarted();
+        return new Promise<Command[]>((resolve) => {
+          releaseFirst = () => resolve(answer);
+        });
+      },
+    });
+
+    stored = [storedCommand({ command: "cuddle" })];
+    const first = deliver(CommandEventType.Updated, { source: "anything", data: { command: { id: "c-1" } } });
+    await firstLookup;
+    stored = [storedCommand({ command: "snuggle" })];
+    const second = deliver(CommandEventType.Updated, { source: "anything", data: { command: { id: "c-1" } } });
+    await Bun.sleep(0);
+    releaseFirst();
+    await Promise.all([first, second]);
+
+    await chat("twitch", { message: "!cuddle", chatterName: "viewer", chatterId: "v-1" });
+    await chat("twitch", { message: "!snuggle", chatterName: "viewer", chatterId: "v-1" });
+    expect(topics(published).filter((t) => t.startsWith("chat.command."))).toEqual(["chat.command.snuggle"]);
   });
 });

@@ -120,6 +120,11 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
   // is needed for `command.deleted` events, which only carry the id — we
   // look up the command name to remove from the in-memory commander.
   private commandsByEngineId = new Map<string, Command>();
+  // The latest reload queued for each command id. The bus does not wait for a
+  // handler before delivering the next event, so two events for one command
+  // can reload it at once; chaining them keeps an older db-proxy answer from
+  // landing after a newer one and reverting the command.
+  private reloadsByEngineId = new Map<string, Promise<void>>();
 
   constructor() {
     this.context = {
@@ -559,13 +564,31 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
    * Bring the commander in step with the stored command `id`: apply it when
    * it exists, remove it when it does not. A db-proxy failure is logged and
    * leaves the commander as it was; the next event for the command, or a
-   * restart, reads it again.
+   * restart, reads it again. Reloads of one command run one at a time, in
+   * the order their events arrived.
    */
   private async reloadCommand(ctx: Context, id: string | undefined) {
     if (!id) {
       ctx.logger.warn("command event names no command id; ignored");
       return;
     }
+    if (!ctx.commander) {
+      throw new Error("Commander is undefined. This should never happen");
+    }
+
+    const reload = () => this.syncStoredCommand(ctx, id);
+    const queued = (this.reloadsByEngineId.get(id) ?? Promise.resolve()).then(reload, reload);
+    this.reloadsByEngineId.set(id, queued);
+    try {
+      await queued;
+    } finally {
+      if (this.reloadsByEngineId.get(id) === queued) {
+        this.reloadsByEngineId.delete(id);
+      }
+    }
+  }
+
+  private async syncStoredCommand(ctx: Context, id: string) {
     if (!ctx.commander) {
       throw new Error("Commander is undefined. This should never happen");
     }
