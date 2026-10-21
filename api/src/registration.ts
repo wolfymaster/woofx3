@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { Exposure } from "@woofx3/common/http/request-guard";
 
 /**
  * Who may call `registerClient`:
@@ -40,9 +41,10 @@ function blankToUndefined(value: string | undefined): string | undefined {
  * Resolves the registration policy, throwing at startup on a contradiction
  * rather than running with a policy the operator did not ask for.
  *
- * With no mode set, a token means `token` and no token means `open`. Managed
+ * With no mode set, a token means `token` and no token means `first`. Managed
  * engines are given `WOOFX3_REGISTRATION_TOKEN` alone and so stay in `token`
- * mode; a bring-your-own engine given nothing stays open.
+ * mode; a bring-your-own engine given nothing belongs to the first client that
+ * registers (the dashboard's one-time handshake). `open` is never a default.
  */
 export function resolveRegistrationPolicy(settings: RegistrationSettings): RegistrationPolicy {
   const envToken = blankToUndefined(settings.token);
@@ -56,7 +58,7 @@ export function resolveRegistrationPolicy(settings: RegistrationSettings): Regis
 
   const rawMode = blankToUndefined(settings.mode)?.trim().toLowerCase();
   if (rawMode === undefined) {
-    return { mode: token === null ? "open" : "token", token };
+    return { mode: token === null ? "first" : "token", token };
   }
   if (!REGISTRATION_MODES.includes(rawMode as RegistrationMode)) {
     throw new Error(
@@ -75,6 +77,20 @@ export function resolveRegistrationPolicy(settings: RegistrationSettings): Regis
     );
   }
   return { mode, token };
+}
+
+/**
+ * Throws at startup when `open` registration would admit callers from beyond
+ * this machine: with `exposure` `network` (a non-loopback bind, or an edge
+ * listening on `PORT`), anyone who finds the engine could register and then
+ * use every session method.
+ */
+export function assertRegistrationExposure(policy: RegistrationPolicy, exposure: Exposure): void {
+  if (policy.mode === "open" && exposure === "network") {
+    throw new Error(
+      "Config error: WOOFX3_REGISTRATION_MODE=open is only allowed on an engine reachable over loopback alone; this one binds a non-loopback interface or sits behind the edge (PORT is set). Use first or token instead"
+    );
+  }
 }
 
 /**

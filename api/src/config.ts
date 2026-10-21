@@ -5,7 +5,7 @@ import { z } from "zod";
 import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
-import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
+import { assertRegistrationExposure, type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
 export interface ApiConfig {
@@ -312,6 +312,7 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
   const exposure = resolveExposure(host, config.port);
+  assertRegistrationExposure(registration, exposure);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,

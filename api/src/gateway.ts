@@ -61,7 +61,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     super();
     if (registration.mode === "open") {
       logger.warn(
-        "WOOFX3_REGISTRATION_TOKEN is not set: any caller that reaches this engine can register a client. Set it on any engine reachable from the internet."
+        "WOOFX3_REGISTRATION_MODE=open: any caller that reaches this engine over loopback can register a client."
       );
     }
     if (registration.mode === "first") {
