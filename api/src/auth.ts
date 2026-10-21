@@ -49,6 +49,12 @@ export class ClientAuth {
   private readonly cache = new Map<string, CacheEntry>();
   /** Every cache key held for a client id, so one client can be dropped without clearing the rest. */
   private readonly keysByClient = new Map<string, Set<string>>();
+  /**
+   * Bumped by invalidateCache. A check records the generation before asking
+   * the db proxy and caches its success only if it is unchanged, so an
+   * invalidation that lands while the check is in flight is not undone.
+   */
+  private readonly generations = new Map<string, number>();
   private readonly ttlMs: number;
   private readonly now: () => number;
 
@@ -78,6 +84,7 @@ export class ClientAuth {
       this.forget(key, clientId);
     }
 
+    const generation = this.generation(clientId);
     let resp: Awaited<ReturnType<DbClient["validateClient"]>>;
     try {
       resp = await this.db.validateClient(clientId, clientSecret);
@@ -99,13 +106,16 @@ export class ClientAuth {
       callbackUrl: resp.client.callbackUrl,
       callbackToken: resp.client.callbackToken,
     };
-    this.remember(key, clientId, client);
+    if (this.generation(clientId) === generation) {
+      this.remember(key, clientId, client);
+    }
     this.logger.debug("Auth: client validated", { clientId, description: client.description });
     return { ok: true, value: client };
   }
 
   /** Drop every cached success for `clientId`, such as when the client is deleted. */
   invalidateCache(clientId: string): void {
+    this.generations.set(clientId, this.generation(clientId) + 1);
     const keys = this.keysByClient.get(clientId);
     if (!keys) {
       return;
@@ -115,6 +125,10 @@ export class ClientAuth {
     }
     this.keysByClient.delete(clientId);
     this.logger.debug("Client auth cache invalidated", { clientId });
+  }
+
+  private generation(clientId: string): number {
+    return this.generations.get(clientId) ?? 0;
   }
 
   private remember(key: string, clientId: string, client: AuthenticatedClient): void {

@@ -167,6 +167,33 @@ describe("ClientAuth.validate", () => {
     expect(outcome(await h.auth.validate("c2", RIGHT))).toBe("valid");
   });
 
+  test("invalidateCache during an in-flight check keeps its success out of the cache", async () => {
+    const h = harness();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const answer = h.validateClient.getMockImplementation();
+    if (!answer) {
+      throw new Error("fake db has no implementation");
+    }
+    h.validateClient.mockImplementationOnce(async (clientId: string, clientSecret: string) => {
+      const response = await answer(clientId, clientSecret);
+      await gate;
+      return response;
+    });
+
+    const pending = h.auth.validate("c1", RIGHT);
+    h.state.deleted.add("c1");
+    h.auth.invalidateCache("c1");
+    release();
+    // The db proxy answered before the delete, so this one check still passes.
+    expect(outcome(await pending)).toBe("valid");
+
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("invalid_credentials");
+    expect(h.validateClient).toHaveBeenCalledTimes(2);
+  });
+
   test("refuses a TTL that is not a positive integer", () => {
     const { db } = fakeDb();
     for (const ttlMs of [0, -1, 1.5, Number.NaN]) {
