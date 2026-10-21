@@ -1572,6 +1572,26 @@ and its token refreshes) always enforce the grant rule, even under
 origin. On any other request, a redirect to another origin (scheme, host or
 port) drops the `Authorization`, `Proxy-Authorization` and `Cookie` headers
 before the next hop, as browsers do.
+
+#### Time and size limits on `ctx.http`
+
+A request is abandoned, with a `deadline_exceeded` error, when the invocation
+that made it runs out of time or after 25 seconds, whichever comes first;
+opening the connection has its own 5 second limit. The 25 seconds cover
+redirects and reading the response. A response body over 4 MiB fails with
+`response_too_large`, checked against `Content-Length` first and then as the
+body arrives, so a module cannot download more than that in one request. More
+than 5 redirects fails with `too_many_redirects`. `ctx.oauth.request` and its
+token refreshes follow the same limits. An operator can change them at
+startup; any value that is not a whole number above zero stops barkloader from
+starting:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS` | `5000` | Time allowed to open the connection |
+| `WOOFX3_MODULE_HTTP_REQUEST_TIMEOUT_MS` | `25000` | Ceiling on one request, redirects and body included |
+| `WOOFX3_MODULE_HTTP_MAX_RESPONSE_BYTES` | `4194304` | Largest response body |
+| `WOOFX3_MODULE_HTTP_MAX_REDIRECTS` | `5` | Redirects followed |
 An unknown id or one listed twice fails the install. At runtime barkloader
 reads the permissions from the installed manifest, and a call to a function
 whose permission the invoking module did not declare throws before anything is

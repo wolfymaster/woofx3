@@ -1,4 +1,6 @@
-use crate::services::http_client::{HttpPolicy, HttpPolicyMode, ReqwestHttpClient};
+use crate::services::http_client::{
+    HttpClientLimits, HttpPolicy, HttpPolicyMode, ReqwestHttpClient,
+};
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::oauth::{OAuthExtension, OAuthService, sealed_setting_writer};
 use crate::services::sandbox_resources::HttpResourceClient;
@@ -161,7 +163,10 @@ async fn setup() -> Result<AppContext> {
         if http_policy.mode == HttpPolicyMode::Log {
             warn!("WOOFX3_MODULE_HTTP=log: modules may reach hosts they were not granted");
         }
-        ctx.http = Arc::new(ReqwestHttpClient::new(http_policy));
+        ctx.http = Arc::new(ReqwestHttpClient::new(
+            http_policy,
+            HttpClientLimits::from_env()?,
+        ));
 
         let oauth = Arc::new(OAuthService::new(
             registry.clone(),

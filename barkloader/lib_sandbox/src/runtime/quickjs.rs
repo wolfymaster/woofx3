@@ -451,6 +451,7 @@ fn build_http_namespace<'js>(
     let client = invocation.host.http.clone();
     let module_id = invocation.module_id.clone();
     let grants = invocation.permissions.clone();
+    let deadline = invocation.deadline;
     let request_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, url: String, method: String, opts: rquickjs::Value<'_>| {
@@ -463,6 +464,7 @@ fn build_http_namespace<'js>(
                     method: &method,
                     opts: json_opts,
                     enforcement: crate::host::Enforcement::Policy,
+                    deadline: Some(deadline),
                 })
                 .map_err(host_err)?;
             json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))

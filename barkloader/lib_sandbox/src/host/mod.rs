@@ -125,6 +125,10 @@ pub struct HttpRequest<'a> {
     pub method: &'a str,
     pub opts: Value,
     pub enforcement: Enforcement,
+    /// When the invocation's caller stops waiting. The client gives up by
+    /// then, so a slow destination cannot outlive the call it serves. `None`
+    /// for a request made outside an invocation.
+    pub deadline: Option<std::time::Instant>,
 }
 
 pub trait HttpClient: Send + Sync {
