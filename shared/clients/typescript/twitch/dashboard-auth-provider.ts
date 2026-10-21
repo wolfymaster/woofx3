@@ -129,7 +129,8 @@ function userIdOf(user: UserIdResolvable): string {
 }
 
 /**
- * NATS subject the api service answers with the dashboard's token. Must match
+ * NATS subject the api service answers with the linked account's token when
+ * it renews it: a dashboard's, or the engine's public Twitch app's. Must match
  * `TWITCH_TOKEN_SUBJECT` in api/src/twitch-token-source.ts.
  */
 export const TWITCH_TOKEN_SUBJECT = "engine.twitch.token";
