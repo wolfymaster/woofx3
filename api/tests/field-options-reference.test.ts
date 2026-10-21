@@ -1,6 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { fieldOptionsDescriptorFor, parseFieldOptionsReference } from "../src/field-options-reference";
 import { fieldOptionsRoutes } from "../src/routes/field-options";
+import { parseStoredManifest } from "../src/stored-manifest";
+
+const noopLogger = { debug() {}, info() {}, warn() {}, error() {} } as any;
 
 const REWARDS_SOURCE = {
   kind: "internal",
@@ -8,7 +11,7 @@ const REWARDS_SOURCE = {
   timeoutMs: 10000,
 };
 
-const MANIFEST = {
+const RAW_MANIFEST = {
   id: "twitch",
   triggers: [
     {
@@ -58,6 +61,8 @@ const MANIFEST = {
     { id: "connect", label: "Connect", type: "button", action: { kind: "integration", integration: "twitch" } },
   ],
 };
+
+const MANIFEST = parseStoredManifest(RAW_MANIFEST, noopLogger, "twitch");
 
 describe("parseFieldOptionsReference", () => {
   test("accepts a reference to a declared item's field, and a module setting without an item", () => {
@@ -206,8 +211,8 @@ function routeHost() {
     db: {
       async findModuleByModuleId(moduleId: string) {
         const installed = [
-          { moduleId: "twitch", state: "active", manifest: JSON.stringify(MANIFEST) },
-          { moduleId: "twitch_off", state: "disabled", manifest: JSON.stringify(MANIFEST) },
+          { moduleId: "twitch", state: "active", manifest: JSON.stringify(RAW_MANIFEST) },
+          { moduleId: "twitch_off", state: "disabled", manifest: JSON.stringify(RAW_MANIFEST) },
         ];
         return installed.find((m) => m.moduleId === moduleId) ?? null;
       },
