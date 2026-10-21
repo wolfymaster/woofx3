@@ -12,6 +12,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 
 - **[Engine integrity](/services/engine-integrity)** - Modules request, the engine acts: module code never drives the bus directly
 - **[Engine capabilities](/services/engine-capabilities)** - How the UI detects which features a connected engine supports, and the rule for adding capability ids
+- **[Engine callbacks](/services/engine-callbacks)** - How the engine reaches its clients: webhooks to a callback URL and the event stream over the capnweb session, the requests it asks, and which client and transport each goes to
 - **[CloudEvents](/services/cloudevents)** - Inter-service messaging format and the canonical NATS subject list
 - **[Widget event channel](/services/widget-events)** - The unified `widget.event` channel and `widgetHost` API contract
 - **[Widget storage](/services/widget-storage)** - Design: how an overlay widget reads and follows a module's stored values
@@ -29,6 +30,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that
 - **[Viewer facts](/services/viewer-facts)** - Per-viewer values defined as data: fact definitions, aggregates, the `where` tree, how events are counted before workflows run, segments and their enter/leave events, and `${viewer.*}` in workflows
+- **[Local UI settings](/services/local-ui-settings)** - The dashboard's own data kept by the engine for a dashboard without an account: engine-wide revisions, tombstones, conflict checks and how a sync with Convex reads them
 
 ## Getting Started
 

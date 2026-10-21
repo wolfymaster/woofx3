@@ -811,6 +811,7 @@ func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
 	}
 
 	return &client.ExecutionStep{
+		Id:          step.ID.String(),
 		StepId:      step.TaskID,
 		Name:        step.Name,
 		Status:      step.Status,
@@ -822,6 +823,8 @@ func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
 		StartedAt:   startedAt,
 		CompletedAt: completedAt,
 		DurationMs:  step.DurationMs,
+		CreatedAt:   timestamppb.New(step.CreatedAt),
+		UpdatedAt:   timestamppb.New(step.UpdatedAt),
 	}
 }
 

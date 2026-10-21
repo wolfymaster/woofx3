@@ -12,7 +12,7 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
-import type { RelayConfig, StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
+import type { RelayConfig, StreamSession, StreamSessionTotals, UISettingValue, WorkflowHealth } from "./api";
 import type { CommandSnapshot } from "./command";
 /**
  * Canonical event-type strings for every engine callback. Prefer
@@ -83,6 +83,7 @@ export const EngineEventType = {
   GROUP_DELETED: "group.deleted",
   GROUP_MEMBER_ADDED: "group.member_added",
   GROUP_MEMBER_REMOVED: "group.member_removed",
+  UI_SETTING_CHANGED: "ui.setting.changed",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -1435,6 +1436,24 @@ export interface SessionSummaryEvent {
 }
 
 /**
+ * Fired after every write to the engine's local UI settings (`setUISetting`,
+ * `deleteUISetting`), a delete included. A notification, not the record:
+ * delivery is best effort, so a consumer that must not miss a change pages
+ * `listUISettingChangesSince` from the last revision it applied. Revisions
+ * rise with every write, so a delivery whose `revision` is not above the one
+ * a consumer holds for the key is stale and can be dropped.
+ */
+export interface UISettingChangedEvent {
+  type: typeof EngineEventType.UI_SETTING_CHANGED;
+  namespace: string;
+  key: string;
+  revision: number;
+  /** True when the setting was deleted; `value` is then null. */
+  deleted: boolean;
+  value: UISettingValue;
+}
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -1495,7 +1514,8 @@ export type CallbackEvent =
   | GroupUpdatedEvent
   | GroupDeletedEvent
   | GroupMemberAddedEvent
-  | GroupMemberRemovedEvent;
+  | GroupMemberRemovedEvent
+  | UISettingChangedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -1558,6 +1578,7 @@ export type CallbackEventByType = {
   [EngineEventType.GROUP_DELETED]: GroupDeletedEvent;
   [EngineEventType.GROUP_MEMBER_ADDED]: GroupMemberAddedEvent;
   [EngineEventType.GROUP_MEMBER_REMOVED]: GroupMemberRemovedEvent;
+  [EngineEventType.UI_SETTING_CHANGED]: UISettingChangedEvent;
 };
 
 // ---------------------------------------------------------------------------

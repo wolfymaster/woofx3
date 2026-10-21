@@ -1903,7 +1903,7 @@ func (s *settingServiceServer) serveListSettingsByPrefixProtobuf(ctx context.Con
 }
 
 func (s *settingServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor12, 0
+	return twirpFileDescriptor13, 0
 }
 
 func (s *settingServiceServer) ProtocGenTwirpVersion() string {
@@ -1917,7 +1917,7 @@ func (s *settingServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "setting", "SettingService")
 }
 
-var twirpFileDescriptor12 = []byte{
+var twirpFileDescriptor13 = []byte{
 	// 667 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x54, 0xcb, 0x6e, 0xd3, 0x40,
 	0x14, 0x95, 0x9d, 0x47, 0x93, 0x5b, 0x9a, 0xa6, 0xd3, 0x0a, 0x2c, 0xd3, 0x88, 0x2a, 0x1b, 0x5a,

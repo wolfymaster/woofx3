@@ -54,6 +54,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { Api },
       { ClientAuth },
       { ConvexWebhookClient },
+      { EngineEventStream },
       { EventCatalog },
       { EventLogSelectionSource },
       { ApiGateway },
@@ -91,6 +92,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./api"),
       import("./auth"),
       import("./convex-webhook-client"),
+      import("./engine-event-stream"),
       import("./event-catalog"),
       import("./event-log-selection"),
       import("./gateway"),
@@ -192,7 +194,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       });
     }
 
-    const webhookClient = new WebhookClient(db, logger);
+    const engineEventStream = new EngineEventStream(logger);
+    api.setEngineEventStream(engineEventStream);
+    const webhookClient = new WebhookClient(db, logger, engineEventStream);
     api.setWebhookClient(webhookClient);
     try {
       await webhookClient.refreshCallbackUrls();

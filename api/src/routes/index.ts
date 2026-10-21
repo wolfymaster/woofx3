@@ -10,6 +10,7 @@ import type { ApiRouteHost } from "./context";
 import { dashboardRoutes } from "./dashboard";
 import { dashboardStatsRoutes } from "./dashboard-stats";
 import { engineRoutes } from "./engine";
+import { engineEventsRoutes } from "./engine-events";
 import { eventsRoutes } from "./events";
 import { fieldOptionsRoutes } from "./field-options";
 import { groupsRoutes } from "./groups";
@@ -30,6 +31,7 @@ import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { triggersRoutes } from "./triggers";
 import { twitchRoutes } from "./twitch";
 import { twitchDeviceLoginRoutes } from "./twitch-device-login";
+import { uiSettingsRoutes } from "./ui-settings";
 import { userActionsRoutes } from "./user-actions";
 import { viewerFactsRoutes } from "./viewer-facts";
 import { workflowsRoutes } from "./workflows";
@@ -39,6 +41,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof subscriptionsRoutes &
   typeof triggerSubscriptionRoutes &
   typeof streamEventsRoutes &
+  typeof engineEventsRoutes &
   typeof workflowsExecutionRoutes &
   typeof actionsRoutes &
   typeof commandsRoutes &
@@ -68,6 +71,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof relayRoutes &
   typeof viewerFactsRoutes &
   typeof twitchRoutes &
+  typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
@@ -103,6 +107,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(subscriptionsRoutes),
     instrumentRoutes(triggerSubscriptionRoutes),
     instrumentRoutes(streamEventsRoutes),
+    instrumentRoutes(engineEventsRoutes),
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),
@@ -132,6 +137,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(relayRoutes),
     instrumentRoutes(viewerFactsRoutes),
     instrumentRoutes(twitchRoutes),
+    instrumentRoutes(uiSettingsRoutes),
     instrumentRoutes(twitchDeviceLoginRoutes)
   );
 }

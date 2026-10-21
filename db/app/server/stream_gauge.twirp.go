@@ -800,7 +800,7 @@ func (s *streamGaugeServiceServer) serveListStreamGaugeSamplesProtobuf(ctx conte
 }
 
 func (s *streamGaugeServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor14, 0
+	return twirpFileDescriptor15, 0
 }
 
 func (s *streamGaugeServiceServer) ProtocGenTwirpVersion() string {
@@ -814,7 +814,7 @@ func (s *streamGaugeServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "stream_gauge", "StreamGaugeService")
 }
 
-var twirpFileDescriptor14 = []byte{
+var twirpFileDescriptor15 = []byte{
 	// 573 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0x4d, 0x6f, 0xd3, 0x40,
 	0x10, 0xc5, 0x76, 0x9b, 0x34, 0x93, 0xb4, 0x21, 0x0b, 0x2a, 0x56, 0xa4, 0x36, 0x51, 0x0e, 0x10,

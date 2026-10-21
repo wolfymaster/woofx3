@@ -82,15 +82,28 @@ func (r *AlertRepository) GetByID(id uuid.UUID) (*models.Alert, error) {
 	return &a, err
 }
 
-// List returns alerts ordered newest-first — backed by the index
-// `idx_alerts_created_at`.
+// AlertFilter narrows List and Count. The zero value matches every alert.
+type AlertFilter struct {
+	// WorkflowID keeps the alerts one workflow execution fired.
+	WorkflowID *uuid.UUID
+}
+
+func (f AlertFilter) apply(q *gorm.DB) *gorm.DB {
+	if f.WorkflowID != nil {
+		q = q.Where("workflow_id = ?", *f.WorkflowID)
+	}
+	return q
+}
+
+// List returns the alerts the filter matches, ordered newest-first — backed by
+// the index `idx_alerts_created_at`.
 //
 // `limit <= 0` means "no limit" (returns the full history). Callers
 // driving the alert-log UI should always pass a finite limit + offset;
 // the no-limit path is for tooling / one-off scripts.
-func (r *AlertRepository) List(limit, offset int) ([]*models.Alert, error) {
+func (r *AlertRepository) List(filter AlertFilter, limit, offset int) ([]*models.Alert, error) {
 	var alerts []*models.Alert
-	q := r.db.Order("created_at DESC")
+	q := filter.apply(r.db.Order("created_at DESC"))
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -98,10 +111,10 @@ func (r *AlertRepository) List(limit, offset int) ([]*models.Alert, error) {
 	return alerts, err
 }
 
-// Count returns the total count for pagination headers.
-func (r *AlertRepository) Count() (int64, error) {
+// Count returns how many alerts the filter matches, for pagination.
+func (r *AlertRepository) Count(filter AlertFilter) (int64, error) {
 	var n int64
-	err := r.db.Model(&models.Alert{}).Count(&n).Error
+	err := filter.apply(r.db.Model(&models.Alert{})).Count(&n).Error
 	return n, err
 }
 

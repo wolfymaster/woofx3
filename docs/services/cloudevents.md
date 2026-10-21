@@ -412,7 +412,7 @@ Alert-related outbox subjects:
 
 Every alert snapshot carries the row's `version`, which the database increments with each write it publishes. The db proxy alone enforces the lifecycle rule; a receiver keeps the snapshot with the highest version of each row and does not re-check it.
 
-The full set of webhook event types is defined in `shared/clients/typescript/api/webhooks.ts`.
+The full set of webhook event types is defined in `shared/clients/typescript/api/webhooks.ts`. Each one also reaches clients subscribed to the engine event stream; see [Engine callbacks](./engine-callbacks.md).
 
 ## Go — Workflow Subjects
 
