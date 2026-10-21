@@ -92,11 +92,7 @@ func main() {
 		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
 		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
 	}
-	secretsDataDir := woofx3config.DataDir()
-	if secretsDataDir == "" {
-		secretsDataDir = workDir
-	}
-	secrets, err := ResolveSecrets(engineSecrets, sources, secretsDataDir, rand.Reader, logger)
+	secrets, err := ResolveSecrets(engineSecrets, sources, engineStateDir(workDir, woofx3config.DataDir()), rand.Reader, logger)
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to resolve the engine secrets", err)
 	}

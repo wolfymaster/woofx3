@@ -97,7 +97,7 @@ func TestResolveSecrets(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dataDir := t.TempDir()
-			path := filepath.Join(dataDir, "secrets", barkloaderKeySpec.Name)
+			path := filepath.Join(dataDir, "data", "secrets", barkloaderKeySpec.Name)
 			if tc.stored != "" {
 				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 					t.Fatalf("mkdir: %v", err)
@@ -156,7 +156,7 @@ func TestResolveSecretsGeneratesOncePrivately(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
-	secretsDir := filepath.Join(dataDir, "secrets")
+	secretsDir := filepath.Join(dataDir, "data", "secrets")
 	assertMode(t, secretsDir, 0o700)
 	for _, spec := range specs {
 		assertMode(t, filepath.Join(secretsDir, spec.Name), 0o600)
@@ -202,9 +202,9 @@ func TestResolveSecretsRefusesABadRegistry(t *testing.T) {
 	}
 }
 
-func TestResolveSecretsNeedsADataDir(t *testing.T) {
+func TestResolveSecretsNeedsAStateDir(t *testing.T) {
 	if _, err := ResolveSecrets([]SecretSpec{barkloaderKeySpec}, woofx3config.Sources{}, "", fixedRandom(0), discardLogger()); err == nil {
-		t.Fatal("ResolveSecrets accepted no data directory")
+		t.Fatal("ResolveSecrets accepted no state directory")
 	}
 }
 
@@ -242,5 +242,36 @@ func TestServiceEnvironment(t *testing.T) {
 				t.Errorf("serviceEnvironment = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// Without a data directory the secrets must land in data/, the tree the
+// production image keeps on its volume, and copyLegacyData must carry them
+// into a data directory set later, so neither recreating a container nor
+// moving to WOOFX3_DATA_DIR changes them.
+func TestResolveSecretsKeepsSecretsInPersistedState(t *testing.T) {
+	workDir := t.TempDir()
+	first, err := ResolveSecrets([]SecretSpec{barkloaderKeySpec}, woofx3config.Sources{}, engineStateDir(workDir, ""), fixedRandom(0x33), discardLogger())
+	if err != nil {
+		t.Fatalf("ResolveSecrets without a data dir: %v", err)
+	}
+	stored, err := os.ReadFile(filepath.Join(workDir, "data", "secrets", barkloaderKeySpec.Name))
+	if err != nil {
+		t.Fatalf("read secret under data/: %v", err)
+	}
+	if string(stored) != first["WOOFX3_BARKLOADER_KEY"] {
+		t.Fatalf("stored secret = %q, want %q", stored, first["WOOFX3_BARKLOADER_KEY"])
+	}
+
+	dataDir := filepath.Join(t.TempDir(), "engine")
+	if err := copyLegacyData(workDir, dataDir, discardLogger()); err != nil {
+		t.Fatalf("copyLegacyData: %v", err)
+	}
+	second, err := ResolveSecrets([]SecretSpec{barkloaderKeySpec}, woofx3config.Sources{}, engineStateDir(workDir, dataDir), fixedRandom(0x44), discardLogger())
+	if err != nil {
+		t.Fatalf("ResolveSecrets with a data dir: %v", err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("secrets after moving to a data dir = %v, want %v", second, first)
 	}
 }

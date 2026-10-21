@@ -21,7 +21,7 @@ import (
 // starts. The services refuse to start without a usable value, so the
 // orchestrator resolves one before any of them runs.
 type SecretSpec struct {
-	// Name is the file the secret persists in under <data dir>/secrets.
+	// Name is the file the secret persists in under <state dir>/data/secrets.
 	Name string
 	// EnvKey is the variable the services read the secret from.
 	EnvKey string
@@ -30,9 +30,22 @@ type SecretSpec struct {
 	ConfigKey string
 }
 
-// secretsDirName is the directory under the data dir that holds generated
-// secrets, one file per SecretSpec.Name.
-const secretsDirName = "secrets"
+// secretsSubdir holds generated secrets, one file per SecretSpec.Name, under
+// the state dir. It sits inside data/ because that tree is what an engine
+// persists: copyLegacyData carries it into a new data directory, and the
+// production image keeps it on its /app/data volume. Anywhere else, the
+// secrets would change whenever the container is recreated.
+var secretsSubdir = filepath.Join("data", "secrets")
+
+// engineStateDir is the directory the services resolve their relative paths
+// against: the data directory when one is set, otherwise the working
+// directory they inherit from the orchestrator.
+func engineStateDir(workDir, dataDir string) string {
+	if dataDir != "" {
+		return dataDir
+	}
+	return workDir
+}
 
 // secretNamePattern keeps a SecretSpec.Name usable as a file name on every OS.
 var secretNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -49,7 +62,7 @@ const (
 //
 //  1. the environment (the process environment, then .env);
 //  2. the config file;
-//  3. <dataDir>/secrets/<Name>, written by an earlier run;
+//  3. <stateDir>/data/secrets/<Name>, written by an earlier run;
 //  4. a new secret of MinSecretBytes bytes from random, hex-encoded and
 //     written to that file (mode 0600, in a 0700 directory).
 //
@@ -57,15 +70,15 @@ const (
 // template used to ship, is logged and passed over rather than refused, so an
 // existing install replaces it on upgrade instead of failing to start.
 // Running again reads the file back, so the generated value is stable.
-func ResolveSecrets(specs []SecretSpec, sources woofx3config.Sources, dataDir string, random io.Reader, logger *slog.Logger) (map[string]string, error) {
+func ResolveSecrets(specs []SecretSpec, sources woofx3config.Sources, stateDir string, random io.Reader, logger *slog.Logger) (map[string]string, error) {
 	if err := checkSecretSpecs(specs); err != nil {
 		return nil, err
 	}
-	if dataDir == "" {
-		return nil, errors.New("resolving engine secrets: no data directory to keep them in")
+	if stateDir == "" {
+		return nil, errors.New("resolving engine secrets: no state directory to keep them in")
 	}
 	environment := woofx3config.MergeByPrecedence(sources.Dotenv, sources.Process)
-	secretsDir := filepath.Join(dataDir, secretsDirName)
+	secretsDir := filepath.Join(stateDir, secretsSubdir)
 
 	resolved := make(map[string]string, len(specs))
 	for _, spec := range specs {

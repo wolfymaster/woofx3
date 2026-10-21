@@ -120,8 +120,8 @@ ship static assets (e.g. sceneManager) expect `public/` next to their binary.
 
 Edit `.woofx3.json` in this directory (or set `WOOFX3_*` environment
 variables). The engine's secrets are not in it: the orchestrator generates
-them on first run and keeps them in the `secrets` folder of the data
-directory. To use your own, set `WOOFX3_BARKLOADER_KEY` and
+them on first run and keeps them in the `data/secrets` folder, beside the
+engine's database. To use your own, set `WOOFX3_BARKLOADER_KEY` and
 `WOOFX3_SCENE_MANAGER_TOKEN_SECRET` to random values of at least 32 bytes.
 
 The orchestrator starts all enabled services defined in `services.json`.
