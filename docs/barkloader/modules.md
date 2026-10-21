@@ -1554,8 +1554,9 @@ Module code reaches only the destinations its module was granted
   `url` setting (`ctx.module.setSetting` refuses it), and a manifest cannot
   give one a default.
 
-Every redirect is checked like the first request. A request to anything else
-throws with `code` `permission_denied` before it is sent.
+Every redirect is checked like the first request. By default a request to
+anything else throws with `code` `permission_denied` before it is sent (see
+the settings below).
 
 Two engine settings shape this, and are read once at startup; any value other
 than the ones listed stops barkloader from starting:

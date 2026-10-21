@@ -109,6 +109,9 @@ impl ReqwestHttpClient {
         let client = reqwest::Client::builder()
             // Followed here instead, so each hop is checked like the first.
             .redirect(reqwest::redirect::Policy::none())
+            // A proxy would resolve the destination itself and skip the
+            // resolver's check of the addresses it answers with.
+            .no_proxy()
             .dns_resolver(Arc::new(GuardedResolver {
                 allow_private: policy.allow_private,
             }))
@@ -131,7 +134,7 @@ impl ReqwestHttpClient {
         };
         let enforced = self.policy.enforces(&refusal, enforcement);
         warn!(
-            "ctx.http to an ungranted destination module={} host={} enforced={} reason={}",
+            "ctx.http destination not allowed module={} host={} enforced={} reason={}",
             module_id,
             url.host_str().unwrap_or(""),
             enforced,

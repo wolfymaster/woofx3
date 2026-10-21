@@ -82,9 +82,14 @@ const RESTRICTED_V4: &[(Ipv4Addr, u8)] = &[
     (Ipv4Addr::new(172, 16, 0, 0), 12),
     // IETF protocol assignments.
     (Ipv4Addr::new(192, 0, 0, 0), 24),
+    // Documentation (TEST-NET-1).
+    (Ipv4Addr::new(192, 0, 2, 0), 24),
     (Ipv4Addr::new(192, 168, 0, 0), 16),
     // Benchmarking.
     (Ipv4Addr::new(198, 18, 0, 0), 15),
+    // Documentation (TEST-NET-2, TEST-NET-3).
+    (Ipv4Addr::new(198, 51, 100, 0), 24),
+    (Ipv4Addr::new(203, 0, 113, 0), 24),
     // Multicast.
     (Ipv4Addr::new(224, 0, 0, 0), 4),
     // Reserved.
@@ -96,6 +101,12 @@ const RESTRICTED_V4: &[(Ipv4Addr, u8)] = &[
 const RESTRICTED_V6: &[(Ipv6Addr, u8)] = &[
     (Ipv6Addr::UNSPECIFIED, 128),
     (Ipv6Addr::LOCALHOST, 128),
+    // Discard-only.
+    (Ipv6Addr::new(0x100, 0, 0, 0, 0, 0, 0, 0), 64),
+    // Teredo hides the client IPv4 address obfuscated, so the whole range is refused.
+    (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 32),
+    // Documentation.
+    (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32),
     // Unique local.
     (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),
     // Link-local.
@@ -113,6 +124,8 @@ const EMBEDDED_V4: &[(Ipv6Addr, u8, u32)] = &[
     (Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0), 96, 0),
     // NAT64, 64:ff9b::/96.
     (Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96, 0),
+    // Local-use NAT64, 64:ff9b:1::/48.
+    (Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48, 0),
     // 6to4, 2002::/16: the IPv4 address follows the prefix.
     (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16, 80),
 ];
@@ -403,6 +416,10 @@ mod tests {
             ("239.255.255.250", true),
             ("240.0.0.1", true),
             ("255.255.255.255", true),
+            ("192.0.2.1", true),
+            ("198.51.100.1", true),
+            ("203.0.113.1", true),
+            ("203.0.114.1", false),
             ("8.8.8.8", false),
             ("35.186.224.25", false),
             // IPv6 ranges.
@@ -429,6 +446,12 @@ mod tests {
             ("2002:a9fe:a9fe::1", true),
             ("2002:c0a8:101::", true),
             ("2002:808:808::", false),
+            ("64:ff9b:1::7f00:1", true),
+            ("64:ff9b:1::808:808", false),
+            ("2001::1", true),
+            ("2001:db8::1", true),
+            ("2001:4860:4860::8888", false),
+            ("100::1", true),
         ];
         for &(ip, restricted) in cases {
             assert_eq!(is_restricted_ip(ip.parse().unwrap()), restricted, "{ip}");
