@@ -11,7 +11,7 @@ import (
 // See the postgres migration of the same ID for the shape decisions.
 func AddLocalUISettings() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0067_local_ui_settings",
+		ID: "0068_local_ui_settings",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Creating local_ui_settings...")
 			if err := execStatements(tx, []string{

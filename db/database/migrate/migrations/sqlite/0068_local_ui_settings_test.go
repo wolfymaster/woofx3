@@ -7,7 +7,7 @@ import (
 )
 
 func TestLocalUISettingsStartTheCounterAtZero(t *testing.T) {
-	db := openMigratedTo(t, "0067_local_ui_settings")
+	db := openMigratedTo(t, "0068_local_ui_settings")
 
 	if n := count(t, db, `SELECT revision FROM local_ui_settings_revision WHERE id = 1`); n != 0 {
 		t.Fatalf("seeded revision = %d, want 0", n)
@@ -18,7 +18,7 @@ func TestLocalUISettingsStartTheCounterAtZero(t *testing.T) {
 }
 
 func TestLocalUISettingsKeepOneRowPerKeyAndRevision(t *testing.T) {
-	db := openMigratedTo(t, "0067_local_ui_settings")
+	db := openMigratedTo(t, "0068_local_ui_settings")
 	insert := `INSERT INTO local_ui_settings (namespace, key, value, revision, deleted) VALUES (?, ?, ?, ?, ?)`
 
 	mustExec(t, db, insert, "macros", "m1", `{"steps":[]}`, 1, false)
@@ -43,7 +43,7 @@ func TestLocalUISettingsKeepOneRowPerKeyAndRevision(t *testing.T) {
 }
 
 func TestLocalUISettingsRollBack(t *testing.T) {
-	db := openMigratedTo(t, "0067_local_ui_settings")
+	db := openMigratedTo(t, "0068_local_ui_settings")
 	if err := gormigrate.New(db, gormigrate.DefaultOptions, All()).RollbackTo("0066_command_workflow_error"); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
