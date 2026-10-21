@@ -114,6 +114,17 @@ pub struct ClearSessionScopedResponse {
     #[prost(message, repeated, tag="2")]
     pub cleared_items: ::prost::alloc::vec::Vec<StorageItem>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetUsageRequest {
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetUsageResponse {
+    /// Size of the module storage database in bytes: its page count times its
+    /// page size, as of the latest commit. Free pages count too, since they take
+    /// the same room on disk and in the replica until a vacuum returns them.
+    #[prost(int64, tag="1")]
+    pub bytes: i64,
+}
 include!("storage.serde.rs");
 include!("storage.tonic.rs");
 // @@protoc_insertion_point(module)
