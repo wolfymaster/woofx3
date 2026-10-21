@@ -144,6 +144,7 @@ write_engine_config() {
   "storagePath": "./data/module-storage.db",
   "databaseProxyUrl": "http://127.0.0.1:$DB_PORT",
   "databaseProxyPort": "$DB_PORT",
+  "dbProxyToken": "$(random_hex)",
   "databaseUrl": "sqlite://./data/woofx3.db",
   "secretsKey": "$(head -c 32 /dev/urandom | base64)",
   "logLevel": "info",
