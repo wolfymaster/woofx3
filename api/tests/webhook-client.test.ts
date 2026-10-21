@@ -161,6 +161,40 @@ describe("WebhookClient callback POSTs", () => {
       big.stop(true);
     }
   });
+
+  it("times out a callback that sends its headers and then stalls the body", async () => {
+    const stalled = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("{"));
+          },
+        });
+        return new Response(body, { headers: { "content-type": "application/json" } });
+      },
+    });
+    try {
+      const logger = fakeLogger();
+      const wc = webhookClient(
+        fakeDb([
+          { clientId: "c", description: "d", callbackUrl: `http://127.0.0.1:${stalled.port}/`, callbackToken: "" },
+        ]),
+        logger,
+        new EngineEventStream(logger),
+        { ...fastConfig, timeoutMs: 50 }
+      );
+      await wc.refreshCallbackUrls();
+
+      const started = performance.now();
+      await expect(wc.request(TOKEN_REQUEST, "c")).rejects.toThrow();
+      // Three attempts of 50 ms each, plus slack; without the body under the timeout it never settles.
+      expect(performance.now() - started).toBeLessThan(2_000);
+    } finally {
+      stalled.stop(true);
+    }
+  });
 });
 
 /** A callback URL on 127.0.0.1 that answers every POST with `answer`, recording the bodies. */
