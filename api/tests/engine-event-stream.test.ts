@@ -217,6 +217,43 @@ describe("EngineEventStream", () => {
   });
 });
 
+describe("EngineEventStream.stop", () => {
+  test("fails requests in flight, releases every held stub, and ends a push in flight", async () => {
+    const { stream } = newStream();
+    const dispose = mock(() => {});
+    const slow = stalled();
+    const held = { ...slow.subscriber, [Symbol.dispose]: dispose };
+    const stub = { onEngineEvent: async () => {}, dup: () => held };
+    stream.subscribe(stub, undefined, {}, "local");
+    stream.subscribe(collector().subscriber, undefined, {}, "other");
+    stream.publish(workflowDeleted("in flight"));
+    const answered = stream.request(tokenRequest(), "other", 60_000);
+
+    stream.stop();
+
+    await expect(answered).rejects.toThrow("the event stream subscription closed (engine shutting down)");
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(stream.subscriberCount).toBe(0);
+    expect(stream.clientIds()).toEqual([]);
+    expect(stream.publish(workflowDeleted("after"))).toBe(0);
+    await slow.releaseAll();
+    expect(slow.frames).toHaveLength(1);
+  });
+
+  test("refuses new subscriptions and requests, and is idempotent", async () => {
+    const { stream } = newStream();
+    stream.stop();
+    stream.stop();
+
+    expect(() => stream.subscribe(collector().subscriber, undefined, {}, "local")).toThrow(
+      "The engine event stream has stopped"
+    );
+    await expect(stream.request(tokenRequest(), "local", 1_000)).rejects.toThrow(
+      "twitch.token.requested: the engine event stream has stopped"
+    );
+  });
+});
+
 describe("EngineEventStream requests", () => {
   test("a request is pushed with its envelope and resolves with the client's answer", async () => {
     const { stream } = newStream();

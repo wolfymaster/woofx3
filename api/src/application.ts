@@ -4,6 +4,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import type { Api } from "./api";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { EngineEventStream } from "./engine-event-stream";
 import type { EventCatalog } from "./event-catalog";
 import type { EventLogSelectionSource } from "./event-log-selection";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
@@ -38,6 +39,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private gaugeSampler: StreamGaugeSampler | null = null;
+  private engineEventStream: EngineEventStream | null = null;
   private eventCatalog: EventCatalog | null = null;
   private eventLogSelection: EventLogSelectionSource | null = null;
   private api: Api | null = null;
@@ -195,6 +197,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     }
 
     const engineEventStream = new EngineEventStream(logger);
+    this.engineEventStream = engineEventStream;
     api.setEngineEventStream(engineEventStream);
     const webhookClient = new WebhookClient(db, logger, engineEventStream);
     api.setWebhookClient(webhookClient);
@@ -341,6 +344,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     this.eventCatalog = null;
     this.eventLogSelection?.stop();
     this.eventLogSelection = null;
+    // Before the server, so subscribers' requests fail with a reason and
+    // their stubs are released while their sessions are still open.
+    this.engineEventStream?.stop();
+    this.engineEventStream = null;
     this.server?.stop();
     this.server = null;
   }

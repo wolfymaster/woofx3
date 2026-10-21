@@ -60,11 +60,15 @@ interface PendingRequest {
  * is bounded: past `bufferLimit` the oldest frame is dropped, and `seq` tells
  * the subscriber it missed something. A push that rejects drops the
  * subscription, as does the session breaking (`onRpcBroken`).
+ *
+ * `stop` closes every subscription and refuses new ones and new requests, so
+ * nothing outlives the engine's shutdown: no request timer, no held stub.
  */
 export class EngineEventStream {
   /** Keyed by the session that subscribed, so a session holds one subscription. */
   private subscriptions = new Map<object, Subscription>();
   private pending = new Map<string, PendingRequest>();
+  private stopped = false;
 
   constructor(
     private readonly logger: SharedLogger,
@@ -85,6 +89,9 @@ export class EngineEventStream {
     session: object,
     clientId: string
   ): void {
+    if (this.stopped) {
+      throw new Error("The engine event stream has stopped");
+    }
     const stub = subscriber as MaybeStub;
     // capnweb disposes a stub passed as a parameter when the call that
     // received it returns, so one kept for later pushes must be duplicated.
@@ -111,6 +118,26 @@ export class EngineEventStream {
       this.drop(session, subscription, "session closed");
     });
     this.logger.info("EngineEventStream: subscribed", { clientId, types: types ?? "all" });
+  }
+
+  /**
+   * Close every subscription, failing the requests in flight and releasing
+   * the held stubs. Later `subscribe` and `request` calls fail. Idempotent.
+   */
+  stop(): void {
+    if (this.stopped) {
+      return;
+    }
+    this.stopped = true;
+    const closing = [...this.subscriptions.values()];
+    this.subscriptions.clear();
+    for (const subscription of closing) {
+      this.close(subscription, "engine shutting down");
+    }
+    if (this.pending.size !== 0) {
+      throw new Error(`EngineEventStream: ${this.pending.size} requests outlived their subscriptions`);
+    }
+    this.logger.info("EngineEventStream: stopped", { closed: closing.length });
   }
 
   /** Engine client ids with a live subscription, in subscription order, each once. */
@@ -154,6 +181,9 @@ export class EngineEventStream {
    * as its subscription drops or the frame is dropped unanswered.
    */
   request(envelope: RequestEnvelope, clientId: string, timeoutMs: number): Promise<unknown> {
+    if (this.stopped) {
+      return Promise.reject(new Error(`${envelope.type}: the engine event stream has stopped`));
+    }
     const subscription = this.newestFor(clientId);
     if (!subscription) {
       return Promise.reject(new Error(`no engine event stream subscription for client id ${clientId}`));
