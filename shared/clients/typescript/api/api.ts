@@ -909,6 +909,32 @@ export interface AlertReplayResult {
   reason?: string;
 }
 
+/**
+ * One alert in the overlays' queue. `alertId` is its recorded row
+ * (`AlertSnapshot.id`), or "" for a delivery queued before deliveries carried
+ * their row; `envelopeId` is its envelope id either way.
+ */
+export interface AlertQueueEntry {
+  alertId: string;
+  envelopeId: string;
+  /** ISO 8601. When an overlay first reported starting it; set only on a playing alert. */
+  startedAt?: string;
+}
+
+/**
+ * Outcome of `getAlertQueue`: the alerts the open overlays are playing and
+ * the alerts waiting behind them, each counted once however many alert
+ * widgets show it. With `ok` false the queue could not be read (no overlay is
+ * open, or the scene manager did not answer), both lists are empty, and
+ * `reason` says why.
+ */
+export interface AlertQueueState {
+  ok: boolean;
+  playing: AlertQueueEntry[];
+  waiting: AlertQueueEntry[];
+  reason?: string;
+}
+
 // ==================== Module lifecycle response types ====================
 
 /**

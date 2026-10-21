@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import type { AlertQueueState } from "@woofx3/api";
 import {
   AlertReplays,
   clearQueuedAlerts,
   NO_OVERLAY_OPEN,
   REPLAY_DEDUPE_MS,
+  readAlertQueue,
   replayAlert,
   skipCurrentAlerts,
 } from "../../src/events/alert-controls";
@@ -381,6 +383,107 @@ describe("clearQueuedAlerts", () => {
 
     expect(await clearQueuedAlerts(queueDeps(db, store))).toEqual({ ok: false, cleared: 0, reason: NO_OVERLAY_OPEN });
   });
+});
+
+describe("readAlertQueue", () => {
+  const at = (ms: number) => new Date(ms).toISOString();
+
+  type QueueSetup = (store: DeliveryStore) => Promise<void>;
+  const cases: Array<{ name: string; open: string[]; setup: QueueSetup; expected: AlertQueueState }> = [
+    {
+      name: "refuses when no overlay is open",
+      open: [],
+      setup: async () => {},
+      expected: { ok: false, playing: [], waiting: [], reason: NO_OVERLAY_OPEN },
+    },
+    {
+      name: "is empty when nothing is queued",
+      open: ["scene-1"],
+      setup: async () => {},
+      expected: { ok: true, playing: [], waiting: [] },
+    },
+    {
+      name: "lists the playing alert and the ones waiting behind it",
+      open: ["scene-1"],
+      setup: async (store) => {
+        await queueAlert(store, "scene-1", "alert-a", ["inst-1"], "row-a");
+        await queueAlert(store, "scene-1", "alert-b", ["inst-1"], "row-b");
+        await queueAlert(store, "scene-1", "alert-c", ["inst-1"]);
+        store.markStarted("scene-1", "evt-1", ["inst-1"], 1_000);
+      },
+      expected: {
+        ok: true,
+        playing: [{ alertId: "row-a", envelopeId: "alert-a", startedAt: at(1_000) }],
+        waiting: [
+          { alertId: "row-b", envelopeId: "alert-b" },
+          { alertId: "", envelopeId: "alert-c" },
+        ],
+      },
+    },
+    {
+      name: "counts an alert on several widgets once, with its earliest start",
+      open: ["scene-1"],
+      setup: async (store) => {
+        await queueAlert(store, "scene-1", "alert-a", ["left", "right"], "row-a");
+        store.markStarted("scene-1", "evt-1", ["right"], 2_000);
+        store.markStarted("scene-1", "evt-1", ["left"], 3_000);
+      },
+      expected: { ok: true, playing: [{ alertId: "row-a", envelopeId: "alert-a", startedAt: at(2_000) }], waiting: [] },
+    },
+    {
+      name: "lists an alert playing on one widget and queued on another as playing",
+      open: ["scene-1"],
+      setup: async (store) => {
+        await queueAlert(store, "scene-1", "alert-a", ["left", "right"], "row-a");
+        store.markStarted("scene-1", "evt-1", ["left"], 1_000);
+      },
+      expected: { ok: true, playing: [{ alertId: "row-a", envelopeId: "alert-a", startedAt: at(1_000) }], waiting: [] },
+    },
+    {
+      name: "keeps two plays of one envelope apart by their rows",
+      open: ["scene-1", "scene-2"],
+      setup: async (store) => {
+        await queueAlert(store, "scene-1", "alert-a", ["inst-1"], "row-1");
+        await queueAlert(store, "scene-2", "alert-a", ["inst-2"], "row-2");
+        store.markStarted("scene-2", "evt-2", ["inst-2"], 1_000);
+      },
+      expected: {
+        ok: true,
+        playing: [{ alertId: "row-2", envelopeId: "alert-a", startedAt: at(1_000) }],
+        waiting: [{ alertId: "row-1", envelopeId: "alert-a" }],
+      },
+    },
+    {
+      name: "leaves out deliveries that are not alerts and widgets the scene no longer has",
+      open: ["scene-1"],
+      setup: async (store) => {
+        await store.recordEvent({
+          sceneId: "scene-1",
+          type: "widget.event",
+          key: "k",
+          value: 1,
+          targetInstanceIds: ["c"],
+        });
+        await queueAlert(store, "scene-1", "alert-a", ["removed"], "row-a");
+      },
+      expected: { ok: true, playing: [], waiting: [] },
+    },
+  ];
+
+  for (const { name, open, setup, expected } of cases) {
+    it(name, async () => {
+      const { db, writes } = fakeDb();
+      const store = new DeliveryStore(db as any, fakeLogger());
+      for (const sceneId of open) {
+        fakeOverlay(store, sceneId);
+      }
+      await setup(store);
+
+      expect(await readAlertQueue({ host: fakeHost(sceneWidgets) as any, deliveryStore: store })).toEqual(expected);
+      expect(writes.lifecycle).toEqual([]);
+      expect(writes.completions).toEqual([]);
+    });
+  }
 });
 
 describe("DeliveryStore bookkeeping", () => {
