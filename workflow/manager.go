@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
@@ -25,6 +26,9 @@ type WorkflowManager struct {
 	registry WorkflowRegistry
 	dbClient dbv1.WorkflowService
 	health   *WorkflowHealthTracker
+	// callTimeout bounds each read from the db client, whatever transport it
+	// uses.
+	callTimeout time.Duration
 
 	// loadMu serializes every read-from-db-then-apply sequence: the start-up
 	// load, each lifecycle event, and each reconcile pass. Without it a
@@ -46,6 +50,8 @@ func NewWorkflowManager(logger tasks.Logger, registry WorkflowRegistry, dbClient
 		registry: registry,
 		dbClient: dbClient,
 		health:   NewWorkflowHealthTracker(logger),
+
+		callTimeout: reconcileListTimeout,
 	}
 }
 
@@ -85,7 +91,7 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 		PageSize:        1000, // Fetch a large batch
 	}
 
-	listCtx, cancel := context.WithTimeout(ctx, reconcileListTimeout)
+	listCtx, cancel := context.WithTimeout(ctx, m.callTimeout)
 	defer cancel()
 	resp, err := m.dbClient.ListWorkflows(listCtx, req)
 	if err != nil {
@@ -138,7 +144,7 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		Id: changeData.WorkflowID,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), reconcileListTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), m.callTimeout)
 	defer cancel()
 	resp, err := m.dbClient.GetWorkflow(ctx, req)
 	if err != nil {

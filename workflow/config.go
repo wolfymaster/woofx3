@@ -13,8 +13,9 @@ import (
 const DefaultDbRequestTimeout = 5 * time.Second
 
 // reconcileListTimeout bounds one read of workflow, fact or trigger
-// definitions from the db proxy. Calls on the shared db client are capped
-// sooner by its own timeout; the fact client's timeout is set to outlast this.
+// definitions from the db proxy. It is the bound for any db client; the
+// shared HTTP client's own, shorter timeout (DbTimeout) normally fires first,
+// and the fact client's timeout is set to outlast this.
 const reconcileListTimeout = 30 * time.Second
 
 type WorkflowEnvConfig struct {
