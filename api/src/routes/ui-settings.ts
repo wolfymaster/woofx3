@@ -71,14 +71,26 @@ export function toUISetting(row: local_ui_setting.LocalUISetting): UISetting {
   };
 }
 
+/**
+ * The row a write response carries, or null when it carries none.
+ * protoscript decodes an absent message as an empty one rather than as
+ * undefined, so absence reads as revision 0, which no stored row has: the
+ * table requires a revision above 0.
+ */
+function writtenRow(response: local_ui_setting.WriteLocalUISettingResponse): local_ui_setting.LocalUISetting | null {
+  const row = response.setting;
+  return row === undefined || row === null || row.revision === 0n ? null : row;
+}
+
 function toWriteResult(response: local_ui_setting.WriteLocalUISettingResponse): UISettingWriteResult {
+  const row = writtenRow(response);
   if (response.conflict) {
-    return { ok: false, reason: "conflict", current: response.setting ? toUISetting(response.setting) : null };
+    return { ok: false, reason: "conflict", current: row === null ? null : toUISetting(row) };
   }
-  if (!response.setting) {
+  if (row === null) {
     throw new Error("db-proxy wrote a local ui setting but returned no row");
   }
-  return { ok: true, setting: toUISetting(response.setting) };
+  return { ok: true, setting: toUISetting(row) };
 }
 
 export const uiSettingsRoutes = routeModule({

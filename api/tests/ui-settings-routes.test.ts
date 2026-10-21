@@ -30,7 +30,16 @@ function fakeDb() {
         (current !== undefined && current.revision === expected) ||
         (expected === 0n && (current === undefined || current.deleted));
       if (!matches) {
-        return { status: { code: "OK", message: "" }, setting: current, conflict: true };
+        // As protoscript decodes it: an absent row arrives as an empty message.
+        const stored = current ?? {
+          namespace: "",
+          key: "",
+          valueJson: "",
+          revision: 0n,
+          updatedAt: { seconds: 0n, nanos: 0 },
+          deleted: false,
+        };
+        return { status: { code: "OK", message: "" }, setting: stored, conflict: true };
       }
     }
     counter += 1n;
