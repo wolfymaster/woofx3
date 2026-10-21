@@ -94,7 +94,7 @@ describe("editor socket — protocol 2", () => {
     const editorToken = await sessionTokens.mintEditor({ sceneId: "s1" });
     expect((await fetch(http(editorToken, ""))).status).toBe(426);
     expect((await fetch(http(editorToken, "&protocol=1"))).status).toBe(426);
-    expect((await fetch(http(await sessionTokens.mint({ sceneId: "s1" })))).status).toBe(401);
+    expect((await fetch(http(await sessionTokens.mint({ sceneId: "s1", authAt: 0 })))).status).toBe(401);
     expect((await fetch(http(await sessionTokens.mintEditor({ sceneId: "s2" })))).status).toBe(401);
     expect((await fetch(http("garbage"))).status).toBe(401);
   });

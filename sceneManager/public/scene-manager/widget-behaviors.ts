@@ -12,11 +12,11 @@
 // behavior is withdrawn, the widget is cleared and told again about the
 // ones still playing.
 
-import { isHostKind } from "@woofx3/scene/model";
-import type { BehaviorId, CompositionDocument, NodeId } from "@woofx3/scene/model";
-import type { DelegatedBehavior, DelegateRequest } from "@woofx3/scene/runtime";
 import type { WidgetBehaviorState } from "@woofx3/module-sdk";
-import { sameValue } from "./scene-update";
+import type { BehaviorId, CompositionDocument, NodeId } from "@woofx3/scene/model";
+import { isHostKind, sameValue } from "@woofx3/scene/model";
+import type { DelegatedBehavior, DelegateRequest } from "@woofx3/scene/runtime";
+import { BROWSER_HOST, type PageLog } from "@woofx3/widget-host/page";
 
 /**
  * What the widget is told for a delegation, or null for one the protocol
@@ -90,7 +90,10 @@ interface Playing {
 export class BehaviorRelay {
   private readonly playing = new Map<NodeId, Map<BehaviorId, Playing>>();
 
-  constructor(private readonly send: (widgetId: NodeId, state: WidgetBehaviorState | null) => void) {}
+  constructor(
+    private readonly send: (widgetId: NodeId, state: WidgetBehaviorState | null) => void,
+    private readonly log: PageLog = BROWSER_HOST.log
+  ) {}
 
   /** The renderer's `onDelegate`. */
   handle(widgetId: NodeId, request: DelegateRequest): void {
@@ -120,7 +123,7 @@ export class BehaviorRelay {
   private start(widgetId: NodeId, delegated: DelegatedBehavior): void {
     const state = behaviorStateOf(delegated);
     if (state === null) {
-      console.warn("[scene-manager] a widget behavior the protocol cannot carry; skipped", {
+      this.log.warn("[scene-manager] a widget behavior the protocol cannot carry; skipped", {
         widgetId,
         behavior: delegated.behavior,
       });

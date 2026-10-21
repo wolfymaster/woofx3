@@ -11,9 +11,12 @@ import {
   encodePlacementBoot,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
+  parseHostToWidgetMessage,
+  parseWidgetToHostMessage,
   type WidgetBootPayload,
   type WidgetProtocolMessage,
 } from "../src/widget-protocol";
+import { SDK_VERSION } from "../src/widget-host-shim";
 import {
   OVERLAY_EVENTS_PROTOCOL,
   OVERLAY_EVENTS_VERSION,
@@ -232,5 +235,59 @@ describe("placement boot in the fragment", () => {
     expect(decodePlacementBoot("")).toBeNull();
     expect(decodePlacementBoot("#boot=%%%")).toBeNull();
     expect(decodePlacementBoot("#boot=" + btoa("[1]"))).toBeNull();
+  });
+});
+
+describe("parseWidgetToHostMessage and parseHostToWidgetMessage", () => {
+  const nonce = "n-1";
+  const env = (type: string, extra: Record<string, unknown> = {}, v: unknown = PROTOCOL_VERSION) => ({
+    proto: WIDGET_PROTOCOL,
+    v,
+    nonce,
+    type,
+    ...extra,
+  });
+
+  it("reads each side's messages typed, with defaults for optional fields", () => {
+    expect(parseWidgetToHostMessage(env("storage.get", { id: "g1", key: "count" }), nonce)).toMatchObject({
+      type: "storage.get",
+      id: "g1",
+      key: "count",
+    });
+    expect(parseWidgetToHostMessage(env("status.report", { key: "k", value: 1 }), nonce)).toMatchObject({ ts: "" });
+    expect(parseHostToWidgetMessage(env("asset.error", { id: "a1", code: "bogus" }), nonce)).toMatchObject({
+      code: "unavailable",
+    });
+  });
+
+  it("keeps only the queue settings it understands", () => {
+    const msg = parseWidgetToHostMessage(
+      env("events.subscribe", { subId: "s1", queue: { maxInFlight: 2.7, retryTimeoutMs: -1, extra: true } }),
+      nonce
+    );
+    expect(msg).toMatchObject({ type: "events.subscribe", queue: { maxInFlight: 2 } });
+  });
+
+  it("refuses another channel's messages, malformed ones, and unknown types", () => {
+    expect(parseWidgetToHostMessage(env("storage.get", { id: "g1", key: "k" }), "other")).toBeNull();
+    expect(parseWidgetToHostMessage(env("storage.get", { key: "k" }), nonce)).toBeNull();
+    expect(parseWidgetToHostMessage(env("event.complete", { subId: "s1" }), nonce)).toBeNull();
+    expect(parseWidgetToHostMessage(env("made.up"), nonce)).toBeNull();
+    expect(parseHostToWidgetMessage(env("asset.value", { id: "a1", bytes: "not bytes" }), nonce)).toBeNull();
+    expect(parseHostToWidgetMessage(env("event.deliver", { subId: "s1", event: { type: "x" } }), nonce)).toBeNull();
+  });
+
+  it("reads hello and init.reject at any version, and everything else only at this one", () => {
+    expect(parseWidgetToHostMessage(env("hello", {}, 2), nonce)).toMatchObject({ type: "hello", v: 2 });
+    expect(parseHostToWidgetMessage(env("init.reject", { reason: "old" }, 3), nonce)).toMatchObject({ v: 3 });
+    expect(parseHostToWidgetMessage(env("init", {}, 2), nonce)).toBeNull();
+    expect(parseWidgetToHostMessage(env("hello", {}, "1"), nonce)).toBeNull();
+  });
+});
+
+describe("SDK_VERSION", () => {
+  it("is the package's version", async () => {
+    const pkg = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version: string };
+    expect(SDK_VERSION).toBe(pkg.version);
   });
 });

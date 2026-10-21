@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { HttpDeps } from "../../src/http";
 import { handleWidgetStorageRoute } from "../../src/routes/widget-storage";
+import { SceneDocuments } from "../../src/scene/scene-documents";
 
 const KEY = "state:woofx3:counter:deaths";
 
@@ -47,6 +48,10 @@ function deps(
         opts.snapshot ??
         (async (sceneId: string, version: string) =>
           sceneId === "scene-1" ? { sceneId, meta: version === "draft" ? draft : published } : null),
+      // The real lookup, over the fake snapshots above.
+      placementMeta(sceneId: string, instanceId: string) {
+        return SceneDocuments.prototype.placementMeta.call(this as never, sceneId, instanceId);
+      },
     },
     moduleState: { read },
     settingsDb: { listModuleSettings: async (moduleId: string) => opts.settings?.[moduleId] ?? [] },
@@ -123,13 +128,13 @@ describe("handleWidgetStorageRoute", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it("answers 502 when the scene cannot be loaded", async () => {
+  it("answers 503 when the scene cannot be loaded", async () => {
     const { deps: d, read } = deps({
       snapshot: async () => {
         throw new Error("db down");
       },
     });
-    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(502);
+    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(503);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -145,12 +150,12 @@ describe("handleWidgetStorageRoute", () => {
     expect((await handleWidgetStorageRoute(request("counter-1", null), "scene-1", "counter-1", d)).status).toBe(400);
   });
 
-  it("answers 502 when storage cannot be read", async () => {
+  it("answers 503 when storage cannot be read", async () => {
     const { deps: d } = deps({
       read: async () => {
         throw new Error("db down");
       },
     });
-    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(502);
+    expect((await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d)).status).toBe(503);
   });
 });

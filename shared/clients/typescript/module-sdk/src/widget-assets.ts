@@ -42,11 +42,96 @@ export class WidgetAssetError extends Error {
     this.code = code;
     this.ref = ref;
   }
+
+  // On stream the error is thrown by the widget host shim, a bundle of its
+  // own, while a widget checks it against the class from its own copy of the
+  // SDK. Recognised by shape, `instanceof` holds across the two.
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return (
+      value instanceof Error &&
+      value.name === "WidgetAssetError" &&
+      isWidgetAssetErrorCode((value as { code?: unknown }).code) &&
+      typeof (value as { ref?: unknown }).ref === "string"
+    );
+  }
 }
 
 /** Path prefixes of the files the engine stores for widgets to read. Must
  *  match `ALLOWED_TOP_LEVEL_PREFIXES` in barkloader/app/src/routes/assets.rs. */
 export const ENGINE_ASSET_PREFIXES = ["/assets/user/", "/assets/modules/"] as const;
+
+/**
+ * A file the engine stores, as its path names it: one in the asset library
+ * (`/assets/user/{libraryId}/...`) or one of a module's own
+ * (`/assets/modules/{moduleId}/...`). `owner` is the library id or module id,
+ * decoded.
+ */
+export interface EngineAssetPath {
+  area: "user" | "modules";
+  owner: string;
+  /** The path as given, still encoded: what the engine is asked for. */
+  path: string;
+}
+
+/**
+ * The engine file `path` names, or null when it names none. Every segment
+ * after `/assets/` is judged decoded and must be non-empty, not `.` or `..`,
+ * and free of `/` and `\`, so an encoded separator or dot segment cannot step
+ * out of the area or the owner; and there must be a file below the owner.
+ * The one judgement of an engine asset path: the widget shim, the preview
+ * host, the overlay page and the scene manager's read route all use it.
+ */
+export function parseEngineAssetPath(path: string): EngineAssetPath | null {
+  const segments = path.split("/");
+  if (segments.length < 5 || segments[0] !== "" || segments[1] !== "assets") {
+    return null;
+  }
+  const decoded: string[] = [];
+  for (const segment of segments.slice(2)) {
+    let value: string;
+    try {
+      value = decodeURIComponent(segment);
+    } catch {
+      return null;
+    }
+    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
+      return null;
+    }
+    decoded.push(value);
+  }
+  const area = decoded[0];
+  if (area !== "user" && area !== "modules") {
+    return null;
+  }
+  return { area, owner: decoded[1]!, path };
+}
+
+/** Whether a widget of module `moduleId` may read `asset`: any library file, and its own module's. */
+export function widgetMayRead(asset: EngineAssetPath, moduleId: string): boolean {
+  if (moduleId === "") {
+    return false;
+  }
+  return asset.area === "user" || asset.owner === moduleId;
+}
+
+/**
+ * Prefix of the scene manager route that reads a stored file's bytes for an
+ * overlay page: `/assets/read/user/...` reads what `/assets/user/...` serves.
+ */
+export const ASSET_READ_PREFIX = "/assets/read/";
+
+/** The read route's path for `asset`. */
+export function assetReadPath(asset: EngineAssetPath): string {
+  return `${ASSET_READ_PREFIX}${asset.path.slice("/assets/".length)}`;
+}
+
+/** The engine file the read route's `pathname` asks for, or null when it names none. */
+export function assetOfReadPath(pathname: string): EngineAssetPath | null {
+  if (!pathname.startsWith(ASSET_READ_PREFIX)) {
+    return null;
+  }
+  return parseEngineAssetPath(`/assets/${pathname.slice(ASSET_READ_PREFIX.length)}`);
+}
 
 /**
  * The engine path a widget's asset reference names, or null when it names no
@@ -69,7 +154,7 @@ export function engineAssetPath(ref: string, resourceBaseUrl: string): string | 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return null;
   }
-  return ENGINE_ASSET_PREFIXES.some((prefix) => url.pathname.startsWith(prefix)) ? url.pathname : null;
+  return parseEngineAssetPath(url.pathname)?.path ?? null;
 }
 
 /** The URL a reference carries: the string itself, or a picker value's `url`. */

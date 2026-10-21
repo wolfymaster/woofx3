@@ -1,15 +1,20 @@
-import type { Scene, SceneEditorSession } from "@woofx3/api";
+import type { Scene, SceneEditorSession, SceneRepairResult } from "@woofx3/api";
 import { EngineEventType, type WidgetBehaviorKinds } from "@woofx3/api/webhooks";
 import {
   SCENE_EDITOR_TOKEN_SUBJECT,
+  SCENE_REPAIR_SUBJECT,
   type SceneEditorTokenReply,
   type SceneEditorTokenRequest,
+  type SceneRepairReply,
+  type SceneRepairRequest,
 } from "@woofx3/common/cloudevents/Scene/editor";
 import { routeModule } from "./context";
 import { compositionKindOf, dbSceneToSnapshot, dbSceneToWire } from "./helpers";
 
 /** Short: sceneManager answers from memory, and an editor is waiting to open. */
 const SCENE_EDITOR_TOKEN_TIMEOUT_MS = 3_000;
+/** Longer: a repair loads the scene, stores its backups and writes it back before it answers. */
+const SCENE_REPAIR_TIMEOUT_MS = 15_000;
 
 export const scenesRoutes = routeModule({
   async getScenes(query?: { page?: number; pageSize?: number }): Promise<{
@@ -209,5 +214,34 @@ export const scenesRoutes = routeModule({
       });
       return null;
     }
+  },
+
+  async repairScene(sceneId: string): Promise<SceneRepairResult> {
+    if (typeof sceneId !== "string" || sceneId === "") {
+      return { ok: false, reason: "not_found", detail: "sceneId required" };
+    }
+    if (!this.nats) {
+      return { ok: false, reason: "unavailable", detail: "the scene manager cannot be reached" };
+    }
+    let answer: SceneRepairReply;
+    try {
+      const request: SceneRepairRequest = { sceneId };
+      const reply = await this.nats.request(SCENE_REPAIR_SUBJECT, new TextEncoder().encode(JSON.stringify(request)), {
+        timeout: SCENE_REPAIR_TIMEOUT_MS,
+      });
+      answer = JSON.parse(new TextDecoder().decode(reply.data)) as SceneRepairReply;
+    } catch (err) {
+      this.logger.warn("repairScene: the scene manager did not answer", {
+        sceneId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { ok: false, reason: "unavailable", detail: "the scene manager did not answer" };
+    }
+    if (answer.ok) {
+      this.logger.info("Repaired scene", { sceneId, backups: answer.backups });
+    } else {
+      this.logger.warn("repairScene: refused", { sceneId, reason: answer.reason, detail: answer.detail });
+    }
+    return answer;
   },
 });

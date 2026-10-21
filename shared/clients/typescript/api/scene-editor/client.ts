@@ -48,6 +48,7 @@ import {
   decodeServerMessage,
   type EditorSnapshot,
   type ItemBody,
+  type UnreadReport,
   isWelcomeSnapshot,
   type NackMessage,
   PROTOCOL_VERSION,
@@ -139,6 +140,13 @@ export interface SceneSyncState {
   pendingCommand: "publish" | "discard" | null;
   pendingItems: number;
   peers: readonly PeerPresence[];
+  /**
+   * Stored data of the scene the engine could not read, as its last welcome
+   * or refusal reported it; null when everything could be read, or the
+   * engine does not report it. With `conn` "gone" and columns listed, the
+   * scene exists but cannot be edited until it is repaired.
+   */
+  unread: UnreadReport | null;
 }
 
 export interface SceneSyncClientOptions {
@@ -216,6 +224,7 @@ export class SceneSyncClient {
   private pumpTimer: unknown = null;
   private lastSentAt = Number.NEGATIVE_INFINITY;
   private presence: { selection: string | null; version: Version } | null = null;
+  private unread: UnreadReport | null = null;
   private readonly peers = new Map<string, PeerPresence>();
   private readonly listeners = new Set<() => void>();
   private readonly liveItemIds = new Set<number>();
@@ -648,6 +657,7 @@ export class SceneSyncClient {
       if (message.code === "protocol") {
         this.restartSession(`the server reported a protocol error: ${message.detail}`, true);
       } else if (message.code === "not_found") {
+        this.unread = message.unread ?? null;
         this.sceneGone(message.detail);
       } else {
         this.endWithReport("closed", message.detail);
@@ -693,6 +703,7 @@ export class SceneSyncClient {
       this.restartSession("a welcome for another client", true);
       return;
     }
+    this.unread = message.unread ?? null;
     if (isWelcomeSnapshot(message)) {
       this.welcomeSnapshot(message.snapshot, message.last, message.diverged);
     } else if (!this.welcomeCatchup(message.catchup, message.last)) {
@@ -1158,6 +1169,7 @@ export class SceneSyncClient {
       pendingCommand: command === undefined ? null : (command.body.kind as "publish" | "discard"),
       pendingItems: pending.length,
       peers: [...this.peers.values()],
+      unread: this.unread,
     };
   }
 

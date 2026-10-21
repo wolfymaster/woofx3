@@ -1,9 +1,7 @@
 // SSE client for `/scene/{sceneId}/events`, with a hand-written
-// exponential-backoff reconnect loop. Deliberately NOT the native browser
-// `EventSource`, whose reconnect cadence isn't controllable: an overlay
-// must not depend on data-star's or the browser's own opaque reconnect
-// timing. Also NOT dependent on
-// data-star's own SSE plugin: this is the thing that flips the
+// reconnect/backoff loop. Deliberately NOT the native browser
+// `EventSource`, whose reconnect cadence isn't controllable, and NOT
+// dependent on data-star's own SSE plugin: this is the thing that flips the
 // `$connected` signal data-star's `data-show`/`data-class` react to,
 // not something built on top of data-star's transport.
 //
@@ -19,39 +17,14 @@
 // ReconnectCoordinator (see reconnect-coordinator.ts).
 
 import { ALWAYS_PROBE, type ReconnectCoordinator } from "./reconnect-coordinator";
-import { type SceneOpsEvent, parseSceneOpsEvent } from "./scene-document";
-
-export interface DeliveryFrame {
-  eventId: string;
-  instanceId: string;
-  type: string;
-  key: string;
-  value: unknown;
-}
-
-/** A change to a module storage key some widget on the page reads. */
-export interface ModuleStateFrame {
-  moduleId: string;
-  key: string;
-  value: unknown;
-}
-
-/** Deliveries to one widget instance the server closed before it finished them. */
-export interface CancelFrame {
-  instanceId: string;
-  eventIds: string[];
-}
-
-/** The stream carries five frame kinds: per-event deliveries, module
- *  storage changes, the `hello` control frame the server opens every
- *  stream with, `scene-ops` when the scene changes, and `cancel` when an
- *  operator skips or clears alerts. */
-export type SceneFrame =
-  | { kind: "delivery"; frame: DeliveryFrame }
-  | { kind: "module-state"; frame: ModuleStateFrame }
-  | { kind: "hello"; bootId: string; seq: number; draftSeq: number }
-  | { kind: "scene-ops"; event: SceneOpsEvent }
-  | { kind: "cancel"; frame: CancelFrame };
+import {
+  type CancelFrame,
+  type OpenSetFrame,
+  type DeliveryFrame,
+  type ModuleStateFrame,
+  parseStreamFrame,
+} from "../../contract/overlay-stream";
+import type { SceneOpsEvent } from "./scene-document";
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
@@ -59,12 +32,14 @@ export interface SceneEventSink {
   onConnectionChange(connected: boolean): void;
   /** Server boot identity for the stream just opened, and the scene ops
    *  the page should be up to. The boot id changes across a sceneManager
-   *  restart; see index.ts for what that triggers. */
+   *  restart; see overlay.ts for what that triggers. */
   onHello?(bootId: string, seq: number, draftSeq: number): void;
   /** The scene changed: the ops for the next sequence number. */
   onSceneOps?(event: SceneOpsEvent): void;
   /** The server closed deliveries the page may still be holding. */
   onCancel?(frame: CancelFrame): void;
+  /** A new stream's open deliveries: anything the page holds beyond them was closed meanwhile. */
+  onOpenSet?(frame: OpenSetFrame): void;
   /** The server rejected our session cookie. Unlike every other
    *  failure here, retrying cannot fix this -- see the note on
    *  SESSION_REJECTED_STATUSES. */
@@ -85,82 +60,9 @@ export interface SceneEventSourceOptions {
   reconnectMaxMs?: number;
   coordinator?: ReconnectCoordinator;
   random?: () => number;
-}
-
-/** Parses one SSE frame into its typed form, or `null` for
- *  comment/keepalive lines and malformed payloads. */
-export function parseSseChunk(rawEvent: string): SceneFrame | null {
-  const lines = rawEvent.split("\n");
-  const eventLine = lines.find((line) => line.startsWith("event:"));
-  const dataLine = lines.find((line) => line.startsWith("data:"));
-  if (!dataLine) {
-    return null;
-  }
-  const json = dataLine.slice("data:".length).trim();
-  if (!json) {
-    return null;
-  }
-  const eventName = eventLine ? eventLine.slice("event:".length).trim() : "";
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(json) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object") {
-    return null;
-  }
-
-  if (eventName === "hello") {
-    return typeof parsed.bootId === "string" && parsed.bootId.length > 0
-      ? {
-          kind: "hello",
-          bootId: parsed.bootId,
-          seq: typeof parsed.seq === "number" ? parsed.seq : 0,
-          draftSeq: typeof parsed.draftSeq === "number" ? parsed.draftSeq : 0,
-        }
-      : null;
-  }
-
-  if (eventName === "scene-ops") {
-    const event = parseSceneOpsEvent(parsed);
-    return event ? { kind: "scene-ops", event } : null;
-  }
-
-  if (eventName === "cancel") {
-    const { instanceId, eventIds } = parsed;
-    return typeof instanceId === "string" &&
-      Array.isArray(eventIds) &&
-      eventIds.every((id): id is string => typeof id === "string")
-      ? { kind: "cancel", frame: { instanceId, eventIds } }
-      : null;
-  }
-
-  if (eventName === "module-state") {
-    return typeof parsed.moduleId === "string" && typeof parsed.key === "string"
-      ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } }
-      : null;
-  }
-
-  if (
-    typeof parsed.eventId === "string" &&
-    typeof parsed.instanceId === "string" &&
-    typeof parsed.type === "string" &&
-    typeof parsed.key === "string"
-  ) {
-    return {
-      kind: "delivery",
-      frame: {
-        eventId: parsed.eventId,
-        instanceId: parsed.instanceId,
-        type: parsed.type,
-        key: parsed.key,
-        value: parsed.value,
-      },
-    };
-  }
-  return null;
+  /** Timers for the reconnect delay; the page's own by default, injectable so tests read the delays. */
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
 }
 
 export class SceneEventSource {
@@ -170,12 +72,14 @@ export class SceneEventSource {
   private readonly reconnectMaxMs: number;
   private readonly coordinator: ReconnectCoordinator;
   private readonly random: () => number;
+  private readonly setTimer: (fn: () => void, ms: number) => unknown;
+  private readonly cancelTimer: (handle: unknown) => void;
 
   private sink: SceneEventSink | null = null;
   private stopped = true;
   private everConnected = false;
   private reconnectAttempt = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: unknown = null;
   private abortController: AbortController | null = null;
 
   constructor(options: SceneEventSourceOptions) {
@@ -192,6 +96,8 @@ export class SceneEventSource {
     this.reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
     this.coordinator = options.coordinator ?? ALWAYS_PROBE;
     this.random = options.random ?? Math.random;
+    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    this.cancelTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
 
   start(sink: SceneEventSink): void {
@@ -285,7 +191,7 @@ export class SceneEventSource {
         while ((sep = buffer.indexOf("\n\n")) !== -1) {
           const rawEvent = buffer.slice(0, sep);
           buffer = buffer.slice(sep + 2);
-          const parsed = parseSseChunk(rawEvent);
+          const parsed = parseStreamFrame(rawEvent);
           if (!parsed) {
             continue;
           }
@@ -297,6 +203,8 @@ export class SceneEventSource {
             this.sink?.onSceneOps?.(parsed.event);
           } else if (parsed.kind === "cancel") {
             this.sink?.onCancel?.(parsed.frame);
+          } else if (parsed.kind === "open-set") {
+            this.sink?.onOpenSet?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }
@@ -320,7 +228,7 @@ export class SceneEventSource {
 
   private clearTimer(): void {
     if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
+      this.cancelTimer(this.reconnectTimer);
       this.reconnectTimer = null;
     }
   }
@@ -339,7 +247,7 @@ export class SceneEventSource {
     }
     const delay = this.nextDelayMs();
     this.reconnectAttempt += 1;
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = this.setTimer(() => {
       this.reconnectTimer = null;
       // Another overlay is the elected prober this round. Don't probe;
       // re-arm and re-check. Its success reaches us via onPeerConnected

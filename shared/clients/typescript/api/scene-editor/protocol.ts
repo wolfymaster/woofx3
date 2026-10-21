@@ -126,6 +126,23 @@ export type ClientMessage = HelloMessage | ItemMessage | ClientPresenceMessage;
 // ---------------------------------------------------------------------------
 // Server to client
 
+/** A stored scene column the server can name as unreadable. */
+export type UnreadColumn = "widgets" | "layout" | "behaviors";
+
+/**
+ * Stored data of a scene the server could not read (by this engine: a newer
+ * one may have written it), which a repair sets aside (`repairScene` in
+ * `@woofx3/api`). While any column is listed the scene cannot be changed, so
+ * a refusal carries this report; placements alone do not stop editing, so a
+ * welcome does. Absent from a server that does not report it.
+ */
+export interface UnreadReport {
+  /** Columns whose whole stored text could not be read, by version. */
+  columns: { version: Version; column: UnreadColumn }[];
+  /** How many stored placements of each version could not be read; kept as stored until a repair. */
+  placements: Record<Version, number>;
+}
+
 interface WelcomeBase {
   type: "welcome";
   protocol: typeof PROTOCOL_VERSION;
@@ -133,6 +150,8 @@ interface WelcomeBase {
   features: string[];
   clientId: string;
   last: Watermark | null;
+  /** Present when some of the scene's stored placements could not be read. */
+  unread?: UnreadReport;
 }
 
 /** The client's `have` is in the server's log: the entries after it follow. */
@@ -179,6 +198,8 @@ export interface ErrorMessage {
   type: "error";
   code: SessionErrorCode;
   detail: string;
+  /** On a `not_found` refusal of a scene whose stored data could not be read. */
+  unread?: UnreadReport;
 }
 
 export type ServerMessage =
@@ -272,6 +293,23 @@ function isPerVersion<T>(value: unknown, valid: (item: unknown) => item is T): v
 
 function isBothVersions<T>(value: unknown, valid: (item: unknown) => item is T): value is Record<Version, T> {
   return isPerVersion(value, valid) && value.draft !== undefined && value.published !== undefined;
+}
+
+const UNREAD_COLUMNS: ReadonlySet<string> = new Set<UnreadColumn>(["widgets", "layout", "behaviors"]);
+
+function isUnreadReport(value: unknown): value is UnreadReport {
+  if (!isPlainObject(value) || !Array.isArray(value.columns) || !isPlainObject(value.placements)) {
+    return false;
+  }
+  const columnsOk = value.columns.every(
+    (entry) =>
+      isPlainObject(entry) &&
+      isVersion(entry.version) &&
+      typeof entry.column === "string" &&
+      UNREAD_COLUMNS.has(entry.column)
+  );
+  const placements = value.placements;
+  return columnsOk && isNonNegativeInteger(placements.published) && isNonNegativeInteger(placements.draft);
 }
 
 function isWatermark(value: unknown): value is Watermark {
@@ -397,6 +435,9 @@ export function parseServerMessage(value: unknown): ServerMessage | null {
       ) {
         return null;
       }
+      if (value.unread !== undefined && !isUnreadReport(value.unread)) {
+        return null;
+      }
       const hasCatchup = Array.isArray(value.catchup) && value.catchup.every(isEntry);
       const snapshot = value.snapshot === undefined ? null : parseEditorSnapshot(value.snapshot);
       const hasSnapshot = snapshot !== null && typeof value.diverged === "boolean";
@@ -448,7 +489,12 @@ export function parseServerMessage(value: unknown): ServerMessage | null {
       if (!isSessionErrorCode(value.code) || typeof value.detail !== "string") {
         return null;
       }
-      return { type: "error", code: value.code, detail: value.detail };
+      if (value.unread !== undefined && !isUnreadReport(value.unread)) {
+        return null;
+      }
+      return value.unread === undefined
+        ? { type: "error", code: value.code, detail: value.detail }
+        : { type: "error", code: value.code, detail: value.detail, unread: value.unread };
     }
     default: {
       return null;

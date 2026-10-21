@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { corsHeadersFor } from "../../src/http";
-import { handleAssetReadRoute, isAssetReadPath } from "../../src/routes/asset-read";
+import { corsHeadersFor, routeOf } from "../../src/http";
+import { handleAssetReadRoute } from "../../src/routes/asset-read";
 
 const BARKLOADER_URL = "http://barkloader.test/";
 
@@ -29,11 +29,11 @@ function upstream(...responses: Response[]) {
 
 const SIGNED = "https://bucket.test/user/res-1/anim.json?X-Amz-Signature=abc";
 
-describe("isAssetReadPath", () => {
-  it("claims only the read prefix", () => {
-    expect(isAssetReadPath("/assets/read/user/res-1/anim.json")).toBe(true);
-    expect(isAssetReadPath("/assets/user/res-1/anim.json")).toBe(false);
-    expect(isAssetReadPath("/assets/reader/x")).toBe(false);
+describe("the read route", () => {
+  it("answers only paths below its prefix", () => {
+    expect(routeOf("/assets/read/user/res-1/anim.json")).toBe("/assets/read/*");
+    expect(routeOf("/assets/user/res-1/anim.json")).toBe("/assets/user/*");
+    expect(routeOf("/assets/reader/x")).toBe("/assets/*");
   });
 });
 
@@ -96,9 +96,15 @@ describe("handleAssetReadRoute", () => {
     expect(resp.status).toBe(404);
   });
 
-  it("404s a key outside the stored prefixes without reaching barkloader", async () => {
+  it("404s a key that names no engine file, or steps out of one, without reaching barkloader", async () => {
     const fetchFn = upstream();
-    for (const path of ["/assets/read/vendor/datastar.js", "/assets/read/media/token", "/assets/read/"]) {
+    for (const path of [
+      "/assets/read/vendor/datastar.js",
+      "/assets/read/media/token",
+      "/assets/read/",
+      "/assets/read/user/res-1",
+      "/assets/read/modules/woofx3%2F..%2Fother/v1/a.json",
+    ]) {
       const { req, url } = get(path);
       const resp = await handleAssetReadRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
       expect(resp.status).toBe(404);
@@ -163,18 +169,6 @@ describe("handleAssetReadRoute", () => {
       barkloader.stop(true);
       storage.stop(true);
     }
-  });
-
-  it("refuses anything but GET", async () => {
-    const url = new URL("http://scene.test/assets/read/user/res-1/anim.json");
-    const resp = await handleAssetReadRoute(
-      new Request(url, { method: "POST" }),
-      url,
-      BARKLOADER_URL,
-      logger,
-      upstream() as never
-    );
-    expect(resp.status).toBe(405);
   });
 
   it("grants no CORS", () => {

@@ -143,18 +143,30 @@
       if (!host) {
         return;
       }
-      const settings = host.settings;
       const el = document.getElementById("text");
 
-      const letters = [];
-      appendLetters(el, withoutMarkup(str(settings.text, "")), letters);
-      letters.forEach((letter, i) => {
-        letter.style.setProperty("--i", String(i));
-        letter.style.setProperty("--ri", String(letters.length - 1 - i));
-      });
-      el.style.setProperty("--n", String(Math.max(letters.length - 1, 1)));
+      // The text as letter spans, numbered for the per-letter transitions.
+      function draw() {
+        const letters = [];
+        el.textContent = "";
+        appendLetters(el, withoutMarkup(str(host.settings.text, "")), letters);
+        letters.forEach((letter, i) => {
+          letter.style.setProperty("--i", String(i));
+          letter.style.setProperty("--ri", String(letters.length - 1 - i));
+        });
+        el.style.setProperty("--n", String(Math.max(letters.length - 1, 1)));
+      }
 
-      playForDuration(host, num(settings.duration, 0));
+      // On a scene, an edit to the text redraws in place rather than
+      // reloading the widget. In an alert the duration decides how the widget
+      // completes when it subscribes, so a change there reloads it, as does
+      // every change on a host without the call.
+      if (host.surface !== "alert" && typeof host.onSettingsChange === "function") {
+        host.onSettingsChange(draw);
+      }
+      draw();
+
+      playForDuration(host, num(host.settings.duration, 0));
     })();
 
     // In an alert, a duration gives this widget a length of its own: it

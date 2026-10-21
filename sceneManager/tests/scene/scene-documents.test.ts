@@ -2,15 +2,15 @@ import { describe, expect, it } from "bun:test";
 import type { EntryRef, ItemBody, ServerMessage, Version } from "@woofx3/api/scene-editor";
 import { applyOps } from "../../public/scene-manager/scene-document";
 import {
-  documentOf,
   type EditorConnection,
   type ItemReply,
   SceneDocuments,
   type SceneDocumentsClock,
-  storedSceneOf,
 } from "../../src/scene/scene-documents";
+import { documentOf, storedSceneOf } from "../../src/scene/scene-codec";
 import type { OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 import { FakeSceneStore, type SceneRow, type StoreHooks, sceneRow, storedPlacement } from "./fake-scene-store";
+import { eventAndData } from "../helpers/stream-frames";
 
 const AUTOSAVE_MS = 2000;
 
@@ -101,7 +101,7 @@ function setup(rows: SceneRow[] = [sceneRow("s1", [storedPlacement("a")])], hook
     new SceneDocuments(
       store,
       {
-        broadcast: (sceneId, _event, data) => overlays.push({ sceneId, data }),
+        broadcast: (sceneId, frame) => overlays.push({ sceneId, data: eventAndData(frame).data }),
         connectedSceneIds: () => connected,
       },
       logger,

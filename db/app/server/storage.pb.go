@@ -748,6 +748,89 @@ func (x *ClearSessionScopedResponse) GetClearedItems() []*StorageItem {
 	return nil
 }
 
+type GetUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUsageRequest) Reset() {
+	*x = GetUsageRequest{}
+	mi := &file_storage_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUsageRequest) ProtoMessage() {}
+
+func (x *GetUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUsageRequest.ProtoReflect.Descriptor instead.
+func (*GetUsageRequest) Descriptor() ([]byte, []int) {
+	return file_storage_proto_rawDescGZIP(), []int{15}
+}
+
+type GetUsageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Size of the module storage database in bytes: its page count times its
+	// page size, as of the latest commit. Free pages count too, since they take
+	// the same room on disk and in the replica until a vacuum returns them.
+	Bytes         int64 `protobuf:"varint,1,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUsageResponse) Reset() {
+	*x = GetUsageResponse{}
+	mi := &file_storage_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUsageResponse) ProtoMessage() {}
+
+func (x *GetUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUsageResponse.ProtoReflect.Descriptor instead.
+func (*GetUsageResponse) Descriptor() ([]byte, []int) {
+	return file_storage_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetUsageResponse) GetBytes() int64 {
+	if x != nil {
+		return x.Bytes
+	}
+	return 0
+}
+
 var File_storage_proto protoreflect.FileDescriptor
 
 const file_storage_proto_rawDesc = "" +
@@ -791,7 +874,10 @@ const file_storage_proto_rawDesc = "" +
 	"\x19ClearSessionScopedRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"q\n" +
 	"\x1aClearSessionScopedResponse\x12\x18\n" +
 	"\acleared\x18\x01 \x01(\x05R\acleared\x129\n" +
-	"\rcleared_items\x18\x02 \x03(\v2\x14.storage.StorageItemR\fclearedItems2\x8c\x04\n" +
+	"\rcleared_items\x18\x02 \x03(\v2\x14.storage.StorageItemR\fclearedItems\"\x11\n" +
+	"\x0fGetUsageRequest\"(\n" +
+	"\x10GetUsageResponse\x12\x14\n" +
+	"\x05bytes\x18\x01 \x01(\x03R\x05bytes2\xcf\x04\n" +
 	"\x0eStorageService\x122\n" +
 	"\x03Get\x12\x13.storage.GetRequest\x1a\x14.storage.GetResponse\"\x00\x122\n" +
 	"\x03Set\x12\x13.storage.SetRequest\x1a\x14.storage.SetResponse\"\x00\x12P\n" +
@@ -799,7 +885,8 @@ const file_storage_proto_rawDesc = "" +
 	"\x06Delete\x12\x16.storage.DeleteRequest\x1a\x17.storage.DeleteResponse\"\x00\x12S\n" +
 	"\x0eClearNamespace\x12\x1e.storage.ClearNamespaceRequest\x1a\x1f.storage.ClearNamespaceResponse\"\x00\x12M\n" +
 	"\fClearExpired\x12\x1c.storage.ClearExpiredRequest\x1a\x1d.storage.ClearExpiredResponse\"\x00\x12_\n" +
-	"\x12ClearSessionScoped\x12\".storage.ClearSessionScopedRequest\x1a#.storage.ClearSessionScopedResponse\"\x00B)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x12ClearSessionScoped\x12\".storage.ClearSessionScopedRequest\x1a#.storage.ClearSessionScopedResponse\"\x00\x12A\n" +
+	"\bGetUsage\x12\x18.storage.GetUsageRequest\x1a\x19.storage.GetUsageResponse\"\x00B)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_storage_proto_rawDescOnce sync.Once
@@ -813,7 +900,7 @@ func file_storage_proto_rawDescGZIP() []byte {
 	return file_storage_proto_rawDescData
 }
 
-var file_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_storage_proto_goTypes = []any{
 	(*StorageItem)(nil),                // 0: storage.StorageItem
 	(*GetRequest)(nil),                 // 1: storage.GetRequest
@@ -830,6 +917,8 @@ var file_storage_proto_goTypes = []any{
 	(*ClearExpiredResponse)(nil),       // 12: storage.ClearExpiredResponse
 	(*ClearSessionScopedRequest)(nil),  // 13: storage.ClearSessionScopedRequest
 	(*ClearSessionScopedResponse)(nil), // 14: storage.ClearSessionScopedResponse
+	(*GetUsageRequest)(nil),            // 15: storage.GetUsageRequest
+	(*GetUsageResponse)(nil),           // 16: storage.GetUsageResponse
 }
 var file_storage_proto_depIdxs = []int32{
 	0,  // 0: storage.GetResponse.item:type_name -> storage.StorageItem
@@ -844,15 +933,17 @@ var file_storage_proto_depIdxs = []int32{
 	9,  // 9: storage.StorageService.ClearNamespace:input_type -> storage.ClearNamespaceRequest
 	11, // 10: storage.StorageService.ClearExpired:input_type -> storage.ClearExpiredRequest
 	13, // 11: storage.StorageService.ClearSessionScoped:input_type -> storage.ClearSessionScopedRequest
-	2,  // 12: storage.StorageService.Get:output_type -> storage.GetResponse
-	4,  // 13: storage.StorageService.Set:output_type -> storage.SetResponse
-	6,  // 14: storage.StorageService.CompareAndSet:output_type -> storage.CompareAndSetResponse
-	8,  // 15: storage.StorageService.Delete:output_type -> storage.DeleteResponse
-	10, // 16: storage.StorageService.ClearNamespace:output_type -> storage.ClearNamespaceResponse
-	12, // 17: storage.StorageService.ClearExpired:output_type -> storage.ClearExpiredResponse
-	14, // 18: storage.StorageService.ClearSessionScoped:output_type -> storage.ClearSessionScopedResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
+	15, // 12: storage.StorageService.GetUsage:input_type -> storage.GetUsageRequest
+	2,  // 13: storage.StorageService.Get:output_type -> storage.GetResponse
+	4,  // 14: storage.StorageService.Set:output_type -> storage.SetResponse
+	6,  // 15: storage.StorageService.CompareAndSet:output_type -> storage.CompareAndSetResponse
+	8,  // 16: storage.StorageService.Delete:output_type -> storage.DeleteResponse
+	10, // 17: storage.StorageService.ClearNamespace:output_type -> storage.ClearNamespaceResponse
+	12, // 18: storage.StorageService.ClearExpired:output_type -> storage.ClearExpiredResponse
+	14, // 19: storage.StorageService.ClearSessionScoped:output_type -> storage.ClearSessionScopedResponse
+	16, // 20: storage.StorageService.GetUsage:output_type -> storage.GetUsageResponse
+	13, // [13:21] is the sub-list for method output_type
+	5,  // [5:13] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -869,7 +960,7 @@ func file_storage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_storage_proto_rawDesc), len(file_storage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

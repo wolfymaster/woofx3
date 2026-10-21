@@ -1,5 +1,5 @@
 import type { HttpDeps } from "../http";
-import { readSessionCookie } from "../scene/session-cookie";
+import { requireSceneSession } from "./http-kit";
 
 /**
  * `GET /frames/{moduleId}/{manifestId}?theme=…&v=…` — a widget's frame
@@ -15,8 +15,8 @@ export async function handleFrameDocumentRoute(
 ): Promise<Response> {
   const url = new URL(req.url);
   return deps.frameAssembler.assembleDocument(
-    decodeURIComponent(moduleId),
-    decodeURIComponent(manifestId),
+    moduleId,
+    manifestId,
     url.searchParams.get("theme"),
     url.searchParams.get("v")
   );
@@ -43,7 +43,5 @@ export async function handleAlertWidgetFrameRoute(
 }
 
 async function sessionAllows(req: Request, sceneId: string, deps: HttpDeps): Promise<boolean> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  return !!claims && claims.sceneId === sceneId;
+  return (await requireSceneSession(req, sceneId, deps.sessionTokens)) !== null;
 }

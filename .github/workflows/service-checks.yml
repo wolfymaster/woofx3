@@ -21,6 +21,8 @@ on:
       - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "services/nats/**"
+      - "shared/common/golang/logging/**"
       - ".github/workflows/service-checks.yml"
   pull_request:
     paths:
@@ -29,6 +31,8 @@ on:
       - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "services/nats/**"
+      - "shared/common/golang/logging/**"
       - ".github/workflows/service-checks.yml"
   workflow_dispatch:
 
@@ -59,6 +63,7 @@ jobs:
             shared/clients/typescript/nats \
             shared/clients/typescript/twitch \
             shared/clients/typescript/module-sdk \
+            shared/clients/typescript/widget-host \
             ${{ matrix.service }}
           do
             echo "::group::bun install ($dir)"
@@ -72,10 +77,38 @@ jobs:
       - name: Build module-sdk
         run: cd shared/clients/typescript/module-sdk && bun run build
 
+      # sceneManager's smoke suite (tests/smoke) runs the service against the
+      # engine's real message bus, a Go program, and fails without it in CI.
+      - name: Set up Go
+        if: matrix.service == 'sceneManager'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: services/nats/go.sum
+
+      - name: Build the message bus
+        if: matrix.service == 'sceneManager'
+        run: |
+          cd services/nats && go build -o "$RUNNER_TEMP/messagebus" .
+          echo "WOOFX3_MESSAGEBUS_BIN=$RUNNER_TEMP/messagebus" >> "$GITHUB_ENV"
+
       - name: Type check
         working-directory: ${{ matrix.service }}
         run: bun run typecheck
 
       - name: Test
         working-directory: ${{ matrix.service }}
+        run: bun test
+
+      # The overlay page's frame and bridge code lives in its own package, so
+      # the author preview can host widgets with it too; it is checked with
+      # the service that serves it.
+      - name: Type check the widget-host package
+        if: matrix.service == 'sceneManager'
+        working-directory: shared/clients/typescript/widget-host
+        run: bun run typecheck
+
+      - name: Test the widget-host package
+        if: matrix.service == 'sceneManager'
+        working-directory: shared/clients/typescript/widget-host
         run: bun test

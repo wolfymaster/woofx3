@@ -1,16 +1,16 @@
 import type { HttpDeps } from "../http";
-import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
-import { readSessionCookie, serializeSessionCookie } from "../scene/session-cookie";
+import { nowSeconds, SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
+import { BLANK_FRAME_DOC } from "../scene/frame-assembler";
+import { serializeSessionCookie } from "../scene/session-cookie";
+import { BODY_LIMITS, invalidSession, jsonError, jsonOk, readJsonBody, requireSceneSession } from "./http-kit";
 import type { SceneVersion } from "../scene/scene-host";
 import { renderSceneShell } from "../scene/shell";
-import { configOfSnapshot } from "../../public/scene-manager/scene-document";
+import { configOfSnapshot } from "../../contract/scene-config";
 
 /** Which version of the scene a page shows: `?view=draft` for the editor's preview. */
 export function viewOf(url: URL): SceneVersion {
   return url.searchParams.get("view") === "draft" ? "draft" : "published";
 }
-
-const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
 
 /**
  * `GET /scene/{sceneId}?token=abc123` — verify the opaque overlay
@@ -25,7 +25,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   const token = url.searchParams.get("token") ?? "";
   const state = await deps.host.loadScene(token);
   if (!state || state.sceneId !== sceneId) {
-    return new Response(NOT_FOUND_HTML, {
+    return new Response(BLANK_FRAME_DOC, {
       status: 404,
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
     });
@@ -38,7 +38,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
   const scene = snapshot
     ? configOfSnapshot(snapshot)
     : deps.mediaProxy.sceneConfig((await deps.host.buildConfig(token)).scene).scene;
-  const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId });
+  const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId, authAt: nowSeconds() });
 
   return new Response(renderSceneShell({ scene, document: snapshot }), {
     status: 200,
@@ -58,24 +58,16 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
  * can read it.
  */
 export async function handleSceneConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  if (!claims || claims.sceneId !== sceneId) {
-    return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
   // With its document, so an overlay that missed ops resyncs from here.
   const snapshot = await deps.sceneDocuments.overlaySnapshot(sceneId, viewOf(new URL(req.url)));
   if (!snapshot) {
-    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    return jsonError(404, "not_found");
   }
-  return Response.json(
-    { scene: configOfSnapshot(snapshot), document: snapshot },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  return jsonOk({ scene: configOfSnapshot(snapshot), document: snapshot });
 }
-
-/** Largest draft-config request body; a scene's placements are a few kilobytes. */
-export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
 
 /**
  * `POST /scene/{sceneId}/draft-config` with `{ widgets: [...] }` — the scene
@@ -96,37 +88,23 @@ export const MAX_DRAFT_BODY_BYTES = 1024 * 1024;
  * proxy with it.
  */
 export async function handleSceneDraftConfigRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  if (!claims || claims.sceneId !== sceneId) {
-    return Response.json({ error: "invalid_session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const declaredLength = Number(req.headers.get("Content-Length") ?? "0");
-  if (declaredLength > MAX_DRAFT_BODY_BYTES) {
-    return Response.json({ error: "too_large" }, { status: 413, headers: { "Cache-Control": "no-store" } });
+  const body = await readJsonBody(req, BODY_LIMITS.placements);
+  if (!body.ok) {
+    return body.response;
   }
-  const text = await req.text();
-  if (text.length > MAX_DRAFT_BODY_BYTES) {
-    return Response.json({ error: "too_large" }, { status: 413, headers: { "Cache-Control": "no-store" } });
-  }
-  let widgets: unknown;
-  try {
-    widgets = (JSON.parse(text) as { widgets?: unknown }).widgets;
-  } catch {
-    widgets = undefined;
-  }
+  const widgets = (body.value as { widgets?: unknown } | null)?.widgets;
   if (!Array.isArray(widgets)) {
-    return Response.json({ error: "invalid_body" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    return jsonError(400, "invalid_body");
   }
   const config = await deps.host.buildDraftConfig(sceneId, widgets);
   const scene = (config as { scene: unknown }).scene;
   if (scene === null) {
-    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    return jsonError(404, "not_found");
   }
   const edited = await deps.sceneDocuments.editedMediaUrls(sceneId);
   const view = deps.mediaProxy.sceneConfig(scene, (url) => edited.has(url));
-  return Response.json(
-    { ...config, scene: view.scene, mediaUrls: view.mediaUrls },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  return jsonOk({ ...config, scene: view.scene, mediaUrls: view.mediaUrls });
 }

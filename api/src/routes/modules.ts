@@ -7,6 +7,7 @@ import {
   type ModuleResourceUsage,
   type ModuleSetting,
   type ModuleSettingsResponse,
+  type ModuleStorageUsage,
   type ResourceInstanceDefinition,
   type WidgetThemes,
 } from "@woofx3/api";
@@ -470,6 +471,11 @@ export const modulesRoutes = routeModule({
     const bytes = new Uint8Array(await response.arrayBuffer());
     const declaredSize = Number(response.headers.get(ARCHIVE_ENTRY_SIZE_HEADER) ?? bytes.byteLength);
     return classifyModuleFile(path, bytes, Number.isFinite(declaredSize) ? declaredSize : bytes.byteLength);
+  },
+
+  async getModuleStorageUsage(): Promise<ModuleStorageUsage> {
+    const usage = await this.db.getModuleStorageUsage();
+    return { bytes: Number(usage.bytes) };
   },
 
   async listWidgetThemes(widgetCanonicalId: string): Promise<WidgetThemes> {

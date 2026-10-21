@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, mock, setSystemTime } from "bun:test";
 import { DeliveryStore } from "../../src/events/delivery-store";
 
 function fakeLogger() {
@@ -10,14 +10,27 @@ function fakeLogger() {
   } as any;
 }
 
+/** A stream's delivery frames, and apart from them each new stream's open set, in arrival order. */
 function fakeController() {
   const frames: string[] = [];
+  const openSets: Array<Record<string, string[]>> = [];
+  const order: string[] = [];
   const controller = {
     enqueue: (chunk: Uint8Array) => {
-      frames.push(new TextDecoder().decode(chunk));
+      const raw = new TextDecoder().decode(chunk);
+      const event = raw
+        .split("\n")
+        .find((l) => l.startsWith("event: "))
+        ?.slice("event: ".length);
+      order.push(event ?? "");
+      if (event === "open-set") {
+        openSets.push((parseFrame(raw) as unknown as { deliveries: Record<string, string[]> }).deliveries);
+        return;
+      }
+      frames.push(raw);
     },
   } as unknown as ReadableStreamDefaultController<Uint8Array>;
-  return { controller, frames };
+  return { controller, frames, openSets, order };
 }
 
 function parseFrame(raw: string): { eventId: string; instanceId: string; type: string; key: string; value: unknown } {
@@ -92,6 +105,33 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     expect(parseFrame(frames[0]!)).toMatchObject({ eventId: "evt-2", instanceId: "inst-a" });
   });
 
+  it("follows the replay with the scene's open deliveries by instance, which is empty for a quiet scene", async () => {
+    let next = 0;
+    const db = {
+      recordSceneEvent: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        sceneEvent: { id: `evt-${++next}`, sceneId: "scene-1", type: "alert", key: "k", value: "null", occurredAt: "" },
+      })),
+    } as any;
+    const store = new DeliveryStore(db, fakeLogger());
+    const quiet = fakeController();
+    store.subscribe("scene-2", quiet.controller);
+    expect(quiet.openSets).toEqual([{}]);
+
+    await store.recordEvent({
+      sceneId: "scene-1",
+      type: "alert",
+      key: "k",
+      value: null,
+      targetInstanceIds: ["a", "b"],
+    });
+    await store.recordEvent({ sceneId: "scene-1", type: "alert", key: "k", value: null, targetInstanceIds: ["a"] });
+    const { controller, openSets, order } = fakeController();
+    store.subscribe("scene-1", controller);
+    expect(order).toEqual(["delivery", "delivery", "delivery", "open-set"]);
+    expect(openSets).toEqual([{ a: ["evt-1", "evt-2"], b: ["evt-1"] }]);
+  });
+
   it("does not record an event with no fan-out targets", async () => {
     const recordSceneEvent = mock(async () => ({ status: { code: "OK" as const, message: "" }, sceneEvent: null }));
     const store = new DeliveryStore({ recordSceneEvent } as any, fakeLogger());
@@ -133,10 +173,10 @@ describe("DeliveryStore.ackCompleted", () => {
       targetInstanceIds: ["inst-a"],
     });
 
-    const closed = await store.ackCompleted("scene-1", "evt-3", ["inst-a"]);
+    const { closed } = await store.ackCompleted("scene-1", "evt-3", ["inst-a"]);
     expect(db.recordSceneEventCompletion).toHaveBeenCalledWith({ sceneEventId: "evt-3", instanceId: "inst-a" });
     expect(closed).toEqual([{ eventId: "evt-3", type: "widget.event", key: "count", value: 1, startedAt: null }]);
-    expect(await store.ackCompleted("scene-1", "evt-3", ["inst-a"])).toEqual([]);
+    expect((await store.ackCompleted("scene-1", "evt-3", ["inst-a"])).closed).toEqual([]);
 
     const { controller, frames } = fakeController();
     store.subscribe("scene-1", controller);
@@ -171,6 +211,35 @@ describe("DeliveryStore.hydrate", () => {
     expect(parseFrame(frames[0]!)).toMatchObject({ eventId: "evt-4", instanceId: "inst-a", value: 42 });
   });
 
+  it("tries again in the background when the DB cannot be read at startup, until it can", async () => {
+    let attempts = 0;
+    const db = {
+      listOpenSceneEventDeliveries: mock(async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("db proxy down");
+        }
+        return {
+          status: { code: "OK" as const, message: "" },
+          deliveries: [{ sceneEventId: "evt-4", sceneId: "scene-1", instanceId: "inst-a" }],
+        };
+      }),
+      getSceneEvent: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        sceneEvent: { id: "evt-4", sceneId: "scene-1", type: "widget.event", key: "count", value: "42" },
+      })),
+    } as any;
+    const store = new DeliveryStore(db, fakeLogger());
+    await store.startHydration();
+    expect(store.scenesWithOpenDeliveries()).toEqual([]);
+    for (let i = 0; i < 40 && store.scenesWithOpenDeliveries().length === 0; i++) {
+      await Bun.sleep(50);
+    }
+    store.stopSweep();
+    expect(attempts).toBe(2);
+    expect(store.scenesWithOpenDeliveries()).toEqual(["scene-1"]);
+  });
+
   it("skips deliveries whose parent event can't be fetched, without throwing", async () => {
     const db = {
       listOpenSceneEventDeliveries: mock(async () => ({
@@ -194,6 +263,89 @@ describe("DeliveryStore.hydrate", () => {
       }),
     } as any;
     const store = new DeliveryStore(db, fakeLogger());
-    await expect(store.hydrate()).resolves.toBeUndefined();
+    await expect(store.hydrate()).resolves.toBe(false);
+  });
+});
+
+describe("DeliveryStore delivered acks and the sweep", () => {
+  function recordingDb(overrides: Record<string, unknown> = {}) {
+    return {
+      recordSceneEvent: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        sceneEvent: { id: "evt-9", sceneId: "scene-1", type: "alert", key: "k", value: "1" },
+      })),
+      recordSceneEventDelivery: mock(async () => ({})),
+      recordSceneEventCompletion: mock(async () => ({})),
+      ...overrides,
+    } as any;
+  }
+
+  async function storeWithOne(db = recordingDb()) {
+    const store = new DeliveryStore(db, fakeLogger());
+    const page = fakeController();
+    store.subscribe("scene-1", page.controller);
+    await store.recordEvent({ sceneId: "scene-1", type: "alert", key: "k", value: 1, targetInstanceIds: ["inst-a"] });
+    return { store, page, db };
+  }
+
+  /** Run the sweep as if `ms` had passed since the delivery was last sent. */
+  function sweepAfter(store: DeliveryStore, ms: number): void {
+    setSystemTime(new Date(Date.now() + ms));
+    try {
+      (store as unknown as { sweepOnce(): void }).sweepOnce();
+    } finally {
+      setSystemTime();
+    }
+  }
+
+  it("sends an undelivered delivery again, and stops once a page says it queued it", async () => {
+    const { store, page } = await storeWithOne();
+    expect(page.frames).toHaveLength(1);
+
+    sweepAfter(store, 6_000);
+    expect(page.frames).toHaveLength(2);
+
+    expect(await store.ackDelivered("scene-1", "evt-9", ["inst-a"])).toEqual([]);
+    sweepAfter(store, 12_000);
+    expect(page.frames).toHaveLength(2);
+  });
+
+  it("sends it again after a page subscribes until that page queues it too", async () => {
+    const { store } = await storeWithOne();
+    await store.ackDelivered("scene-1", "evt-9", ["inst-a"]);
+
+    const reloaded = fakeController();
+    store.subscribe("scene-1", reloaded.controller);
+    expect(reloaded.frames).toHaveLength(1);
+
+    sweepAfter(store, 6_000);
+    expect(reloaded.frames).toHaveLength(2);
+  });
+
+  it("reports a delivery it could not record, and still stops sending it", async () => {
+    const db = recordingDb({
+      recordSceneEventDelivery: mock(async () => {
+        throw new Error("db down");
+      }),
+    });
+    const { store, page } = await storeWithOne(db);
+
+    expect(await store.ackDelivered("scene-1", "evt-9", ["inst-a"])).toEqual(["inst-a"]);
+    sweepAfter(store, 6_000);
+    expect(page.frames).toHaveLength(1);
+  });
+
+  it("keeps a delivery open, and reports it, when its completion could not be recorded", async () => {
+    const db = recordingDb({
+      recordSceneEventCompletion: mock(async () => {
+        throw new Error("db down");
+      }),
+    });
+    const { store } = await storeWithOne(db);
+
+    expect(await store.ackCompleted("scene-1", "evt-9", ["inst-a"])).toEqual({ closed: [], failed: ["inst-a"] });
+    const later = fakeController();
+    store.subscribe("scene-1", later.controller);
+    expect(later.frames).toHaveLength(1);
   });
 });

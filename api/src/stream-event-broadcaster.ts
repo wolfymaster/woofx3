@@ -4,6 +4,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { type EventCatalog, SubjectSubscriptions } from "./event-catalog";
+import { holdStub, onStubBroken, releaseStub } from "./held-stub";
 
 /**
  * What a subscriber that names no types receives: the events clients relied
@@ -24,8 +25,6 @@ export const LEGACY_STREAM_EVENT_TYPES: readonly string[] = [
 ];
 
 /** capnweb stubs carry this; the contract types the argument as a plain object. */
-type MaybeStub = Partial<{ onRpcBroken(callback: (error: unknown) => void): void }>;
-
 interface Registration {
   subscriber: StreamEventSubscriber;
   /** The types asked for, or null for `LEGACY_STREAM_EVENT_TYPES`. */
@@ -84,24 +83,27 @@ export class StreamEventBroadcaster {
    * the callback it passes is a new stub each time.
    *
    * Eviction is driven by `onRpcBroken`, the signal capnweb raises when the
-   * peer goes away. The older triggerSubscribers set has no disconnect path at
-   * all -- it only drops a subscriber whose call happens to reject, so a closed
-   * tab lingers until the next event, and forever if none arrives.
+   * peer goes away.
    */
   async subscribe(
     subscriber: StreamEventSubscriber,
     types: readonly string[] | undefined,
     session: object
   ): Promise<void> {
-    const registration: Registration = { subscriber, requested: types === undefined ? null : new Set(types) };
+    const held = holdStub(subscriber);
+    const registration: Registration = { subscriber: held, requested: types === undefined ? null : new Set(types) };
+    const replaced = this.registrations.get(session);
     this.registrations.set(session, registration);
-    const stub = subscriber as MaybeStub;
-    stub.onRpcBroken?.(() => {
+    if (replaced) {
+      releaseStub(replaced.subscriber);
+    }
+    onStubBroken(held, () => {
       // A replaced registration's stub may break after its replacement exists.
       if (this.registrations.get(session) !== registration) {
         return;
       }
       this.registrations.delete(session);
+      releaseStub(held);
       this.logger.debug("StreamEventBroadcaster: subscriber disconnected", {
         remaining: this.registrations.size,
       });

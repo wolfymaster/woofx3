@@ -24,13 +24,12 @@ export function sessionCookieName(sceneId: string): string {
  * origin).
  */
 export function serializeSessionCookie(sceneId: string, token: string, maxAgeSeconds: number): string {
-  return [
-    `${sessionCookieName(sceneId)}=${token}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Strict",
-    `Max-Age=${maxAgeSeconds}`,
-  ].join("; ");
+  return serializeCookie(sessionCookieName(sceneId), token, maxAgeSeconds);
+}
+
+/** A session cookie as every page of the scene manager's is set: HttpOnly, SameSite=Strict, site-wide. */
+export function serializeCookie(name: string, token: string, maxAgeSeconds: number): string {
+  return [`${name}=${token}`, "Path=/", "HttpOnly", "SameSite=Strict", `Max-Age=${maxAgeSeconds}`].join("; ");
 }
 
 export function readSessionCookie(req: Request, sceneId: string): string | null {

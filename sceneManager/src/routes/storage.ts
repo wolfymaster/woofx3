@@ -1,8 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { type BarkloaderRelay, relayGetToBarkloader } from "./barkloader-relay";
-
-// Mirrors barkloader's ALLOWED_TOP_LEVEL_PREFIXES.
-const STORAGE_ASSET_PREFIXES = ["/assets/modules/", "/assets/user/"] as const;
+import { type BarkloaderRelay, relayToBarkloader } from "./barkloader-relay";
+import { jsonError } from "./http-kit";
 
 const STORAGE_ASSET_RELAY: BarkloaderRelay = {
   forwardedRequestHeaders: [],
@@ -10,10 +8,6 @@ const STORAGE_ASSET_RELAY: BarkloaderRelay = {
   failure: "barkloader asset request failed",
   loggedPath: (url) => url.pathname,
 };
-
-export function isStorageAssetPath(pathname: string): boolean {
-  return STORAGE_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-}
 
 /**
  * Relays to barkloader, which is not browser-reachable. Redirects are
@@ -27,10 +21,7 @@ export async function handleStorageAssetRoute(
   logger: Logger,
   fetchFn: typeof fetch = fetch
 ): Promise<Response> {
-  if (req.method !== "GET") {
-    return new Response(null, { status: 404 });
-  }
-  return relayGetToBarkloader(req, url, barkloaderUrl, logger, STORAGE_ASSET_RELAY, fetchFn);
+  return relayToBarkloader(req, url, barkloaderUrl, logger, STORAGE_ASSET_RELAY, fetchFn);
 }
 
 /**
@@ -41,24 +32,18 @@ export async function handleStorageAssetRoute(
  */
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 
-/** `/assets/upload/{token}`: exactly one segment, the signed grant. */
-const UPLOAD_PATH = /^\/assets\/upload\/[^/]+$/;
-
-/** The only method an upload grant is good for, plus its preflight. */
-export const UPLOAD_ALLOWED_METHODS = "PUT, OPTIONS";
-
-/**
- * Request headers barkloader needs to validate and store the upload.
- *
- * Content-Length is deliberately absent: the body is forwarded as a stream and
- * the transport frames it, so a length copied from the incoming request would
- * be a promise this relay cannot keep if the client goes away mid-upload.
- */
-const UPLOAD_FORWARDED_HEADERS = ["Content-Type"] as const;
-
-export function isUploadPath(pathname: string): boolean {
-  return UPLOAD_PATH.test(pathname);
-}
+const UPLOAD_RELAY: BarkloaderRelay = {
+  method: "PUT",
+  // What barkloader needs to validate and store the upload. Content-Length is
+  // deliberately absent: the body is forwarded as a stream and the transport
+  // frames it, so a length copied from the incoming request would be a promise
+  // this relay cannot keep if the client goes away mid-upload.
+  forwardedRequestHeaders: ["Content-Type"],
+  relayedResponseHeaders: ["Content-Type"],
+  failure: "barkloader upload request failed",
+  // The path carries the grant, a credential.
+  loggedPath: () => "/assets/upload/{token}",
+};
 
 /**
  * Relays a token-guarded upload to barkloader, which issues these grants
@@ -76,52 +61,15 @@ export async function handleUploadRoute(
   logger: Logger,
   fetchFn: typeof fetch = fetch
 ): Promise<Response> {
-  if (req.method !== "PUT") {
-    return new Response(null, { status: 405, headers: { Allow: UPLOAD_ALLOWED_METHODS } });
-  }
-
   const declaredLength = req.headers.get("Content-Length");
   if (declaredLength !== null) {
     if (!/^\d+$/.test(declaredLength)) {
-      return Response.json({ success: false, error: "invalid Content-Length" }, { status: 400 });
+      return jsonError(400, "invalid_content_length");
     }
     if (Number(declaredLength) > MAX_UPLOAD_BYTES) {
-      return Response.json({ success: false, error: "upload exceeds size limit" }, { status: 413 });
+      return jsonError(413, "too_large");
     }
   }
 
-  const headers = new Headers();
-  for (const name of UPLOAD_FORWARDED_HEADERS) {
-    const value = req.headers.get(name);
-    if (value !== null) {
-      headers.set(name, value);
-    }
-  }
-
-  const upstreamUrl = `${barkloaderUrl.replace(/\/+$/, "")}${url.pathname}`;
-  let upstream: Response;
-  try {
-    upstream = await fetchFn(upstreamUrl, {
-      method: "PUT",
-      headers,
-      body: req.body,
-      redirect: "manual",
-      // Required by the fetch spec to send a ReadableStream body without
-      // buffering it first.
-      duplex: "half",
-    } as RequestInit);
-  } catch (err) {
-    logger.warn("barkloader upload request failed", {
-      path: "/assets/upload/{token}",
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return new Response(null, { status: 502 });
-  }
-
-  const relayed = new Headers();
-  const contentType = upstream.headers.get("Content-Type");
-  if (contentType !== null) {
-    relayed.set("Content-Type", contentType);
-  }
-  return new Response(upstream.body, { status: upstream.status, headers: relayed });
+  return relayToBarkloader(req, url, barkloaderUrl, logger, UPLOAD_RELAY, fetchFn);
 }

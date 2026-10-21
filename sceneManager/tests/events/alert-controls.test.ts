@@ -10,7 +10,7 @@ import {
   skipCurrentAlerts,
 } from "../../src/events/alert-controls";
 import { dispatchAlert } from "../../src/events/alert-dispatch";
-import { CANCEL_EVENT, DeliveryStore } from "../../src/events/delivery-store";
+import { DeliveryStore } from "../../src/events/delivery-store";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function fakeLogger() {
@@ -90,7 +90,7 @@ function fakeOverlay(store: DeliveryStore, sceneId: string) {
   store.subscribe(sceneId, controller);
   return {
     frames,
-    cancels: () => frames.filter((frame) => frame.event === CANCEL_EVENT).map((frame) => frame.data),
+    cancels: () => frames.filter((frame) => frame.event === "cancel").map((frame) => frame.data),
     deliveries: () => frames.filter((frame) => frame.event === "delivery").map((frame) => frame.data),
   };
 }

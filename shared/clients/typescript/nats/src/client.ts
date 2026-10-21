@@ -1,7 +1,7 @@
-import type { ConnectionOptions, NatsConnection, Subscription } from "@nats-io/nats-core";
+import type { ConnectionOptions, Msg as NatsCoreMsg, NatsConnection, Subscription } from "@nats-io/nats-core";
 import { jwtAuthenticator, wsconnect } from "@nats-io/nats-core";
 import { MessageImpl } from "./msg";
-import type { Handler, Logger, NATSConfig } from "./types";
+import type { Handler, Logger, Msg, NATSConfig } from "./types";
 
 /** The connect options a config asks for. */
 export function connectOptions(config: NATSConfig): ConnectionOptions {
@@ -108,17 +108,7 @@ export default class NATSClient {
     const subscription = this.connection.subscribe(subject);
     this.logger.debug?.("Subscribed to subject", { subject });
 
-    // Start consuming messages asynchronously
-    (async () => {
-      try {
-        for await (const msg of subscription) {
-          const wrappedMsg = new MessageImpl(msg.subject, msg.data, msg);
-          handler(wrappedMsg);
-        }
-      } catch (error) {
-        this.logger.error?.("Subscription error:", error);
-      }
-    })();
+    void consumeMessages(subject, subscription, handler, this.logger);
 
     return subscription;
   }
@@ -162,4 +152,53 @@ export default class NATSClient {
   asNATS(): NatsConnection | null {
     return this.connection;
   }
+}
+
+/**
+ * Hand each message of a subscription to its handler until the subscription
+ * ends. A handler that throws, or whose promise rejects, is logged with the
+ * subject and the loop goes on to the next message: one bad message must not
+ * end the subscription for every message after it. Handlers are not awaited,
+ * so a slow one never holds up the messages behind it.
+ */
+export async function consumeMessages(
+  subject: string,
+  messages: AsyncIterable<NatsCoreMsg>,
+  handler: Handler,
+  logger: Logger
+): Promise<void> {
+  try {
+    for await (const msg of messages) {
+      dispatchMessage(subject, new MessageImpl(msg.subject, msg.data, msg), handler, logger);
+    }
+  } catch (error) {
+    logger.error("subscription ended with an error", { subject, error: describeError(error) });
+  }
+}
+
+function dispatchMessage(subject: string, msg: Msg, handler: Handler, logger: Logger): void {
+  const fail = (error: unknown): void => {
+    logger.error("subscription handler failed", {
+      subject,
+      messageSubject: msg.subject,
+      error: describeError(error),
+    });
+  };
+  let result: void | Promise<void>;
+  try {
+    result = handler(msg);
+  } catch (error) {
+    fail(error);
+    return;
+  }
+  if (result instanceof Promise) {
+    result.catch(fail);
+  }
+}
+
+function describeError(error: unknown): { message: string; stack?: string } {
+  if (error instanceof Error) {
+    return { message: error.message, stack: error.stack };
+  }
+  return { message: String(error) };
 }

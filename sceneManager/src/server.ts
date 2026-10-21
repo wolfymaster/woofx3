@@ -52,5 +52,8 @@ process.on("uncaughtException", (error) => {
   gracefulShutdown("uncaughtException");
 });
 process.on("unhandledRejection", (reason) => {
-  logger.error("Unhandled Rejection", { reason: reason instanceof Error ? reason.message : String(reason) });
+  logger.error("Unhandled Rejection", {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
 });

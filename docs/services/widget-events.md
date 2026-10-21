@@ -260,6 +260,41 @@ manager that does not answer gives `ok: false` with `the scene manager did not a
 ...`, as for the controls. The queue has no paused state: an alert widget plays its queue
 whenever a page holding it is open.
 
+## Delivery acknowledgements
+
+Every event bound for a placement is an open delivery on the scene manager until a page
+acknowledges it as completed. A page acknowledges in two steps:
+
+- **Delivered** (`POST .../events/{eventId}/delivered`, batched): the event reached the
+  placement's queue on the page. A page acknowledges only what reached a queue; an event
+  for a placement whose widget has not subscribed yet is left undelivered. The scene
+  manager sends undelivered deliveries again every few seconds and stops once one is
+  delivered. When a page subscribes to the scene's stream, every open delivery is sent to
+  it and counts as undelivered again until that page queues it, since a page that
+  reloaded holds nothing it was sent before.
+- **Completed** (`POST .../events/{eventId}/completed`): the widget finished the event, or
+  the page gave up on it after the subscription's `retryTimeoutMs`. Either way the
+  delivery closes; a delivery left open would play again after the next page load.
+
+The scene manager answers an acknowledgement it could not record with `503`, and the page
+sends it again with backoff (about four minutes in all); acknowledgements are idempotent.
+
+When the frame of a placement is replaced (a settings or theme change swaps a fresh frame
+in), the fresh frame's queue takes over the events not yet dispatched, the old frame
+finishes what it is showing, and whatever it never finished is handed to the fresh frame
+when it is retired. An alert area is mounted afresh the same way: the new area takes over
+the waiting alerts, and the old one starts nothing more.
+
+A skip or clear closes deliveries and tells every open page at once, but that message is
+not kept for a page whose stream was down at the time. So after replaying the open
+deliveries to a new stream, the scene manager sends the whole open set (event ids by
+placement), and the page drops whatever it still holds beyond it, playing or waiting.
+
+A delivery addressed to a placement removed from the scene afterwards would never be
+queued by any page. Such deliveries are closed when the scene is saved, and when the
+scene manager starts. A placement still in the draft counts as present, since the editor's
+preview plays the draft.
+
 ## End-to-end flow
 
 ```

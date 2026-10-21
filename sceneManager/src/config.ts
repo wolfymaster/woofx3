@@ -2,51 +2,35 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
-import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
 
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
-  sceneManagerPort: z.union([z.number(), z.string()]).optional(),
-  // sceneManager binds loopback by default — a reverse proxy (or direct
+  // sceneManager binds loopback by default: a reverse proxy (or direct
   // exposure in dev) is the public surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
-  sceneManagerHost: z.string().optional(),
   // HS256 signing secret for the short-lived session JWT minted at
   // `GET /scene/{sceneId}`. Required — fail fast rather than run with
   // an absent/guessable secret.
   woofx3SceneManagerTokenSecret: z.string().optional(),
-  sceneManagerTokenSecret: z.string().optional(),
   woofx3RootPath: z.string().optional(),
-  rootPath: z.string().optional(),
   woofx3MessagebusUrl: z.string().default("ws://localhost:4225"),
-  messagebusUrl: z.string().optional(),
   woofx3MessagebusJwt: z.string().optional(),
-  messagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
-  messagebusNkey: z.string().optional(),
   woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
-  messagebusToken: z.union([z.string(), z.number()]).optional(),
   woofx3ObsHost: z.string().default("127.0.0.1"),
-  obsHost: z.string().optional(),
   woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
-  obsPort: z.union([z.number(), z.string()]).optional(),
   woofx3ObsRpcToken: z.string().optional(),
-  obsRpcToken: z.string().optional(),
   woofx3DatabaseProxyUrl: z.string().default(""),
-  databaseProxyUrl: z.string().optional(),
   woofx3BarkloaderUrl: z.string().default("http://127.0.0.1:9653"),
-  barkloaderUrl: z.string().optional(),
   // The engine secret barkloader verifies media proxy URLs with (see
   // scene/media-proxy.ts); sceneManager signs them with it.
   woofx3BarkloaderKey: z.string().optional(),
-  barkloaderKey: z.string().optional(),
   // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
-
-export type SceneManagerConfig = z.infer<typeof SceneManagerEnvSchema>;
 
 export interface SceneManagerRuntimeConfig {
   port: number;
@@ -81,9 +65,9 @@ export interface SceneManagerRuntimeConfig {
 }
 
 /**
- * Fail-fast validation: assert the invariants the rest of the
- * service depends on at startup rather than surfacing them as
- * confusing runtime failures later.
+ * Fail-fast validation: assert the invariants the rest of the service
+ * depends on at startup rather than surfacing them as confusing runtime
+ * failures later.
  */
 export function validateConfig(config: SceneManagerRuntimeConfig): void {
   if (!config.bindHost) {
@@ -106,6 +90,20 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
     new URL(config.barkloaderUrl);
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
+  }
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
+    throw new Error(
+      `sceneManager: port must be a whole number from 0 to 65535 (WOOFX3_SCENE_MANAGER_PORT), got ${config.port}`
+    );
+  }
+  // Every scene, token and delivery is read through the db proxy: without it
+  // the service would start and then fail every request.
+  try {
+    new URL(config.databaseProxyUrl);
+  } catch {
+    throw new Error(
+      `sceneManager: databaseProxyUrl must be a valid URL (WOOFX3_DATABASE_PROXY_URL), got "${config.databaseProxyUrl}"`
+    );
   }
   // The shim is a build output (`bun run build:shim`), not a tracked file, so
   // a checkout or release that skipped that step would serve widget frames
@@ -149,35 +147,23 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
 
-  const port = Number(c.woofx3SceneManagerPort ?? c.sceneManagerPort ?? 9101);
-  const bindHost = String(c.woofx3SceneManagerHost ?? c.sceneManagerHost ?? "127.0.0.1");
-  const tokenSecret = String(c.woofx3SceneManagerTokenSecret ?? c.sceneManagerTokenSecret ?? "");
-  const rootDir = String(c.woofx3RootPath ?? c.rootPath ?? process.cwd());
+  const port = Number(c.woofx3SceneManagerPort ?? 9101);
+  const bindHost = String(c.woofx3SceneManagerHost ?? "127.0.0.1");
+  const tokenSecret = String(c.woofx3SceneManagerTokenSecret ?? "");
+  const rootDir = String(c.woofx3RootPath ?? process.cwd());
 
-  const messagebusUrl = String(c.woofx3MessagebusUrl ?? c.messagebusUrl ?? "ws://localhost:4225");
-  const jwt = c.woofx3MessagebusJwt
-    ? String(c.woofx3MessagebusJwt)
-    : c.messagebusJwt
-      ? String(c.messagebusJwt)
-      : undefined;
-  const nkeySeed = c.woofx3MessagebusNkey
-    ? String(c.woofx3MessagebusNkey)
-    : c.messagebusNkey
-      ? String(c.messagebusNkey)
-      : undefined;
-  const token = nonBlank(c.woofx3MessagebusToken) ?? nonBlank(c.messagebusToken);
+  const messagebusUrl = String(c.woofx3MessagebusUrl ?? "ws://localhost:4225");
+  const jwt = c.woofx3MessagebusJwt ? String(c.woofx3MessagebusJwt) : undefined;
+  const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : undefined;
+  const token = nonBlank(c.woofx3MessagebusToken);
 
-  const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
-  const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken
-    ? String(c.woofx3ObsRpcToken)
-    : c.obsRpcToken
-      ? String(c.obsRpcToken)
-      : undefined;
+  const obsHost = String(c.woofx3ObsHost ?? "127.0.0.1");
+  const obsPort = String(c.woofx3ObsPort ?? "4455");
+  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : undefined;
 
-  const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
-  const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? c.barkloaderUrl ?? "http://127.0.0.1:9653");
-  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? c.barkloaderKey ?? "");
+  const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
+  const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
+  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
     allowedOrigins: c.woofx3AllowedOrigins,
