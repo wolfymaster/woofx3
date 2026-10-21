@@ -13,6 +13,7 @@ import (
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/monitor"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
+	"github.com/wolfymaster/woofx3/db/app/middleware"
 	"github.com/wolfymaster/woofx3/db/app/routes"
 	"github.com/wolfymaster/woofx3/db/app/services"
 	"github.com/wolfymaster/woofx3/db/config"
@@ -51,6 +52,15 @@ func main() {
 			databaseURL := cfg.DatabaseURL
 			httpHost := cfg.DatabaseProxyHost
 			httpPort := cfg.DatabaseProxyPort
+			// Checked before anything connects: a bad token or limit stops the start.
+			serverConfig, err := cfg.HTTPServer()
+			if err != nil {
+				return err
+			}
+			serviceAuth, err := middleware.NewServiceAuth(cfg.DbProxyToken, cfg.AllowedHosts(), logger)
+			if err != nil {
+				return err
+			}
 
 			if cfg.LogLevel != "" {
 				var parsedLevel slog.Level
@@ -87,7 +97,10 @@ func main() {
 				return err
 			}
 
-			httpSvc := services.NewHTTPServerService(app, httpHost, httpPort, logger, routes.SetupAllRoutes)
+			httpSvc, err := services.NewHTTPServerService(app, httpHost, httpPort, serverConfig, serviceAuth, logger, routes.SetupAllRoutes)
+			if err != nil {
+				return err
+			}
 			if err := application.Register("http", httpSvc); err != nil {
 				return err
 			}

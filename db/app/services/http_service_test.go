@@ -59,7 +59,7 @@ func TestEnsureRoutesRegistersOnce(t *testing.T) {
 	if registrations != 1 {
 		t.Fatalf("routes registered %d times, want exactly 1", registrations)
 	}
-	if !svc.routesInitialized {
+	if !svc.routesInitialized.Load() {
 		t.Fatal("routesInitialized is false after ensureRoutes succeeded")
 	}
 }

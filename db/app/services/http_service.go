@@ -2,18 +2,23 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/twitchtv/twirp"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/db/app/middleware"
 	"github.com/wolfymaster/woofx3/db/app/types"
+	"github.com/wolfymaster/woofx3/db/config"
 )
 
 type RouteSetupFunc func(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware)
@@ -23,6 +28,8 @@ type HTTPServerService struct {
 	logger           *slog.Logger
 	httpHost         string
 	httpPort         string
+	serverConfig     config.HTTPServerConfig
+	auth             *middleware.ServiceAuth
 	app              interface{}
 	server           *http.Server
 	routeSetup       RouteSetupFunc
@@ -33,21 +40,37 @@ type HTTPServerService struct {
 	// panics on a duplicate pattern, so two first requests racing here take
 	// the process down rather than merely duplicating work.
 	initMu            sync.Mutex
-	routesInitialized bool
+	routesInitialized atomic.Bool
 	mux               *http.ServeMux
 }
 
-func NewHTTPServerService(app interface{}, httpHost string, httpPort string, logger *slog.Logger, routeSetup RouteSetupFunc) *HTTPServerService {
+func NewHTTPServerService(
+	app interface{},
+	httpHost string,
+	httpPort string,
+	serverConfig config.HTTPServerConfig,
+	auth *middleware.ServiceAuth,
+	logger *slog.Logger,
+	routeSetup RouteSetupFunc,
+) (*HTTPServerService, error) {
+	if auth == nil {
+		return nil, fmt.Errorf("http server: service auth is nil")
+	}
+	if serverConfig.MaxBodyBytes <= 0 {
+		return nil, fmt.Errorf("http server: max body bytes must be positive, got %d", serverConfig.MaxBodyBytes)
+	}
 	return &HTTPServerService{
 		// Depending on module storage orders shutdown: the server stops
 		// taking requests before storage closes and makes its final flush.
-		BaseService: runtime.NewBaseServiceWithDeps[*http.Server]("http", "server", nil, false, []string{ModuleStorageServiceName}),
-		logger:      logger,
-		httpHost:    httpHost,
-		httpPort:    httpPort,
-		app:         app,
-		routeSetup:  routeSetup,
-	}
+		BaseService:  runtime.NewBaseServiceWithDeps[*http.Server]("http", "server", nil, false, []string{ModuleStorageServiceName}),
+		logger:       logger,
+		httpHost:     httpHost,
+		httpPort:     httpPort,
+		serverConfig: serverConfig,
+		auth:         auth,
+		app:          app,
+		routeSetup:   routeSetup,
+	}, nil
 }
 
 func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
@@ -55,18 +78,15 @@ func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.Applica
 
 	// Create mux but defer route setup until first request (when app.Init() has been called)
 	s.mux = http.NewServeMux()
-	s.routesInitialized = false
-
-	// Wrap handler with lazy initialization, logging, and tracing middleware.
-	// Tracing sits outermost so the request span is already on the context by
-	// the time the logging middleware and the Twirp handlers run.
-	var handler http.Handler = http.HandlerFunc(s.lazyInitHandler)
-	handler = s.loggingMiddleware(handler)
-	handler = s.tracingMiddleware(handler)
+	s.routesInitialized.Store(false)
 
 	s.server = &http.Server{
-		Addr:    net.JoinHostPort(s.httpHost, s.httpPort),
-		Handler: handler,
+		Addr:              net.JoinHostPort(s.httpHost, s.httpPort),
+		Handler:           s.handler(),
+		ReadHeaderTimeout: s.serverConfig.ReadHeaderTimeout,
+		ReadTimeout:       s.serverConfig.ReadTimeout,
+		WriteTimeout:      s.serverConfig.WriteTimeout,
+		IdleTimeout:       s.serverConfig.IdleTimeout,
 	}
 	s.SetClient(s.server)
 
@@ -80,9 +100,52 @@ func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.Applica
 	return s.BaseService.Connect(ctx, appCtx)
 }
 
+// handler is the full request chain, outermost first: the body limit, so no
+// layer reads more than MaxBodyBytes; tracing, so the request span is on the
+// context for everything after it; logging, so refused requests are recorded
+// too; service auth; then lazy route setup and the Twirp handlers.
+func (s *HTTPServerService) handler() http.Handler {
+	var handler http.Handler = http.HandlerFunc(s.lazyInitHandler)
+	handler = s.auth.Wrap(handler)
+	handler = s.loggingMiddleware(handler)
+	handler = s.tracingMiddleware(handler)
+	return limitBody(handler, s.serverConfig.MaxBodyBytes)
+}
+
+// limitBody refuses a request whose declared length is over maxBytes with 413
+// and caps what any handler can read from the rest. A body that grows past the
+// cap without declaring its length fails as it is read, which Twirp reports as
+// a malformed request.
+func limitBody(next http.Handler, maxBytes int64) http.Handler {
+	limited := http.MaxBytesHandler(next, maxBytes)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > maxBytes {
+			writeBodyTooLarge(w, maxBytes)
+			return
+		}
+		limited.ServeHTTP(w, r)
+	})
+}
+
+// writeBodyTooLarge answers in Twirp's JSON error shape so Twirp clients decode
+// it. Twirp has no error code for 413, so the status is written by hand.
+func writeBodyTooLarge(w http.ResponseWriter, maxBytes int64) {
+	body, err := json.Marshal(map[string]string{
+		"code": string(twirp.Malformed),
+		"msg":  fmt.Sprintf("request body exceeds %d bytes", maxBytes),
+	})
+	if err != nil {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+	_, _ = w.Write(body) // The status is already sent; a failed write leaves nothing to report it to.
+}
+
 func (s *HTTPServerService) lazyInitHandler(w http.ResponseWriter, r *http.Request) {
 	// Initialize routes on first request if not already done
-	if !s.routesInitialized {
+	if !s.routesInitialized.Load() {
 		s.logger.Info("Initializing routes on first request")
 
 		if appWithMethods, ok := s.app.(interface {
@@ -134,7 +197,7 @@ func (s *HTTPServerService) lazyInitHandler(w http.ResponseWriter, r *http.Reque
 func (s *HTTPServerService) ensureRoutes(app *types.App) error {
 	s.initMu.Lock()
 	defer s.initMu.Unlock()
-	if s.routesInitialized {
+	if s.routesInitialized.Load() {
 		return nil
 	}
 
@@ -144,7 +207,7 @@ func (s *HTTPServerService) ensureRoutes(app *types.App) error {
 	}
 	s.casbinMiddleware = casbinMiddleware
 	s.setupRoutes(s.mux, app)
-	s.routesInitialized = true
+	s.routesInitialized.Store(true)
 	s.logger.Info("Routes initialized successfully")
 	return nil
 }
