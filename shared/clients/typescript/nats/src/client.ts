@@ -40,7 +40,10 @@ function reconnectPolicy(config: NATSConfig): ReconnectPolicy {
 }
 
 /** The connect options a config asks for. Throws on an invalid reconnect policy. */
-export function connectOptions(config: NATSConfig, policy: ReconnectPolicy = reconnectPolicy(config)): ConnectionOptions {
+export function connectOptions(
+  config: NATSConfig,
+  policy: ReconnectPolicy = reconnectPolicy(config)
+): ConnectionOptions {
   const options: ConnectionOptions = {
     name: config.name,
     servers: config.url,
