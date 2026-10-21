@@ -305,7 +305,7 @@ func TestTheClientKeysInTheSharedConfigAreAccepted(t *testing.T) {
 
 func TestAPortThatIsNotANumberFailsTheLoad(t *testing.T) {
 	for _, key := range []string{"WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT", "WOOFX3_MESSAGEBUS_WEBSOCKET_PORT"} {
-		for _, value := range []string{"42x5", "-1", "70000"} {
+		for _, value := range []string{"42x5", "-1", "0", "70000"} {
 			t.Run(key+"="+value, func(t *testing.T) {
 				cfg := DefaultConfiguration()
 				if err := cfg.OverlayFromMap(map[string]string{key: value}); err == nil {

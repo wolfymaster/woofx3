@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"testing"
@@ -14,8 +15,9 @@ func TestTheServerListensOnLoopbackByDefault(t *testing.T) {
 	// -1 asks NATS for a free port, so the test never collides with a
 	// running engine.
 	cfg.Port = -1
+	cfg.WebSocketPort = -1
 
-	ns, err := createServer(cfg, slog.Default(), cfg.Host, -1)
+	ns, err := createServer(cfg, slog.Default(), cfg.Host)
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
@@ -50,5 +52,38 @@ func TestReachableWithoutToken(t *testing.T) {
 				t.Errorf("reachableWithoutToken(%q, %q) = %v, want %v", tc.host, tc.token, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestValidateRefusesListenersOnOnePort(t *testing.T) {
+	cases := []struct {
+		name        string
+		port        int
+		wsPort      int
+		tcpDisabled bool
+		wantErr     error
+	}{
+		{name: "the defaults", port: DefaultClientPort, wsPort: DefaultWebSocketPort},
+		{name: "one port for both", port: 4300, wsPort: 4300, wantErr: ErrPortsCollide},
+		{name: "one port with TCP off", port: 4300, wsPort: 4300, tcpDisabled: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfiguration()
+			cfg.Port = tc.port
+			cfg.WebSocketPort = tc.wsPort
+			cfg.TCPDisabled = tc.tcpDisabled
+			if err := cfg.Validate(); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Validate() = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestAPortOfZeroFailsValidation(t *testing.T) {
+	cfg := DefaultConfiguration()
+	cfg.WebSocketPort = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted WebSocket port 0")
 	}
 }

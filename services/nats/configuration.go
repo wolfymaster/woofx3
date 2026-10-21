@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -40,14 +41,50 @@ type Configuration struct {
 	WebSocketAllowedOrigins []string `json:"-"`
 }
 
-// DefaultConfiguration listens on loopback only. Unless a token is
-// configured the server has no authentication, and in a shared-network
-// deployment anything reachable beyond loopback is reachable by every
-// neighbour.
+// Listener defaults. DefaultClientPort is NATS's own default for its TCP
+// listener; DefaultWebSocketPort must match the port in messagebusUrl in
+// build/config/.woofx3.json, which is how the engine's services connect.
+const (
+	DefaultHost          = "127.0.0.1"
+	DefaultClientPort    = 4222
+	DefaultWebSocketPort = 4225
+)
+
+// DefaultConfiguration listens on loopback only, on fixed ports. In a
+// shared-network deployment anything reachable beyond loopback is reachable
+// by every neighbour.
 func DefaultConfiguration() *Configuration {
 	return &Configuration{
-		Host: "127.0.0.1",
+		Host:          DefaultHost,
+		Port:          DefaultClientPort,
+		WebSocketPort: DefaultWebSocketPort,
 	}
+}
+
+// ErrPortsCollide is returned by Validate when the TCP and WebSocket
+// listeners would bind the same port.
+var ErrPortsCollide = errors.New("the TCP and WebSocket listeners are set to the same port")
+
+// Validate refuses a configuration the server must not start with. Each
+// problem is one the operator has to resolve; none has a safe guess.
+func (c *Configuration) Validate() error {
+	if err := checkPort("messagebusServerListeningPort", c.Port); err != nil {
+		return err
+	}
+	if err := checkPort("messagebusWebSocketPort", c.WebSocketPort); err != nil {
+		return err
+	}
+	if !c.TCPDisabled && c.Port == c.WebSocketPort {
+		return fmt.Errorf("%w (%d): set messagebusServerListeningPort and messagebusWebSocketPort apart, or disable TCP", ErrPortsCollide, c.Port)
+	}
+	return nil
+}
+
+func checkPort(key string, port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%s = %d is not a port number", key, port)
+	}
+	return nil
 }
 
 func (c *Configuration) Load(path string) error {
@@ -216,7 +253,7 @@ func overlayPort(env map[string]string, key string, target *int) error {
 		return nil
 	}
 	port, err := strconv.Atoi(v)
-	if err != nil || port < 0 || port > 65535 {
+	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("%s = %q is not a port number", key, v)
 	}
 	*target = port

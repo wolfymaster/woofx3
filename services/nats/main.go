@@ -40,16 +40,16 @@ func main() {
 	// default logger route through the shared transports as well.
 	slog.SetDefault(logger)
 
-	host, wsPort, err := findPort(cfg)
-	if err != nil {
-		fatalExit(sharedLogger, "Failed to resolve ports", "error", err)
+	host := cfg.Host
+	if host == "" {
+		host = "0.0.0.0"
 	}
 	if reachableWithoutToken(host, cfg.Token) {
 		logger.Warn("NATS listens beyond loopback without a token: anyone who can reach it can read and publish every engine message; set WOOFX3_MESSAGEBUS_TOKEN",
 			"host", host)
 	}
 
-	ns, err := createServer(cfg, logger, host, wsPort)
+	ns, err := createServer(cfg, logger, host)
 	if err != nil {
 		fatalExit(sharedLogger, "Failed to create server", "error", err)
 	}
@@ -73,6 +73,9 @@ func loadConfiguration(confPath string) (*Configuration, error) {
 		return nil, err
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	if cfg.RootPath == "" {
 		return nil, &configError{msg: "rootPath must be set"}
 	}
@@ -98,29 +101,7 @@ func (e *configError) Error() string {
 	return e.msg
 }
 
-func findPort(cfg *Configuration) (host string, wsPort int, err error) {
-	host = cfg.Host
-	if host == "" {
-		host = "0.0.0.0"
-	}
-
-	if cfg.WebSocketPort > 0 {
-		wsPort = cfg.WebSocketPort
-	} else {
-		preferredWSPorts := []int{4222}
-		wsPort, err = findAvailablePort(host, preferredWSPorts)
-		if err != nil {
-			return "", 0, err
-		}
-	}
-
-	// if err := writePIDFile(cfg.RootPath, wsPort); err != nil {
-	// 	return "", 0, err
-	// }
-	return host, wsPort, nil
-}
-
-func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort int) (*server.Server, error) {
+func createServer(cfg *Configuration, logger *slog.Logger, host string) (*server.Server, error) {
 	opts := &server.Options{
 		// The client (TCP) listener binds the same host as the WebSocket one;
 		// left unset, NATS binds it on every interface.
@@ -134,7 +115,7 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort i
 		DontListen:    cfg.TCPDisabled,
 		Websocket: server.WebsocketOpts{
 			Host:           host,
-			Port:           wsPort,
+			Port:           cfg.WebSocketPort,
 			NoTLS:          true,
 			SameOrigin:     cfg.WebSocketSameOrigin,
 			AllowedOrigins: cfg.WebSocketAllowedOrigins,

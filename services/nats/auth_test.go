@@ -39,9 +39,9 @@ func startHardenedServer(t *testing.T) string {
 	cfg.Token = testToken
 	cfg.TCPDisabled = true
 	cfg.WebSocketSameOrigin = true
-	wsPort := freePort(t)
+	cfg.WebSocketPort = freePort(t)
 
-	ns, err := createServer(cfg, slog.Default(), cfg.Host, wsPort)
+	ns, err := createServer(cfg, slog.Default(), cfg.Host)
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
@@ -50,7 +50,7 @@ func startHardenedServer(t *testing.T) string {
 	if ns.Addr() != nil {
 		t.Fatalf("TCP listener on %v, want none", ns.Addr())
 	}
-	return fmt.Sprintf("ws://%s:%d", cfg.Host, wsPort)
+	return fmt.Sprintf("ws://%s:%d", cfg.Host, cfg.WebSocketPort)
 }
 
 func repoRoot(t *testing.T) string {
@@ -191,8 +191,9 @@ func TestSameOriginTurnsAwayOtherPages(t *testing.T) {
 func TestAnOpenServerAdmitsAnyone(t *testing.T) {
 	cfg := DefaultConfiguration()
 	cfg.Port = -1
-	wsPort := freePort(t)
-	ns, err := createServer(cfg, slog.Default(), cfg.Host, wsPort)
+	cfg.WebSocketPort = freePort(t)
+	wsPort := cfg.WebSocketPort
+	ns, err := createServer(cfg, slog.Default(), cfg.Host)
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
