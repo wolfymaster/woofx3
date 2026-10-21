@@ -1,0 +1,66 @@
+name: shared packages
+
+# Type-checks and tests the shared TypeScript packages that no service or api
+# workflow runs. api-checks.yml already covers shared/clients/typescript/{api,
+# scene} and service-checks.yml covers widget-host; the packages here were
+# only ever exercised by whoever last touched them.
+#
+# shared/clients/typescript/barkloader is absent: it has a test file but no
+# package.json, so there is nothing to install it against.
+
+on:
+  push:
+    branches: [main, master, release]
+    paths:
+      - "shared/**"
+      - ".bun-version"
+      - ".github/workflows/shared-packages.yml"
+  pull_request:
+    paths:
+      - "shared/**"
+      - ".bun-version"
+      - ".github/workflows/shared-packages.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: shared/common/typescript
+            typecheck: true
+          - package: shared/clients/typescript/nats
+            typecheck: false
+          - package: shared/clients/typescript/twitch
+            typecheck: false
+          - package: shared/clients/typescript/module-sdk
+            typecheck: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.package }}
+        run: bun install --frozen-lockfile
+
+      # Only packages whose own tsc program is clean are gated; the others
+      # have no typecheck script.
+      - name: Type check
+        if: matrix.typecheck
+        working-directory: ${{ matrix.package }}
+        run: bun run typecheck
+
+      # `bun test` directly: the nats package's "test" script names jest, which
+      # it does not depend on, and shared/common/typescript's script is the
+      # same bun test over a narrower path list.
+      - name: Test
+        working-directory: ${{ matrix.package }}
+        run: bun test
