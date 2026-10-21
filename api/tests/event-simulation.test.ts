@@ -69,6 +69,8 @@ describe("simulateTwitchEvent guard", () => {
     "channel.>",
     "",
     "channel.follow x",
+    "channel.",
+    "channel..follow",
   ])("refuses %p and publishes nothing", async (eventType) => {
     const { published, routes, ctx } = harness();
     await expect(routes.simulateTwitchEvent.call(ctx, eventType, {})).rejects.toThrow(/Cannot simulate event/);
@@ -96,6 +98,9 @@ describe("triggerEvent guard", () => {
     "custom.>",
     "",
     "custom thing",
+    "a..b",
+    ".x",
+    "x.",
   ])("refuses %p and publishes nothing", async (eventType) => {
     const { published, routes, ctx } = harness();
     await expect(routes.triggerEvent.call(ctx, eventType, {})).rejects.toThrow(/Cannot trigger event/);

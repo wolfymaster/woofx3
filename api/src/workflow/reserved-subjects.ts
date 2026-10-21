@@ -44,6 +44,8 @@ export function publishedEventTypeProblem(eventType: string): string | null {
   return `is reserved for the engine (${JSON.stringify(entry)})`;
 }
 
+const EMPTY_TOKEN_PROBLEM = "has an empty token (a leading, trailing or doubled dot), which a subject cannot";
+
 export type TestEventKind = "trigger" | "simulate";
 
 /**
@@ -56,14 +58,19 @@ export function testEventProblem(kind: TestEventKind, eventType: string): string
   if (eventType === "") {
     return "is empty";
   }
-  if (kind === "trigger") {
-    return publishedEventTypeProblem(eventType);
-  }
   if (isMalformedSubject(eventType)) {
     return NOT_A_SUBJECT_PROBLEM;
   }
-  const isPlatformEvent = [...PLATFORM_EVENT_ENTRIES].some((entry) => entryMatches(entry, eventType));
-  return isPlatformEvent
-    ? null
-    : "is not a platform event, so it cannot be simulated; use triggerEvent for custom events";
+  if (/^\.|\.$|\.\./.test(eventType)) {
+    return EMPTY_TOKEN_PROBLEM;
+  }
+  if (kind === "trigger") {
+    return publishedEventTypeProblem(eventType);
+  }
+  for (const entry of PLATFORM_EVENT_ENTRIES) {
+    if (entryMatches(entry, eventType)) {
+      return null;
+    }
+  }
+  return "is not a platform event, so it cannot be simulated; use triggerEvent for custom events";
 }
