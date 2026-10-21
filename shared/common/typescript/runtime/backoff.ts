@@ -25,15 +25,21 @@ export interface Backoff {
  * never overflows the exponent or grows the wait past the cap.
  */
 export function createBackoff(config: BackoffConfig, random: RandomSource): Backoff {
-  if (!(config.baseMs > 0) || !(config.maxMs >= config.baseMs)) {
-    throw new Error(`backoff requires 0 < baseMs <= maxMs, got baseMs=${config.baseMs} maxMs=${config.maxMs}`);
+  if (!(config.baseMs > 0) || !(config.maxMs >= config.baseMs) || !Number.isFinite(config.maxMs)) {
+    throw new Error(
+      `backoff requires 0 < baseMs <= maxMs < Infinity, got baseMs=${config.baseMs} maxMs=${config.maxMs}`
+    );
   }
 
   let ceilingMs = config.baseMs;
 
   return {
     next(): number {
-      const delay = Math.floor(random.next() * ceilingMs);
+      const sample = random.next();
+      if (!(sample >= 0 && sample < 1)) {
+        throw new Error(`RandomSource must return a value in [0, 1), got ${sample}`);
+      }
+      const delay = Math.floor(sample * ceilingMs);
       ceilingMs = Math.min(config.maxMs, ceilingMs * 2);
       return delay;
     },

@@ -57,6 +57,17 @@ describe("installShutdown", () => {
     expect(h.exits).toEqual([1]);
   });
 
+  test("a synchronously throwing stop exits 1 with the stop-error log line", async () => {
+    const h = harness((() => {
+      throw new Error("sync boom");
+    }) as unknown as () => Promise<void>);
+    h.emitter.emit("SIGTERM");
+    await flush();
+    expect(h.exits).toEqual([1]);
+    expect(h.logs.some((l) => l.includes("Error during graceful shutdown"))).toBe(true);
+    expect(h.logs.some((l) => l.includes("during shutdown, exiting immediately"))).toBe(false);
+  });
+
   test("a hung stop exits 1 at the deadline and says so", async () => {
     const h = harness(() => new Promise<void>(() => {}), 250);
     h.emitter.emit("SIGTERM");
@@ -107,6 +118,21 @@ describe("installShutdown", () => {
     for (const event of ["SIGTERM", "SIGINT", "SIGBREAK", "uncaughtException", "unhandledRejection"]) {
       expect(h.emitter.listenerCount(event)).toBe(0);
     }
+  });
+
+  test("dispose suppresses the exit of a stop already in flight", async () => {
+    let finish = () => {};
+    const h = harness(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    h.emitter.emit("SIGTERM");
+    h.handle.dispose();
+    finish();
+    await flush();
+    expect(h.exits).toEqual([]);
   });
 
   test.each([0, -5, Number.NaN])("rejects deadline %p", (deadlineMs) => {

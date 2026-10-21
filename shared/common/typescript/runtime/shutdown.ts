@@ -28,7 +28,7 @@ export interface ShutdownOptions {
 }
 
 export interface ShutdownHandle {
-  /** Removes every listener and cancels a pending deadline. */
+  /** Removes every listener, cancels a pending deadline and suppresses the exit of a stop already in flight. */
   dispose(): void;
 }
 
@@ -48,9 +48,10 @@ export function installShutdown(options: ShutdownOptions): ShutdownHandle {
   let exited = false;
   let deadline: unknown;
   let failed = false;
+  let disposed = false;
 
   const exitOnce = (code: number): void => {
-    if (exited) {
+    if (exited || disposed) {
       return;
     }
     exited = true;
@@ -75,7 +76,15 @@ export function installShutdown(options: ShutdownOptions): ShutdownHandle {
       exitOnce(1);
     }, options.deadlineMs);
 
-    options.stop(reason).then(
+    // stop is called synchronously so a first signal starts shutdown immediately; a synchronous
+    // throw is folded into the same rejection path as an async failure.
+    let stopped: Promise<void>;
+    try {
+      stopped = options.stop(reason);
+    } catch (error) {
+      stopped = Promise.reject(error);
+    }
+    stopped.then(
       () => {
         options.logger.info("Graceful shutdown completed");
         exitOnce(failed ? 1 : 0);
@@ -109,6 +118,7 @@ export function installShutdown(options: ShutdownOptions): ShutdownHandle {
 
   return {
     dispose(): void {
+      disposed = true;
       for (const { event, listener } of listeners) {
         options.process.off(event, listener);
       }

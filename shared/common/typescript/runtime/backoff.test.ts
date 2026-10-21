@@ -47,7 +47,17 @@ describe("createBackoff", () => {
     ["max below base", { baseMs: 100, maxMs: 10 }],
     ["NaN base", { baseMs: Number.NaN, maxMs: 10 }],
     ["NaN max", { baseMs: 1, maxMs: Number.NaN }],
+    ["infinite max", { baseMs: 1, maxMs: Number.POSITIVE_INFINITY }],
   ])("rejects %s", (_name, config) => {
     expect(() => createBackoff(config, seeded([0]))).toThrow("backoff requires");
+  });
+
+  test.each([
+    ["one", 1],
+    ["negative", -0.1],
+    ["NaN", Number.NaN],
+  ])("rejects a random source returning %s", (_name, value) => {
+    const backoff = createBackoff({ baseMs: 10, maxMs: 100 }, seeded([value]));
+    expect(() => backoff.next()).toThrow("RandomSource");
   });
 });
