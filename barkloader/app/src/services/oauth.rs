@@ -503,10 +503,12 @@ mod tests {
         sent: Mutex<Vec<Sent>>,
         token_answers: Mutex<Vec<Value>>,
         api_statuses: Mutex<Vec<i64>>,
+        deadlines: Mutex<Vec<Option<Instant>>>,
     }
 
     impl HttpClient for FakeProvider {
         fn request(&self, request: HttpRequest<'_>) -> Result<Value, String> {
+            self.deadlines.lock().unwrap().push(request.deadline);
             self.sent.lock().unwrap().push((
                 request.url.to_string(),
                 request.grants.clone(),
@@ -555,6 +557,7 @@ mod tests {
             sent: Mutex::new(Vec::new()),
             token_answers: Mutex::new(token_answers),
             api_statuses: Mutex::new(api_statuses),
+            deadlines: Mutex::new(Vec::new()),
         })
     }
 
@@ -775,6 +778,36 @@ mod tests {
                 .unwrap()
                 .contains("grant_type=refresh_token")
         );
+    }
+
+    #[test]
+    fn a_request_and_its_token_refresh_carry_the_callers_deadline() {
+        let token = json!({ "accessToken": "old", "refreshToken": "r1", "expiresAtMs": NOW + 10_000, "scope": [], "clientId": "app", "tokenUrl": "https://accounts.spotify.com/api/token", "hosts": ["api.spotify.com"] });
+        let settings = settings(&[
+            ("oauth.spotify", &token.to_string()),
+            ("clientSecret", "shh"),
+        ]);
+        let provider = provider(
+            vec![
+                json!({ "access_token": "a2", "expires_in": 3600 }),
+                json!({ "access_token": "a3", "refresh_token": "r2" }),
+            ],
+            vec![401, 200],
+        );
+        let deadline = Instant::now() + Duration::from_secs(7);
+        service(settings, provider.clone())
+            .request(
+                "spotify",
+                "spotify",
+                "https://api.spotify.com/v1/me",
+                "GET",
+                Value::Null,
+                deadline,
+            )
+            .unwrap();
+        let deadlines = provider.deadlines.lock().unwrap();
+        assert_eq!(deadlines.len(), 4, "{deadlines:?}");
+        assert!(deadlines.iter().all(|seen| *seen == Some(deadline)));
     }
 
     #[test]
