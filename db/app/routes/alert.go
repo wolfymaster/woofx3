@@ -2,12 +2,14 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	middleware "github.com/wolfymaster/woofx3/db/app/middleware"
 	svc "github.com/wolfymaster/woofx3/db/app/services"
 	types "github.com/wolfymaster/woofx3/db/app/types"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
@@ -17,7 +19,10 @@ import (
 // proxy's existing auth surface.
 func AlertRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
 	alertRepository := repo.NewAlertRepository(app.Db)
-	alertService := svc.NewAlertService(alertRepository, app.EventPublisher)
+	alertService := svc.NewAlertService(alertRepository, app.EventPublisher, svc.AlertRetention{
+		Period: workers.LoadConfig().EventDetailRetention,
+		Now:    time.Now,
+	})
 	alertHandler := client.NewAlertServiceServer(
 		alertService,
 		twirp.WithServerHooks(twirp.ChainHooks(

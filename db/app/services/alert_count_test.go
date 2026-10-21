@@ -41,7 +41,7 @@ func countRequest(since time.Time, hours int32, unconfirmedBefore time.Time) *cl
 	}
 }
 
-func TestCountAlertsByHourCountsEachHourByStatusAndConfirmation(t *testing.T) {
+func TestCountAlertsByHourCountsEachHourByOutcome(t *testing.T) {
 	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
 		hour := func(h int, minutes int) time.Time {
 			return countWindowStart.Add(time.Duration(h)*time.Hour + time.Duration(minutes)*time.Minute)
@@ -51,35 +51,69 @@ func TestCountAlertsByHourCountsEachHourByStatusAndConfirmation(t *testing.T) {
 		// Before and after the window: not counted.
 		placeAlert(t, svc, db, "completed", hour(0, 0).Add(-time.Microsecond), hour(0, 0))
 		placeAlert(t, svc, db, "completed", hour(3, 0), hour(3, 0))
-		// Hour 0, from its first instant.
+		// Hour 0, from its first instant to its last.
 		placeAlert(t, svc, db, "completed", hour(0, 0), hour(0, 1))
 		placeAlert(t, svc, db, "completed", hour(0, 10), hour(0, 11))
-		placeAlert(t, svc, db, "failed", hour(0, 59), hour(1, 0))
-		// Hour 1: an unsettled alert nothing reported on is unconfirmed; a settled one never is.
+		placeAlert(t, svc, db, "failed", hour(1, 0).Add(-time.Microsecond), hour(1, 0))
+		// Hour 1: an unsettled alert nothing reported on is unconfirmed; a
+		// settled one never is, and timed_out counts as failed.
 		placeAlert(t, svc, db, "playing", hour(1, 0), hour(1, 1))
 		placeAlert(t, svc, db, "timed_out", hour(1, 5), hour(1, 6))
-		// Hour 2, up to its last instant: unsettled and written since the bound, so still on its way.
+		placeAlert(t, svc, db, "replayed", hour(1, 7), hour(1, 8))
+		// Hour 2: unsettled and written since the bound, so still on its way;
+		// a status this build does not know counts the same way.
 		placeAlert(t, svc, db, "sent", hour(3, 0).Add(-time.Microsecond), hour(2, 45))
+		placeAlert(t, svc, db, "queued_somewhere_new", hour(2, 1), hour(2, 50))
+		placeAlert(t, svc, db, "skipped", hour(2, 2), hour(2, 3))
 
 		resp, err := svc.CountAlertsByHour(context.Background(), countRequest(countWindowStart, 3, unconfirmedBefore))
 		if err != nil {
 			t.Fatalf("CountAlertsByHour: %v", err)
 		}
 		want := []*client.AlertHourCount{
-			{Hour: 0, Status: "completed", Count: 2},
-			{Hour: 0, Status: "failed", Count: 1},
-			{Hour: 1, Status: "playing", Unconfirmed: true, Count: 1},
-			{Hour: 1, Status: "timed_out", Count: 1},
-			{Hour: 2, Status: "sent", Count: 1},
+			{Hour: 0, Outcome: client.AlertOutcome_ALERT_OUTCOME_COMPLETED, Count: 2},
+			{Hour: 0, Outcome: client.AlertOutcome_ALERT_OUTCOME_FAILED, Count: 1},
+			{Hour: 1, Outcome: client.AlertOutcome_ALERT_OUTCOME_FAILED, Count: 1},
+			{Hour: 1, Outcome: client.AlertOutcome_ALERT_OUTCOME_REPLAYED, Count: 1},
+			{Hour: 1, Outcome: client.AlertOutcome_ALERT_OUTCOME_UNCONFIRMED, Count: 1},
+			{Hour: 2, Outcome: client.AlertOutcome_ALERT_OUTCOME_SKIPPED, Count: 1},
+			{Hour: 2, Outcome: client.AlertOutcome_ALERT_OUTCOME_IN_FLIGHT, Count: 2},
 		}
 		if len(resp.Counts) != len(want) {
 			t.Fatalf("got %d counts %v, want %v", len(resp.Counts), resp.Counts, want)
 		}
 		for i, got := range resp.Counts {
 			w := want[i]
-			if got.Hour != w.Hour || got.Status != w.Status || got.Unconfirmed != w.Unconfirmed || got.Count != w.Count {
+			if got.Hour != w.Hour || got.Outcome != w.Outcome || got.Count != w.Count {
 				t.Fatalf("count %d = %v, want %v", i, got, w)
 			}
+		}
+		if resp.Truncated {
+			t.Fatalf("a window inside retention is truncated")
+		}
+	})
+}
+
+func TestCountAlertsByHourSaysWhenRetentionTruncatesTheWindow(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, _ *gorm.DB) {
+		tests := []struct {
+			name  string
+			since time.Time
+			want  bool
+		}{
+			{"a window from the retention horizon", countWindowStart, false},
+			{"a window from an hour before it", countWindowStart.Add(-time.Hour), true},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				resp, err := svc.CountAlertsByHour(context.Background(), countRequest(tc.since, 1, tc.since))
+				if err != nil {
+					t.Fatalf("CountAlertsByHour: %v", err)
+				}
+				if resp.Truncated != tc.want {
+					t.Fatalf("truncated = %v, want %v", resp.Truncated, tc.want)
+				}
+			})
 		}
 	})
 }

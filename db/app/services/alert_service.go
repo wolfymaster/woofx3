@@ -31,16 +31,41 @@ import (
 type alertService struct {
 	repo      *repo.AlertRepository
 	publisher *workers.EventPublisher
+	retention AlertRetention
+}
+
+// AlertRetention is how far back settled alerts are kept, and the clock that
+// horizon is measured on, so a count can say when its window reaches past
+// what the cleanup worker keeps.
+type AlertRetention struct {
+	// Period is the cleanup worker's EventDetailRetention.
+	Period time.Duration
+	Now    func() time.Time
 }
 
 func NewAlertService(
 	alertRepo *repo.AlertRepository,
 	publisher *workers.EventPublisher,
+	retention AlertRetention,
 ) client.AlertService {
+	if retention.Period <= 0 || retention.Now == nil {
+		panic("NewAlertService: retention needs a positive period and a clock")
+	}
 	return &alertService{
 		repo:      alertRepo,
 		publisher: publisher,
+		retention: retention,
 	}
+}
+
+// alertOutcomeToProto maps every repository outcome to its wire value.
+var alertOutcomeToProto = map[repo.AlertOutcome]client.AlertOutcome{
+	repo.AlertOutcomeCompleted:   client.AlertOutcome_ALERT_OUTCOME_COMPLETED,
+	repo.AlertOutcomeFailed:      client.AlertOutcome_ALERT_OUTCOME_FAILED,
+	repo.AlertOutcomeSkipped:     client.AlertOutcome_ALERT_OUTCOME_SKIPPED,
+	repo.AlertOutcomeReplayed:    client.AlertOutcome_ALERT_OUTCOME_REPLAYED,
+	repo.AlertOutcomeInFlight:    client.AlertOutcome_ALERT_OUTCOME_IN_FLIGHT,
+	repo.AlertOutcomeUnconfirmed: client.AlertOutcome_ALERT_OUTCOME_UNCONFIRMED,
 }
 
 func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertRequest) (*client.AlertResponse, error) {
@@ -171,19 +196,20 @@ func (s *alertService) CountAlertsByHour(ctx context.Context, req *client.CountA
 	}
 	out := make([]*client.AlertHourCount, len(counts))
 	for i, c := range counts {
-		out[i] = &client.AlertHourCount{
-			Hour:        int32(c.Hour),
-			Status:      c.Status,
-			Unconfirmed: c.Unconfirmed,
-			Count:       c.Count,
+		outcome, known := alertOutcomeToProto[c.Outcome]
+		if !known {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("alert outcome %d has no wire value", c.Outcome))
 		}
+		out[i] = &client.AlertHourCount{Hour: int32(c.Hour), Outcome: outcome, Count: c.Count}
 	}
+	horizon := s.retention.Now().Add(-s.retention.Period)
 	return &client.CountAlertsByHourResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Alerts counted successfully",
 		},
-		Counts: out,
+		Counts:    out,
+		Truncated: since.Before(horizon),
 	}, nil
 }
 

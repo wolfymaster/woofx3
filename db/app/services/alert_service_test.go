@@ -39,7 +39,14 @@ func newAlertSvc(t *testing.T, db *gorm.DB) client.AlertService {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)
-	return NewAlertService(repo.NewAlertRepository(db), publisher)
+	return NewAlertService(repo.NewAlertRepository(db), publisher, testAlertRetention)
+}
+
+// testAlertRetention keeps a week of alerts, measured from countWindowStart
+// plus one week, so a week-long window from countWindowStart is just inside it.
+var testAlertRetention = AlertRetention{
+	Period: 7 * 24 * time.Hour,
+	Now:    func() time.Time { return countWindowStart.Add(7 * 24 * time.Hour) },
 }
 
 // forEachAlertDialect runs an alert test against SQLite and, when configured,

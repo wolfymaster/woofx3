@@ -120,28 +120,63 @@ func (r *AlertRepository) Count(filter AlertFilter) (int64, error) {
 }
 
 // MaxAlertCountHours is the longest window CountByHour counts: a week, which
-// bounds how many rows one count reads.
+// bounds how many hours one count groups. Must match
+// ALERT_OVERVIEW_MAX_HOURS in shared/clients/typescript/api/api.ts.
 const MaxAlertCountHours = 7 * 24
 
+// AlertOutcome is what an alert counts as in an overview.
+type AlertOutcome int
+
+const (
+	AlertOutcomeCompleted AlertOutcome = iota + 1
+	AlertOutcomeFailed
+	AlertOutcomeSkipped
+	AlertOutcomeReplayed
+	// AlertOutcomeInFlight is an alert still on its way.
+	AlertOutcomeInFlight
+	// AlertOutcomeUnconfirmed is an alert still on its way that nothing has
+	// reported on for long enough that no report is coming.
+	AlertOutcomeUnconfirmed
+)
+
+// settledAlertOutcomes is what each settled status counts as, and the one
+// list of settled statuses: no report moves a row out of one, apart from a
+// verdict replacing another. Any other status is still on its way.
+// `replayed` is neither a success nor a failure: an operator superseded that
+// row, and the replay is a row of its own.
+var settledAlertOutcomes = map[string]AlertOutcome{
+	AlertStatusCompleted: AlertOutcomeCompleted,
+	AlertStatusFailed:    AlertOutcomeFailed,
+	AlertStatusTimedOut:  AlertOutcomeFailed,
+	AlertStatusSkipped:   AlertOutcomeSkipped,
+	AlertStatusReplayed:  AlertOutcomeReplayed,
+}
+
+// alertOutcomeSQL is a row's outcome as a SQL expression; `@unconfirmed_before`
+// separates unconfirmed alerts from those still in flight.
+var alertOutcomeSQL = func() string {
+	var b strings.Builder
+	b.WriteString("CASE status")
+	for _, status := range settledAlertStatuses {
+		fmt.Fprintf(&b, " WHEN '%s' THEN %d", status, settledAlertOutcomes[status])
+	}
+	fmt.Fprintf(&b, " ELSE CASE WHEN updated_at < @unconfirmed_before THEN %d ELSE %d END END",
+		AlertOutcomeUnconfirmed, AlertOutcomeInFlight)
+	return b.String()
+}()
+
 // AlertHourCount is how many alerts created in one hour of a CountByHour
-// window hold one status, and whether they are unconfirmed.
+// window count as one outcome.
 type AlertHourCount struct {
 	// Hour is the hour's index in the window; 0 starts at the window's `since`.
-	Hour        int
-	Status      string
-	Unconfirmed bool
-	Count       int64
+	Hour    int
+	Outcome AlertOutcome
+	Count   int64
 }
 
 // CountByHour counts the alerts created in `hours` whole hours from `since`,
-// by hour, status and whether each is unconfirmed: not settled (see
-// settledAlertStatuses) and last written before `unconfirmedBefore`. Ordered
-// by hour, then status, then confirmed before unconfirmed.
-//
-// The window is read through `idx_alerts_created_at`, three columns a row, and
-// counted here rather than grouped in SQL: an hour bucket is spelled
-// differently by each dialect's date arithmetic, and the window is at most
-// MaxAlertCountHours of alerts.
+// by hour and outcome, grouped in SQL. `since` must be on the hour. Ordered by
+// hour, then outcome.
 func (r *AlertRepository) CountByHour(
 	ctx context.Context,
 	since time.Time,
@@ -152,56 +187,56 @@ func (r *AlertRepository) CountByHour(
 		return nil, fmt.Errorf("alert count window must be 1 to %d hours, got %d", MaxAlertCountHours, hours)
 	}
 	since = since.UTC()
+	if !since.Equal(since.Truncate(time.Hour)) {
+		return nil, fmt.Errorf("alert count window must start on the hour, got %s", since.Format(time.RFC3339Nano))
+	}
 	until := since.Add(time.Duration(hours) * time.Hour)
-	rows, err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Select("created_at, updated_at, status").
-		Where("created_at >= ? AND created_at < ?", r.timeBound(since), r.timeBound(until)).
-		Rows()
+	query := `SELECT ` + r.hourInWindowSQL() + ` AS hour, ` + alertOutcomeSQL + ` AS outcome, COUNT(*) AS count
+		FROM alerts
+		WHERE created_at >= @since AND created_at < @until
+		GROUP BY 1, 2
+		ORDER BY 1, 2`
+	var rows []struct {
+		Hour    int
+		Outcome int
+		Count   int64
+	}
+	err := r.db.WithContext(ctx).Raw(query, map[string]interface{}{
+		"since":              r.timeBound(since),
+		"until":              r.timeBound(until),
+		"since_unix":         since.Unix(),
+		"unconfirmed_before": r.timeBound(unconfirmedBefore),
+	}).Scan(&rows).Error
 	if err != nil {
-		return nil, fmt.Errorf("read alerts from %s for %d hours: %w", since.Format(time.RFC3339), hours, err)
-	}
-	defer rows.Close()
-
-	type key struct {
-		hour        int
-		status      string
-		unconfirmed bool
-	}
-	counts := map[key]int64{}
-	for rows.Next() {
-		var row struct {
-			CreatedAt time.Time
-			UpdatedAt time.Time
-			Status    string
-		}
-		if err := r.db.ScanRows(rows, &row); err != nil {
-			return nil, fmt.Errorf("scan alert row: %w", err)
-		}
-		hour := int(row.CreatedAt.Sub(since) / time.Hour)
-		if hour < 0 || hour >= hours {
-			return nil, fmt.Errorf("alert created at %s is outside the window it was read for", row.CreatedAt.Format(time.RFC3339Nano))
-		}
-		unconfirmed := !isSettledAlertStatus(row.Status) && row.UpdatedAt.Before(unconfirmedBefore)
-		counts[key{hour: hour, status: row.Status, unconfirmed: unconfirmed}]++
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read alert rows: %w", err)
+		return nil, fmt.Errorf("count alerts from %s for %d hours: %w", since.Format(time.RFC3339), hours, err)
 	}
 
-	out := make([]AlertHourCount, 0, len(counts))
-	for k, n := range counts {
-		out = append(out, AlertHourCount{Hour: k.hour, Status: k.status, Unconfirmed: k.unconfirmed, Count: n})
+	out := make([]AlertHourCount, len(rows))
+	for i, row := range rows {
+		if row.Hour < 0 || row.Hour >= hours {
+			return nil, fmt.Errorf("alerts counted in hour %d of a %d-hour window", row.Hour, hours)
+		}
+		outcome := AlertOutcome(row.Outcome)
+		if outcome < AlertOutcomeCompleted || outcome > AlertOutcomeUnconfirmed {
+			return nil, fmt.Errorf("alerts counted with unknown outcome %d", row.Outcome)
+		}
+		out[i] = AlertHourCount{Hour: row.Hour, Outcome: outcome, Count: row.Count}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Hour != out[j].Hour {
-			return out[i].Hour < out[j].Hour
-		}
-		if out[i].Status != out[j].Status {
-			return out[i].Status < out[j].Status
-		}
-		return !out[i].Unconfirmed && out[j].Unconfirmed
-	})
 	return out, nil
+}
+
+// hourInWindowSQL is the hour of the window a row was created in, counted
+// from `@since_unix` (epoch seconds, on the hour), as a SQL expression.
+//
+// SQLite reads its stored layout (SQLiteTimestampLayout, offset included)
+// with strftime, which drops the fraction: a row a microsecond before an hour
+// falls in the hour before, as it should. Integer division then floors, since
+// every row in the window is at or after `@since_unix`.
+func (r *AlertRepository) hourInWindowSQL() string {
+	if r.isPostgres() {
+		return "FLOOR((EXTRACT(EPOCH FROM created_at) - @since_unix) / 3600)::int"
+	}
+	return "(CAST(strftime('%s', created_at) AS INTEGER) - @since_unix) / 3600"
 }
 
 // timeBound is `t` as a bound on a timestamp column. SQLite compares the text
@@ -594,26 +629,15 @@ func (r *AlertRepository) Delete(id uuid.UUID, record RecordAlertChange) error {
 	})
 }
 
-// settledAlertStatuses are the statuses no report moves a row out of, apart
-// from a verdict replacing another: the alert has played, failed, been given
-// up on, skipped or replayed. A row in any other status may still be queued
-// or on screen.
-var settledAlertStatuses = []string{
-	AlertStatusCompleted,
-	AlertStatusFailed,
-	AlertStatusTimedOut,
-	AlertStatusSkipped,
-	AlertStatusReplayed,
-}
-
-func isSettledAlertStatus(status string) bool {
-	for _, settled := range settledAlertStatuses {
-		if status == settled {
-			return true
-		}
+// settledAlertStatuses lists settledAlertOutcomes' statuses, sorted.
+var settledAlertStatuses = func() []string {
+	statuses := make([]string, 0, len(settledAlertOutcomes))
+	for status := range settledAlertOutcomes {
+		statuses = append(statuses, status)
 	}
-	return false
-}
+	sort.Strings(statuses)
+	return statuses
+}()
 
 // PruneSettled deletes settled alerts created before `before`, `batchSize`
 // rows per statement, and returns how many it deleted. A row still sent,
