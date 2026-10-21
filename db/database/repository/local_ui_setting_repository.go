@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -45,9 +46,9 @@ type LocalUISettingWriteResult struct {
 }
 
 // List returns a namespace's live rows, ordered by key.
-func (r *LocalUISettingRepository) List(namespace string) ([]*models.LocalUISetting, error) {
+func (r *LocalUISettingRepository) List(ctx context.Context, namespace string) ([]*models.LocalUISetting, error) {
 	var settings []*models.LocalUISetting
-	err := r.db.
+	err := r.db.WithContext(ctx).
 		Where("namespace = ? AND deleted = ?", namespace, false).
 		Order("key ASC").
 		Find(&settings).Error
@@ -55,9 +56,9 @@ func (r *LocalUISettingRepository) List(namespace string) ([]*models.LocalUISett
 }
 
 // Get returns the stored row, a tombstone included, or gorm.ErrRecordNotFound.
-func (r *LocalUISettingRepository) Get(namespace, key string) (*models.LocalUISetting, error) {
+func (r *LocalUISettingRepository) Get(ctx context.Context, namespace, key string) (*models.LocalUISetting, error) {
 	var setting models.LocalUISetting
-	if err := r.db.Where("namespace = ? AND key = ?", namespace, key).First(&setting).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("namespace = ? AND key = ?", namespace, key).First(&setting).Error; err != nil {
 		return nil, err
 	}
 	return &setting, nil
@@ -66,9 +67,9 @@ func (r *LocalUISettingRepository) Get(namespace, key string) (*models.LocalUISe
 // ChangesSince returns up to limit rows, tombstones included, whose revision
 // is greater than after, in revision order. The bool reports whether more
 // rows follow the last one returned.
-func (r *LocalUISettingRepository) ChangesSince(after int64, limit int) ([]*models.LocalUISetting, bool, error) {
+func (r *LocalUISettingRepository) ChangesSince(ctx context.Context, after int64, limit int) ([]*models.LocalUISetting, bool, error) {
 	var settings []*models.LocalUISetting
-	err := r.db.
+	err := r.db.WithContext(ctx).
 		Where("revision > ?", after).
 		Order("revision ASC").
 		Limit(limit + 1).
@@ -89,10 +90,12 @@ func (r *LocalUISettingRepository) ChangesSince(after int64, limit int) ([]*mode
 // commits: the expected-revision check reads a row no one else can change
 // before the write lands, and revisions become visible in the order they were
 // handed out. A refused write rolls back, so it consumes no revision.
-func (r *LocalUISettingRepository) Write(write LocalUISettingWrite) (*LocalUISettingWriteResult, error) {
+//
+// Cancelling ctx rolls the transaction back, which releases the counter lock.
+func (r *LocalUISettingRepository) Write(ctx context.Context, write LocalUISettingWrite) (*LocalUISettingWriteResult, error) {
 	var result *LocalUISettingWriteResult
 
-	err := r.db.Transaction(func(tx *gorm.DB) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		revision, err := nextLocalUISettingRevision(tx)
 		if err != nil {
 			return err

@@ -42,10 +42,10 @@ type localUISettingService struct {
 	now      func() time.Time
 }
 
-func NewLocalUISettingService(settingRepo *repo.LocalUISettingRepository) client.LocalUISettingService {
+func NewLocalUISettingService(settingRepo *repo.LocalUISettingRepository, now func() time.Time) client.LocalUISettingService {
 	return &localUISettingService{
 		settings: settingRepo,
-		now:      func() time.Time { return time.Now().UTC() },
+		now:      now,
 	}
 }
 
@@ -53,7 +53,7 @@ func (s *localUISettingService) ListLocalUISettings(ctx context.Context, req *cl
 	if err := validateLocalUISettingNamespace(req.Namespace); err != nil {
 		return nil, err
 	}
-	settings, err := s.settings.List(req.Namespace)
+	settings, err := s.settings.List(ctx, req.Namespace)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list local ui settings: %w", err))
 	}
@@ -67,7 +67,7 @@ func (s *localUISettingService) GetLocalUISetting(ctx context.Context, req *clie
 	if err := validateLocalUISettingAddress(req.Namespace, req.Key); err != nil {
 		return nil, err
 	}
-	setting, err := s.settings.Get(req.Namespace, req.Key)
+	setting, err := s.settings.Get(ctx, req.Namespace, req.Key)
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && setting.Deleted) {
 		return nil, twirp.NotFoundError("local ui setting not found")
 	}
@@ -80,7 +80,7 @@ func (s *localUISettingService) GetLocalUISetting(ctx context.Context, req *clie
 	}, nil
 }
 
-func (s *localUISettingService) SetLocalUISetting(ctx context.Context, req *client.SetLocalUISettingRequest) (*client.WriteLocalUISettingResponse, error) {
+func (s *localUISettingService) SetLocalUISetting(ctx context.Context, req *client.SetLocalUISettingRequest) (*client.SetLocalUISettingResponse, error) {
 	if err := validateLocalUISettingAddress(req.Namespace, req.Key); err != nil {
 		return nil, err
 	}
@@ -91,47 +91,54 @@ func (s *localUISettingService) SetLocalUISetting(ctx context.Context, req *clie
 		return nil, err
 	}
 	value := req.ValueJson
-	return s.write(repo.LocalUISettingWrite{
+	status, setting, conflict, err := s.write(ctx, repo.LocalUISettingWrite{
 		Namespace:        req.Namespace,
 		Key:              req.Key,
 		Value:            &value,
 		ExpectedRevision: req.ExpectedRevision,
 		At:               s.now(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &client.SetLocalUISettingResponse{Status: status, Setting: setting, Conflict: conflict}, nil
 }
 
-func (s *localUISettingService) DeleteLocalUISetting(ctx context.Context, req *client.DeleteLocalUISettingRequest) (*client.WriteLocalUISettingResponse, error) {
+func (s *localUISettingService) DeleteLocalUISetting(ctx context.Context, req *client.DeleteLocalUISettingRequest) (*client.DeleteLocalUISettingResponse, error) {
 	if err := validateLocalUISettingAddress(req.Namespace, req.Key); err != nil {
 		return nil, err
 	}
 	if err := validateExpectedRevision(req.ExpectedRevision); err != nil {
 		return nil, err
 	}
-	return s.write(repo.LocalUISettingWrite{
+	status, setting, conflict, err := s.write(ctx, repo.LocalUISettingWrite{
 		Namespace:        req.Namespace,
 		Key:              req.Key,
 		ExpectedRevision: req.ExpectedRevision,
 		At:               s.now(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &client.DeleteLocalUISettingResponse{Status: status, Setting: setting, Conflict: conflict}, nil
 }
 
-func (s *localUISettingService) write(write repo.LocalUISettingWrite) (*client.WriteLocalUISettingResponse, error) {
-	result, err := s.settings.Write(write)
+// write applies one set or delete and returns the fields both write
+// responses share.
+func (s *localUISettingService) write(ctx context.Context, write repo.LocalUISettingWrite) (*client.ResponseStatus, *client.LocalUISetting, bool, error) {
+	result, err := s.settings.Write(ctx, write)
 	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to write local ui setting: %w", err))
+		return nil, nil, false, twirp.InternalErrorWith(fmt.Errorf("failed to write local ui setting: %w", err))
 	}
 	message := "Local UI setting written"
 	if result.Conflict {
 		message = "Local UI setting revision does not match the expected revision"
 	}
-	response := &client.WriteLocalUISettingResponse{
-		Status:   &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: message},
-		Conflict: result.Conflict,
+	status := &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: message}
+	if result.Setting == nil {
+		return status, nil, result.Conflict, nil
 	}
-	if result.Setting != nil {
-		response.Setting = localUISettingToProto(result.Setting)
-	}
-	return response, nil
+	return status, localUISettingToProto(result.Setting), result.Conflict, nil
 }
 
 func (s *localUISettingService) ListLocalUISettingChanges(ctx context.Context, req *client.ListLocalUISettingChangesRequest) (*client.ListLocalUISettingChangesResponse, error) {
@@ -148,7 +155,7 @@ func (s *localUISettingService) ListLocalUISettingChanges(ctx context.Context, r
 		return nil, twirp.InvalidArgumentError("limit", fmt.Sprintf("must be at most %d", maxLocalUISettingChangesLimit))
 	}
 
-	settings, hasMore, err := s.settings.ChangesSince(req.AfterRevision, limit)
+	settings, hasMore, err := s.settings.ChangesSince(ctx, req.AfterRevision, limit)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list local ui setting changes: %w", err))
 	}
