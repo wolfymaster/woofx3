@@ -539,6 +539,24 @@ pub struct MarketplaceOrigin {
     pub edition: i32,
 }
 
+/// `created_by_type` of a module row a bundled module installed.
+pub const CREATED_BY_SYSTEM: &str = "SYSTEM";
+/// `created_by_type` of a module row a client installed.
+pub const CREATED_BY_CLIENT: &str = "CLIENT";
+/// `created_by_type` the db gives a module row written without one.
+pub const CREATED_BY_USER: &str = "USER";
+
+/// The provenance a module row's `created_by_type` records. A value no
+/// install writes is an error, so a row is never restamped as a type it
+/// was not installed with.
+pub fn provenance_from_created_by_type(created_by_type: &str) -> Result<InstallProvenance> {
+    match created_by_type {
+        CREATED_BY_SYSTEM => Ok(InstallProvenance::System),
+        CREATED_BY_CLIENT | CREATED_BY_USER => Ok(InstallProvenance::User),
+        other => Err(anyhow!("unknown module created_by_type {:?}", other)),
+    }
+}
+
 /// Twirp JSON for `module.ModuleService/CreateModule`.
 /// Returns the module ID from the created record.
 ///
@@ -572,8 +590,8 @@ pub async fn create_module(
     // uninstall guard keys on this pair (`ResolvedModule::is_system`), so
     // provenance is what decides it rather than an absent client id.
     let (created_by_type, created_by_ref) = match provenance {
-        InstallProvenance::System => ("SYSTEM", module_id),
-        InstallProvenance::User => ("CLIENT", client_id),
+        InstallProvenance::System => (CREATED_BY_SYSTEM, module_id),
+        InstallProvenance::User => (CREATED_BY_CLIENT, client_id),
     };
     let mut body = serde_json::json!({
         "name": display_name,

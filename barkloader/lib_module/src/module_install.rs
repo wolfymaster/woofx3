@@ -6,7 +6,10 @@ use std::path::Path;
 use tracing::{error, info, warn};
 
 use super::canonical_id::CanonicalId;
-use super::db_proxy::{CreateModuleFunctionJson, MarketplaceOrigin, ModuleFunctionRecord};
+use super::db_proxy::{
+    CreateModuleFunctionJson, MarketplaceOrigin, ModuleFunctionRecord,
+    provenance_from_created_by_type,
+};
 use super::db_proxy_client::ModuleDbProxy;
 use super::manifest_validate::{
     self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest, SystemOnlyActions,
@@ -242,8 +245,8 @@ struct PreviousInstall {
     manifest: String,
     #[serde(default)]
     archive_key: String,
-    #[serde(default)]
-    created_by_type: String,
+    #[serde(rename = "created_by_type", deserialize_with = "provenance_field")]
+    provenance: InstallProvenance,
     #[serde(default)]
     created_by_ref: String,
     #[serde(default)]
@@ -257,6 +260,14 @@ struct PreviousInstall {
 #[derive(Debug, Deserialize)]
 struct PreviousInstallBody {
     module: PreviousInstall,
+}
+
+fn provenance_field<'de, D>(deserializer: D) -> std::result::Result<InstallProvenance, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let created_by_type = String::deserialize(deserializer)?;
+    provenance_from_created_by_type(&created_by_type).map_err(serde::de::Error::custom)
 }
 
 impl PreviousInstall {
@@ -285,11 +296,11 @@ impl PreviousInstall {
     /// The provenance and installing client the row was stamped with, so a
     /// restore stamps it the same way (see `db_proxy::create_module`).
     fn provenance(&self) -> (InstallProvenance, &str) {
-        if self.created_by_type == "SYSTEM" {
-            (InstallProvenance::System, "")
-        } else {
-            (InstallProvenance::User, self.created_by_ref.as_str())
-        }
+        let client_id = match self.provenance {
+            InstallProvenance::System => "",
+            InstallProvenance::User => self.created_by_ref.as_str(),
+        };
+        (self.provenance, client_id)
     }
 
     fn marketplace(&self) -> Option<MarketplaceOrigin> {
@@ -2152,6 +2163,37 @@ mod tests {
             Some(&(PREVIOUS_MODULE_KEY.to_string(), "0.9.0".to_string())),
             "the legacy row must be rewritten back to its version"
         );
+    }
+
+    #[tokio::test]
+    async fn install_over_a_row_of_unknown_provenance_fails_before_writing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-up");
+        let files = fault_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let mut row = previous_version_row("fault-mod-up");
+        row["created_by_type"] = serde_json::Value::from("MODULE");
+        let db_proxy = FakeDbProxyClient::new()
+            .with_installed_version(serde_json::json!({ "module": row }).to_string());
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-up.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("an installed row of unknown provenance cannot be restored");
+        assert!(err.to_string().contains("created_by_type"), "got: {err}");
+        assert!(db_proxy.created_modules().is_empty());
     }
 
     #[tokio::test]
