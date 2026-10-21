@@ -110,6 +110,35 @@ describe("installShutdown", () => {
     expect(h.logs.some((l) => l.includes("Unhandled rejection"))).toBe(true);
   });
 
+  test("a stop settling after the deadline already exited does not exit again", async () => {
+    let finish = () => {};
+    const h = harness(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      250
+    );
+    h.emitter.emit("SIGTERM");
+    [...h.timers.values()][0].fn();
+    finish();
+    await flush();
+    expect(h.exits).toEqual([1]);
+  });
+
+  test("an uncaught exception during shutdown exits 1 once and stop runs once", async () => {
+    let stops = 0;
+    const h = harness(() => {
+      stops++;
+      return new Promise<void>(() => {});
+    });
+    h.emitter.emit("SIGTERM");
+    h.emitter.emit("uncaughtException", new Error("bad"));
+    await flush();
+    expect(stops).toBe(1);
+    expect(h.exits).toEqual([1]);
+  });
+
   test("dispose removes listeners and cancels a pending deadline", () => {
     const h = harness(() => new Promise<void>(() => {}));
     h.emitter.emit("SIGTERM");
@@ -140,7 +169,7 @@ describe("installShutdown", () => {
   });
 });
 
-test("the real process satisfies SignalSource", () => {
+test("process is assignable to SignalSource (checked by tsc)", () => {
   const source: SignalSource = process;
   expect(typeof source.on).toBe("function");
 });

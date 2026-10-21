@@ -465,7 +465,7 @@ installShutdown({
 - A clean stop exits 0; a `stop` that throws exits 1.
 - `uncaughtException` is logged and then shuts down like a signal, but always exits 1. `unhandledRejection` is logged and the process keeps running.
 - `deadlineMs` must be greater than 0; there is no default, the caller names its own.
-- `dispose()` removes the listeners and cancels a pending deadline.
+- `dispose()` removes the listeners, cancels a pending deadline, and stops an in-flight stop from exiting the process.
 
 ## Capped backoff helper
 
@@ -474,7 +474,7 @@ installShutdown({
 - Exponential with full jitter: the nth failure waits a random time between 0 and `min(maxMs, baseMs * 2^n)`.
 - At the cap the ceiling stays put, so a long outage neither overflows nor waits longer than `maxMs`.
 - `reset()` starts over after a success.
-- The configuration must satisfy `0 < baseMs <= maxMs`, otherwise construction throws. There are no default values; callers pass their own named constants.
+- The configuration must satisfy `0 < baseMs <= maxMs < Infinity`, otherwise construction throws. The `RandomSource` must return values in `[0, 1)`; `next()` throws otherwise. There are no default values; callers pass their own named constants.
 - `RandomSource` and `Clock` are small interfaces so tests use a seeded source instead of `Math.random`.
 
 This is separate from the service-retry strategy above, which keeps its own fixed doubling schedule.
