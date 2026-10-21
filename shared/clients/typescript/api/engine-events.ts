@@ -13,7 +13,7 @@
 // its oldest undelivered frames dropped. `seq` makes a drop visible. A client
 // re-reads the state it shows when it subscribes and whenever `seq` skips.
 
-import type { CallbackEnvelope, RequestEnvelope } from "./webhooks";
+import type { CallbackEnvelope, EngineEventType, RequestEnvelope } from "./webhooks";
 
 /** What a frame carries: a state-change notification, or a request to answer. */
 export type EngineEventMessage =
@@ -46,11 +46,11 @@ export interface EngineEventSubscriber {
 
 export interface EngineEventSubscribeOptions {
   /**
-   * The event types (`EngineEventType`) to push. Absent pushes every event.
-   * Requests are pushed whatever this says: a client with a subscription is
-   * the one the engine asks.
+   * The event types to push. Absent pushes every event. A type the engine
+   * does not know fails the subscribe call. Requests are pushed whatever this
+   * says: a client with a subscription is the one the engine asks.
    */
-  types?: string[];
+  types?: EngineEventType[];
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
   EngineRequestAnswer,
   RequestEnvelope,
 } from "@woofx3/api";
+import type { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 
 export interface EngineEventStreamLimits {
@@ -101,7 +102,7 @@ export class EngineEventStream {
    */
   subscribe(
     subscriber: EngineEventSubscriber,
-    types: readonly string[] | undefined,
+    types: readonly EngineEventType[] | undefined,
     session: object,
     clientId: string
   ): void {
