@@ -12,7 +12,7 @@ import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
 import type { RegistrationPolicy } from "./registration";
-import type { WebhookClient } from "./webhook-client";
+import { callbackUrlRefusal, type WebhookClient } from "./webhook-client";
 
 /**
  * A registration the engine will not accept. Named so the refusal is
@@ -97,6 +97,12 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     description: string,
     options: RegisterClientOptions
   ): Promise<{ clientId: string; clientSecret: string }> {
+    if (options.callbackUrl) {
+      const refusal = callbackUrlRefusal(options.callbackUrl);
+      if (refusal !== null) {
+        throw new RegistrationRefused(`The callback URL is refused: ${refusal}.`);
+      }
+    }
     if (this.registration.mode !== "first") {
       this.admit(options.registrationToken, this.registration.mode === "token");
       return this.createClient(description, options);

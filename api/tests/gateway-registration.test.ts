@@ -126,6 +126,34 @@ describe("registerClient on an engine without a registration token or mode", () 
   });
 });
 
+describe("registerClient callback URLs", () => {
+  const refused = [
+    "file:///etc/passwd",
+    "http://internal.example/hook",
+    "https://user:pass@example.com/hook",
+    "https://example.com/hook#fragment",
+    "gopher://example.com/hook",
+  ];
+  for (const callbackUrl of refused) {
+    it(`refuses ${callbackUrl} before creating a client`, async () => {
+      const { gateway: gw, createClient } = gateway(null);
+
+      const err = await refusal(gw.registerClient("ui", { callbackUrl }));
+
+      expect(err.name).toBe(REGISTRATION_REFUSED);
+      expect(createClient).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const callbackUrl of ["https://example.convex.site/api/webhooks/woofx3", "http://127.0.0.1:3000/hook"]) {
+    it(`accepts ${callbackUrl}`, async () => {
+      const { gateway: gw } = gateway(null, "open");
+
+      expect((await gw.registerClient("ui", { callbackUrl })).clientId).toBe("c1");
+    });
+  }
+});
+
 describe("registerClient in first mode", () => {
   it("admits the first caller without a token", async () => {
     const { gateway: gw } = gateway(null, "first");

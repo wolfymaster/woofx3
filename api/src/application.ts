@@ -76,7 +76,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { serveRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
-      { WebhookClient },
+      { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
       { WorkflowHealthEmitter },
@@ -200,7 +200,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const engineEventStream = new EngineEventStream(logger);
     this.engineEventStream = engineEventStream;
     api.setEngineEventStream(engineEventStream);
-    const webhookClient = new WebhookClient(db, logger, engineEventStream);
+    const webhookClient = new WebhookClient(db, logger, engineEventStream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhookClient);
     try {
       await webhookClient.refreshCallbackUrls();
