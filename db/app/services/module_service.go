@@ -864,6 +864,9 @@ func (s *moduleService) installedModule(manifestModuleID, name string) (*models.
 	if name == "" {
 		return byID, nil
 	}
+	if err := s.refuseNameThatIsAnotherModulesID(manifestModuleID, name); err != nil {
+		return nil, err
+	}
 
 	byName, err := s.repo.GetByDisplayName(name)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -879,6 +882,25 @@ func (s *moduleService) installedModule(manifestModuleID, name string) (*models.
 		return byName, nil
 	}
 	return nil, twirp.NewError(twirp.AlreadyExists, fmt.Sprintf("module name %q already used by %s", name, nameHolder(byName)))
+}
+
+// refuseNameThatIsAnotherModulesID refuses a name equal to a different
+// module's manifest id. DeleteModule and GetModuleByName resolve their
+// argument against both the module_id and the name column, so such a name
+// would let a delete by this module's name (barkloader's fresh-install
+// rollback, an uninstall) resolve to the other module's row.
+func (s *moduleService) refuseNameThatIsAnotherModulesID(manifestModuleID, name string) error {
+	if name == manifestModuleID {
+		return nil
+	}
+	holder, err := s.repo.GetByModuleID(name)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return twirp.InternalErrorWith(fmt.Errorf("look up module %q: %w", name, err))
+	}
+	return twirp.NewError(twirp.AlreadyExists, fmt.Sprintf("module name %q is the id of module %s", name, nameHolder(holder)))
 }
 
 // nameHolder names the module that holds a name, for the AlreadyExists

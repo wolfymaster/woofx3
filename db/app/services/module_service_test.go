@@ -135,6 +135,32 @@ func TestCreateModuleRefusesARenameOntoAnotherModulesName(t *testing.T) {
 	}
 }
 
+func TestCreateModuleRefusesANameThatIsAnotherModulesID(t *testing.T) {
+	svc, db := newModuleSvc(t)
+	mustCreateModule(t, svc, moduleRequest("cozy", "Cozy Corner", "1.0.0", moduleFunction("f1", "key-v1")))
+
+	_, err := svc.CreateModule(context.Background(), moduleRequest("evil", "cozy", "6.6.6"))
+	assertTwirpCode(t, err, twirp.AlreadyExists)
+
+	var count int64
+	if err := db.Model(&models.Module{}).Where("module_id = ?", "evil").Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("the refused upload left %d rows", count)
+	}
+	holder, functions := storedModule(t, db, "cozy")
+	if holder.Name != "Cozy Corner" || functions["f1"].FileKey != "key-v1" {
+		t.Fatalf("holder row changed: %+v %+v", holder, functions)
+	}
+}
+
+func TestCreateModuleAcceptsANameEqualToItsOwnID(t *testing.T) {
+	svc, _ := newModuleSvc(t)
+	mustCreateModule(t, svc, moduleRequest("cozy", "cozy", "1.0.0"))
+	mustCreateModule(t, svc, moduleRequest("cozy", "cozy", "2.0.0"))
+}
+
 func TestCreateModuleAdoptsALegacyRowWithoutAModuleID(t *testing.T) {
 	svc, db := newModuleSvc(t)
 	legacy := mustCreateModule(t, svc, moduleRequest("cozy", "Cozy", "1.0.0"))
