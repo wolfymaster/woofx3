@@ -323,6 +323,8 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    lib_module::load_reserved_subjects_contract();
+
     // Validate required config. Each fatal path drops the guard first so the
     // file and OpenTelemetry sinks flush before the process goes away.
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {

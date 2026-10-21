@@ -37,13 +37,17 @@ pub struct ReservedSubjects {
     pub engine_module_segments: Vec<String>,
 }
 
-/// Parsed on first use. The input is compiled into the binary and parsed by
-/// `test_reserved_subjects_contract_parses`, so the `expect` cannot fire in a
-/// build whose tests passed.
+/// Parsed on first use; `load_contract` forces it at startup so a malformed
+/// contract stops the process there instead of panicking inside an upload.
 pub static RESERVED_SUBJECTS: LazyLock<ReservedSubjects> = LazyLock::new(|| {
     serde_json::from_str(CONTRACT_JSON)
         .expect("shared/common/contracts/reserved-subjects.json must match ReservedSubjects")
 });
+
+/// Parses the compiled-in contract now. Call once from `main`.
+pub fn load_contract() {
+    LazyLock::force(&RESERVED_SUBJECTS);
+}
 
 /// The reservation `event` falls under when a module of `provenance` with id
 /// `module_id` declares it as a bus-fired trigger, or `None` when it may.
