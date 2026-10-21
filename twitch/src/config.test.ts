@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { TwitchEnvSchema } from "./config";
+import { selfSentConfig, TwitchEnvSchema } from "./config";
+import { DEFAULT_SELF_SENT_CONFIG } from "./lib/selfSentChat";
 
 describe("TwitchEnvSchema", () => {
   test("accepts a complete valid configuration", () => {
@@ -40,5 +41,30 @@ describe("TwitchEnvSchema", () => {
       woofx3TwitchClientSecret: "sec",
     });
     expect(result.success).toBe(true);
+  });
+
+  test("remembers sent chat lines by the named defaults unless configured", () => {
+    const base = { woofx3MessagebusUrl: "ws://127.0.0.1:4225", woofx3DatabaseProxyUrl: "http://db" };
+    const defaults = TwitchEnvSchema.parse(base) as Record<string, unknown>;
+    expect(selfSentConfig({ getConfig: (key) => defaults[key] })).toEqual(DEFAULT_SELF_SENT_CONFIG);
+
+    const tuned = TwitchEnvSchema.parse({
+      ...base,
+      woofx3TwitchSelfSentCapacity: 16,
+      woofx3TwitchSelfSentTtlMs: 5_000,
+    }) as Record<string, unknown>;
+    expect(selfSentConfig({ getConfig: (key) => tuned[key] })).toEqual({ capacity: 16, ttlMs: 5_000 });
+  });
+
+  test("refuses a self-sent capacity or ttl that is not a positive whole number", () => {
+    const base = { woofx3MessagebusUrl: "ws://127.0.0.1:4225", woofx3DatabaseProxyUrl: "http://db" };
+    for (const bad of [
+      { woofx3TwitchSelfSentCapacity: 0 },
+      { woofx3TwitchSelfSentCapacity: 1.5 },
+      { woofx3TwitchSelfSentTtlMs: -1 },
+      { woofx3TwitchSelfSentTtlMs: "soon" },
+    ]) {
+      expect(TwitchEnvSchema.safeParse({ ...base, ...bad }).success).toBe(false);
+    }
   });
 });

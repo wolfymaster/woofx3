@@ -50,6 +50,15 @@ export interface ChatMessage {
   chatterId: string;
   chatterName: string;
   message: string;
+  /** Twitch's id of the message, which a reply names (`replyToMessageId`). */
+  messageId: string;
+  /**
+   * True when the engine itself said this line through its chat provider and
+   * this is Twitch handing it back. Consumers that act on chatters' lines
+   * (commands, group sync) skip these so the engine never answers itself.
+   * A simulated event may leave it out; treat anything but `true` as false.
+   */
+  fromEngine: boolean;
   membership: ChatterMembership;
 }
 

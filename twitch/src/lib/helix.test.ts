@@ -5,9 +5,11 @@ import {
   HELIX_OPERATIONS,
   type HelixAuth,
   type HelixRequest,
+  readSentChatMessage,
   runHelixOperation,
   validateHelixParams,
 } from "./helix";
+import type { ChatLineLog } from "./selfSentChat";
 import { TwitchApiError } from "./twitchApiError";
 
 const BROADCASTER_ID = "broadcaster-1";
@@ -81,6 +83,30 @@ function fetchAnswering(...answers: (Response | Error)[]) {
     return answer;
   });
   return { sent };
+}
+
+/** What a chat line log was told, in order. */
+type ChatLineEvent = { begin: string } | { sent: string } | { failed: true };
+
+function recordingChatLines(): { log: ChatLineLog; events: ChatLineEvent[] } {
+  const events: ChatLineEvent[] = [];
+  return {
+    events,
+    log: {
+      begin: (text) => {
+        events.push({ begin: text });
+        return {
+          sent: (messageId) => events.push({ sent: messageId }),
+          failed: () => events.push({ failed: true }),
+        };
+      },
+    },
+  };
+}
+
+/** A log for tests that do not look at it. */
+function chatLines(): ChatLineLog {
+  return recordingChatLines().log;
 }
 
 function json(status: number, body: unknown): Response {
@@ -384,7 +410,7 @@ describe("validateHelixParams", () => {
   });
 
   test("refuses with the invalid_arguments code", async () => {
-    const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getGames" }));
+    const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getGames" }, chatLines()));
     expect(err.code).toBe("invalid_arguments");
   });
 });
@@ -394,10 +420,15 @@ describe("runHelixOperation", () => {
     const body = { data: [{ broadcaster_id: BROADCASTER_ID, title: "Hi", game_id: "1", tags: [] }] };
     const { sent } = fetchAnswering(json(200, body));
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
-      operation: "modifyChannelInformation",
-      params: { title: "Hi" },
-    });
+    const result = await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      {
+        operation: "modifyChannelInformation",
+        params: { title: "Hi" },
+      },
+      chatLines()
+    );
 
     expect(result).toEqual({ ok: true, body });
     expect(sent).toEqual([
@@ -418,10 +449,15 @@ describe("runHelixOperation", () => {
   test("encodes the query and sends no body for a read", async () => {
     const { sent } = fetchAnswering(json(200, { data: [] }));
 
-    await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
-      operation: "searchCategories",
-      params: { query: "just chat & more", first: 10 },
-    });
+    await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      {
+        operation: "searchCategories",
+        params: { query: "just chat & more", first: 10 },
+      },
+      chatLines()
+    );
 
     expect(sent[0]?.url).toBe("https://api.twitch.tv/helix/search/categories?query=just+chat+%26+more&first=10");
     expect(sent[0]?.body).toBeUndefined();
@@ -435,10 +471,15 @@ describe("runHelixOperation", () => {
   test("answers null for a response with no body", async () => {
     fetchAnswering(new Response(null, { status: 204 }));
     expect(
-      await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
-        operation: "modifyChannelInformation",
-        params: { title: "x" },
-      })
+      await runHelixOperation(
+        fakeAuth(),
+        BROADCASTER_ID,
+        {
+          operation: "modifyChannelInformation",
+          params: { title: "x" },
+        },
+        chatLines()
+      )
     ).toEqual({ ok: true, body: null });
   });
 
@@ -446,7 +487,9 @@ describe("runHelixOperation", () => {
     const twitchBody = '{"error":"Not Found","status":404,"message":"stream not found"}';
     fetchAnswering(new Response(twitchBody, { status: 404 }));
 
-    expect(await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" })).toEqual({
+    expect(
+      await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, chatLines())
+    ).toEqual({
       ok: false,
       status: 404,
       body: twitchBody,
@@ -456,10 +499,15 @@ describe("runHelixOperation", () => {
   test("sends a write once when Twitch answers 5xx, and answers that status", async () => {
     const { sent } = fetchAnswering(new Response("upstream failed", { status: 503 }), json(200, { data: [] }));
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
-      operation: "createStreamMarker",
-      params: { description: "clutch" },
-    });
+    const result = await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      {
+        operation: "createStreamMarker",
+        params: { description: "clutch" },
+      },
+      chatLines()
+    );
 
     expect(result).toEqual({ ok: false, status: 503, body: "upstream failed" });
     expect(sent).toHaveLength(1);
@@ -469,7 +517,12 @@ describe("runHelixOperation", () => {
     const { sent } = fetchAnswering(new TypeError("fetch failed"), json(200, { data: [] }));
 
     await expect(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "modifyChannelInformation", params: { title: "x" } })
+      runHelixOperation(
+        fakeAuth(),
+        BROADCASTER_ID,
+        { operation: "modifyChannelInformation", params: { title: "x" } },
+        chatLines()
+      )
     ).rejects.toThrow("fetch failed");
     expect(sent).toHaveLength(1);
   });
@@ -477,7 +530,12 @@ describe("runHelixOperation", () => {
   test("sends a read once when Twitch answers 5xx", async () => {
     const { sent } = fetchAnswering(new Response("", { status: 500 }), json(200, { data: [] }));
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" });
+    const result = await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "getChannelInformation" },
+      chatLines()
+    );
 
     expect(result).toEqual({ ok: false, status: 500, body: "" });
     expect(sent).toHaveLength(1);
@@ -489,7 +547,12 @@ describe("runHelixOperation", () => {
       json(200, { data: [{ id: "m1" }] })
     );
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" });
+    const result = await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "createStreamMarker" },
+      chatLines()
+    );
 
     expect(result).toEqual({ ok: true, body: { data: [{ id: "m1" }] } });
     expect(sent.map((request) => request.headers.authorization)).toEqual(["Bearer token-1", "Bearer token-2"]);
@@ -502,7 +565,12 @@ describe("runHelixOperation", () => {
       new Response(unauthorized, { status: 401 })
     );
 
-    const result = await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" });
+    const result = await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "createStreamMarker" },
+      chatLines()
+    );
 
     expect(result).toEqual({ ok: false, status: 401, body: unauthorized });
     expect(sent).toHaveLength(2);
@@ -510,18 +578,18 @@ describe("runHelixOperation", () => {
 
   test("throws for a success that is not JSON", async () => {
     fetchAnswering(new Response("<html>", { status: 200 }));
-    await expect(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" })).rejects.toThrow(
-      "not JSON"
-    );
+    await expect(
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, chatLines())
+    ).rejects.toThrow("not JSON");
   });
 
   test("throws when there is no token for the broadcaster, without a request", async () => {
     const { sent } = fetchAnswering();
     const auth = { ...fakeAuth(), getAccessTokenForUser: async () => null };
 
-    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" })).rejects.toThrow(
-      "no Twitch token"
-    );
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, chatLines())
+    ).rejects.toThrow("no Twitch token");
     expect(sent).toEqual([]);
   });
 
@@ -537,7 +605,7 @@ describe("runHelixOperation", () => {
     );
 
     await expect(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, 20)
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, chatLines(), 20)
     ).rejects.toThrow("helix createStreamMarker: no answer within 0.02s; Twitch may still have acted");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.aborted).toBe(true);
@@ -548,7 +616,7 @@ describe("runHelixOperation", () => {
     fetchAnswering(new Response(endless, { status: 200 }));
 
     await expect(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, 20)
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, chatLines(), 20)
     ).rejects.toThrow("no answer within 0.02s");
   });
 
@@ -556,9 +624,9 @@ describe("runHelixOperation", () => {
     const { sent } = fetchAnswering(json(200, { data: [] }));
     const auth = { ...fakeAuth(), getAccessTokenForUser: () => new Promise<never>(() => {}) };
 
-    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, 20)).rejects.toThrow(
-      "no answer within 0.02s, before a request was sent"
-    );
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, chatLines(), 20)
+    ).rejects.toThrow("no answer within 0.02s, before a request was sent");
     expect(sent).toEqual([]);
   });
 
@@ -566,9 +634,9 @@ describe("runHelixOperation", () => {
     const { sent } = fetchAnswering(new Response("", { status: 401 }), json(200, { data: [] }));
     const auth = { ...fakeAuth(), refreshAccessTokenForUser: () => new Promise<never>(() => {}) };
 
-    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, 20)).rejects.toThrow(
-      "Twitch may still have acted"
-    );
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, chatLines(), 20)
+    ).rejects.toThrow("Twitch may still have acted");
     expect(sent).toHaveLength(1);
   });
 
@@ -576,9 +644,126 @@ describe("runHelixOperation", () => {
     const { sent } = fetchAnswering();
 
     for (const operation of ["deleteVideos", "toString"]) {
-      const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation }));
+      const err = await refusalOf(runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation }, chatLines()));
       expect(err.code).toBe("invalid_arguments");
     }
     expect(sent).toEqual([]);
   });
+});
+
+describe("runHelixOperation chat lines", () => {
+  const SENT = { data: [{ message_id: "m-1", is_sent: true, drop_reason: null }] };
+  const DROPPED = {
+    data: [{ message_id: "", is_sent: false, drop_reason: { code: "msg_rejected", message: "AutoMod held it" } }],
+  };
+
+  const cases: {
+    name: string;
+    operation: HelixOperationName;
+    params: Record<string, unknown>;
+    answer: Response | Error;
+    events: ChatLineEvent[];
+  }[] = [
+    {
+      name: "records a sent line by the id Twitch gives it",
+      operation: "sendChatMessage",
+      params: { message: "hello" },
+      answer: json(200, SENT),
+      events: [{ begin: "hello" }, { sent: "m-1" }],
+    },
+    {
+      name: "records the guarded text that goes to Twitch",
+      operation: "sendChatMessage",
+      params: { message: "!title" },
+      answer: json(200, SENT),
+      events: [{ begin: "\u200b!title" }, { sent: "m-1" }],
+    },
+    {
+      name: "forgets a line Twitch dropped",
+      operation: "sendChatMessage",
+      params: { message: "hello" },
+      answer: json(200, DROPPED),
+      events: [{ begin: "hello" }, { failed: true }],
+    },
+    {
+      name: "forgets a line Twitch refused",
+      operation: "sendChatMessage",
+      params: { message: "hello" },
+      answer: json(403, { message: "banned" }),
+      events: [{ begin: "hello" }, { failed: true }],
+    },
+    {
+      name: "keeps an announcement, which has no id, recorded by its text",
+      operation: "sendChatAnnouncement",
+      params: { message: "big news" },
+      answer: new Response(null, { status: 204 }),
+      events: [{ begin: "big news" }],
+    },
+    {
+      name: "keeps a line that may have gone out when the network failed",
+      operation: "sendChatMessage",
+      params: { message: "hello" },
+      answer: new Error("socket hang up"),
+      events: [{ begin: "hello" }],
+    },
+    {
+      name: "records nothing for an operation that says nothing in chat",
+      operation: "createStreamMarker",
+      params: {},
+      answer: json(200, { data: [] }),
+      events: [],
+    },
+  ];
+
+  for (const c of cases) {
+    test(c.name, async () => {
+      fetchAnswering(c.answer);
+      const { log, events } = recordingChatLines();
+
+      await runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: c.operation, params: c.params }, log).catch(
+        () => undefined
+      );
+
+      expect(events).toEqual(c.events);
+    });
+  }
+
+  test("forgets a line when no request was sent", async () => {
+    const { sent } = fetchAnswering(json(200, SENT));
+    const { log, events } = recordingChatLines();
+    const auth = { ...fakeAuth(), getAccessTokenForUser: async () => null };
+
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "sendChatMessage", params: { message: "hi" } }, log)
+    ).rejects.toThrow("no Twitch token");
+
+    expect(sent).toEqual([]);
+    expect(events).toEqual([{ begin: "hi" }, { failed: true }]);
+  });
+});
+
+describe("readSentChatMessage", () => {
+  const cases: [string, unknown, ReturnType<typeof readSentChatMessage>][] = [
+    [
+      "a sent line",
+      { data: [{ message_id: "m-1", is_sent: true, drop_reason: null }] },
+      { messageId: "m-1", isSent: true },
+    ],
+    [
+      "a dropped line with its reason",
+      { data: [{ message_id: "", is_sent: false, drop_reason: { code: "x", message: "AutoMod held it" } }] },
+      { messageId: "", isSent: false, dropReason: "AutoMod held it" },
+    ],
+    ["no body", null, undefined],
+    ["no data", {}, undefined],
+    ["empty data", { data: [] }, undefined],
+    ["is_sent missing", { data: [{ message_id: "m-1" }] }, undefined],
+    ["message_id of the wrong type", { data: [{ message_id: 7, is_sent: true }] }, undefined],
+  ];
+
+  for (const [name, body, expected] of cases) {
+    test(name, () => {
+      expect(readSentChatMessage(body)).toEqual(expected);
+    });
+  }
 });

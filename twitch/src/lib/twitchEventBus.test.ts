@@ -3,6 +3,7 @@ import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Context } from "src/types";
+import { DEFAULT_SELF_SENT_CONFIG, SelfSentRegistry } from "./selfSentChat";
 import TwitchEventBus from "./twitchEventBus";
 
 let stubCounter = 0;
@@ -81,6 +82,7 @@ function minimalContext(): Context {
     } as unknown as Context["logger"],
     messageBus: { publish: mock(() => {}) } as unknown as Context["messageBus"],
     events: {} as Context["events"],
+    selfSent: new SelfSentRegistry(DEFAULT_SELF_SENT_CONFIG, () => 0),
   };
 }
 

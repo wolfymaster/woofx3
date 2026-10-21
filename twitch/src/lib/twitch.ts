@@ -6,6 +6,7 @@ import type {
   UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { type HelixAuth, runHelixOperation } from "./helix";
+import type { ChatLineLog } from "./selfSentChat";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 
@@ -328,13 +329,15 @@ function wholeSeconds(raw: number | string | undefined): number {
 export default class TwitchApi {
   /**
    * `helixAuth` is the auth provider behind `apiClient`, which `helix` sends
-   * with directly. `enqueueShoutout` hands shoutouts to the dashboard's
-   * queue; without it, every shoutout is sent directly.
+   * with directly, recording every chat line it says in `chatLines`.
+   * `enqueueShoutout` hands shoutouts to the dashboard's queue; without it,
+   * every shoutout is sent directly.
    */
   constructor(
     private apiClient: ApiClient,
     private broadcaster: HelixUser,
     private helixAuth: HelixAuth,
+    private chatLines: ChatLineLog,
     private enqueueShoutout?: EnqueueShoutout
   ) {}
 
@@ -653,7 +656,7 @@ export default class TwitchApi {
    * than reshaping them as the other commands do.
    */
   async helix(args: unknown): Promise<HelixCommandResult> {
-    return runHelixOperation(this.helixAuth, this.broadcaster.id, args);
+    return runHelixOperation(this.helixAuth, this.broadcaster.id, args, this.chatLines);
   }
 
   /**

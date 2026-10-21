@@ -3,7 +3,8 @@ import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
 import MessageBus from "@woofx3/nats";
 import Application, { type TwitchApiApplication } from "./application";
-import { TwitchEnvSchema } from "./config";
+import { selfSentConfig, TwitchEnvSchema } from "./config";
+import { SelfSentRegistry } from "./lib/selfSentChat";
 import DbProxyService from "./services/dbProxy";
 import MessageBusService from "./services/messageBus";
 
@@ -24,7 +25,7 @@ const logger = createServiceLogger({
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
 });
 
-const application = new Application();
+const application = new Application(new SelfSentRegistry(selfSentConfig(loadedConfig), Date.now));
 
 const runtime = createRuntime({
   application: createApplication(application),

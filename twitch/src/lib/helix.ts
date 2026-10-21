@@ -5,6 +5,7 @@ import type {
   HelixCommandResult,
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import type { ChatLineLog, PendingChatLine } from "./selfSentChat";
 import { TwitchApiError } from "./twitchApiError";
 
 // Twurple passes these straight to fetch and leaves declaring the ones a
@@ -454,12 +455,84 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/** Twitch's answer to Send Chat Message, as far as the engine reads it. */
+export interface SentChatMessage {
+  /** Empty when Twitch dropped the line. */
+  messageId: string;
+  isSent: boolean;
+  dropReason?: string;
+}
+
+/**
+ * The first entry of a Send Chat Message answer
+ * (`{ data: [{ message_id, is_sent, drop_reason }] }`), or undefined when
+ * `body` is not shaped like one.
+ */
+export function readSentChatMessage(body: unknown): SentChatMessage | undefined {
+  if (!body || typeof body !== "object") {
+    return undefined;
+  }
+  const data = (body as { data?: unknown }).data;
+  const entry: unknown = Array.isArray(data) ? data[0] : undefined;
+  if (!entry || typeof entry !== "object") {
+    return undefined;
+  }
+  const { message_id, is_sent, drop_reason } = entry as Record<string, unknown>;
+  if (typeof message_id !== "string" || typeof is_sent !== "boolean") {
+    return undefined;
+  }
+  const reason = drop_reason && typeof drop_reason === "object" ? (drop_reason as { message?: unknown }).message : null;
+  return {
+    messageId: message_id,
+    isSent: is_sent,
+    ...(typeof reason === "string" && reason !== "" ? { dropReason: reason } : {}),
+  };
+}
+
+/** The line `request` says in chat, exactly as it goes to Twitch, when the operation says one. */
+function chatLineOf(operation: HelixOperationName, request: HelixRequest): string | undefined {
+  const name = HELIX_OPERATIONS[operation].chatLine;
+  if (name === undefined) {
+    return undefined;
+  }
+  const value = request.jsonBody?.[name] ?? request.query[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Tell the log what came of a line Twitch answered. A line Twitch says with
+ * no id to report (an announcement) stays recorded until its ttl, matched by
+ * its text.
+ */
+function settleChatLine(pending: PendingChatLine, operation: HelixOperationName, result: HelixCommandResult): void {
+  if (!result.ok) {
+    pending.failed();
+    return;
+  }
+  if (operation !== "sendChatMessage") {
+    return;
+  }
+  const sent = readSentChatMessage(result.body);
+  if (sent === undefined) {
+    return;
+  }
+  if (!sent.isSent || sent.messageId === "") {
+    pending.failed();
+    return;
+  }
+  pending.sent(sent.messageId);
+}
+
 /**
  * Perform one declared Helix operation with the broadcaster's token and
  * answer with Twitch's own result. Twitch answering with an error status is
  * a result (`ok: false`), so its status and reason reach the caller intact;
  * only a request refused before it is sent, or one that never got an answer,
  * throws. The whole operation gives up after `deadlineMs`.
+ *
+ * Every chat line an operation says goes into `chatLines` before it is sent,
+ * so its echo on the chat feed is known as the engine's own. A line that may
+ * have been said (the request went out but no answer came) stays recorded.
  *
  * Sent with Twurple's `callTwitchApiRaw`, which makes exactly one request,
  * rather than its API client, because that client retries a 5xx or a network
@@ -473,10 +546,13 @@ export async function runHelixOperation(
   auth: HelixAuth,
   broadcasterId: string,
   args: unknown,
+  chatLines: ChatLineLog,
   deadlineMs: number = HELIX_DEADLINE_MS
 ): Promise<HelixCommandResult> {
   const { operation, params } = parseHelixArgs(args);
   const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
+  const chatLine = chatLineOf(operation, request);
+  const pending = chatLine === undefined ? undefined : chatLines.begin(chatLine);
   // Not `AbortSignal.timeout`: in Bun 1.3 its timer stops for good once its
   // last abort listener is removed, which every wait here does as it settles.
   const deadline = new AbortController();
@@ -509,6 +585,9 @@ export async function runHelixOperation(
     }
     text = await untilAborted(response.text(), signal);
   } catch (err) {
+    if (!sent) {
+      pending?.failed();
+    }
     if (signal.aborted) {
       const outcome = sent ? "; Twitch may still have acted" : ", before a request was sent";
       throw new Error(`helix ${operation}: no answer within ${deadlineMs / 1000}s${outcome}`, { cause: err });
@@ -518,6 +597,14 @@ export async function runHelixOperation(
     clearTimeout(timer);
   }
 
+  const result = parseHelixResponse(operation, response, text);
+  if (pending) {
+    settleChatLine(pending, operation, result);
+  }
+  return result;
+}
+
+function parseHelixResponse(operation: HelixOperationName, response: Response, text: string): HelixCommandResult {
   if (!response.ok) {
     return { ok: false, status: response.status, body: text };
   }

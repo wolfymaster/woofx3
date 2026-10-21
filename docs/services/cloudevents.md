@@ -106,6 +106,8 @@ interface ChatMessage {
     chatterId: string;
     chatterName: string;
     message: string;
+    messageId: string;    // the platform's id of the message, which a chat reply names
+    fromEngine: boolean;  // the echo of a line the engine said itself; see twitch-channel.md
 }
 ```
 

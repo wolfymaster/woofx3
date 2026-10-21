@@ -52,7 +52,16 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
     ctx.broadcaster.id,
     ctx.broadcaster.id,
     async (event: EventSubChannelChatMessageEvent) => {
-      const { bits, chatterId, chatterDisplayName, sourceBroadcasterName, sourceBroadcasterId, messageText } = event;
+      const {
+        bits,
+        chatterId,
+        chatterDisplayName,
+        sourceBroadcasterName,
+        sourceBroadcasterId,
+        messageText,
+        messageId,
+      } = event;
+      const fromEngine = ctx.selfSent.claimEcho({ messageId, chatterId, text: messageText }, ctx.broadcaster.id);
 
       // Following and subscription tier are not on the message at all, so
       // they come from Helix. The enricher bounds how long that may take and
@@ -71,6 +80,8 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
         chatterName: chatterDisplayName,
         isPaid: Boolean(bits),
         message: messageText,
+        messageId,
+        fromEngine,
         membership,
       });
       try {

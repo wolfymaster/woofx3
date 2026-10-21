@@ -15,6 +15,7 @@ import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
+import type { SelfSentRegistry } from "./lib/selfSentChat";
 import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiReplyCode, twitchApiErrorCodeOf } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
@@ -80,7 +81,11 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   readonly context: TwitchApiContext;
   readonly __finalContextType!: TwitchApiContext;
 
-  constructor() {
+  /**
+   * `selfSent` records every chat line this service says, across relinks, so
+   * the chat feed can mark their echoes as the engine's own.
+   */
+  constructor(private readonly selfSent: SelfSentRegistry) {
     this.context = { services: {} } as unknown as TwitchApiContext;
   }
 
@@ -246,6 +251,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       apiClient,
       broadcaster,
       authProvider,
+      this.selfSent,
       enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts))
     );
     const events = new EventFactory({ source: "twitch" });
@@ -273,6 +279,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       messageBus,
       events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
+      selfSent: this.selfSent,
       onStreamLiveChange: (live: boolean) => adBreakScheduler.setLive(live),
     };
     const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);

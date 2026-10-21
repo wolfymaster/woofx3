@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { TwitchApiContext } from "./application";
+import { DEFAULT_SELF_SENT_CONFIG, SelfSentRegistry } from "./lib/selfSentChat";
 
 let stubCounter = 0;
 
@@ -73,6 +74,10 @@ mock.module("@woofx3/twitch", () => ({
 
 const { default: TwitchApiApplication } = await import("./application");
 
+function selfSent(): SelfSentRegistry {
+  return new SelfSentRegistry(DEFAULT_SELF_SENT_CONFIG, () => 0);
+}
+
 describe("TwitchApi application", () => {
   test("init wires TwitchClient with channel and DB-backed getSetting; starts EventSub and subscribes to twitchapi", async () => {
     const subscribe = mock(async () => {});
@@ -101,7 +106,7 @@ describe("TwitchApi application", () => {
       },
     } as unknown as TwitchApiContext;
 
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     await app.init(ctx);
 
     expect(lastTwitchClientConfig).toEqual(
@@ -117,7 +122,7 @@ describe("TwitchApi application", () => {
   });
 
   test("terminate disconnects the EventSub bus when present", async () => {
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     const disconnect = mock(() => {});
     const ctx = {
       twitchEventBus: { disconnect },
@@ -136,7 +141,7 @@ describe("TwitchApi application", () => {
   // `handleTwitchApiRequest` with a NATS Msg instead of (command, args) -
   // worth doing, but its own change.
   test.skip("twitchApiMessageHandler returns false when the command is not implemented on the API client", async () => {
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     const handler = (
       app as unknown as {
         twitchApiMessageHandler(ctx: TwitchApiContext, command: string, args: Record<string, string>): Promise<boolean>;
@@ -161,7 +166,7 @@ describe("TwitchApi application", () => {
   // `handleTwitchApiRequest` with a NATS Msg instead of (command, args) -
   // worth doing, but its own change.
   test.skip("twitchApiMessageHandler publishes follow-up bus commands when the handler returns a command envelope", async () => {
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     const handler = (
       app as unknown as {
         twitchApiMessageHandler(ctx: TwitchApiContext, command: string, args: Record<string, string>): Promise<boolean>;

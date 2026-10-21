@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { TwitchApiContext } from "./application";
+import { DEFAULT_SELF_SENT_CONFIG, SelfSentRegistry } from "./lib/selfSentChat";
 
 /**
  * An EventSub listener that confirms every subscription as it is created, so
@@ -91,6 +92,10 @@ mock.module("@woofx3/twitch", () => ({
 
 const { default: TwitchApiApplication } = await import("./application");
 
+function selfSent(): SelfSentRegistry {
+  return new SelfSentRegistry(DEFAULT_SELF_SENT_CONFIG, () => 0);
+}
+
 type Handler = (msg: unknown) => unknown;
 
 function context(config: Record<string, string | undefined>) {
@@ -133,7 +138,7 @@ describe("TwitchApi before Twitch is linked", () => {
   test("starts idle and reports ready instead of failing", async () => {
     reset();
     const { ctx, logger } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
 
     await app.init(ctx);
 
@@ -146,7 +151,7 @@ describe("TwitchApi before Twitch is linked", () => {
     reset();
     const { ctx } = context(CREDENTIALS);
 
-    await new TwitchApiApplication().init(ctx);
+    await new TwitchApiApplication(selfSent()).init(ctx);
 
     expect(constructedWith[0]?.channel).toBeUndefined();
   });
@@ -154,7 +159,7 @@ describe("TwitchApi before Twitch is linked", () => {
   test("connects when the Twitch link arrives", async () => {
     reset();
     const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     await app.init(ctx);
 
     linkTwitch();
@@ -170,7 +175,7 @@ describe("TwitchApi before Twitch is linked", () => {
   test("ignores token updates for other integrations", async () => {
     reset();
     const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
+    await new TwitchApiApplication(selfSent()).init(ctx);
 
     linkTwitch();
     await handlers.get("setting.integration.token.updated")?.({
@@ -183,7 +188,7 @@ describe("TwitchApi before Twitch is linked", () => {
   test("answers a twitchapi request with an error rather than failing", async () => {
     reset();
     const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
+    await new TwitchApiApplication(selfSent()).init(ctx);
     const respond = mock(() => true);
 
     await handlers.get("twitchapi")?.({
@@ -202,7 +207,7 @@ describe("TwitchApi before Twitch is linked", () => {
   test("codes the not-linked refusal for helix only, as the other commands' contract has no code for it", async () => {
     reset();
     const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
+    await new TwitchApiApplication(selfSent()).init(ctx);
     const answer = async (command: string) => {
       const respond = mock(() => true);
       await handlers.get("twitchapi")?.({
@@ -229,7 +234,7 @@ describe("TwitchApi before Twitch is linked", () => {
   test("reads a bare { command, args } request as well as a CloudEvent one", async () => {
     reset();
     const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
+    await new TwitchApiApplication(selfSent()).init(ctx);
     const respond = mock(() => true);
 
     await handlers.get("twitchapi")?.({
@@ -253,7 +258,7 @@ describe("TwitchApi relinked while connected", () => {
     reset();
     linkTwitch();
     const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     await app.init(ctx);
     const client = instances[0];
     const bus = ctx.twitchEventBus;
@@ -272,7 +277,7 @@ describe("TwitchApi relinked while connected", () => {
     reset();
     linkTwitch();
     const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     await app.init(ctx);
     const first = instances[0];
 
@@ -289,7 +294,7 @@ describe("TwitchApi relinked while connected", () => {
     reset();
     linkTwitch();
     const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
+    const app = new TwitchApiApplication(selfSent());
     await app.init(ctx);
     const first = instances[0];
 
@@ -307,7 +312,7 @@ describe("TwitchApi relinked while connected", () => {
     reset();
     linkTwitch();
     const { ctx, handlers } = context({ ...CREDENTIALS, woofx3TwitchChannelName: "stream" });
-    await new TwitchApiApplication().init(ctx);
+    await new TwitchApiApplication(selfSent()).init(ctx);
 
     nextReload = { userId: "42", userChanged: false, providerChanged: true };
     await handlers.get("setting.integration.token.updated")?.(tokenUpdated);

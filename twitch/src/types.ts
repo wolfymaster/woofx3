@@ -3,6 +3,7 @@ import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { ChatterMembershipEnricher } from "./lib/chatterMembership";
+import type { SelfSentRegistry } from "./lib/selfSentChat";
 
 export interface Context {
   broadcaster: HelixUser;
@@ -15,6 +16,8 @@ export interface Context {
    * publishes fine without it - the unresolved fields are simply absent.
    */
   membershipEnricher?: ChatterMembershipEnricher;
+  /** The chat lines this service said, whose echoes are published as `fromEngine`. */
+  selfSent: SelfSentRegistry;
   /** Told when stream.online / stream.offline arrives, after it is published. */
   onStreamLiveChange?: (live: boolean) => void;
 }

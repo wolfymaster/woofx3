@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_SELF_SENT_CONFIG, type SelfSentConfig } from "./lib/selfSentChat";
 
 export const TwitchEnvSchema = z.object({
   woofx3MessagebusUrl: z.string().min(1, "woofx3MessagebusUrl is required"),
@@ -26,6 +27,19 @@ export const TwitchEnvSchema = z.object({
   // How long a chat message may wait on a cache miss before publishing without
   // the unresolved fields.
   woofx3TwitchMembershipDeadlineMs: z.number().int().positive().default(250),
+
+  // The chat lines this service said, remembered until Twitch hands them back
+  // on the chat feed so they are published as the engine's own.
+  woofx3TwitchSelfSentCapacity: z.number().int().positive().default(DEFAULT_SELF_SENT_CONFIG.capacity),
+  woofx3TwitchSelfSentTtlMs: z.number().int().positive().default(DEFAULT_SELF_SENT_CONFIG.ttlMs),
 });
 
 export type TwitchEnvConfig = z.infer<typeof TwitchEnvSchema>;
+
+/** The self-sent registry's settings, from config the runtime has validated against TwitchEnvSchema. */
+export function selfSentConfig(config: { getConfig: (key: string) => unknown }): SelfSentConfig {
+  return {
+    capacity: config.getConfig("woofx3TwitchSelfSentCapacity") as number,
+    ttlMs: config.getConfig("woofx3TwitchSelfSentTtlMs") as number,
+  };
+}

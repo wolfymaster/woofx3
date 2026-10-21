@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ApiClient, HelixUser } from "@twurple/api";
 import type { HelixAuth } from "./helix";
+import { DEFAULT_SELF_SENT_CONFIG, SelfSentRegistry } from "./selfSentChat";
 import type { EnqueueOutcome, ShoutoutTarget } from "./shoutoutQueue";
 import TwitchApi, {
   isTwitchApiCommand,
@@ -16,6 +17,7 @@ import TwitchApi, {
 const BROADCASTER = { id: "broadcaster-1" } as HelixUser;
 
 /** Never used to send: these tests go through `apiClient` only. */
+const CHAT_LINES = new SelfSentRegistry(DEFAULT_SELF_SENT_CONFIG, () => 0);
 const HELIX_AUTH: HelixAuth = {
   clientId: "client-1",
   getAccessTokenForUser: async () => {
@@ -56,7 +58,7 @@ describe("shoutout", () => {
   test("joins the dashboard's queue with who the user is, instead of sending", async () => {
     const { client, shoutoutUser, getUserById } = apiClientWith({});
     const enqueue = queue({ kind: "queued", position: 2, alreadyQueued: false });
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, enqueue);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES, enqueue);
 
     expect(await api.shoutout({ userId: "target-1" })).toEqual({
       ok: true,
@@ -84,6 +86,7 @@ describe("shoutout", () => {
       client,
       BROADCASTER,
       HELIX_AUTH,
+      CHAT_LINES,
       queue({ kind: "queued", position: 1, alreadyQueued: true })
     );
 
@@ -98,6 +101,7 @@ describe("shoutout", () => {
       client,
       BROADCASTER,
       HELIX_AUTH,
+      CHAT_LINES,
       queue(new Error("shoutout: could not queue the shoutout: HTTP 500"))
     );
 
@@ -111,6 +115,7 @@ describe("shoutout", () => {
       client,
       BROADCASTER,
       HELIX_AUTH,
+      CHAT_LINES,
       queue({ kind: "no_queue", reason: "not linked through a dashboard" })
     );
 
@@ -122,7 +127,7 @@ describe("shoutout", () => {
   test("resolves a login name, with or without the @", async () => {
     for (const typed of ["wolfymaster", "@wolfymaster"]) {
       const { client, shoutoutUser, getUserByName } = apiClientWith({});
-      const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+      const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
       await api.shoutout({ userName: typed });
       expect(getUserByName.mock.calls[0]).toEqual(["wolfymaster"]);
@@ -132,7 +137,7 @@ describe("shoutout", () => {
 
   test("says which name it could not find", async () => {
     const { client } = apiClientWith({ getUserByName: mock(async (..._args: unknown[]) => null) });
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await expect(api.shoutout({ userName: "ghost" })).rejects.toThrow('no Twitch user named "ghost"');
   });
@@ -146,7 +151,7 @@ describe("shoutout", () => {
         throw limited;
       }),
     });
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const err = await api.shoutout({ userId: "target-1" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TwitchApiError);
@@ -161,7 +166,7 @@ describe("shoutout", () => {
         throw denied;
       }),
     });
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const err = await api.shoutout({ userId: "target-1" }).catch((e: unknown) => e);
     expect(err).toBe(denied);
@@ -171,7 +176,7 @@ describe("shoutout", () => {
   test("refuses a shoutout that names nobody", async () => {
     const { client, shoutoutUser } = apiClientWith({});
     const enqueue = queue({ kind: "queued", position: 1, alreadyQueued: false });
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, enqueue);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES, enqueue);
 
     await expect(api.shoutout({})).rejects.toThrow("userId or userName is required");
     expect(enqueue).not.toHaveBeenCalled();
@@ -234,7 +239,7 @@ describe("ad schedule", () => {
         },
       ],
     }));
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const schedule = await api.getAdSchedule({});
 
@@ -261,7 +266,7 @@ describe("ad schedule", () => {
         { next_ad_at: "", last_ad_at: "", duration: 0, preroll_free_time: 0, snooze_count: 0, snooze_refresh_at: "" },
       ],
     }));
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const { serverNow: _serverNow, ...schedule } = await api.getAdSchedule({});
     expect(schedule).toEqual({
@@ -278,7 +283,7 @@ describe("ad schedule", () => {
     const { client, callApi } = helixClient(() => ({
       data: [{ snooze_count: "2", snooze_refresh_at: "1790622000", next_ad_at: "2026-09-28T18:15:00Z" }],
     }));
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.snoozeNextAd({})).toEqual({
       snoozeCount: 2,
@@ -298,7 +303,7 @@ describe("ad schedule", () => {
         "This token does not have any of the requested scopes (channel:read:ads) and can not be upgraded."
       );
     });
-    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const err = await rejectionOf(api.getAdSchedule({}));
     expect(err.code).toBe("missing_scope");
@@ -318,7 +323,7 @@ describe("ad schedule", () => {
       const { client } = helixClient(() => {
         throw thrown;
       });
-      const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH);
+      const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, CHAT_LINES);
       expect((await rejectionOf(api.snoozeNextAd({}))).code).toBe(code);
     }
     expect(twitchApiErrorCodeOf(new TwitchApiError("failed", "x"))).toBeUndefined();
@@ -375,7 +380,7 @@ describe("the twitchapi command list", () => {
 describe("timeout", () => {
   test("times a user out by name through the ban endpoint with a duration", async () => {
     const banUser = mock(async (..._args: unknown[]) => []);
-    const api = new TwitchApi(helix({ banUser }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ banUser }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.timeout({ userName: "@spammer", durationSeconds: 300, reason: " spam " })).toEqual({
       ok: true,
@@ -387,7 +392,7 @@ describe("timeout", () => {
 
   test("refuses a duration Twitch would reject", async () => {
     const banUser = mock(async (..._args: unknown[]) => []);
-    const api = new TwitchApi(helix({ banUser }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ banUser }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     for (const durationSeconds of [0, -5, 1.5, 1_209_601, Number.NaN]) {
       await expect(api.timeout({ userId: "u", durationSeconds })).rejects.toThrow(
@@ -400,7 +405,7 @@ describe("timeout", () => {
 
   test("refuses a reason over 500 characters", async () => {
     const banUser = mock(async (..._args: unknown[]) => []);
-    const api = new TwitchApi(helix({ banUser }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ banUser }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await expect(api.timeout({ userId: "u", durationSeconds: 60, reason: "a".repeat(501) })).rejects.toThrow(
       "longer than 500"
@@ -409,12 +414,12 @@ describe("timeout", () => {
   });
 
   test("refuses to time out the broadcaster", async () => {
-    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH, CHAT_LINES);
     await expect(api.timeout({ userId: BROADCASTER.id, durationSeconds: 60 })).rejects.toThrow("broadcaster cannot");
   });
 
   test("names the command when nobody is named", async () => {
-    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH, CHAT_LINES);
     await expect(api.timeout({ durationSeconds: 60 })).rejects.toThrow("timeout: userId or userName is required");
   });
 });
@@ -422,7 +427,7 @@ describe("timeout", () => {
 describe("updateStream", () => {
   test("sends title and tags as given, leaving the category alone", async () => {
     const updateChannelInfo = mock(async (..._args: unknown[]) => {});
-    const api = new TwitchApi(helix({ updateChannelInfo }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ updateChannelInfo }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const result = await api.updateStream({ title: "  Building a bot  ", tags: ["English", "Programming"] });
     expect(result).toEqual({ ok: true, title: "Building a bot", tags: ["English", "Programming"] });
@@ -435,7 +440,7 @@ describe("updateStream", () => {
   test("prefers an exact category name over the first search result", async () => {
     const searchCategories = categories("IRL Games", "IRL");
     const updateChannelInfo = mock(async (..._args: unknown[]) => {});
-    const api = new TwitchApi(helix({ searchCategories, updateChannelInfo }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ searchCategories, updateChannelInfo }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const result = await api.updateStream({ category: "irl" });
     expect(result).toEqual({ ok: true, categoryId: "game-1", categoryName: "IRL" });
@@ -449,7 +454,8 @@ describe("updateStream", () => {
     const api = new TwitchApi(
       helix({ searchCategories: categories("Software and Game Development", "Software") }),
       BROADCASTER,
-      HELIX_AUTH
+      HELIX_AUTH,
+      CHAT_LINES
     );
 
     const result = await api.updateStream({ category: "software and game" });
@@ -458,7 +464,12 @@ describe("updateStream", () => {
 
   test("says which category it could not find, and changes nothing", async () => {
     const updateChannelInfo = mock(async (..._args: unknown[]) => {});
-    const api = new TwitchApi(helix({ searchCategories: categories(), updateChannelInfo }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(
+      helix({ searchCategories: categories(), updateChannelInfo }),
+      BROADCASTER,
+      HELIX_AUTH,
+      CHAT_LINES
+    );
 
     await expect(api.updateStream({ category: "zzzz" })).rejects.toThrow('no Twitch category matches "zzzz"');
     expect(updateChannelInfo).not.toHaveBeenCalled();
@@ -466,26 +477,26 @@ describe("updateStream", () => {
 
   test("uses a category id as given without searching", async () => {
     const searchCategories = categories("x");
-    const api = new TwitchApi(helix({ searchCategories }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ searchCategories }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.updateStream({ categoryId: "509658" })).toEqual({ ok: true, categoryId: "509658" });
     expect(searchCategories).not.toHaveBeenCalled();
   });
 
   test("refuses category and categoryId together", async () => {
-    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH, CHAT_LINES);
     await expect(api.updateStream({ category: "IRL", categoryId: "1" })).rejects.toThrow("not both");
   });
 
   test("refuses an update with nothing in it", async () => {
-    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH, CHAT_LINES);
     await expect(api.updateStream({})).rejects.toThrow("nothing to update");
   });
 
   // A bad tag must not let the valid title through on its own.
   test("validates everything before calling Twitch", async () => {
     const updateChannelInfo = mock(async (..._args: unknown[]) => {});
-    const api = new TwitchApi(helix({ updateChannelInfo }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ updateChannelInfo }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await expect(api.updateStream({ title: "fine", tags: ["has space"] })).rejects.toThrow("letters and numbers");
     expect(updateChannelInfo).not.toHaveBeenCalled();
@@ -548,7 +559,7 @@ describe("createMarker", () => {
       description: "clutch",
       positionInSeconds: 3600,
     }));
-    const api = new TwitchApi(helix({ createStreamMarker }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ createStreamMarker }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.createMarker({ description: " clutch " })).toEqual({
       id: "m1",
@@ -566,7 +577,7 @@ describe("createMarker", () => {
       description: "",
       positionInSeconds: 1,
     }));
-    const api = new TwitchApi(helix({ createStreamMarker }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ createStreamMarker }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await api.createMarker({});
     expect(createStreamMarker.mock.calls[0]).toEqual([BROADCASTER, undefined]);
@@ -577,7 +588,8 @@ describe("createMarker", () => {
     const api = new TwitchApi(
       helix({ createStreamMarker: mock(async (..._args: unknown[]) => Promise.reject(offline)) }),
       BROADCASTER,
-      HELIX_AUTH
+      HELIX_AUTH,
+      CHAT_LINES
     );
 
     await expect(api.createMarker({})).rejects.toThrow("the channel is not live");
@@ -588,7 +600,8 @@ describe("createMarker", () => {
     const api = new TwitchApi(
       helix({ createStreamMarker: mock(async (..._args: unknown[]) => Promise.reject(denied)) }),
       BROADCASTER,
-      HELIX_AUTH
+      HELIX_AUTH,
+      CHAT_LINES
     );
 
     await expect(api.createMarker({})).rejects.toThrow("Unauthorized");
@@ -596,7 +609,7 @@ describe("createMarker", () => {
 
   test("refuses a description over 140 characters", async () => {
     const createStreamMarker = mock(async (..._args: unknown[]) => ({}));
-    const api = new TwitchApi(helix({ createStreamMarker }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ createStreamMarker }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await expect(api.createMarker({ description: "a".repeat(141) })).rejects.toThrow("at most 140");
     expect(createStreamMarker).not.toHaveBeenCalled();
@@ -606,7 +619,7 @@ describe("createMarker", () => {
 describe("searchCategories", () => {
   test("returns id, name and box art, asking Twitch for ten by default", async () => {
     const searchCategories = categories("Just Chatting");
-    const api = new TwitchApi(helix({ searchCategories }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ searchCategories }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.searchCategories({ query: " just " })).toEqual([
       { id: "game-0", name: "Just Chatting", boxArtUrl: "https://box/0.jpg" },
@@ -615,7 +628,7 @@ describe("searchCategories", () => {
   });
 
   test("refuses an empty query or an out-of-range page size", async () => {
-    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({}), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await expect(api.searchCategories({ query: " " })).rejects.toThrow("query is required");
     await expect(api.searchCategories({ query: "x", first: 0 })).rejects.toThrow("from 1 to 100");
@@ -632,7 +645,7 @@ describe("getStreamInfo", () => {
       tags: ["English"],
       language: "en",
     }));
-    const api = new TwitchApi(helix({ getChannelInfoById }), BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(helix({ getChannelInfoById }), BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.getStreamInfo({})).toEqual({
       title: "Live coding",
@@ -677,7 +690,7 @@ describe("getUser", () => {
 
   test("reads the profile and the channel's last category while offline", async () => {
     const { apiClient, getUserByName, getChannelInfoById, getStreamByUserId } = client(null);
-    const api = new TwitchApi(apiClient, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(apiClient, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     expect(await api.getUser({ userName: "@wolfymaster" })).toEqual({
       userId: "user-1",
@@ -707,7 +720,7 @@ describe("getUser", () => {
       viewers: 42,
       startDate: new Date("2026-10-03T18:00:00Z"),
     });
-    const api = new TwitchApi(apiClient, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(apiClient, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     const info = await api.getUser({ userId: "user-1" });
     expect(info.isLive).toBe(true);
@@ -725,7 +738,7 @@ describe("getUser", () => {
     const { apiClient, getUserByName, getUserById } = client(null);
     getUserByName.mockImplementation(async () => null as never);
     getUserById.mockImplementation(async () => null as never);
-    const api = new TwitchApi(apiClient, BROADCASTER, HELIX_AUTH);
+    const api = new TwitchApi(apiClient, BROADCASTER, HELIX_AUTH, CHAT_LINES);
 
     await expect(api.getUser({ userName: "ghost" })).rejects.toThrow('getUser: no Twitch user named "ghost"');
     await expect(api.getUser({ userId: "404" })).rejects.toThrow("getUser: no Twitch user with id 404");
