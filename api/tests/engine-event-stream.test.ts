@@ -8,18 +8,22 @@ import {
   makeRequestEnvelope,
 } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { EngineEventStream } from "../src/engine-event-stream";
+import {
+  DEFAULT_ENGINE_EVENT_STREAM_LIMITS,
+  EngineEventStream,
+  type EngineEventStreamLimits,
+} from "../src/engine-event-stream";
 
 function fakeLogger() {
   return { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) };
 }
 
-function newStream(bufferLimit?: number) {
+function newStream(limits: Partial<EngineEventStreamLimits> = {}) {
   const logger = fakeLogger();
-  const stream = new EngineEventStream(
-    logger as unknown as SharedLogger,
-    bufferLimit === undefined ? undefined : { bufferLimit }
-  );
+  const stream = new EngineEventStream(logger as unknown as SharedLogger, {
+    ...DEFAULT_ENGINE_EVENT_STREAM_LIMITS,
+    ...limits,
+  });
   return { stream, logger };
 }
 
@@ -167,7 +171,7 @@ describe("EngineEventStream", () => {
   });
 
   test("a slow subscriber holds up neither the publisher nor anyone else, and loses its oldest frames", async () => {
-    const { stream, logger } = newStream(2);
+    const { stream, logger } = newStream({ bufferLimit: 2 });
     const slow = stalled();
     const fast = collector();
     stream.subscribe(slow.subscriber, undefined, {}, "slow");
@@ -213,7 +217,28 @@ describe("EngineEventStream", () => {
   });
 
   test("rejects a bufferLimit that is not a positive integer", () => {
-    expect(() => newStream(0)).toThrow("bufferLimit");
+    expect(() => newStream({ bufferLimit: 0 })).toThrow("bufferLimit");
+  });
+
+  test("rejects a pushTimeoutMs that is not a positive integer", () => {
+    expect(() => newStream({ pushTimeoutMs: 0 })).toThrow("pushTimeoutMs");
+  });
+
+  test("a push that never settles drops the subscription after pushTimeoutMs", async () => {
+    const { stream, logger } = newStream({ pushTimeoutMs: 20 });
+    const slow = stalled();
+    stream.subscribe(slow.subscriber, undefined, {}, "local");
+
+    stream.publish(workflowDeleted("w1"));
+    const answered = stream.request(tokenRequest(), "local", 60_000);
+
+    await expect(answered).rejects.toThrow("the event stream subscription closed (push timed out after 20ms)");
+    expect(stream.subscriberCount).toBe(0);
+    expect(slow.frames).toHaveLength(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "EngineEventStream: subscription dropped",
+      expect.objectContaining({ clientId: "local", reason: "push timed out after 20ms" })
+    );
   });
 });
 
@@ -334,7 +359,7 @@ describe("EngineEventStream requests", () => {
   });
 
   test("rejects at once when the request is dropped unsent behind a slow subscriber", async () => {
-    const { stream } = newStream(1);
+    const { stream } = newStream({ bufferLimit: 1 });
     const slow = stalled();
     stream.subscribe(slow.subscriber, undefined, {}, "local");
     stream.publish(workflowDeleted("in flight"));
