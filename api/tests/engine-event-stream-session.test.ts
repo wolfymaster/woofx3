@@ -153,7 +153,16 @@ describe("subscribeEngineEvents over a WebSocket session", () => {
         stored = value;
       },
     };
-    const source = new TwitchTokenSource(settings, () => webhooks);
+    const source = new TwitchTokenSource({
+      db: settings,
+      dashboard: () => webhooks,
+      ownClientId: null,
+      publicClient: {
+        refresh: async () => {
+          throw new Error("this test has no public Twitch app");
+        },
+      },
+    });
 
     expect(await source.dashboardToken(true)).toEqual(GRANT);
     close();

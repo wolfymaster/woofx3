@@ -7,7 +7,7 @@ import {
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
-import { type PublicClientToken, TwitchOAuthClient, TwitchOAuthError } from "@woofx3/twitch/oauth";
+import { type PublicClientToken, type TwitchOAuthClient, TwitchOAuthError } from "@woofx3/twitch/oauth";
 import { publicClientIdOf, selectStrategy } from "@woofx3/twitch/token-strategy";
 import type { DbClient } from "./db-client";
 
@@ -15,8 +15,9 @@ export const TWITCH_TOKEN_SETTING = "twitch_token";
 
 /**
  * NATS subject the engine's other services ask on for the linked account's
- * Twitch token when it came from a dashboard. The request is
- * `{ force?: boolean }`; the reply is `{ token }` or `{ error }`.
+ * Twitch token when this service renews it: a dashboard's, or the engine's
+ * public Twitch app's. The request is `{ force?: boolean }`; the reply is
+ * `{ token }` or `{ error }`.
  */
 export const TWITCH_TOKEN_SUBJECT = "engine.twitch.token";
 
@@ -57,6 +58,16 @@ export type StoredPublicToken = PublicClientToken & { userId: string; publicClie
 /** What `TwitchTokenSource` needs to refresh a public app's token; `TwitchOAuthClient` provides it. */
 export type PublicClientRefresher = Pick<TwitchOAuthClient, "refresh">;
 
+export interface TwitchTokenSourceOptions {
+  db: Pick<DbClient, "getSetting" | "setSetting">;
+  /** The connection to ask a dashboard on, or null while there is none. */
+  dashboard: () => DashboardRequester | null;
+  /** The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`), or null when it has none. */
+  ownClientId: string | null;
+  publicClient: PublicClientRefresher;
+  now?: () => number;
+}
+
 /**
  * The linked Twitch account's token, wherever it is renewed.
  *
@@ -85,13 +96,19 @@ export class TwitchTokenSource implements TwitchCredentials {
   /** A refresh token Twitch refused. It never works again, so it is not sent again. */
   private refusedRefreshToken: string | null = null;
 
-  constructor(
-    private readonly db: Pick<DbClient, "getSetting" | "setSetting">,
-    private readonly dashboard: () => DashboardRequester | null,
-    private readonly ownClientId: () => string | undefined = () => process.env.WOOFX3_TWITCH_CLIENT_ID,
-    private readonly now: () => number = () => Date.now(),
-    private readonly publicClient: PublicClientRefresher = new TwitchOAuthClient()
-  ) {}
+  private readonly db: TwitchTokenSourceOptions["db"];
+  private readonly dashboard: TwitchTokenSourceOptions["dashboard"];
+  private readonly ownClientId: string | null;
+  private readonly publicClient: PublicClientRefresher;
+  private readonly now: () => number;
+
+  constructor(opts: TwitchTokenSourceOptions) {
+    this.db = opts.db;
+    this.dashboard = opts.dashboard;
+    this.ownClientId = opts.ownClientId;
+    this.publicClient = opts.publicClient;
+    this.now = opts.now ?? (() => Date.now());
+  }
 
   async helix(): Promise<HelixCredentials | string> {
     let stored: Record<string, unknown> | null;
@@ -217,7 +234,7 @@ export class TwitchTokenSource implements TwitchCredentials {
 
   /** The engine's own token, which the twitch service refreshes; this only reads it. */
   private engineRefreshHelix(stored: Record<string, unknown>): HelixCredentials | string {
-    const clientId = this.ownClientId();
+    const clientId = this.ownClientId;
     if (!clientId) {
       return "WOOFX3_TWITCH_CLIENT_ID is not set";
     }

@@ -129,3 +129,25 @@ describe("public Twitch app", () => {
     expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_PUBLIC_CLIENT_ID");
   });
 });
+
+describe("confidential Twitch app", () => {
+  test("is the client id WOOFX3_TWITCH_CLIENT_ID gives", () => {
+    withEnv({ WOOFX3_TWITCH_CLIENT_ID: "confidential", WOOFX3_TWITCH_PUBLIC_CLIENT_ID: "abc123publicapp" });
+
+    expect(loadConfig().twitchClientId).toBe("confidential");
+  });
+
+  test("is null when unset or blank", () => {
+    delete process.env.WOOFX3_TWITCH_CLIENT_ID;
+    withEnv({});
+    expect(loadConfig().twitchClientId).toBeNull();
+
+    withEnv({ WOOFX3_TWITCH_CLIENT_ID: " " });
+    expect(loadConfig().twitchClientId).toBeNull();
+  });
+
+  test("refuses a value that is not a client id", () => {
+    withEnv({ WOOFX3_TWITCH_CLIENT_ID: "abc def" });
+    expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_CLIENT_ID");
+  });
+});

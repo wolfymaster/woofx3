@@ -75,6 +75,8 @@ export interface ApiOptions {
   marketplace?: MarketplaceClient | null;
   /** The engine's public Twitch app (`WOOFX3_TWITCH_PUBLIC_CLIENT_ID`), for device logins; null or absent when it has none. */
   twitchPublicClientId?: string | null;
+  /** The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`); null or absent when it has none. */
+  twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
 }
@@ -421,7 +423,12 @@ export class ApiRouteHost extends RpcTarget {
     }
     this.db = opts.db;
     const twitchOAuth = opts.twitchOAuth ?? new TwitchOAuthClient();
-    this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient, undefined, undefined, twitchOAuth);
+    this.twitchToken = new TwitchTokenSource({
+      db: this.db,
+      dashboard: () => this.webhookClient,
+      ownClientId: opts.twitchClientId ?? null,
+      publicClient: twitchOAuth,
+    });
     this.twitchDeviceLogins = new TwitchDeviceLogins({
       clientId: opts.twitchPublicClientId ?? null,
       oauth: twitchOAuth,
