@@ -4,6 +4,8 @@
 
 export type { Application, ApplicationContext, IApplication, Logger, ServicesRegistry } from "./application";
 export { createApplication } from "./application";
+export type { Backoff, BackoffConfig, Clock, RandomSource } from "./backoff";
+export { createBackoff } from "./backoff";
 export type {
   EnvConfigSchema,
   LoadRuntimeEnvOptions,
@@ -29,4 +31,13 @@ export type {
 } from "./runtime";
 export { createRuntime, Runtime } from "./runtime";
 export type { Service } from "./service";
+export type {
+  ShutdownHandle,
+  ShutdownOptions,
+  ShutdownReason,
+  ShutdownSignal,
+  ShutdownTimers,
+  SignalSource,
+} from "./shutdown";
+export { installShutdown, SHUTDOWN_SIGNALS } from "./shutdown";
 export { createNATSHealthCheck, createNATSHeartbeat } from "./utils";
