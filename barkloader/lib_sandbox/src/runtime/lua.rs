@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
-use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits};
+use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits, Trip};
 use mlua::{
     ChunkMode, Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue,
     VmState,
@@ -9,10 +9,7 @@ use mlua::{
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-
-const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
-const DEFAULT_MAX_INSTRUCTIONS: u64 = 10_000_000;
-const HOOK_INTERVAL: u32 = 10_000;
+use std::time::Instant;
 
 /// The only globals module code may see. mlua opens the base library even
 /// under `StdLib::NONE`, so every other global is removed before host
@@ -57,19 +54,56 @@ const LUA_FORBIDDEN_GLOBALS: &[&str] = &[
     "require",
 ];
 
+/// Replacements for two allowed globals whose stock versions run module code
+/// with debug hooks off, out of reach of the instruction and deadline checks.
+///
+/// Lua turns hooks off while a hook runs, and an error a hook raises keeps
+/// them off until a `pcall` boundary unwinds. The stock `xpcall` calls its
+/// message handler at the point of the error, before that unwinding, so a
+/// handler that loops would never be stopped. This `xpcall` calls the handler
+/// after `pcall` has unwound instead. A handler that fails makes it return
+/// `false` and the handler's error, where the stock one reports an error in
+/// error handling; the handler cannot inspect the stack either way, since
+/// `debug` is not a global.
+///
+/// Lua also runs `__gc` finalizers with hooks off, so `setmetatable` refuses a
+/// metatable that carries one. A `__gc` added to the metatable afterwards is
+/// never honoured by Lua.
+const LUA_HOOK_SAFE_GLOBALS: &str = r#"
+local error, pcall, rawget, setmetatable, type = error, pcall, rawget, setmetatable, type
+
+local function settle(handler, ok, ...)
+    if ok then
+        return true, ...
+    end
+    local _, handled = pcall(handler, (...))
+    return false, handled
+end
+
+_G.xpcall = function(f, handler, ...)
+    return settle(handler, pcall(f, ...))
+end
+
+_G.setmetatable = function(t, mt)
+    if type(mt) == "table" and rawget(mt, "__gc") ~= nil then
+        error("setmetatable: __gc metamethods are not allowed in the sandbox", 2)
+    end
+    return setmetatable(t, mt)
+end
+"#;
+
 pub struct LuaAdapter {
-    memory_limit: usize,
-    max_instructions: u64,
     limits: SandboxLimits,
 }
 
 impl LuaAdapter {
     pub fn new(limits: SandboxLimits) -> Result<Self, Error> {
-        Ok(Self {
-            memory_limit: DEFAULT_MEMORY_LIMIT,
-            max_instructions: DEFAULT_MAX_INSTRUCTIONS,
-            limits,
-        })
+        if limits.hook_interval == 0 {
+            return Err(Error::RuntimeError(
+                "Lua hook interval must be above zero".to_string(),
+            ));
+        }
+        Ok(Self { limits })
     }
 }
 
@@ -81,34 +115,69 @@ impl RuntimeAdapter for LuaAdapter {
         invocation: &InvocationContext,
     ) -> Result<Value, Error> {
         let lua = Lua::new_with(StdLib::NONE, LuaOptions::new())?;
-        lua.set_memory_limit(self.memory_limit)?;
+        lua.set_memory_limit(self.limits.memory_bytes)?;
         strip_globals(&lua)?;
+        lua.load(LUA_HOOK_SAFE_GLOBALS)
+            .set_name("=sandbox")
+            .set_mode(ChunkMode::Text)
+            .exec()?;
 
-        let max_instr = self.max_instructions;
-        let count = Cell::new(0u64);
-        lua.set_hook(
-            HookTriggers::new().every_nth_instruction(HOOK_INTERVAL),
-            move |_, _| {
-                let c = count.get() + HOOK_INTERVAL as u64;
-                count.set(c);
-                if c > max_instr {
-                    Err(mlua::Error::RuntimeError(
-                        "instruction limit exceeded".to_string(),
-                    ))
-                } else {
-                    Ok(VmState::Continue)
-                }
-            },
-        );
+        let trip = Rc::new(Cell::new(None));
+        install_budget_hook(&lua, &self.limits, invocation.deadline, trip.clone());
 
-        let ctx_table = build_lua_ctx(&lua, invocation, self.limits.conversion)?;
-
-        lua.load(code).set_mode(ChunkMode::Text).exec()?;
-        let main: Function = lua.globals().get(entry_point)?;
-        let result = main.call::<LuaValue>(ctx_table)?;
-
-        lua_to_json(&lua, &result, &mut Budget::new(self.limits.conversion))
+        let run = || -> Result<Value, Error> {
+            let ctx_table = build_lua_ctx(&lua, invocation, self.limits.conversion)?;
+            lua.load(code).set_mode(ChunkMode::Text).exec()?;
+            let main: Function = lua.globals().get(entry_point)?;
+            let result = main.call::<LuaValue>(ctx_table)?;
+            lua_to_json(&lua, &result, &mut Budget::new(self.limits.conversion))
+        };
+        let outcome = run();
+        // Whatever error surfaced, a tripped budget is the reason: module code
+        // may have caught the trip and failed some other way while unwinding.
+        match trip.get() {
+            Some(trip) => Err(trip.into()),
+            None => outcome,
+        }
     }
+}
+
+/// Checks the instruction budget and the invocation deadline every
+/// `hook_interval` instructions, recording the first trip in `trip`.
+///
+/// A hook error is an ordinary Lua error, so `pcall` would catch it and let the
+/// module carry on. After the first trip the hook is re-installed to fail every
+/// instruction: a handler that catches the error cannot run a single
+/// instruction of its own, and the error unwinds through every `pcall` to the
+/// entry point.
+fn install_budget_hook(
+    lua: &Lua,
+    limits: &SandboxLimits,
+    deadline: Instant,
+    trip: Rc<Cell<Option<Trip>>>,
+) {
+    let interval = limits.hook_interval;
+    let max_instructions = limits.max_instructions;
+    let executed = Cell::new(0u64);
+    lua.set_hook(
+        HookTriggers::new().every_nth_instruction(interval),
+        move |lua, _| {
+            let total = executed.get().saturating_add(u64::from(interval));
+            executed.set(total);
+            let reason = if total > max_instructions {
+                Trip::Instructions
+            } else if Instant::now() >= deadline {
+                Trip::Deadline
+            } else {
+                return Ok(VmState::Continue);
+            };
+            trip.set(Some(reason));
+            lua.set_hook(HookTriggers::new().every_nth_instruction(1), move |_, _| {
+                Err(mlua::Error::RuntimeError(reason.to_string()))
+            });
+            Err(mlua::Error::RuntimeError(reason.to_string()))
+        },
+    );
 }
 
 /// Removes every global not in [`LUA_ALLOWED_GLOBALS`], then asserts none of

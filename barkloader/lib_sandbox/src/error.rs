@@ -54,6 +54,9 @@ pub enum Error {
     #[error("Instruction limit exceeded")]
     InstructionLimitExceeded,
 
+    #[error("invocation ran past its deadline")]
+    DeadlineExceeded,
+
     #[error("value nests deeper than {max_depth} levels")]
     ValueTooDeep { max_depth: usize },
 
@@ -83,4 +86,13 @@ pub enum InvokeBlockingError {
 
     #[error("sandbox invocation task panicked or was cancelled: {0}")]
     TaskJoin(String),
+
+    /// Every invocation slot stayed taken for the whole wait.
+    #[error(
+        "sandbox is busy: all {max_concurrent} invocation slots stayed taken for {waited_ms} ms"
+    )]
+    Busy {
+        max_concurrent: usize,
+        waited_ms: u64,
+    },
 }

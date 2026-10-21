@@ -6,9 +6,11 @@ use crate::host::{
 };
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
+use crate::runtime::limits::SandboxLimits;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Semaphore;
 use tracing::{debug, error, warn};
 use woofx3_cloudevents::{BaseEvent, now_iso8601};
 
@@ -16,15 +18,27 @@ use woofx3_cloudevents::{BaseEvent, now_iso8601};
 pub struct SandboxFactory {
     registry: Arc<ModuleRegistry>,
     host_ctx: HostContext,
+    limits: SandboxLimits,
+    /// One permit per invocation slot, shared by every clone of the factory.
+    permits: Arc<Semaphore>,
 }
 
 impl SandboxFactory {
-    pub fn new(registry: Arc<ModuleRegistry>, host_ctx: HostContext) -> Self {
-        Self { registry, host_ctx }
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        host_ctx: HostContext,
+        limits: SandboxLimits,
+    ) -> Self {
+        Self {
+            registry,
+            host_ctx,
+            limits,
+            permits: Arc::new(Semaphore::new(limits.max_concurrent_invocations)),
+        }
     }
 
     pub fn create(&self) -> Result<Sandbox, Error> {
-        Sandbox::new(self.registry.clone(), self.host_ctx.clone())
+        Sandbox::new(self.registry.clone(), self.host_ctx.clone(), self.limits)
     }
 
     /// Creates a fresh `Sandbox` and invokes `request` on Tokio's blocking
@@ -41,10 +55,36 @@ impl SandboxFactory {
     /// responder) should go through this rather than calling
     /// `Sandbox::invoke` directly, so the hazard can't be reintroduced by
     /// a future call site forgetting to offload it.
+    ///
+    /// At most `max_concurrent_invocations` run at once, so a burst or a few
+    /// runaway modules cannot take every thread of the blocking pool. A call
+    /// waits for a free slot for `permit_wait` or until its deadline, whichever
+    /// comes first, and is refused with [`InvokeBlockingError::Busy`] after
+    /// that. The wait counts against the invocation's deadline.
     pub async fn invoke_blocking(
         &self,
         request: InvokeRequest,
     ) -> Result<Value, InvokeBlockingError> {
+        let deadline = Instant::now() + invocation_timeout(request.timeout_ms);
+        let wait = self
+            .limits
+            .permit_wait
+            .min(deadline.saturating_duration_since(Instant::now()));
+        let permit = match tokio::time::timeout(wait, self.permits.clone().acquire_owned()).await {
+            Ok(Ok(permit)) => permit,
+            // The factory never closes its semaphore.
+            Ok(Err(closed)) => {
+                return Err(InvokeBlockingError::Invoke(format!(
+                    "sandbox invocation slots are closed: {closed}"
+                )));
+            }
+            Err(_) => {
+                return Err(InvokeBlockingError::Busy {
+                    max_concurrent: self.limits.max_concurrent_invocations,
+                    waited_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
+                });
+            }
+        };
         let factory = self.clone();
         // The closure's return value has to cross back from the blocking
         // thread pool into this async task, so it has to be `Send`. `Error`
@@ -53,9 +93,12 @@ impl SandboxFactory {
         // requiring every error source in this crate to be thread-safe just
         // to satisfy `spawn_blocking`.
         match tokio::task::spawn_blocking(move || {
+            // Held until the invocation ends, even when the caller stops
+            // waiting for it.
+            let _permit = permit;
             factory
                 .create()
-                .and_then(|mut sandbox| sandbox.invoke(request))
+                .and_then(|mut sandbox| sandbox.invoke_until(request, deadline))
                 .map_err(|e| e.to_string())
         })
         .await
@@ -73,24 +116,36 @@ pub struct Sandbox {
     host_ctx: HostContext,
 }
 
+/// How long an invocation may run: the requested `timeout_ms`, capped at
+/// `MAX_INVOCATION_TIMEOUT`, which is also the default.
+fn invocation_timeout(timeout_ms: Option<u64>) -> Duration {
+    timeout_ms
+        .map(Duration::from_millis)
+        .unwrap_or(MAX_INVOCATION_TIMEOUT)
+        .min(MAX_INVOCATION_TIMEOUT)
+}
+
 impl Sandbox {
-    pub fn new(registry: Arc<ModuleRegistry>, host_ctx: HostContext) -> Result<Self, Error> {
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        host_ctx: HostContext,
+        limits: SandboxLimits,
+    ) -> Result<Self, Error> {
         Ok(Self {
             registry,
-            function_executor: FunctionExecutor::new(),
+            function_executor: FunctionExecutor::new(limits),
             host_ctx,
         })
     }
 
+    /// Runs `request` with a deadline of its `timeout_ms` from now.
     pub fn invoke(&mut self, request: InvokeRequest) -> Result<Value, Error> {
-        debug!("Invoking function function={}", request.function);
-        let timeout = request
-            .timeout_ms
-            .map(Duration::from_millis)
-            .unwrap_or(MAX_INVOCATION_TIMEOUT)
-            .min(MAX_INVOCATION_TIMEOUT);
-        let deadline = Instant::now() + timeout;
+        let deadline = Instant::now() + invocation_timeout(request.timeout_ms);
+        self.invoke_until(request, deadline)
+    }
 
+    fn invoke_until(&mut self, request: InvokeRequest, deadline: Instant) -> Result<Value, Error> {
+        debug!("Invoking function function={}", request.function);
         let function = self.registry.get_function(&request.function)?;
         debug!(
             "Executing sandbox function={} entry_point={}",
@@ -233,15 +288,21 @@ thread_local! {
 ///
 /// Built before the `HostContext` it runs with — which holds it — so the
 /// context is bound afterwards with `bind`.
+///
+/// A nested run takes no invocation slot: its caller's thread already holds
+/// one, and waiting for a second while every slot is held by such callers
+/// would never end.
 pub struct SandboxActionRunner {
     registry: Arc<ModuleRegistry>,
+    limits: SandboxLimits,
     host: std::sync::OnceLock<HostContext>,
 }
 
 impl SandboxActionRunner {
-    pub fn new(registry: Arc<ModuleRegistry>) -> Arc<Self> {
+    pub fn new(registry: Arc<ModuleRegistry>, limits: SandboxLimits) -> Arc<Self> {
         Arc::new(Self {
             registry,
+            limits,
             host: std::sync::OnceLock::new(),
         })
     }
@@ -392,7 +453,7 @@ impl SandboxActionRunner {
             timeout_ms: Some(remaining.as_millis() as u64),
         };
 
-        Sandbox::new(self.registry.clone(), host.clone())
+        Sandbox::new(self.registry.clone(), host.clone(), self.limits)
             .and_then(|mut sandbox| sandbox.invoke(request))
             .map_err(|e| format!("ctx.resources.run: {owner}'s `{action}` failed: {e}"))
     }

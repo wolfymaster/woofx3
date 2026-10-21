@@ -15,10 +15,10 @@ pub struct FunctionExecutor {
 }
 
 impl FunctionExecutor {
-    pub fn new() -> Self {
+    pub fn new(limits: SandboxLimits) -> Self {
         Self {
             adapters: HashMap::new(),
-            limits: SandboxLimits::default(),
+            limits,
         }
     }
 
@@ -63,12 +63,6 @@ impl FunctionExecutor {
     }
 }
 
-impl Default for FunctionExecutor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,13 +104,13 @@ mod tests {
     fn test_new_executor_builds_no_adapters_up_front() {
         // Adapter construction is lazy: a fresh executor hasn't paid for
         // any runtime (echo/lua/js) until execute() actually needs one.
-        let executor = FunctionExecutor::new();
+        let executor = FunctionExecutor::new(SandboxLimits::default());
         assert!(executor.adapters.is_empty());
     }
 
     #[test]
     fn test_execute_only_builds_the_requested_runtime() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let adapter = Box::new(MockRuntimeAdapter);
         executor.add_adapter("mock".to_string(), adapter);
 
@@ -138,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_add_adapter() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let adapter = Box::new(MockRuntimeAdapter);
 
         executor.add_adapter("mock".to_string(), adapter);
@@ -147,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_execute_with_adapter() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let adapter = Box::new(MockRuntimeAdapter);
         executor.add_adapter("mock".to_string(), adapter);
 
@@ -171,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_execute_without_adapter() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let function = Function {
             name: "test_function".to_string(),
             file_name: "test_function.nonexistent".to_string(),
@@ -189,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_execute_with_unknown_extension() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let function = Function {
             name: "test_function".to_string(),
             file_name: "test_function".to_string(),

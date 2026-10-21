@@ -13,7 +13,7 @@ use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
 use lib_sandbox::extensions::{ChatExtension, ObsExtension, TwitchExtension};
 use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
-use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory};
+use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory, SandboxLimits};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
@@ -65,6 +65,11 @@ async fn connect_messagebus(
 
 async fn setup() -> Result<AppContext> {
     let registry = Arc::new(ModuleRegistry::new());
+    let sandbox_limits = SandboxLimits::from_lookup(|key| get_env_or_default(key, ""))?;
+    info!(
+        "sandbox limits: max_concurrent_invocations={}",
+        sandbox_limits.max_concurrent_invocations
+    );
 
     // Capture the raw async_nats::Client alongside the host context so we can
     // subscribe to NATS subjects directly (not just publish via NatsPublisher).
@@ -83,7 +88,7 @@ async fn setup() -> Result<AppContext> {
     let oauth_service: Option<Arc<OAuthService>>;
     // `ctx.resources.run` runs actions in a sandbox built from the very
     // context it is part of, so it is handed that context once it exists.
-    let action_runner = SandboxActionRunner::new(registry.clone());
+    let action_runner = SandboxActionRunner::new(registry.clone(), sandbox_limits);
     let host_ctx = {
         let mut ctx = noop_host_context();
         ctx.schedule = scheduler.clone();
@@ -185,7 +190,7 @@ async fn setup() -> Result<AppContext> {
     };
 
     action_runner.bind(host_ctx.clone());
-    let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
+    let sandbox = SandboxFactory::new(registry.clone(), host_ctx, sandbox_limits);
 
     scheduler.start(Arc::new(sandbox.clone()));
 

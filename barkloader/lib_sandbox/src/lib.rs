@@ -13,5 +13,5 @@ mod sandbox;
 
 pub use error::{Error, InvokeBlockingError};
 pub use module_registry::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
-pub use runtime::limits::{ConversionLimits, SandboxLimits, SizeLimit};
+pub use runtime::limits::{ConversionLimits, SandboxLimits, SandboxLimitsError, SizeLimit};
 pub use sandbox::{Sandbox, SandboxActionRunner, SandboxFactory};
