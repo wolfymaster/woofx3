@@ -90,10 +90,20 @@ In-process Lua execution via the `mlua` crate (vendored Lua 5.4).
 |----------|-------|
 | Extension | `.lua` |
 | Entry point | `main(args)` |
-| Sandboxing | `StdLib::NONE` -- no io, os, require, dofile |
+| Sandboxing | Allow-listed globals only; text chunks only |
 | Type mapping | JSON <-> LuaValue (nil, bool, number, string, table) |
 
-The adapter creates a `Lua` instance with an empty standard library, loads the source code, extracts the global `main` function, converts args from JSON to Lua tables, calls `main`, and converts the result back to JSON.
+The adapter creates a `Lua` instance with `StdLib::NONE`, strips the global environment down to an allow-list, loads the source code, extracts the global `main` function, converts args from JSON to Lua tables, calls `main`, and converts the result back to JSON.
+
+#### Globals and isolation
+
+`StdLib::NONE` leaves out `io`, `os`, `string`, `table`, `math`, `coroutine`, `debug` and `package`, but mlua always opens the base library. Before any host binding is installed, the adapter removes every global except these (`LUA_ALLOWED_GLOBALS` in `barkloader/lib_sandbox/src/runtime/lua.rs`):
+
+`assert`, `error`, `ipairs`, `next`, `pairs`, `pcall`, `rawequal`, `rawget`, `rawlen`, `rawset`, `select`, `setmetatable`, `getmetatable`, `tonumber`, `tostring`, `type`, `xpcall`, `_G`, `_VERSION`
+
+`ctx` is the only other value a module function receives. In particular `dofile`, `loadfile`, `load`, `loadstring`, `print`, `collectgarbage` and `require` are absent; the adapter checks that after the strip and fails the invocation if any survived.
+
+Module source is loaded in text mode: a source starting with the Lua bytecode signature (`\27Lua`) is refused with a syntax error, because the VM does not verify precompiled chunks.
 
 ### Echo (fallback)
 
@@ -167,8 +177,8 @@ how a manifest declares these values and how they get registered at install time
 
 Neither runtime provides a host-visible logging facility on its own — QuickJS has no
 `console` (rquickjs doesn't even offer a `console` cargo feature in the version this
-project pins), and the Lua sandbox's `StdLib` is `NONE` (no `io`, no `print` byte
-sink). `ctx.log` is the only way a module function can emit a log line; both adapters
+project pins), and the Lua sandbox strips `print` and has no `io`
+([Globals and isolation](#globals-and-isolation)). `ctx.log` is the only way a module function can emit a log line; both adapters
 build it as a namespace on `ctx` (`build_log_namespace` in
 `barkloader/lib_sandbox/src/runtime/quickjs.rs`, and the equivalent inline block in
 `barkloader/lib_sandbox/src/runtime/lua.rs`), forwarding to the host's `log` crate:
