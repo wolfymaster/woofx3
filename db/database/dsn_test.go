@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wolfymaster/woofx3/common/runtime"
@@ -151,4 +152,33 @@ func TestInitializeDB_SQLiteMemory(t *testing.T) {
 		t.Fatalf("ping: %v", err)
 	}
 	_ = sqlDB.Close()
+}
+
+func TestParsedDSN_LogSafe(t *testing.T) {
+	t.Setenv(runtime.DataDirEnv, "")
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"postgres password", "postgresql://user:hunter2@db:5432/woofx3", "postgresql://user:xxxxx@db:5432/woofx3"},
+		{"postgres query credentials", "postgres://user@db/woofx3?password=hunter2&sslmode=require", "postgres://user@db/woofx3"},
+		{"sqlite path", "sqlite:///var/lib/woofx3.db", "/var/lib/woofx3.db"},
+		{"memory", ":memory:", ":memory:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := ParseDatabaseURL(tc.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := parsed.LogSafe()
+			if got != tc.want {
+				t.Fatalf("LogSafe() = %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, "hunter2") {
+				t.Fatalf("LogSafe() leaked the password: %q", got)
+			}
+		})
+	}
 }

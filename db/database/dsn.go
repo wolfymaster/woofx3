@@ -22,8 +22,25 @@ type ParsedDSN struct {
 	Dialect Dialect
 	// DriverDSN is what the selected GORM dialector expects.
 	DriverDSN string
-	// Original is the untouched config / env value (for logs).
+	// Original is the untouched config / env value. It may hold a password:
+	// log LogSafe(), never this.
 	Original string
+}
+
+// LogSafe is the connection target as it may appear in logs. Postgres URLs
+// lose their password and query string (credentials can ride in either, e.g.
+// ?password=); SQLite logs its file path.
+func (p ParsedDSN) LogSafe() string {
+	if p.Dialect == DialectSQLite {
+		return p.DriverDSN
+	}
+	u, err := url.Parse(p.Original)
+	if err != nil {
+		return "<unparseable database url>"
+	}
+	u.RawQuery = ""
+	u.ForceQuery = false
+	return u.Redacted()
 }
 
 // ParseDatabaseURL chooses postgres vs sqlite from the URL scheme.

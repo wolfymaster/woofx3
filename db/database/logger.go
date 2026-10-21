@@ -49,6 +49,12 @@ func (a *SlogAdapter) Error(ctx context.Context, msg string, args ...interface{}
 	}
 }
 
+// ParamsFilter makes gorm trace SQL with its placeholders and no bound values,
+// so credentials and tokens passed as parameters never reach the logs.
+func (a *SlogAdapter) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	return sql, nil
+}
+
 // Trace logs SQL query information, execution time, errors, and affected rows.
 func (a *SlogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	elapsed := time.Since(begin)
@@ -69,11 +75,5 @@ func (a *SlogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (str
 			"rows", rows,
 			"sql", sql,
 		)
-		// case a.config.LogLevel >= logger.Info:
-		// 	a.slogger.InfoContext(ctx, "gorm trace",
-		// 		"elapsed_ms", float64(elapsed.Microseconds())/1000.0,
-		// 		"rows", rows,
-		// 		"sql", sql,
-		// 	)
 	}
 }
