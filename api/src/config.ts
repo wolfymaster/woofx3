@@ -255,7 +255,9 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
   }
   const ttlMs = Number(text);
   if (!Number.isInteger(ttlMs) || ttlMs <= 0) {
-    throw new Error(`Config error: woofx3AuthCacheTtlMs (WOOFX3_AUTH_CACHE_TTL_MS) must be a positive integer, got ${text}`);
+    throw new Error(
+      `Config error: woofx3AuthCacheTtlMs (WOOFX3_AUTH_CACHE_TTL_MS) must be a positive integer, got ${text}`
+    );
   }
   return ttlMs;
 }
