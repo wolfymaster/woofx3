@@ -28,6 +28,8 @@ func TestValidateSecret(t *testing.T) {
 		{"32 bytes", strings.Repeat("a", 32), nil},
 		{"64 hex", strings.Repeat("0123456789abcdef", 4), nil},
 		{"multibyte counts bytes", strings.Repeat("é", 16), nil},
+		{"leading byte order mark is kept", "\uFEFF" + strings.Repeat("a", 29), nil},
+		{"next line is trimmed", "\u0085" + strings.Repeat("a", 31), ErrSecretTooShort},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -87,6 +87,8 @@ mod tests {
         let exact = "a".repeat(32);
         let hex = "0123456789abcdef".repeat(4);
         let multibyte = "é".repeat(16);
+        let bom = format!("\u{FEFF}{}", "a".repeat(29));
+        let next_line = format!("\u{0085}{}", "a".repeat(31));
         let cases: Vec<(&str, &str, Want)> = vec![
             ("empty", "", Want::Empty),
             ("whitespace only", " \t\n", Want::Empty),
@@ -104,6 +106,8 @@ mod tests {
             ("32 bytes", &exact, Want::Accepted),
             ("64 hex", &hex, Want::Accepted),
             ("multibyte counts bytes", &multibyte, Want::Accepted),
+            ("leading byte order mark is kept", &bom, Want::Accepted),
+            ("next line is trimmed", &next_line, Want::TooShort),
         ];
         for (label, value, want) in cases {
             let result = validate_secret("barkloaderKey", value);

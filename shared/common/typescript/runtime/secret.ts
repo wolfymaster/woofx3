@@ -24,6 +24,19 @@ const PLACEHOLDER_SECRETS: ReadonlySet<string> = new Set([
   "test",
 ]);
 
+/**
+ * Unicode White_Space, the set Go's strings.TrimSpace and Rust's str::trim
+ * strip. String.prototype.trim differs: it also strips U+FEFF (a byte order
+ * mark) and keeps U+0085, so a value near MIN_SECRET_BYTES could pass in one
+ * language and fail in another.
+ */
+const SURROUNDING_WHITE_SPACE =
+  /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g;
+
+function trimWhiteSpace(value: string): string {
+  return value.replace(SURROUNDING_WHITE_SPACE, "");
+}
+
 export type SecretProblemKind = "empty" | "placeholder" | "tooShort";
 
 export interface SecretProblem {
@@ -60,7 +73,7 @@ function problemKind(trimmed: string): SecretProblemKind | null {
  * back unchanged, so every service signs with the same bytes.
  */
 export function validateSecret(name: string, value: string): SecretResult {
-  const kind = problemKind(value.trim());
+  const kind = problemKind(trimWhiteSpace(value));
   if (kind === null) {
     return { ok: true, value };
   }

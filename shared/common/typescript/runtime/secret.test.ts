@@ -19,6 +19,8 @@ describe("validateSecret", () => {
     ["32 bytes", "a".repeat(32), null],
     ["64 hex", "0123456789abcdef".repeat(4), null],
     ["multibyte counts bytes", "é".repeat(16), null],
+    ["leading byte order mark is kept", `\uFEFF${"a".repeat(29)}`, null],
+    ["next line is trimmed", `\u0085${"a".repeat(31)}`, "tooShort"],
   ];
 
   for (const [label, value, want] of cases) {
