@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -203,5 +204,93 @@ func TestPanicOnAWaitTimerFailsItsRun(t *testing.T) {
 	}
 	if _, ran := recorder.step("after"); ran {
 		t.Error("the step after the panic ran")
+	}
+}
+
+func TestSubWorkflowParametersThatDoNotResolveFailTheTask(t *testing.T) {
+	cases := []struct {
+		name string
+		call types.TaskDefinition
+		want string
+	}{
+		{
+			name: "parameters form, unresolvable eventData",
+			call: types.TaskDefinition{ID: "call", Type: "workflow", Parameters: map[string]any{
+				"workflowId": "wf-child",
+				"eventData":  map[string]any{"user": "${trigger.data.missing}"},
+			}},
+			want: "resolve sub-workflow parameters: failed to resolve eventData",
+		},
+		{
+			name: "parameters form, wrong type",
+			call: types.TaskDefinition{ID: "call", Type: "workflow", Parameters: map[string]any{
+				"workflowId":          "wf-child",
+				"waitUntilCompletion": "yes",
+			}},
+			want: `sub-workflow parameter "waitUntilCompletion" must be a boolean`,
+		},
+		{
+			name: "parameters form, no workflowId",
+			call: types.TaskDefinition{ID: "call", Type: "workflow", Parameters: map[string]any{"event": "child.run"}},
+			want: "workflow task missing workflowId",
+		},
+		{
+			name: "workflow block, unresolvable eventData",
+			call: types.TaskDefinition{ID: "call", Type: "workflow", Workflow: &types.WorkflowConfig{
+				WorkflowID: "wf-child",
+				EventData:  map[string]any{"user": "${trigger.data.missing}"},
+			}},
+			want: "resolve sub-workflow eventData: failed to resolve user",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPanicHarness(t)
+			h.register(t, "wf-child", "child.run", types.TaskDefinition{ID: "child-mark", Type: "action", Action: "mark"})
+			h.register(t, "wf-parent", "channel.cheer", tc.call)
+
+			execution := h.fire(t, "channel.cheer", "wf-parent")
+			if execution.Status != types.ExecutionStatusFailed {
+				t.Fatalf("status = %s, want failed", execution.Status)
+			}
+			if !strings.Contains(execution.Error, tc.want) {
+				t.Errorf("run error = %q, want it to contain %q", execution.Error, tc.want)
+			}
+			step, ok := h.log.step("call")
+			if !ok || step.Status != string(types.TaskStatusFailed) || !strings.Contains(step.Error, tc.want) {
+				t.Errorf("call step = %+v (recorded %v), want failed with %q", step, ok, tc.want)
+			}
+			if n := h.runCount("wf-child"); n != 0 {
+				t.Errorf("sub-workflow ran %d times, want 0", n)
+			}
+		})
+	}
+}
+
+// Sub-workflow parameters resolve once: text that only looks like an
+// expression after resolving, such as a chat message, reaches the sub-workflow
+// as written.
+func TestSubWorkflowParametersResolveOnce(t *testing.T) {
+	h := newPanicHarness(t)
+	h.register(t, "wf-child", "child.run", types.TaskDefinition{ID: "child-mark", Type: "action", Action: "mark"})
+	h.register(t, "wf-parent", "channel.chat", types.TaskDefinition{ID: "call", Type: "workflow", Parameters: map[string]any{
+		"workflowId": "wf-child",
+		"eventData":  map[string]any{"message": "${trigger.data.message}"},
+	}})
+
+	event := &types.Event{ID: "chat-1", Type: "channel.chat", Source: "test", Time: time.Now(), Data: map[string]any{"message": "${trigger.id}"}}
+	if err := h.engine.HandleEvent(event); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	parentID := h.runOf(t, "wf-parent")
+	if status := h.log.awaitSettled(t, parentID); status != types.ExecutionStatusCompleted {
+		t.Fatalf("parent status = %s, want completed", status)
+	}
+	child, err := h.engine.GetExecution(h.runOf(t, "wf-child"))
+	if err != nil {
+		t.Fatalf("GetExecution: %v", err)
+	}
+	if got := child.TriggerEvent.Data["message"]; got != "${trigger.id}" {
+		t.Errorf("sub-workflow message = %v, want the chat text as written", got)
 	}
 }

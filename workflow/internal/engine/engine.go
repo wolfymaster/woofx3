@@ -1246,47 +1246,12 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		}
 
 		if taskDef.Type == types.TaskTypeWorkflow {
-			// Note: Condition checking is now handled by the general guard above
-			// Handle workflow task - can use Workflow config or Parameters
-			workflowConfig := taskDef.Workflow
-			if workflowConfig == nil {
-				// Try to build workflow config from parameters
-				resolver := e.buildResolver(execution, triggerEvent, taskExports)
-				resolvedParams, err := resolver.Resolve(taskDef.Parameters)
-				if err == nil {
-					if params, ok := resolvedParams.(map[string]any); ok {
-						workflowConfig = &types.WorkflowConfig{}
-						if workflowID, ok := params["workflowId"].(string); ok {
-							workflowConfig.WorkflowID = workflowID
-						}
-						if waitUntilCompletion, ok := params["waitUntilCompletion"].(bool); ok {
-							workflowConfig.WaitUntilCompletion = waitUntilCompletion
-						}
-						if event, ok := params["event"].(string); ok {
-							workflowConfig.Event = event
-						}
-						if eventData, ok := params["eventData"].(map[string]any); ok {
-							workflowConfig.EventData = eventData
-						}
-					}
-				}
-			}
-
-			if workflowConfig == nil || workflowConfig.WorkflowID == "" {
-				taskExec.Status = types.TaskStatusFailed
-				taskExec.Error = "workflow task missing workflowId"
-				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
-				e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("workflow task missing workflowId"))
-				e.logger.Error("Workflow task missing workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID)
-				e.checkSubWorkflowCompletion(execution.ID)
+			workflowConfig, err := resolveWorkflowConfig(taskDef, e.buildResolver(execution, triggerEvent, taskExports))
+			if err != nil {
+				e.failRecordedTask(execution, taskExec, taskDef.ID, i, err, "Workflow task failed")
 				return
 			}
-
-			// Temporarily set Workflow config for handleWorkflowTask
-			originalWorkflow := taskDef.Workflow
-			taskDef.Workflow = workflowConfig
-			workflowResult := e.handleWorkflowTask(execution, taskDef, taskExec, executionOrder, i, taskExports, triggerEvent)
-			taskDef.Workflow = originalWorkflow // Restore original
+			workflowResult, err := e.handleWorkflowTask(execution, taskDef, workflowConfig, taskExec, executionOrder, i, taskExports, triggerEvent)
 			switch workflowResult {
 			case "waiting":
 				return
@@ -1295,13 +1260,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 				e.settleCancelled(execution)
 				return
 			case "failed":
-				taskExec.Status = types.TaskStatusFailed
-				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
-				// nil: the sub-workflow's own reason was already recorded and
-				// logged on its execution; this path never had one of its own.
-				e.setExecutionStatus(execution, types.ExecutionStatusFailed, nil)
-				e.logger.Error("Workflow task failed", "workflow", execution.WorkflowID, "task", taskDef.ID)
-				e.checkSubWorkflowCompletion(execution.ID)
+				e.failRecordedTask(execution, taskExec, taskDef.ID, i, err, "Workflow task failed")
 				return
 			}
 
@@ -1647,6 +1606,17 @@ collect:
 	return true
 }
 
+// failRecordedTask fails a task, records the failed step, and then fails the
+// run, so the step that failed the run is stored before the run is.
+func (e *Engine[TServices]) failRecordedTask(execution *types.WorkflowExecution, taskExec *types.TaskExecution, taskID string, index int, err error, msg string) {
+	now := time.Now()
+	taskExec.Status = types.TaskStatusFailed
+	taskExec.Error = err.Error()
+	taskExec.CompletedAt = &now
+	e.recordStep(execution, taskID, index, nil, taskExec)
+	e.failExecution(execution, taskExec, err, msg, taskID)
+}
+
 // failExecution records a task-level error as an execution failure. Extracted
 // so the concurrent path fails identically to the sequential one.
 func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, taskExec *types.TaskExecution, err error, msg, taskID string) {
@@ -1856,58 +1826,27 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 	return "timeout"
 }
 
-func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
+// handleWorkflowTask starts, or checks on, the sub-workflow a workflow task
+// runs. config is the task's sub-workflow as resolveWorkflowConfig resolved
+// it; the task definition itself is never written to. The error is set
+// exactly when the result is "failed", and says why.
+func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, config *types.WorkflowConfig, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) (string, error) {
 	if taskExec.WorkflowState == nil {
-		// Resolve workflow config parameters
-		resolver := e.buildResolver(execution, triggerEvent, taskExports)
-
-		// Resolve workflowID if it contains expressions
-		workflowIDRaw := taskDef.Workflow.WorkflowID
-		if workflowIDRaw == "" {
-			e.logger.Error("Workflow task missing workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID)
-			return "failed"
-		}
-
-		workflowIDResolved, err := resolver.ResolveString(workflowIDRaw)
-		if err != nil {
-			e.logger.Error("Failed to resolve workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID, "error", err)
-			return "failed"
-		}
-
-		workflowID, ok := workflowIDResolved.(string)
-		if !ok {
-			e.logger.Error("WorkflowId must resolve to a string", "workflow", execution.WorkflowID, "task", taskDef.ID)
-			return "failed"
-		}
-
-		if workflowID == "" {
-			e.logger.Error("Resolved workflowId is empty", "workflow", execution.WorkflowID, "task", taskDef.ID)
-			return "failed"
-		}
-
-		// Get the workflow definition
+		workflowID := config.WorkflowID
 		wf, err := e.workflowRegistry.Get(workflowID)
 		if err != nil {
-			e.logger.Error("Workflow not found", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID, "error", err)
-			return "failed"
+			return "failed", fmt.Errorf("sub-workflow %s: %w", workflowID, err)
 		}
 
-		// Create event data for the sub-workflow
-		eventData := make(map[string]any)
-		if taskDef.Workflow.EventData != nil {
-			// Resolve event data using resolver
-			resolvedData, err := resolver.Resolve(taskDef.Workflow.EventData)
-			if err == nil {
-				if dataMap, ok := resolvedData.(map[string]any); ok {
-					eventData = dataMap
-				}
-			}
+		eventData := config.EventData
+		if eventData == nil {
+			eventData = make(map[string]any)
 		}
 
 		// Determine the NATS subject — use the sub-workflow task's
 		// explicit `event` if set, then fall back to the target
 		// workflow's trigger event, then a generic default.
-		eventSubject := taskDef.Workflow.Event
+		eventSubject := config.Event
 		if eventSubject == "" && wf.Trigger != nil {
 			eventSubject = wf.Trigger.Event
 		}
@@ -1928,28 +1867,27 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		// Execute the sub-workflow
 		subExecutionID := e.executeWorkflowSync(wf, subEvent, execution.DryRun)
 		if subExecutionID == "" {
-			e.logger.Error("Failed to execute sub-workflow", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID)
-			return "failed"
+			return "failed", fmt.Errorf("sub-workflow %s did not start", workflowID)
 		}
 
 		// Initialize workflow state
 		timeout := time.Now().Add(5 * time.Minute) // Default timeout
-		if taskDef.Workflow.Timeout != nil {
-			timeout = time.Now().Add(taskDef.Workflow.Timeout.Duration)
+		if config.Timeout != nil {
+			timeout = time.Now().Add(config.Timeout.Duration)
 		}
 
 		taskExec.WorkflowState = &types.WorkflowState{
 			SubWorkflowID:       workflowID,
 			ExecutionID:         subExecutionID,
-			WaitUntilCompletion: taskDef.Workflow.WaitUntilCompletion,
+			WaitUntilCompletion: config.WaitUntilCompletion,
 			Timeout:             timeout,
 			Completed:           false,
 		}
 
 		// If not waiting for completion, we're done
-		if !taskDef.Workflow.WaitUntilCompletion {
+		if !config.WaitUntilCompletion {
 			taskExec.WorkflowState.Completed = true
-			return "completed"
+			return "completed", nil
 		}
 
 		// If waiting for completion, mark as waiting and register the waiter
@@ -1964,7 +1902,7 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 			if _, err := e.Cancel(subExecutionID, "parent run cancelled"); err != nil {
 				e.logger.Warn("Sub-workflow run not cancelled", "execution", subExecutionID, "error", err)
 			}
-			return "cancelled"
+			return "cancelled", nil
 		}
 		waiter := &SubWorkflowWaiter{
 			ParentExecutionID: execution.ID,
@@ -1980,39 +1918,35 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		e.subWorkflowWaitersMu.Unlock()
 
 		e.logger.Info("Workflow task waiting for sub-workflow completion", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID, "subExecution", subExecutionID)
-		return "waiting"
+		return "waiting", nil
 	}
 
 	// Check if the sub-workflow has completed
+	subExecutionID := taskExec.WorkflowState.ExecutionID
 	e.executionsMu.RLock()
-	subExecution, exists := e.executions[taskExec.WorkflowState.ExecutionID]
+	subExecution, exists := e.executions[subExecutionID]
 	e.executionsMu.RUnlock()
 
 	if !exists {
-		e.logger.Error("Sub-workflow execution not found", "workflow", execution.WorkflowID, "task", taskDef.ID, "subExecution", taskExec.WorkflowState.ExecutionID)
-		return "failed"
+		return "failed", fmt.Errorf("sub-workflow run %s not found", subExecutionID)
 	}
 
-	// Check timeout
 	if time.Now().After(taskExec.WorkflowState.Timeout) {
-		e.logger.Error("Workflow task timed out waiting for sub-workflow", "workflow", execution.WorkflowID, "task", taskDef.ID, "subExecution", taskExec.WorkflowState.ExecutionID)
-		return "failed"
+		return "failed", fmt.Errorf("timed out waiting for sub-workflow run %s", subExecutionID)
 	}
 
-	// Check if completed
 	if subExecution.Status == types.ExecutionStatusCompleted {
 		taskExec.WorkflowState.Completed = true
 		taskExec.WorkflowState.Result = subExecution.Variables
-		return "completed"
+		return "completed", nil
 	}
 
 	if subExecution.Status == types.ExecutionStatusFailed {
-		e.logger.Error("Sub-workflow execution failed", "workflow", execution.WorkflowID, "task", taskDef.ID, "subExecution", taskExec.WorkflowState.ExecutionID, "error", subExecution.Error)
-		return "failed"
+		return "failed", fmt.Errorf("sub-workflow execution failed: %s", subExecution.Error)
 	}
 
 	// Still running or waiting
-	return "waiting"
+	return "waiting", nil
 }
 
 func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, event *types.Event, dryRun bool) string {
@@ -2420,3 +2354,93 @@ func (e *Engine[TServices]) waitForRuns(timeout time.Duration, done func(unsettl
 }
 
 const stopPollInterval = 20 * time.Millisecond
+
+// resolveWorkflowConfig is the sub-workflow a workflow task starts, resolved
+// for this run: its `workflow` block, or one built from its `parameters`. It
+// is a new value; the task definition is never written to.
+//
+// Everything is resolved here, once. Resolving a value a second time would
+// evaluate any `${...}` text the first pass produced, such as a chat message
+// carried in from the trigger. A parameter that does not resolve, or resolves
+// to the wrong type, fails the task rather than being skipped: skipping it
+// would start the wrong run, or none, without saying why.
+func resolveWorkflowConfig(taskDef *types.TaskDefinition, resolver *expression.Resolver) (*types.WorkflowConfig, error) {
+	var config *types.WorkflowConfig
+	var err error
+	if taskDef.Workflow != nil {
+		config, err = resolveWorkflowBlock(taskDef.Workflow, resolver)
+	} else {
+		config, err = resolveWorkflowParameters(taskDef.Parameters, resolver)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if config.WorkflowID == "" {
+		return nil, errors.New("workflow task missing workflowId")
+	}
+	return config, nil
+}
+
+func resolveWorkflowBlock(block *types.WorkflowConfig, resolver *expression.Resolver) (*types.WorkflowConfig, error) {
+	config := *block
+	if block.WorkflowID != "" {
+		resolved, err := resolver.ResolveString(block.WorkflowID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve sub-workflow workflowId: %w", err)
+		}
+		workflowID, ok := resolved.(string)
+		if !ok {
+			return nil, fmt.Errorf("sub-workflow workflowId must resolve to a string, got %T", resolved)
+		}
+		config.WorkflowID = workflowID
+	}
+	if block.EventData != nil {
+		resolved, err := resolver.Resolve(block.EventData)
+		if err != nil {
+			return nil, fmt.Errorf("resolve sub-workflow eventData: %w", err)
+		}
+		eventData, ok := resolved.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("sub-workflow eventData must resolve to an object, got %T", resolved)
+		}
+		config.EventData = eventData
+	}
+	return &config, nil
+}
+
+func resolveWorkflowParameters(parameters map[string]any, resolver *expression.Resolver) (*types.WorkflowConfig, error) {
+	resolved, err := resolver.Resolve(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("resolve sub-workflow parameters: %w", err)
+	}
+	params, ok := resolved.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("sub-workflow parameters must resolve to an object, got %T", resolved)
+	}
+	config := &types.WorkflowConfig{}
+	if err := errors.Join(
+		workflowParam(params, "workflowId", "a string", &config.WorkflowID),
+		workflowParam(params, "waitUntilCompletion", "a boolean", &config.WaitUntilCompletion),
+		workflowParam(params, "event", "a string", &config.Event),
+		workflowParam(params, "eventData", "an object", &config.EventData),
+	); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+// workflowParam copies the resolved parameter key into dst. An absent or null
+// parameter leaves dst at its zero value; one of another type is an error
+// naming the parameter and the type it needs to be.
+func workflowParam[T any](params map[string]any, key, want string, dst *T) error {
+	raw, present := params[key]
+	if !present || raw == nil {
+		return nil
+	}
+	value, ok := raw.(T)
+	if !ok {
+		return fmt.Errorf("sub-workflow parameter %q must be %s, got %T", key, want, raw)
+	}
+	*dst = value
+	return nil
+}
