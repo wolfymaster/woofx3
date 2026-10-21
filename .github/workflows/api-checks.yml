@@ -26,6 +26,7 @@ on:
       - "api/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "shared/common/contracts/**"
       # Imported and read by api/tests; must match select_for_path in scripts/check.sh.
       - ".github/scripts/capability-since.mts"
       - "docs/services/engine-capabilities.md"
@@ -35,6 +36,7 @@ on:
       - "api/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "shared/common/contracts/**"
       # Imported and read by api/tests; must match select_for_path in scripts/check.sh.
       - ".github/scripts/capability-since.mts"
       - "docs/services/engine-capabilities.md"

@@ -16,12 +16,14 @@ on:
       - "**.go"
       - "**/go.mod"
       - "**/go.sum"
+      - "shared/common/contracts/**"
       - ".github/workflows/go-checks.yml"
   pull_request:
     paths:
       - "**.go"
       - "**/go.mod"
       - "**/go.sum"
+      - "shared/common/contracts/**"
       - ".github/workflows/go-checks.yml"
   workflow_dispatch:
 
