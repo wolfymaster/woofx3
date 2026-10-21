@@ -29,6 +29,12 @@ const (
 	// Chat events (platform-agnostic; payload carries `platform` discriminator)
 	SubjectChatSend Subject = "message.send"
 
+	// Chat providers (platform_chat.go). Request/reply: the twitch service
+	// says a line, or an announcement, in the broadcaster's Twitch chat and
+	// answers with a ChatSendReply.
+	SubjectPlatformTwitchChatSend     Subject = "platform.twitch.chat.send"
+	SubjectPlatformTwitchChatAnnounce Subject = "platform.twitch.chat.announce"
+
 	// Chat command events — subject pattern `chat.command.<slug>` emitted by
 	// woofwoofwoof when a chat command matches. The wildcard is documentation;
 	// the workflow engine subscribes to concrete subjects via the reactive
