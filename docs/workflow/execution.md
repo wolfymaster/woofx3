@@ -156,6 +156,13 @@ When the sub-workflow completes:
 2. Sub-workflow results are copied to the parent task's exports
 3. Parent workflows resume from the next task
 
+The task's sub-workflow comes from its `workflow` block, or from its
+`parameters` (`workflowId`, `waitUntilCompletion`, `event`, `eventData`). Either
+form is resolved once per run into a value of its own; the task definition is
+never written to. A parameter whose expression does not resolve, or that
+resolves to the wrong type, fails the task with an error naming it, and no
+sub-workflow starts.
+
 ## Manual Runs and Sample Trigger Data
 
 `workflow.execute` runs one named workflow on request. Without sample data the
@@ -463,6 +470,14 @@ Wait task timeouts follow `onTimeout`:
 
 - `"fail"` (default): The workflow fails.
 - `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues. With no event, its `data` is empty: a later `${<wait id>.data.<field>}` resolves to empty rather than failing.
+
+A panic anywhere under a run is a bug, but it fails only that run. A panic
+inside a task fails the task, and so the run, with `internal error: panic in
+task <id>`. A panic elsewhere on a run's goroutine (starting it, resuming it
+after a wait or sub-workflow, or a wait's timer) fails the run with `internal
+error: panic in <where>`. Either way the run settles, is recorded and releases
+a parent waiting on it, the panic value and stack are logged at Error with the
+workflow and execution ids, and every other run carries on.
 
 ## Concurrency
 
