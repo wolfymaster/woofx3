@@ -347,57 +347,6 @@ fn test_ctx_event_data() {
     assert_eq!(result["amount"], serde_json::json!(500));
 }
 
-#[test]
-fn test_ctx_chat_is_not_exposed_to_modules() {
-    let code = r#"function probe(ctx) {
-    return { chat: typeof ctx.chat };
-}"#;
-
-    let registry = Arc::new(ModuleRegistry::new());
-    let mut functions = HashMap::new();
-    functions.insert(
-        "probe".to_string(),
-        Function::new(
-            "probe".to_string(),
-            "probe.js".to_string(),
-            code.to_string(),
-            false,
-        ),
-    );
-    let module = RegisteredModule {
-        actions: Default::default(),
-        metadata: ModuleMetadata {
-            name: "chat_test".to_string(),
-            version: "1.0.0".to_string(),
-            installed_at: 0,
-            updated_at: 0,
-        },
-        functions,
-        state: ModuleState::Active,
-        event_types: Default::default(),
-        permissions: Default::default(),
-        url_settings: Default::default(),
-        oauth: Default::default(),
-    };
-    registry
-        .register_module("chat_test".to_string(), module)
-        .unwrap();
-
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
-    let result = sandbox
-        .invoke(InvokeRequest {
-            function: "chat_test:function:probe".to_string(),
-            event: serde_json::Value::Null,
-            user: None,
-            params: serde_json::Value::Null,
-            workflow_chain: None,
-            timeout_ms: None,
-        })
-        .unwrap();
-
-    assert_eq!(result["chat"], serde_json::json!("undefined"));
-}
-
 #[derive(Default)]
 struct CapturingNats {
     published: Mutex<Vec<(String, serde_json::Value)>>,

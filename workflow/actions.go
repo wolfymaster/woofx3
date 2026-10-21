@@ -15,9 +15,8 @@ import (
 
 // NewChatReplyAction is the engine handler registered as `chat.reply`.
 //
-// Sends one message to chat, by publishing the same `message.send` event the
-// sandbox's chat extension publishes (see barkloader's BusChatSender) — the
-// chat client lives in woofwoofwoof, which is the only process holding it.
+// Sends one message to chat by publishing `message.send`, consumed by
+// woofwoofwoof, the only process holding the chat client.
 //
 // Native rather than a module function so that replying in chat needs no
 // module installed: it is what a chat command has always done, and what makes

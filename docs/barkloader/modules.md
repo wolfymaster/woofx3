@@ -879,7 +879,12 @@ message" (`chat.reply`) action after the function's step that reads
 `ctx.chat` is undefined. Replace the call with `return ctx.success(text)` and add
 a "Send chat message" step after the function's step that posts
 `${<stepId>.message}`. The streamer can then reword, condition or remove the
-reply in the workflow.
+reply in the workflow. Guard the step on `${<stepId>.success}` if failures should
+stay silent, otherwise a `ctx.failure(message)` posts its text to chat. Modules that
+must also run on older engines, where `ctx.success` is missing, use the feature-detect
+fallback in [`ctx.success` and `ctx.failure`](./sandbox.md#ctxsuccess-and-ctxfailure).
+Publish the migrated module releases before upgrading the engine: a published module
+that still calls `ctx.chat.sendMessage` throws a TypeError at runtime.
 
 ### Workflow entry (`workflows[]`)
 
