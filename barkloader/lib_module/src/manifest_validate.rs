@@ -1144,6 +1144,7 @@ pub async fn build_install_plan(
     resolved: &ResolvedManifest,
     db_proxy: &dyn ModuleDbProxy,
 ) -> Result<Vec<InstallStep>> {
+    refuse_cross_module_function_calls(manifest, resolved)?;
     validate_cross_module_refs(resolved, db_proxy).await?;
     validate_cross_module_permissions(manifest, resolved, db_proxy).await?;
     validate_theme_dependencies(manifest, db_proxy).await?;
@@ -1510,6 +1511,173 @@ async fn validate_cross_module_permissions(
     if !refused.is_empty() {
         return Err(anyhow!(
             "Module calls actions of other modules without declaring the permissions they run with:\n  - {}",
+            refused.join("\n  - ")
+        ));
+    }
+    Ok(())
+}
+
+/// Resource id of the bundled native action that invokes a module function
+/// named by the step's `parameters.function`. Must match the `function`
+/// action in modules/woofx3/manifest.json.
+const FUNCTION_ACTION_ID: &str = "function";
+
+/// Where a step that uses the bundled function action sits in the manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StepRef {
+    Workflow { workflow: String, index: usize },
+    Command { command: String, index: usize },
+}
+
+impl std::fmt::Display for StepRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Workflow { workflow, index } => write!(f, "workflow '{workflow}' step #{index}"),
+            Self::Command { command, index } => write!(f, "command '{command}' action #{index}"),
+        }
+    }
+}
+
+/// What a function-action step's `parameters.function` names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FunctionTarget {
+    /// A canonical function id, fixed in the manifest.
+    Static(CanonicalId),
+    /// A `${...}` template, filled in only when the step runs.
+    Expression(String),
+    /// Missing, not a string, or not a canonical function id; carries why.
+    Invalid(String),
+}
+
+/// Every step, in workflows and command actions alike, that uses the bundled
+/// function action, paired with the function it invokes.
+fn function_action_targets(
+    manifest: &ModuleManifest,
+    resolved: &ResolvedManifest,
+) -> Vec<(StepRef, FunctionTarget)> {
+    let workflow_steps =
+        manifest
+            .workflows
+            .iter()
+            .zip(&resolved.workflows)
+            .flat_map(|(wf, resolved_wf)| {
+                wf.steps
+                    .iter()
+                    .zip(&resolved_wf.step_actions)
+                    .enumerate()
+                    .map(move |(index, (step, action))| {
+                        let at = StepRef::Workflow {
+                            workflow: wf.id.clone(),
+                            index,
+                        };
+                        (at, step, action)
+                    })
+            });
+    let command_steps =
+        manifest
+            .commands
+            .iter()
+            .zip(&resolved.commands)
+            .flat_map(|(cmd, resolved_cmd)| {
+                cmd.actions
+                    .iter()
+                    .zip(&resolved_cmd.step_actions)
+                    .enumerate()
+                    .map(move |(index, (step, action))| {
+                        let at = StepRef::Command {
+                            command: cmd.id.clone(),
+                            index,
+                        };
+                        (at, step, action)
+                    })
+            });
+    workflow_steps
+        .chain(command_steps)
+        // Step actions are resolved as action ids, so module and resource id
+        // identify the bundled function action.
+        .filter(|(_, _, action)| {
+            action.module_id() == SYSTEM_MODULE_ID && action.resource_id() == FUNCTION_ACTION_ID
+        })
+        .map(|(at, step, _)| (at, parse_function_target(&step.parameters)))
+        .collect()
+}
+
+/// Read a step's `parameters.function`. The engine invokes the value verbatim
+/// and only understands a canonical id, so a bare local id is invalid here
+/// rather than resolved: it would install a step that can never run.
+fn parse_function_target(parameters: &serde_json::Value) -> FunctionTarget {
+    let Some(value) = parameters.get("function") else {
+        return FunctionTarget::Invalid(
+            "has no `function` parameter naming the function to invoke".to_string(),
+        );
+    };
+    let Some(raw) = value.as_str() else {
+        return FunctionTarget::Invalid(format!(
+            "`function` must be a canonical function id string, got {value}"
+        ));
+    };
+    let raw = raw.trim();
+    if raw.contains("${") {
+        return FunctionTarget::Expression(raw.to_string());
+    }
+    let parts: Vec<&str> = raw.split(CANONICAL_ID_SEPARATOR).collect();
+    if !looks_like_canonical_id(raw) || parts[1] != ResourceKind::Function.as_str() {
+        return FunctionTarget::Invalid(format!(
+            "`function` {raw:?} is not a canonical function id (`<moduleId>:function:<functionId>`)"
+        ));
+    }
+    match CanonicalId::new(parts[0], ResourceKind::Function, parts[2]) {
+        Ok(id) => FunctionTarget::Static(id),
+        Err(e) => FunctionTarget::Invalid(format!("`function` {raw:?}: {e}")),
+    }
+}
+
+/// Refuse an upload whose steps use the bundled function action to invoke a
+/// function this module does not declare.
+///
+/// The function action is owned by the system module, which declares no
+/// permissions, so `validate_cross_module_permissions` always passes it. The
+/// sandbox, however, runs the invoked function with its owner's permissions
+/// and OAuth tokens. Without this check an upload could run another module's
+/// function with that module's grants just by naming it, so an upload may
+/// invoke only its own functions, by a literal id install can check.
+///
+/// Bundled system modules are exempt: their steps are the engine's own wiring.
+fn refuse_cross_module_function_calls(
+    manifest: &ModuleManifest,
+    resolved: &ResolvedManifest,
+) -> Result<()> {
+    if resolved.provenance == InstallProvenance::System {
+        return Ok(());
+    }
+    let mut refused: Vec<String> = Vec::new();
+    for (at, target) in function_action_targets(manifest, resolved) {
+        match target {
+            FunctionTarget::Static(id) if id.module_id() != resolved.module_id => {
+                refused.push(format!(
+                    "{at} invokes '{id}', which belongs to another module"
+                ));
+            }
+            FunctionTarget::Static(id) => {
+                if !resolved.functions.iter().any(|f| f.canonical_id == id) {
+                    refused.push(format!(
+                        "{at} invokes '{id}', which this manifest does not declare"
+                    ));
+                }
+            }
+            FunctionTarget::Expression(raw) => {
+                refused.push(format!(
+                    "{at} computes the function to invoke from {raw:?}; name one of this module's functions directly so install can check it"
+                ));
+            }
+            FunctionTarget::Invalid(reason) => {
+                refused.push(format!("{at}: {reason}"));
+            }
+        }
+    }
+    if !refused.is_empty() {
+        return Err(anyhow!(
+            "Module invokes functions an upload may not invoke:\n  - {}",
             refused.join("\n  - ")
         ));
     }
@@ -2905,6 +3073,10 @@ fn resolve_local_or_canonical(
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "manifest_validate_function_refs_test.rs"]
+mod function_refs_tests;
 
 #[cfg(test)]
 mod tests {

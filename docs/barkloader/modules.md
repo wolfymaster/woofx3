@@ -1630,6 +1630,23 @@ reference and the missing permissions. The other module must be installed with
 a readable manifest. Bundled system modules are exempt, and references to the
 module's own actions need nothing beyond its own `permissions`.
 
+The built-in `woofx3:action:function` action invokes whichever function its
+`parameters.function` names, and that function runs with its own module's
+permissions and OAuth tokens. An uploaded module may therefore use it only to
+invoke a function it declares itself, named by its full canonical id
+(`my_module:function:greet`). The install fails when a workflow step or command
+action uses it with another module's function, with a `${...}` template (the
+target would only be known at run time), or with no literal canonical function
+id at all. Bundled system modules are exempt.
+
+```json
+{
+  "id": "greet",
+  "action": "woofx3:action:function",
+  "parameters": { "function": "my_module:function:greet", "name": "${trigger.data.user}" }
+}
+```
+
 ### Local endpoints (`local[]`)
 
 A module that controls something on the streamer's own network (OBS, a key
