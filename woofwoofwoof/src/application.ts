@@ -4,7 +4,6 @@ import { parseCommandVariables } from "@woofx3/common/templates/command-variable
 import { EventType as ChatEventType, type SendMessageMessage } from "@woofx3/common/cloudevents/Chat";
 import {
   type CommandCreatedMessage,
-  type CommandSnapshot,
   type CommandDeletedMessage,
   EventType as CommandEventType,
   type CommandUpdatedMessage,
@@ -40,6 +39,15 @@ const TWITCH_REQUEST_TIMEOUT_MS = 10_000;
 
 /** The reply type the twitch service answers a refused request with; see twitch/src/application.ts. */
 const TWITCH_ERROR_TYPE = "twitchapi.error";
+
+/**
+ * The CloudEvent `source` of the chat messages the twitch service relays from
+ * Twitch. Must match the EventFactory source in twitch/src/application.ts.
+ * Only membership on these messages is written to the derived groups: a
+ * simulated message (the api publishes them with source "api") still runs
+ * commands, but is not the platform's word on who is a moderator.
+ */
+const TWITCH_EVENT_SOURCE = "twitch";
 
 /** The fields of the twitch service's replies the built-in commands read. */
 interface UpdateStreamResult {
@@ -179,9 +187,15 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
         "woofwoofwoof.chat.message",
         async () => {
           const payload = msg.json<ChatMessageMessage>();
+          // The bot speaks as the broadcaster, so its own lines come back with
+          // broadcaster authority. Read as commands they would let any chatter
+          // who can make the bot repeat text run broadcaster-only commands.
+          if (ctx.services.twitchChat.consumeOwnEcho(payload.data.chatterId, payload.data.message)) {
+            return;
+          }
           // Reconcile before dispatching so freshly-granted membership is
           // already reflected when the command's permission check runs.
-          if (payload.data.membership) {
+          if (payload.source === TWITCH_EVENT_SOURCE && payload.data.membership) {
             await derivedGroupSync.reconcile(payload.data.chatterName, payload.data.membership);
           }
           const [message, matched] = await commander.process(
@@ -244,18 +258,15 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     // Hot-reload of chat commands: the engine emits these from Api.create/
     // update/deleteCommand, so user CRUD in woofx3-ui takes effect without
-    // restarting woofwoofwoof. The events carry CommandSnapshot (created/
-    // updated) or just the engine id (deleted).
+    // restarting woofwoofwoof. Anything on the bus can publish these
+    // subjects, so an event is only a signal naming a command id: the command
+    // is read back from db-proxy, the owner of the data, and the snapshot the
+    // event carries is never applied.
     ctx.services.messageBus.client.subscribe(CommandEventType.Created, async (msg: Msg) => {
       await withSpan(
         "woofwoofwoof.command.created",
         async () => {
-          const payload = msg.json<CommandCreatedMessage>();
-          const snapshot = payload?.data?.command;
-          if (!snapshot) {
-            return;
-          }
-          this.applyCommand(ctx, snapshotToCommand(snapshot));
+          await this.reloadCommand(ctx, msg.json<CommandCreatedMessage>()?.data?.command?.id);
         },
         { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
       );
@@ -265,18 +276,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       await withSpan(
         "woofwoofwoof.command.updated",
         async () => {
-          const payload = msg.json<CommandUpdatedMessage>();
-          const snapshot = payload?.data?.command;
-          if (!snapshot) {
-            return;
-          }
-          // If the command name changed, drop the old entry from the commander
-          // first so we don't leave a phantom matcher behind.
-          const previous = this.commandsByEngineId.get(snapshot.id);
-          if (previous && previous.command !== snapshot.command && ctx.commander) {
-            ctx.commander.remove(previous.command);
-          }
-          this.applyCommand(ctx, snapshotToCommand(snapshot));
+          await this.reloadCommand(ctx, msg.json<CommandUpdatedMessage>()?.data?.command?.id);
         },
         { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
       );
@@ -286,12 +286,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       await withSpan(
         "woofwoofwoof.command.deleted",
         async () => {
-          const payload = msg.json<CommandDeletedMessage>();
-          const id = payload?.data?.id;
-          if (!id) {
-            return;
-          }
-          this.removeCommandById(ctx, id);
+          await this.reloadCommand(ctx, msg.json<CommandDeletedMessage>()?.data?.id);
         },
         { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
       );
@@ -560,6 +555,44 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     this.commandsByEngineId.set(command.id, command);
   }
 
+  /**
+   * Bring the commander in step with the stored command `id`: apply it when
+   * it exists, remove it when it does not. A db-proxy failure is logged and
+   * leaves the commander as it was; the next event for the command, or a
+   * restart, reads it again.
+   */
+  private async reloadCommand(ctx: Context, id: string | undefined) {
+    if (!id) {
+      ctx.logger.warn("command event names no command id; ignored");
+      return;
+    }
+    if (!ctx.commander) {
+      throw new Error("Commander is undefined. This should never happen");
+    }
+
+    let stored: Command | null;
+    try {
+      stored = await ctx.services.db.client.findCommandById(id);
+    } catch (err) {
+      ctx.logger.error("Failed to reload command", {
+        id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    if (!stored) {
+      this.removeCommandById(ctx, id);
+      return;
+    }
+    // A renamed command would otherwise leave its old name matching.
+    const previous = this.commandsByEngineId.get(id);
+    if (previous && previous.command !== stored.command) {
+      ctx.commander.remove(previous.command);
+    }
+    this.applyCommand(ctx, stored);
+  }
+
   private removeCommandById(ctx: Context, id: string) {
     if (!ctx.commander) {
       return;
@@ -591,29 +624,4 @@ function parseCommandActions(command: Command, ctx: Context): ActionStep[] {
     });
     return [];
   }
-}
-
-// Bridge the engine's CommandSnapshot into the protobuf Command shape that
-// applyCommand expects. The two diverge only in fields applyCommand doesn't
-// read (createdAt, createdBy*); we fill them with zero values so a round-trip
-// stays type-safe.
-function snapshotToCommand(snapshot: CommandSnapshot): Command {
-  return {
-    id: snapshot.id,
-    command: snapshot.command,
-    actionsJson: JSON.stringify(snapshot.actions ?? []),
-    cooldown: snapshot.cooldown,
-    priority: snapshot.priority,
-    enabled: snapshot.enabled,
-    createdAt: { seconds: 0n, nanos: 0 },
-    createdByType: "",
-    createdByRef: "",
-    visibility: snapshot.visibility,
-    groupIds: snapshot.groupIds,
-    usernames: snapshot.usernames,
-    argumentPattern: snapshot.argumentPattern,
-    workflowId: snapshot.workflowId ?? "",
-    stepsJson: JSON.stringify(snapshot.steps ?? []),
-    workflowError: snapshot.workflowError ?? "",
-  };
 }

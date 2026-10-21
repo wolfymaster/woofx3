@@ -5,7 +5,8 @@ import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } f
 import MessageBus from "@woofx3/nats";
 import { requestTokenOverNats, type TwitchAuthCredentials } from "@woofx3/twitch";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
-import { WoofEnvSchema } from "./config";
+import { sentLineConfig, WoofEnvSchema } from "./config";
+import { SentLineRegistry } from "./sentLines";
 import BarkloaderClientService from "./services/barkloader";
 import DatabaseService from "./services/database";
 import MessageBusService from "./services/messageBus";
@@ -86,6 +87,7 @@ const runtime = createRuntime({
             userId: "",
           });
         },
+        sentLines: new SentLineRegistry(sentLineConfig(config), Date.now),
       })
     );
 

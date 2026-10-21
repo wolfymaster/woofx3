@@ -7,6 +7,7 @@ import TwitchClient, {
   type TwitchAuthCredentials,
 } from "@woofx3/twitch";
 import type { ChatSayMessageAttributes, ChatSender } from "../commands";
+import { guardOutgoingLine, type SentLineRegistry } from "../sentLines";
 
 /**
  * The error name TwitchClient.init rejects with while no Twitch account is
@@ -29,6 +30,8 @@ export interface TwitchChatConfig {
   requestToken: RequestDashboardToken;
   getSetting: GetSettingFn;
   setSetting?: SetSettingFn;
+  /** Where every line the bot says is recorded, so its echo can be recognised. */
+  sentLines: SentLineRegistry;
 }
 
 /**
@@ -48,6 +51,8 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
   waitingForLink: boolean;
   private config: TwitchChatConfig;
   private joinedChannel: string | null = null;
+  /** The Twitch user id the bot says its lines as, or null when it cannot speak. */
+  private speakerId: string | null = null;
 
   constructor(config: TwitchChatConfig) {
     this.healthcheck = false;
@@ -70,21 +75,31 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
       requestToken: this.config.requestToken,
     });
 
-    try {
-      await twitchClient.init(this.config.credentials);
-    } catch (err) {
+    const authProvider = await twitchClient.init(this.config.credentials).catch((err: unknown) => {
       if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
-        this.waitingForLink = true;
-        this.healthcheck = true;
-        return;
+        return null;
       }
       throw err;
+    });
+    if (authProvider === null) {
+      this.waitingForLink = true;
+      this.healthcheck = true;
+      return;
     }
 
     const channel = this.config.channel || (await twitchClient.broadcaster()).name;
+    // The chat client says its lines with the token the provider hands out for
+    // the chat intent, so that token's user is who the bot speaks as. That is
+    // the linked account, which is not the joined channel's owner when a
+    // channel is configured.
+    if (!authProvider.getAccessTokenForIntent) {
+      throw new Error("Twitch chat needs an auth provider that hands out tokens by intent");
+    }
+    const chatToken = await authProvider.getAccessTokenForIntent("chat");
     this.client = twitchClient.ChatClient(channel);
     this.client.connect();
     this.joinedChannel = channel;
+    this.speakerId = chatToken?.userId ?? null;
     this.waitingForLink = false;
     this.connected = true;
     this.healthcheck = true;
@@ -96,6 +111,7 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
     }
     this.client.quit();
     this.joinedChannel = null;
+    this.speakerId = null;
     this.connected = false;
     this.healthcheck = false;
   }
@@ -120,6 +136,22 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
     if (!this.connected || this.joinedChannel === null) {
       throw new Error("Twitch chat is not connected: link a Twitch account to send chat messages");
     }
-    await this.client.say(this.joinedChannel, text, opts);
+    const line = guardOutgoingLine(text);
+    // Recorded before sending: the echo can arrive on the chat feed before
+    // `say` resolves. A line whose send fails simply expires unclaimed.
+    this.config.sentLines.record(line);
+    await this.client.say(this.joinedChannel, line, opts);
+  }
+
+  /**
+   * True when a chat message is the echo of a line the bot said: it comes
+   * from the account the bot speaks as and matches an unclaimed recent line.
+   * Claims that line, so it answers for one echo only.
+   */
+  consumeOwnEcho(chatterId: string, text: string): boolean {
+    if (this.speakerId === null || chatterId !== this.speakerId) {
+      return false;
+    }
+    return this.config.sentLines.consume(text);
   }
 }
