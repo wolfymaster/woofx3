@@ -365,6 +365,43 @@ the login answers `cancelled: false` and the login still ends `linked`. A
 login started meanwhile replaces it, but its token still lands and is
 announced.
 
+## Reading the link
+
+```ts
+getTwitchLink(): Promise<TwitchLinkInfo | null>;
+```
+
+`getTwitchLink` describes the linked account, however it was linked, and is
+null when none is. Engines advertise it with the `twitch.linkRead` capability.
+It never returns a token: it answers the account's `userId`, the `scopes` the
+token was granted, `expiresAt` (when the current access token expires, null
+when it does not) and `authFailedAt`.
+
+`login`, `displayName` and `profileImageUrl` come from Helix
+(`GET /helix/users`, asked through the twitch service as the linked
+broadcaster) and are kept for an hour (`TwitchProfiles`,
+`api/src/twitch-profiles.ts`). When the twitch service is not running or
+Twitch refuses, they are null and the next read asks again; the link itself
+is still described.
+
+`authFailedAt` is when renewing the token was refused: Twitch refused a device
+login's refresh token, or the dashboard that sent the token answered
+`relink_required` or `not_linked`. The link no longer works and the streamer
+has to link Twitch again. A failure to reach Twitch or the dashboard does not
+set it. It is kept in the api's memory, because the api is the only service
+that renews these tokens: after a restart it is null until the next renewal
+is refused. A token the twitch service refreshes with the engine's own
+confidential app is renewed in that service, so its failures do not set it.
+
+Every change to the link sends a `twitch.link.changed` webhook
+(`TwitchLinkChangedEvent` in `@woofx3/api/webhooks`), on the event stream
+like every other: an account linked (`setTwitchToken`, a device login), the
+link removed (`deleteTwitchToken`), renewal refused, and a refused link
+renewing again. It carries `linked`, `userId` and `authFailedAt`, and is sent
+after the `twitch_token` write it describes, in the order of the writes
+(`TwitchTokenSource`). It is a notification delivered best effort:
+`getTwitchLink` is the record.
+
 ## Ad breaks
 
 Mid-roll ads are the break viewers notice most. The engine gives a creator

@@ -4,6 +4,7 @@ import { type PublicClientToken, TwitchOAuthError } from "@woofx3/twitch/oauth";
 import {
   parseTokenResponse,
   type StoredPublicToken,
+  type TwitchLinkChange,
   TwitchTokenSource,
   type TwitchTokenSourceOptions,
 } from "../src/twitch-token-source";
@@ -40,7 +41,13 @@ const NO_PUBLIC_APP = {
 };
 
 function tokenSource(opts: Partial<TwitchTokenSourceOptions> & Pick<TwitchTokenSourceOptions, "db">) {
-  return new TwitchTokenSource({ dashboard: () => null, ownClientId: null, publicClient: NO_PUBLIC_APP, ...opts });
+  return new TwitchTokenSource({
+    dashboard: () => null,
+    ownClientId: null,
+    publicClient: NO_PUBLIC_APP,
+    onLinkChanged: () => {},
+    ...opts,
+  });
 }
 
 function dashboard(answer: unknown) {
@@ -414,5 +421,164 @@ describe("a token from the engine's public Twitch app", () => {
     const { db } = store(withoutRefreshToken);
     const tokens = source(db, rotatingTwitch(), NOW);
     await expect(tokens.servedToken(false)).rejects.toThrow("link Twitch again");
+  });
+});
+
+describe("the link", () => {
+  const PUBLIC: StoredPublicToken = {
+    userId: "42",
+    accessToken: "access-1",
+    refreshToken: "refresh-1",
+    scope: ["chat:read", "moderator:read:chatters"],
+    expiresIn: 3600,
+    obtainmentTimestamp: NOW,
+    publicClientId: "public-app",
+  };
+  const DASHBOARD = { ...GRANT, dashboardClientId: "dash-client" };
+
+  function watched(opts: Partial<TwitchTokenSourceOptions> & Pick<TwitchTokenSourceOptions, "db">) {
+    const changes: TwitchLinkChange[] = [];
+    const source = tokenSource({ onLinkChanged: (change) => changes.push(change), ...opts });
+    return { source, changes };
+  }
+
+  const REFUSING_TWITCH = {
+    refresh: mock(async (): Promise<PublicClientToken> => {
+      throw new TwitchOAuthError("Twitch refused the refresh: invalid refresh token (HTTP 400)", 400);
+    }),
+  };
+
+  test("is described from the stored row, without any token", async () => {
+    const { db } = store(PUBLIC);
+    const { source } = watched({ db });
+
+    expect(await source.link()).toEqual({
+      userId: "42",
+      scopes: ["chat:read", "moderator:read:chatters"],
+      expiresAt: NOW + 3_600_000,
+      authFailedAt: null,
+    });
+  });
+
+  test.each([
+    ["no row", null],
+    ["an unlinked row", ""],
+  ])("is null with %s", async (_, raw) => {
+    const db = { getSetting: mock(async () => raw), setSetting: mock(async () => {}) };
+    const { source } = watched({ db });
+
+    expect(await source.link()).toBeNull();
+  });
+
+  test("has no expiry for a token that does not expire", async () => {
+    const { db } = store({ ...GRANT, clientId: undefined, expiresIn: null });
+    const { source } = watched({ db });
+
+    expect((await source.link())?.expiresAt).toBeNull();
+  });
+
+  test.each([
+    ["no user", { ...GRANT, userId: "" }, "names no Twitch user"],
+    ["no scope list", { ...GRANT, scope: "chat:read" }, "no scope list"],
+  ])("refuses a row with %s", async (_, stored, reason) => {
+    const { db } = store(stored);
+    const { source } = watched({ db });
+
+    await expect(source.link()).rejects.toThrow(reason);
+  });
+
+  test("announces linking and unlinking, after each write", async () => {
+    const { db, state } = store(null);
+    const seen: { change: TwitchLinkChange; stored: string | null }[] = [];
+    const source = tokenSource({ db, onLinkChanged: (change) => seen.push({ change, stored: state.value }) });
+
+    await source.store(PUBLIC);
+    await source.clear();
+
+    expect(seen).toEqual([
+      { change: { linked: true, userId: "42", authFailedAt: null }, stored: JSON.stringify(PUBLIC) },
+      { change: { linked: false, userId: null, authFailedAt: null }, stored: "" },
+    ]);
+  });
+
+  test("does not announce a write that failed", async () => {
+    const db = {
+      getSetting: mock(async () => null),
+      setSetting: mock(async () => {
+        throw new Error("db-proxy unavailable");
+      }),
+    };
+    const { source, changes } = watched({ db });
+
+    await expect(source.store(PUBLIC)).rejects.toThrow("db-proxy unavailable");
+    expect(changes).toEqual([]);
+  });
+
+  test("refuses to store a token that names no user", async () => {
+    const { db } = store(null);
+    const { source, changes } = watched({ db });
+
+    await expect(source.store({ ...PUBLIC, userId: "" })).rejects.toThrow("must name its Twitch user");
+    expect(db.setSetting).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+  });
+
+  test("a refused public refresh marks the link failed once, and a new link clears it", async () => {
+    const { db } = store(PUBLIC);
+    const { source, changes } = watched({ db, publicClient: REFUSING_TWITCH, now: () => NOW + 3_590_000 });
+
+    await expect(source.servedToken(false)).rejects.toThrow("link Twitch again");
+    await expect(source.servedToken(true)).rejects.toThrow("link Twitch again");
+
+    expect(changes).toEqual([{ linked: true, userId: "42", authFailedAt: NOW + 3_590_000 }]);
+    expect((await source.link())?.authFailedAt).toBe(NOW + 3_590_000);
+
+    await source.store({ ...PUBLIC, refreshToken: "refresh-2" });
+
+    expect(changes.at(-1)).toEqual({ linked: true, userId: "42", authFailedAt: null });
+    expect((await source.link())?.authFailedAt).toBeNull();
+  });
+
+  test("an unreachable Twitch does not mark the link failed", async () => {
+    const { db } = store(PUBLIC);
+    const refresh = mock(async (): Promise<PublicClientToken> => {
+      throw new TwitchOAuthError("could not reach Twitch: offline", null);
+    });
+    const { source, changes } = watched({ db, publicClient: { refresh }, now: () => NOW + 3_590_000 });
+
+    await expect(source.servedToken(false)).rejects.toThrow("could not refresh");
+    expect(changes).toEqual([]);
+    expect((await source.link())?.authFailedAt).toBeNull();
+  });
+
+  test("a dashboard that cannot renew marks the link failed, and a later renewal restores it", async () => {
+    const { db } = store(DASHBOARD);
+    let answer: unknown = { token: null, reason: "relink_required" };
+    const ui = { request: mock(async () => answer) };
+    const { source, changes } = watched({ db, dashboard: () => ui, now: () => NOW + 3_590_000 });
+
+    await expect(source.dashboardToken(false)).rejects.toThrow("relink_required");
+    expect(changes).toEqual([{ linked: true, userId: "42", authFailedAt: NOW + 3_590_000 }]);
+
+    answer = { token: { ...GRANT, accessToken: "access-2", obtainmentTimestamp: NOW + 3_590_000 } };
+    await source.dashboardToken(true);
+
+    expect(changes.at(-1)).toEqual({ linked: true, userId: "42", authFailedAt: null });
+    expect((await source.link())?.authFailedAt).toBeNull();
+  });
+
+  test("a refusal of a link already replaced does not mark the new one failed", async () => {
+    const { db, state } = store(DASHBOARD);
+    const ui = {
+      request: mock(async () => {
+        state.value = JSON.stringify({ ...DASHBOARD, accessToken: "relinked" });
+        return { token: null, reason: "not_linked" };
+      }),
+    };
+    const { source, changes } = watched({ db, dashboard: () => ui, now: () => NOW + 3_590_000 });
+
+    await expect(source.dashboardToken(false)).rejects.toThrow("not_linked");
+    expect(changes).toEqual([]);
+    expect((await source.link())?.authFailedAt).toBeNull();
   });
 });

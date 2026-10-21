@@ -117,6 +117,11 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchDeviceLogin: "twitch.deviceLogin",
   /**
+   * Reading the linked Twitch account without its tokens, `getTwitchLink`,
+   * and the `twitch.link.changed` webhook sent whenever the link changes.
+   */
+  twitchLinkRead: "twitch.linkRead",
+  /**
    * The Stream info widget's Helix calls, made by the engine as the linked
    * broadcaster and answered with Twitch's own result:
    * `twitchGetChannelInformation`, `twitchGetGames`, `twitchSearchCategories`,

@@ -126,6 +126,7 @@ describe("a dashboard client with a loopback callback URL", () => {
       db: settings,
       dashboard: () => webhooks,
       ownClientId: null,
+      onLinkChanged: () => {},
       publicClient: {
         refresh: async () => {
           throw new Error("this test has no public Twitch app");

@@ -84,6 +84,7 @@ export const EngineEventType = {
   GROUP_MEMBER_ADDED: "group.member_added",
   GROUP_MEMBER_REMOVED: "group.member_removed",
   UI_SETTING_CHANGED: "ui.setting.changed",
+  TWITCH_LINK_CHANGED: "twitch.link.changed",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -1458,6 +1459,22 @@ export interface UISettingChangedEvent {
 }
 
 /**
+ * Fired whenever the engine's Twitch link changes: an account is linked
+ * (`setTwitchToken`, a device login), it is unlinked (`deleteTwitchToken`),
+ * renewing its token is refused so it stops working, or a refused link
+ * renews again. A notification: `getTwitchLink` is the record, and carries
+ * the account's login and display name.
+ */
+export interface TwitchLinkChangedEvent {
+  type: typeof EngineEventType.TWITCH_LINK_CHANGED;
+  linked: boolean;
+  /** The linked account's Twitch user id; null when `linked` is false. */
+  userId: string | null;
+  /** As `TwitchLinkInfo.authFailedAt`; null when `linked` is false. */
+  authFailedAt: number | null;
+}
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -1519,7 +1536,8 @@ export type CallbackEvent =
   | GroupDeletedEvent
   | GroupMemberAddedEvent
   | GroupMemberRemovedEvent
-  | UISettingChangedEvent;
+  | UISettingChangedEvent
+  | TwitchLinkChangedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -1583,6 +1601,7 @@ export type CallbackEventByType = {
   [EngineEventType.GROUP_MEMBER_ADDED]: GroupMemberAddedEvent;
   [EngineEventType.GROUP_MEMBER_REMOVED]: GroupMemberRemovedEvent;
   [EngineEventType.UI_SETTING_CHANGED]: UISettingChangedEvent;
+  [EngineEventType.TWITCH_LINK_CHANGED]: TwitchLinkChangedEvent;
 };
 
 // ---------------------------------------------------------------------------

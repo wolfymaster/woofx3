@@ -220,6 +220,7 @@ export const RPC_METHODS = [
   "setTwitchToken",
   "setRelayConfig",
   "deleteTwitchToken",
+  "getTwitchLink",
   "startTwitchDeviceLogin",
   "getTwitchDeviceLogin",
   "cancelTwitchDeviceLogin",
