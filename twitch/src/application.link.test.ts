@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
+import { TWITCH_CHAT_ANNOUNCE_SUBJECT, TWITCH_CHAT_SEND_SUBJECT } from "@woofx3/common/cloudevents/Platform/chat";
 import type { TwitchApiContext } from "./application";
 import { DEFAULT_SELF_SENT_CONFIG, SelfSentRegistry } from "./lib/selfSentChat";
 
@@ -202,6 +203,45 @@ describe("TwitchApi before Twitch is linked", () => {
     expect(respond).toHaveBeenCalledTimes(1);
     const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
     expect(new TextDecoder().decode(payload)).toContain("not linked");
+  });
+
+  test("serves the Twitch chat provider subjects, answering not_linked until Twitch is linked", async () => {
+    reset();
+    const { ctx, handlers } = context(CREDENTIALS);
+    await new TwitchApiApplication(selfSent()).init(ctx);
+
+    for (const subject of [TWITCH_CHAT_SEND_SUBJECT, TWITCH_CHAT_ANNOUNCE_SUBJECT]) {
+      const respond = mock(() => true);
+      await handlers.get(subject)?.({ reply: "inbox.1", json: () => ({ message: "hi" }), respond });
+      // The handler answers inside a tracing span it does not await.
+      await Bun.sleep(0);
+
+      expect(respond).toHaveBeenCalledTimes(1);
+      const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
+      expect(JSON.parse(new TextDecoder().decode(payload))).toMatchObject({
+        ok: false,
+        error: { code: "not_linked" },
+      });
+    }
+  });
+
+  test("answers a chat provider request that is not JSON as invalid", async () => {
+    reset();
+    const { ctx, handlers } = context(CREDENTIALS);
+    await new TwitchApiApplication(selfSent()).init(ctx);
+    const respond = mock(() => true);
+
+    await handlers.get(TWITCH_CHAT_SEND_SUBJECT)?.({
+      reply: "inbox.1",
+      json: () => {
+        throw new SyntaxError("Unexpected token");
+      },
+      respond,
+    });
+    await Bun.sleep(0);
+
+    const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
+    expect(JSON.parse(new TextDecoder().decode(payload))).toMatchObject({ ok: false, error: { code: "invalid" } });
   });
 
   test("codes the not-linked refusal for helix only, as the other commands' contract has no code for it", async () => {

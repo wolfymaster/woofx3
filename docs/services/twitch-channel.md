@@ -117,6 +117,66 @@ category takes a free-text field and passes it to `updateStream` as
 above. `searchCategories` stays a command for the services that resolve text
 themselves.
 
+## Chat provider
+
+The twitch service is the engine's Twitch chat provider: every line the
+engine says in Twitch chat goes out through it, with the broadcaster's token,
+through Helix. It answers two request/reply subjects, with plain JSON (no
+CloudEvent envelope). The contract types are in
+`shared/common/typescript/cloudevents/Platform/chat.ts` and
+`shared/common/golang/cloudevents/platform_chat.go`.
+
+| Subject | Request | Helix operation |
+|---|---|---|
+| `platform.twitch.chat.send` | `{ message, replyToMessageId? }` | Send Chat Message, as a reply to `replyToMessageId` when given |
+| `platform.twitch.chat.announce` | `{ message, color? }` (`primary`, `blue`, `green`, `orange`, `purple`) | Send Chat Announcement |
+
+Both answer:
+
+```jsonc
+// Twitch took the request. isSent is false when Twitch dropped the line
+// (AutoMod, say), with its reason. An announcement has no messageId.
+{ "ok": true, "messageId"?: "<Twitch message id>", "isSent": true, "dropReason"?: "<reason>" }
+// The line was not said.
+{ "ok": false, "error": { "code": "<code>", "message": "<why>" } }
+```
+
+| `code` | When |
+|---|---|
+| `invalid` | The request breaks the contract (not an object, an empty `message`, an unknown field, a color Twitch lacks), or Twitch refused the line with HTTP 400 or 422 (too long, a reply to an unknown message). |
+| `not_linked` | No Twitch account is linked yet. |
+| `rate_limited` | Twitch answered HTTP 429. |
+| `upstream` | Twitch refused the line for another reason, or did not answer within 8 seconds. After a timeout the line may still have been said. |
+| `dropped` | Part of the contract for providers that refuse a line themselves; the twitch service never sends it. A Twitch drop is `ok: true, isSent: false`. |
+
+The `platform.` namespace is reserved for the engine (see
+[Reserved subjects](./engine-integrity.md#reserved-subjects)): an uploaded
+module may not declare an event under it and a workflow may not publish one,
+so neither can make the engine speak on its own account.
+
+### The engine's own lines
+
+A line the engine says comes back on the chat feed as the broadcaster's own
+message. So that nothing answers the engine's own words, the twitch service
+records every line it sends through Helix, whatever asked for it (the
+provider subjects, or the `helix` command behind a dashboard widget's
+`twitchSendChatMessage`), and marks the echo on the `user.message` event it
+publishes:
+
+- `messageId` is Twitch's id of every chat message.
+- `fromEngine` is `true` when the message is the echo of a line the engine
+  sent: its id is one Twitch returned for a send, or, when the echo arrives
+  before Twitch's answer, it comes from the broadcaster's account with the
+  text of a line still waiting for that answer. Each sent line marks one
+  echo, so the streamer typing the same words afterwards is read as the
+  streamer.
+
+A line Twitch refused or dropped is forgotten at once. The rest are kept for
+`woofx3TwitchSelfSentTtlMs` (default 30000) and at most
+`woofx3TwitchSelfSentCapacity` (default 256) at a time, oldest forgotten
+first. An announcement has no id to match, so it is matched by its text until
+it expires.
+
 ## Chatbot built-ins
 
 woofwoofwoof registers these commands itself. Each waits for the twitch

@@ -15,6 +15,7 @@ import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
+import { answerChatRequest, TWITCH_CHAT_VERBS } from "./lib/platformChat";
 import type { SelfSentRegistry } from "./lib/selfSentChat";
 import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiReplyCode, twitchApiErrorCodeOf } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
@@ -176,6 +177,20 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
         ctx.logger.error("twitchapi: request handling failed", { err });
       });
     });
+
+    // The Twitch chat provider: every line the engine says in Twitch chat
+    // arrives here. Subscribed before the link so a request made while
+    // waiting hears `not_linked` rather than timing out.
+    for (const subject of Object.keys(TWITCH_CHAT_VERBS)) {
+      await ctx.services.messageBus.client.subscribe(subject, (msg: Msg) => {
+        void withSpan(subject, () => this.handleChatRequest(ctx, subject, msg), {
+          attributes: { "messaging.destination.name": subject, "messaging.system": "nats" },
+          kind: SpanKind.CONSUMER,
+        }).catch((err) => {
+          ctx.logger.error("twitch: chat provider request failed", { subject, err });
+        });
+      });
+    }
 
     // Published when the streamer links (or relinks) Twitch in the UI. A
     // first link moves a waiting service to connected; a relink while
@@ -375,6 +390,32 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     this.adBreakScheduler?.stop();
     this.adBreakScheduler = null;
     ctx.twitchEventBus?.disconnect();
+  }
+
+  /**
+   * Answer one chat provider request with a ChatSendReply. A request with no
+   * reply inbox is dropped unsaid: the provider contract is request/reply,
+   * and a line said with nobody told whether it went out cannot be retried
+   * or reported.
+   */
+  private async handleChatRequest(ctx: TwitchApiContext, subject: string, msg: Msg): Promise<void> {
+    if (!msg.reply) {
+      ctx.logger.warn("twitch: chat provider message without a reply inbox ignored", { subject });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = msg.json<unknown>();
+    } catch {
+      // Not JSON: answered as `invalid`, like any body that is not a request object.
+      body = undefined;
+    }
+    const twitchApi = ctx.twitchApi;
+    const reply = await answerChatRequest(subject, body, twitchApi ? (args) => twitchApi.helix(args) : undefined);
+    if (!reply.ok) {
+      ctx.logger.warn("twitch: chat line not said", { subject, code: reply.error.code, reason: reply.error.message });
+    }
+    msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
   }
 
   private async handleTwitchApiRequest(ctx: TwitchApiContext, msg: Msg, span?: Span) {

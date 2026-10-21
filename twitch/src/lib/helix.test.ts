@@ -740,6 +740,24 @@ describe("runHelixOperation chat lines", () => {
     expect(sent).toEqual([]);
     expect(events).toEqual([{ begin: "hi" }, { failed: true }]);
   });
+
+  test("sends a reply to the message it names", async () => {
+    const { sent } = fetchAnswering(json(200, SENT));
+
+    await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "sendChatMessage", params: { message: "hi", reply_parent_message_id: "parent-1" } },
+      chatLines()
+    );
+
+    expect(sent[0]?.body).toEqual({
+      message: "hi",
+      reply_parent_message_id: "parent-1",
+      broadcaster_id: BROADCASTER_ID,
+      sender_id: BROADCASTER_ID,
+    });
+  });
 });
 
 describe("readSentChatMessage", () => {

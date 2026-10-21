@@ -217,7 +217,11 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
   sendChatMessage: {
     method: "POST",
     path: "chat/messages",
-    params: { message: { type: "string", required: true }, pin: { type: "boolean" } },
+    params: {
+      message: { type: "string", required: true },
+      pin: { type: "boolean" },
+      reply_parent_message_id: { type: "string" },
+    },
     paramsIn: "body",
     broadcasterQuery: [],
     broadcasterBody: ["broadcaster_id", "sender_id"],
