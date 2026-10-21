@@ -194,6 +194,23 @@ describe("ClientAuth.validate", () => {
     expect(h.validateClient).toHaveBeenCalledTimes(2);
   });
 
+  test("caching a success drops the client's expired entries", async () => {
+    const h = harness();
+    const other = "other-secret";
+    const answer = h.validateClient.getMockImplementation();
+    if (!answer) {
+      throw new Error("fake db has no implementation");
+    }
+    h.validateClient.mockImplementationOnce(async (clientId: string) => answer(clientId, RIGHT));
+    await h.auth.validate("c1", other);
+    h.clock.now += TTL_MS;
+
+    await h.auth.validate("c1", RIGHT);
+
+    expect(h.auth["cache"].size).toBe(1);
+    expect(h.auth["keysByClient"].get("c1")?.size).toBe(1);
+  });
+
   test("refuses a TTL that is not a positive integer", () => {
     const { db } = fakeDb();
     for (const ttlMs of [0, -1, 1.5, Number.NaN]) {

@@ -131,13 +131,26 @@ export class ClientAuth {
     return this.generations.get(clientId) ?? 0;
   }
 
+  /**
+   * Caches a success and drops this client's expired entries, so a secret
+   * that is never presented again does not stay in the cache once a newer
+   * one for the same client has been checked.
+   */
   private remember(key: string, clientId: string, client: AuthenticatedClient): void {
-    this.cache.set(key, { clientId, client, expiresAt: this.now() + this.ttlMs });
+    const now = this.now();
     let keys = this.keysByClient.get(clientId);
     if (!keys) {
       keys = new Set();
       this.keysByClient.set(clientId, keys);
     }
+    for (const held of keys) {
+      const entry = this.cache.get(held);
+      if (!entry || entry.expiresAt <= now) {
+        this.cache.delete(held);
+        keys.delete(held);
+      }
+    }
+    this.cache.set(key, { clientId, client, expiresAt: now + this.ttlMs });
     keys.add(key);
   }
 
