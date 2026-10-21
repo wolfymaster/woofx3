@@ -277,7 +277,17 @@ function song_request(ctx) {
 
 The function returns a message; it never posts to chat. A "Send chat message" step
 (`chat.reply`) posts `${<stepId>.message}`, so the streamer decides whether, where and
-how the reply is worded. Extra fields are part of the step output (`${queue_song.song}`).
+how the reply is worded. Extra fields are part of the step output: if the function
+step's id is `queue_song`, the example's song is `${queue_song.song}`.
+
+To keep a failure out of chat, put a condition on the chat step so it runs only when
+`${queue_song.success}` is true. A failed step
+output still carries its `message`, so a second chat step conditioned on
+`${queue_song.success}` being false can answer the failure on purpose.
+
+Engines older than the release that added these functions have no `ctx.success` or
+`ctx.failure`; calling them throws `not a function`. A module that must run on both
+can use `ctx.success ? ctx.success(m, f) : Object.assign(ctx.response(true, m), f)`.
 
 - `fields` must be an object (or omitted). It may not set `proto`, `v`, `success` or
   `message`: the call throws a sandbox error naming the reserved field, so a module
