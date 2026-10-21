@@ -1,3 +1,5 @@
+import { ZERO_WIDTH_SPACE } from "./helix";
+
 export interface SelfSentConfig {
   /** How many sent lines are remembered at most; the oldest is forgotten first. */
   capacity: number;
@@ -13,9 +15,6 @@ export const DEFAULT_SELF_SENT_CONFIG: SelfSentConfig = {
 /** Milliseconds since the epoch. Injected so tests control expiry. */
 export type Clock = () => number;
 
-/** U+200B ZERO WIDTH SPACE, which guardChatLine (./helix.ts) puts in front of a line. */
-const ZERO_WIDTH_SPACE = "​";
-
 /**
  * The form a sent line and its echo are compared in. Twitch trims and
  * collapses whitespace and may or may not keep the zero-width space a guarded
@@ -29,7 +28,7 @@ export function normalizeChatLine(text: string): string {
 export interface PendingChatLine {
   /** Twitch said it with this id; its echo is matched by the id from now on. */
   sent(messageId: string): void;
-  /** Twitch did not say it (refused or dropped it), so no echo will come. */
+  /** No echo will come: Twitch refused or dropped the line, or says it somewhere other than chat messages. */
   failed(): void;
 }
 
@@ -110,7 +109,10 @@ export class SelfSentRegistry implements ChatLineLog {
   /**
    * True, and forgets the line, when `echo` is Twitch handing back a line the
    * engine sent: its id is a recorded one, or it comes from `broadcasterId`
-   * with the text of a line still waiting for Twitch's answer.
+   * with the text of a line still waiting for Twitch's answer. Trade-off: if
+   * the streamer types the same words while the engine's line is in flight,
+   * the streamer's message claims the record and the engine's own echo is not
+   * marked; the zero-width guard still stops command loops.
    */
   claimEcho(echo: ChatEcho, broadcasterId: string): boolean {
     this.prune();

@@ -693,11 +693,11 @@ describe("runHelixOperation chat lines", () => {
       events: [{ begin: "hello" }, { failed: true }],
     },
     {
-      name: "keeps an announcement, which has no id, recorded by its text",
+      name: "forgets an announcement, which never comes back as a chat message",
       operation: "sendChatAnnouncement",
       params: { message: "big news" },
       answer: new Response(null, { status: 204 }),
-      events: [{ begin: "big news" }],
+      events: [{ begin: "big news" }, { failed: true }],
     },
     {
       name: "keeps a line that may have gone out when the network failed",

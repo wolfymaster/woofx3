@@ -57,7 +57,7 @@ interface HelixOperation {
 const COMMAND_PREFIX = "!";
 
 /** U+200B ZERO WIDTH SPACE. */
-const ZERO_WIDTH_SPACE = "\u200b";
+export const ZERO_WIDTH_SPACE = "\u200b";
 
 /**
  * `text` with a zero-width space in front when it would start with the
@@ -504,9 +504,9 @@ function chatLineOf(operation: HelixOperationName, request: HelixRequest): strin
 }
 
 /**
- * Tell the log what came of a line Twitch answered. A line Twitch says with
- * no id to report (an announcement) stays recorded until its ttl, matched by
- * its text.
+ * Tell the log what came of a line Twitch answered. An announcement comes back
+ * on the notification feed, never as a chat message, so nothing would claim
+ * its record: it is forgotten at once.
  */
 function settleChatLine(pending: PendingChatLine, operation: HelixOperationName, result: HelixCommandResult): void {
   if (!result.ok) {
@@ -514,6 +514,7 @@ function settleChatLine(pending: PendingChatLine, operation: HelixOperationName,
     return;
   }
   if (operation !== "sendChatMessage") {
+    pending.failed();
     return;
   }
   const sent = readSentChatMessage(result.body);

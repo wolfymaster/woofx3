@@ -119,9 +119,9 @@ themselves.
 
 ## Chat provider
 
-The twitch service is the engine's Twitch chat provider: every line the
-engine says in Twitch chat goes out through it, with the broadcaster's token,
-through Helix. It answers two request/reply subjects, with plain JSON (no
+The twitch service is the engine's Twitch chat provider: the lines the
+engine says through the provider subjects go out through it, with the
+broadcaster's token, through Helix. It answers two request/reply subjects, with plain JSON (no
 CloudEvent envelope). The contract types are in
 `shared/common/typescript/cloudevents/Platform/chat.ts` and
 `shared/common/golang/cloudevents/platform_chat.go`.
@@ -174,8 +174,8 @@ publishes:
 A line Twitch refused or dropped is forgotten at once. The rest are kept for
 `woofx3TwitchSelfSentTtlMs` (default 30000) and at most
 `woofx3TwitchSelfSentCapacity` (default 256) at a time, oldest forgotten
-first. An announcement has no id to match, so it is matched by its text until
-it expires.
+first. An announcement comes back on the notification feed rather than as a
+chat message, so it is not kept.
 
 ## Chatbot built-ins
 
