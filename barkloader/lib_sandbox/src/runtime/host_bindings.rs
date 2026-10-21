@@ -430,11 +430,9 @@ pub fn build_outcome_value(
             "ctx.success/ctx.failure: fields may not set reserved name '{reserved}'"
         ));
     }
-    let mut envelope = serde_json::Map::new();
-    envelope.insert("proto".to_string(), Value::from("woofx3.response"));
-    envelope.insert("v".to_string(), Value::from(1));
-    envelope.insert("success".to_string(), Value::Bool(success));
-    envelope.insert("message".to_string(), Value::String(message));
+    let Value::Object(mut envelope) = build_response_value(success, message) else {
+        unreachable!("build_response_value always returns an object");
+    };
     envelope.extend(extra);
     Ok(Value::Object(envelope))
 }
@@ -623,46 +621,90 @@ mod tests {
 
     #[test]
     fn build_outcome_value_table() {
-        let cases: [(&str, Option<Value>, Result<Value, &str>); 7] = [
-            (
-                "no fields",
-                None,
-                Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m"})),
-            ),
+        let ok_envelope = |success: bool| json!({"proto":"woofx3.response","v":1,"success":success,"message":"m"});
+        let cases: Vec<(&str, bool, Option<Value>, Result<Value, &str>)> = vec![
+            ("no fields", true, None, Ok(ok_envelope(true))),
             (
                 "null fields",
+                true,
                 Some(Value::Null),
-                Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m"})),
+                Ok(ok_envelope(true)),
             ),
             (
                 "extra fields",
+                true,
                 Some(json!({"a":1})),
                 Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m","a":1})),
             ),
             (
+                "failure with fields",
+                false,
+                Some(json!({"a":1})),
+                Ok(json!({"proto":"woofx3.response","v":1,"success":false,"message":"m","a":1})),
+            ),
+            ("failure no fields", false, None, Ok(ok_envelope(false))),
+            (
                 "reserved proto",
+                true,
                 Some(json!({"proto":"x"})),
                 Err("reserved name 'proto'"),
             ),
-            ("reserved v", Some(json!({"v":2})), Err("reserved name 'v'")),
+            (
+                "reserved v",
+                true,
+                Some(json!({"v":2})),
+                Err("reserved name 'v'"),
+            ),
             (
                 "reserved success",
+                true,
                 Some(json!({"success":false})),
                 Err("reserved name 'success'"),
             ),
             (
+                "reserved message",
+                true,
+                Some(json!({"message":"x"})),
+                Err("reserved name 'message'"),
+            ),
+            (
                 "array fields",
+                true,
                 Some(json!([1])),
                 Err("fields must be an object"),
             ),
+            (
+                "number fields",
+                true,
+                Some(json!(5)),
+                Err("fields must be an object"),
+            ),
+            (
+                "string fields",
+                true,
+                Some(json!("x")),
+                Err("fields must be an object"),
+            ),
         ];
-        for (name, fields, want) in cases {
-            let got = build_outcome_value(true, "m".to_string(), fields);
+        for (name, success, fields, want) in cases {
+            let got = build_outcome_value(success, "m".to_string(), fields);
             match want {
                 Ok(v) => assert_eq!(got.unwrap(), v, "{name}"),
                 Err(substr) => assert!(got.unwrap_err().contains(substr), "{name}"),
             }
         }
+    }
+
+    #[test]
+    fn reserved_response_fields_are_the_envelope_keys() {
+        let Value::Object(envelope) = build_response_value(true, String::new()) else {
+            panic!("envelope is an object");
+        };
+        let mut keys: Vec<&str> = envelope.keys().map(String::as_str).collect();
+        let mut reserved = RESERVED_RESPONSE_FIELDS.to_vec();
+        keys.sort_unstable();
+        reserved.sort_unstable();
+        assert_eq!(keys, reserved);
     }
 
     #[test]

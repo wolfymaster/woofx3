@@ -864,17 +864,17 @@ fn build_log_namespace<'js>(
     Ok(())
 }
 
-/// `ctx.response(success, message)` and `ctx.success`/`ctx.failure(message,
-/// fields?)` — the standard shape a module function
-/// returns to report an outcome and a message, which becomes the calling
-/// step's output. A pure data constructor (no host state, unlike the other
-/// `build_*` functions): it only builds and returns `{ proto:
-/// "woofx3.response", v: 1, success, message }`; the sandboxed function
-/// still has to actually `return` the result for it to reach the step.
-/// Tagged with `proto`/`v` (mirroring
-/// the `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a
-/// caller can reliably distinguish "this is a deliberate response" from any
-/// other object a function might return for its own purposes.
+/// `ctx.response`, `ctx.success` and `ctx.failure` — the standard shape a
+/// module function returns to report an outcome and a message, which becomes
+/// the calling step's output. Pure data constructors (no host state, unlike
+/// the other `build_*` functions): each only builds and returns `{ proto:
+/// "woofx3.response", v: 1, success, message, ...fields }`; the sandboxed
+/// function still has to actually `return` the result for it to reach the
+/// step. `ctx.success`/`ctx.failure` accept extra fields, validated by
+/// `build_outcome_value`. Tagged with `proto`/`v` (mirroring the
+/// `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a caller
+/// can reliably distinguish "this is a deliberate response" from any other
+/// object a function might return for its own purposes.
 fn build_response_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let response_fn = JsFunction::new(ctx.clone(), move |ctx, success: bool, message: String| {
@@ -1133,6 +1133,20 @@ mod tests {
         assert_eq!(result["message"], "nope");
     }
 
+    fn outcome_test_invocation() -> InvocationContext {
+        InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        }
+    }
+
     #[test]
     fn quickjs_ctx_success_and_failure_build_the_response_with_fields() {
         let adapter = QuickJSAdapter::new().unwrap();
@@ -1150,7 +1164,13 @@ mod tests {
         // (call, success, message, extra field name, extra field value)
         let cases = [
             ("ctx.success('ok')", true, "ok", "", serde_json::Value::Null),
-            ("ctx.success('ok', {})", true, "ok", "", serde_json::Value::Null),
+            (
+                "ctx.success('ok', {})",
+                true,
+                "ok",
+                "",
+                serde_json::Value::Null,
+            ),
             (
                 "ctx.failure('bad', { code: 7 })",
                 false,
@@ -1180,53 +1200,26 @@ mod tests {
     }
 
     #[test]
-    fn quickjs_ctx_success_and_failure_refuse_reserved_field_names() {
+    fn quickjs_ctx_success_and_failure_refuse_bad_fields() {
         let adapter = QuickJSAdapter::new().unwrap();
-        let invocation = InvocationContext {
-            event: serde_json::Value::Null,
-            user: serde_json::Value::Null,
-            host: noop_host_context(),
-            module_id: "mymod".to_string(),
-            module_name: "My Module".to_string(),
-            module_version: "2.0.0".to_string(),
-            permissions: Default::default(),
-            url_settings: Default::default(),
-            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
-        };
-        for reserved in ["proto", "v", "success", "message"] {
+        let invocation = outcome_test_invocation();
+        // (fields argument source, expected error substring)
+        let cases = [
+            ("{ proto: 1 }", "reserved name 'proto'"),
+            ("{ v: 1 }", "reserved name 'v'"),
+            ("{ success: 1 }", "reserved name 'success'"),
+            ("{ message: 1 }", "reserved name 'message'"),
+            ("5", "fields must be an object"),
+            ("'text'", "fields must be an object"),
+            ("[1, 2]", "fields must be an object"),
+        ];
+        for (fields, want) in cases {
             for func in ["success", "failure"] {
-                let code =
-                    format!("function run(ctx) {{ return ctx.{func}('x', {{ {reserved}: 1 }}); }}");
+                let code = format!("function run(ctx) {{ return ctx.{func}('x', {fields}); }}");
                 let err = adapter.execute(&code, "run", &invocation).unwrap_err();
-                assert!(
-                    err.to_string()
-                        .contains(&format!("reserved name '{reserved}'")),
-                    "{func} {reserved}: {err}"
-                );
+                assert!(err.to_string().contains(want), "{func} {fields}: {err}");
             }
         }
-    }
-
-    #[test]
-    fn quickjs_ctx_success_refuses_non_object_fields() {
-        let adapter = QuickJSAdapter::new().unwrap();
-        let invocation = InvocationContext {
-            event: serde_json::Value::Null,
-            user: serde_json::Value::Null,
-            host: noop_host_context(),
-            module_id: "mymod".to_string(),
-            module_name: "My Module".to_string(),
-            module_version: "2.0.0".to_string(),
-            permissions: Default::default(),
-            url_settings: Default::default(),
-            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
-        };
-        let code = "function run(ctx) { return ctx.success('x', 5); }";
-        let err = adapter.execute(code, "run", &invocation).unwrap_err();
-        assert!(
-            err.to_string().contains("fields must be an object"),
-            "{err}"
-        );
     }
 
     struct CountingSettingsClient {

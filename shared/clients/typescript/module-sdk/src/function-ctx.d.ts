@@ -202,6 +202,14 @@ export interface CtxResponse {
   message: string;
 }
 
+/** Extra fields for `ctx.success`/`ctx.failure`; the envelope's own keys are refused at compile time and at run time. */
+export type CtxResponseFields = Record<string, unknown> & {
+  proto?: never;
+  v?: never;
+  success?: never;
+  message?: never;
+};
+
 /** One event a function asks the engine to publish. */
 export interface CtxResultEvent {
   /** The `event` of an eventbus trigger this module declares. */
@@ -644,9 +652,9 @@ export interface Ctx extends CtxExtensions {
    * `ctx.success("text")` and follows the step with a "Send chat message" step
    * posting `${<stepId>.message}`.
    */
-  success(message: string, fields?: Record<string, unknown>): CtxResponse & Record<string, unknown>;
+  success<F extends CtxResponseFields = Record<never, never>>(message: string, fields?: F): CtxResponse & F;
   /** Like `success`, but `success` is `false`. */
-  failure(message: string, fields?: Record<string, unknown>): CtxResponse & Record<string, unknown>;
+  failure<F extends CtxResponseFields = Record<never, never>>(message: string, fields?: F): CtxResponse & F;
   /**
    * Builds the shape to `return` when the function's work is something
    * workflows should be able to act on — a counter changed, a timer ended.
