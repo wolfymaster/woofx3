@@ -380,7 +380,9 @@ const stopGracePeriod = 25 * time.Second
 // on others get to themselves, before the services they depend on are asked
 // to stop. It must cover the workflow engine's Stop (DefaultStopDrainTimeout
 // plus DefaultStopSettleTimeout in workflow/internal/engine/engine.go), which
-// records through db-proxy the runs it could not finish. What is left of
+// records through db-proxy the runs it could not finish, and the run
+// recorder's drain after it (DefaultRecorderDrainTimeout in
+// workflow/async_run_recorder.go). What is left of
 // stopGracePeriod must cover db-proxy's final flush of module storage to its
 // replica (closeTimeout in db/app/services/module_storage_service.go); a kill
 // mid-flush loses the writes since the last sync.

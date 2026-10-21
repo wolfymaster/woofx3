@@ -110,6 +110,12 @@ func main() {
 			// constructed pre-config in main(); the others are local to this scope.
 			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, factClient, cfg.SceneManagerURL)
 
+			runRecorder, err := newAsyncRunRecorder(dbClient.Workflow, defaultRecorderConfig(), logger, time.Now)
+			if err != nil {
+				return err
+			}
+			app.SetRunRecorder(runRecorder)
+
 			return nil
 		},
 		RuntimeTerminate: func(ctx context.Context, application runtime.Application) error {
