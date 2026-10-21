@@ -67,7 +67,7 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 	if req.Size < 0 {
 		return nil, twirp.InvalidArgumentError("size", "must not be negative")
 	}
-	id := uuid.New()
+	id := uuid.Nil
 	if req.Id != nil {
 		parsed, err := uuid.Parse(*req.Id)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wolfymaster/woofx3/db/database"
 	"io"
 	"log/slog"
 	"regexp"
@@ -29,7 +30,7 @@ func newAlertSvc(t *testing.T, db *gorm.DB) client.AlertService {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)
-	return NewAlertService(repo.NewAlertRepository(db), publisher)
+	return NewAlertService(repo.NewAlertRepository(db, database.RandomIDs{}), publisher)
 }
 
 // forEachAlertDialect runs an alert test against SQLite and, when configured,

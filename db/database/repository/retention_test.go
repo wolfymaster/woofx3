@@ -14,14 +14,14 @@ import (
 
 func TestPruneSettledAlertsKeepsUnsettledAndRecentOnes(t *testing.T) {
 	db := openFactDb(t)
-	alerts := NewAlertRepository(db)
+	alerts := NewAlertRepository(db, database.RandomIDs{})
 	cutoff := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	old := cutoff.Add(-time.Hour)
 	recent := cutoff.Add(time.Hour)
 
 	seed := func(name, status string, createdAt time.Time) {
 		t.Helper()
-		row, err := alerts.Create(NewAlert{ID: uuid.New(), Payload: `{}`, EnvelopeID: name},
+		row, err := alerts.Create(NewAlert{Payload: `{}`, EnvelopeID: name},
 			func(*gorm.DB, *models.Alert) error { return nil })
 		if err != nil {
 			t.Fatalf("Create: %v", err)

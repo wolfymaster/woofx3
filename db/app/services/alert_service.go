@@ -58,9 +58,6 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 	}
 
 	alert, err := s.repo.Create(repo.NewAlert{
-		// The repository inserts with raw SQL, which the create callback that
-		// assigns ids does not see, so the id is chosen here.
-		ID:            uuid.New(),
 		Payload:       req.Payload,
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
