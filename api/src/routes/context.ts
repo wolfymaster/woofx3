@@ -27,8 +27,9 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
-import type { MarketplaceClient } from "../marketplace-client";
 import type { EventLogSelectionSource } from "../event-log-selection";
+import { releaseStub } from "../held-stub";
+import type { MarketplaceClient } from "../marketplace-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchTokenSource } from "../twitch-token-source";
@@ -250,7 +251,9 @@ export class ApiRouteHost extends RpcTarget {
       }
     }
     for (const cb of dead) {
-      this.triggerSubscribers.delete(cb);
+      if (this.triggerSubscribers.delete(cb)) {
+        releaseStub(cb);
+      }
     }
   }
 
