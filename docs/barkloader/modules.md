@@ -1543,6 +1543,13 @@ except `net:`, which names a host: an exact lowercase DNS name with no IP
 address, port or wildcard. Declaring a host does not declare its subdomains,
 so a module that calls `api.spotify.com` and `accounts.spotify.com` lists both.
 
+An unknown id or one listed twice fails the install. At runtime barkloader
+reads the permissions from the installed manifest, and a call to a function
+whose permission the invoking module did not declare throws before anything is
+sent, with `code` `permission_denied`. Permissions are declared by the module
+and enforced by the engine, and shown on the module install page (woofx3-ui
+feat/module-permissions-review).
+
 #### Where `ctx.http` may connect
 
 Module code reaches only the destinations its module was granted
@@ -1583,8 +1590,8 @@ redirects and reading the response. A response body over 4 MiB fails with
 body arrives, so a module cannot download more than that in one request. More
 than 5 redirects fails with `too_many_redirects`. `ctx.oauth.request` and its
 token refreshes follow the same limits. An operator can change them at
-startup; any value that is not a whole number above zero stops barkloader from
-starting:
+startup; any value that is not a whole number above zero, or a time above
+30 seconds (the longest an invocation may take), stops barkloader from starting:
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -1592,12 +1599,6 @@ starting:
 | `WOOFX3_MODULE_HTTP_REQUEST_TIMEOUT_MS` | `25000` | Ceiling on one request, redirects and body included |
 | `WOOFX3_MODULE_HTTP_MAX_RESPONSE_BYTES` | `4194304` | Largest response body |
 | `WOOFX3_MODULE_HTTP_MAX_REDIRECTS` | `5` | Redirects followed |
-An unknown id or one listed twice fails the install. At runtime barkloader
-reads the permissions from the installed manifest, and a call to a function
-whose permission the invoking module did not declare throws before anything is
-sent, with `code` `permission_denied`. Permissions are declared by the module
-and enforced by the engine, and shown on the module install page (woofx3-ui
-feat/module-permissions-review).
 
 ### OAuth integrations (`oauth[]`)
 
