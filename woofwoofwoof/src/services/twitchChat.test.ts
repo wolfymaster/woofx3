@@ -256,6 +256,22 @@ describe("TwitchChatClientService and its own lines", () => {
     expect(svc.consumeOwnEcho(SPEAKER_ID, "!title mine")).toBe(false);
   });
 
+  test("refuses to connect when the chat token does not name the user it speaks as", async () => {
+    for (const token of [null, { userId: "" }]) {
+      initMock.mockImplementationOnce(async () => ({ getAccessTokenForIntent: async () => token }));
+      const svc = new TwitchChatClientService({
+        channel: "chan",
+        requestToken: noDashboard,
+        getSetting: async () => undefined,
+        sentLines: sentLines(),
+      });
+
+      await expect(svc.connect()).rejects.toThrow("chat intent");
+      expect(svc.connected).toBe(false);
+      expect(svc.healthcheck).toBe(false);
+    }
+  });
+
   test("nothing is an echo while chat is not connected", async () => {
     const svc = await connected();
     await svc.say("hello");

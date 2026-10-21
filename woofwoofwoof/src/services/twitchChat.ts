@@ -95,11 +95,16 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
     if (!authProvider.getAccessTokenForIntent) {
       throw new Error("Twitch chat needs an auth provider that hands out tokens by intent");
     }
+    // Without the speaker's id the bot's own lines could not be told apart
+    // from the broadcaster's, and its echoes would run as commands.
     const chatToken = await authProvider.getAccessTokenForIntent("chat");
+    if (!chatToken?.userId) {
+      throw new Error("Twitch chat has no token for the chat intent naming the user it speaks as");
+    }
     this.client = twitchClient.ChatClient(channel);
     this.client.connect();
     this.joinedChannel = channel;
-    this.speakerId = chatToken?.userId ?? null;
+    this.speakerId = chatToken.userId;
     this.waitingForLink = false;
     this.connected = true;
     this.healthcheck = true;
