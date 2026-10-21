@@ -35,6 +35,18 @@ func (e *Engine[TServices]) safeGo(name string, run runRef, fn func()) {
 	go e.guard(name, run, fn)
 }
 
+// safeGoThenSignal is safeGo for a caller that must know when the run has
+// settled: the channel closes after a panic has been recovered and the run
+// failed, not before, so whatever waits on it never sees a half-settled run.
+func (e *Engine[TServices]) safeGoThenSignal(name string, run runRef, fn func()) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.guard(name, run, fn)
+	}()
+	return done
+}
+
 // guard runs fn and recovers a panic in it: the panic is logged at Error with
 // its stack, and the run it belongs to fails so it settles, is recorded, and
 // releases a parent waiting on it. A panic is still a bug; recovering keeps it

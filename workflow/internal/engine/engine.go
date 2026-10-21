@@ -590,9 +590,7 @@ func (e *Engine[TServices]) executeInOrder(runs []queuedRun, event *types.Event)
 			continue
 		}
 		e.logDispatch(run.wf, event)
-		finished := make(chan struct{})
-		e.safeGo("run", refTo(run.execution), func() {
-			defer close(finished)
+		finished := e.safeGoThenSignal("run", refTo(run.execution), func() {
 			e.runExecution(run.wf, run.execution, event)
 		})
 		if !e.awaitTurn(run, event, finished) {
@@ -1246,10 +1244,16 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		}
 
 		if taskDef.Type == types.TaskTypeWorkflow {
-			workflowConfig, err := resolveWorkflowConfig(taskDef, e.buildResolver(execution, triggerEvent, taskExports))
-			if err != nil {
-				e.failRecordedTask(execution, taskExec, taskDef.ID, i, err, "Workflow task failed")
-				return
+			// A task that already started is only checked on, which reads no
+			// config, so a resolve error there would fail it for nothing.
+			var workflowConfig *types.WorkflowConfig
+			if taskExec.WorkflowState == nil {
+				var err error
+				workflowConfig, err = resolveWorkflowConfig(taskDef, e.buildResolver(execution, triggerEvent, taskExports))
+				if err != nil {
+					e.failRecordedTask(execution, taskExec, taskDef.ID, i, err, "Workflow task failed")
+					return
+				}
 			}
 			workflowResult, err := e.handleWorkflowTask(execution, taskDef, workflowConfig, taskExec, executionOrder, i, taskExports, triggerEvent)
 			switch workflowResult {
@@ -1609,21 +1613,27 @@ collect:
 // failRecordedTask fails a task, records the failed step, and then fails the
 // run, so the step that failed the run is stored before the run is.
 func (e *Engine[TServices]) failRecordedTask(execution *types.WorkflowExecution, taskExec *types.TaskExecution, taskID string, index int, err error, msg string) {
-	now := time.Now()
-	taskExec.Status = types.TaskStatusFailed
-	taskExec.Error = err.Error()
-	taskExec.CompletedAt = &now
+	markTaskFailed(taskExec, err)
 	e.recordStep(execution, taskID, index, nil, taskExec)
-	e.failExecution(execution, taskExec, err, msg, taskID)
+	e.failRun(execution, err, msg, taskID)
 }
 
 // failExecution records a task-level error as an execution failure. Extracted
 // so the concurrent path fails identically to the sequential one.
 func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, taskExec *types.TaskExecution, err error, msg, taskID string) {
+	markTaskFailed(taskExec, err)
+	e.failRun(execution, err, msg, taskID)
+}
+
+func markTaskFailed(taskExec *types.TaskExecution, err error) {
 	now := time.Now()
 	taskExec.Status = types.TaskStatusFailed
 	taskExec.Error = err.Error()
 	taskExec.CompletedAt = &now
+}
+
+// failRun settles the run as failed by a task and releases a parent waiting on it.
+func (e *Engine[TServices]) failRun(execution *types.WorkflowExecution, err error, msg, taskID string) {
 	e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 	e.logger.Error(msg, "workflow", execution.WorkflowID, "task", taskID, "error", err)
 	e.checkSubWorkflowCompletion(execution.ID)
@@ -1641,7 +1651,7 @@ func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, ta
 // never knew.
 //
 // It deliberately does not call checkSubWorkflowCompletion. Most callers do and
-// the dependency-graph and execution-order failures in executeWorkflow never
+// the dependency-graph and execution-order failures in runExecution never
 // have; folding it in here would change sub-workflow behaviour rather than just
 // reporting on it.
 //
