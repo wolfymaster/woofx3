@@ -10,6 +10,10 @@ use tracing::warn;
 /// Redirects a module's request may follow, as reqwest's default allows.
 const MAX_REDIRECTS: usize = 10;
 
+/// Request headers that carry credentials, dropped before a redirect hop to
+/// another origin, as browsers and reqwest do.
+const CREDENTIAL_HEADERS: &[&str] = &["authorization", "proxy-authorization", "cookie"];
+
 /// What happens when module code reaches a destination outside its grants
 /// (see `lib_sandbox::net`). Private and local addresses are a separate rule
 /// (`HttpPolicy::allow_private`) that this mode never relaxes.
@@ -29,6 +33,19 @@ pub enum PolicyError {
     Mode(String),
     #[error("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE must be true or false, not {0:?}")]
     AllowPrivate(String),
+}
+
+/// Why the client refused to send a request. Crosses the `HttpClient`
+/// boundary as its message, which starts with the `permission_denied` code
+/// module code sees.
+#[derive(Debug, thiserror::Error)]
+enum EgressError {
+    #[error("permission_denied: ctx.http: {0}")]
+    Refused(Refusal),
+    #[error(
+        "permission_denied: ctx.http: a request carrying credentials for {from} is not followed to another origin, {to}"
+    )]
+    CrossOriginRedirect { from: String, to: String },
 }
 
 /// The two egress rules for module requests, parsed once at startup.
@@ -108,7 +125,7 @@ impl ReqwestHttpClient {
         grants: &HashSet<String>,
         enforcement: Enforcement,
         url: &reqwest::Url,
-    ) -> Result<(), String> {
+    ) -> Result<(), EgressError> {
         let Some(refusal) = net::refusal(grants, url, self.policy.allow_private) else {
             return Ok(());
         };
@@ -121,7 +138,7 @@ impl ReqwestHttpClient {
             refusal
         );
         if enforced {
-            return Err(format!("permission_denied: ctx.http: {refusal}"));
+            return Err(EgressError::Refused(refusal));
         }
         Ok(())
     }
@@ -142,11 +159,13 @@ impl HttpClient for ReqwestHttpClient {
         let mut method = reqwest::Method::from_bytes(request.method.as_bytes())
             .map_err(|e| format!("invalid HTTP method: {}", e))?;
         let mut body = request.opts.get("body").cloned().unwrap_or(Value::Null);
-        let headers = request.opts.get("headers").cloned().unwrap_or(Value::Null);
+        let mut headers = request.opts.get("headers").cloned().unwrap_or(Value::Null);
+        let first_origin = url.origin();
 
         Handle::current().block_on(async {
             for _ in 0..=MAX_REDIRECTS {
-                self.check(request.module_id, request.grants, request.enforcement, &url)?;
+                self.check(request.module_id, request.grants, request.enforcement, &url)
+                    .map_err(|e| e.to_string())?;
                 let response = send(&self.client, &url, &method, &headers, &body).await?;
                 let status = response.status();
                 let location = status
@@ -161,6 +180,16 @@ impl HttpClient for ReqwestHttpClient {
                 url = url
                     .join(&location)
                     .map_err(|e| format!("redirect to an invalid location {location:?}: {e}"))?;
+                if url.origin() != first_origin {
+                    if request.enforcement == Enforcement::Always {
+                        return Err(EgressError::CrossOriginRedirect {
+                            from: first_origin.ascii_serialization(),
+                            to: url.origin().ascii_serialization(),
+                        }
+                        .to_string());
+                    }
+                    drop_credential_headers(&mut headers);
+                }
                 // As browsers and reqwest do: a 303, or a 301/302 after a
                 // POST, is followed with a GET and no body.
                 if status == reqwest::StatusCode::SEE_OTHER
@@ -176,6 +205,18 @@ impl HttpClient for ReqwestHttpClient {
             }
             Err(format!("more than {MAX_REDIRECTS} redirects"))
         })
+    }
+}
+
+/// Remove `CREDENTIAL_HEADERS` from a module's header map, whatever their
+/// case. Once removed they stay removed for the rest of the redirect chain.
+fn drop_credential_headers(headers: &mut Value) {
+    if let Some(headers) = headers.as_object_mut() {
+        headers.retain(|name, _| {
+            !CREDENTIAL_HEADERS
+                .iter()
+                .any(|credential| name.eq_ignore_ascii_case(credential))
+        });
     }
 }
 
@@ -424,5 +465,140 @@ mod tests {
         };
         let name = reqwest::dns::Name::from_str("localhost").unwrap();
         assert!(permissive.resolve(name).await.is_ok());
+    }
+
+    /// Request heads a test server received, lowercased.
+    type Heads = Arc<std::sync::Mutex<Vec<String>>>;
+
+    /// A loopback HTTP server answering every request with `response`. Returns
+    /// its origin and the request heads it receives.
+    async fn serve(response: String) -> (String, Heads) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let heads = Heads::default();
+        let received = heads.clone();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => head.extend_from_slice(&buf[..n]),
+                    }
+                }
+                received
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&head).to_ascii_lowercase());
+                // A client that hung up early fails its own assertions.
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            }
+        });
+        (origin, heads)
+    }
+
+    /// A server that answers 200, and one on another port that redirects to
+    /// it, with grants for both.
+    struct CrossOriginRedirect {
+        start: String,
+        start_heads: Heads,
+        target_heads: Heads,
+        grants: HashSet<String>,
+    }
+
+    async fn cross_origin_redirect() -> CrossOriginRedirect {
+        let (target, target_heads) = serve(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+        )
+        .await;
+        let (start, start_heads) = serve(format!(
+            "HTTP/1.1 302 Found\r\nLocation: {target}/landing\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        ))
+        .await;
+        let grants = grants(&[&format!("origin:{start}"), &format!("origin:{target}")]);
+        CrossOriginRedirect {
+            start,
+            start_heads,
+            target_heads,
+            grants,
+        }
+    }
+
+    fn loopback_client() -> ReqwestHttpClient {
+        ReqwestHttpClient::new(HttpPolicy {
+            mode: HttpPolicyMode::Enforce,
+            allow_private: true,
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_cross_origin_redirect_drops_credential_headers() {
+        let CrossOriginRedirect {
+            start,
+            start_heads,
+            target_heads,
+            grants,
+        } = cross_origin_redirect().await;
+        let client = loopback_client();
+        let url = format!("{start}/start");
+        let response = tokio::task::block_in_place(|| {
+            client.request(HttpRequest {
+                module_id: "mymod",
+                grants: &grants,
+                url: &url,
+                method: "GET",
+                opts: serde_json::json!({ "headers": {
+                    "Authorization": "Bearer secret",
+                    "proxy-authorization": "Basic c2VjcmV0",
+                    "Cookie": "session=secret",
+                    "X-Trace": "kept",
+                } }),
+                enforcement: Enforcement::Policy,
+            })
+        })
+        .unwrap();
+        assert_eq!(response["status"], 200);
+        let start_head = start_heads.lock().unwrap()[0].clone();
+        assert!(
+            start_head.contains("authorization: bearer secret"),
+            "{start_head}"
+        );
+        let target_head = target_heads.lock().unwrap()[0].clone();
+        assert!(target_head.starts_with("get /landing"), "{target_head}");
+        assert!(!target_head.contains("secret"), "{target_head}");
+        assert!(!target_head.contains("authorization"), "{target_head}");
+        assert!(!target_head.contains("cookie"), "{target_head}");
+        assert!(target_head.contains("x-trace: kept"), "{target_head}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_credential_request_refuses_a_cross_origin_redirect() {
+        let CrossOriginRedirect {
+            start,
+            start_heads,
+            target_heads,
+            grants,
+        } = cross_origin_redirect().await;
+        let client = loopback_client();
+        let url = format!("{start}/start");
+        let error = tokio::task::block_in_place(|| {
+            client.request(HttpRequest {
+                module_id: "mymod",
+                grants: &grants,
+                url: &url,
+                method: "GET",
+                opts: serde_json::json!({ "headers": { "Authorization": "Bearer secret" } }),
+                enforcement: Enforcement::Always,
+            })
+        })
+        .unwrap_err();
+        assert!(error.starts_with("permission_denied:"), "{error}");
+        assert!(error.contains("another origin"), "{error}");
+        assert_eq!(start_heads.lock().unwrap().len(), 1);
+        assert!(target_heads.lock().unwrap().is_empty());
     }
 }
