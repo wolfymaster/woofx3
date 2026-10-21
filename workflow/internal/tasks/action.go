@@ -39,8 +39,8 @@ func NewActionTask[TServices any](actionRegistry *ActionRegistry[TServices]) Tas
 	}
 }
 
-func (t *ActionTask[TServices]) Type() string {
-	return "action"
+func (t *ActionTask[TServices]) Type() types.TaskType {
+	return types.TaskTypeAction
 }
 
 func (t *ActionTask[TServices]) Execute(ctx *TaskContext) (*types.TaskResult, error) {

@@ -17,19 +17,23 @@ pub struct FileMetadata {
     pub callback_url: Option<String>,
     pub client_id: Option<String>,
     pub module_key: Option<String>,
+    /// The marketplace listing and edition the archive came from, as the
+    /// uploader sent them. Read, not validated: see `marketplace_origin`.
+    pub marketplace_listing_id: Option<String>,
+    pub marketplace_edition: Option<String>,
 }
 
 pub struct FileService {
-    upload_dir: String,
+    upload_dir: PathBuf,
 }
 
 impl FileService {
-    pub fn new(upload_dir: &str) -> Self {
+    pub fn new(upload_dir: &Path) -> Self {
         // Create directory if it doesn't exist
         fs::create_dir_all(upload_dir).expect("Failed to create upload directory");
 
         Self {
-            upload_dir: upload_dir.to_string(),
+            upload_dir: upload_dir.to_path_buf(),
         }
     }
 
@@ -44,6 +48,8 @@ impl FileService {
         let mut callback_url: Option<String> = None;
         let mut client_id: Option<String> = None;
         let mut module_key: Option<String> = None;
+        let mut marketplace_listing_id: Option<String> = None;
+        let mut marketplace_edition: Option<String> = None;
 
         while let Ok(Some(mut field)) = payload.try_next().await {
             let Some(content_disposition) = field.content_disposition() else {
@@ -69,7 +75,11 @@ impl FileService {
                             .await?,
                     )
                 }
-                "callback_url" | "client_id" | "module_key" => {
+                "callback_url"
+                | "client_id"
+                | "module_key"
+                | "marketplace_listing_id"
+                | "marketplace_edition" => {
                     let mut value = String::new();
                     while let Some(chunk) = field.next().await {
                         let data = chunk.map_err(|e| {
@@ -82,6 +92,8 @@ impl FileService {
                         "callback_url" => callback_url = Some(value),
                         "client_id" => client_id = Some(value),
                         "module_key" => module_key = Some(value),
+                        "marketplace_listing_id" => marketplace_listing_id = Some(value),
+                        "marketplace_edition" => marketplace_edition = Some(value),
                         _ => {}
                     }
                 }
@@ -97,6 +109,8 @@ impl FileService {
             metadata.ok_or_else(|| actix_web::error::ErrorBadRequest("No file field found"))?;
         meta.client_id = client_id;
         meta.module_key = module_key;
+        meta.marketplace_listing_id = marketplace_listing_id;
+        meta.marketplace_edition = marketplace_edition;
         Ok(meta)
     }
 
@@ -179,6 +193,8 @@ impl FileService {
                         callback_url: metadata.callback_url.clone(),
                         client_id: metadata.client_id.clone(),
                         module_key: metadata.module_key.clone(),
+                        marketplace_listing_id: metadata.marketplace_listing_id.clone(),
+                        marketplace_edition: metadata.marketplace_edition.clone(),
                     });
                 }
             }
@@ -226,7 +242,7 @@ impl FileService {
         // Get filename
         let mut file_extension = None;
         let sanitized = sanitize_filename::sanitize(file_name);
-        let upload_dir_path = PathBuf::from(&self.upload_dir);
+        let upload_dir_path = self.upload_dir.clone();
         let temp_dir_path = upload_dir_path.join(&temp_dir_name);
 
         if let Some(ext) = Path::new(&sanitized).extension() {
@@ -265,6 +281,8 @@ impl FileService {
             callback_url,
             client_id: None,
             module_key: None,
+            marketplace_listing_id: None,
+            marketplace_edition: None,
         })
     }
 }

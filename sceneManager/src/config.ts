@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
 
@@ -17,6 +18,7 @@ export const SceneManagerEnvSchema = z.object({
   woofx3MessagebusUrl: z.string().default("ws://localhost:4225"),
   woofx3MessagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
+  woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
   woofx3ObsHost: z.string().default("127.0.0.1"),
   woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
   woofx3ObsRpcToken: z.string().optional(),
@@ -25,6 +27,9 @@ export const SceneManagerEnvSchema = z.object({
   // The engine secret barkloader verifies media proxy URLs with (see
   // scene/media-proxy.ts); sceneManager signs them with it.
   woofx3BarkloaderKey: z.string().optional(),
+  // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
+  woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -39,6 +44,8 @@ export interface SceneManagerRuntimeConfig {
   barkloaderUrl: string;
   /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
   mediaProxySecret: string;
+  /** Which Host and Origin headers the HTTP server accepts; open unless set. */
+  requestGuard: RequestGuardPolicy;
   /**
    * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
    * the module is not installed, or a setting is empty.
@@ -53,6 +60,7 @@ export interface SceneManagerRuntimeConfig {
     name: string;
     jwt?: string;
     nkeySeed?: string;
+    token?: string;
   };
 }
 
@@ -129,6 +137,12 @@ export function resolvePublicDir(metaDir: string, execDir: string = dirname(proc
   return candidates[candidates.length - 1] as string;
 }
 
+/** A setting's text, or undefined when it is unset or blank. */
+function nonBlank(value: unknown): string | undefined {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  return text === "" ? undefined : text;
+}
+
 export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
@@ -141,6 +155,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const messagebusUrl = String(c.woofx3MessagebusUrl ?? "ws://localhost:4225");
   const jwt = c.woofx3MessagebusJwt ? String(c.woofx3MessagebusJwt) : undefined;
   const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : undefined;
+  const token = nonBlank(c.woofx3MessagebusToken);
 
   const obsHost = String(c.woofx3ObsHost ?? "127.0.0.1");
   const obsPort = String(c.woofx3ObsPort ?? "4455");
@@ -149,6 +164,10 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
   const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
+  const requestGuard = parseRequestGuardPolicy({
+    allowedHosts: c.woofx3AllowedHosts,
+    allowedOrigins: c.woofx3AllowedOrigins,
+  });
 
   return {
     port,
@@ -156,10 +175,12 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     tokenSecret,
     rootDir,
     publicDir: resolvePublicDir(import.meta.dir),
-    fontCacheDir: join(rootDir, "cache", "fonts"),
+    // The cache is written at runtime, so it follows the data directory when there is one.
+    fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
     barkloaderUrl,
     mediaProxySecret,
+    requestGuard,
     obs: {
       host: obsHost,
       port: obsPort,
@@ -170,6 +191,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
       name: "woofx3-scene-manager",
       jwt,
       nkeySeed,
+      token,
     },
   };
 }

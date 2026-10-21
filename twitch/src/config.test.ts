@@ -24,6 +24,14 @@ describe("TwitchEnvSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  test("accepts a message bus token, numeric or not, and no token", () => {
+    const base = { woofx3MessagebusUrl: "ws://127.0.0.1:4225", woofx3DatabaseProxyUrl: "http://db" };
+
+    expect(TwitchEnvSchema.parse({ ...base, woofx3MessagebusToken: "s3cret" }).woofx3MessagebusToken).toBe("s3cret");
+    expect(TwitchEnvSchema.parse({ ...base, woofx3MessagebusToken: 12345 }).woofx3MessagebusToken).toBe(12345);
+    expect(TwitchEnvSchema.parse(base).woofx3MessagebusToken).toBeUndefined();
+  });
+
   test("accepts no channel: the channel is whoever links Twitch", () => {
     const result = TwitchEnvSchema.safeParse({
       woofx3MessagebusUrl: "nats://localhost:4222",

@@ -19,16 +19,14 @@ import type { SceneVersion } from "./scene-host";
 const nonEmptyId = z.string().min(1);
 
 // Mirrors SceneControlCommand in shared/common/typescript/cloudevents/Scene/commands.ts.
-// `.strict()` so a misspelled field is refused rather than silently ignored.
+// Strict objects, so a misspelled field is refused rather than silently ignored.
 const commandSchema = z.discriminatedUnion("command", [
-  z
-    .object({
-      command: z.literal("set_placement_visibility"),
-      sceneId: nonEmptyId,
-      placementId: nonEmptyId,
-      visible: z.boolean(),
-    })
-    .strict(),
+  z.strictObject({
+    command: z.literal("set_placement_visibility"),
+    sceneId: nonEmptyId,
+    placementId: nonEmptyId,
+    visible: z.boolean(),
+  }),
 ]);
 
 /** The slice of `SceneDocuments` a command changes a scene through. */

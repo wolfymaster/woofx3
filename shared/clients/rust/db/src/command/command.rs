@@ -49,8 +49,29 @@ pub struct Command {
     /// chat is an action (`chat.reply`) rather than a kind of command, which is
     /// what lets a command do anything a workflow step can. An empty array is a
     /// command that only announces itself on `chat.command.<slug>`.
+    ///
+    /// Only a command with no workflow (see workflow_id) runs these. Linking a
+    /// command to its workflow moves its actions into the workflow and leaves
+    /// this empty.
     #[prost(string, tag="22")]
     pub actions_json: ::prost::alloc::string::String,
+    /// The stored workflow this command runs, or empty when it has none. The
+    /// workflow's trigger has type "command": no event starts it, and the
+    /// commander runs it by id once the command has matched and passed its
+    /// checks. A command with no steps has no workflow.
+    #[prost(string, tag="23")]
+    pub workflow_id: ::prost::alloc::string::String,
+    /// The tasks of the workflow named by workflow_id, as that workflow stores
+    /// them (its `steps`), so a reader of the command needs no second lookup.
+    /// "\[\]" when the command has no workflow.
+    #[prost(string, tag="24")]
+    pub steps_json: ::prost::alloc::string::String,
+    /// Why this command has no workflow when it should have one, or empty.
+    /// Either db-proxy could not turn its actions into a workflow (it then
+    /// keeps running actions_json, and the next start of db-proxy tries
+    /// again), or the workflow named by workflow_id no longer exists.
+    #[prost(string, tag="25")]
+    pub workflow_error: ::prost::alloc::string::String,
 }
 /// Request to get a single command by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -105,9 +126,14 @@ pub struct CreateCommandRequest {
     pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="14")]
     pub argument_pattern: ::prost::alloc::string::String,
-    /// See Command.actions_json.
+    /// See Command.actions_json. Ignored when steps_json is set. A non-empty
+    /// list becomes the command's workflow, its actions run in order.
     #[prost(string, tag="15")]
     pub actions_json: ::prost::alloc::string::String,
+    /// The tasks of the command's workflow, as a workflow stores them. A
+    /// non-empty list creates the workflow and links the command to it.
+    #[prost(string, tag="16")]
+    pub steps_json: ::prost::alloc::string::String,
 }
 /// Request to update an existing command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -130,9 +156,16 @@ pub struct UpdateCommandRequest {
     pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="11")]
     pub argument_pattern: ::prost::alloc::string::String,
-    /// See Command.actions_json.
+    /// See Command.actions_json. Empty leaves the command's steps as they
+    /// are; otherwise its actions, in order, replace the steps of its workflow.
+    /// Ignored when steps_json is set.
     #[prost(string, tag="12")]
     pub actions_json: ::prost::alloc::string::String,
+    /// Replaces the tasks of the command's workflow, as a workflow stores them.
+    /// A non-empty list creates the workflow when the command has none; an
+    /// empty one deletes it. Absent leaves the steps to actions_json.
+    #[prost(string, optional, tag="13")]
+    pub steps_json: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Request to delete a command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

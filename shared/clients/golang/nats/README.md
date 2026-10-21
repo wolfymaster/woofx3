@@ -70,6 +70,7 @@ type Config struct {
     Name     string  // Client name
     JWT      string  // Optional JWT for authentication
     NKeySeed string  // Optional NKey seed for authentication
+    Token    string  // Optional token (WOOFX3_MESSAGEBUS_TOKEN); sent when not blank
 }
 ```
 

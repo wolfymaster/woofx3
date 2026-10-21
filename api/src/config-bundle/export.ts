@@ -70,24 +70,15 @@ export function workflowToBundle(
   state: Pick<EngineConfigState, "modules" | "actionOwners" | "triggerOwners">
 ): ConfigBundleWorkflow {
   const requires = new Set<string>();
-  const workflowRefs: Record<string, string> = {};
-  const tasks: TaskDefinition[] = wf.tasks.map((task) => {
+  for (const task of wf.tasks) {
     if (task.type === "action" && task.action) {
       const owner = state.actionOwners.get(task.action);
       if (owner && state.modules.has(owner)) {
         requires.add(owner);
       }
     }
-    const targetId = task.workflow?.workflowId;
-    const targetName = targetId ? workflowNames.get(targetId) : undefined;
-    if (!task.workflow) {
-      return task;
-    }
-    if (targetName) {
-      workflowRefs[task.id] = targetName;
-    }
-    return { ...task, workflow: { ...task.workflow, workflowId: "" } };
-  });
+  }
+  const { tasks, workflowRefs } = portableTasks(wf.tasks, workflowNames);
 
   if (wf.trigger?.type === "event") {
     const owner = state.triggerOwners.get(wf.trigger.event);
@@ -115,26 +106,55 @@ export function workflowToBundle(
 }
 
 /**
+ * `tasks` with every sub-workflow step's raw `workflow.workflowId` blanked,
+ * and `workflowRefs` naming each target by its name in `workflowNames`
+ * (task id to workflow name). A target missing from `workflowNames` was
+ * already dangling; its id is blanked all the same and it gets no entry.
+ */
+function portableTasks(
+  tasks: TaskDefinition[],
+  workflowNames: ReadonlyMap<string, string>
+): { tasks: TaskDefinition[]; workflowRefs: Record<string, string> } {
+  const workflowRefs: Record<string, string> = {};
+  const portable = tasks.map((task) => {
+    if (!task.workflow) {
+      return task;
+    }
+    const targetName = task.workflow.workflowId ? workflowNames.get(task.workflow.workflowId) : undefined;
+    if (targetName) {
+      workflowRefs[task.id] = targetName;
+    }
+    return { ...task, workflow: { ...task.workflow, workflowId: "" } };
+  });
+  return { tasks: portable, workflowRefs };
+}
+
+/**
  * A command in bundle form. Group grants become group names. `usernames` is
  * included only when `includeMembers` is set, so a comparison against a bundle
  * exported without members ignores them rather than seeing a difference.
+ * Its steps name sub-workflow targets the way a workflow's tasks do; see
+ * `portableTasks`.
  */
 export function commandToBundle(
   cmd: EngineCommand,
   groupNames: ReadonlyMap<string, string>,
+  workflowNames: ReadonlyMap<string, string>,
   includeMembers: boolean,
   state: Pick<EngineConfigState, "modules" | "actionOwners">
 ): ConfigBundleCommand {
   const requires = new Set<string>();
-  for (const action of cmd.actions) {
-    const owner = state.actionOwners.get(action.action);
+  for (const action of [...cmd.actions, ...cmd.steps]) {
+    const owner = action.action ? state.actionOwners.get(action.action) : undefined;
     if (owner && state.modules.has(owner)) {
       requires.add(owner);
     }
   }
   collectCanonicalRefs(cmd.actions, state.modules, requires);
+  collectCanonicalRefs(cmd.steps, state.modules, requires);
 
   const groups = cmd.groupIds.map((id) => groupNames.get(id)).filter((name): name is string => name !== undefined);
+  const steps = portableTasks(cmd.steps, workflowNames);
 
   return canonicalize({
     command: cmd.command,
@@ -144,6 +164,7 @@ export function commandToBundle(
     visibility: cmd.visibility,
     argumentPattern: cmd.argumentPattern,
     actions: cmd.actions,
+    ...(cmd.steps.length > 0 ? { steps: steps.tasks, workflowRefs: steps.workflowRefs } : {}),
     groups: [...groups].sort(),
     ...(includeMembers ? { usernames: [...cmd.usernames].sort() } : {}),
     requires: sortedRequires(requires),
@@ -218,7 +239,7 @@ export function buildConfigBundle(
   const commands = options.sections.has("commands")
     ? state.commands
         .filter((c) => c.userOwned)
-        .map((c) => commandToBundle(c, groupNames, options.includeMembers, state))
+        .map((c) => commandToBundle(c, groupNames, workflowNames, options.includeMembers, state))
         .sort(byKey((c) => c.command.toLowerCase()))
     : [];
   const groups = options.sections.has("groups")

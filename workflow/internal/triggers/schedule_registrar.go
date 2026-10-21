@@ -40,7 +40,7 @@ func (r *ScheduleTriggerRegistrar) Stop() {
 }
 
 func (r *ScheduleTriggerRegistrar) Register(workflowID string, trigger *types.TriggerConfig) error {
-	if trigger == nil || trigger.Type != "schedule" {
+	if trigger == nil || trigger.Type != types.TriggerTypeSchedule {
 		return nil
 	}
 	// Refused rather than skipped: a schedule trigger with no schedule can

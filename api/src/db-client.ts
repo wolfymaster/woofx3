@@ -21,6 +21,7 @@ import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
 import * as user_event from "@woofx3/db/user_event.pb";
+import * as viewer_fact from "@woofx3/db/viewer_fact.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
@@ -246,6 +247,12 @@ export class DbClient {
   async getGroup(req: group.GetGroupRequest): Promise<group.Group> {
     const response = await group.GetGroup(req, this.config);
     return unwrap("getGroup", response, response.group);
+  }
+
+  /** Every viewer fact definition, each with its status resolved against the triggers registered now. */
+  async listFactDefinitions(): Promise<viewer_fact.FactDefinition[]> {
+    const response = await viewer_fact.ListFactDefinitions({}, this.config);
+    return unwrap("listFactDefinitions", response, response.definitions ?? []);
   }
 
   async listGroups(req: group.ListGroupsRequest): Promise<group.Group[]> {

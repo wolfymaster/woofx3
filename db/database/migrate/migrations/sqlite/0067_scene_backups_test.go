@@ -3,7 +3,7 @@ package sqlite
 import "testing"
 
 func TestSceneBackupsAcceptOnlyKnownValues(t *testing.T) {
-	db := openMigratedTo(t, "0062_scene_backups")
+	db := openMigratedTo(t, "0067_scene_backups")
 	const scene = "00000000-0000-0000-0000-00000000b4c1"
 	mustExec(t, db, `INSERT INTO scene_backups (id, scene_id, version, source_column, reason, content)
 		VALUES ('b1', ?, 'draft', 'widgets', 'unreadable_column', 'not json {')`, scene)

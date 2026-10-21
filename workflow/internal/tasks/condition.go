@@ -13,8 +13,8 @@ func NewConditionTask() TaskFactory {
 	}
 }
 
-func (t *ConditionTask) Type() string {
-	return "condition"
+func (t *ConditionTask) Type() types.TaskType {
+	return types.TaskTypeCondition
 }
 
 func (t *ConditionTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {

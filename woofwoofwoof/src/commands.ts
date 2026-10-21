@@ -1,3 +1,4 @@
+import type { ChatCommandEvent } from "@woofx3/common/cloudevents/Chat/commands";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import { extractCommandVariables } from "@woofx3/common/templates/command-variables";
 import { resolve, type ResolverContext } from "@woofx3/common/templates/resolver";
@@ -84,6 +85,11 @@ export type CommandResponse =
 export interface CommandInvocation {
   rawMessage: string;
   args: string[];
+  /** The `chat.command.<slug>` event this invocation announced, or undefined
+   *  when it could not be built (no publisher, or a name with no valid slug).
+   *  A handler that hands the invocation on to something else hands on this
+   *  same event, so both carry one id. */
+  event?: ChatCommandEvent;
   /** The platform's id for the chatter, when the message carried one. */
   chatterId?: string;
   membership?: ChatterMembership;
@@ -123,7 +129,12 @@ export interface CommandMatch {
   variables: Record<string, unknown>;
   chatter: string;
 }
-export type CommandPublisher = (match: CommandMatch) => void;
+/**
+ * Builds the match's `chat.command.<slug>` event and starts publishing it.
+ * Returns the event so the handler can pass the very same one on, and the
+ * publish, which the commander reports through `onPublishError` if it fails.
+ */
+export type CommandPublisher = (match: CommandMatch) => { event: ChatCommandEvent; published: Promise<void> };
 
 export interface CommandsOptions {
   publisher?: CommandPublisher;
@@ -216,7 +227,14 @@ export class Commands {
       let msg = this.parseAction(text);
 
       if (msg.action === action) {
-        // Cooldown gates everything, including the emitted CloudEvent - a
+        // Who may run it comes first, so a refused chatter neither spends the
+        // cooldown for everyone else nor gets told it is on cooldown.
+        const auth = await this.authorize(cmdRecord, user, msg.cmd, membership);
+        if (!auth.granted) {
+          return [auth.message ?? "", !!auth.message];
+        }
+
+        // Cooldown gates everything else, including the emitted CloudEvent - a
         // throttled invocation is fully dropped (requirement: "drop any
         // invocations that happen within the cooldown period"), so it must
         // not trigger any workflow subscribed to this command either.
@@ -228,11 +246,6 @@ export class Commands {
           cmdRecord.lastInvokedAt = now;
         }
 
-        const auth = await this.authorize(cmdRecord, user, msg.cmd, membership);
-        if (!auth.granted) {
-          return [auth.message ?? "", !!auth.message];
-        }
-
         // vars must be computed before emitMatch so the emitted CloudEvent
         // carries the same argument_pattern captures a module function sees.
         const args = msg.text.length > 0 ? msg.text.split(/\s+/) : [];
@@ -241,7 +254,7 @@ export class Commands {
         // Emit the chat.command.<slug> CloudEvent before running the handler so
         // downstream consumers (e.g. workflow engine triggers) still observe the
         // match even if the handler throws or returns an empty string.
-        this.emitMatch({
+        const event = this.emitMatch({
           commandName: msg.cmd,
           args,
           rawMessage: text,
@@ -263,7 +276,13 @@ export class Commands {
           return [typeof resolved === "string" ? resolved : String(resolved ?? ""), true];
         }
         if (typeof response === "function") {
-          const res = await response(msg.text, user.trim(), vars, { rawMessage: text, args, chatterId, membership });
+          const res = await response(msg.text, user.trim(), vars, {
+            rawMessage: text,
+            args,
+            chatterId,
+            membership,
+            event,
+          });
           return [res, true];
         }
       }
@@ -308,20 +327,29 @@ export class Commands {
 
   // Isolate publisher failures from command dispatch. A malformed command name
   // (e.g. one that slipped past UI validation) would throw inside the slug
-  // helper, and we must not let that break the normal handler chain.
-  private emitMatch(match: CommandMatch) {
+  // helper, and we must not let that break the normal handler chain; a failed
+  // publish is reported the same way, without holding up the handler.
+  private emitMatch(match: CommandMatch): ChatCommandEvent | undefined {
     if (!this.publisher) {
+      return undefined;
+    }
+    let emitted: ReturnType<CommandPublisher>;
+    try {
+      emitted = this.publisher(match);
+    } catch (err) {
+      this.reportPublishError(err, match);
+      return undefined;
+    }
+    emitted.published.catch((err: unknown) => this.reportPublishError(err, match));
+    return emitted.event;
+  }
+
+  private reportPublishError(err: unknown, match: CommandMatch) {
+    if (this.onPublishError) {
+      this.onPublishError(err, match);
       return;
     }
-    try {
-      this.publisher(match);
-    } catch (err) {
-      if (this.onPublishError) {
-        this.onPublishError(err, match);
-        return;
-      }
-      console.error("Failed to publish chat.command event", match.commandName, err);
-    }
+    console.error("Failed to publish chat.command event", match.commandName, err);
   }
 
   private async authorize(

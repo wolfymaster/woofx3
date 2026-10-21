@@ -91,7 +91,7 @@ func planConcurrentRun(
 // isConcurrencySafe reports whether a task's type can run alongside others.
 func isConcurrencySafe(task *types.TaskDefinition) bool {
 	switch task.Type {
-	case "wait", "workflow", "condition":
+	case types.TaskTypeWait, types.TaskTypeWorkflow, types.TaskTypeCondition:
 		return false
 	default:
 		return true

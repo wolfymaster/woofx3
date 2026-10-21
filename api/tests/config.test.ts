@@ -56,3 +56,48 @@ describe("engine name", () => {
     expect(loadConfig().engineName).toBeNull();
   });
 });
+
+describe("engine hosting", () => {
+  test("is null when WOOFX3_HOSTING is unset or blank", () => {
+    withEnv({});
+    delete process.env.WOOFX3_HOSTING;
+    expect(loadConfig().hosting).toBeNull();
+
+    withEnv({ WOOFX3_HOSTING: " " });
+    expect(loadConfig().hosting).toBeNull();
+  });
+
+  test("is the hosting WOOFX3_HOSTING names", () => {
+    for (const hosting of ["managed", "self", "local"]) {
+      withEnv({ WOOFX3_HOSTING: hosting });
+      expect(loadConfig().hosting).toBe(hosting as never);
+    }
+  });
+
+  test("refuses any other value", () => {
+    withEnv({ WOOFX3_HOSTING: "cloud" });
+    expect(() => loadConfig()).toThrow("WOOFX3_HOSTING");
+  });
+});
+
+describe("message bus token", () => {
+  test("is the token WOOFX3_MESSAGEBUS_TOKEN gives", () => {
+    withEnv({ WOOFX3_MESSAGEBUS_TOKEN: "s3cret" });
+
+    expect(loadConfig().nats.token).toBe("s3cret");
+  });
+
+  test("keeps a numeric token as text", () => {
+    withEnv({ WOOFX3_MESSAGEBUS_TOKEN: "12345" });
+
+    expect(loadConfig().nats.token).toBe("12345");
+  });
+
+  test("is unset when nothing sets it", () => {
+    delete process.env.WOOFX3_MESSAGEBUS_TOKEN;
+    delete process.env.MESSAGEBUS_TOKEN;
+    withEnv({});
+
+    expect(loadConfig().nats.token).toBeUndefined();
+  });
+});

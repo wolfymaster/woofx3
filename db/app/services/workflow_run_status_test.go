@@ -34,7 +34,7 @@ func newRunStatusSvc(t *testing.T) (client.WorkflowService, *gorm.DB) {
 	)`).Error; err != nil {
 		t.Fatalf("create workflow_executions: %v", err)
 	}
-	return NewWorkflowService(nil, db, nil, nil), db
+	return NewWorkflowService(nil, nil, db, nil, nil), db
 }
 
 func recordRun(t *testing.T, svc client.WorkflowService) string {

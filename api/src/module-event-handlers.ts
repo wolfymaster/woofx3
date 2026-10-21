@@ -1,3 +1,9 @@
+import { isWidgetSurface, parseFieldList } from "@woofx3/api/ui-schema";
+import { EngineEventType } from "@woofx3/api/webhooks";
+import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
+import { asString } from "./outbox";
+import { subscribeProjections } from "./projection";
 import type {
   ActionDefinition,
   AssetDefinition,
@@ -27,12 +33,6 @@ import type {
   WidgetBehaviorKinds,
   WidgetDefinition,
 } from "./webhook-client";
-import { asString } from "./outbox";
-import { subscribeProjections } from "./projection";
-import { EngineEventType } from "@woofx3/api/webhooks";
-import { isWidgetSurface, parseFieldList } from "@woofx3/api/ui-schema";
-import type { SharedLogger } from "@woofx3/common/logging";
-import type NATSClient from "@woofx3/nats/src/client";
 
 interface RawTrigger {
   id?: unknown;
@@ -62,6 +62,7 @@ interface RawAction {
   type?: unknown;
   params_schema?: unknown;
   returns?: unknown;
+  sentence?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -201,6 +202,11 @@ function mapAction(raw: RawAction): ActionDefinition {
   const returns = asString(raw.returns);
   if (returns !== "" && returns !== "{}") {
     def.returns = returns;
+  }
+  // As for a trigger's sentence: "" is the column default.
+  const sentence = asString(raw.sentence);
+  if (sentence !== "") {
+    def.sentence = sentence;
   }
   const canonicalId = asString(raw.canonical_id);
   if (canonicalId !== "") {

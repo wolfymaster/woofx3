@@ -17,6 +17,13 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	// One connection: each new :memory: connection is a separate database,
+	// and a transaction would otherwise see none of the tables below.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	stmts := []string{
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY,
@@ -53,7 +60,20 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_by_ref TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			visibility VARCHAR(20) NOT NULL DEFAULT 'restricted',
-			argument_pattern VARCHAR(255) NOT NULL DEFAULT ''
+			argument_pattern VARCHAR(255) NOT NULL DEFAULT '',
+			workflow_id TEXT,
+			workflow_error TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE workflow_definitions (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			steps TEXT,
+			trigger TEXT,
+			created_by_type TEXT NOT NULL DEFAULT 'USER',
+			created_by_ref TEXT NOT NULL DEFAULT '',
+			manifest_id TEXT NOT NULL DEFAULT '',
+			taxonomy TEXT NOT NULL DEFAULT '[]',
+			enabled BOOLEAN NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE command_groups (
 			command_id TEXT NOT NULL,

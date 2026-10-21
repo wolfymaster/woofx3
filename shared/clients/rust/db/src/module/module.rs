@@ -254,6 +254,14 @@ pub struct Action {
     /// an opaque map\[string\]any and never validates it against this.
     #[prost(string, tag="14")]
     pub returns: ::prost::alloc::string::String,
+    /// The module author's one-line English template for a configured step that
+    /// runs this action, e.g. "Add {amount} to {counter}". Each `{fieldId}`
+    /// names a field in params_schema; the UI substitutes the configured value,
+    /// or that field's `missingText` while a required field is still empty.
+    /// Validated at install: non-empty, braces balanced and unnested, every
+    /// placeholder a declared field id. Empty means the author declared none.
+    #[prost(string, tag="15")]
+    pub sentence: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ActionInput {
@@ -275,6 +283,9 @@ pub struct ActionInput {
     /// JSON string — see Action.returns
     #[prost(string, tag="9")]
     pub returns: ::prost::alloc::string::String,
+    /// see Action.sentence
+    #[prost(string, tag="10")]
+    pub sentence: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {
@@ -997,6 +1008,13 @@ pub struct Module {
     pub created_by_ref: ::prost::alloc::string::String,
     #[prost(string, tag="12")]
     pub module_key: ::prost::alloc::string::String,
+    /// The marketplace listing this module was installed from, and that
+    /// listing's edition. Unset for a module that did not come from the
+    /// marketplace or was installed before the engine recorded it.
+    #[prost(string, optional, tag="14")]
+    pub marketplace_listing_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(int32, optional, tag="15")]
+    pub marketplace_edition: ::core::option::Option<i32>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ModuleFunction {
@@ -1044,6 +1062,12 @@ pub struct CreateModuleRequest {
     /// Manifest-local module id (manifest.json `id`). Required on install.
     #[prost(string, tag="9")]
     pub module_id: ::prost::alloc::string::String,
+    /// Set together for an install from the marketplace; see Module. A request
+    /// that leaves them unset keeps what an existing row of the same name has.
+    #[prost(string, optional, tag="10")]
+    pub marketplace_listing_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(int32, optional, tag="11")]
+    pub marketplace_edition: ::core::option::Option<i32>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateModuleFunctionRequest {

@@ -1,203 +1,67 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
+
+	"github.com/wolfymaster/woofx3/common/config"
 )
 
-func findProjectRoot(startDir string) string {
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
-		return startDir
+// resolveConfigLocation picks the config file and .env directory: the -conf flag's file, with .env
+// from its directory, else wherever config.ResolveLocation finds them.
+func resolveConfigLocation(confPath string) config.Location {
+	if confPath == "" {
+		return config.ResolveLocation("")
 	}
-	root := filepath.VolumeName(dir) + string(filepath.Separator)
-	if root == string(filepath.Separator) {
-		root = "/"
+	if abs, err := filepath.Abs(confPath); err == nil {
+		confPath = abs
 	}
-	for dir != root {
-		for _, name := range []string{".woofx3.json"} {
-			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-				return dir
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return startDir
+	return config.Location{RootDir: filepath.Dir(confPath), ConfigPath: confPath}
 }
 
-func parseDotenv(path string) (map[string]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-	out := make(map[string]string)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.Index(line, "=")
-		if idx <= 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		value := strings.TrimSpace(line[idx+1:])
-		if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'')) {
-			value = value[1 : len(value)-1]
-		}
-		out[key] = value
-	}
-	return out, scanner.Err()
-}
-
-func camelToScreamingSnake(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('_')
-		}
-		if r >= 'a' && r <= 'z' {
-			b.WriteRune(r - 32)
-		} else if r >= 'A' && r <= 'Z' || (r >= '0' && r <= '9') || r == '_' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-func loadWoofx3JSON(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func valueToString(v any) string {
-	if v == nil {
-		return ""
-	}
-	switch x := v.(type) {
-	case string:
-		return x
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case bool:
-		if x {
-			return "true"
-		}
-		return "false"
-	default:
-		return fmt.Sprint(v)
-	}
-}
-
-// loadEnvMap pulls in variables from .woofx3.json/.woofx3.config, .env and the process environment
-// into a single map. Precedence, highest first: the process environment, then .env, then the
-// config file -- the same order as the shared Go runtime loader, so a deployment's variables beat
-// values baked into the image. A blank value never masks a non-blank one from a lower source.
-// Does not modify the process environment. Returns the map and the config file path used, or ""
-// if none.
-func loadEnvMap(confPath string) (map[string]string, string, error) {
-	var rootDir, configPath string
-	if confPath != "" {
-		rootDir = filepath.Dir(confPath)
-		configPath = confPath
-	} else {
-		rootDir = findProjectRoot(".")
-		for _, name := range []string{".woofx3.json", ".woofx3.config"} {
-			p := filepath.Join(rootDir, name)
-			if _, err := os.Stat(p); err == nil {
-				configPath = p
-				break
-			}
-		}
-	}
-
-	fromFile := make(map[string]string)
-	if configPath != "" {
-		woofx3, err := loadWoofx3JSON(configPath)
-		if err != nil {
-			return nil, "", err
-		}
-		for key, val := range woofx3 {
-			fromFile["WOOFX3_"+camelToScreamingSnake(key)] = valueToString(val)
-		}
-	}
-
-	fromDotenv, err := parseDotenv(filepath.Join(rootDir, ".env"))
-	if err != nil {
-		return nil, "", err
-	}
-
-	fromProcess := make(map[string]string)
-	for _, e := range os.Environ() {
-		idx := strings.Index(e, "=")
-		if idx > 0 {
-			fromProcess[e[:idx]] = e[idx+1:]
-		}
-	}
-
-	return mergeByPrecedence(fromFile, fromDotenv, fromProcess), configPath, nil
-}
-
-// mergeByPrecedence merges sources given lowest precedence first. A later source overrides an
-// earlier one unless its value is blank. Must match mergeByPrecedence in
-// shared/common/golang/runtime/env.go.
-func mergeByPrecedence(sources ...map[string]string) map[string]string {
-	merged := make(map[string]string)
-	for _, source := range sources {
-		for key, value := range source {
-			if _, present := merged[key]; strings.TrimSpace(value) != "" || !present {
-				merged[key] = value
-			}
-		}
-	}
-	return merged
-}
-
-// LoadConfig loads configuration from env, .env, and optionally .woofx3.json/.woofx3.config.
-// If confPath is non-empty, that file is used as the config file; otherwise the project root is searched.
-// Does not set process environment; returns a Configuration object with defaults applied and env/file merged.
+// LoadConfig loads configuration from the process environment, .env and the config file, in that
+// order of precedence -- the same as every other service, so a deployment's variables beat values
+// baked into the image. See resolveConfigLocation for where the files are found. When nothing
+// named a location and the search found no config file, the config files next to the executable
+// are tried instead. Does not set the process environment.
 func LoadConfig(confPath string) (*Configuration, error) {
-	env, configPath, err := loadEnvMap(confPath)
+	location := resolveConfigLocation(confPath)
+	env, err := loadEnv(location)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := DefaultConfiguration()
-	loadPath := confPath
-	if loadPath == "" && configPath != "" {
-		loadPath = configPath
-	}
-	if loadPath != "" {
-		if err := cfg.Load(loadPath); err != nil {
+	if location.ConfigPath != "" {
+		if err := cfg.Load(location.ConfigPath); err != nil {
 			return nil, err
 		}
-	} else if err := cfg.Load(""); err != nil && !os.IsNotExist(err) {
+	} else if location.Searched {
+		if err := cfg.Load(""); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	if err := cfg.OverlayFromMap(env); err != nil {
 		return nil, err
 	}
-	cfg.OverlayFromMap(env)
 	return cfg, nil
+}
+
+// loadEnv merges the config sources with every message bus key spelt
+// canonically (see canonicalKey), so a file key and the variable that
+// overrides it meet under one name and precedence holds between them.
+func loadEnv(location config.Location) (map[string]string, error) {
+	sources, err := config.LoadSources(location)
+	if err != nil {
+		return nil, err
+	}
+	merged := make([]map[string]string, 0, 3)
+	for _, source := range []map[string]string{sources.File, sources.Dotenv, sources.Process} {
+		canonical, err := canonicalSource(source)
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, canonical)
+	}
+	return config.MergeByPrecedence(merged...), nil
 }

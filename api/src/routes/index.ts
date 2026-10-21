@@ -14,6 +14,8 @@ import { eventsRoutes } from "./events";
 import { fieldOptionsRoutes } from "./field-options";
 import { groupsRoutes } from "./groups";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
+import { marketplaceRoutes } from "./marketplace";
+import { marketplaceCatalogRoutes } from "./marketplace-catalog";
 import { moduleOAuthRoutes } from "./module-oauth";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
@@ -26,7 +28,9 @@ import { streamSessionsRoutes } from "./stream-sessions";
 import { subscriptionsRoutes } from "./subscriptions";
 import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { triggersRoutes } from "./triggers";
+import { twitchRoutes } from "./twitch";
 import { userActionsRoutes } from "./user-actions";
+import { viewerFactsRoutes } from "./viewer-facts";
 import { workflowsRoutes } from "./workflows";
 import { workflowsExecutionRoutes } from "./workflows-execution";
 
@@ -44,6 +48,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof dashboardRoutes &
   typeof accountsRoutes &
   typeof modulesRoutes &
+  typeof marketplaceRoutes &
+  typeof marketplaceCatalogRoutes &
   typeof workflowsRoutes &
   typeof scenesRoutes &
   typeof compositionsRoutes &
@@ -58,7 +64,9 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof analyticsRoutes &
   typeof configBundlesRoutes &
   typeof moduleOAuthRoutes &
-  typeof relayRoutes;
+  typeof relayRoutes &
+  typeof viewerFactsRoutes &
+  typeof twitchRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -103,6 +111,8 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(dashboardRoutes),
     instrumentRoutes(accountsRoutes),
     instrumentRoutes(modulesRoutes),
+    instrumentRoutes(marketplaceRoutes),
+    instrumentRoutes(marketplaceCatalogRoutes),
     instrumentRoutes(workflowsRoutes),
     instrumentRoutes(scenesRoutes),
     instrumentRoutes(compositionsRoutes),
@@ -117,6 +127,8 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(analyticsRoutes),
     instrumentRoutes(configBundlesRoutes),
     instrumentRoutes(moduleOAuthRoutes),
-    instrumentRoutes(relayRoutes)
+    instrumentRoutes(relayRoutes),
+    instrumentRoutes(viewerFactsRoutes),
+    instrumentRoutes(twitchRoutes)
   );
 }

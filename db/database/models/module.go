@@ -23,6 +23,13 @@ type Module struct {
 	InstalledAt   time.Time        `gorm:"column:installed_at;default:CURRENT_TIMESTAMP;not null"`
 	UpdatedAt     time.Time        `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 	Functions     []ModuleFunction `gorm:"foreignKey:ModuleID;references:ID"`
+
+	// The marketplace listing the module was installed from and that
+	// listing's edition. Nil for any other install. Recorded because the
+	// module key's first segment is the manifest id, which every edition of
+	// a listing shares.
+	MarketplaceListingID *string `gorm:"column:marketplace_listing_id;type:text"`
+	MarketplaceEdition   *int32  `gorm:"column:marketplace_edition;type:integer"`
 }
 
 func (Module) TableName() string { return "modules" }
@@ -154,6 +161,11 @@ type Action struct {
 	// hands back. Replaces the ConfigField-shaped output_schema — see
 	// module_action.proto Action.returns.
 	Returns string `gorm:"column:returns;type:jsonb;not null;default:'{}'"`
+	// Sentence is the module author's one-line English template for a
+	// configured step that runs this action, e.g. "Add {amount} to {counter}",
+	// where each `{fieldId}` names a field in ParamsSchema. Empty means the
+	// author declared none. See module_action.proto Action.sentence.
+	Sentence string `gorm:"column:sentence;type:text;not null;default:''"`
 	// ArchivedAt is set when a module upgrade drops this action from the
 	// manifest. Archived rows stay resolvable by canonical id (existing
 	// workflows keep working) but are excluded from catalog listings.

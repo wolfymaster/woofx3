@@ -39,3 +39,27 @@ func TestDatabaseProxyBindsTheConfiguredHost(t *testing.T) {
 		t.Fatalf("DatabaseProxyHost = %q, want 0.0.0.0", cfg.DatabaseProxyHost)
 	}
 }
+
+func TestTheMessageBusTokenIsReadFromTheEnvironment(t *testing.T) {
+	env := requiredEnv()
+	env["WOOFX3_MESSAGEBUS_TOKEN"] = "s3cret"
+	cfg := &DatabaseEnvConfig{}
+	if err := runtime.FillEnvConfig(env, cfg); err != nil {
+		t.Fatalf("FillEnvConfig: %v", err)
+	}
+
+	if cfg.Config.Token != "s3cret" {
+		t.Fatalf("messagebus token = %q, want s3cret", cfg.Config.Token)
+	}
+}
+
+func TestTheMessageBusTokenIsOptional(t *testing.T) {
+	cfg := &DatabaseEnvConfig{}
+	if err := runtime.FillEnvConfig(requiredEnv(), cfg); err != nil {
+		t.Fatalf("FillEnvConfig: %v", err)
+	}
+
+	if cfg.Config.Token != "" {
+		t.Fatalf("messagebus token = %q, want none", cfg.Config.Token)
+	}
+}

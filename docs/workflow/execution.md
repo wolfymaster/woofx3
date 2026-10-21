@@ -23,10 +23,10 @@ Trigger condition evaluation (if conditions defined)
 WorkflowExecution created (UUID, status: running)
     |
     v
-DependencyGraph built from task dependsOn fields
+DependencyGraph built from dependsOn, plus the orderings onTrue/onFalse imply
     |
     v
-Topological sort -> execution order
+Topological sort, ties broken by declaration order -> execution order
     |
     v
 Tasks execute in order; independent adjacent ones run together:
@@ -44,6 +44,10 @@ Execution completed/failed
 
 Tasks declare dependencies via `dependsOn`. The engine builds a directed acyclic graph and performs a topological sort to determine execution order.
 
+A condition adds orderings of its own, so a branch behaves like the steps under an "if": every task in `onTrue` or `onFalse` waits for the condition, and a task outside the branches that depends on the condition, or on anything in them, waits for everything in them. See [condition](./tasks.md#condition).
+
+The order is deterministic. Whenever more than one task is ready, the one declared first in `tasks` goes first, so tasks with no order between them run in the order they are written, every run.
+
 ### Concurrency
 
 Adjacent tasks that do not depend on one another execute at the same time,
@@ -59,7 +63,8 @@ has a defined answer under concurrency:
   resume by index, so they cannot sit inside a set of tasks with no ordering
   between them.
 - It is a `condition` task, which decides which later tasks are skipped.
-- It declares `dependsOn` a task in the same run.
+- It depends on a task in the same run, whether by `dependsOn` or by an
+  ordering a condition implies.
 - It reads another run member's exports as `${otherTask.field}` **without**
   declaring `dependsOn`. Such a workflow works today only because the sorted
   order happened to put them in sequence; it keeps working, sequentially,
@@ -207,7 +212,7 @@ never told about a dry run.
 - **Waits** complete at once, recording what they would have waited for
   (`would wait for a channel.follow event for up to 2m0s`, or `would wait 10s`
   for a delay). Their exports read `satisfied: true`, `timedOut: false`, with
-  no events.
+  no events and an empty `data` whose fields resolve to empty.
 - **Sub-workflows** started by a dry run are dry runs too.
 - **Workflows triggered by a dry run.** A dry run's `workflow.run.*`
   lifecycle events carry the CloudEvents extension attribute `dryRun: true`,
@@ -325,10 +330,10 @@ The refused run is recorded as failed, with an error naming the loop:
 Counter changed), 8 runs deep`, or the whole chain when it does not close on the
 refused workflow. See `workflow/internal/engine/loopguard.go`.
 
-The rule is a length, not "this workflow is already in the chain". The dashboard
-stores one workflow per event with a condition per instance, so "when counter A
-changes, add to counter B" and "when counter B changes, say so in chat" are branches
-of the same workflow, and that chain visits it twice on purpose. What every loop
+The rule is a length, not "this workflow is already in the chain". One workflow on
+"counter changed" can hold a branch per counter, so "when counter A changes, add to
+counter B" and "when counter B changes, say so in chat" are branches of the same
+workflow, and that chain visits it twice on purpose. What every loop
 does, and no chain that means to end does, is keep growing.
 
 Nor is it a check on the workflow graph when a workflow is saved. Which events a
@@ -371,6 +376,14 @@ create/update lifecycle event, and the reconciler.
 | Unreadable JSON, or refused by registration validation | `{ status: "error", reason }` | no (a refused update leaves the previous version) |
 | Trigger could not be registered | `{ status: "error", reason }` | yes: it can be run manually by id, but never fires on its own |
 | Disabled or deleted (including ones the reconciler finds gone) | entry removed | no |
+
+Registration validation includes the step graph every run is built from, disabled steps
+included: a task id used twice, a `dependsOn`, `onTrue` or `onFalse` naming a step that is
+not in the workflow, a condition listing itself in its own branch, and a cycle (including one
+made by a condition depending on one of its own branch steps) are refused. A workflow stored
+before the engine checked this, for example with a branch still naming a step that was since
+deleted, loads as `{ status: "error", reason }` naming the problem, the rest of the start-up
+load carries on, and it fires again once it is saved with a graph the engine can build.
 
 `reason` is the engine's error verbatim; trigger refusals use the registrar's own wording,
 for example `schedule "* * *" is not a valid cron expression: ...`. Each entry carries
@@ -424,11 +437,23 @@ Condition evaluation errors always fail the workflow regardless of `onError`.
 Wait task timeouts follow `onTimeout`:
 
 - `"fail"` (default): The workflow fails.
-- `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues.
+- `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues. With no event, its `data` is empty: a later `${<wait id>.data.<field>}` resolves to empty rather than failing.
 
 ## Concurrency
 
 - Each workflow execution runs in its own goroutine
-- Multiple workflows can be triggered by the same event simultaneously
+- Multiple workflows can be triggered by the same event simultaneously, except the [ordered](#ordered-workflows) ones, which take turns
 - Wait task resumptions run on new goroutines (the event handler's, or the wait's timer)
 - Internal state is protected by `sync.RWMutex` on executions, waiting executions, and sub-workflow waiters
+
+## Ordered workflows
+
+A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerconfig)) waits its turn behind the other ordered workflows the same event starts. Every matching workflow's trigger conditions are checked when the event arrives; the ordered ones that match then run one at a time, lowest `order` first and by workflow id among equals. Each starts once the run before it settles (completes, fails or is cancelled) or pauses at a wait or sub-workflow, so a wait holds back only its own run. Workflows that set no `order` start straight away, alongside the ordered ones.
+
+For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list.
+
+Every ordered run is begun when the event matches, so each is in the run history, recorded and announced as running, while it waits its turn; only executing its steps is sequential. As a result:
+
+- A queued run can be cancelled before its turn. It settles as cancelled at once, never starts, and the queue moves past it.
+- A stopping engine starts no further ordered run. Each run it never reached settles as failed with `engine stopped`, as any run the engine abandons does, so it can be resumed later like one.
+- A run gets one turn's worth of time, 30 seconds by default (`WOOFX3_WORKFLOW_ORDERED_TURN_TIMEOUT_SECONDS`). A run still going when it passes is left to finish, the overrun is logged (`Ordered workflow overran its turn`), and the next run starts, so a step that never returns cannot hold back every later workflow on the event.
