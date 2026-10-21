@@ -25,6 +25,7 @@ service AlertService {
   rpc GetAlert(GetAlertRequest) returns (AlertResponse);
   rpc GetAlertByEnvelopeId(GetAlertByEnvelopeIdRequest) returns (AlertResponse);
   rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+  rpc CountAlertsByHour(CountAlertsByHourRequest) returns (CountAlertsByHourResponse);
   rpc UpdateAlertStatus(UpdateAlertStatusRequest) returns (AlertResponse);
   rpc UpdateAlertLifecycle(UpdateAlertLifecycleRequest) returns (AlertResponse);
   rpc DeleteAlert(DeleteAlertRequest) returns (common.ResponseStatus);
@@ -142,6 +143,35 @@ message ListAlertsResponse {
   int64 total_count = 3;
   int32 limit = 4;
   int32 offset = 5;
+}
+
+// Counts the alerts created in `hours` whole hours from `since`, by hour,
+// status and whether the alert is unconfirmed. `since` is on the hour, and
+// `hours` is 1 to 168; anything else is INVALID_ARGUMENT.
+//
+// An alert is unconfirmed when its status is not settled (completed, failed,
+// timed_out, skipped, replayed) and it was last written before
+// `unconfirmed_before`: nothing has reported on it for long enough that no
+// report is coming. The caller chooses the bound, since it owns the clock.
+message CountAlertsByHourRequest {
+  google.protobuf.Timestamp since = 1;
+  int32 hours = 2;
+  google.protobuf.Timestamp unconfirmed_before = 3;
+}
+
+// How many alerts created in hour `hour` of the window (0 is the hour that
+// starts at `since`) hold `status`. Only combinations with a count above
+// zero are listed.
+message AlertHourCount {
+  int32 hour = 1;
+  string status = 2;
+  bool unconfirmed = 3;
+  int64 count = 4;
+}
+
+message CountAlertsByHourResponse {
+  common.ResponseStatus status = 1;
+  repeated AlertHourCount counts = 2;
 }
 
 message UpdateAlertStatusRequest {

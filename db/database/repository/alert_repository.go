@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -116,6 +117,101 @@ func (r *AlertRepository) Count(filter AlertFilter) (int64, error) {
 	var n int64
 	err := filter.apply(r.db.Model(&models.Alert{})).Count(&n).Error
 	return n, err
+}
+
+// MaxAlertCountHours is the longest window CountByHour counts: a week, which
+// bounds how many rows one count reads.
+const MaxAlertCountHours = 7 * 24
+
+// AlertHourCount is how many alerts created in one hour of a CountByHour
+// window hold one status, and whether they are unconfirmed.
+type AlertHourCount struct {
+	// Hour is the hour's index in the window; 0 starts at the window's `since`.
+	Hour        int
+	Status      string
+	Unconfirmed bool
+	Count       int64
+}
+
+// CountByHour counts the alerts created in `hours` whole hours from `since`,
+// by hour, status and whether each is unconfirmed: not settled (see
+// settledAlertStatuses) and last written before `unconfirmedBefore`. Ordered
+// by hour, then status, then confirmed before unconfirmed.
+//
+// The window is read through `idx_alerts_created_at`, three columns a row, and
+// counted here rather than grouped in SQL: an hour bucket is spelled
+// differently by each dialect's date arithmetic, and the window is at most
+// MaxAlertCountHours of alerts.
+func (r *AlertRepository) CountByHour(
+	ctx context.Context,
+	since time.Time,
+	hours int,
+	unconfirmedBefore time.Time,
+) ([]AlertHourCount, error) {
+	if hours < 1 || hours > MaxAlertCountHours {
+		return nil, fmt.Errorf("alert count window must be 1 to %d hours, got %d", MaxAlertCountHours, hours)
+	}
+	since = since.UTC()
+	until := since.Add(time.Duration(hours) * time.Hour)
+	rows, err := r.db.WithContext(ctx).Model(&models.Alert{}).
+		Select("created_at, updated_at, status").
+		Where("created_at >= ? AND created_at < ?", r.timeBound(since), r.timeBound(until)).
+		Rows()
+	if err != nil {
+		return nil, fmt.Errorf("read alerts from %s for %d hours: %w", since.Format(time.RFC3339), hours, err)
+	}
+	defer rows.Close()
+
+	type key struct {
+		hour        int
+		status      string
+		unconfirmed bool
+	}
+	counts := map[key]int64{}
+	for rows.Next() {
+		var row struct {
+			CreatedAt time.Time
+			UpdatedAt time.Time
+			Status    string
+		}
+		if err := r.db.ScanRows(rows, &row); err != nil {
+			return nil, fmt.Errorf("scan alert row: %w", err)
+		}
+		hour := int(row.CreatedAt.Sub(since) / time.Hour)
+		if hour < 0 || hour >= hours {
+			return nil, fmt.Errorf("alert created at %s is outside the window it was read for", row.CreatedAt.Format(time.RFC3339Nano))
+		}
+		unconfirmed := !isSettledAlertStatus(row.Status) && row.UpdatedAt.Before(unconfirmedBefore)
+		counts[key{hour: hour, status: row.Status, unconfirmed: unconfirmed}]++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read alert rows: %w", err)
+	}
+
+	out := make([]AlertHourCount, 0, len(counts))
+	for k, n := range counts {
+		out = append(out, AlertHourCount{Hour: k.hour, Status: k.status, Unconfirmed: k.unconfirmed, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Hour != out[j].Hour {
+			return out[i].Hour < out[j].Hour
+		}
+		if out[i].Status != out[j].Status {
+			return out[i].Status < out[j].Status
+		}
+		return !out[i].Unconfirmed && out[j].Unconfirmed
+	})
+	return out, nil
+}
+
+// timeBound is `t` as a bound on a timestamp column. SQLite compares the text
+// it stored, which the repository writes in one fixed layout, so the bound is
+// written in it too.
+func (r *AlertRepository) timeBound(t time.Time) interface{} {
+	if r.isPostgres() {
+		return t.UTC()
+	}
+	return t.UTC().Truncate(time.Microsecond).Format(database.SQLiteTimestampLayout)
 }
 
 // GetByEnvelopeID looks up the most recent alert row for a given
@@ -510,6 +606,15 @@ var settledAlertStatuses = []string{
 	AlertStatusReplayed,
 }
 
+func isSettledAlertStatus(status string) bool {
+	for _, settled := range settledAlertStatuses {
+		if status == settled {
+			return true
+		}
+	}
+	return false
+}
+
 // PruneSettled deletes settled alerts created before `before`, `batchSize`
 // rows per statement, and returns how many it deleted. A row still sent,
 // dispatched or playing is kept however old it is.
@@ -520,12 +625,7 @@ func (r *AlertRepository) PruneSettled(before time.Time, batchSize int) (int64, 
 	if batchSize < 1 {
 		return 0, fmt.Errorf("prune batch size must be at least 1, got %d", batchSize)
 	}
-	// SQLite compares the text it stored, which the repository writes in one
-	// fixed layout, so the bound is written in it too.
-	var cutoff interface{} = before.UTC()
-	if !r.isPostgres() {
-		cutoff = before.UTC().Truncate(time.Microsecond).Format(database.SQLiteTimestampLayout)
-	}
+	cutoff := r.timeBound(before)
 	var total int64
 	for {
 		result := r.db.Exec(`DELETE FROM alerts WHERE id IN (

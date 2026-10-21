@@ -142,6 +142,51 @@ func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsReq
 	}, nil
 }
 
+// CountAlertsByHour counts the alerts created in a window of whole hours, by
+// hour, status and whether each is unconfirmed (see CountAlertsByHourRequest).
+func (s *alertService) CountAlertsByHour(ctx context.Context, req *client.CountAlertsByHourRequest) (*client.CountAlertsByHourResponse, error) {
+	if req.Since == nil {
+		return nil, twirp.RequiredArgumentError("since")
+	}
+	if err := req.Since.CheckValid(); err != nil {
+		return nil, twirp.InvalidArgumentError("since", err.Error())
+	}
+	since := req.Since.AsTime()
+	if !since.Equal(since.Truncate(time.Hour)) {
+		return nil, twirp.InvalidArgumentError("since", "must be on the hour")
+	}
+	if req.Hours < 1 || req.Hours > repo.MaxAlertCountHours {
+		return nil, twirp.InvalidArgumentError("hours", fmt.Sprintf("must be 1 to %d", repo.MaxAlertCountHours))
+	}
+	if req.UnconfirmedBefore == nil {
+		return nil, twirp.RequiredArgumentError("unconfirmed_before")
+	}
+	if err := req.UnconfirmedBefore.CheckValid(); err != nil {
+		return nil, twirp.InvalidArgumentError("unconfirmed_before", err.Error())
+	}
+
+	counts, err := s.repo.CountByHour(ctx, since, int(req.Hours), req.UnconfirmedBefore.AsTime())
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count alerts: %w", err))
+	}
+	out := make([]*client.AlertHourCount, len(counts))
+	for i, c := range counts {
+		out[i] = &client.AlertHourCount{
+			Hour:        int32(c.Hour),
+			Status:      c.Status,
+			Unconfirmed: c.Unconfirmed,
+			Count:       c.Count,
+		}
+	}
+	return &client.CountAlertsByHourResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Alerts counted successfully",
+		},
+		Counts: out,
+	}, nil
+}
+
 func (s *alertService) GetAlertByEnvelopeId(ctx context.Context, req *client.GetAlertByEnvelopeIdRequest) (*client.AlertResponse, error) {
 	if req.EnvelopeId == "" {
 		return nil, twirp.RequiredArgumentError("envelope_id")
