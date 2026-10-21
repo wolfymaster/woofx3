@@ -4132,7 +4132,7 @@ func (s *permissionServiceServer) serveListPermissionsProtobuf(ctx context.Conte
 }
 
 func (s *permissionServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor8, 0
+	return twirpFileDescriptor9, 0
 }
 
 func (s *permissionServiceServer) ProtocGenTwirpVersion() string {
@@ -4146,7 +4146,7 @@ func (s *permissionServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "permission", "PermissionService")
 }
 
-var twirpFileDescriptor8 = []byte{
+var twirpFileDescriptor9 = []byte{
 	// 608 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x55, 0x4f, 0x6f, 0xda, 0x4e,
 	0x10, 0x95, 0x0d, 0x21, 0x30, 0x24, 0xfc, 0xc8, 0xfe, 0x22, 0xb0, 0x90, 0x5a, 0x51, 0x72, 0x68,

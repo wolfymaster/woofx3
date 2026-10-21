@@ -1633,7 +1633,7 @@ func (s *sceneServiceServer) serveListScenesProtobuf(ctx context.Context, resp h
 }
 
 func (s *sceneServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor10, 0
+	return twirpFileDescriptor11, 0
 }
 
 func (s *sceneServiceServer) ProtocGenTwirpVersion() string {
@@ -1647,7 +1647,7 @@ func (s *sceneServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "scene", "SceneService")
 }
 
-var twirpFileDescriptor10 = []byte{
+var twirpFileDescriptor11 = []byte{
 	// 870 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x56, 0xdd, 0x6e, 0xe3, 0x44,
 	0x14, 0x56, 0x7e, 0xec, 0x3a, 0xc7, 0x69, 0x9a, 0x8e, 0x56, 0x8b, 0x37, 0x5c, 0x34, 0x1b, 0x15,

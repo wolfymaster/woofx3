@@ -2208,7 +2208,7 @@ func (s *userEventServiceServer) serveCompactStreamSessionProtobuf(ctx context.C
 }
 
 func (s *userEventServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor18, 0
+	return twirpFileDescriptor19, 0
 }
 
 func (s *userEventServiceServer) ProtocGenTwirpVersion() string {
@@ -2222,7 +2222,7 @@ func (s *userEventServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "user_event", "UserEventService")
 }
 
-var twirpFileDescriptor18 = []byte{
+var twirpFileDescriptor19 = []byte{
 	// 1372 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x57, 0xcd, 0x8e, 0x1b, 0x45,
 	0x10, 0x4e, 0x7b, 0xfc, 0x5b, 0x0e, 0x1b, 0x6f, 0xb3, 0x49, 0x26, 0xde, 0x0d, 0x59, 0x4d, 0x90,
