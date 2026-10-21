@@ -8,6 +8,7 @@ const baseValid = {
   woofx3BarkloaderWsUrl: "wss://barkloader/ws",
   woofx3BarkloaderKey: "key",
   woofx3DatabaseProxyUrl: "http://db-proxy",
+  woofx3DbProxyToken: "woof-db-proxy-token-0123456789abcdef",
   woofx3TwitchClientId: "twitch-client-id",
   woofx3TwitchClientSecret: "twitch-secret",
 };
@@ -49,4 +50,12 @@ describe("WoofEnvSchema", () => {
       expect(parsed.data.twitchRedirectUrl).toBe("http://localhost");
     }
   });
+
+  for (const value of [undefined, "", "CHANGE_ME", "short-token"]) {
+    test(`refuses the db proxy token ${JSON.stringify(value)}`, () => {
+      const parsed = WoofEnvSchema.safeParse({ ...baseValid, woofx3DbProxyToken: value });
+      expect(parsed.success).toBe(false);
+      expect(parsed.error?.issues[0]?.message).toContain("dbProxyToken (WOOFX3_DB_PROXY_TOKEN)");
+    });
+  }
 });

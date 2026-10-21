@@ -19,6 +19,7 @@ import {
   RemoveUserFromResource,
   type UserResourceRoleRequest,
 } from "@woofx3/db/permission.pb";
+import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
 import {
   GetSetting,
   type GetSettingRequest,
@@ -26,13 +27,12 @@ import {
   type SetSettingRequest,
   type SettingResponse,
 } from "@woofx3/db/setting.pb";
-import type { ClientConfiguration } from "twirpscript";
 
 export class DatabaseClient {
-  private config: ClientConfiguration;
+  private config: DbProxyClientConfig;
 
-  constructor(baseURL: string) {
-    this.config = { baseURL };
+  constructor(config: DbProxyClientConfig) {
+    this.config = config;
   }
 
   async ping() {
@@ -87,11 +87,11 @@ export default class DatabaseService implements Service<DatabaseClient> {
   client: DatabaseClient;
   connected: boolean;
 
-  constructor(baseURL: string) {
+  constructor(config: DbProxyClientConfig) {
     this.healthcheck = false;
     this.name = "db";
     this.type = "database";
-    this.client = new DatabaseClient(baseURL);
+    this.client = new DatabaseClient(config);
     this.connected = false;
   }
 

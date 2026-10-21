@@ -2,6 +2,7 @@ import path from "node:path";
 import BarkloaderClient from "@woofx3/barkloader";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 import MessageBus from "@woofx3/nats";
 import { requestTokenOverNats, type TwitchAuthCredentials } from "@woofx3/twitch";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
@@ -65,8 +66,12 @@ const runtime = createRuntime({
 
     application.register("messageBus", messageBusService);
 
-    const databaseProxyUrl = config.getConfig("woofx3DatabaseProxyUrl") as string;
-    const dbService = new DatabaseService(databaseProxyUrl);
+    const dbService = new DatabaseService(
+      dbProxyClientConfig(
+        config.getConfig("woofx3DatabaseProxyUrl") as string,
+        config.getConfig("woofx3DbProxyToken") as string
+      )
+    );
     application.register("db", dbService);
 
     application.register(

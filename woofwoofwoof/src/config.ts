@@ -1,3 +1,5 @@
+import { validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
 
 // Schema field names are the camelCase versions of WOOFX3_-prefixed env keys
@@ -15,6 +17,16 @@ export const WoofEnvSchema = z.object({
   woofx3BarkloaderWsUrl: z.string().min(1, "barkloaderWsUrl is required in .woofx3.json"),
   woofx3BarkloaderKey: z.string().min(1, "barkloaderKey is required in .woofx3.json"),
   woofx3DatabaseProxyUrl: z.string().min(1, "databaseProxyUrl is required in .woofx3.json"),
+  // Defaults to blank so a missing token fails with the secret rule's message.
+  woofx3DbProxyToken: z
+    .string()
+    .default("")
+    .superRefine((value, ctx) => {
+      const check = validateSecret(DB_PROXY_TOKEN_CONFIG_KEY, value);
+      if (!check.ok) {
+        ctx.addIssue({ code: "custom", message: check.error.message });
+      }
+    }),
   // An engine's own Twitch app, for refreshing tokens itself. Absent when its
   // Twitch token comes from a dashboard, which owns the app and refreshes.
   woofx3TwitchClientId: z.string().optional(),
