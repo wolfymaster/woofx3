@@ -151,6 +151,11 @@ interface HypeTrainBegin {
 }
 ```
 
+Every Twitch payload must be a plain object. `TwitchEvents` throws when given a
+class instance (anywhere in the payload), so a platform SDK event, whose data
+sits behind getters and whose API client is an own property, can never be
+serialized onto the bus by accident.
+
 #### StreamOnline
 
 ```typescript
