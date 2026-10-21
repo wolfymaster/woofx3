@@ -53,6 +53,7 @@ Since is the first release whose engine advertised the id, and `unreleased` unti
 | `marketplace.catalog` | v0.35.0 | Marketplace catalog reads through the engine, answered with the marketplace's JSON unchanged and an optional buyer token forwarded: `marketplaceSearch`, `marketplaceCounts`, `marketplaceGetListing`, `marketplaceGetAuthor`, `marketplaceQuote`. See [Marketplace catalog](./marketplace-catalog.md) |
 | `modules.localEndpoints` | v0.13.0 | A manifest's `local[]` endpoints, `setRelayConfig`, the `relay.credential.requested` callback, and sceneManager's endpoint dialer reaching OBS through the companion's bridge. See [Local endpoints](./local-endpoints.md) |
 | `modules.files` | v0.19.0 | Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile` |
+| `modules.storageUsage` | unreleased | What module storage holds across every module, in bytes: `getModuleStorageUsage` |
 | `modules.marketplaceInstall` | v0.35.0 | Installing from the marketplace by listing id, with the engine fetching and verifying the archive itself: `installMarketplaceListing`, `inspectMarketplaceListing`, `installMarketplaceBundle`. See [Marketplace installs](./marketplace-install.md) |
 | `modules.oauth` | v0.9.0 | A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a connect with `completeModuleOAuth` |
 | `obs.control` | v0.4.0 | The `ctx.obs` host extension and the `obs.control` manifest permission, which a module that changes OBS or lists its names needs to install and run |

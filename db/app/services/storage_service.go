@@ -256,3 +256,17 @@ func (s *storageService) ClearSessionScoped(ctx context.Context, req *client.Cle
 	}
 	return &client.ClearSessionScopedResponse{Cleared: int32(len(cleared)), ClearedItems: cleared}, nil
 }
+
+// GetUsage reports the size of the module storage database. It reads the
+// page count rather than the file's size on disk: in replicated mode the WAL
+// is only checkpointed by Litestream, so the file alone lags the data, while
+// the page count is what this connection sees as of the latest commit -- the
+// same figure a restore from the replica would produce.
+func (s *storageService) GetUsage(ctx context.Context, req *client.GetUsageRequest) (*client.GetUsageResponse, error) {
+	var bytes int64
+	err := s.db.QueryRowContext(ctx, `SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&bytes)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("module storage usage: %w", err))
+	}
+	return &client.GetUsageResponse{Bytes: bytes}, nil
+}

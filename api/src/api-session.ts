@@ -159,6 +159,7 @@ export const RPC_METHODS = [
   "getModuleManifest",
   "listModuleFiles",
   "getModuleFile",
+  "getModuleStorageUsage",
   "listWidgetThemes",
   "createResourceInstance",
   "updateResourceInstance",
