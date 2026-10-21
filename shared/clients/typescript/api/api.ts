@@ -30,6 +30,7 @@ import type {
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
+import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
 import type {
   EventLogPage,
   EventLogQuery,
@@ -2056,6 +2057,17 @@ export interface Woofx3EngineApi {
   // and stored on settings.user_id so the row is properly user-scoped.
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
+
+  // Twitch device login: the engine links Twitch itself with its public
+  // Twitch app (see ./twitch-device-login.ts). Requires the
+  // `twitch.deviceLogin` capability.
+
+  /** Start a device login for `scopes` (the engine's own set when omitted), replacing any login in progress. */
+  startTwitchDeviceLogin(scopes?: string[]): Promise<TwitchDeviceLoginStartResult>;
+  /** Where a device login stands. */
+  getTwitchDeviceLogin(loginId: string): Promise<TwitchDeviceLoginStateResult>;
+  /** Stop polling for a device login and forget it. `cancelled` is false when there was none in progress. */
+  cancelTwitchDeviceLogin(loginId: string): Promise<{ cancelled: boolean }>;
 
   // Twitch: each method performs one Helix call as the linked broadcaster
   // and answers with Twitch's own result (see ./twitch-helix.ts). They never

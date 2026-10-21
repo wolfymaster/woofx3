@@ -33,7 +33,9 @@ import type { MarketplaceClient } from "../marketplace-client";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
-import { TwitchTokenSource } from "../twitch-token-source";
+import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
+import { TwitchDeviceLogins } from "../twitch-device-login";
+import { TWITCH_TOKEN_SETTING, TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
 import type { WebhookClient } from "../webhook-client";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
@@ -71,6 +73,10 @@ export interface ApiOptions {
   hosting?: EngineHosting | null;
   /** The marketplace to install and read the catalog from; null or absent when it is turned off. */
   marketplace?: MarketplaceClient | null;
+  /** The engine's public Twitch app (`WOOFX3_TWITCH_PUBLIC_CLIENT_ID`), for device logins; null or absent when it has none. */
+  twitchPublicClientId?: string | null;
+  /** Twitch's OAuth endpoints; Twitch itself when absent. */
+  twitchOAuth?: TwitchOAuthClient;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -97,6 +103,8 @@ export class ApiRouteHost extends RpcTarget {
   readonly twitchToken: TwitchTokenSource;
   /** The companion bridge's credential. An instance property for the same reason as `twitchToken`. */
   readonly relayCredential: RelayCredentialSource;
+  /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
+  readonly twitchDeviceLogins: TwitchDeviceLogins;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -234,6 +242,22 @@ export class ApiRouteHost extends RpcTarget {
       });
     } catch (err) {
       this.logger.error("Failed to send ui setting webhook", { namespace: setting.namespace, err });
+    }
+  }
+
+  /**
+   * Write the linked Twitch account's token and tell the services that hold
+   * one to reload it (`setting.integration.token.updated`). `engineUserId`
+   * scopes the row to the engine user who linked it, when known.
+   */
+  protected async storeTwitchToken(stored: object, engineUserId?: string): Promise<void> {
+    await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(stored), engineUserId);
+    // Best effort: the row is already written, so a missed event only delays
+    // the pickup until the services next read it.
+    try {
+      await this.publishEvent("setting.integration.token.updated", { integration: "twitch" });
+    } catch (err) {
+      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
     }
   }
 
@@ -396,7 +420,14 @@ export class ApiRouteHost extends RpcTarget {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
     this.db = opts.db;
-    this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient);
+    const twitchOAuth = opts.twitchOAuth ?? new TwitchOAuthClient();
+    this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient, undefined, undefined, twitchOAuth);
+    this.twitchDeviceLogins = new TwitchDeviceLogins({
+      clientId: opts.twitchPublicClientId ?? null,
+      oauth: twitchOAuth,
+      storeToken: (token) => this.storeTwitchToken(token),
+      logger: opts.logger,
+    });
     this.relayCredential = new RelayCredentialSource({
       dashboard: () => this.webhookClient,
       readConfig: async () => readStoredRelayConfig(await this.db.getSetting(RELAY_CONFIG_SETTING)),

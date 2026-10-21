@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { selectStrategy } from "@woofx3/twitch/token-strategy";
-import { parseTokenResponse, TwitchTokenSource } from "../src/twitch-token-source";
+import { type PublicClientToken, TwitchOAuthError } from "@woofx3/twitch/oauth";
+import { parseTokenResponse, type StoredPublicToken, TwitchTokenSource } from "../src/twitch-token-source";
 
 const NOW = 1_000_000_000_000;
 
@@ -193,5 +194,163 @@ describe("linkedDashboardClientId", () => {
 
     const none = new TwitchTokenSource(store(null).db, () => null);
     expect(await none.linkedDashboardClientId()).toBeNull();
+  });
+});
+
+describe("a token from the engine's public Twitch app", () => {
+  const STORED: StoredPublicToken = {
+    userId: "42",
+    accessToken: "access-1",
+    refreshToken: "refresh-1",
+    scope: ["chat:read"],
+    expiresIn: 3600,
+    obtainmentTimestamp: NOW,
+    publicClientId: "public-app",
+  };
+
+  /** A Twitch that rotates the refresh token on every refresh and refuses a spent one. */
+  function rotatingTwitch() {
+    let issued = 1;
+    const spent = new Set<string>();
+    const refresh = mock(async (clientId: string, refreshToken: string): Promise<PublicClientToken> => {
+      expect(clientId).toBe("public-app");
+      if (spent.has(refreshToken)) {
+        throw new TwitchOAuthError("Twitch refused the refresh: invalid refresh token (HTTP 400)", 400);
+      }
+      spent.add(refreshToken);
+      issued += 1;
+      return {
+        accessToken: `access-${issued}`,
+        refreshToken: `refresh-${issued}`,
+        scope: ["chat:read"],
+        expiresIn: 3600,
+        obtainmentTimestamp: NOW + 3_590_000,
+      };
+    });
+    return { refresh };
+  }
+
+  function source(
+    db: ReturnType<typeof store>["db"],
+    twitch: { refresh: ReturnType<typeof rotatingTwitch>["refresh"] },
+    now: number
+  ) {
+    return new TwitchTokenSource(
+      db,
+      () => null,
+      () => undefined,
+      () => now,
+      twitch
+    );
+  }
+
+  test("is served with the public app's client id while it is valid, without its refresh token", async () => {
+    const { db } = store(STORED);
+    const twitch = rotatingTwitch();
+    const tokens = source(db, twitch, NOW + 1_000);
+
+    expect(await tokens.servedToken(false)).toEqual({
+      userId: "42",
+      accessToken: "access-1",
+      scope: ["chat:read"],
+      expiresIn: 3600,
+      obtainmentTimestamp: NOW,
+      clientId: "public-app",
+    });
+    expect(await tokens.helix()).toEqual({ clientId: "public-app", accessToken: "access-1", broadcasterId: "42" });
+    expect(twitch.refresh).not.toHaveBeenCalled();
+    expect(await tokens.linkedDashboardClientId()).toBeNull();
+  });
+
+  test("is refreshed near expiry, and each rotated refresh token is stored with its access token", async () => {
+    const { db, state } = store(STORED);
+    const twitch = rotatingTwitch();
+    const tokens = source(db, twitch, NOW + 3_590_000);
+
+    expect((await tokens.servedToken(false)).accessToken).toBe("access-2");
+    expect(JSON.parse(state.value ?? "")).toMatchObject({
+      accessToken: "access-2",
+      refreshToken: "refresh-2",
+      publicClientId: "public-app",
+      userId: "42",
+    });
+    // Twitch refused it, so a forced refresh spends the stored (rotated) token, not the first one.
+    expect((await tokens.servedToken(true)).accessToken).toBe("access-3");
+    expect(twitch.refresh.mock.calls.map((call) => call[1])).toEqual(["refresh-1", "refresh-2"]);
+    expect(JSON.parse(state.value ?? "").refreshToken).toBe("refresh-3");
+  });
+
+  test("concurrent askers share one refresh, so a refresh token is never spent twice", async () => {
+    const { db } = store(STORED);
+    const twitch = rotatingTwitch();
+    const tokens = source(db, twitch, NOW + 3_590_000);
+
+    const served = await Promise.all([tokens.servedToken(false), tokens.publicToken(true), tokens.helix()]);
+    expect(served.map((t) => (typeof t === "string" ? t : t.accessToken))).toEqual([
+      "access-2",
+      "access-2",
+      "access-2",
+    ]);
+    expect(twitch.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("a refused refresh says to link Twitch again, and is not retried", async () => {
+    const { db } = store(STORED);
+    const refresh = mock(async (): Promise<PublicClientToken> => {
+      throw new TwitchOAuthError("Twitch refused the refresh: invalid refresh token (HTTP 400)", 400);
+    });
+    const tokens = source(db, { refresh }, NOW + 3_590_000);
+
+    await expect(tokens.servedToken(false)).rejects.toThrow("link Twitch again");
+    expect(await tokens.helix()).toContain("link Twitch again");
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("an unreachable Twitch is reported, and the next ask tries again", async () => {
+    const { db } = store(STORED);
+    const refresh = mock(async (): Promise<PublicClientToken> => {
+      throw new TwitchOAuthError("could not reach Twitch: offline", null);
+    });
+    const tokens = source(db, { refresh }, NOW + 3_590_000);
+
+    await expect(tokens.servedToken(false)).rejects.toThrow("could not refresh the Twitch token");
+    await expect(tokens.servedToken(false)).rejects.toThrow("could not refresh the Twitch token");
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  test("a refreshed token whose write failed is kept and written again, never refreshed from the spent one", async () => {
+    const { db, state } = store(STORED);
+    const twitch = rotatingTwitch();
+    db.setSetting.mockImplementationOnce(async () => {
+      throw new Error("db proxy down");
+    });
+    const tokens = source(db, twitch, NOW + 3_590_000);
+
+    await expect(tokens.servedToken(false)).rejects.toThrow("could not store it: db proxy down");
+    expect(JSON.parse(state.value ?? "").refreshToken).toBe("refresh-1");
+
+    expect((await tokens.servedToken(false)).accessToken).toBe("access-2");
+    expect(JSON.parse(state.value ?? "").refreshToken).toBe("refresh-2");
+    expect(twitch.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("a refresh does not overwrite a link made while it was in flight", async () => {
+    const { db, state } = store(STORED);
+    const relinked = { ...STORED, accessToken: "relinked", refreshToken: "relinked-refresh" };
+    const refresh = mock(async (): Promise<PublicClientToken> => {
+      state.value = JSON.stringify(relinked);
+      return { ...STORED, accessToken: "access-2", refreshToken: "refresh-2" };
+    });
+    const tokens = source(db, { refresh }, NOW + 3_590_000);
+
+    expect((await tokens.servedToken(false)).accessToken).toBe("access-2");
+    expect(JSON.parse(state.value ?? "")).toEqual(relinked);
+  });
+
+  test("an incomplete one is refused", async () => {
+    const { refreshToken: _, ...withoutRefreshToken } = STORED;
+    const { db } = store(withoutRefreshToken);
+    const tokens = source(db, rotatingTwitch(), NOW);
+    await expect(tokens.servedToken(false)).rejects.toThrow("link Twitch again");
   });
 });

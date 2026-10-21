@@ -7,6 +7,7 @@ export * from "./marketplace-catalog";
 export * from "./overlay-events";
 export * from "./rpc";
 export * from "./stream-events";
+export * from "./twitch-device-login";
 export * from "./twitch-helix";
 export * from "./ui-schema";
 export * from "./webhooks";

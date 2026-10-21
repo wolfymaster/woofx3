@@ -109,6 +109,12 @@ export const ENGINE_CAPABILITIES = {
    */
   twitchDashboardTokens: "twitch.dashboardTokens",
   /**
+   * Linking Twitch from the engine with Twitch's Device Code Grant and the
+   * engine's public Twitch app: `startTwitchDeviceLogin`,
+   * `getTwitchDeviceLogin`, `cancelTwitchDeviceLogin`.
+   */
+  twitchDeviceLogin: "twitch.deviceLogin",
+  /**
    * The Stream info widget's Helix calls, made by the engine as the linked
    * broadcaster and answered with Twitch's own result:
    * `twitchGetChannelInformation`, `twitchGetGames`, `twitchSearchCategories`,
