@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { EngineEventFrame } from "@woofx3/api";
-import { EngineEventType } from "@woofx3/api/webhooks";
+import { EngineEventType, EngineRequestType, makeRequestEnvelope } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { Api } from "../src/api";
 import { EngineEventStream } from "../src/engine-event-stream";
@@ -63,6 +63,66 @@ describe("subscribeEngineEvents types", () => {
       }
       await expect(subscribe).rejects.toThrow(error);
       expect(stream.subscriberCount).toBe(0);
+    });
+  }
+});
+
+describe("answerEngineRequest", () => {
+  const SHAPE = "answer must be { ok: true, body } or { ok: false, error }";
+  const cases: {
+    name: string;
+    requestId: unknown;
+    answer: unknown;
+    outcome: { body: unknown } | { refused: string } | { error: string };
+  }[] = [
+    {
+      name: "ok with a body",
+      requestId: null,
+      answer: { ok: true, body: { token: "t" } },
+      outcome: { body: { token: "t" } },
+    },
+    { name: "ok with no body", requestId: null, answer: { ok: true }, outcome: { body: undefined } },
+    { name: "a refusal", requestId: null, answer: { ok: false, error: "no" }, outcome: { refused: "no" } },
+    { name: "a refusal with no error", requestId: null, answer: { ok: false }, outcome: { error: SHAPE } },
+    { name: "ok as a string", requestId: null, answer: { ok: "true", body: 1 }, outcome: { error: SHAPE } },
+    { name: "no ok", requestId: null, answer: { body: 1 }, outcome: { error: SHAPE } },
+    { name: "null", requestId: null, answer: null, outcome: { error: SHAPE } },
+    {
+      name: "an empty request id",
+      requestId: "",
+      answer: { ok: true, body: 1 },
+      outcome: { error: "requestId must be a non-empty string" },
+    },
+    {
+      name: "a non-string request id",
+      requestId: 7,
+      answer: { ok: true, body: 1 },
+      outcome: { error: "requestId must be a non-empty string" },
+    },
+  ];
+  for (const { name, requestId, answer, outcome } of cases) {
+    test(name, async () => {
+      const { api, stream } = newApi();
+      await api.subscribeEngineEvents(recorder().subscriber, undefined, { session: {}, clientId: "local" });
+      const envelope = makeRequestEnvelope({ type: EngineRequestType.TWITCH_TOKEN_REQUESTED });
+      const answered = stream.request(envelope, "local", 1_000);
+      const call = api.answerEngineRequest((requestId ?? envelope.id) as string, answer as never, {
+        clientId: "local",
+      });
+
+      if ("error" in outcome) {
+        await expect(call).rejects.toThrow(outcome.error);
+        // A malformed answer leaves the request waiting for a proper one.
+        await api.answerEngineRequest(envelope.id, { ok: true, body: "later" }, { clientId: "local" });
+        expect(await answered).toBe("later");
+        return;
+      }
+      await call;
+      if ("refused" in outcome) {
+        await expect(answered).rejects.toThrow(`the client refused: ${outcome.refused}`);
+        return;
+      }
+      expect(await answered).toEqual(outcome.body);
     });
   }
 });
