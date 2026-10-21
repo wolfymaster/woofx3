@@ -68,6 +68,8 @@ func (e *Engine[TServices]) RunCommand(run CommandRun) (CommandRunOutcome, strin
 	}
 
 	execution := e.beginExecutionAs(def, run.Event, run.Event.DryRun, viewer)
-	go e.runExecution(def, execution, run.Event)
+	e.safeGo("run", refTo(execution), func() {
+		e.runExecution(def, execution, run.Event)
+	})
 	return CommandRunStarted, execution.ID, nil
 }

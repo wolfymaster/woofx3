@@ -509,10 +509,13 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 			continue
 		}
 		e.logDispatch(wf, event)
-		go e.executeWorkflow(wf, event, viewer)
+		e.startRun(wf, event, viewer)
 	}
 	if len(ordered) > 0 {
-		go e.executeInOrder(e.queueInOrder(ordered, event), event)
+		runs := e.queueInOrder(ordered, event)
+		e.safeGo("ordered queue", runRef{}, func() {
+			e.executeInOrder(runs, event)
+		})
 	}
 
 	return nil
@@ -588,10 +591,10 @@ func (e *Engine[TServices]) executeInOrder(runs []queuedRun, event *types.Event)
 		}
 		e.logDispatch(run.wf, event)
 		finished := make(chan struct{})
-		go func() {
+		e.safeGo("run", refTo(run.execution), func() {
 			defer close(finished)
 			e.runExecution(run.wf, run.execution, event)
-		}()
+		})
 		if !e.awaitTurn(run, event, finished) {
 			e.abandonQueued(runs[i+1:])
 			return
@@ -653,7 +656,7 @@ func (e *Engine[TServices]) SetOrderedTurnTimeout(timeout time.Duration) {
 // FireByWorkflowID runs the named workflow with a synthesized trigger event.
 // Used by non-bus trigger types (schedule, manual) that already know the target
 // and so bypass GetByEvent / evaluateTrigger. Dispatch mirrors HandleEvent:
-// launch executeWorkflow in a goroutine so callers never block on task execution.
+// the run executes on its own goroutine so callers never block on task execution.
 func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Event) error {
 	if e.ctx.Err() != nil {
 		return errEngineStopped
@@ -662,7 +665,7 @@ func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Eve
 	if err != nil {
 		return fmt.Errorf("FireByWorkflowID: %w", err)
 	}
-	go e.executeWorkflow(def, event, e.newViewerLoader(viewerTrigger(def), event))
+	e.startRun(def, event, e.newViewerLoader(viewerTrigger(def), event))
 	return nil
 }
 
@@ -731,7 +734,9 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 	e.waitingMu.Unlock()
 
 	for _, w := range toResume {
-		go e.resumeWait(w)
+		e.safeGo("wait resume", runRef{workflowID: w.WorkflowID, executionID: w.ExecutionID}, func() {
+			e.resumeWait(w)
+		})
 	}
 }
 
@@ -767,7 +772,9 @@ func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Tim
 	}
 	if !deadline.IsZero() {
 		w.timer = time.AfterFunc(time.Until(deadline), func() {
-			e.expireWait(w)
+			e.guard("wait timer", runRef{workflowID: w.WorkflowID, executionID: w.ExecutionID}, func() {
+				e.expireWait(w)
+			})
 		})
 	}
 	return ""
@@ -998,13 +1005,19 @@ func (e *Engine[TServices]) beginRun(wf *types.WorkflowDefinition, event *types.
 	return execution
 }
 
-func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) {
-	e.runExecution(wf, e.beginExecutionAs(wf, event, event.DryRun, viewer), event)
+// startRun begins a run of wf for event and executes it on its own goroutine.
+// The run is begun before the goroutine starts so the goroutine's guard knows
+// which run a panic on it belongs to.
+func (e *Engine[TServices]) startRun(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) {
+	execution := e.beginExecutionAs(wf, event, event.DryRun, viewer)
+	e.safeGo("run", refTo(execution), func() {
+		e.runExecution(wf, execution, event)
+	})
 }
 
 // runExecution runs a begun execution from its first task. Separate from
-// executeWorkflow so a caller that needs the execution id before any task
-// runs can begin the execution itself.
+// startRun so a caller that needs the execution id before any task runs can
+// begin the execution itself.
 func (e *Engine[TServices]) runExecution(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) {
 	executionID := execution.ID
 	if e.refuseLoop(wf, execution, event) {
@@ -1563,7 +1576,7 @@ func (e *Engine[TServices]) executeConcurrentRun(
 			// completed before this run began -- no member of the run is
 			// referenced by another (planConcurrentRun rejects the run
 			// otherwise), so there is nothing to synchronise on the read side.
-			result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+			result, params, err := e.executeTaskGuarded(taskDef, execution, triggerEvent, taskExports)
 			done <- indexedOutcome{idx: idx, out: outcome{taskDef: taskDef, result: result, params: params, err: err}}
 		}(idx, taskDef)
 	}
@@ -2029,8 +2042,9 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 	e.emitRunLifecycle(execution)
 	e.recordRunStarted(execution)
 
-	// Execute in a goroutine (async)
-	go e.executeWorkflowInternal(wf, execution, event)
+	e.safeGo("sub-workflow", refTo(execution), func() {
+		e.executeWorkflowInternal(wf, execution, event)
+	})
 
 	return executionID
 }
@@ -2084,7 +2098,10 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 
 	// Resume all parent executions waiting for this sub-workflow
 	for _, waiter := range waiters {
-		go e.resumeSubWorkflowExecution(waiter, subExecution)
+		parent := runRef{workflowID: waiter.ParentWorkflowID, executionID: waiter.ParentExecutionID}
+		e.safeGo("sub-workflow resume", parent, func() {
+			e.resumeSubWorkflowExecution(waiter, subExecution)
+		})
 	}
 }
 
