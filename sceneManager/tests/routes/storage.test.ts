@@ -31,22 +31,40 @@ describe("routes for stored files", () => {
 });
 
 describe("handleStorageAssetRoute inert headers", () => {
-  const html = () => upstream(new Response("<script>1</script>", { headers: { "Content-Type": "text/html" } }));
+  const BARKLOADER_CSP = "sandbox; default-src 'none'";
+  const html = (extra: Record<string, string> = {}) =>
+    upstream(
+      new Response("<script>1</script>", {
+        headers: {
+          "Content-Type": "text/html",
+          "Content-Security-Policy": BARKLOADER_CSP,
+          "X-Content-Type-Options": "nosniff",
+          ...extra,
+        },
+      })
+    );
 
-  it("sandboxes and never sniffs a user upload", async () => {
-    const { req, url } = get("/assets/user/res-1/x.html");
-    const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
-    expect(resp.headers.get("Content-Security-Policy")).toBe("sandbox");
+  it("serves barkloader's headers for a user upload, attachment included", async () => {
+    const { req, url } = get("/assets/user/res-1/x.svg");
+    const resp = await handleStorageAssetRoute(
+      req,
+      url,
+      BARKLOADER_URL,
+      logger,
+      html({ "Content-Disposition": "attachment" }) as never
+    );
+    expect(resp.headers.get("Content-Security-Policy")).toBe(BARKLOADER_CSP);
     expect(resp.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(resp.headers.get("Content-Disposition")).toBe("attachment");
   });
 
-  it("sandboxes a module file that is not part of a widget or theme bundle", async () => {
+  it("keeps the sandbox on a module file that is not part of a widget or theme bundle", async () => {
     const { req, url } = get("/assets/modules/m1/abc123/assets/page.html");
     const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
-    expect(resp.headers.get("Content-Security-Policy")).toBe("sandbox");
+    expect(resp.headers.get("Content-Security-Policy")).toBe(BARKLOADER_CSP);
   });
 
-  it("leaves widget and theme bundle files as they are", async () => {
+  it("drops the sandbox from widget and theme bundle files but still never sniffs them", async () => {
     for (const path of [
       "/assets/modules/m1/abc123/widgets/w1/app.js",
       "/assets/modules/pack/abc123/themes/neon/theme.css",
@@ -54,19 +72,20 @@ describe("handleStorageAssetRoute inert headers", () => {
       const { req, url } = get(path);
       const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
       expect(resp.headers.get("Content-Security-Policy")).toBeNull();
-      expect(resp.headers.get("X-Content-Type-Options")).toBeNull();
+      expect(resp.headers.get("X-Content-Type-Options")).toBe("nosniff");
     }
   });
 
   it("treats an encoded or lookalike path as not exempt", async () => {
     for (const path of [
       "/assets/modules/m1/abc123%2Fwidgets/w1/app.js",
+      "/assets/modules/m1/abc123%2Fassets/widgets/x.html",
       "/assets/modules/widgets/abc123/assets/x.html",
       "/assets/user/res-1/widgets/w1/app.js",
     ]) {
       const { req, url } = get(path);
       const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
-      expect(resp.headers.get("Content-Security-Policy")).toBe("sandbox");
+      expect(resp.headers.get("Content-Security-Policy")).toBe(BARKLOADER_CSP);
     }
   });
 });

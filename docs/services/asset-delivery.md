@@ -74,10 +74,11 @@ types. A `user/` file of one of those types is also sent as
 `Content-Disposition: attachment`. Content types come from a fixed table of
 extensions; anything else is served as `application/octet-stream`.
 
-The scene manager adds the same protection (`sandbox` and `nosniff`) to what it
-relays under `/assets/user/*` and `/assets/modules/*`, except for files under
-`/assets/modules/{module}/{version}/widgets/` and `.../themes/`, which a widget
-frame loads as its own scripts, styles, fonts and media.
+The scene manager relays those headers unchanged, so a browser sees the same
+protection and the same attachment rule. The one exception is the sandbox on
+files under `/assets/modules/{module}/{version}/widgets/` and `.../themes/`,
+which a widget frame loads as its own scripts, styles, fonts and media; those
+are the module's own code and still carry `nosniff`.
 
 ## How an upload is stored
 
