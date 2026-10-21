@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { newMessagePortRpcSession, RpcTarget } from "capnweb";
-import { AUTHENTICATION_REFUSED, authenticationRefusedMessage, isAuthenticationRefused } from "../rpc";
+import {
+  AUTHENTICATION_REFUSED,
+  authenticationRefusedMessage,
+  isAuthenticationRefused,
+  isRegistrationRefused,
+  registrationRefusedMessage,
+} from "../rpc";
 
 class RefusingGateway extends RpcTarget {
   async authenticate(): Promise<never> {
@@ -60,5 +66,24 @@ describe("isAuthenticationRefused", () => {
 
     expect(err).toBeInstanceOf(Error);
     expect(isAuthenticationRefused(err)).toBe(false);
+  });
+});
+
+describe("isRegistrationRefused", () => {
+  const cases: { name: string; err: unknown; refused: boolean }[] = [
+    { name: "the engine's refusal", err: new Error(registrationRefusedMessage("token mismatch")), refused: true },
+    { name: "an authentication refusal", err: new Error(authenticationRefusedMessage("bad secret")), refused: false },
+    { name: "a plain error", err: new Error("This engine requires a registration token"), refused: false },
+    { name: "a thrown string", err: registrationRefusedMessage("token mismatch"), refused: false },
+  ];
+
+  for (const { name, err, refused } of cases) {
+    test(`${name} -> ${refused}`, () => {
+      expect(isRegistrationRefused(err)).toBe(refused);
+    });
+  }
+
+  test("an authentication refusal is not a registration refusal either way round", () => {
+    expect(isAuthenticationRefused(new Error(registrationRefusedMessage("x")))).toBe(false);
   });
 });

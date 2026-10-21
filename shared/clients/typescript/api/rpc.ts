@@ -1,7 +1,7 @@
 // capnweb RPC surface contracts for the engine.
 //
-// Types-only module — deliberately does NOT import from "capnweb" so this
-// shared package stays zero-dep. Engine runtime classes (api/src/gateway.ts,
+// Deliberately does NOT import from "capnweb", so this module has no
+// dependencies. Engine runtime classes (api/src/gateway.ts,
 // api/src/api.ts, api/src/api-session.ts) `extends RpcTarget` for the
 // capnweb side and `implements` the contracts declared here.
 //
@@ -35,38 +35,44 @@ export interface RegisterClientOptions {
   registrationToken?: string;
 }
 
+// Refusals across capnweb.
+//
+// capnweb sends an error's `name` and `message`, but the receiving side
+// rebuilds any name it does not know as a plain `Error`, so a custom name is
+// lost in transit. Each refusal is therefore carried by its message, which
+// starts with the refusal's marker and ": ". A guard below reads it, both for
+// the engine's own error and for the plain `Error` a capnweb client receives.
+
 /**
- * The error a refused `registerClient` rejects with. Its `name` survives the
- * capnweb boundary, so a caller can tell a refused registration from a
- * transport failure; its `message` is written to be shown to a user.
+ * The marker of a refused `registerClient`: this engine will not register the
+ * caller. The rest of the message is written to be shown to a user.
  */
 export const REGISTRATION_REFUSED = "RegistrationRefused";
 
 /**
- * The error a refused `authenticate` rejects with: the engine does not
- * accept these client credentials, so retrying them cannot succeed.
- *
- * capnweb sends an error's `name` and `message`, but the receiving side
- * rebuilds any name it does not know as a plain `Error`, so the name is
- * lost in transit. The refusal is therefore carried by the message, which
- * starts with this marker; `isAuthenticationRefused` reads it.
+ * The marker of a refused `authenticate`: the engine does not accept these
+ * client credentials, so retrying them cannot succeed.
  */
 export const AUTHENTICATION_REFUSED = "AuthenticationRefused";
 
-const AUTHENTICATION_REFUSED_PREFIX = `${AUTHENTICATION_REFUSED}: `;
+/** The message of a refused `registerClient`, for the engine to throw. */
+export function registrationRefusedMessage(reason: string): string {
+  return `${REGISTRATION_REFUSED}: ${reason}`;
+}
 
 /** The message of a refused `authenticate`, for the engine to throw. */
 export function authenticationRefusedMessage(reason: string): string {
-  return `${AUTHENTICATION_REFUSED_PREFIX}${reason}`;
+  return `${AUTHENTICATION_REFUSED}: ${reason}`;
 }
 
-/**
- * Whether `err` is a refused `authenticate`, as opposed to a transport or
- * transient failure. Holds both for the engine's own error and for the
- * plain `Error` a capnweb client receives in its place.
- */
+/** Whether `err` is a refused `registerClient`, as opposed to a transport or transient failure. */
+export function isRegistrationRefused(err: unknown): err is Error {
+  return err instanceof Error && err.message.startsWith(`${REGISTRATION_REFUSED}: `);
+}
+
+/** Whether `err` is a refused `authenticate`, as opposed to a transport or transient failure. */
 export function isAuthenticationRefused(err: unknown): err is Error {
-  return err instanceof Error && err.message.startsWith(AUTHENTICATION_REFUSED_PREFIX);
+  return err instanceof Error && err.message.startsWith(`${AUTHENTICATION_REFUSED}: `);
 }
 
 /**

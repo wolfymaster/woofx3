@@ -74,7 +74,13 @@ describe("ApiGateway.registerClient", () => {
     const api = newApi(db, logger);
     const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
     api.setWebhookClient(webhook);
-    const gateway = new ApiGateway(api, { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any, db, logger, OPEN);
+    const gateway = new ApiGateway(
+      api,
+      { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
+      db,
+      logger,
+      OPEN
+    );
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test", {});

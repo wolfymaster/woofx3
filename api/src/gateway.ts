@@ -4,6 +4,7 @@ import {
   authenticationRefusedMessage,
   REGISTRATION_REFUSED,
   type RegisterClientOptions,
+  registrationRefusedMessage,
 } from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
@@ -16,12 +17,13 @@ import type { RegistrationPolicy } from "./registration";
 import type { WebhookClient } from "./webhook-client";
 
 /**
- * A registration the engine will not accept. Named so the refusal is
- * recognisable across the capnweb boundary; see REGISTRATION_REFUSED.
+ * A registration the engine will not accept. Its message carries the
+ * REGISTRATION_REFUSED marker, so a capnweb client can tell the refusal from
+ * a transient failure.
  */
 export class RegistrationRefused extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(reason: string) {
+    super(registrationRefusedMessage(reason));
     this.name = REGISTRATION_REFUSED;
   }
 }

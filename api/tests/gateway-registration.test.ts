@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { REGISTRATION_REFUSED } from "@woofx3/api/rpc";
+import { isRegistrationRefused } from "@woofx3/api/rpc";
 import { Api } from "../src/api";
 import { ApiGateway } from "../src/gateway";
 import { type RegistrationMode, resolveRegistrationPolicy } from "../src/registration";
@@ -70,7 +70,7 @@ describe("registerClient on an engine with a registration token", () => {
 
     const err = await refusal(gw.registerClient("ui", {}));
 
-    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(err)).toBe(true);
     expect(createClient).not.toHaveBeenCalled();
   });
 
@@ -79,7 +79,7 @@ describe("registerClient on an engine with a registration token", () => {
 
     for (const wrong of ["", "nope", `${TOKEN}x`, TOKEN.slice(1)]) {
       const err = await refusal(gw.registerClient("ui", { registrationToken: wrong }));
-      expect(err.name).toBe(REGISTRATION_REFUSED);
+      expect(isRegistrationRefused(err)).toBe(true);
     }
     expect(createClient).not.toHaveBeenCalled();
   });
@@ -130,9 +130,9 @@ describe("registerClient in first mode", () => {
     await gw.registerClient("desktop", {});
 
     const err = await refusal(gw.registerClient("intruder", {}));
-    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(err)).toBe(true);
     const wrong = await refusal(gw.registerClient("intruder", { registrationToken: "nope" }));
-    expect(wrong.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(wrong)).toBe(true);
 
     const second = await gw.registerClient("dashboard", { registrationToken: TOKEN });
     expect(second.clientId).toBe("c2");
@@ -145,7 +145,7 @@ describe("registerClient in first mode", () => {
 
     const err = await refusal(gw.registerClient("intruder", { registrationToken: "anything" }));
 
-    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(err)).toBe(true);
   });
 
   it("admits only one of two callers racing on an empty engine", async () => {
@@ -178,7 +178,7 @@ describe("registerClient in an explicit mode", () => {
   it("token mode admits only a caller presenting the token", async () => {
     const { gateway: gw } = gateway(TOKEN, "token");
 
-    expect((await refusal(gw.registerClient("ui", {}))).name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(await refusal(gw.registerClient("ui", {})))).toBe(true);
     expect((await gw.registerClient("ui", { registrationToken: TOKEN })).clientId).toBe("c1");
   });
 
