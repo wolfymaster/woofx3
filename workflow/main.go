@@ -70,7 +70,11 @@ func main() {
 			app.engine.SetOrderedTurnTimeout(turnTimeout)
 
 			// Database
-			httpClient := &http.Client{}
+			dbTimeout, err := cfg.dbRequestTimeout()
+			if err != nil {
+				return err
+			}
+			httpClient := newDBHTTPClient(dbTimeout)
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
 			// The alert and viewer fact services are not on DbProxyClient,
 			// which predates them.
@@ -135,6 +139,14 @@ func main() {
 	}
 
 	logger.Info("Workflow service stopped")
+}
+
+// newDBHTTPClient is the client every db proxy service but the fact service
+// shares. Its timeout caps each request, the definition lists included, so a
+// db proxy that stops answering surfaces as an error rather than a caller
+// waiting forever.
+func newDBHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
 }
 
 // newFactHTTPClient is the fact service's own HTTP client. Fact writes run on

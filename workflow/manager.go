@@ -85,7 +85,9 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 		PageSize:        1000, // Fetch a large batch
 	}
 
-	resp, err := m.dbClient.ListWorkflows(ctx, req)
+	listCtx, cancel := context.WithTimeout(ctx, reconcileListTimeout)
+	defer cancel()
+	resp, err := m.dbClient.ListWorkflows(listCtx, req)
 	if err != nil {
 		return fmt.Errorf("failed to list workflows: %w", err)
 	}
@@ -124,7 +126,6 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		return
 	}
 
-	ctx := context.Background()
 	if m.dbClient == nil {
 		m.logger.Warn("Database client not configured, cannot fetch workflow data", "workflow_id", changeData.WorkflowID)
 		return
@@ -137,6 +138,8 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		Id: changeData.WorkflowID,
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), reconcileListTimeout)
+	defer cancel()
 	resp, err := m.dbClient.GetWorkflow(ctx, req)
 	if err != nil {
 		m.logger.Error("Failed to fetch workflow from DB", "error", err, "workflow_id", changeData.WorkflowID)
