@@ -130,7 +130,9 @@ export class GuardedDownloader {
 
   /**
    * The body at `url`, read in full, or why it was refused. Nothing is
-   * fetched unless the URL's origin is on the allow-list.
+   * fetched unless the URL's origin is on the allow-list. Every refusal is
+   * returned as a result, except a malformed expected sha256: that is a
+   * caller bug and throws.
    */
   async download(url: string, expect: DownloadExpectation = {}): Promise<DownloadResult> {
     if (expect.sha256 !== undefined && !isSha256Hex(expect.sha256)) {
@@ -235,14 +237,14 @@ function verify(bytes: Uint8Array, expect: DownloadExpectation): DownloadResult 
 }
 
 /**
- * Whether a fetch rejection is `redirect: "error"` refusing a redirect. Bun
- * names it with code `UnexpectedRedirect`; Node and browsers throw a
- * TypeError whose message mentions the redirect.
+ * Whether a fetch rejection is `redirect: "error"` refusing a redirect. Bun,
+ * the only runtime this service targets, names it with code
+ * `UnexpectedRedirect`.
  */
 function isRedirectRefusal(err: unknown): boolean {
   if (!(err instanceof Error)) {
     return false;
   }
   const code = (err as { code?: unknown }).code;
-  return code === "UnexpectedRedirect" || /redirect/i.test(err.message);
+  return code === "UnexpectedRedirect";
 }

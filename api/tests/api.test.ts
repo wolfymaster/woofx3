@@ -292,6 +292,7 @@ describe("Api.installModuleFromUrl", () => {
       })
     ).rejects.toThrow(/clientId is required/);
   });
+
   it("refuses a file: URL without fetching it", async () => {
     const db = { getModuleByModuleKey: mock(async () => null) } as any;
     const webhookClient = fakeWebhookClient();
