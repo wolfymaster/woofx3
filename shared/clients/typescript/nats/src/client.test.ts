@@ -174,6 +174,26 @@ describe("NATSClient", () => {
     expect(client.isClosed()).toBe(false);
   });
 
+  test("close() while the first dial sleeps stops before dialling again", async () => {
+    const deps = refusingDeps(5);
+    const client = new NATSClient(config, recordingLogger(), {
+      ...deps,
+      sleep: async () => {
+        await client.close();
+      },
+    });
+
+    await expect(client.connect()).rejects.toThrow("NATS connection is closed");
+
+    expect(deps.attempts()).toBe(1);
+  });
+
+  test("an invalid reconnect policy is refused when the client is built", () => {
+    const reconnect = { ...DEFAULT_RECONNECT_POLICY, firstConnectAttempts: 0 };
+
+    expect(() => new NATSClient({ ...config, reconnect }, recordingLogger())).toThrow("firstConnectAttempts");
+  });
+
   test("a connection the library gives up on closes the client for good", async () => {
     const dialer = fakeDialer();
     const logger = recordingLogger();

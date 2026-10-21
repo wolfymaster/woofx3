@@ -40,8 +40,7 @@ function reconnectPolicy(config: NATSConfig): ReconnectPolicy {
 }
 
 /** The connect options a config asks for. Throws on an invalid reconnect policy. */
-export function connectOptions(config: NATSConfig): ConnectionOptions {
-  const policy = reconnectPolicy(config);
+export function connectOptions(config: NATSConfig, policy: ReconnectPolicy = reconnectPolicy(config)): ConnectionOptions {
   const options: ConnectionOptions = {
     name: config.name,
     servers: config.url,
@@ -82,12 +81,16 @@ export default class NATSClient {
   private connection: NatsConnection | null = null;
   private dialing: Promise<NatsConnection> | null = null;
   private closed = false;
+  private readonly policy: ReconnectPolicy;
 
+  /** Throws when config.reconnect is not a valid policy. */
   constructor(
     private readonly config: NATSConfig,
     private readonly logger: Logger,
     private readonly deps: ClientDeps = DEFAULT_CLIENT_DEPS
-  ) {}
+  ) {
+    this.policy = reconnectPolicy(config);
+  }
 
   async connect(): Promise<void> {
     await this.connected();
@@ -118,10 +121,14 @@ export default class NATSClient {
    * a later call starts over.
    */
   private async dialOnce(): Promise<NatsConnection> {
-    const policy = reconnectPolicy(this.config);
-    const options = connectOptions(this.config);
+    const policy = this.policy;
+    const options = connectOptions(this.config, policy);
     let connection: NatsConnection | null = null;
     for (let attempt = 1; connection === null; attempt++) {
+      if (this.closed) {
+        this.dialing = null;
+        throw new Error("NATS connection is closed");
+      }
       try {
         connection = await this.deps.dial(options);
       } catch (error) {
