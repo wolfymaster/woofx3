@@ -15,6 +15,7 @@ use actix_web::body::{EitherBody, MessageBody};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::http::StatusCode;
 use actix_web::http::header::{self, HeaderMap};
+use actix_web::http::uri::Authority;
 use actix_web::middleware::Next;
 use actix_web::{Error, HttpResponse};
 use serde_json::json;
@@ -26,10 +27,10 @@ use woofx3_runtime::{SecretError, validate_secret};
 pub const ALLOWED_HOST_CONFIG_KEY: &str = "barkloaderAllowedHost";
 pub const ALLOWED_HOST_ENV_VAR: &str = "WOOFX3_BARKLOADER_ALLOWED_HOST";
 
-/// `Sec-Fetch-Site` values a browser sends for a request another site's page
-/// started. `same-origin` and `none` are not here: nothing barkloader serves
-/// is a page that could start one.
-const CROSS_SITE_FETCH_VALUES: &[&str] = &["cross-site", "same-site"];
+/// Headers only a browser adds. Engine services never send them, and barkloader
+/// serves widget bundles from its own origin, so even a `same-origin` request
+/// may come from a page.
+const BROWSER_ONLY_HEADERS: &[&str] = &["sec-fetch-site", "sec-fetch-mode"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceAuthError {
@@ -162,17 +163,10 @@ pub async fn service_auth(
 }
 
 fn is_browser_context(headers: &HeaderMap) -> bool {
-    if headers.contains_key(header::ORIGIN) {
-        return true;
-    }
-    headers
-        .get("sec-fetch-site")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|site| {
-            CROSS_SITE_FETCH_VALUES
-                .iter()
-                .any(|value| site.trim().eq_ignore_ascii_case(value))
-        })
+    headers.contains_key(header::ORIGIN)
+        || BROWSER_ONLY_HEADERS
+            .iter()
+            .any(|name| headers.contains_key(*name))
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
@@ -184,13 +178,21 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     Some(token)
 }
 
-/// A bare host name, IPv4 address, bracketed IPv6 address, each with an
-/// optional port: the shape of a Host header, nothing that could hide a
+/// A host name, IPv4 address or bracketed IPv6 address with an optional
+/// non-zero port: the shape of a Host header, nothing that could hide a
 /// scheme, path or user info.
 fn is_host_value(value: &str) -> bool {
-    value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']'))
+    let Ok(authority) = value.parse::<Authority>() else {
+        return false;
+    };
+    if authority.as_str() != value || value.contains('@') {
+        return false;
+    }
+    let after_host = value.rsplit(']').next().unwrap_or(value);
+    match after_host.rsplit_once(':') {
+        Some((_, port)) => port.parse::<u16>().is_ok_and(|port| port != 0),
+        None => true,
+    }
 }
 
 #[cfg(test)]
@@ -303,6 +305,33 @@ mod tests {
                 Err(Refusal::BrowserOrigin),
             ),
             (
+                "correct key, same-origin fetch",
+                vec![
+                    ("host", "127.0.0.1:9653"),
+                    ("authorization", &bearer),
+                    ("sec-fetch-site", "same-origin"),
+                ],
+                Err(Refusal::BrowserOrigin),
+            ),
+            (
+                "correct key, fetch metadata none",
+                vec![
+                    ("host", "127.0.0.1:9653"),
+                    ("authorization", &bearer),
+                    ("sec-fetch-site", "none"),
+                ],
+                Err(Refusal::BrowserOrigin),
+            ),
+            (
+                "correct key, fetch mode only",
+                vec![
+                    ("host", "127.0.0.1:9653"),
+                    ("authorization", &bearer),
+                    ("sec-fetch-mode", "cors"),
+                ],
+                Err(Refusal::BrowserOrigin),
+            ),
+            (
                 "correct key, rebound host",
                 vec![("host", "evil.example"), ("authorization", &bearer)],
                 Err(Refusal::UnknownHost),
@@ -347,7 +376,18 @@ mod tests {
             ServiceAuth::new("CHANGE_ME", PORT, ""),
             Err(ServiceAuthError::Secret(SecretError::Placeholder { .. }))
         ));
-        for bad in ["http://barkloader", "user@host", "host/path", "a b"] {
+        for bad in [
+            "http://barkloader",
+            "user@host",
+            "host/path",
+            "a b",
+            ":",
+            "[",
+            "a:b:c",
+            "host:",
+            "host:abc",
+            "host:0",
+        ] {
             assert!(
                 matches!(
                     ServiceAuth::new(KEY, PORT, bad),

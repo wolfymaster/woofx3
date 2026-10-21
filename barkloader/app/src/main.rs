@@ -353,7 +353,14 @@ async fn main() -> std::io::Result<()> {
         }
     };
     let port: u16 = match get_env_or_default("BARKLOADER_PORT", "9653").parse() {
-        Ok(port) => port,
+        Ok(port) if port != 0 => port,
+        Ok(_) => {
+            tracing::error!(
+                "BARKLOADER_PORT must not be 0: the Host allow-list needs the bound port"
+            );
+            drop(logging);
+            std::process::exit(1);
+        }
         Err(e) => {
             tracing::error!("BARKLOADER_PORT must be a port number: {}", e);
             drop(logging);
