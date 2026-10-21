@@ -1,20 +1,62 @@
 import type { ConnectionOptions, Msg as NatsCoreMsg, NatsConnection, Subscription } from "@nats-io/nats-core";
 import { jwtAuthenticator, wsconnect } from "@nats-io/nats-core";
 import { MessageImpl } from "./msg";
-import type { Handler, Logger, Msg, NATSConfig } from "./types";
+import type { Handler, Logger, Msg, NATSConfig, ReconnectPolicy } from "./types";
 
-/** The connect options a config asks for. */
+/** The reconnect policy a config gets when it names none. The pace matches the Go client's. */
+export const DEFAULT_RECONNECT_POLICY: ReconnectPolicy = {
+  reconnectTimeWaitMs: 1000,
+  reconnectJitterMs: 500,
+  firstConnectAttempts: 30,
+};
+
+/** What a client needs from the outside world; production uses DEFAULT_CLIENT_DEPS. */
+export interface ClientDeps {
+  dial: (options: ConnectionOptions) => Promise<NatsConnection>;
+  sleep: (ms: number) => Promise<void>;
+}
+
+export const DEFAULT_CLIENT_DEPS: ClientDeps = {
+  dial: wsconnect,
+  sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+};
+
+function assertReconnectPolicy(policy: ReconnectPolicy): void {
+  if (!Number.isInteger(policy.reconnectTimeWaitMs) || policy.reconnectTimeWaitMs <= 0) {
+    throw new Error(`reconnectTimeWaitMs must be a positive integer, got ${policy.reconnectTimeWaitMs}`);
+  }
+  if (!Number.isInteger(policy.reconnectJitterMs) || policy.reconnectJitterMs < 0) {
+    throw new Error(`reconnectJitterMs must be a non-negative integer, got ${policy.reconnectJitterMs}`);
+  }
+  if (!Number.isInteger(policy.firstConnectAttempts) || policy.firstConnectAttempts <= 0) {
+    throw new Error(`firstConnectAttempts must be a positive integer, got ${policy.firstConnectAttempts}`);
+  }
+}
+
+function reconnectPolicy(config: NATSConfig): ReconnectPolicy {
+  const policy = config.reconnect ?? DEFAULT_RECONNECT_POLICY;
+  assertReconnectPolicy(policy);
+  return policy;
+}
+
+/** The connect options a config asks for. Throws on an invalid reconnect policy. */
 export function connectOptions(config: NATSConfig): ConnectionOptions {
+  const policy = reconnectPolicy(config);
   const options: ConnectionOptions = {
     name: config.name,
     servers: config.url,
-    // Retry the first connect attempt instead of failing immediately —
-    // in local dev, messagebus and its dependents start in parallel via
-    // process-compose with no ordering guarantee, so the NATS server may
-    // not be listening yet when a consumer's first connect fires.
-    waitOnFirstConnect: true,
-    maxReconnectAttempts: 30,
-    reconnectTimeWait: 1000,
+    // The first dial fails at once when the bus is not listening, and the
+    // client retries it a bounded number of times (firstConnectAttempts).
+    // nats-core would apply maxReconnectAttempts to those retries too, so a
+    // service that can run without the bus would wait for it forever.
+    waitOnFirstConnect: false,
+    // Once connected, a service outlives any bus outage: the connection keeps
+    // reconnecting, buffering what is published meanwhile and restoring its
+    // subscriptions.
+    maxReconnectAttempts: -1,
+    reconnectTimeWait: policy.reconnectTimeWaitMs,
+    reconnectJitter: policy.reconnectJitterMs,
+    reconnectJitterTLS: policy.reconnectJitterMs,
   };
 
   if (config.jwt && config.nkeySeed) {
@@ -29,45 +71,110 @@ export function connectOptions(config: NATSConfig): ConnectionOptions {
   return options;
 }
 
+/**
+ * A client owns one connection for its whole life. It is dialled once, on
+ * first use, and shared by every caller; the connection reconnects by itself.
+ * Once it closes (after close(), or a failure the library gives up on) the
+ * client is closed for good and every call throws: dialling a fresh
+ * connection would silently drop every subscription made on the old one.
+ */
 export default class NATSClient {
   private connection: NatsConnection | null = null;
-  private logger: Logger;
+  private dialing: Promise<NatsConnection> | null = null;
+  private closed = false;
 
   constructor(
-    private config: NATSConfig,
-    logger?: Logger
-  ) {
-    this.logger = logger || console;
-  }
+    private readonly config: NATSConfig,
+    private readonly logger: Logger,
+    private readonly deps: ClientDeps = DEFAULT_CLIENT_DEPS
+  ) {}
 
   async connect(): Promise<void> {
+    await this.connected();
+  }
+
+  /** True once the connection has closed; a closed client cannot be used again. */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  private connected(): Promise<NatsConnection> {
+    if (this.closed) {
+      return Promise.reject(new Error("NATS connection is closed"));
+    }
     if (this.connection) {
+      return Promise.resolve(this.connection);
+    }
+    if (!this.dialing) {
+      this.dialing = this.dialOnce();
+    }
+    return this.dialing;
+  }
+
+  /**
+   * Dial the first connection, retrying while the bus is not listening yet:
+   * in local dev the bus and its dependents start in parallel with no
+   * ordering guarantee. A dial that runs out of attempts clears the memo, so
+   * a later call starts over.
+   */
+  private async dialOnce(): Promise<NatsConnection> {
+    const policy = reconnectPolicy(this.config);
+    const options = connectOptions(this.config);
+    let connection: NatsConnection | null = null;
+    for (let attempt = 1; connection === null; attempt++) {
+      try {
+        connection = await this.deps.dial(options);
+      } catch (error) {
+        if (attempt >= policy.firstConnectAttempts || this.closed) {
+          this.dialing = null;
+          this.logger.error("Failed to connect to NATS", {
+            name: options.name,
+            attempts: attempt,
+            error: describeError(error),
+          });
+          throw error;
+        }
+        this.logger.info("NATS is not accepting connections yet; retrying", {
+          name: options.name,
+          attempt,
+          attempts: policy.firstConnectAttempts,
+          error: describeError(error),
+        });
+        await this.deps.sleep(policy.reconnectTimeWaitMs);
+      }
+    }
+    if (this.closed) {
+      // close() ran while the dial was in flight.
+      await connection.close();
+      throw new Error("NATS connection is closed");
+    }
+    this.connection = connection;
+    this.logger.info("Connected to NATS", { url: options.servers, name: options.name });
+    void this.watchClosed(connection);
+    return connection;
+  }
+
+  private async watchClosed(connection: NatsConnection): Promise<void> {
+    const error = await connection.closed();
+    const intentional = this.closed;
+    this.closed = true;
+    this.connection = null;
+    this.dialing = null;
+    if (error) {
+      this.logger.error("NATS connection closed", { name: this.config.name, error: describeError(error) });
       return;
     }
-    try {
-      const options = connectOptions(this.config);
-      this.connection = await wsconnect(options);
-      this.logger.info("Connected to NATS", {
-        url: options.servers,
-        name: options.name,
-      });
-    } catch (error) {
-      this.logger.error("Failed to connect to NATS:", error);
-      throw error;
+    if (intentional) {
+      this.logger.info("NATS connection closed", { name: this.config.name });
+      return;
     }
+    this.logger.error("NATS connection closed unexpectedly", { name: this.config.name });
   }
 
   async publish(subject: string, data: Uint8Array): Promise<void> {
-    if (!this.connection) {
-      await this.connect();
-    }
-
-    if (!this.connection) {
-      throw new Error("NATS connection not available");
-    }
-
-    this.connection.publish(subject, data);
-    this.logger.debug?.("Published message", { subject, size: data.length });
+    const connection = await this.connected();
+    connection.publish(subject, data);
+    this.logger.debug("Published message", { subject, size: data.length });
   }
 
   /**
@@ -81,32 +188,17 @@ export default class NATSClient {
     data: Uint8Array,
     opts?: { timeout?: number }
   ): Promise<{ subject: string; data: Uint8Array }> {
-    if (!this.connection) {
-      await this.connect();
-    }
-
-    if (!this.connection) {
-      throw new Error("NATS connection not available");
-    }
-
-    const reply = await this.connection.request(subject, data, {
+    const connection = await this.connected();
+    const reply = await connection.request(subject, data, {
       timeout: opts?.timeout ?? 10_000,
     });
     return { subject: reply.subject, data: reply.data };
   }
 
   async subscribe(subject: string, handler: Handler): Promise<Subscription> {
-    if (!this.connection) {
-      await this.connect();
-    }
-
-    if (!this.connection) {
-      throw new Error("NATS connection not available");
-    }
-
-    // Create subscription using correct NATS API
-    const subscription = this.connection.subscribe(subject);
-    this.logger.debug?.("Subscribed to subject", { subject });
+    const connection = await this.connected();
+    const subscription = connection.subscribe(subject);
+    this.logger.debug("Subscribed to subject", { subject });
 
     void consumeMessages(subject, subscription, handler, this.logger);
 
@@ -119,15 +211,8 @@ export default class NATSClient {
    * mirrors state from events uses this to resynchronise.
    */
   async onReconnect(handler: () => void): Promise<void> {
-    if (!this.connection) {
-      await this.connect();
-    }
-
-    if (!this.connection) {
-      throw new Error("NATS connection not available");
-    }
-
-    const status = this.connection.status();
+    const connection = await this.connected();
+    const status = connection.status();
     (async () => {
       try {
         for await (const event of status) {
@@ -136,16 +221,16 @@ export default class NATSClient {
           }
         }
       } catch (error) {
-        this.logger.error?.("Connection status watch error:", error);
+        this.logger.error("Connection status watch error", { error: describeError(error) });
       }
     })();
   }
 
   async close(): Promise<void> {
-    if (this.connection) {
-      await this.connection.close();
-      this.connection = null;
-      this.logger.info("NATS connection closed");
+    this.closed = true;
+    const connection = this.connection;
+    if (connection) {
+      await connection.close();
     }
   }
 
