@@ -35,7 +35,7 @@ import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { TwitchDeviceLogins } from "../twitch-device-login";
-import { TWITCH_TOKEN_SETTING, TwitchTokenSource } from "../twitch-token-source";
+import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
 import type { WebhookClient } from "../webhook-client";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
@@ -75,6 +75,8 @@ export interface ApiOptions {
   marketplace?: MarketplaceClient | null;
   /** The engine's public Twitch app (`WOOFX3_TWITCH_PUBLIC_CLIENT_ID`), for device logins; null or absent when it has none. */
   twitchPublicClientId?: string | null;
+  /** The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`); null or absent when it has none. */
+  twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
 }
@@ -251,7 +253,7 @@ export class ApiRouteHost extends RpcTarget {
    * scopes the row to the engine user who linked it, when known.
    */
   protected async storeTwitchToken(stored: object, engineUserId?: string): Promise<void> {
-    await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(stored), engineUserId);
+    await this.twitchToken.store(stored, engineUserId);
     // Best effort: the row is already written, so a missed event only delays
     // the pickup until the services next read it.
     try {
@@ -421,7 +423,12 @@ export class ApiRouteHost extends RpcTarget {
     }
     this.db = opts.db;
     const twitchOAuth = opts.twitchOAuth ?? new TwitchOAuthClient();
-    this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient, undefined, undefined, twitchOAuth);
+    this.twitchToken = new TwitchTokenSource({
+      db: this.db,
+      dashboard: () => this.webhookClient,
+      ownClientId: opts.twitchClientId ?? null,
+      publicClient: twitchOAuth,
+    });
     this.twitchDeviceLogins = new TwitchDeviceLogins({
       clientId: opts.twitchPublicClientId ?? null,
       oauth: twitchOAuth,

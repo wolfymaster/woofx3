@@ -8,14 +8,16 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-function gauges(
-  respond: (url: string) => Response,
-  token: string | null = TOKEN,
-  clientId: () => string | undefined = () => "cid"
-) {
+const noPublicApp = {
+  refresh: async (): Promise<never> => {
+    throw new Error("this test has no public Twitch app");
+  },
+};
+
+function gauges(respond: (url: string) => Response, token: string | null = TOKEN, clientId: string | null = "cid") {
   const db = { getSetting: mock(async () => token), setSetting: mock(async () => {}) };
   const fetchFn = mock(async (url: string, _init: RequestInit) => respond(url));
-  const twitch = new TwitchTokenSource(db, () => null, clientId);
+  const twitch = new TwitchTokenSource({ db, dashboard: () => null, ownClientId: clientId, publicClient: noPublicApp });
   return { helix: new TwitchHelixGauges(twitch, fetchFn), fetchFn };
 }
 
@@ -62,15 +64,7 @@ describe("TwitchHelixGauges", () => {
     expect((await gauges(() => json({ message: "Unauthorized" }, 401)).helix.subscriptions()).kind).toBe("failed");
     expect((await gauges(() => json({ total: 40 })).helix.subscriptions()).kind).toBe("failed");
     expect((await gauges(() => json({ total: 1 }), null).helix.followerTotal()).kind).toBe("failed");
-    expect(
-      (
-        await gauges(
-          () => json({ total: 1 }),
-          TOKEN,
-          () => undefined
-        ).helix.followerTotal()
-      ).kind
-    ).toBe("failed");
+    expect((await gauges(() => json({ total: 1 }), TOKEN, null).helix.followerTotal()).kind).toBe("failed");
   });
 
   test("fails when fetch itself throws", async () => {

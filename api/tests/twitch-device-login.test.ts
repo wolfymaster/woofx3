@@ -77,21 +77,45 @@ function immediate() {
   return { delays, schedule };
 }
 
-function logins(baseUrl: string, opts: { clientId?: string | null; now?: () => number; schedule?: Schedule } = {}) {
+function logins(
+  baseUrl: string,
+  opts: { clientId?: string | null; now?: () => number; schedule?: Schedule; random?: () => number } = {}
+) {
   const stored: StoredPublicToken[] = [];
   const storeToken = mock(async (token: StoredPublicToken) => {
     stored.push(token);
   });
+  const logger = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) };
+  let ids = 0;
   const manager = new TwitchDeviceLogins({
     clientId: opts.clientId === undefined ? "public-app" : opts.clientId,
     oauth: new TwitchOAuthClient({ baseUrl, now: () => NOW }),
     storeToken,
-    logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
+    logger: logger as never,
     now: opts.now ?? (() => NOW),
     schedule: opts.schedule ?? immediate().schedule,
-    newId: () => `login-${Math.random()}`,
+    newId: () => `login-${++ids}`,
+    random: opts.random ?? (() => 0.5),
   });
-  return { manager, stored, storeToken };
+  return { manager, stored, storeToken, logger };
+}
+
+/** A storeToken that waits until `release` is called, so a test can act while the token is being stored. */
+function heldStore(storeToken: ReturnType<typeof logins>["storeToken"], stored: StoredPublicToken[]) {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let storing: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    storing = resolve;
+  });
+  storeToken.mockImplementation(async (token: StoredPublicToken) => {
+    storing();
+    await held;
+    stored.push(token);
+  });
+  return { started, release };
 }
 
 async function settled(manager: TwitchDeviceLogins, loginId: string) {
@@ -196,16 +220,30 @@ describe("a device login", () => {
     expect(storeToken).not.toHaveBeenCalled();
   });
 
-  test("keeps polling through a Twitch outage, backing off", async () => {
-    const twitch = fakeTwitch([{ status: 503, body: {} }, ISSUED]);
+  test.each([
+    // The retry after the outage backs off past the interval: double it, less up to a quarter of jitter.
+    ["no jitter drawn", 0, [5_000, 7_500, 5_000]],
+    ["half the jitter", 0.5, [5_000, 8_750, 5_000]],
+    ["almost all the jitter", 0.999, [5_000, 9_998, 5_000]],
+  ])("keeps polling through a Twitch outage, backing off (%s)", async (_, random, expected) => {
+    const twitch = fakeTwitch([{ status: 503, body: {} }, PENDING, ISSUED]);
     const { schedule, delays } = immediate();
-    const { manager } = logins(twitch.baseUrl, { schedule });
+    const { manager } = logins(twitch.baseUrl, { schedule, random: () => random });
 
     const login = await start(manager);
     expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
-    // The retry after the outage backs off past the interval: double it, less up to a quarter of jitter.
-    expect(delays[1]).toBeGreaterThanOrEqual(7_500);
-    expect(delays[1]).toBeLessThanOrEqual(10_000);
+    expect(delays).toEqual(expected);
+  });
+
+  test("backs off further on each outage in a row, up to a minute", async () => {
+    const outage: Answer = { status: 503, body: {} };
+    const twitch = fakeTwitch([outage, outage, outage, outage, ISSUED]);
+    const { schedule, delays } = immediate();
+    const { manager } = logins(twitch.baseUrl, { schedule, random: () => 0 });
+
+    const login = await start(manager);
+    expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
+    expect(delays).toEqual([5_000, 7_500, 15_000, 30_000, 45_000]);
   });
 
   test("fails when the token cannot be stored", async () => {
@@ -220,6 +258,41 @@ describe("a device login", () => {
     expect(result.ok && result.state).toMatchObject({
       status: "failed",
       reason: "could not store the Twitch token: db proxy down",
+    });
+  });
+
+  test("a login whose token is being stored cannot be cancelled, and ends linked", async () => {
+    const twitch = fakeTwitch([ISSUED]);
+    const { manager, stored, storeToken } = logins(twitch.baseUrl);
+    const store = heldStore(storeToken, stored);
+
+    const login = await start(manager);
+    await store.started;
+    expect(manager.cancel(login.loginId)).toEqual({ cancelled: false });
+    store.release();
+
+    expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
+    expect(stored).toHaveLength(1);
+  });
+
+  test("a login replaced while its token is being stored still ends linked", async () => {
+    const twitch = fakeTwitch([ISSUED]);
+    const { manager, stored, storeToken, logger } = logins(twitch.baseUrl);
+    const store = heldStore(storeToken, stored);
+
+    const first = await start(manager);
+    await store.started;
+    await start(manager);
+    expect(manager.get(first.loginId)).toMatchObject({ ok: false, code: "not_found" });
+    store.release();
+
+    for (let i = 0; i < 200 && stored.length === 0; i++) {
+      await Bun.sleep(2);
+    }
+    await Bun.sleep(2);
+    expect(logger.info).toHaveBeenCalledWith("twitch device login linked", {
+      loginId: first.loginId,
+      twitchUserId: "42",
     });
   });
 

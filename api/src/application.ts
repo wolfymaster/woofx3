@@ -178,6 +178,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         ? new MarketplaceClient({ baseUrl: config.marketplace.url, downloadHosts: config.marketplace.downloadHosts })
         : null,
       twitchPublicClientId: config.twitchPublicClientId,
+      twitchClientId: config.twitchClientId,
     });
     this.api = api;
 

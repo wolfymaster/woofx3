@@ -33,6 +33,8 @@ export interface TwitchDeviceLoginsOptions {
   now?: () => number;
   schedule?: Schedule;
   newId?: () => string;
+  /** A number in [0, 1) for the retry jitter; `Math.random` when absent. */
+  random?: () => number;
 }
 
 interface Login {
@@ -46,6 +48,12 @@ interface Login {
   linked?: { userId: string; login: string };
   /** Consecutive polls Twitch could not answer, for the retry backoff. */
   unavailableStreak: number;
+  /**
+   * The issued token is being stored. Past this point the login can no
+   * longer be called off: the token lands, so the login ends linked (or
+   * failed, if the write fails) whatever is asked of it meanwhile.
+   */
+  storing: boolean;
   cancelTimer: (() => void) | null;
   /** Aborts the poll in flight when the login is cancelled or replaced, or the engine stops. */
   abort: AbortController;
@@ -67,11 +75,13 @@ export class TwitchDeviceLogins {
   private readonly now: () => number;
   private readonly schedule: Schedule;
   private readonly newId: () => string;
+  private readonly random: () => number;
 
   constructor(private readonly opts: TwitchDeviceLoginsOptions) {
     this.now = opts.now ?? (() => Date.now());
     this.schedule = opts.schedule ?? scheduleWithTimer;
     this.newId = opts.newId ?? (() => crypto.randomUUID());
+    this.random = opts.random ?? Math.random;
   }
 
   async start(scopes?: string[]): Promise<TwitchDeviceLoginStartResult> {
@@ -110,6 +120,7 @@ export class TwitchDeviceLogins {
       intervalMs: authorization.intervalSeconds * 1000,
       status: "pending",
       unavailableStreak: 0,
+      storing: false,
       cancelTimer: null,
       abort: new AbortController(),
     };
@@ -135,9 +146,13 @@ export class TwitchDeviceLogins {
     return { ok: true, state: stateOf(login) };
   }
 
+  /**
+   * Call off a pending login. One whose token is already being stored is not
+   * cancelled: it ends linked, and stays readable with `get`.
+   */
   cancel(loginId: string): { cancelled: boolean } {
     const login = this.find(loginId);
-    if (!login) {
+    if (!login || login.storing) {
       return { cancelled: false };
     }
     const wasPending = login.status === "pending";
@@ -167,7 +182,7 @@ export class TwitchDeviceLogins {
     login.cancelTimer?.();
     login.cancelTimer = null;
     login.abort.abort();
-    if (login.status === "pending") {
+    if (login.status === "pending" && !login.storing) {
       // Ended here so a poll still in flight sees it is no longer wanted.
       login.status = "failed";
       login.reason = "cancelled";
@@ -212,7 +227,7 @@ export class TwitchDeviceLogins {
       case "unavailable":
         login.unavailableStreak += 1;
         login.reason = result.reason;
-        this.pollAfter(login, retryDelay(login.intervalMs, login.unavailableStreak));
+        this.pollAfter(login, retryDelay(login.intervalMs, login.unavailableStreak, this.random()));
         return;
       case "expired":
         this.finish(login, "expired", result.reason);
@@ -245,6 +260,7 @@ export class TwitchDeviceLogins {
     if (login.status !== "pending") {
       return;
     }
+    login.storing = true;
     try {
       await this.opts.storeToken({ ...token, userId: validation.userId, publicClientId: clientId });
     } catch (err) {
@@ -271,10 +287,13 @@ export class TwitchDeviceLogins {
   }
 }
 
-/** Exponential backoff from the polling interval, capped, with jitter so retries do not land in step. */
-function retryDelay(intervalMs: number, streak: number): number {
+/**
+ * Exponential backoff from the polling interval, capped, less up to a quarter
+ * of jitter (`random` in [0, 1)) so retries do not land in step.
+ */
+function retryDelay(intervalMs: number, streak: number, random: number): number {
   const backoff = Math.min(intervalMs * 2 ** streak, MAX_RETRY_DELAY_MS);
-  return Math.max(intervalMs, Math.round(backoff * (0.75 + Math.random() * 0.25)));
+  return Math.max(intervalMs, Math.round(backoff * (0.75 + random * 0.25)));
 }
 
 function stateOf(login: Login): TwitchDeviceLoginState {

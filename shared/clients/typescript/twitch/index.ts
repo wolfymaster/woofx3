@@ -180,27 +180,39 @@ export default class TwitchClient {
    * scope, say) while this client is running: without it the provider keeps
    * refreshing the old token and never sees the new scopes.
    *
-   * Returns the linked user id and whether it changed. A different account
-   * means a different broadcaster, which a token swap cannot cover; the
-   * caller has to reconnect from scratch.
+   * Returns the linked user id and what a token swap could not cover, which
+   * the caller handles by reconnecting from scratch:
+   * - `userChanged`: a different account means a different broadcaster.
+   * - `providerChanged`: the new token is renewed differently from the one
+   *   loaded (asked of the api service, or refreshed here with the
+   *   confidential app), so it needs a different auth provider. Nothing is
+   *   applied in that case.
    */
-  async reloadToken(): Promise<{ userId: string; userChanged: boolean }> {
+  async reloadToken(): Promise<{ userId: string; userChanged: boolean; providerChanged: boolean }> {
     if (!this.authProvider) {
       throw new Error("Must initialize TwitchClient before use");
     }
     const token = await this.getBroadcasterToken();
     const previous = this.linkedUserId;
+    const servedToken = asServedToken(token);
     let userId: string;
     if (this.authProvider instanceof DashboardAuthProvider) {
-      const dashboardToken = asServedToken(token);
-      if (!dashboardToken) {
-        throw new Error("The relinked twitch_token is not one the api service serves; restart to load it");
+      if (!servedToken) {
+        return {
+          userId: token.userId,
+          userChanged: previous !== null && previous !== token.userId,
+          providerChanged: true,
+        };
       }
-      this.authProvider.replace(dashboardToken);
-      userId = dashboardToken.userId;
+      this.authProvider.replace(servedToken);
+      userId = servedToken.userId;
     } else if (this.authProvider instanceof RefreshingAuthProvider) {
-      if (asServedToken(token)) {
-        throw new Error("The relinked twitch_token is one the api service serves; restart to load it");
+      if (servedToken) {
+        return {
+          userId: servedToken.userId,
+          userChanged: previous !== null && previous !== servedToken.userId,
+          providerChanged: true,
+        };
       }
       userId = await this.authProvider.addUserForToken(token, ["chat"]);
       this.knownRefreshToken = token.refreshToken ?? null;
@@ -208,7 +220,7 @@ export default class TwitchClient {
       throw new Error("Must initialize TwitchClient before use");
     }
     this.linkedUserId = userId;
-    return { userId, userChanged: previous !== null && previous !== userId };
+    return { userId, userChanged: previous !== null && previous !== userId, providerChanged: false };
   }
 
   /**

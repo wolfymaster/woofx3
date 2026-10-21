@@ -73,6 +73,12 @@ export interface ApiConfig {
    * (`WOOFX3_TWITCH_CLIENT_ID`): a public app has no secret.
    */
   twitchPublicClientId: string | null;
+  /**
+   * The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`), or null
+   * when it has none. The twitch service refreshes a token issued to it; the
+   * api only names it on Helix calls.
+   */
+  twitchClientId: string | null;
   nats: {
     url: string;
     name: string;
@@ -136,6 +142,7 @@ export const ApiEnvSchema = z.looseObject({
   marketplaceDownloadHosts: z.string().optional(),
   // loadRuntimeEnv coerces an all-digit value to a number.
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
+  woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
 });
 
 /**
@@ -215,18 +222,17 @@ export function resolveMarketplaceConfig(
 const TWITCH_CLIENT_ID_PATTERN = /^[A-Za-z0-9]{1,64}$/;
 
 /**
- * The public Twitch app's client id, or null when unset or blank. A malformed
- * one stops startup rather than failing every device login.
+ * A Twitch app's client id, or null when unset or blank. A malformed one
+ * stops startup rather than failing every Twitch call made with it.
+ * `setting` names the config key and its variable for the error.
  */
-export function resolveTwitchPublicClientId(value: unknown): string | null {
+function resolveTwitchClientId(value: unknown, setting: string): string | null {
   const clientId = nonBlank(value);
   if (clientId === undefined) {
     return null;
   }
   if (!TWITCH_CLIENT_ID_PATTERN.test(clientId)) {
-    throw new Error(
-      "Config error: woofx3TwitchPublicClientId (WOOFX3_TWITCH_PUBLIC_CLIENT_ID) must be a Twitch client id (letters and digits)"
-    );
+    throw new Error(`Config error: ${setting} must be a Twitch client id (letters and digits)`);
   }
   return clientId;
 }
@@ -302,7 +308,14 @@ export function loadConfig(): ApiConfig {
       : config.messagebusNkey != null
         ? String(config.messagebusNkey)
         : undefined;
-  const twitchPublicClientId = resolveTwitchPublicClientId(config.woofx3TwitchPublicClientId);
+  const twitchPublicClientId = resolveTwitchClientId(
+    config.woofx3TwitchPublicClientId,
+    "woofx3TwitchPublicClientId (WOOFX3_TWITCH_PUBLIC_CLIENT_ID)"
+  );
+  const twitchClientId = resolveTwitchClientId(
+    config.woofx3TwitchClientId,
+    "woofx3TwitchClientId (WOOFX3_TWITCH_CLIENT_ID)"
+  );
   const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
 
   return {
@@ -322,6 +335,7 @@ export function loadConfig(): ApiConfig {
     apiUrl,
     marketplace,
     twitchPublicClientId,
+    twitchClientId,
     rootDir,
     requestGuard,
     nats: {

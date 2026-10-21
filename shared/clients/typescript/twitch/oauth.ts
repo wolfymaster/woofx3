@@ -17,8 +17,8 @@ export const TWITCH_ID_BASE_URL = "https://id.twitch.tv";
 
 export const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 
-/** Every request to Twitch gives up after this long, so a hung connection cannot stall a poll loop. */
-const REQUEST_TIMEOUT_MS = 10_000;
+/** The default for `TwitchOAuthClientOptions.requestTimeoutMs`. */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -98,17 +98,28 @@ export interface TwitchOAuthClientOptions {
   fetch?: Fetch;
   baseUrl?: string;
   now?: () => number;
+  /**
+   * How long a request to Twitch, its answer's body included, may take
+   * before it is given up, so a hung connection cannot stall a poll loop.
+   * `DEFAULT_REQUEST_TIMEOUT_MS` when absent.
+   */
+  requestTimeoutMs?: number;
 }
 
 export class TwitchOAuthClient {
   private readonly fetch: Fetch;
   private readonly baseUrl: string;
   private readonly now: () => number;
+  private readonly requestTimeoutMs: number;
 
   constructor(opts: TwitchOAuthClientOptions = {}) {
     this.fetch = opts.fetch ?? ((input, init) => fetch(input, init));
     this.baseUrl = (opts.baseUrl ?? TWITCH_ID_BASE_URL).replace(/\/+$/, "");
     this.now = opts.now ?? (() => Date.now());
+    this.requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      throw new Error(`requestTimeoutMs must be a positive number of milliseconds, got ${this.requestTimeoutMs}`);
+    }
   }
 
   /** `POST /oauth2/device`. Throws `TwitchOAuthError` when Twitch refuses or cannot be reached. */
@@ -209,30 +220,24 @@ export class TwitchOAuthClient {
 
   /** `GET /oauth2/validate`. Throws `TwitchOAuthError` when Twitch refuses the token or cannot be reached. */
   async validate(accessToken: string): Promise<TokenValidation> {
-    let response: Response;
-    try {
-      response = await this.fetch(`${this.baseUrl}/oauth2/validate`, {
-        method: "GET",
-        headers: { Authorization: `OAuth ${accessToken}` },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-    } catch (err) {
-      throw new TwitchOAuthError(`could not reach Twitch: ${errorMessage(err)}`, null);
-    }
-    const body = await readJson(response);
-    if (response.status !== 200) {
-      throw new TwitchOAuthError(`Twitch refused the token: ${describeError(response.status, body)}`, response.status);
+    const { status, body } = await this.send("/oauth2/validate", {
+      method: "GET",
+      headers: { Authorization: `OAuth ${accessToken}` },
+    });
+    if (status !== 200) {
+      throw new TwitchOAuthError(`Twitch refused the token: ${describeError(status, body)}`, status);
     }
     const { client_id, user_id, login, scopes, expires_in } = body;
     if (
       typeof client_id !== "string" ||
+      client_id === "" ||
       typeof user_id !== "string" ||
       user_id === "" ||
       typeof login !== "string" ||
       !isStringArray(scopes) ||
       typeof expires_in !== "number"
     ) {
-      throw new TwitchOAuthError("Twitch's validate answer is malformed or names no user", response.status);
+      throw new TwitchOAuthError("Twitch's validate answer is malformed or names no user", status);
     }
     return { clientId: client_id, userId: user_id, login, scopes, expiresIn: expires_in };
   }
@@ -262,19 +267,37 @@ export class TwitchOAuthClient {
     form: Record<string, string>,
     signal?: AbortSignal
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-    let response: Response;
-    try {
-      response = await this.fetch(`${this.baseUrl}${path}`, {
+    return this.send(
+      path,
+      {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
         body: new URLSearchParams(form).toString(),
+      },
+      signal
+    );
+  }
+
+  /**
+   * One request and its whole answer, under the request timeout. Failing to
+   * send it or to read the answer's body throws a `TwitchOAuthError` with no
+   * status: no answer was read, so it says nothing about what Twitch decided.
+   */
+  private async send(
+    path: string,
+    init: RequestInit,
+    signal?: AbortSignal
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const timeout = AbortSignal.timeout(this.requestTimeoutMs);
+    try {
+      const response = await this.fetch(`${this.baseUrl}${path}`, {
+        ...init,
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
+      return { status: response.status, body: await readJson(response) };
     } catch (err) {
       throw new TwitchOAuthError(`could not reach Twitch: ${errorMessage(err)}`, null);
     }
-    return { status: response.status, body: await readJson(response) };
   }
 }
 

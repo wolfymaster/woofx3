@@ -122,7 +122,16 @@ describe("a dashboard client with a loopback callback URL", () => {
         stored = value;
       },
     };
-    const source = new TwitchTokenSource(settings, () => webhooks);
+    const source = new TwitchTokenSource({
+      db: settings,
+      dashboard: () => webhooks,
+      ownClientId: null,
+      publicClient: {
+        refresh: async () => {
+          throw new Error("this test has no public Twitch app");
+        },
+      },
+    });
 
     expect(await source.dashboardToken(true)).toEqual(renewed);
     expect(JSON.parse(stored ?? "null")).toEqual({ ...renewed, dashboardClientId: "shell" });
