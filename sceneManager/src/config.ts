@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
 import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
@@ -30,6 +30,11 @@ export const SceneManagerEnvSchema = z.object({
   // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  // The URL OBS and the dashboard reach sceneManager at; its host and origin
+  // join the request guard's defaults.
+  woofx3SceneManagerUrl: z.string().optional(),
+  // The edge's public port (`PORT`); set means sceneManager is reachable beyond loopback.
+  port: z.union([z.number(), z.string()]).optional(),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -44,7 +49,7 @@ export interface SceneManagerRuntimeConfig {
   barkloaderUrl: string;
   /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
   mediaProxySecret: string;
-  /** Which Host and Origin headers the HTTP server accepts; open unless set. */
+  /** Which Host and Origin headers the HTTP server accepts, with their defaults resolved. */
   requestGuard: RequestGuardPolicy;
   /**
    * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
@@ -164,9 +169,14 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
   const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
+  const publicUrl = nonBlank(c.woofx3SceneManagerUrl);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
     allowedOrigins: c.woofx3AllowedOrigins,
+    exposure: resolveExposure(bindHost, c.port),
+    ownUrls: publicUrl === undefined ? [] : [publicUrl],
+    // Sandboxed widget frames load fonts and module scripts from sceneManager with `Origin: null`.
+    extraDefaultOrigins: ["null"],
   });
 
   return {

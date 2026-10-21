@@ -25,6 +25,9 @@ afterEach(() => {
 function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_API_HOST;
   delete process.env.API_HOST;
+  delete process.env.PORT;
+  delete process.env.WOOFX3_ALLOWED_HOSTS;
+  delete process.env.WOOFX3_ALLOWED_ORIGINS;
   Object.assign(process.env, REQUIRED, vars);
 }
 
@@ -39,6 +42,24 @@ describe("api listener", () => {
     withEnv({ WOOFX3_API_HOST: "0.0.0.0" });
 
     expect(loadConfig().host).toBe("0.0.0.0");
+  });
+});
+
+describe("request guard defaults", () => {
+  test("an unset request guard checks Origin, and Host on a loopback-only engine", () => {
+    withEnv({});
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).not.toBeNull();
+  });
+
+  test("behind the edge an unset request guard still checks Origin but not Host", () => {
+    withEnv({ PORT: "8080" });
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).toBeNull();
   });
 });
 

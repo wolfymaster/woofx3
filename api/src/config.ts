@@ -1,5 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
-import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
@@ -59,7 +59,7 @@ export interface ApiConfig {
   apiUrl: string;
   /**
    * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
-   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. See
+   * `WOOFX3_ALLOWED_ORIGINS`), with their defaults resolved. See
    * shared/common/typescript/http/request-guard.ts.
    */
   requestGuard: RequestGuardPolicy;
@@ -150,6 +150,8 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  // The edge's public port (`PORT`); set means the api is reachable beyond loopback.
+  port: z.union([z.number(), z.string()]).optional(),
 });
 
 /**
@@ -309,9 +311,14 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
+  const exposure = resolveExposure(host, config.port);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,
+    exposure,
+    // barkloader calls the api at apiUrl; behind the edge both apps share sceneManagerUrl's origin.
+    ownUrls: [apiUrl, sceneManagerUrl],
+    extraDefaultOrigins: [],
   });
   const marketplaceUrl = config.woofx3MarketplaceUrl ?? config.marketplaceUrl;
   const marketplaceDownloadHosts = config.woofx3MarketplaceDownloadHosts ?? config.marketplaceDownloadHosts;
