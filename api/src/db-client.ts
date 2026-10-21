@@ -509,8 +509,10 @@ export class DbClient {
     return alert.GetAlertByEnvelopeId(req, this.config);
   }
 
-  async listAlerts(req: alert.ListAlertsRequest): Promise<alert.ListAlertsResponse> {
-    return alert.ListAlerts(req, this.config);
+  async listAlerts(req: alert.ListAlertsRequest): Promise<{ alerts: alert.Alert[]; totalCount: number }> {
+    const response = await alert.ListAlerts(req, this.config);
+    unwrapVoid("listAlerts", response);
+    return { alerts: response.alerts ?? [], totalCount: Number(response.totalCount ?? 0) };
   }
 
   // `replayed` is the only status UpdateAlertStatus accepts.

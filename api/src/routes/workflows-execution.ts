@@ -4,10 +4,13 @@ import {
   type TriggerWorkflowOptions,
   type TriggerWorkflowResponse,
   type UnmetTriggerCondition,
+  WORKFLOW_RUN_ALERT_LIMIT,
+  type WorkflowRunDetail,
 } from "@woofx3/api";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
+import { alertSnapshotFromRow, runSnapshotFromRow, stepSnapshotFromRow } from "../stored-snapshots";
 import { routeModule } from "./context";
 import { timestampFromDate } from "./helpers";
 
@@ -389,6 +392,30 @@ export const workflowsExecutionRoutes = routeModule({
           ? new Date(Number(step.completedAt.seconds) * 1000 + step.completedAt.nanos / 1000000).toISOString()
           : undefined,
       })),
+    };
+  },
+
+  /**
+   * A recorded run read whole from db-proxy: the run, its steps in the order
+   * it ran them, and the alerts it fired. Each is the snapshot its callback
+   * carries, so a client can merge this read with the callbacks that follow.
+   */
+  async getWorkflowRun(executionId: string): Promise<WorkflowRunDetail | null> {
+    if (!executionId) {
+      throw new Error("executionId is required");
+    }
+    const exec = await this.db.findWorkflowExecution({ id: executionId });
+    if (!exec) {
+      return null;
+    }
+    const [workflowRow, alerts] = await Promise.all([
+      this.db.findWorkflow({ id: exec.workflowId }),
+      this.db.listAlerts({ limit: WORKFLOW_RUN_ALERT_LIMIT, offset: 0, workflowId: exec.id }),
+    ]);
+    return {
+      run: { ...runSnapshotFromRow(exec), workflowName: workflowRow?.name ?? "" },
+      steps: (exec.steps ?? []).map((step) => stepSnapshotFromRow(exec.id, step)),
+      alerts: alerts.alerts.map(alertSnapshotFromRow),
     };
   },
 

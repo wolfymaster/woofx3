@@ -22,7 +22,7 @@ import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import { isPermissionDenied } from "../db-client";
 import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
 import { routeModule } from "./context";
-import { commandToSnapshot, parseActions } from "./helpers";
+import { availableFunctions, commandToSnapshot, parseActions } from "./helpers";
 
 // The factories hold nothing but the CloudEvent `source`, so one instance each
 // serves every call in this module.
@@ -423,27 +423,7 @@ export const commandsRoutes = routeModule({
    * `typeValue`.
    */
   async listAvailableFunctions(): Promise<AvailableFunction[]> {
-    const modules = await this.db.listModules();
-    const out: AvailableFunction[] = [];
-    for (const m of modules) {
-      const moduleName = m.name ?? "";
-      const moduleId = m.id ?? "";
-      for (const fn of m.functions ?? []) {
-        if (!fn.manifestId) {
-          continue;
-        }
-        out.push({
-          id: fn.id,
-          moduleId,
-          moduleName,
-          manifestId: fn.manifestId,
-          name: fn.name ?? "",
-          qualifiedName: moduleName ? `${moduleName}/${fn.manifestId}` : fn.manifestId,
-          runtime: fn.runtime ?? "",
-        });
-      }
-    }
-    return out;
+    return availableFunctions(await this.db.listModules());
   },
 
   /**
