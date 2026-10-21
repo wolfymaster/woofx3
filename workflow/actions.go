@@ -27,31 +27,40 @@ import (
 // `woofx3:action:chat.reply`.
 func NewChatReplyAction() tasks.ActionFunc[AppServices] {
 	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
-		message, _ := params["message"].(string)
-		if message == "" {
-			return nil, fmt.Errorf("message parameter is required")
+		payload, err := chatReplyMessage(ctx, params)
+		if err != nil {
+			return nil, err
 		}
 
 		bus := ctx.Services.MessageBus()
 		if bus == nil {
 			return nil, fmt.Errorf("message bus not available")
 		}
-
-		platform, _ := params["platform"].(string)
-		if platform == "" {
-			platform = "twitch"
-		}
-
-		event := newChainedEvent(ctx, "message.send", map[string]any{"platform": platform, "message": message})
-		payload, err := json.Marshal(event)
-		if err != nil {
-			return nil, fmt.Errorf("marshal message.send: %w", err)
-		}
 		if err := bus.Publish("message.send", payload); err != nil {
 			return nil, fmt.Errorf("publish message.send: %w", err)
 		}
+		message, _ := params["message"].(string)
 		return map[string]any{"message": message}, nil
 	}
+}
+
+// chatReplyMessage validates the chat.reply parameters and returns the
+// marshalled message.send event the action publishes. Split from the action so
+// the published bytes are testable without a message bus.
+func chatReplyMessage(ctx tasks.ActionContext[AppServices], params map[string]any) ([]byte, error) {
+	message, _ := params["message"].(string)
+	if message == "" {
+		return nil, fmt.Errorf("message parameter is required")
+	}
+	platform, _ := params["platform"].(string)
+	if platform == "" {
+		platform = "twitch"
+	}
+	payload, err := json.Marshal(newChainedEvent(ctx, "message.send", map[string]any{"platform": platform, "message": message}))
+	if err != nil {
+		return nil, fmt.Errorf("marshal message.send: %w", err)
+	}
+	return payload, nil
 }
 
 // newChainedEvent builds an event a native action publishes on behalf of the

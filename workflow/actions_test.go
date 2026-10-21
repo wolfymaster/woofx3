@@ -279,3 +279,52 @@ func TestNewChainedEvent_CarriesTriggerChainAndWorkflow(t *testing.T) {
 		})
 	}
 }
+
+func TestChatReplyMessage(t *testing.T) {
+	tests := []struct {
+		name         string
+		trigger      *types.Event
+		params       map[string]any
+		wantChain    string
+		wantPlatform string
+		wantErr      bool
+	}{
+		{"no trigger starts the chain", nil, map[string]any{"message": "hi"}, "wf-b", "twitch", false},
+		{"unchained trigger starts the chain", &types.Event{}, map[string]any{"message": "hi"}, "wf-b", "twitch", false},
+		{"chained trigger is extended", &types.Event{WorkflowChain: "wf-a"}, map[string]any{"message": "hi", "platform": "kick"}, "wf-a,wf-b", "kick", false},
+		{"missing message is refused", &types.Event{}, map[string]any{"platform": "twitch"}, "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := tasks.ActionContext[AppServices]{WorkflowID: "wf-b", TriggerEvent: tt.trigger}
+			raw, err := chatReplyMessage(ctx, tt.params)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("chatReplyMessage: %v", err)
+			}
+			var wire struct {
+				Type          string         `json:"type"`
+				Source        string         `json:"source"`
+				WorkflowChain string         `json:"workflowChain"`
+				Data          map[string]any `json:"data"`
+			}
+			if err := json.Unmarshal(raw, &wire); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if wire.WorkflowChain != tt.wantChain {
+				t.Errorf("workflowChain = %q, want %q", wire.WorkflowChain, tt.wantChain)
+			}
+			if wire.Type != "message.send" || wire.Source != "workflow" {
+				t.Errorf("unexpected envelope: %+v", wire)
+			}
+			if wire.Data["message"] != "hi" || wire.Data["platform"] != tt.wantPlatform {
+				t.Errorf("unexpected data: %v", wire.Data)
+			}
+		})
+	}
+}
