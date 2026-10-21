@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/wolfymaster/woofx3/clients/nats"
+	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 )
 
 // DefaultDbRequestTimeout bounds one request to the db proxy when
@@ -30,6 +31,15 @@ type WorkflowEnvConfig struct {
 	// DbTimeout caps every request on the db proxy client, as a Go duration
 	// ("5s", "750ms"). Unset means DefaultDbRequestTimeout.
 	DbTimeout string `env:"WOOFX3_WORKFLOW_DB_TIMEOUT"`
+	// RunRetention is how long a settled run stays in memory, as a Go
+	// duration. Unset means engine.DefaultRunRetentionTTL.
+	RunRetention string `env:"WOOFX3_WORKFLOW_RUN_RETENTION"`
+	// RunSweepInterval is how often settled runs are evicted, as a Go
+	// duration. Unset means engine.DefaultRunSweepInterval.
+	RunSweepInterval string `env:"WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL"`
+	// MaxSettledRuns caps how many settled runs stay in memory. Unset means
+	// engine.DefaultMaxSettledRuns.
+	MaxSettledRuns int `env:"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS"`
 	nats.Config
 }
 
@@ -46,15 +56,45 @@ func (c *WorkflowEnvConfig) orderedTurnTimeout() (time.Duration, error) {
 // dbRequestTimeout is DbTimeout parsed, refused when it does not parse or is
 // not positive so a typo fails the start rather than removing the deadline.
 func (c *WorkflowEnvConfig) dbRequestTimeout() (time.Duration, error) {
-	if c.DbTimeout == "" {
-		return DefaultDbRequestTimeout, nil
-	}
-	timeout, err := time.ParseDuration(c.DbTimeout)
+	return positiveDuration("WOOFX3_WORKFLOW_DB_TIMEOUT", c.DbTimeout, DefaultDbRequestTimeout)
+}
+
+// runRetention is the engine's run retention with each unset value at its
+// default. A value that does not parse, or is not positive, fails the start
+// rather than disabling eviction.
+func (c *WorkflowEnvConfig) runRetention() (engine.RetentionConfig, error) {
+	retention := engine.DefaultRetentionConfig()
+	ttl, err := positiveDuration("WOOFX3_WORKFLOW_RUN_RETENTION", c.RunRetention, retention.RetentionTTL)
 	if err != nil {
-		return 0, fmt.Errorf("WOOFX3_WORKFLOW_DB_TIMEOUT must be a duration such as 5s: %w", err)
+		return engine.RetentionConfig{}, err
 	}
-	if timeout <= 0 {
-		return 0, fmt.Errorf("WOOFX3_WORKFLOW_DB_TIMEOUT must be positive, got %s", timeout)
+	interval, err := positiveDuration("WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL", c.RunSweepInterval, retention.SweepInterval)
+	if err != nil {
+		return engine.RetentionConfig{}, err
 	}
-	return timeout, nil
+	if c.MaxSettledRuns < 0 {
+		return engine.RetentionConfig{}, fmt.Errorf("WOOFX3_WORKFLOW_MAX_SETTLED_RUNS must not be negative, got %d", c.MaxSettledRuns)
+	}
+	retention.RetentionTTL = ttl
+	retention.SweepInterval = interval
+	if c.MaxSettledRuns > 0 {
+		retention.MaxSettledRuns = c.MaxSettledRuns
+	}
+	return retention, nil
+}
+
+// positiveDuration parses the Go duration in value, read from the variable
+// key, or returns fallback when value is unset.
+func positiveDuration(key, value string, fallback time.Duration) (time.Duration, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a duration such as 5s: %w", key, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive, got %s", key, parsed)
+	}
+	return parsed, nil
 }

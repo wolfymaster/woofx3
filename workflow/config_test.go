@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/wolfymaster/woofx3/common/runtime"
+	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 )
 
 func TestOrderedTurnTimeoutFromEnv(t *testing.T) {
@@ -89,6 +90,61 @@ func TestDbRequestTimeoutFromEnv(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunRetentionFromEnv(t *testing.T) {
+	defaults := engine.DefaultRetentionConfig()
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    engine.RetentionConfig
+		wantErr bool
+	}{
+		{name: "unset uses the defaults", env: map[string]string{}, want: defaults},
+		{
+			name: "each value is taken as is",
+			env: map[string]string{
+				"WOOFX3_WORKFLOW_RUN_RETENTION":      "5m",
+				"WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL": "10s",
+				"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS":   "500",
+			},
+			want: engine.RetentionConfig{RetentionTTL: 5 * time.Minute, SweepInterval: 10 * time.Second, MaxSettledRuns: 500},
+		},
+		{name: "a bare number retention is refused", env: map[string]string{"WOOFX3_WORKFLOW_RUN_RETENTION": "120"}, wantErr: true},
+		{name: "zero retention is refused", env: map[string]string{"WOOFX3_WORKFLOW_RUN_RETENTION": "0s"}, wantErr: true},
+		{name: "negative sweep interval is refused", env: map[string]string{"WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL": "-1s"}, wantErr: true},
+		{name: "negative cap is refused", env: map[string]string{"WOOFX3_WORKFLOW_MAX_SETTLED_RUNS": "-1"}, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := map[string]string{
+				"WOOFX3_BARKLOADER_WS_URL":  "ws://barkloader",
+				"WOOFX3_DATABASE_PROXY_URL": "http://db",
+				"WOOFX3_SCENE_MANAGER_URL":  "http://scenes",
+				"WOOFX3_MESSAGEBUS_URL":     "nats://bus",
+			}
+			for k, v := range tc.env {
+				env[k] = v
+			}
+			cfg := &WorkflowEnvConfig{}
+			if err := runtime.FillEnvConfig(env, cfg); err != nil {
+				t.Fatalf("FillEnvConfig: %v", err)
+			}
+			got, err := cfg.runRetention()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got %+v, want an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("runRetention: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
 	}

@@ -69,6 +69,14 @@ func main() {
 			}
 			app.engine.SetOrderedTurnTimeout(turnTimeout)
 
+			retention, err := cfg.runRetention()
+			if err != nil {
+				return err
+			}
+			if err := app.engine.SetRetention(retention); err != nil {
+				return err
+			}
+
 			// Database
 			dbTimeout, err := cfg.dbRequestTimeout()
 			if err != nil {
