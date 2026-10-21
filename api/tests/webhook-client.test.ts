@@ -177,6 +177,31 @@ describe("WebhookClient routing", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  it("refuses an empty target client id instead of broadcasting it over either transport", async () => {
+    const http = callbackServer(null);
+    try {
+      const logger = fakeLogger();
+      const stream = new EngineEventStream(logger);
+      const wc = new WebhookClient(
+        fakeDb([{ clientId: "cloud", description: "cloud", callbackUrl: http.url, callbackToken: "" }]),
+        logger,
+        stream
+      );
+      await wc.refreshCallbackUrls();
+      const frames = answeringSubscriber(stream, "local", null);
+
+      await expect(wc.send({ type: EngineEventType.WORKFLOW_DELETED, workflowId: "w1" }, "")).rejects.toThrow(
+        "targetClientId is empty"
+      );
+      await settle();
+
+      expect(http.received).toHaveLength(0);
+      expect(frames).toHaveLength(0);
+    } finally {
+      http.stop();
+    }
+  });
+
   it("warns when an event reaches nobody", async () => {
     const logger = fakeLogger();
     const wc = new WebhookClient(fakeDb(), logger, new EngineEventStream(logger));
