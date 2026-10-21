@@ -41,11 +41,26 @@ Content-Type: multipart/form-data
 
 Install failures after the HTTP response are **logged**; the client does not receive a second callback today.
 
+**Upload limits:**
+
+The archive is counted as it streams in and refused with 413 past `max_archive_bytes`. Extraction then counts the bytes each entry really inflates to, not the sizes the archive declares, and install fails (through the usual failed-install notification) when a limit is crossed. Rollback unpacks the stored archive under the same limits.
+
+| Variable | Default | Limit |
+|----------|---------|-------|
+| `WOOFX3_UPLOAD_MAX_ARCHIVE_BYTES` | 512 MiB | Archive size, matching the scene manager's upload ceiling |
+| `WOOFX3_UPLOAD_MAX_ENTRIES` | 10000 | Entries in the archive |
+| `WOOFX3_UPLOAD_MAX_UNCOMPRESSED_BYTES` | 500 MiB | Total inflated size, aligned with the module-storage entitlement |
+| `WOOFX3_UPLOAD_MAX_ENTRY_BYTES` | 100 MiB | Inflated size of one entry |
+| `WOOFX3_UPLOAD_MAX_RATIO` | 100 | Inflated bytes per archive byte, applied once an archive inflates past 1 MiB |
+
+Values must be positive integers; anything else stops barkloader at startup. Installs, deletes and rollbacks of the same module run one at a time.
+
 **Error responses:**
 
 | Code | Condition |
 |------|-----------|
-| 400 | Missing `file` field, invalid file, or unrecognized format |
+| 400 | Missing `file` field, invalid file, unrecognized format, or a body cut short |
+| 413 | The archive, or a text field, is over its size limit |
 | 500 | Storage or processing failure |
 
 Error body:
