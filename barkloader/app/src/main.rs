@@ -165,7 +165,7 @@ async fn setup() -> Result<AppContext> {
         }
         ctx.http = Arc::new(ReqwestHttpClient::new(
             http_policy,
-            HttpClientLimits::from_env()?,
+            HttpClientLimits::from_lookup(|key| get_env_or_default(key, ""))?,
         ));
 
         let oauth = Arc::new(OAuthService::new(

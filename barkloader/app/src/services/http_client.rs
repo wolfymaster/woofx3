@@ -1,4 +1,4 @@
-use lib_sandbox::host::{Enforcement, HttpClient, HttpRequest};
+use lib_sandbox::host::{Enforcement, HttpClient, HttpRequest, MAX_INVOCATION_TIMEOUT};
 use lib_sandbox::net::{self, Refusal};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -8,10 +8,8 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tracing::warn;
 
-use crate::util::get_env_or_default;
-
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// Under the 30 s a whole invocation may take (`MAX_INVOCATION_TIMEOUT`), so
+/// Under the longest an invocation may take (`MAX_INVOCATION_TIMEOUT`), so
 /// one request cannot use all of it.
 const DEFAULT_MAX_REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
 const DEFAULT_MAX_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
@@ -46,6 +44,12 @@ pub enum PolicyError {
 pub enum LimitsError {
     #[error("{name} must be a whole number above zero, not {value:?}")]
     Invalid { name: &'static str, value: String },
+    #[error("{name} must be at most {max} ms, the longest an invocation may take, not {value}")]
+    TooLong {
+        name: &'static str,
+        value: u64,
+        max: u64,
+    },
 }
 
 /// What one `ctx.http` request may cost the engine. Read once at startup.
@@ -75,14 +79,13 @@ impl Default for HttpClientLimits {
 }
 
 impl HttpClientLimits {
-    /// `WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS`, `_REQUEST_TIMEOUT_MS`,
-    /// `_MAX_RESPONSE_BYTES` and `_MAX_REDIRECTS`. A blank value keeps the
-    /// default; anything but a whole number above zero is an error.
-    pub fn from_env() -> Result<Self, LimitsError> {
-        Self::from_lookup(|name| get_env_or_default(name, ""))
-    }
-
-    fn from_lookup(lookup: impl Fn(&str) -> String) -> Result<Self, LimitsError> {
+    /// Reads `WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS`, `_REQUEST_TIMEOUT_MS`,
+    /// `_MAX_RESPONSE_BYTES` and `_MAX_REDIRECTS` through `lookup`. A blank
+    /// value keeps the default; anything but a whole number above zero is an
+    /// error, and so is a timeout longer than `MAX_INVOCATION_TIMEOUT`, which
+    /// would let the connect-time token exchange (it has no invocation
+    /// deadline) hold a thread for that long.
+    pub fn from_lookup(lookup: impl Fn(&str) -> String) -> Result<Self, LimitsError> {
         let defaults = Self::default();
         let number = |name: &'static str, default: u64| -> Result<u64, LimitsError> {
             let value = lookup(name);
@@ -98,15 +101,27 @@ impl HttpClientLimits {
                 }),
             }
         };
+        let timeout = |name: &'static str, default: Duration| -> Result<Duration, LimitsError> {
+            let millis = number(name, default.as_millis() as u64)?;
+            let max = MAX_INVOCATION_TIMEOUT.as_millis() as u64;
+            if millis > max {
+                return Err(LimitsError::TooLong {
+                    name,
+                    value: millis,
+                    max,
+                });
+            }
+            Ok(Duration::from_millis(millis))
+        };
         Ok(Self {
-            connect_timeout: Duration::from_millis(number(
+            connect_timeout: timeout(
                 "WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS",
-                defaults.connect_timeout.as_millis() as u64,
-            )?),
-            max_request_timeout: Duration::from_millis(number(
+                defaults.connect_timeout,
+            )?,
+            max_request_timeout: timeout(
                 "WOOFX3_MODULE_HTTP_REQUEST_TIMEOUT_MS",
-                defaults.max_request_timeout.as_millis() as u64,
-            )?),
+                defaults.max_request_timeout,
+            )?,
             max_response_bytes: number(
                 "WOOFX3_MODULE_HTTP_MAX_RESPONSE_BYTES",
                 defaults.max_response_bytes,
@@ -759,24 +774,29 @@ mod tests {
         assert!(target_heads.lock().unwrap().is_empty());
     }
 
-    fn limited_client(limits: HttpClientLimits) -> ReqwestHttpClient {
-        ReqwestHttpClient::new(
+    fn limited_client(limits: HttpClientLimits) -> Arc<ReqwestHttpClient> {
+        Arc::new(ReqwestHttpClient::new(
             HttpPolicy {
                 mode: HttpPolicyMode::Enforce,
                 allow_private: true,
             },
             limits,
-        )
+        ))
     }
 
+    /// Fails the test, rather than hanging it, when the client never gives up.
+    const TEST_HANG_GUARD: Duration = Duration::from_secs(10);
+
     async fn get(
-        client: &ReqwestHttpClient,
+        client: &Arc<ReqwestHttpClient>,
         origin: &str,
         deadline: Option<Instant>,
     ) -> Result<Value, String> {
-        let grants = grants(&[&format!("origin:{origin}")]);
-        let url = format!("{origin}/");
-        tokio::task::block_in_place(|| {
+        let client = client.clone();
+        let origin = origin.to_string();
+        let call = tokio::task::spawn_blocking(move || {
+            let grants = grants(&[&format!("origin:{origin}")]);
+            let url = format!("{origin}/");
             client.request(HttpRequest {
                 module_id: "mymod",
                 grants: &grants,
@@ -786,7 +806,11 @@ mod tests {
                 enforcement: Enforcement::Policy,
                 deadline,
             })
-        })
+        });
+        tokio::time::timeout(TEST_HANG_GUARD, call)
+            .await
+            .expect("the client did not give up on its own")
+            .unwrap()
     }
 
     /// A loopback server that accepts connections and never answers.
@@ -831,6 +855,39 @@ mod tests {
         });
         let started = Instant::now();
         let error = get(&client, &origin, None).await.unwrap_err();
+        assert!(error.starts_with("deadline_exceeded:"), "{error}");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_body_that_stalls_after_the_headers_is_abandoned_at_the_deadline() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf).await;
+                let _ = stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc")
+                    .await;
+                held.push(stream);
+            }
+        });
+        let client = limited_client(HttpClientLimits::default());
+        let started = Instant::now();
+        let error = get(
+            &client,
+            &origin,
+            Some(Instant::now() + Duration::from_millis(300)),
+        )
+        .await
+        .unwrap_err();
         assert!(error.starts_with("deadline_exceeded:"), "{error}");
         assert!(
             started.elapsed() < Duration::from_secs(5),
@@ -965,6 +1022,19 @@ mod tests {
         assert_eq!(custom.max_request_timeout, Duration::from_secs(1));
         assert_eq!(custom.max_response_bytes, 10);
         assert_eq!(custom.max_redirects, 1);
+        for name in [
+            "WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS",
+            "WOOFX3_MODULE_HTTP_REQUEST_TIMEOUT_MS",
+        ] {
+            assert!(from(&[(name, "30000")]).is_ok(), "{name}");
+            assert!(
+                matches!(
+                    from(&[(name, "30001")]),
+                    Err(LimitsError::TooLong { max: 30_000, .. })
+                ),
+                "{name}"
+            );
+        }
         for bad in ["0", "-1", "4MiB", "1.5"] {
             assert!(
                 matches!(
