@@ -62,7 +62,12 @@ impl ModuleLocks {
     /// Waits for the module's turn; the lock is released when the guard drops.
     pub async fn lock(&self, module_name: &str) -> OwnedMutexGuard<()> {
         let slot = {
-            let mut slots = self.0.lock().expect("module locks poisoned");
+            let mut slots = self
+                .0
+                .lock()
+                // The map only holds Arc slots, so it stays consistent even
+                // if a holder panicked.
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             // A slot only the map holds is idle; dropping it keeps the map
             // from growing with every module name ever seen.
             slots.retain(|_, slot| Arc::strong_count(slot) > 1);

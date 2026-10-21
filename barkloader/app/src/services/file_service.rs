@@ -13,6 +13,13 @@ use uuid::Uuid;
 /// Longest value accepted for a plain form field (`callback_url`,
 /// `module_key`, ...). They carry URLs and short keys, never content.
 const MAX_TEXT_FIELD_BYTES: usize = 8 * 1024;
+/// Everything in a request that is not the archive (text fields and
+/// unrecognised fields) shares this budget, so the number of such fields
+/// cannot be used to stream unbounded data.
+const MAX_FORM_EXTRAS_BYTES: u64 = 64 * 1024;
+/// Subdirectory of the upload's temp dir that the archive is unpacked into,
+/// so an entry can never overwrite the archive while it is being read.
+const EXTRACT_DIR: &str = "extracted";
 
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
@@ -144,7 +151,7 @@ pub fn unpack_zip<R: Read + Seek>(
         let allowance = limits.max_entry_bytes.min(total_limit - actual_total);
         // One byte past the allowance, so overrunning it is observable.
         let mut bounded = Counted {
-            inner: (&mut entry).take(allowance + 1),
+            inner: (&mut entry).take(allowance.saturating_add(1)),
             count: 0,
         };
         sink(&relative, &mut bounded)?;
@@ -214,6 +221,7 @@ impl FileService {
     ) -> Result<TextFields, Error> {
         let mut fields = TextFields::default();
         let mut callback_url: Option<String> = None;
+        let mut extras_left = MAX_FORM_EXTRAS_BYTES;
 
         while let Some(mut field) = payload
             .try_next()
@@ -235,6 +243,11 @@ impl FileService {
 
             match field_name.as_str() {
                 "file" => {
+                    if metadata.is_some() {
+                        return Err(actix_web::error::ErrorBadRequest(
+                            "Only one file field is allowed",
+                        ));
+                    }
                     let name = file_name.ok_or_else(|| {
                         actix_web::error::ErrorBadRequest("File missing file name")
                     })?;
@@ -248,7 +261,7 @@ impl FileService {
                 | "module_key"
                 | "marketplace_listing_id"
                 | "marketplace_edition" => {
-                    let value = read_text_field(&mut field, &field_name).await?;
+                    let value = read_text_field(&mut field, &field_name, &mut extras_left).await?;
                     match field_name.as_str() {
                         "callback_url" => callback_url = Some(value),
                         "client_id" => fields.client_id = Some(value),
@@ -259,13 +272,9 @@ impl FileService {
                     }
                 }
                 _ => {
-                    let mut drained = 0u64;
                     while let Some(chunk) = field.next().await {
                         let data = chunk.map_err(actix_web::error::ErrorBadRequest)?;
-                        drained += data.len() as u64;
-                        if drained > self.limits.max_archive_bytes {
-                            return Err(actix_web::error::ErrorPayloadTooLarge("Upload too large"));
-                        }
+                        spend_extras(&mut extras_left, data.len())?;
                     }
                 }
             }
@@ -280,7 +289,8 @@ impl FileService {
         match metadata.file_extension.as_deref() {
             Some("zip") => {
                 let archive_path = metadata.temp_dir_path.join(&metadata.file_name);
-                self.extract_zip(&archive_path, &metadata.temp_dir_path)?;
+                let extract_root = metadata.temp_dir_path.join(EXTRACT_DIR);
+                self.extract_zip(&archive_path, &extract_root)?;
 
                 // Recursively collect every extracted file. `file_name` is the
                 // path **relative to the extraction root** (e.g.
@@ -313,20 +323,16 @@ impl FileService {
                 }
 
                 let mut collected: Vec<(String, Option<String>)> = Vec::new();
-                collect_files(
-                    &metadata.temp_dir_path,
-                    &metadata.temp_dir_path,
-                    &mut collected,
-                )?;
+                collect_files(&extract_root, &extract_root, &mut collected)?;
                 debug!(
                     "Extracted {} files into {}",
                     collected.len(),
-                    metadata.temp_dir_path.display()
+                    extract_root.display()
                 );
 
                 for (rel_name, file_extension) in collected {
                     metadatas.push(FileMetadata {
-                        temp_dir_path: metadata.temp_dir_path.clone(),
+                        temp_dir_path: extract_root.clone(),
                         file_extension,
                         file_name: rel_name,
                         upload_dir_path: metadata.upload_dir_path.clone(),
@@ -356,6 +362,8 @@ impl FileService {
             .metadata()
             .with_context(|| format!("stat archive {}", archive_path.display()))?
             .len();
+
+        fs::create_dir_all(dest_dir).with_context(|| format!("create {}", dest_dir.display()))?;
 
         unpack_zip(file, archive_len, &self.limits, |relative, reader| {
             let destination = dest_dir.join(relative);
@@ -465,13 +473,25 @@ struct TextFields {
     marketplace_edition: Option<String>,
 }
 
-async fn read_text_field(field: &mut Field, field_name: &str) -> Result<String, Error> {
+fn spend_extras(left: &mut u64, bytes: usize) -> Result<(), Error> {
+    *left = left
+        .checked_sub(bytes as u64)
+        .ok_or_else(|| actix_web::error::ErrorPayloadTooLarge("Form fields too large"))?;
+    Ok(())
+}
+
+async fn read_text_field(
+    field: &mut Field,
+    field_name: &str,
+    extras_left: &mut u64,
+) -> Result<String, Error> {
     let mut value = Vec::new();
     while let Some(chunk) = field.next().await {
         let data = chunk.map_err(|e| {
             warn!("Error reading {} chunk: {}", field_name, e);
             actix_web::error::ErrorBadRequest("Upload interrupted")
         })?;
+        spend_extras(extras_left, data.len())?;
         if value.len() + data.len() > MAX_TEXT_FIELD_BYTES {
             return Err(actix_web::error::ErrorPayloadTooLarge(format!(
                 "Field {} is too long",
@@ -841,5 +861,85 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(status(&err), 413);
+    }
+
+    #[actix_web::test]
+    async fn process_upload_refuses_a_second_file_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let service = service(dir.path(), UploadLimits::default());
+        let mut body = form_body(b"first", false);
+        body.extend_from_slice(
+            format!(
+                "\r\n--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"n.zip\"\r\n\r\nsecond\r\n--{BOUNDARY}--\r\n"
+            )
+            .as_bytes(),
+        );
+
+        let err = service
+            .process_upload(multipart(body, None))
+            .await
+            .unwrap_err();
+
+        assert_eq!(status(&err), 400);
+        let leftovers = fs::read_dir(dir.path().join("uploads")).unwrap().count();
+        assert_eq!(leftovers, 0, "the first file's temp dir is removed");
+    }
+
+    #[actix_web::test]
+    async fn process_upload_budgets_unknown_fields_across_the_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let service = service(dir.path(), UploadLimits::default());
+        let chunk = "z".repeat(MAX_FORM_EXTRAS_BYTES as usize / 2 + 1);
+        let mut body = String::new();
+        for _ in 0..2 {
+            body.push_str(&format!(
+                "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"junk\"\r\n\r\n{chunk}\r\n"
+            ));
+        }
+        body.push_str(&format!("--{BOUNDARY}--\r\n"));
+
+        let err = service
+            .process_upload(multipart(body.into_bytes(), None))
+            .await
+            .unwrap_err();
+
+        assert_eq!(status(&err), 413);
+    }
+
+    #[actix_web::test]
+    async fn process_uploaded_file_survives_an_entry_named_like_the_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let service = service(dir.path(), UploadLimits::default());
+        let temp = dir.path().join("uploads").join("u1");
+        fs::create_dir_all(&temp).unwrap();
+        write_zip(&temp.join("m.zip"), |writer| {
+            writer.start_file("m.zip", deflated()).unwrap();
+            writer.write_all(b"inner").unwrap();
+            writer.start_file("a.js", deflated()).unwrap();
+            writer.write_all(b"code").unwrap();
+        });
+        let meta = FileMetadata {
+            file_name: "m.zip".into(),
+            file_extension: Some("zip".into()),
+            upload_dir_path: dir.path().join("uploads"),
+            temp_dir_path: temp.clone(),
+            sha256: String::new(),
+            callback_url: None,
+            client_id: None,
+            module_key: None,
+            marketplace_listing_id: None,
+            marketplace_edition: None,
+        };
+
+        let files = service.process_uploaded_file(meta).await.unwrap();
+
+        let mut names: Vec<_> = files.iter().map(|f| f.file_name.clone()).collect();
+        names.sort();
+        assert_eq!(names, ["a.js", "m.zip"]);
+        assert!(
+            files
+                .iter()
+                .all(|f| f.temp_dir_path == temp.join(EXTRACT_DIR))
+        );
     }
 }
