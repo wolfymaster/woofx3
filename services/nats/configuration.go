@@ -68,6 +68,9 @@ var ErrPortsCollide = errors.New("the TCP and WebSocket listeners are set to the
 // Validate refuses a configuration the server must not start with. Each
 // problem is one the operator has to resolve; none has a safe guess.
 func (c *Configuration) Validate() error {
+	if strings.TrimSpace(c.Host) == "" {
+		return errors.New("messagebusHost is blank: a blank host must keep the loopback default")
+	}
 	if err := checkPort("messagebusServerListeningPort", c.Port); err != nil {
 		return err
 	}
@@ -91,7 +94,7 @@ func (c *Configuration) Load(path string) error {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err == nil {
-			return json.Unmarshal(data, c)
+			return c.applyFile(data)
 		}
 	}
 
@@ -119,11 +122,41 @@ func (c *Configuration) Load(path string) error {
 			if readErr != nil {
 				continue
 			}
-			return json.Unmarshal(data, c)
+			return c.applyFile(data)
 		}
 	}
 
 	return os.ErrNotExist
+}
+
+// applyFile sets the fields a config file holds. A key whose value is blank
+// (null, or a string that is empty once trimmed) is left out, so a "" left in
+// a template keeps the default instead of masking it, the same rule
+// config.MergeByPrecedence applies between sources.
+func (c *Configuration) applyFile(data []byte) error {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	for key, raw := range values {
+		if isBlankJSON(raw) {
+			delete(values, key)
+		}
+	}
+	filtered, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(filtered, c)
+}
+
+func isBlankJSON(raw json.RawMessage) bool {
+	var text *string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		// Not a string: a number, boolean, array or object is a value.
+		return false
+	}
+	return text == nil || strings.TrimSpace(*text) == ""
 }
 
 // The WOOFX3_MESSAGEBUS_* keys the server reads. A config file key arrives as

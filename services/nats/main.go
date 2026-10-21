@@ -40,16 +40,12 @@ func main() {
 	// default logger route through the shared transports as well.
 	slog.SetDefault(logger)
 
-	host := cfg.Host
-	if host == "" {
-		host = "0.0.0.0"
-	}
-	if reachableWithoutToken(host, cfg.Token) {
+	if reachableWithoutToken(cfg.Host, cfg.Token) {
 		logger.Warn("NATS listens beyond loopback without a token: anyone who can reach it can read and publish every engine message; set WOOFX3_MESSAGEBUS_TOKEN",
-			"host", host)
+			"host", cfg.Host)
 	}
 
-	ns, err := createServer(cfg, logger, host)
+	ns, err := createServer(cfg, logger)
 	if err != nil {
 		fatalExit(sharedLogger, "Failed to create server", "error", err)
 	}
@@ -101,11 +97,11 @@ func (e *configError) Error() string {
 	return e.msg
 }
 
-func createServer(cfg *Configuration, logger *slog.Logger, host string) (*server.Server, error) {
+func createServer(cfg *Configuration, logger *slog.Logger) (*server.Server, error) {
 	opts := &server.Options{
 		// The client (TCP) listener binds the same host as the WebSocket one;
 		// left unset, NATS binds it on every interface.
-		Host:   host,
+		Host:   cfg.Host,
 		Port:   cfg.Port,
 		NoLog:  cfg.NoLog,
 		NoSigs: cfg.NoSigs,
@@ -114,7 +110,7 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string) (*server
 		Authorization: cfg.Token,
 		DontListen:    cfg.TCPDisabled,
 		Websocket: server.WebsocketOpts{
-			Host:           host,
+			Host:           cfg.Host,
 			Port:           cfg.WebSocketPort,
 			NoTLS:          true,
 			SameOrigin:     cfg.WebSocketSameOrigin,

@@ -41,7 +41,7 @@ func startHardenedServer(t *testing.T) string {
 	cfg.WebSocketSameOrigin = true
 	cfg.WebSocketPort = freePort(t)
 
-	ns, err := createServer(cfg, slog.Default(), cfg.Host)
+	ns, err := createServer(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestAnOpenServerAdmitsAnyone(t *testing.T) {
 	cfg.Port = -1
 	cfg.WebSocketPort = freePort(t)
 	wsPort := cfg.WebSocketPort
-	ns, err := createServer(cfg, slog.Default(), cfg.Host)
+	ns, err := createServer(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}

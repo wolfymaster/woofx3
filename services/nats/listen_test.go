@@ -17,7 +17,7 @@ func TestTheServerListensOnLoopbackByDefault(t *testing.T) {
 	cfg.Port = -1
 	cfg.WebSocketPort = -1
 
-	ns, err := createServer(cfg, slog.Default(), cfg.Host)
+	ns, err := createServer(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
@@ -85,5 +85,50 @@ func TestAPortOfZeroFailsValidation(t *testing.T) {
 	cfg.WebSocketPort = 0
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate accepted WebSocket port 0")
+	}
+}
+
+// A blank messagebusHost, as a template ships it, means "not set" and keeps
+// the loopback default: NATS would otherwise bind every interface.
+func TestABlankHostStaysOnLoopback(t *testing.T) {
+	cases := []struct {
+		name   string
+		config string
+		env    string
+	}{
+		{name: "blank in the file", config: `{"messagebusHost": ""}`},
+		{name: "blank in the file, spelt as the template does", config: `{"messageBusHost": ""}`},
+		{name: "spaces in the file", config: `{"messagebusHost": "   "}`},
+		{name: "null in the file", config: `{"messagebusHost": null}`},
+		{name: "blank in the environment", config: `{}`, env: " "},
+		{name: "blank everywhere", config: `{"messagebusHost": ""}`, env: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateLocation(t)
+			t.Setenv("WOOFX3_MESSAGEBUS_HOST", tc.env)
+			path := writeFile(t, t.TempDir(), ".woofx3.json", tc.config)
+
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.Host != DefaultHost {
+				t.Fatalf("host = %q, want %q", cfg.Host, DefaultHost)
+			}
+		})
+	}
+}
+
+func TestABlankFileValueKeepsEachDefault(t *testing.T) {
+	isolateLocation(t)
+	path := writeFile(t, t.TempDir(), ".woofx3.json", `{"messagebusHost": "", "logLevel": "", "messagebusWebSocketPort": 4301}`)
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.WebSocketPort != 4301 || cfg.Port != DefaultClientPort || cfg.Host != DefaultHost {
+		t.Fatalf("config = %+v, want the file's WebSocket port and every other default", cfg)
 	}
 }
