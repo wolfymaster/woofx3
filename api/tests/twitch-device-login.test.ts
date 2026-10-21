@@ -85,18 +85,37 @@ function logins(
   const storeToken = mock(async (token: StoredPublicToken) => {
     stored.push(token);
   });
+  const logger = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) };
   let ids = 0;
   const manager = new TwitchDeviceLogins({
     clientId: opts.clientId === undefined ? "public-app" : opts.clientId,
     oauth: new TwitchOAuthClient({ baseUrl, now: () => NOW }),
     storeToken,
-    logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
+    logger: logger as never,
     now: opts.now ?? (() => NOW),
     schedule: opts.schedule ?? immediate().schedule,
     newId: () => `login-${++ids}`,
     random: opts.random ?? (() => 0.5),
   });
-  return { manager, stored, storeToken };
+  return { manager, stored, storeToken, logger };
+}
+
+/** A storeToken that waits until `release` is called, so a test can act while the token is being stored. */
+function heldStore(storeToken: ReturnType<typeof logins>["storeToken"], stored: StoredPublicToken[]) {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let storing: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    storing = resolve;
+  });
+  storeToken.mockImplementation(async (token: StoredPublicToken) => {
+    storing();
+    await held;
+    stored.push(token);
+  });
+  return { started, release };
 }
 
 async function settled(manager: TwitchDeviceLogins, loginId: string) {
@@ -239,6 +258,41 @@ describe("a device login", () => {
     expect(result.ok && result.state).toMatchObject({
       status: "failed",
       reason: "could not store the Twitch token: db proxy down",
+    });
+  });
+
+  test("a login whose token is being stored cannot be cancelled, and ends linked", async () => {
+    const twitch = fakeTwitch([ISSUED]);
+    const { manager, stored, storeToken } = logins(twitch.baseUrl);
+    const store = heldStore(storeToken, stored);
+
+    const login = await start(manager);
+    await store.started;
+    expect(manager.cancel(login.loginId)).toEqual({ cancelled: false });
+    store.release();
+
+    expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
+    expect(stored).toHaveLength(1);
+  });
+
+  test("a login replaced while its token is being stored still ends linked", async () => {
+    const twitch = fakeTwitch([ISSUED]);
+    const { manager, stored, storeToken, logger } = logins(twitch.baseUrl);
+    const store = heldStore(storeToken, stored);
+
+    const first = await start(manager);
+    await store.started;
+    await start(manager);
+    expect(manager.get(first.loginId)).toMatchObject({ ok: false, code: "not_found" });
+    store.release();
+
+    for (let i = 0; i < 200 && stored.length === 0; i++) {
+      await Bun.sleep(2);
+    }
+    await Bun.sleep(2);
+    expect(logger.info).toHaveBeenCalledWith("twitch device login linked", {
+      loginId: first.loginId,
+      twitchUserId: "42",
     });
   });
 

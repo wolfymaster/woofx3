@@ -48,6 +48,12 @@ interface Login {
   linked?: { userId: string; login: string };
   /** Consecutive polls Twitch could not answer, for the retry backoff. */
   unavailableStreak: number;
+  /**
+   * The issued token is being stored. Past this point the login can no
+   * longer be called off: the token lands, so the login ends linked (or
+   * failed, if the write fails) whatever is asked of it meanwhile.
+   */
+  storing: boolean;
   cancelTimer: (() => void) | null;
   /** Aborts the poll in flight when the login is cancelled or replaced, or the engine stops. */
   abort: AbortController;
@@ -114,6 +120,7 @@ export class TwitchDeviceLogins {
       intervalMs: authorization.intervalSeconds * 1000,
       status: "pending",
       unavailableStreak: 0,
+      storing: false,
       cancelTimer: null,
       abort: new AbortController(),
     };
@@ -139,9 +146,13 @@ export class TwitchDeviceLogins {
     return { ok: true, state: stateOf(login) };
   }
 
+  /**
+   * Call off a pending login. One whose token is already being stored is not
+   * cancelled: it ends linked, and stays readable with `get`.
+   */
   cancel(loginId: string): { cancelled: boolean } {
     const login = this.find(loginId);
-    if (!login) {
+    if (!login || login.storing) {
       return { cancelled: false };
     }
     const wasPending = login.status === "pending";
@@ -171,7 +182,7 @@ export class TwitchDeviceLogins {
     login.cancelTimer?.();
     login.cancelTimer = null;
     login.abort.abort();
-    if (login.status === "pending") {
+    if (login.status === "pending" && !login.storing) {
       // Ended here so a poll still in flight sees it is no longer wanted.
       login.status = "failed";
       login.reason = "cancelled";
@@ -249,6 +260,7 @@ export class TwitchDeviceLogins {
     if (login.status !== "pending") {
       return;
     }
+    login.storing = true;
     try {
       await this.opts.storeToken({ ...token, userId: validation.userId, publicClientId: clientId });
     } catch (err) {

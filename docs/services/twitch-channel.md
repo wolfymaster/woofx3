@@ -360,6 +360,11 @@ and a connected one reloads. The stored token has its refresh token and no
 names the public app that refreshes it (see
 [Who renews the token](#who-renews-the-token)).
 
+Storing the token is the point of no return: once it has started, cancelling
+the login answers `cancelled: false` and the login still ends `linked`. A
+login started meanwhile replaces it, but its token still lands and is
+announced.
+
 ## Ad breaks
 
 Mid-roll ads are the break viewers notice most. The engine gives a creator
