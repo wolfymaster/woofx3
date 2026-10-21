@@ -89,7 +89,7 @@ docker run --detach --name "$CONTAINER_NAME" \
   --env "WOOFX3_SCENE_MANAGER_TOKEN_SECRET=check-scene-manager-secret" \
   --env "WOOFX3_REGISTRATION_TOKEN=${REGISTRATION_TOKEN}" \
   --env "WOOFX3_SCENE_MANAGER_URL=${BASE_URL}" \
-  --env "WOOFX3_TWITCH_CLIENT_ID=check-twitch-client-id" \
+  --env "WOOFX3_TWITCH_CLIENT_ID=checktwitchclientid" \
   --env "WOOFX3_TWITCH_CLIENT_SECRET=check-twitch-client-secret" \
   "$IMAGE" >/dev/null
 
