@@ -151,27 +151,24 @@ func isTerminalStatus(status types.ExecutionStatus) bool {
 	return false
 }
 
-// registerRun gives a new run its cancellation state and its `${viewer.*}`
-// loader. Caller holds executionsMu.
+// newRunControl gives a new run its cancellation state and its
+// `${viewer.*}` loader.
 //
 // Each run's context derives from Background rather than the engine's own:
 // Stop ends the engine, and it is not a request to cancel every run in flight,
 // which would record as cancelled runs nobody asked to stop. Stop gives runs
 // time to finish and abandons the rest one by one (see abandonRun).
-func (e *Engine[TServices]) registerRunLocked(executionID string, viewer *runViewer) *runControl {
+func newRunControl(executionID string, viewer *runViewer) *runControl {
 	if viewer == nil {
 		panic(fmt.Sprintf("engine: run %s registered without a viewer loader", executionID))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ctl := &runControl{ctx: ctx, cancel: cancel, viewer: viewer}
-	e.controls[executionID] = ctl
-	return ctl
+	return &runControl{ctx: ctx, cancel: cancel, viewer: viewer}
 }
 
 func (e *Engine[TServices]) control(executionID string) *runControl {
-	e.executionsMu.RLock()
-	defer e.executionsMu.RUnlock()
-	return e.controls[executionID]
+	_, ctl, _ := e.runs.get(executionID)
+	return ctl
 }
 
 // runContext is the context a run's tasks see. A run with no control -- one
@@ -203,11 +200,8 @@ func (e *Engine[TServices]) Cancel(executionID, reason string) (CancelResult, er
 		reason = "cancelled by user"
 	}
 
-	e.executionsMu.RLock()
-	execution := e.executions[executionID]
-	ctl := e.controls[executionID]
-	e.executionsMu.RUnlock()
-	if execution == nil || ctl == nil {
+	execution, ctl, ok := e.runs.get(executionID)
+	if !ok {
 		return CancelResult{}, fmt.Errorf("%w: %s", ErrExecutionNotFound, executionID)
 	}
 

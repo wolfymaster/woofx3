@@ -69,13 +69,13 @@ type Engine[TServices any] struct {
 	workflowRegistry *WorkflowRegistry
 	taskRegistry     *tasks.TaskRegistry
 	actionRegistry   *tasks.ActionRegistry[TServices]
-	executions       map[string]*types.WorkflowExecution
-	// controls holds each run's cancellation state, keyed like executions and
-	// guarded by executionsMu. An entry must live exactly as long as the
-	// run's entry in executions; neither map is pruned today, so a pruning
-	// pass added later has to delete from both.
-	controls             map[string]*runControl
-	executionsMu         sync.RWMutex
+	runs             *runTable
+	// retention bounds how long settled runs stay in runs; the sweep in Start
+	// applies it.
+	retention RetentionConfig
+	// now is the engine's clock for run retention, injected so tests can age
+	// settled runs without waiting.
+	now                  func() time.Time
 	waitingExecutions    map[string][]*WaitingExecution // eventType -> waiting executions
 	armedWaits           map[*WaitingExecution]struct{} // unsettled waits; see armWaitLocked
 	waitingMu            sync.RWMutex
@@ -159,8 +159,9 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 		workflowRegistry:   NewWorkflowRegistry(),
 		taskRegistry:       tasks.NewTaskRegistry(),
 		actionRegistry:     tasks.NewActionRegistry[TServices](),
-		executions:         make(map[string]*types.WorkflowExecution),
-		controls:           make(map[string]*runControl),
+		runs:               newRunTable(),
+		retention:          DefaultRetentionConfig(),
+		now:                time.Now,
 		waitingExecutions:  make(map[string][]*WaitingExecution),
 		armedWaits:         make(map[*WaitingExecution]struct{}),
 		subWorkflowWaiters: make(map[string][]*SubWorkflowWaiter),
@@ -683,9 +684,7 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 			continue
 		}
 
-		e.executionsMu.RLock()
-		execution := e.executions[w.ExecutionID]
-		e.executionsMu.RUnlock()
+		execution, _, _ := e.runs.get(w.ExecutionID)
 
 		if execution == nil {
 			continue
@@ -807,9 +806,7 @@ func (e *Engine[TServices]) expireWait(w *WaitingExecution) {
 		}
 	}
 
-	e.executionsMu.RLock()
-	execution := e.executions[w.ExecutionID]
-	e.executionsMu.RUnlock()
+	execution, _, _ := e.runs.get(w.ExecutionID)
 	if execution == nil {
 		e.waitingMu.Unlock()
 		return
@@ -978,13 +975,11 @@ func (e *Engine[TServices]) beginRun(wf *types.WorkflowDefinition, event *types.
 		Ephemeral:    wf.Ephemeral,
 	}
 
-	e.executionsMu.Lock()
-	e.executions[execution.ID] = execution
-	ctl := e.registerRunLocked(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
-	// Marked under the lock Cancel and Stop find runs through, so neither can
-	// see a queued run before it reads as queued.
+	ctl := newRunControl(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
+	// Marked before the run is in the table Cancel and Stop find runs through,
+	// so neither can see a queued run before it reads as queued.
 	ctl.queued = start == runQueued
-	e.executionsMu.Unlock()
+	e.runs.put(execution, ctl)
 
 	if start == runQueued {
 		e.logger.Info("Queued workflow execution for its turn", "workflow", wf.ID, "execution", execution.ID)
@@ -1687,8 +1682,11 @@ func (e *Engine[TServices]) setExecutionStatus(
 	// reach here today, but stamping CompletedAt on a paused run would make it
 	// look finished to everything that reads these rows.
 	if isTerminalStatus(status) {
-		now := time.Now()
+		now := e.now()
 		execution.CompletedAt = &now
+		// Stamped before the outcome is announced, so whoever hears it can
+		// rely on the run's retention having started.
+		e.runs.settle(execution.ID, now)
 	}
 	e.emitRunLifecycle(execution)
 	e.recordRunSettled(execution)
@@ -1933,9 +1931,7 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 
 	// Check if the sub-workflow has completed
 	subExecutionID := taskExec.WorkflowState.ExecutionID
-	e.executionsMu.RLock()
-	subExecution, exists := e.executions[subExecutionID]
-	e.executionsMu.RUnlock()
+	subExecution, _, exists := e.runs.get(subExecutionID)
 
 	if !exists {
 		return "failed", fmt.Errorf("sub-workflow run %s not found", subExecutionID)
@@ -1973,10 +1969,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 		Variables:    make(map[string]any),
 	}
 
-	e.executionsMu.Lock()
-	e.executions[executionID] = execution
-	e.registerRunLocked(executionID, newRunViewer(viewerTrigger(wf), event, e.newViewerLoader(viewerTrigger(wf), event)))
-	e.executionsMu.Unlock()
+	e.runs.put(execution, newRunControl(executionID, newRunViewer(viewerTrigger(wf), event, e.newViewerLoader(viewerTrigger(wf), event))))
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
 
@@ -2032,9 +2025,7 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 	e.subWorkflowWaitersMu.Unlock()
 
 	// Get the sub-execution status
-	e.executionsMu.RLock()
-	subExecution, exists := e.executions[subExecutionID]
-	e.executionsMu.RUnlock()
+	subExecution, _, exists := e.runs.get(subExecutionID)
 
 	if !exists {
 		return
@@ -2050,9 +2041,7 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 }
 
 func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter, subExecution *types.WorkflowExecution) {
-	e.executionsMu.RLock()
-	execution := e.executions[waiter.ParentExecutionID]
-	e.executionsMu.RUnlock()
+	execution, _, _ := e.runs.get(waiter.ParentExecutionID)
 
 	if execution == nil {
 		return
@@ -2105,10 +2094,7 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 // resumeWait continues a run whose wait has been settled, by re-entering the
 // wait task so runTasksFrom applies the outcome the wait state records.
 func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
-	e.executionsMu.RLock()
-	execution := e.executions[w.ExecutionID]
-	ctl := e.controls[w.ExecutionID]
-	e.executionsMu.RUnlock()
+	execution, ctl, _ := e.runs.get(w.ExecutionID)
 
 	if execution == nil {
 		return
@@ -2244,21 +2230,65 @@ func publishTaskResultExports(taskExports map[string]map[string]any, taskID stri
 }
 
 func (e *Engine[TServices]) GetExecution(id string) (*types.WorkflowExecution, error) {
-	e.executionsMu.RLock()
-	defer e.executionsMu.RUnlock()
-
-	exec, ok := e.executions[id]
+	exec, _, ok := e.runs.get(id)
 	if !ok {
 		return nil, fmt.Errorf("execution not found: %s", id)
 	}
 	return exec, nil
 }
 
+// SetRetention sets how long settled runs are kept in memory. Call it before
+// Start, which reads it once.
+func (e *Engine[TServices]) SetRetention(retention RetentionConfig) error {
+	if err := retention.Validate(); err != nil {
+		return err
+	}
+	e.retention = retention
+	return nil
+}
+
+// Start runs the engine until ctx is done or Stop is called. Runs execute on
+// goroutines of their own; what Start owns is the sweep that evicts settled
+// runs, so the sweep ends with the engine.
 func (e *Engine[TServices]) Start(ctx context.Context) error {
 	e.logger.Info("Workflow engine started")
-	<-ctx.Done()
-	e.logger.Info("Workflow engine stopping")
-	return nil
+	ticker := time.NewTicker(e.retention.SweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			e.logger.Info("Workflow engine stopping")
+			return nil
+		case <-e.ctx.Done():
+			e.logger.Info("Workflow engine stopping")
+			return nil
+		case <-ticker.C:
+			e.guard("run sweep", runRef{}, e.sweepSettledRuns)
+		}
+	}
+}
+
+// sweepSettledRuns evicts settled runs past their retention, or over the cap.
+//
+// A sub-workflow a parent is registered as waiting on is kept, and so is that
+// parent: checkSubWorkflowCompletion reads the settled child to resume the
+// parent. The waiters lock is held across the sweep so no waiter can be
+// registered for a run between deciding to evict it and evicting it.
+func (e *Engine[TServices]) sweepSettledRuns() {
+	e.subWorkflowWaitersMu.RLock()
+	defer e.subWorkflowWaitersMu.RUnlock()
+
+	pinned := make(map[string]bool, len(e.subWorkflowWaiters))
+	for childID, waiters := range e.subWorkflowWaiters {
+		pinned[childID] = true
+		for _, waiter := range waiters {
+			pinned[waiter.ParentExecutionID] = true
+		}
+	}
+	evicted := e.runs.sweep(e.now(), e.retention, func(executionID string) bool { return pinned[executionID] })
+	if evicted > 0 {
+		e.logger.Debug("Evicted settled workflow runs", "count", evicted)
+	}
 }
 
 // Stop ends the engine, leaving no run without a recorded outcome.
@@ -2305,16 +2335,7 @@ type abandonedRun struct {
 
 // unsettledRuns lists the runs that have no outcome yet.
 func (e *Engine[TServices]) unsettledRuns() []*abandonedRun {
-	e.executionsMu.RLock()
-	defer e.executionsMu.RUnlock()
-
-	var unsettled []*abandonedRun
-	for id, ctl := range e.controls {
-		if execution := e.executions[id]; execution != nil && !ctl.isSettled() {
-			unsettled = append(unsettled, &abandonedRun{execution: execution, control: ctl})
-		}
-	}
-	return unsettled
+	return e.runs.snapshotUnsettled()
 }
 
 // pausedAtWait lists the unsettled runs that have a wait armed.

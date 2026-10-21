@@ -71,10 +71,8 @@ func (e *Engine[TServices]) recoverRun(name string, run runRef) {
 		return
 	}
 
-	e.executionsMu.RLock()
-	execution := e.executions[run.executionID]
-	e.executionsMu.RUnlock()
-	if execution == nil {
+	execution, _, ok := e.runs.get(run.executionID)
+	if !ok {
 		return
 	}
 	// A run that settled before the panic keeps its outcome: claimSettle
