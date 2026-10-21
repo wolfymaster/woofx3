@@ -40,9 +40,10 @@ func main() {
 	// default logger route through the shared transports as well.
 	slog.SetDefault(logger)
 
-	if reachableWithoutToken(cfg.Host, cfg.Token) {
-		logger.Warn("NATS listens beyond loopback without a token: anyone who can reach it can read and publish every engine message; set WOOFX3_MESSAGEBUS_TOKEN",
-			"host", cfg.Host)
+	if cfg.Token == "" {
+		logger.Warn("NATS RUNS WITHOUT AUTHENTICATION (WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED=true): any process that can reach it can read and publish every engine message, including requests for the Twitch token; set WOOFX3_MESSAGEBUS_TOKEN instead",
+			"host", cfg.Host,
+			"reachable_beyond_loopback", !isLoopbackHost(cfg.Host))
 	}
 
 	ns, err := createServer(cfg, logger)

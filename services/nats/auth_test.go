@@ -18,7 +18,8 @@ import (
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 )
 
-const testToken = "integration-s3cret"
+// testToken passes config.ValidateSecret, as the server requires at startup.
+const testToken = "integration-s3cret-0123456789abcdef"
 
 // freePort returns a loopback port nothing is listening on.
 func freePort(t *testing.T) int {

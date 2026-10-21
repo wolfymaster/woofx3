@@ -4,7 +4,10 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"path/filepath"
 	"testing"
+
+	"github.com/wolfymaster/woofx3/common/config"
 )
 
 func TestTheServerListensOnLoopbackByDefault(t *testing.T) {
@@ -32,27 +35,33 @@ func TestTheServerListensOnLoopbackByDefault(t *testing.T) {
 	}
 }
 
-func TestReachableWithoutToken(t *testing.T) {
+func TestIsLoopbackHost(t *testing.T) {
 	cases := []struct {
-		host  string
-		token string
-		want  bool
+		host string
+		want bool
 	}{
-		{host: "127.0.0.1", want: false},
-		{host: "::1", want: false},
-		{host: "localhost", want: false},
-		{host: "0.0.0.0", want: true},
-		{host: "192.168.1.20", want: true},
-		{host: "nats.internal", want: true},
-		{host: "0.0.0.0", token: "s3cret", want: false},
+		{host: "127.0.0.1", want: true},
+		{host: "::1", want: true},
+		{host: "localhost", want: true},
+		{host: "0.0.0.0", want: false},
+		{host: "192.168.1.20", want: false},
+		{host: "nats.internal", want: false},
 	}
 	for _, tc := range cases {
-		t.Run(tc.host+"/token="+tc.token, func(t *testing.T) {
-			if got := reachableWithoutToken(tc.host, tc.token); got != tc.want {
-				t.Errorf("reachableWithoutToken(%q, %q) = %v, want %v", tc.host, tc.token, got, tc.want)
+		t.Run(tc.host, func(t *testing.T) {
+			if got := isLoopbackHost(tc.host); got != tc.want {
+				t.Errorf("isLoopbackHost(%q) = %v, want %v", tc.host, got, tc.want)
 			}
 		})
 	}
+}
+
+// validConfiguration is the default configuration with the one setting it
+// cannot start without.
+func validConfiguration() *Configuration {
+	cfg := DefaultConfiguration()
+	cfg.Token = testToken
+	return cfg
 }
 
 func TestValidateRefusesListenersOnOnePort(t *testing.T) {
@@ -69,7 +78,7 @@ func TestValidateRefusesListenersOnOnePort(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := DefaultConfiguration()
+			cfg := validConfiguration()
 			cfg.Port = tc.port
 			cfg.WebSocketPort = tc.wsPort
 			cfg.TCPDisabled = tc.tcpDisabled
@@ -81,7 +90,7 @@ func TestValidateRefusesListenersOnOnePort(t *testing.T) {
 }
 
 func TestAPortOfZeroFailsValidation(t *testing.T) {
-	cfg := DefaultConfiguration()
+	cfg := validConfiguration()
 	cfg.WebSocketPort = 0
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate accepted WebSocket port 0")
@@ -153,12 +162,72 @@ func TestValidateChecksTheAllowedOrigins(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := DefaultConfiguration()
+			cfg := validConfiguration()
 			cfg.WebSocketSameOrigin = tc.sameOrigin
 			cfg.WebSocketAllowedOrigins = tc.origins
 			if err := cfg.Validate(); !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Validate() = %v, want %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestStartupRequiresAToken loads each case the way main does, from a config
+// file and the environment.
+func TestStartupRequiresAToken(t *testing.T) {
+	cases := []struct {
+		name    string
+		token   string
+		optOut  string
+		wantErr error
+		wantAny bool
+	}{
+		{name: "a token", token: testToken},
+		{name: "no token", wantErr: ErrNoToken},
+		{name: "a blank token", token: "   ", wantErr: ErrNoToken},
+		{name: "no token, opted out", optOut: "true"},
+		{name: "no token, opt-out false", optOut: "false", wantErr: ErrNoToken},
+		{name: "a token, opted out", token: testToken, optOut: "true"},
+		{name: "a short token", token: "s3cret", wantErr: config.ErrSecretTooShort},
+		{name: "a placeholder token", token: "CHANGE_ME", wantErr: config.ErrSecretPlaceholder},
+		{name: "a short token, opted out", token: "s3cret", optOut: "true", wantErr: config.ErrSecretTooShort},
+		{name: "opt-out garbage", optOut: "yes", wantAny: true},
+		{name: "opt-out 1", optOut: "1", wantAny: true},
+		{name: "opt-out in capitals", optOut: "TRUE", wantAny: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateLocation(t)
+			t.Setenv("WOOFX3_MESSAGEBUS_TOKEN", tc.token)
+			t.Setenv("WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED", tc.optOut)
+			root := t.TempDir()
+			path := writeFile(t, root, ".woofx3.json", `{"rootPath": "`+filepath.ToSlash(root)+`"}`)
+
+			_, err := loadConfiguration(path)
+			switch {
+			case tc.wantAny:
+				if err == nil {
+					t.Fatalf("loadConfiguration accepted WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED=%q", tc.optOut)
+				}
+			case !errors.Is(err, tc.wantErr):
+				t.Fatalf("loadConfiguration() = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestTheOptOutIsReadFromTheConfigFile(t *testing.T) {
+	isolateLocation(t)
+	t.Setenv("WOOFX3_MESSAGEBUS_TOKEN", "")
+	t.Setenv("WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED", "")
+	root := t.TempDir()
+	path := writeFile(t, root, ".woofx3.json", `{"rootPath": "`+filepath.ToSlash(root)+`", "messagebusAllowUnauthenticated": true}`)
+
+	cfg, err := loadConfiguration(path)
+	if err != nil {
+		t.Fatalf("loadConfiguration: %v", err)
+	}
+	if !cfg.AllowUnauthenticated {
+		t.Fatal("messagebusAllowUnauthenticated: true in the file was not read")
 	}
 }
