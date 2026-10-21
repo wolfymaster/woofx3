@@ -306,6 +306,154 @@ impl<'de> serde::Deserialize<'de> for Alert {
         deserializer.deserialize_struct("alert.Alert", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for AlertHourCount {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.hour != 0 {
+            len += 1;
+        }
+        if !self.status.is_empty() {
+            len += 1;
+        }
+        if self.unconfirmed {
+            len += 1;
+        }
+        if self.count != 0 {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("alert.AlertHourCount", len)?;
+        if self.hour != 0 {
+            struct_ser.serialize_field("hour", &self.hour)?;
+        }
+        if !self.status.is_empty() {
+            struct_ser.serialize_field("status", &self.status)?;
+        }
+        if self.unconfirmed {
+            struct_ser.serialize_field("unconfirmed", &self.unconfirmed)?;
+        }
+        if self.count != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("count", ToString::to_string(&self.count).as_str())?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for AlertHourCount {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "hour",
+            "status",
+            "unconfirmed",
+            "count",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Hour,
+            Status,
+            Unconfirmed,
+            Count,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "hour" => Ok(GeneratedField::Hour),
+                            "status" => Ok(GeneratedField::Status),
+                            "unconfirmed" => Ok(GeneratedField::Unconfirmed),
+                            "count" => Ok(GeneratedField::Count),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = AlertHourCount;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct alert.AlertHourCount")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<AlertHourCount, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut hour__ = None;
+                let mut status__ = None;
+                let mut unconfirmed__ = None;
+                let mut count__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Hour => {
+                            if hour__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("hour"));
+                            }
+                            hour__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Unconfirmed => {
+                            if unconfirmed__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("unconfirmed"));
+                            }
+                            unconfirmed__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Count => {
+                            if count__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("count"));
+                            }
+                            count__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                    }
+                }
+                Ok(AlertHourCount {
+                    hour: hour__.unwrap_or_default(),
+                    status: status__.unwrap_or_default(),
+                    unconfirmed: unconfirmed__.unwrap_or_default(),
+                    count: count__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("alert.AlertHourCount", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for AlertResponse {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -412,6 +560,242 @@ impl<'de> serde::Deserialize<'de> for AlertResponse {
             }
         }
         deserializer.deserialize_struct("alert.AlertResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for CountAlertsByHourRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.since.is_some() {
+            len += 1;
+        }
+        if self.hours != 0 {
+            len += 1;
+        }
+        if self.unconfirmed_before.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("alert.CountAlertsByHourRequest", len)?;
+        if let Some(v) = self.since.as_ref() {
+            struct_ser.serialize_field("since", v)?;
+        }
+        if self.hours != 0 {
+            struct_ser.serialize_field("hours", &self.hours)?;
+        }
+        if let Some(v) = self.unconfirmed_before.as_ref() {
+            struct_ser.serialize_field("unconfirmedBefore", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CountAlertsByHourRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "since",
+            "hours",
+            "unconfirmed_before",
+            "unconfirmedBefore",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Since,
+            Hours,
+            UnconfirmedBefore,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "since" => Ok(GeneratedField::Since),
+                            "hours" => Ok(GeneratedField::Hours),
+                            "unconfirmedBefore" | "unconfirmed_before" => Ok(GeneratedField::UnconfirmedBefore),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CountAlertsByHourRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct alert.CountAlertsByHourRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CountAlertsByHourRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut since__ = None;
+                let mut hours__ = None;
+                let mut unconfirmed_before__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Since => {
+                            if since__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("since"));
+                            }
+                            since__ = map_.next_value()?;
+                        }
+                        GeneratedField::Hours => {
+                            if hours__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("hours"));
+                            }
+                            hours__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::UnconfirmedBefore => {
+                            if unconfirmed_before__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("unconfirmedBefore"));
+                            }
+                            unconfirmed_before__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(CountAlertsByHourRequest {
+                    since: since__,
+                    hours: hours__.unwrap_or_default(),
+                    unconfirmed_before: unconfirmed_before__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("alert.CountAlertsByHourRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for CountAlertsByHourResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.counts.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("alert.CountAlertsByHourResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.counts.is_empty() {
+            struct_ser.serialize_field("counts", &self.counts)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for CountAlertsByHourResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "counts",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Counts,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "counts" => Ok(GeneratedField::Counts),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = CountAlertsByHourResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct alert.CountAlertsByHourResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<CountAlertsByHourResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut counts__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Counts => {
+                            if counts__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("counts"));
+                            }
+                            counts__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(CountAlertsByHourResponse {
+                    status: status__,
+                    counts: counts__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("alert.CountAlertsByHourResponse", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for CreateAlertRequest {

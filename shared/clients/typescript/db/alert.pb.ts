@@ -150,6 +150,39 @@ export interface ListAlertsResponse {
   offset: number;
 }
 
+/**
+ * Counts the alerts created in `hours` whole hours from `since`, by hour,
+ * status and whether the alert is unconfirmed. `since` is on the hour, and
+ * `hours` is 1 to 168; anything else is INVALID_ARGUMENT.
+ *
+ * An alert is unconfirmed when its status is not settled (completed, failed,
+ * timed_out, skipped, replayed) and it was last written before
+ * `unconfirmed_before`: nothing has reported on it for long enough that no
+ * report is coming. The caller chooses the bound, since it owns the clock.
+ */
+export interface CountAlertsByHourRequest {
+  since: protoscript.Timestamp;
+  hours: number;
+  unconfirmedBefore: protoscript.Timestamp;
+}
+
+/**
+ * How many alerts created in hour `hour` of the window (0 is the hour that
+ * starts at `since`) hold `status`. Only combinations with a count above
+ * zero are listed.
+ */
+export interface AlertHourCount {
+  hour: number;
+  status: string;
+  unconfirmed: boolean;
+  count: bigint;
+}
+
+export interface CountAlertsByHourResponse {
+  status: common.ResponseStatus;
+  counts: AlertHourCount[];
+}
+
 export interface UpdateAlertStatusRequest {
   id: string;
   status: string;
@@ -209,6 +242,18 @@ export async function ListAlerts(
     config,
   );
   return ListAlertsResponse.decode(response);
+}
+
+export async function CountAlertsByHour(
+  countAlertsByHourRequest: CountAlertsByHourRequest,
+  config?: ClientConfiguration,
+): Promise<CountAlertsByHourResponse> {
+  const response = await PBrequest(
+    "/alert.AlertService/CountAlertsByHour",
+    CountAlertsByHourRequest.encode(countAlertsByHourRequest),
+    config,
+  );
+  return CountAlertsByHourResponse.decode(response);
 }
 
 export async function UpdateAlertStatus(
@@ -299,6 +344,18 @@ export async function ListAlertsJSON(
   return ListAlertsResponseJSON.decode(response);
 }
 
+export async function CountAlertsByHourJSON(
+  countAlertsByHourRequest: CountAlertsByHourRequest,
+  config?: ClientConfiguration,
+): Promise<CountAlertsByHourResponse> {
+  const response = await JSONrequest(
+    "/alert.AlertService/CountAlertsByHour",
+    CountAlertsByHourRequestJSON.encode(countAlertsByHourRequest),
+    config,
+  );
+  return CountAlertsByHourResponseJSON.decode(response);
+}
+
 export async function UpdateAlertStatusJSON(
   updateAlertStatusRequest: UpdateAlertStatusRequest,
   config?: ClientConfiguration,
@@ -372,6 +429,10 @@ export interface AlertService<Context = unknown> {
     listAlertsRequest: ListAlertsRequest,
     context: Context,
   ) => Promise<ListAlertsResponse> | ListAlertsResponse;
+  CountAlertsByHour: (
+    countAlertsByHourRequest: CountAlertsByHourRequest,
+    context: Context,
+  ) => Promise<CountAlertsByHourResponse> | CountAlertsByHourResponse;
   UpdateAlertStatus: (
     updateAlertStatusRequest: UpdateAlertStatusRequest,
     context: Context,
@@ -416,6 +477,18 @@ export function createAlertService<Context>(service: AlertService<Context>) {
         handler: service.ListAlerts,
         input: { protobuf: ListAlertsRequest, json: ListAlertsRequestJSON },
         output: { protobuf: ListAlertsResponse, json: ListAlertsResponseJSON },
+      },
+      CountAlertsByHour: {
+        name: "CountAlertsByHour",
+        handler: service.CountAlertsByHour,
+        input: {
+          protobuf: CountAlertsByHourRequest,
+          json: CountAlertsByHourRequestJSON,
+        },
+        output: {
+          protobuf: CountAlertsByHourResponse,
+          json: CountAlertsByHourResponseJSON,
+        },
       },
       UpdateAlertStatus: {
         name: "UpdateAlertStatus",
@@ -1213,6 +1286,275 @@ export const ListAlertsResponse = {
         }
         case 5: {
           msg.offset = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CountAlertsByHourRequest = {
+  /**
+   * Serializes CountAlertsByHourRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<CountAlertsByHourRequest>): Uint8Array {
+    return CountAlertsByHourRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CountAlertsByHourRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CountAlertsByHourRequest {
+    return CountAlertsByHourRequest._readMessage(
+      CountAlertsByHourRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CountAlertsByHourRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountAlertsByHourRequest>,
+  ): CountAlertsByHourRequest {
+    return {
+      since: protoscript.Timestamp.initialize(),
+      hours: 0,
+      unconfirmedBefore: protoscript.Timestamp.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountAlertsByHourRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.since) {
+      writer.writeMessage(1, msg.since, protoscript.Timestamp._writeMessage);
+    }
+    if (msg.hours) {
+      writer.writeInt32(2, msg.hours);
+    }
+    if (msg.unconfirmedBefore) {
+      writer.writeMessage(
+        3,
+        msg.unconfirmedBefore,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountAlertsByHourRequest,
+    reader: protoscript.BinaryReader,
+  ): CountAlertsByHourRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.since, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 2: {
+          msg.hours = reader.readInt32();
+          break;
+        }
+        case 3: {
+          reader.readMessage(
+            msg.unconfirmedBefore,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const AlertHourCount = {
+  /**
+   * Serializes AlertHourCount to protobuf.
+   */
+  encode: function (msg: PartialDeep<AlertHourCount>): Uint8Array {
+    return AlertHourCount._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes AlertHourCount from protobuf.
+   */
+  decode: function (bytes: ByteSource): AlertHourCount {
+    return AlertHourCount._readMessage(
+      AlertHourCount.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes AlertHourCount with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<AlertHourCount>): AlertHourCount {
+    return {
+      hour: 0,
+      status: "",
+      unconfirmed: false,
+      count: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<AlertHourCount>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.hour) {
+      writer.writeInt32(1, msg.hour);
+    }
+    if (msg.status) {
+      writer.writeString(2, msg.status);
+    }
+    if (msg.unconfirmed) {
+      writer.writeBool(3, msg.unconfirmed);
+    }
+    if (msg.count) {
+      writer.writeInt64String(4, msg.count.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: AlertHourCount,
+    reader: protoscript.BinaryReader,
+  ): AlertHourCount {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.hour = reader.readInt32();
+          break;
+        }
+        case 2: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.unconfirmed = reader.readBool();
+          break;
+        }
+        case 4: {
+          msg.count = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CountAlertsByHourResponse = {
+  /**
+   * Serializes CountAlertsByHourResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<CountAlertsByHourResponse>): Uint8Array {
+    return CountAlertsByHourResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CountAlertsByHourResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CountAlertsByHourResponse {
+    return CountAlertsByHourResponse._readMessage(
+      CountAlertsByHourResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CountAlertsByHourResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountAlertsByHourResponse>,
+  ): CountAlertsByHourResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      counts: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountAlertsByHourResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.counts?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.counts as any,
+        AlertHourCount._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountAlertsByHourResponse,
+    reader: protoscript.BinaryReader,
+  ): CountAlertsByHourResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = AlertHourCount.initialize();
+          reader.readMessage(m, AlertHourCount._readMessage);
+          msg.counts.push(m);
           break;
         }
         default: {
@@ -2024,6 +2366,236 @@ export const ListAlertsResponseJSON = {
     const _offset_ = json["offset"];
     if (_offset_) {
       msg.offset = protoscript.parseNumber(_offset_);
+    }
+    return msg;
+  },
+};
+
+export const CountAlertsByHourRequestJSON = {
+  /**
+   * Serializes CountAlertsByHourRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CountAlertsByHourRequest>): string {
+    return JSON.stringify(CountAlertsByHourRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CountAlertsByHourRequest from JSON.
+   */
+  decode: function (json: string): CountAlertsByHourRequest {
+    return CountAlertsByHourRequestJSON._readMessage(
+      CountAlertsByHourRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CountAlertsByHourRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountAlertsByHourRequest>,
+  ): CountAlertsByHourRequest {
+    return {
+      since: protoscript.TimestampJSON.initialize(),
+      hours: 0,
+      unconfirmedBefore: protoscript.TimestampJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountAlertsByHourRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.since && (msg.since.seconds || msg.since.nanos)) {
+      json["since"] = protoscript.serializeTimestamp(msg.since);
+    }
+    if (msg.hours) {
+      json["hours"] = msg.hours;
+    }
+    if (
+      msg.unconfirmedBefore &&
+      (msg.unconfirmedBefore.seconds || msg.unconfirmedBefore.nanos)
+    ) {
+      json["unconfirmedBefore"] = protoscript.serializeTimestamp(
+        msg.unconfirmedBefore,
+      );
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountAlertsByHourRequest,
+    json: any,
+  ): CountAlertsByHourRequest {
+    const _since_ = json["since"];
+    if (_since_) {
+      msg.since = protoscript.parseTimestamp(_since_);
+    }
+    const _hours_ = json["hours"];
+    if (_hours_) {
+      msg.hours = protoscript.parseNumber(_hours_);
+    }
+    const _unconfirmedBefore_ =
+      json["unconfirmedBefore"] ?? json["unconfirmed_before"];
+    if (_unconfirmedBefore_) {
+      msg.unconfirmedBefore = protoscript.parseTimestamp(_unconfirmedBefore_);
+    }
+    return msg;
+  },
+};
+
+export const AlertHourCountJSON = {
+  /**
+   * Serializes AlertHourCount to JSON.
+   */
+  encode: function (msg: PartialDeep<AlertHourCount>): string {
+    return JSON.stringify(AlertHourCountJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes AlertHourCount from JSON.
+   */
+  decode: function (json: string): AlertHourCount {
+    return AlertHourCountJSON._readMessage(
+      AlertHourCountJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes AlertHourCount with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<AlertHourCount>): AlertHourCount {
+    return {
+      hour: 0,
+      status: "",
+      unconfirmed: false,
+      count: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<AlertHourCount>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.hour) {
+      json["hour"] = msg.hour;
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.unconfirmed) {
+      json["unconfirmed"] = msg.unconfirmed;
+    }
+    if (msg.count) {
+      json["count"] = String(msg.count);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: AlertHourCount, json: any): AlertHourCount {
+    const _hour_ = json["hour"];
+    if (_hour_) {
+      msg.hour = protoscript.parseNumber(_hour_);
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _unconfirmed_ = json["unconfirmed"];
+    if (_unconfirmed_) {
+      msg.unconfirmed = _unconfirmed_;
+    }
+    const _count_ = json["count"];
+    if (_count_) {
+      msg.count = BigInt(_count_);
+    }
+    return msg;
+  },
+};
+
+export const CountAlertsByHourResponseJSON = {
+  /**
+   * Serializes CountAlertsByHourResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<CountAlertsByHourResponse>): string {
+    return JSON.stringify(CountAlertsByHourResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CountAlertsByHourResponse from JSON.
+   */
+  decode: function (json: string): CountAlertsByHourResponse {
+    return CountAlertsByHourResponseJSON._readMessage(
+      CountAlertsByHourResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CountAlertsByHourResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CountAlertsByHourResponse>,
+  ): CountAlertsByHourResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      counts: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CountAlertsByHourResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.counts?.length) {
+      json["counts"] = msg.counts.map(AlertHourCountJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CountAlertsByHourResponse,
+    json: any,
+  ): CountAlertsByHourResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _counts_ = json["counts"];
+    if (_counts_) {
+      for (const item of _counts_) {
+        const m = AlertHourCountJSON.initialize();
+        AlertHourCountJSON._readMessage(m, item);
+        msg.counts.push(m);
+      }
     }
     return msg;
   },

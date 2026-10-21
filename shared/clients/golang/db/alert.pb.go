@@ -623,6 +623,197 @@ func (x *ListAlertsResponse) GetOffset() int32 {
 	return 0
 }
 
+// Counts the alerts created in `hours` whole hours from `since`, by hour,
+// status and whether the alert is unconfirmed. `since` is on the hour, and
+// `hours` is 1 to 168; anything else is INVALID_ARGUMENT.
+//
+// An alert is unconfirmed when its status is not settled (completed, failed,
+// timed_out, skipped, replayed) and it was last written before
+// `unconfirmed_before`: nothing has reported on it for long enough that no
+// report is coming. The caller chooses the bound, since it owns the clock.
+type CountAlertsByHourRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Since             *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=since,proto3" json:"since,omitempty"`
+	Hours             int32                  `protobuf:"varint,2,opt,name=hours,proto3" json:"hours,omitempty"`
+	UnconfirmedBefore *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=unconfirmed_before,json=unconfirmedBefore,proto3" json:"unconfirmed_before,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CountAlertsByHourRequest) Reset() {
+	*x = CountAlertsByHourRequest{}
+	mi := &file_alert_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountAlertsByHourRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountAlertsByHourRequest) ProtoMessage() {}
+
+func (x *CountAlertsByHourRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_alert_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountAlertsByHourRequest.ProtoReflect.Descriptor instead.
+func (*CountAlertsByHourRequest) Descriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CountAlertsByHourRequest) GetSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Since
+	}
+	return nil
+}
+
+func (x *CountAlertsByHourRequest) GetHours() int32 {
+	if x != nil {
+		return x.Hours
+	}
+	return 0
+}
+
+func (x *CountAlertsByHourRequest) GetUnconfirmedBefore() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UnconfirmedBefore
+	}
+	return nil
+}
+
+// How many alerts created in hour `hour` of the window (0 is the hour that
+// starts at `since`) hold `status`. Only combinations with a count above
+// zero are listed.
+type AlertHourCount struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hour          int32                  `protobuf:"varint,1,opt,name=hour,proto3" json:"hour,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Unconfirmed   bool                   `protobuf:"varint,3,opt,name=unconfirmed,proto3" json:"unconfirmed,omitempty"`
+	Count         int64                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AlertHourCount) Reset() {
+	*x = AlertHourCount{}
+	mi := &file_alert_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AlertHourCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AlertHourCount) ProtoMessage() {}
+
+func (x *AlertHourCount) ProtoReflect() protoreflect.Message {
+	mi := &file_alert_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AlertHourCount.ProtoReflect.Descriptor instead.
+func (*AlertHourCount) Descriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AlertHourCount) GetHour() int32 {
+	if x != nil {
+		return x.Hour
+	}
+	return 0
+}
+
+func (x *AlertHourCount) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AlertHourCount) GetUnconfirmed() bool {
+	if x != nil {
+		return x.Unconfirmed
+	}
+	return false
+}
+
+func (x *AlertHourCount) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type CountAlertsByHourResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Counts        []*AlertHourCount      `protobuf:"bytes,2,rep,name=counts,proto3" json:"counts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountAlertsByHourResponse) Reset() {
+	*x = CountAlertsByHourResponse{}
+	mi := &file_alert_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountAlertsByHourResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountAlertsByHourResponse) ProtoMessage() {}
+
+func (x *CountAlertsByHourResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_alert_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountAlertsByHourResponse.ProtoReflect.Descriptor instead.
+func (*CountAlertsByHourResponse) Descriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CountAlertsByHourResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *CountAlertsByHourResponse) GetCounts() []*AlertHourCount {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
 type UpdateAlertStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -633,7 +824,7 @@ type UpdateAlertStatusRequest struct {
 
 func (x *UpdateAlertStatusRequest) Reset() {
 	*x = UpdateAlertStatusRequest{}
-	mi := &file_alert_proto_msgTypes[8]
+	mi := &file_alert_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +836,7 @@ func (x *UpdateAlertStatusRequest) String() string {
 func (*UpdateAlertStatusRequest) ProtoMessage() {}
 
 func (x *UpdateAlertStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[8]
+	mi := &file_alert_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +849,7 @@ func (x *UpdateAlertStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAlertStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAlertStatusRequest) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{8}
+	return file_alert_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UpdateAlertStatusRequest) GetId() string {
@@ -684,7 +875,7 @@ type DeleteAlertRequest struct {
 
 func (x *DeleteAlertRequest) Reset() {
 	*x = DeleteAlertRequest{}
-	mi := &file_alert_proto_msgTypes[9]
+	mi := &file_alert_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -696,7 +887,7 @@ func (x *DeleteAlertRequest) String() string {
 func (*DeleteAlertRequest) ProtoMessage() {}
 
 func (x *DeleteAlertRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[9]
+	mi := &file_alert_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -709,7 +900,7 @@ func (x *DeleteAlertRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAlertRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAlertRequest) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{9}
+	return file_alert_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteAlertRequest) GetId() string {
@@ -775,18 +966,31 @@ const file_alert_proto_rawDesc = "" +
 	"\vtotal_count\x18\x03 \x01(\x03R\n" +
 	"totalCount\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x05 \x01(\x05R\x06offset\"B\n" +
+	"\x06offset\x18\x05 \x01(\x05R\x06offset\"\xad\x01\n" +
+	"\x18CountAlertsByHourRequest\x120\n" +
+	"\x05since\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x14\n" +
+	"\x05hours\x18\x02 \x01(\x05R\x05hours\x12I\n" +
+	"\x12unconfirmed_before\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x11unconfirmedBefore\"t\n" +
+	"\x0eAlertHourCount\x12\x12\n" +
+	"\x04hour\x18\x01 \x01(\x05R\x04hour\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12 \n" +
+	"\vunconfirmed\x18\x03 \x01(\bR\vunconfirmed\x12\x14\n" +
+	"\x05count\x18\x04 \x01(\x03R\x05count\"z\n" +
+	"\x19CountAlertsByHourResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12-\n" +
+	"\x06counts\x18\x02 \x03(\v2\x15.alert.AlertHourCountR\x06counts\"B\n" +
 	"\x18UpdateAlertStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\"$\n" +
 	"\x12DeleteAlertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\xfd\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id2\xd5\x04\n" +
 	"\fAlertService\x12>\n" +
 	"\vCreateAlert\x12\x19.alert.CreateAlertRequest\x1a\x14.alert.AlertResponse\x128\n" +
 	"\bGetAlert\x12\x16.alert.GetAlertRequest\x1a\x14.alert.AlertResponse\x12P\n" +
 	"\x14GetAlertByEnvelopeId\x12\".alert.GetAlertByEnvelopeIdRequest\x1a\x14.alert.AlertResponse\x12A\n" +
 	"\n" +
-	"ListAlerts\x12\x18.alert.ListAlertsRequest\x1a\x19.alert.ListAlertsResponse\x12J\n" +
+	"ListAlerts\x12\x18.alert.ListAlertsRequest\x1a\x19.alert.ListAlertsResponse\x12V\n" +
+	"\x11CountAlertsByHour\x12\x1f.alert.CountAlertsByHourRequest\x1a .alert.CountAlertsByHourResponse\x12J\n" +
 	"\x11UpdateAlertStatus\x12\x1f.alert.UpdateAlertStatusRequest\x1a\x14.alert.AlertResponse\x12P\n" +
 	"\x14UpdateAlertLifecycle\x12\".alert.UpdateAlertLifecycleRequest\x1a\x14.alert.AlertResponse\x12@\n" +
 	"\vDeleteAlert\x12\x19.alert.DeleteAlertRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
@@ -803,7 +1007,7 @@ func file_alert_proto_rawDescGZIP() []byte {
 	return file_alert_proto_rawDescData
 }
 
-var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_alert_proto_goTypes = []any{
 	(*Alert)(nil),                       // 0: alert.Alert
 	(*CreateAlertRequest)(nil),          // 1: alert.CreateAlertRequest
@@ -813,40 +1017,49 @@ var file_alert_proto_goTypes = []any{
 	(*AlertResponse)(nil),               // 5: alert.AlertResponse
 	(*ListAlertsRequest)(nil),           // 6: alert.ListAlertsRequest
 	(*ListAlertsResponse)(nil),          // 7: alert.ListAlertsResponse
-	(*UpdateAlertStatusRequest)(nil),    // 8: alert.UpdateAlertStatusRequest
-	(*DeleteAlertRequest)(nil),          // 9: alert.DeleteAlertRequest
-	(*timestamppb.Timestamp)(nil),       // 10: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),              // 11: common.ResponseStatus
+	(*CountAlertsByHourRequest)(nil),    // 8: alert.CountAlertsByHourRequest
+	(*AlertHourCount)(nil),              // 9: alert.AlertHourCount
+	(*CountAlertsByHourResponse)(nil),   // 10: alert.CountAlertsByHourResponse
+	(*UpdateAlertStatusRequest)(nil),    // 11: alert.UpdateAlertStatusRequest
+	(*DeleteAlertRequest)(nil),          // 12: alert.DeleteAlertRequest
+	(*timestamppb.Timestamp)(nil),       // 13: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),              // 14: common.ResponseStatus
 }
 var file_alert_proto_depIdxs = []int32{
-	10, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
-	10, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
-	10, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
-	10, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
-	10, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
-	11, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
+	13, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
+	13, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
+	13, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
+	13, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
+	14, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
 	0,  // 6: alert.AlertResponse.alert:type_name -> alert.Alert
-	11, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
+	14, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
 	0,  // 8: alert.ListAlertsResponse.alerts:type_name -> alert.Alert
-	1,  // 9: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
-	2,  // 10: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
-	3,  // 11: alert.AlertService.GetAlertByEnvelopeId:input_type -> alert.GetAlertByEnvelopeIdRequest
-	6,  // 12: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
-	8,  // 13: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
-	4,  // 14: alert.AlertService.UpdateAlertLifecycle:input_type -> alert.UpdateAlertLifecycleRequest
-	9,  // 15: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
-	5,  // 16: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
-	5,  // 17: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
-	5,  // 18: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
-	7,  // 19: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
-	5,  // 20: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
-	5,  // 21: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
-	11, // 22: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	13, // 9: alert.CountAlertsByHourRequest.since:type_name -> google.protobuf.Timestamp
+	13, // 10: alert.CountAlertsByHourRequest.unconfirmed_before:type_name -> google.protobuf.Timestamp
+	14, // 11: alert.CountAlertsByHourResponse.status:type_name -> common.ResponseStatus
+	9,  // 12: alert.CountAlertsByHourResponse.counts:type_name -> alert.AlertHourCount
+	1,  // 13: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
+	2,  // 14: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
+	3,  // 15: alert.AlertService.GetAlertByEnvelopeId:input_type -> alert.GetAlertByEnvelopeIdRequest
+	6,  // 16: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
+	8,  // 17: alert.AlertService.CountAlertsByHour:input_type -> alert.CountAlertsByHourRequest
+	11, // 18: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
+	4,  // 19: alert.AlertService.UpdateAlertLifecycle:input_type -> alert.UpdateAlertLifecycleRequest
+	12, // 20: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
+	5,  // 21: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
+	5,  // 22: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
+	5,  // 23: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
+	7,  // 24: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
+	10, // 25: alert.AlertService.CountAlertsByHour:output_type -> alert.CountAlertsByHourResponse
+	5,  // 26: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
+	5,  // 27: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
+	14, // 28: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
+	21, // [21:29] is the sub-list for method output_type
+	13, // [13:21] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_alert_proto_init() }
@@ -861,7 +1074,7 @@ func file_alert_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_alert_proto_rawDesc), len(file_alert_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

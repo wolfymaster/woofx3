@@ -137,6 +137,44 @@ pub struct ListAlertsResponse {
     #[prost(int32, tag="5")]
     pub offset: i32,
 }
+/// Counts the alerts created in `hours` whole hours from `since`, by hour,
+/// status and whether the alert is unconfirmed. `since` is on the hour, and
+/// `hours` is 1 to 168; anything else is INVALID_ARGUMENT.
+///
+/// An alert is unconfirmed when its status is not settled (completed, failed,
+/// timed_out, skipped, replayed) and it was last written before
+/// `unconfirmed_before`: nothing has reported on it for long enough that no
+/// report is coming. The caller chooses the bound, since it owns the clock.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CountAlertsByHourRequest {
+    #[prost(message, optional, tag="1")]
+    pub since: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(int32, tag="2")]
+    pub hours: i32,
+    #[prost(message, optional, tag="3")]
+    pub unconfirmed_before: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+/// How many alerts created in hour `hour` of the window (0 is the hour that
+/// starts at `since`) hold `status`. Only combinations with a count above
+/// zero are listed.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AlertHourCount {
+    #[prost(int32, tag="1")]
+    pub hour: i32,
+    #[prost(string, tag="2")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(bool, tag="3")]
+    pub unconfirmed: bool,
+    #[prost(int64, tag="4")]
+    pub count: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CountAlertsByHourResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub counts: ::prost::alloc::vec::Vec<AlertHourCount>,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateAlertStatusRequest {
     #[prost(string, tag="1")]

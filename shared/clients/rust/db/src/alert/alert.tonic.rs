@@ -177,6 +177,30 @@ pub mod alert_service_client {
                 .insert(GrpcMethod::new("alert.AlertService", "ListAlerts"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn count_alerts_by_hour(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CountAlertsByHourRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CountAlertsByHourResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/alert.AlertService/CountAlertsByHour",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("alert.AlertService", "CountAlertsByHour"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn update_alert_status(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateAlertStatusRequest>,
@@ -275,6 +299,13 @@ pub mod alert_service_server {
             request: tonic::Request<super::ListAlertsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListAlertsResponse>,
+            tonic::Status,
+        >;
+        async fn count_alerts_by_hour(
+            &self,
+            request: tonic::Request<super::CountAlertsByHourRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CountAlertsByHourResponse>,
             tonic::Status,
         >;
         async fn update_alert_status(
@@ -538,6 +569,52 @@ pub mod alert_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListAlertsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/alert.AlertService/CountAlertsByHour" => {
+                    #[allow(non_camel_case_types)]
+                    struct CountAlertsByHourSvc<T: AlertService>(pub Arc<T>);
+                    impl<
+                        T: AlertService,
+                    > tonic::server::UnaryService<super::CountAlertsByHourRequest>
+                    for CountAlertsByHourSvc<T> {
+                        type Response = super::CountAlertsByHourResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CountAlertsByHourRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as AlertService>::count_alerts_by_hour(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CountAlertsByHourSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
