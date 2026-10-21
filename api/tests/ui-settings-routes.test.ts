@@ -23,7 +23,7 @@ function fakeDb() {
     key: string,
     valueJson: string | null,
     expected: bigint | undefined
-  ): local_ui_setting.WriteLocalUISettingResponse {
+  ): local_ui_setting.SetLocalUISettingResponse {
     const current = rows.get(`${namespace}/${key}`);
     if (expected !== undefined) {
       const matches =

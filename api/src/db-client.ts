@@ -690,7 +690,7 @@ export class DbClient {
   /** A conflict is an answer, not a failure: it resolves with `conflict` true. */
   async setLocalUISetting(
     req: local_ui_setting.SetLocalUISettingRequest
-  ): Promise<local_ui_setting.WriteLocalUISettingResponse> {
+  ): Promise<local_ui_setting.SetLocalUISettingResponse> {
     const response = await local_ui_setting.SetLocalUISetting(req, this.config);
     unwrapVoid("setLocalUISetting", response);
     return response;
@@ -699,7 +699,7 @@ export class DbClient {
   /** As `setLocalUISetting`, storing a tombstone. */
   async deleteLocalUISetting(
     req: local_ui_setting.DeleteLocalUISettingRequest
-  ): Promise<local_ui_setting.WriteLocalUISettingResponse> {
+  ): Promise<local_ui_setting.DeleteLocalUISettingResponse> {
     const response = await local_ui_setting.DeleteLocalUISetting(req, this.config);
     unwrapVoid("deleteLocalUISetting", response);
     return response;

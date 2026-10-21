@@ -71,18 +71,20 @@ export function toUISetting(row: local_ui_setting.LocalUISetting): UISetting {
   };
 }
 
+type WriteResponse = local_ui_setting.SetLocalUISettingResponse | local_ui_setting.DeleteLocalUISettingResponse;
+
 /**
  * The row a write response carries, or null when it carries none.
  * protoscript decodes an absent message as an empty one rather than as
  * undefined, so absence reads as revision 0, which no stored row has: the
  * table requires a revision above 0.
  */
-function writtenRow(response: local_ui_setting.WriteLocalUISettingResponse): local_ui_setting.LocalUISetting | null {
+function writtenRow(response: WriteResponse): local_ui_setting.LocalUISetting | null {
   const row = response.setting;
   return row === undefined || row === null || row.revision === 0n ? null : row;
 }
 
-function toWriteResult(response: local_ui_setting.WriteLocalUISettingResponse): UISettingWriteResult {
+function toWriteResult(response: WriteResponse): UISettingWriteResult {
   const row = writtenRow(response);
   if (response.conflict) {
     return { ok: false, reason: "conflict", current: row === null ? null : toUISetting(row) };
