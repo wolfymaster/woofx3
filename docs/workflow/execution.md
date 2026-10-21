@@ -275,7 +275,10 @@ idempotent. A run that completed or failed first gets
 `{ "outcome": "already_finished", "status": "completed" }` and is unchanged. An
 id this engine does not know gets `{ "outcome": "not_found" }`. That covers a
 run that was in flight when the engine restarted, which nothing will ever
-finish. The api then settles that run's history row as `cancelled` itself.
+finish, and a run that settled longer ago than the engine keeps settled runs
+(see [Settled Runs](#settled-runs)). The api then settles that run's history
+row as `cancelled` itself, unless the row already holds an outcome, which it
+reports instead.
 
 `Engine.Stop` is not a cancel. Runs in flight are not recorded as cancelled
 when the engine shuts down.
@@ -301,6 +304,31 @@ run history. Writing never holds up a run or the delivery that started it:
 
 Runs fired by hand from the dashboard are not written; whoever started one is
 already watching it live.
+
+## Settled Runs
+
+The engine holds every run it has begun in memory while it executes, and for a
+while after it settles. The grace period exists so that whatever still reads a
+run right after it ends finds it: a parent resuming from a sub-workflow, or a
+cancel arriving in the same instant the run finished. The lasting record of a
+run is its history (see [Recording Runs](#recording-runs)), not this memory.
+
+A sweep evicts settled runs on a fixed interval:
+
+- A run is evicted once it has been settled for its retention, 2 minutes by
+  default (`WOOFX3_WORKFLOW_RUN_RETENTION`, a duration such as `90s`).
+- However recent they are, no more than 10,000 settled runs are kept
+  (`WOOFX3_WORKFLOW_MAX_SETTLED_RUNS`). Past that, the oldest settled go first,
+  so a burst of events cannot grow memory without bound inside one retention.
+- A sub-workflow a parent is still registered as waiting on is never evicted,
+  and neither is that parent, however long ago either settled.
+- The sweep runs every 30 seconds (`WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL`), so a
+  run can outlive its retention by up to one interval.
+
+A run still executing or paused is never evicted. Each value must be positive;
+one that is not, or does not parse, stops the service at start rather than
+disabling eviction. Once a run is evicted the engine no longer knows its id, and
+a cancel for it is answered as for any unknown run.
 
 ## Stopping the Engine
 
