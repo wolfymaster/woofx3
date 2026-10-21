@@ -93,6 +93,11 @@ pub const SECRET_SETTING_TYPE: &str = "secret";
 /// the manifest cannot ship a value for it and module code cannot write it.
 pub const URL_SETTING_TYPE: &str = "url";
 
+/// `ManifestSetting::setting_type` of a link to a resource instance the end
+/// user picks. Its value lets the module read and run that instance
+/// (`lib_sandbox::resource_access`), so module code cannot write it.
+pub const RESOURCE_REF_SETTING_TYPE: &str = "resource_ref";
+
 /// Action implementation — discriminated by `type` (matches an engine
 /// action handler). Each variant carries the handler-specific config at
 /// the same JSON object level as `type`, mirroring how `TaskDefinition`

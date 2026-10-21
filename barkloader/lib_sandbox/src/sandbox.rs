@@ -6,6 +6,7 @@ use crate::host::{
 };
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
+use crate::resource_access::{ResourceAccess, instance_owner};
 use crate::runtime::limits::{SandboxLimits, SandboxLimitsError};
 use serde_json::Value;
 use std::sync::Arc;
@@ -183,6 +184,7 @@ impl Sandbox {
                 }
             }
         }
+        let resource_link_settings = self.registry.resource_link_settings(&module_id);
         let invocation = InvocationContext {
             event: request.event,
             user: request.user.unwrap_or(Value::Null),
@@ -192,6 +194,7 @@ impl Sandbox {
             module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
             permissions,
             url_settings,
+            resource_link_settings,
             deadline,
         };
 
@@ -369,32 +372,26 @@ impl SandboxActionRunner {
             .host
             .get()
             .ok_or_else(|| "ctx.resources.run: the engine is still starting".to_string())?;
-        let mut parts = canonical_id.splitn(3, ':');
-        let (owner, kind, instance) = (
-            parts.next().unwrap_or_default(),
-            parts.next().unwrap_or_default(),
-            parts.next().unwrap_or_default(),
-        );
-        if owner.is_empty() || kind.is_empty() || instance.is_empty() {
+        let Some(owner) = instance_owner(canonical_id) else {
             return Err(format!(
                 "ctx.resources.run: {canonical_id:?} is not a resource instance id"
             ));
-        }
+        };
+        let kind = canonical_id.split(':').nth(1).unwrap_or_default();
         if verb.is_empty() || verb.contains(':') {
             return Err(format!("ctx.resources.run: {verb:?} is not an action name"));
         }
 
-        if caller.module_id != owner {
-            let settings = host
-                .settings
-                .list_by_module(caller.module_id)
-                .map_err(|e| format!("ctx.resources.run: read settings: {e}"))?;
-            if !settings.values().any(|v| v.as_str() == Some(canonical_id)) {
-                return Err(format!(
-                    "ctx.resources.run: {} may act only on a resource it owns or one its settings link to, and {canonical_id} is neither",
-                    caller.module_id
-                ));
-            }
+        let link_settings = self.registry.resource_link_settings(caller.module_id);
+        let access = ResourceAccess::new(caller.module_id, &link_settings, host.settings.as_ref());
+        if !access
+            .may_read(canonical_id)
+            .map_err(|e| format!("ctx.resources.run: {e}"))?
+        {
+            return Err(format!(
+                "ctx.resources.run: {} may act only on a resource it owns or one its settings link to, and {canonical_id} is neither",
+                caller.module_id
+            ));
         }
 
         let found = host

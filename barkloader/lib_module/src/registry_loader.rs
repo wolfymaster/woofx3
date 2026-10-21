@@ -345,6 +345,7 @@ async fn build_registered_module<R: Repository>(
         event_types: eventbus_event_types(module),
         permissions: declared_permissions(module),
         url_settings: url_setting_ids(module),
+        resource_link_settings: resource_link_setting_ids(module),
         oauth: stored_manifest(module)
             .map(|manifest| manifest.oauth)
             .unwrap_or_default(),
@@ -403,12 +404,22 @@ fn declared_permissions(module: &ModuleRecord) -> HashSet<String> {
 /// The ids of the module's `url` settings, whose values' origins its
 /// `ctx.http` may reach.
 fn url_setting_ids(module: &ModuleRecord) -> HashSet<String> {
+    setting_ids_of_type(module, crate::module_manifest::URL_SETTING_TYPE)
+}
+
+/// The ids of the module's `resource_ref` settings, whose values are the
+/// resource instances the streamer linked to it.
+fn resource_link_setting_ids(module: &ModuleRecord) -> HashSet<String> {
+    setting_ids_of_type(module, crate::module_manifest::RESOURCE_REF_SETTING_TYPE)
+}
+
+fn setting_ids_of_type(module: &ModuleRecord, setting_type: &str) -> HashSet<String> {
     stored_manifest(module)
         .map(|manifest| {
             manifest
                 .settings
                 .into_iter()
-                .filter(|setting| setting.setting_type == crate::module_manifest::URL_SETTING_TYPE)
+                .filter(|setting| setting.setting_type == setting_type)
                 .map(|setting| setting.id)
                 .collect()
         })
@@ -483,7 +494,8 @@ pub fn unregister_schedule<S: ScheduleRegistrar>(scheduler: &S, module_key: &str
 mod tests {
     use super::{
         BackgroundTaskJson, ModuleRecord, declared_permissions, eventbus_event_types,
-        function_actions, functions_failed_to_load, module_schedule,
+        function_actions, functions_failed_to_load, module_schedule, resource_link_setting_ids,
+        url_setting_ids,
     };
 
     fn module_with_manifest(manifest_json: Option<&str>) -> ModuleRecord {
@@ -548,6 +560,25 @@ mod tests {
             ["twitch.moderation".to_string()].into_iter().collect()
         );
         assert!(declared_permissions(&module_with_manifest(None)).is_empty());
+    }
+
+    #[test]
+    fn link_and_url_settings_are_read_by_their_declared_type() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3", "settings": [
+            { "id": "timer", "label": "Timer", "type": "resource_ref", "resourceKind": "woofx3:timer" },
+            { "id": "server", "label": "Server", "type": "url" },
+            { "id": "note", "label": "Note", "type": "text" }
+        ] }"#;
+        let module = module_with_manifest(Some(manifest));
+        assert_eq!(
+            resource_link_setting_ids(&module),
+            ["timer".to_string()].into_iter().collect()
+        );
+        assert_eq!(
+            url_setting_ids(&module),
+            ["server".to_string()].into_iter().collect()
+        );
+        assert!(resource_link_setting_ids(&module_with_manifest(None)).is_empty());
     }
 
     fn task_row(manifest_id: &str) -> BackgroundTaskJson {

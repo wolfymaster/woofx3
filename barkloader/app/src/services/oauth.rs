@@ -509,6 +509,7 @@ mod tests {
                     event_types: Default::default(),
                     permissions: Default::default(),
                     url_settings: Default::default(),
+                    resource_link_settings: Default::default(),
                     oauth: vec![spotify()],
                 },
             )
