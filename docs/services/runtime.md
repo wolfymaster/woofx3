@@ -381,7 +381,7 @@ for the life of the process, and never give up on it:
   keeps dialling in the background. The TypeScript client retries its first
   dial 30 times, a second apart, then rejects, so a service that can run
   without the bus (the scene manager, the API's offline mode) is not held back
-  forever. Both paces are named defaults: `DefaultReconnectPolicy()` in Go,
+  forever. Both paces are named defaults: `DefaultReconnectWait` and `DefaultReconnectJitter` in Go,
   `DEFAULT_RECONNECT_POLICY` (overridable per client through
   `NATSConfig.reconnect`) in TypeScript.
 - **Closed is final.** A connection closes only after an explicit close (or a
