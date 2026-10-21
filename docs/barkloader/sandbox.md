@@ -129,7 +129,7 @@ Every value that crosses between a runtime and the engine is converted to or fro
 
 A value that refers to itself exceeds the depth limit, so a cyclic return value fails the invocation with a clear error. A refused `ctx` argument is raised inside the script, where a `try`/`catch` or `pcall` can handle it; a value `ctx.log.*` cannot convert is logged as unloggable instead.
 
-A Lua table whose keys are exactly `1..n` becomes an array; any other table becomes an object keyed by its string and integer keys. An empty table is an object, except an empty array from the event, which round-trips as `[]`. Functions, coroutines and userdata have no JSON form and are refused with `UnsupportedValue`.
+A Lua table whose keys are exactly `1..n` becomes an array; any other table becomes an object keyed by its string and integer keys. An empty table is an object, except an empty array from the event, which round-trips as `[]`. A table holding both `[1]` and `['1']` is refused rather than silently keeping one. Functions, coroutines and userdata (in JavaScript: functions, promises, symbols and BigInts) have no JSON form and are refused with `UnsupportedValue`.
 
 A JavaScript entry point must return its result directly. The adapter does not run the promise job queue, so an `async` function (or any function returning a Promise) is refused with `AsyncEntryUnsupported`.
 

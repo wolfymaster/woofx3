@@ -164,6 +164,48 @@ fn binding_arg(lua: &Lua, value: &LuaValue, limits: ConversionLimits) -> mlua::R
         .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
 }
 
+/// Converts a host binding's answer, or an event, into a value for the
+/// script.
+fn binding_return(lua: &Lua, value: &Value, limits: ConversionLimits) -> mlua::Result<LuaValue> {
+    json_to_lua(lua, value, &mut Budget::new(limits))
+        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+}
+
+/// Converts JSON to a Lua value within `budget`, the mirror of
+/// [`lua_to_json`]. Arrays carry mlua's array metatable so an empty one
+/// converts back to an array; `null` becomes mlua's `null` sentinel.
+fn json_to_lua(lua: &Lua, value: &Value, budget: &mut Budget) -> Result<LuaValue, Error> {
+    budget.charge_node()?;
+    match value {
+        Value::Null => Ok(LuaValue::NULL),
+        Value::Bool(b) => Ok(LuaValue::Boolean(*b)),
+        Value::Number(n) => Ok(match n.as_i64() {
+            Some(i) => LuaValue::Integer(i),
+            None => LuaValue::Number(n.as_f64().unwrap_or(f64::NAN)),
+        }),
+        Value::String(s) => {
+            budget.charge_text(s.len())?;
+            Ok(LuaValue::String(lua.create_string(s)?))
+        }
+        Value::Array(items) => budget.nested(|budget| {
+            let table = lua.create_table_with_capacity(items.len(), 0)?;
+            table.set_metatable(Some(lua.array_metatable()));
+            for (index, item) in items.iter().enumerate() {
+                table.raw_set(index + 1, json_to_lua(lua, item, budget)?)?;
+            }
+            Ok(LuaValue::Table(table))
+        }),
+        Value::Object(map) => budget.nested(|budget| {
+            let table = lua.create_table_with_capacity(0, map.len())?;
+            for (key, item) in map {
+                budget.charge_text(key.len())?;
+                table.raw_set(key.as_str(), json_to_lua(lua, item, budget)?)?;
+            }
+            Ok(LuaValue::Table(table))
+        }),
+    }
+}
+
 /// Converts a Lua value to JSON within `budget`. Recursion happens only
 /// inside [`Budget::nested`], so depth is bounded and a cyclic table is
 /// refused as too deep. Functions, threads and userdata have no JSON form
@@ -235,7 +277,11 @@ fn lua_table_to_json(lua: &Lua, table: &mlua::Table, budget: &mut Budget) -> Res
         };
         budget.charge_text(key.len())?;
         let item = lua_to_json(lua, &item, budget)?;
-        map.insert(key, item);
+        if map.insert(key.clone(), item).is_some() {
+            return Err(Error::UnsupportedValue {
+                type_name: format!("table with duplicate key {key:?}"),
+            });
+        }
     }
     Ok(Value::Object(map))
 }
@@ -255,10 +301,10 @@ fn build_lua_ctx(
 ) -> Result<mlua::Table, Error> {
     let ctx = lua.create_table()?;
 
-    let event = lua.to_value(&invocation.event)?;
+    let event = json_to_lua(lua, &invocation.event, &mut Budget::new(limits))?;
     ctx.set("event", event)?;
 
-    let user = lua.to_value(&invocation.user)?;
+    let user = json_to_lua(lua, &invocation.user, &mut Budget::new(limits))?;
     ctx.set("user", user)?;
 
     // crypto namespace — see `runtime::crypto`. Pure computation: no host
@@ -305,7 +351,7 @@ fn build_lua_ctx(
         let namespace = invocation.module_id.clone();
         let get_fn = lua.create_function(move |lua, key: String| -> mlua::Result<LuaValue> {
             match store.get(&namespace, &key) {
-                Ok(Some(v)) => lua.to_value(&v),
+                Ok(Some(v)) => binding_return(lua, &v, limits),
                 Ok(None) => Ok(LuaValue::Nil),
                 Err(e) => Err(mlua::Error::RuntimeError(e)),
             }
@@ -355,7 +401,7 @@ fn build_lua_ctx(
                     super::host_bindings::parse_storage_set_options(json_options.as_ref()),
                 )
                 .map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&outcome)
+                binding_return(lua, &outcome, limits)
             },
         )?;
         storage.set("compareAndSet", compare_and_set_fn)?;
@@ -380,7 +426,7 @@ fn build_lua_ctx(
                         opts: json_opts,
                     })
                     .map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&result)
+                binding_return(lua, &result, limits)
             },
         )?;
         http.set("request", request_fn)?;
@@ -413,7 +459,7 @@ fn build_lua_ctx(
                     &display,
                     json_settings,
                 ) {
-                    Ok(v) => lua.to_value(&v),
+                    Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 }
             },
@@ -431,7 +477,7 @@ fn build_lua_ctx(
         let host = invocation.host.clone();
         let get_fn = lua.create_function(move |lua, canonical_id: String| {
             match super::host_bindings::resources_get(&host, &canonical_id) {
-                Ok(v) => lua.to_value(&v),
+                Ok(v) => binding_return(lua, &v, limits),
                 Err(e) => Err(mlua::Error::RuntimeError(e)),
             }
         })?;
@@ -441,7 +487,7 @@ fn build_lua_ctx(
         let list_fn =
             lua.create_function(
                 move |lua, kind: String| match super::host_bindings::resources_list(&host, &kind) {
-                    Ok(v) => lua.to_value(&v),
+                    Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 },
             )?;
@@ -464,7 +510,7 @@ fn build_lua_ctx(
                     &verb,
                     json_params,
                 ) {
-                    Ok(v) => lua.to_value(&v),
+                    Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 }
             },
@@ -496,7 +542,7 @@ fn build_lua_ctx(
                         &json_val,
                     )
                     .map_err(mlua::Error::RuntimeError)?;
-                    lua.to_value(&outcome)
+                    binding_return(lua, &outcome, limits)
                 },
             )?;
         resources.set("compareAndSetSetting", compare_and_set_setting_fn)?;
@@ -593,7 +639,7 @@ fn build_lua_ctx(
                     &json_val,
                 )
                 .map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&outcome)
+                binding_return(lua, &outcome, limits)
             },
         )?;
         module_tbl.set("compareAndSetSetting", compare_and_set_setting_fn)?;
@@ -621,7 +667,7 @@ fn build_lua_ctx(
                     super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings);
                 let settings_tbl = lua.create_table()?;
                 for (k, v) in &settings_map {
-                    let lua_val = lua.to_value(v)?;
+                    let lua_val = binding_return(lua, v, limits)?;
                     settings_tbl.set(k.as_str(), lua_val)?;
                 }
                 *cache = Some(settings_tbl);
@@ -684,7 +730,7 @@ fn build_lua_ctx(
     // might return for its own purposes.
     let response_fn = lua.create_function(move |lua, (success, message): (bool, String)| {
         let value = super::host_bindings::build_response_value(success, message);
-        lua.to_value(&value)
+        binding_return(lua, &value, limits)
     })?;
     ctx.set("response", response_fn)?;
 
@@ -695,7 +741,7 @@ fn build_lua_ctx(
         let to_json = |v: &LuaValue| binding_arg(lua, v, limits);
         let envelope =
             crate::function_result::build_result_value(to_json(&value)?, to_json(&events)?);
-        lua.to_value(&envelope)
+        binding_return(lua, &envelope, limits)
     })?;
     ctx.set("result", result_fn)?;
 
@@ -770,7 +816,7 @@ fn bind_extensions(
             let call = lua.create_function(move |lua, arg: LuaValue| {
                 let value = binding_arg(lua, &arg, limits)?;
                 match func.call(&namespace, &scope, value) {
-                    Ok(result) => Ok((true, lua.to_value(&result)?)),
+                    Ok(result) => Ok((true, binding_return(lua, &result, limits)?)),
                     Err(err) => Ok((
                         false,
                         LuaValue::Table(host_error_table(lua, &err, &error_meta)?),

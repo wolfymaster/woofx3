@@ -231,6 +231,16 @@ impl Runtime {
         }
     }
 
+    /// Statements binding `v` to an object with `len` keys.
+    fn build_wide_object(self, len: usize) -> String {
+        match self {
+            Runtime::Js => {
+                format!("const v = {{}}; for (let i = 0; i < {len}; i++) {{ v['k' + i] = 0; }}")
+            }
+            Runtime::Lua => format!("local v = {{}}; for i = 1, {len} do v['k' .. i] = 0 end"),
+        }
+    }
+
     /// Statements binding `v` to an object holding a `bytes`-long string.
     fn build_long_text(self, bytes: usize) -> String {
         match self {
@@ -247,6 +257,13 @@ impl Runtime {
         match self {
             Runtime::Js => "return v;",
             Runtime::Lua => "return v",
+        }
+    }
+
+    fn returning_event(self) -> &'static str {
+        match self {
+            Runtime::Js => "return ctx.event;",
+            Runtime::Lua => "return ctx.event",
         }
     }
 
@@ -297,6 +314,17 @@ fn test_returned_value_size_is_bounded() {
                 })
             ),
             "{runtime:?} wide: {result:?}"
+        );
+
+        let result = runtime.invoke(&runtime.build_wide_object(100_001), runtime.returning());
+        assert!(
+            matches!(
+                result,
+                Err(Error::ValueTooLarge {
+                    limit: SizeLimit::Nodes(100_000)
+                })
+            ),
+            "{runtime:?} wide object: {result:?}"
         );
 
         let result = runtime.invoke(
@@ -441,4 +469,47 @@ fn test_lua_event_round_trips_empty_arrays_and_nulls() {
     )
     .expect("event round-trips");
     assert_eq!(result, event);
+}
+
+#[test]
+fn test_event_nested_past_the_depth_limit_is_refused() {
+    let mut event = json!(0);
+    for _ in 0..65 {
+        event = json!({ "v": event });
+    }
+    for runtime in RUNTIMES {
+        let code = runtime.function("", runtime.returning_event());
+        let result = invoke(runtime.file_name(), &code, event.clone());
+        assert_too_deep(runtime, "event 65 deep", result);
+    }
+}
+
+#[test]
+fn test_js_values_without_a_json_form_are_refused() {
+    for (case, code) in [
+        (
+            "function",
+            "function run(ctx) { return { f: function () {} }; }",
+        ),
+        (
+            "promise",
+            "function run(ctx) { return { p: Promise.resolve(1) }; }",
+        ),
+        ("symbol", "function run(ctx) { return { s: Symbol('x') }; }"),
+    ] {
+        let result = invoke("run.js", code, Value::Null);
+        assert!(
+            matches!(&result, Err(Error::UnsupportedValue { .. })),
+            "{case}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn test_lua_colliding_integer_and_string_keys_are_refused() {
+    let result = invoke_lua("function run(ctx) return { [1] = 'a', ['1'] = 'b' } end");
+    assert!(
+        matches!(&result, Err(Error::UnsupportedValue { type_name }) if type_name.contains("duplicate key")),
+        "{result:?}"
+    );
 }

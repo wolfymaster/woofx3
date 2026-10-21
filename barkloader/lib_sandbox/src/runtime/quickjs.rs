@@ -236,6 +236,10 @@ fn js_to_json(value: &JsValue<'_>, budget: &mut Budget) -> Result<Value, Error> 
             .map_err(|e| Error::RuntimeError(e.to_string()))?;
         budget.charge_text(rs.len())?;
         Ok(Value::String(rs))
+    } else if value.is_function() || value.is_promise() {
+        Err(Error::UnsupportedValue {
+            type_name: format!("{:?}", value.type_of()),
+        })
     } else if value.is_array() {
         let arr = value
             .clone()
@@ -264,10 +268,9 @@ fn js_to_json(value: &JsValue<'_>, budget: &mut Budget) -> Result<Value, Error> 
             Ok(Value::Object(map))
         })
     } else {
-        Err(Error::RuntimeError(format!(
-            "unsupported JS type: {:?}",
-            value.type_of()
-        )))
+        Err(Error::UnsupportedValue {
+            type_name: format!("{:?}", value.type_of()),
+        })
     }
 }
 
