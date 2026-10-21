@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.38.0](https://github.com/wolfymaster/woofx3/compare/v0.37.0...v0.38.0) (2026-10-21)
+
+### ⚠ BREAKING CHANGES
+
+* the streamlabs service and its Streamlabs OBS bridge are gone.
+* the chat bot no longer has !sc, !src, !follow or !time,
+and nothing answers the `slobs` subject. Rebuild scene and source chat
+commands in the commands UI with the OBS module's actions.
+
+### Features
+
+* **db:** keep scene data a repair replaces in scene_backups ([f015350](https://github.com/wolfymaster/woofx3/commit/f015350a6f82025537e1f5edc0ae6f67bc79be90))
+* **module-sdk:** let a widget redraw itself on a settings change ([50f5106](https://github.com/wolfymaster/woofx3/commit/50f5106a2ceaf41f3859e1bd00e36f46e7c07d53))
+* **module-sdk:** one contract for the engine asset paths widgets read ([1b4a060](https://github.com/wolfymaster/woofx3/commit/1b4a0604c66dd7bbf05cc1fea77d65cf19eccc2a))
+* **obs:** set a source visible, hidden or toggled ([e3047f6](https://github.com/wolfymaster/woofx3/commit/e3047f6ffab6818f29ad60fcdff13690e951a298)), closes [woofx3-modules#52](https://github.com/wolfymaster/woofx3-modules/issues/52)
+* **sceneManager:** one contract for the overlay stream and its acks ([43bd3fe](https://github.com/wolfymaster/woofx3/commit/43bd3feb7adc97c669c81283b95b46c976eb2d1c))
+* **sceneManager:** report and repair scene data it cannot read ([65bcb82](https://github.com/wolfymaster/woofx3/commit/65bcb82139917465fbd38ee2b9e466c37b058c50))
+* **scene:** one codec for stored placements and canonical widget ids ([0a7c369](https://github.com/wolfymaster/woofx3/commit/0a7c3694ee136e45e258afa0dc182de5ec085e48))
+* **widgets:** read the widget protocol through shared guards, with one capability set ([e7dbb4e](https://github.com/wolfymaster/woofx3/commit/e7dbb4e2fd291fa8aa1f9d97d5f5f6fdbab2ff88))
+* **woofx3:** edit the counter, timer and text widgets in place ([68b623c](https://github.com/wolfymaster/woofx3/commit/68b623c21156a97c782e83ed04a442ec932d6b60))
+
+### Bug Fixes
+
+* **module-sdk:** match the mock's argument checks to the shim's ([9fae6f7](https://github.com/wolfymaster/woofx3/commit/9fae6f7081a0f5236605a1cd717efc9445d64f09))
+* **nats:** keep a subscription alive when one handler fails ([f0902bb](https://github.com/wolfymaster/woofx3/commit/f0902bbf16cc66d22b43e0caeecd8a2dd221beaa))
+* **sceneManager:** bound session renewals and drop silent catches ([4b01ddd](https://github.com/wolfymaster/woofx3/commit/4b01ddd4fbc69dc4abe69688b7621543150a2091))
+* **sceneManager:** check every placement when reading a scene config ([2e57995](https://github.com/wolfymaster/woofx3/commit/2e5799592a12f6a6dd1034447bb1a23f21bed6c7))
+* **sceneManager:** close the bus connection on shutdown and failed start ([34c68f3](https://github.com/wolfymaster/woofx3/commit/34c68f30fc61dd4c83eb0e7d2551e1d60c64df99))
+* **sceneManager:** deliver each widget event once, to the frame that is showing ([178dcee](https://github.com/wolfymaster/woofx3/commit/178dceea24755f1520d4f4f936f95ccb2df901f9))
+* **sceneManager:** file widget status under the placement's module, not the widget's claim ([c6f1f87](https://github.com/wolfymaster/woofx3/commit/c6f1f875574bb8e7923676de4629ecd402405f91))
+* **sceneManager:** give up on an OBS session that never finishes opening ([cee36c7](https://github.com/wolfymaster/woofx3/commit/cee36c7316f568376169ce134090be598eada03a))
+* **sceneManager:** hand an alert area's queue over when it is remounted ([381cc78](https://github.com/wolfymaster/woofx3/commit/381cc78010e459a6a97edcdad741cb4f08a11e4a))
+* **sceneManager:** keep unreadable placements in step with the draft ([b4d9096](https://github.com/wolfymaster/woofx3/commit/b4d909657fdf0fb9831a1ca0a72b64307076a77f))
+* **sceneManager:** let a replayed delivery wait a full sweep interval ([da71423](https://github.com/wolfymaster/woofx3/commit/da71423b60529251b48778cc98c22787ffcf81ff))
+* **sceneManager:** let go of widget asset reads after a minute ([5e6e1fb](https://github.com/wolfymaster/woofx3/commit/5e6e1fb56997b36643ca253dda696f3fc091a410))
+* **sceneManager:** never cache a token answer older than an invalidation ([d8eaeb0](https://github.com/wolfymaster/woofx3/commit/d8eaeb0d6613263f633d25ccd93bce8289cc243c))
+* **sceneManager:** never delete stored scene data the loader could not read ([5ca6e41](https://github.com/wolfymaster/woofx3/commit/5ca6e4141670446d61223571ceaec9bf393be333))
+* **sceneManager:** never roll a scene back to a stale config snapshot ([46375bd](https://github.com/wolfymaster/woofx3/commit/46375bd0d43728adc73c6a2d3a74859287429ef0))
+* **sceneManager:** never write a scene over a column it could not read ([8560185](https://github.com/wolfymaster/woofx3/commit/856018583cf68080981497f921586b7ffc80002d))
+* **sceneManager:** re-verify long overlay sessions, reconcile cancels, close orphaned deliveries, bound the token cache ([fe5b341](https://github.com/wolfymaster/woofx3/commit/fe5b3412534cba0d5bd8f6f196aa04e06c1fac4f))
+* **sceneManager:** reconcile replaced queues against a new stream's open set ([5d13363](https://github.com/wolfymaster/woofx3/commit/5d1336325ef47b8ab20b920b47859e359d89587c))
+* **sceneManager:** refuse a missing db proxy URL or a bad port at startup ([133d991](https://github.com/wolfymaster/woofx3/commit/133d99122aee9df685ecbb8f2f0bb792360b354a))
+* **sceneManager:** refuse scene changes once the documents are closed ([ee6b3c4](https://github.com/wolfymaster/woofx3/commit/ee6b3c4f5b8deb37e700edabf9cf258a1ab62c9e))
+* **sceneManager:** reload only this overlay when its stream session lapses ([18b4503](https://github.com/wolfymaster/woofx3/commit/18b450368d41b52383659968122ead6c10755aac))
+* **sceneManager:** renew the alert preview's session as an overlay's ([ede7254](https://github.com/wolfymaster/woofx3/commit/ede7254a4140ecf88cc8e4338cb17a769420a98c))
+* **sceneManager:** report a completed delivery only if this ack closed it ([e371811](https://github.com/wolfymaster/woofx3/commit/e371811fcfbd4b2e05135d5a89b2d219252b5c67))
+* **sceneManager:** retry hydrating open deliveries until the db answers ([8ac018b](https://github.com/wolfymaster/woofx3/commit/8ac018bb3aaf73ab7e0a1c1933c7bc76afed3fd1))
+* **sceneManager:** sign an overlay in again when its session lapses ([f0afc7d](https://github.com/wolfymaster/woofx3/commit/f0afc7d50fa2ae76e827c0b7c145141181c11861))
+* **sceneManager:** stop the server forcibly on shutdown ([77b769f](https://github.com/wolfymaster/woofx3/commit/77b769f6d5cb4b8ee61e4e6053d658bda5325b6a))
+
+### Performance Improvements
+
+* **sceneManager:** apply live edits as ops in the editor's preview ([cedd0ee](https://github.com/wolfymaster/woofx3/commit/cedd0ee5bc6b7710241e376bef47e60cd4cb0387))
+
+### Code Refactoring
+
+* remove the reward service and the legacy slobs subject ([ab65be0](https://github.com/wolfymaster/woofx3/commit/ab65be01cf1f71ff0242b1ee2261ecc9604c7e82))
+* remove the streamlabs service ([29d37b9](https://github.com/wolfymaster/woofx3/commit/29d37b922d0fecf54b225e024d9895bd8a1253f2))
+
 ## [0.37.0](https://github.com/wolfymaster/woofx3/compare/v0.36.0...v0.37.0) (2026-10-20)
 
 ### Features
