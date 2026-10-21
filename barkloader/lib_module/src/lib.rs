@@ -14,6 +14,7 @@ pub mod module_manifest;
 mod module_plan;
 mod module_service;
 pub mod registry_loader;
+mod reserved_subjects;
 pub mod resource_kind_ref;
 pub mod theme;
 
