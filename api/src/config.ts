@@ -1,6 +1,6 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
@@ -274,8 +274,9 @@ export function loadConfig(): ApiConfig {
   if (!barkloaderWsUrl) {
     throw new Error("barkloaderWsUrl (or WOOFX3_BARKLOADER_WS_URL) is required");
   }
-  if (!barkloaderKey) {
-    throw new Error("barkloaderKey (or WOOFX3_BARKLOADER_KEY) is required");
+  const barkloaderKeyCheck = validateSecret("barkloaderKey", barkloaderKey);
+  if (!barkloaderKeyCheck.ok) {
+    throw new Error(barkloaderKeyCheck.error.message);
   }
 
   // Tiger Style: fail fast at startup on malformed URLs rather than

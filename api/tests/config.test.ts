@@ -6,7 +6,7 @@ const REQUIRED: Record<string, string> = {
   WOOFX3_DATABASE_PROXY_URL: "http://127.0.0.1:5555",
   WOOFX3_SCENE_MANAGER_URL: "http://127.0.0.1:9101",
   WOOFX3_BARKLOADER_WS_URL: "ws://127.0.0.1:9653/ws",
-  WOOFX3_BARKLOADER_KEY: "test-key",
+  WOOFX3_BARKLOADER_KEY: "test-barkloader-key-0123456789abcdef",
 };
 
 // loadConfig writes the resolved config back into process.env, so every
@@ -150,4 +150,14 @@ describe("confidential Twitch app", () => {
     withEnv({ WOOFX3_TWITCH_CLIENT_ID: "abc def" });
     expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_CLIENT_ID");
   });
+});
+
+describe("barkloader key", () => {
+  for (const value of ["", "CHANGE_ME", "short-key"]) {
+    test(`refuses "${value}"`, () => {
+      withEnv({ WOOFX3_BARKLOADER_KEY: value });
+
+      expect(() => loadConfig()).toThrow("barkloaderKey (WOOFX3_BARKLOADER_KEY)");
+    });
+  }
 });
