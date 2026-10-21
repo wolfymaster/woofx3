@@ -23,6 +23,16 @@ describe("readHelixUser", () => {
     ["no users", { data: [] }, null],
     ["a body with no data list", { data: "nope" }, null],
     ["no body", null, null],
+    [
+      "an avatar that is not https",
+      { data: [{ ...USER, profile_image_url: "javascript:alert(1)" }] },
+      { userId: "42", login: "streamer", displayName: "Streamer", profileImageUrl: null },
+    ],
+    [
+      "an avatar that is not a URL",
+      { data: [{ ...USER, profile_image_url: "not a url" }] },
+      { userId: "42", login: "streamer", displayName: "Streamer", profileImageUrl: null },
+    ],
   ];
 
   for (const [name, body, expected] of cases) {
@@ -66,6 +76,48 @@ describe("TwitchProfiles", () => {
     expect(await profiles.lookup("42", async () => refused)).toBeNull();
     expect(await profiles.lookup("42", async () => ok({ data: [] }))).toBeNull();
     expect(await profiles.lookup("42", async () => ok({ data: [USER] }))).toMatchObject({ login: "streamer" });
+  });
+
+  test("concurrent lookups of one user share one Helix call", async () => {
+    const profiles = new TwitchProfiles({ logger: LOGGER, now: () => 0 });
+    let answer: (result: TwitchHelixResult) => void = () => {};
+    const getUsers = mock(
+      () =>
+        new Promise<TwitchHelixResult>((resolve) => {
+          answer = resolve;
+        })
+    );
+
+    const lookups = Promise.all([profiles.lookup("42", getUsers), profiles.lookup("42", getUsers)]);
+    answer(ok({ data: [USER] }));
+
+    expect((await lookups).map((p) => p?.login)).toEqual(["streamer", "streamer"]);
+    expect(getUsers).toHaveBeenCalledTimes(1);
+  });
+
+  test("forget drops the kept profile, and a lookup in flight when it was called is not kept", async () => {
+    const profiles = new TwitchProfiles({ logger: LOGGER, now: () => 0 });
+    await profiles.lookup("42", async () => ok({ data: [USER] }));
+
+    profiles.forget();
+    const getUsers = mock(async () => ok({ data: [{ ...USER, login: "renamed" }] }));
+    expect((await profiles.lookup("42", getUsers))?.login).toBe("renamed");
+
+    let answer: (result: TwitchHelixResult) => void = () => {};
+    const stale = profiles.lookup(
+      "7",
+      () =>
+        new Promise<TwitchHelixResult>((resolve) => {
+          answer = resolve;
+        })
+    );
+    profiles.forget();
+    answer(ok({ data: [{ ...USER, id: "7", login: "old" }] }));
+    await stale;
+
+    const fresh = mock(async () => ok({ data: [{ ...USER, id: "7", login: "new" }] }));
+    expect((await profiles.lookup("7", fresh))?.login).toBe("new");
+    expect(fresh).toHaveBeenCalledTimes(1);
   });
 
   test("refuses a time to keep that is not positive", () => {

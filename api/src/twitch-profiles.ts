@@ -22,10 +22,14 @@ export interface TwitchProfilesOptions {
  * The linked account's profile, looked up through Helix and kept for a while.
  *
  * An engine has one Twitch link, so this holds one profile. A failed lookup
- * is not kept: the next read asks Twitch again.
+ * is not kept: the next read asks Twitch again. Concurrent lookups of one
+ * user share a single Helix call.
  */
 export class TwitchProfiles {
   private cached: { profile: TwitchProfile; fetchedAt: number } | null = null;
+  private pending: { userId: string; lookup: Promise<TwitchProfile | null> } | null = null;
+  /** Raised by `forget`, so a lookup started before it does not keep its answer. */
+  private generation = 0;
   private readonly logger: SharedLogger;
   private readonly ttlMs: number;
   private readonly now: () => number;
@@ -49,6 +53,34 @@ export class TwitchProfiles {
     if (cached && cached.profile.userId === userId && this.now() - cached.fetchedAt < this.ttlMs) {
       return cached.profile;
     }
+    if (this.pending?.userId === userId) {
+      return this.pending.lookup;
+    }
+    const pending = { userId, lookup: this.fetch(userId, getUsers) };
+    this.pending = pending;
+    try {
+      return await pending.lookup;
+    } finally {
+      if (this.pending === pending) {
+        this.pending = null;
+      }
+    }
+  }
+
+  /**
+   * Drop the kept profile, and stop sharing a lookup in flight, so the next
+   * read asks Twitch: the link changed, and a relink is when a renamed
+   * account shows its new name.
+   */
+  forget(): void {
+    this.cached = null;
+    this.pending = null;
+    this.generation += 1;
+  }
+
+  private async fetch(userId: string, getUsers: () => Promise<TwitchHelixResult>): Promise<TwitchProfile | null> {
+    const startedAt = this.now();
+    const generation = this.generation;
     const result = await getUsers();
     if (!result.ok) {
       this.logger.warn("could not look up the linked Twitch account's profile", {
@@ -63,7 +95,9 @@ export class TwitchProfiles {
       this.logger.warn("Twitch did not describe the linked Twitch account", { twitchUserId: userId });
       return null;
     }
-    this.cached = { profile, fetchedAt: this.now() };
+    if (generation === this.generation) {
+      this.cached = { profile, fetchedAt: startedAt };
+    }
     return profile;
   }
 }
@@ -86,8 +120,20 @@ export function readHelixUser(body: unknown, userId: string): TwitchProfile | nu
       userId,
       login,
       displayName: typeof display_name === "string" && display_name !== "" ? display_name : login,
-      profileImageUrl: typeof profile_image_url === "string" && profile_image_url !== "" ? profile_image_url : null,
+      profileImageUrl: httpsUrlOrNull(profile_image_url),
     };
   }
   return null;
+}
+
+/** `value` when it is an `https:` URL, so a client can put it straight into an image source; null otherwise. */
+function httpsUrlOrNull(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  try {
+    return new URL(value).protocol === "https:" ? value : null;
+  } catch {
+    return null;
+  }
 }
