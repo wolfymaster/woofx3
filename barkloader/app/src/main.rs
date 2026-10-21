@@ -10,9 +10,9 @@ use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
-use lib_sandbox::extensions::{ChatExtension, ObsExtension, TwitchExtension};
-use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
-use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
+use lib_sandbox::extensions::{ObsExtension, TwitchExtension};
+use lib_sandbox::host::noop::{NoopNatsRequester, noop_host_context};
+use lib_sandbox::host::{ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -89,7 +89,6 @@ async fn setup() -> Result<AppContext> {
         ctx.schedule = scheduler.clone();
         ctx.actions = action_runner.clone();
 
-        let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
         let mut requester: Arc<dyn NatsRequester> = Arc::new(NoopNatsRequester);
 
         let messagebus_url =
@@ -104,10 +103,6 @@ async fn setup() -> Result<AppContext> {
                         nats.raw_client().clone(),
                         SERVICE_NAME,
                     ));
-                    chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
-                        nats.clone(),
-                        "twitch",
-                    ));
                     requester = nats.clone();
                     ctx.nats = nats;
                 }
@@ -119,7 +114,7 @@ async fn setup() -> Result<AppContext> {
                 }
             }
         } else {
-            info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
+            info!("messagebusUrl not set; using noop NATS publisher");
         }
 
         // Resource-instance lifecycle (`ctx.resources.*`) and module storage
@@ -169,7 +164,7 @@ async fn setup() -> Result<AppContext> {
         ));
         oauth_service = Some(oauth.clone());
 
-        // Platform integrations (twitch / obs / chat) and `ctx.oauth` are
+        // Platform integrations (twitch / obs) and `ctx.oauth` are
         // bound through the extension registry. Each extension owns its own
         // Arc<dyn …> of the relevant transport, so the runtime adapters stay
         // agnostic to which platforms exist.
@@ -177,7 +172,6 @@ async fn setup() -> Result<AppContext> {
             ExtensionRegistry::new()
                 .with(Arc::new(TwitchExtension::new(requester.clone())))
                 .with(Arc::new(ObsExtension::new(requester)))
-                .with(Arc::new(ChatExtension::new(chat_sender)))
                 .with(Arc::new(OAuthExtension::new(oauth))),
         );
 

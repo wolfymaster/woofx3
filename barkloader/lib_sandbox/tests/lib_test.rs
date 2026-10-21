@@ -1,8 +1,7 @@
-use lib_sandbox::extensions::{ChatExtension, TwitchExtension};
+use lib_sandbox::extensions::TwitchExtension;
 use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::{
-    ChatSender, ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester,
-    RequestError,
+    ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester, RequestError,
 };
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
@@ -348,32 +347,19 @@ fn test_ctx_event_data() {
     assert_eq!(result["amount"], serde_json::json!(500));
 }
 
-#[derive(Default)]
-struct CapturingChatSender {
-    sent: Mutex<Vec<String>>,
-}
-
-impl ChatSender for CapturingChatSender {
-    fn send_message(&self, text: &str) -> Result<(), String> {
-        self.sent.lock().unwrap().push(text.to_string());
-        Ok(())
-    }
-}
-
 #[test]
-fn test_ctx_chat_send_message_routes_to_host() {
-    let code = r#"function send(ctx) {
-    ctx.chat.sendMessage(ctx.event.text);
-    return { ok: true };
+fn test_ctx_chat_is_not_exposed_to_modules() {
+    let code = r#"function probe(ctx) {
+    return { chat: typeof ctx.chat };
 }"#;
 
     let registry = Arc::new(ModuleRegistry::new());
     let mut functions = HashMap::new();
     functions.insert(
-        "send".to_string(),
+        "probe".to_string(),
         Function::new(
-            "send".to_string(),
-            "send.js".to_string(),
+            "probe".to_string(),
+            "probe.js".to_string(),
             code.to_string(),
             false,
         ),
@@ -397,16 +383,11 @@ fn test_ctx_chat_send_message_routes_to_host() {
         .register_module("chat_test".to_string(), module)
         .unwrap();
 
-    let capturing = Arc::new(CapturingChatSender::default());
-    let mut host_ctx = noop_host_context();
-    host_ctx.extensions =
-        Arc::new(ExtensionRegistry::new().with(Arc::new(ChatExtension::new(capturing.clone()))));
-
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "chat_test:function:send".to_string(),
-            event: serde_json::json!({ "text": "hi from sandbox" }),
+            function: "chat_test:function:probe".to_string(),
+            event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
             workflow_chain: None,
@@ -414,9 +395,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         })
         .unwrap();
 
-    assert_eq!(result["ok"], serde_json::json!(true));
-    let captured = capturing.sent.lock().unwrap();
-    assert_eq!(captured.as_slice(), &["hi from sandbox".to_string()]);
+    assert_eq!(result["chat"], serde_json::json!("undefined"));
 }
 
 #[derive(Default)]

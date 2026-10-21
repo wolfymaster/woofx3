@@ -1,5 +1,4 @@
 pub mod bundled_reconciler;
-pub mod chat;
 pub mod field_options;
 pub mod file_service;
 pub mod frame_cache;
