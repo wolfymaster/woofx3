@@ -51,6 +51,7 @@ func (a *SlogAdapter) Error(ctx context.Context, msg string, args ...interface{}
 
 // ParamsFilter makes gorm trace SQL with its placeholders and no bound values,
 // so credentials and tokens passed as parameters never reach the logs.
+// gorm's Raw(...).Scan finisher bypasses this hook, so never bind secrets there.
 func (a *SlogAdapter) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
 	return sql, nil
 }
