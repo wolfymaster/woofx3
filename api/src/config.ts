@@ -3,7 +3,8 @@ import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
-import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
+import { downloadOrigin } from "./guarded-download";
+import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
 import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
