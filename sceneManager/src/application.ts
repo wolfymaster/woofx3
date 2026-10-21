@@ -1,5 +1,27 @@
-import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
+import type {
+  ApplicationContext,
+  IApplication,
+  Logger,
+  Application as RuntimeApplication,
+} from "@woofx3/common/runtime";
+import { createMessageBus } from "@woofx3/nats";
+import type NATSClient from "@woofx3/nats/src/client";
 import type { SceneManagerRuntimeConfig } from "./config";
+import { DeliveryStore } from "./events/delivery-store";
+import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
+import { GoogleFontCache } from "./fonts/google-font-cache";
+import { createHttpServer } from "./http";
+import { initSubscriptions } from "./nats-subscriptions";
+import { createObsService, type ObsService } from "./obs/service";
+import { FrameAssembler, HttpBarkloaderFrameClient } from "./scene/frame-assembler";
+import { FrameCatalog } from "./scene/frame-catalog";
+import { MediaProxy } from "./scene/media-proxy";
+import { linkedResources, ModuleStateWatch } from "./scene/module-state";
+import { dbSceneBackupStore } from "./scene/scene-backups";
+import { SceneDocuments } from "./scene/scene-documents";
+import { OverlayHost } from "./scene/scene-host";
+import { SessionTokenService, sceneTokenIssuer } from "./scene/session-token";
+import { OverlayTokenResolver } from "./scene/token-resolver";
 import type DatabaseService from "./services/db";
 
 export type SceneManagerServices = {
@@ -25,191 +47,93 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   readonly context: SceneManagerContext;
   readonly __finalContextType!: SceneManagerContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
-  private deliveryStore: import("./events/delivery-store").DeliveryStore | null = null;
-  private obs: import("./obs/connection").ObsConnection<import("./obs/manager").default> | null = null;
-  private sceneDocuments: import("./scene/scene-documents").SceneDocuments | null = null;
+  private deliveryStore: DeliveryStore | null = null;
+  private obs: ObsService | null = null;
+  private sceneDocuments: SceneDocuments | null = null;
+  private nats: NATSClient | null = null;
 
   constructor(runtimeConfig: SceneManagerRuntimeConfig) {
     this.context = { runtimeConfig };
   }
 
   async run(ctx: Context): Promise<void> {
-    const { createHttpServer } = await import("./http");
-    const { OverlayTokenResolver } = await import("./scene/token-resolver");
-    const { OverlayHost } = await import("./scene/scene-host");
-    const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
-    const { FrameCatalog } = await import("./scene/frame-catalog");
-    const { SceneDocuments } = await import("./scene/scene-documents");
-    const { MediaProxy } = await import("./scene/media-proxy");
-    const { EDITOR_TOKEN_TTL_SECONDS, PREVIEW_TOKEN_TTL_SECONDS, SessionTokenService } = await import(
-      "./scene/session-token"
-    );
-    const { sceneEditorPath } = await import("@woofx3/common/cloudevents/Scene/editor");
-    const { COMPOSITION_PREVIEW_PATH } = await import("@woofx3/common/cloudevents/Scene/composition-preview");
-    const { DeliveryStore } = await import("./events/delivery-store");
-    const { ModuleStateWatch, linkedResources } = await import("./scene/module-state");
-    const { createMessageBus } = await import("@woofx3/nats");
-    const { ObsConnection } = await import("./obs/connection");
-    const { obsDialTarget, openObsOverRoute } = await import("./obs/settings");
-    const { obsStatusReply } = await import("./obs/status");
-    const { dialWebSocketEndpoint, endpointKeysFromManifest, EndpointRelayError, relayChangeMovesEndpoint } =
-      await import("./endpoints/dialer");
-    const { RELAY_CONFIG_SETTING, readStoredRelayConfig, requestRelayCredentialOverNats } = await import(
-      "@woofx3/common/cloudevents/Relay/relay"
-    );
-    const { initSubscriptions } = await import("./nats-subscriptions");
-    const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
-    const { GoogleFontCache } = await import("./fonts/google-font-cache");
+    try {
+      await this.start(ctx);
+    } catch (err) {
+      // A start that fails part way (the port taken, say) must not leave
+      // the bus connection or the redelivery sweep running behind it.
+      await this.release();
+      throw err;
+    }
+    // Block for the process lifetime — Bun.serve doesn't return a
+    // promise that resolves on its own; hold the runtime here until
+    // terminate() stops the server.
+    await new Promise<void>(() => {});
+  }
 
+  private async start(ctx: Context): Promise<void> {
+    const { runtimeConfig, logger } = ctx;
     // Identity of this process, announced on every SSE stream so a
     // reconnecting overlay can tell a resumed stream from one that came
     // back against a restarted sceneManager (see routes/events.ts).
     const bootId = crypto.randomUUID();
 
     const db = ctx.services.db.client;
-    const resolver = new OverlayTokenResolver(db, ctx.logger);
-    const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-    const framing = new FrameCatalog(barkloader, ctx.logger, (moduleId) => linkedResources(db, moduleId));
-    const host = new OverlayHost(resolver, db, ctx.logger, { framing });
-    const mediaProxy = new MediaProxy(ctx.runtimeConfig.mediaProxySecret);
-    const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
+    const resolver = new OverlayTokenResolver(db, logger);
+    const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, logger);
+    const framing = new FrameCatalog(barkloader, logger, (moduleId) => linkedResources(db, moduleId));
+    const host = new OverlayHost(resolver, db, logger, { framing });
+    const mediaProxy = new MediaProxy(runtimeConfig.mediaProxySecret);
+    const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
 
-    const deliveryStore = new DeliveryStore(db, ctx.logger);
+    const deliveryStore = new DeliveryStore(db, logger);
     // Edits are written back here, so the database stays each scene's record.
-    const sceneDocuments = new SceneDocuments(host, deliveryStore, ctx.logger, {
+    const sceneDocuments = new SceneDocuments(host, deliveryStore, logger, {
       mediaProxy,
-      persister: {
-        updateScene: (write) =>
-          db.updateScene({
-            name: "",
-            description: "",
-            widgetsJson: "",
-            layoutJson: "",
-            behaviorsJson: "",
-            inputsJson: "",
-            draftWidgetsJson: "",
-            draftLayoutJson: "",
-            draftBehaviorsJson: "",
-            clearDraft: false,
-            editorStateJson: "",
-            clearEditorState: false,
-            ...write,
-          }),
-      },
+      persister: { updateScene: (write) => db.writeScene(write) },
+      backups: dbSceneBackupStore(db),
     });
     this.sceneDocuments = sceneDocuments;
-    const frameAssembler = new FrameAssembler(host, ctx.logger, {
+    const frameAssembler = new FrameAssembler(host, logger, {
       barkloader,
       linkedResources: (moduleId) => linkedResources(db, moduleId),
       mediaProxy,
     });
-    // Hydrate from the DB before accepting any traffic — a restart
-    // must never silently drop in-flight events.
-    await deliveryStore.hydrate();
-    deliveryStore.startSweep();
+    // Held before hydrating, so a start that fails after this still stops
+    // the store's timers.
     this.deliveryStore = deliveryStore;
-    const moduleState = new ModuleStateWatch(db, deliveryStore, ctx.logger);
+    // Hydrate from the DB before accepting any traffic — a restart must
+    // never silently drop in-flight events; one that cannot read the DB
+    // keeps trying in the background.
+    await deliveryStore.startHydration();
+    deliveryStore.startSweep();
+    const moduleState = new ModuleStateWatch(db, deliveryStore, logger);
 
-    // NATS and OBS are both best-effort, non-blocking dependencies —
-    // scene serving must degrade gracefully without live
-    // infrastructure, so neither
-    // goes through the shared runtime's health-monitor-gated startup
-    // (that would block core scene-serving on their availability).
-    let nats: Awaited<ReturnType<typeof createMessageBus>> | null = null;
-    try {
-      nats = await createMessageBus(ctx.runtimeConfig.nats, ctx.logger);
-      await nats.connect();
-    } catch (err) {
-      ctx.logger.warn("NATS connection failed; event subscriptions disabled", {
-        url: ctx.runtimeConfig.nats.url,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      nats = null;
-    }
+    // NATS and OBS are both best-effort, non-blocking dependencies: scenes
+    // are served without them, so neither goes through the shared runtime's
+    // health-monitor-gated startup, which would hold scene serving back.
+    const nats = await connectBus(runtimeConfig, logger);
+    this.nats = nats;
     // Started only once the server is listening (below), so the first
     // session's overlay refresh can never land before /scene is served.
-    const readRelayConfig = async () => readStoredRelayConfig(await db.getSetting(RELAY_CONFIG_SETTING));
-    const bus = nats;
-    const requestRelayCredential = bus
-      ? requestRelayCredentialOverNats((subject, data, opts) => bus.request(subject, data, opts))
-      : null;
-    const dialer: import("./endpoints/dialer").DialerDeps = {
-      endpointKeys: async (moduleId, endpointId) =>
-        endpointKeysFromManifest(await db.getModuleManifest(moduleId), endpointId),
-      settings: (moduleId) => db.listModuleSettings(moduleId),
-      secrets: (moduleId) => db.getModuleSecretValues(moduleId),
-      // Read on every attempt, like the module settings, so a missed
-      // `engine.relay.config.updated` is picked up on the next retry.
-      relayConfig: readRelayConfig,
-      relayCredential: async (force) => {
-        if (!requestRelayCredential) {
-          throw new Error("no message bus to ask the api for a relay credential");
-        }
-        return requestRelayCredential(force);
-      },
-      fetch,
-      logger: ctx.logger,
-    };
-    const obsTarget = obsDialTarget(ctx.runtimeConfig.obs);
-    // Where and how the latest attempt looked for OBS, for the status reply.
-    // The password and any bridge ticket stay inside the attempt.
-    let lastObs: import("./obs/status").ObsLastRoute | null = null;
-    const obs = new ObsConnection({
-      open: async () => {
-        try {
-          const route = await dialWebSocketEndpoint(dialer, obsTarget);
-          lastObs = { route: route.route, address: route.address };
-          return await openObsOverRoute(route, ctx.logger);
-        } catch (err) {
-          if (err instanceof EndpointRelayError) {
-            lastObs = { route: "companion", address: err.address };
-          }
-          throw err;
-        }
-      },
-      // Refresh overlays on the first session only. It exists to recover
-      // overlays after *this process* restarted; after a mere reconnect their
-      // streams are intact, and a refresh would cut off whatever is playing.
-      // The scene cache the legacy slobs bridge reads is rebuilt by
-      // openObsSession on every session.
-      onConnected: async (client, { first }) => {
-        if (first) {
-          await refreshOverlayBrowserSources(client, ctx.runtimeConfig.port, ctx.logger);
-        }
-      },
-      logger: ctx.logger,
-    });
+    const obs = createObsService({ db, nats, obs: runtimeConfig.obs, overlayPort: runtimeConfig.port, logger });
     this.obs = obs;
+    const tokens = sceneTokenIssuer(sessionTokens, async (sceneId) => (await host.loadSceneById(sceneId)) !== null);
 
     await initSubscriptions({
       nats,
-      obs,
-      obsStatus: () => obsStatusReply(obs, lastObs),
-      relayConfigMovesObs: async () => relayChangeMovesEndpoint(await readRelayConfig(), obsTarget, lastObs),
+      obs: obs.connection,
+      obsStatus: () => obs.status(),
+      relayConfigMovesObs: () => obs.relayConfigMovesObs(),
       db,
       host,
       deliveryStore,
       moduleState,
       resolver,
       sceneDocuments,
-      editorToken: async (sceneId) => {
-        if (!(await host.loadSceneById(sceneId))) {
-          return { ok: false, reason: "scene not found" };
-        }
-        return {
-          ok: true,
-          token: await sessionTokens.mintEditor({ sceneId }),
-          expiresInSeconds: EDITOR_TOKEN_TTL_SECONDS,
-          path: sceneEditorPath(sceneId),
-        };
-      },
-      previewToken: async () => ({
-        ok: true,
-        token: await sessionTokens.mintPreview(),
-        expiresInSeconds: PREVIEW_TOKEN_TTL_SECONDS,
-        path: COMPOSITION_PREVIEW_PATH,
-      }),
-      logger: ctx.logger,
+      editorToken: tokens.editorToken,
+      previewToken: tokens.previewToken,
+      logger,
     });
 
     this.server = createHttpServer({
@@ -221,33 +145,61 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       moduleState,
       settingsDb: db,
       sceneDocuments,
-      fonts: new GoogleFontCache(ctx.runtimeConfig.fontCacheDir, ctx.logger),
+      fonts: new GoogleFontCache(runtimeConfig.fontCacheDir, logger),
       mediaProxy,
       bootId,
     });
-    ctx.logger.info("sceneManager listening", {
-      port: ctx.runtimeConfig.port,
-      bindHost: ctx.runtimeConfig.bindHost,
-      bootId,
-    });
+    logger.info("sceneManager listening", { port: this.server.port, bindHost: runtimeConfig.bindHost, bootId });
 
     obs.start();
-    // Block for the process lifetime — Bun.serve doesn't return a
-    // promise that resolves on its own; hold the runtime here until
-    // terminate() stops the server.
-    await new Promise<void>(() => {});
+
+    // Placements removed while this process was down left deliveries no page
+    // will queue; checked once the server is up, so it never holds serving back.
+    for (const sceneId of deliveryStore.scenesWithOpenDeliveries()) {
+      void closeDeliveriesToRemovedPlacements(sceneId, { host, deliveryStore, logger });
+    }
+  }
+
+  /** The port the server is listening on, once it is; the one the OS chose when configured with 0. */
+  listeningPort(): number | null {
+    return this.server?.port ?? null;
   }
 
   async terminate(ctx: Context): Promise<void> {
+    await this.release();
+    ctx.logger.info("sceneManager stopped");
+  }
+
+  /** Stops whatever has been started, in any state `start` may have left. */
+  private async release(): Promise<void> {
     // Edits still waiting to be written would otherwise be lost with the process.
     await this.sceneDocuments?.close();
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
-    this.server?.stop();
+    // Forced: open event streams would otherwise hold the server, and their
+    // heartbeats, past shutdown.
+    await this.server?.stop(true);
     this.server = null;
     await this.obs?.stop();
     this.obs = null;
-    ctx.logger.info("sceneManager stopped");
+    // Last, so nothing above is left publishing onto a closed connection.
+    await this.nats?.close();
+    this.nats = null;
+  }
+}
+
+/** The message bus, connected; null when it cannot be reached, which the scene manager runs without. */
+async function connectBus(runtimeConfig: SceneManagerRuntimeConfig, logger: Logger): Promise<NATSClient | null> {
+  try {
+    const nats = await createMessageBus(runtimeConfig.nats, logger);
+    await nats.connect();
+    return nats;
+  } catch (err) {
+    logger.warn("NATS connection failed; event subscriptions disabled", {
+      url: runtimeConfig.nats.url,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
 }

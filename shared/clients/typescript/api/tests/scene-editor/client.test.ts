@@ -28,6 +28,7 @@ import {
   type HelloMessage,
   type ItemMessage,
   type ServerMessage,
+  type WelcomeMessage,
   type Watermark,
 } from "../../scene-editor/protocol";
 import { commit, createSequencerState, EMPTY_EDITOR_STATE, prepare } from "../../scene-editor/sequencer";
@@ -572,6 +573,32 @@ describe("SceneSyncClient transitions by event", () => {
     h.socket().serverClose(1006);
     await h.clock.advance(2 * BACKOFF_BASE_MS);
     expect(h.sockets).toHaveLength(4);
+  });
+
+  test("a refusal of a scene that could not be read says what could not be read", async () => {
+    const h = harness();
+    await connected(h);
+    const unread = {
+      columns: [{ version: "published" as const, column: "layout" as const }],
+      placements: { published: 0, draft: 0 },
+    };
+    h.socket().deliver({ type: "error", code: "not_found", detail: "unreadable", unread });
+    expect(h.client.getState().conn).toBe("gone");
+    expect(h.client.getState().unread).toEqual(unread);
+  });
+
+  test("a welcome reports unreadable placements, and the next welcome replaces the report", async () => {
+    const h = harness();
+    await connected(h);
+    expect(h.client.getState().unread).toBeNull();
+    const unread = { columns: [], placements: { published: 1, draft: 0 } };
+    h.socket().deliver({ ...(snapshotWelcome() as WelcomeMessage), unread });
+    expect(h.client.getState().unread).toEqual(unread);
+    h.socket().serverClose(1012, "the scene was repaired");
+    await h.clock.advance(BACKOFF_BASE_MS);
+    h.socket().open();
+    h.socket().deliver(snapshotWelcome());
+    expect(h.client.getState().unread).toBeNull();
   });
 
   test("close 4404: gone", async () => {

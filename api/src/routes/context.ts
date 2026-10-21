@@ -27,14 +27,15 @@ import {
 import { encode } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
 import type { EngineEventStream } from "../engine-event-stream";
-import type { MarketplaceClient } from "../marketplace-client";
 import type { EventLogSelectionSource } from "../event-log-selection";
+import { releaseStub } from "../held-stub";
+import type { MarketplaceClient } from "../marketplace-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
-import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { TwitchDeviceLogins } from "../twitch-device-login";
 import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
@@ -276,7 +277,9 @@ export class ApiRouteHost extends RpcTarget {
       }
     }
     for (const cb of dead) {
-      this.triggerSubscribers.delete(cb);
+      if (this.triggerSubscribers.delete(cb)) {
+        releaseStub(cb);
+      }
     }
   }
 

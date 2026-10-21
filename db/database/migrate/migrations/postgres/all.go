@@ -79,6 +79,7 @@ func All() []*gormigrate.Migration {
 		AddCommandWorkflow(),
 		SplitAlertWorkflows(),
 		AddCommandWorkflowError(),
+		CreateSceneBackupsTable(),
 		AddLocalUISettings(),
 	}
 }

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Logger } from "@woofx3/common/runtime";
+import { selectedThemeId } from "../../contract/scene-config";
 import type { BarkloaderFrameClient, BarkloaderFrameInfo } from "./frame-assembler";
 import { frameMediaProxyBase } from "./media-proxy";
 import type { OverlayWidgetInstance } from "./scene-host";
-import { selectedThemeId } from "./widget-theme";
 
 /**
  * Bumped whenever the frame assembler changes what it writes into a frame

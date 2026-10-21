@@ -12,7 +12,7 @@ export interface OverlayTokenDb {
 }
 
 export interface OverlayTokenResolverOptions {
-  /** Cache TTL in milliseconds. Fixed at 30s. */
+  /** Cache TTL in milliseconds; `OVERLAY_TOKEN_CACHE_TTL_MS` by default. */
   ttlMs?: number;
   /** Clock injection for tests. */
   now?: () => number;
@@ -37,6 +37,13 @@ export function maskToken(token: string): string {
 }
 
 /**
+ * The most tokens the cache holds. Every distinct token presented is cached,
+ * the unknown ones included, so without a bound a stream of made-up tokens
+ * would grow it for as long as the process runs.
+ */
+export const OVERLAY_TOKEN_CACHE_MAX = 1024;
+
+/**
  * Resolves overlay tokens via the db-proxy with a 30s TTL cache.
  *
  * Uniformity invariant (no enumeration oracle): revoked, unknown, and
@@ -50,6 +57,9 @@ export function maskToken(token: string): string {
  */
 export class OverlayTokenResolver {
   private readonly cache = new Map<string, CacheEntry>();
+  // Bumped by every `invalidateAll`: an answer asked for before one is not
+  // cached, since the change that poisoned the cache may postdate it.
+  private generation = 0;
   private readonly ttlMs: number;
   private readonly now: () => number;
 
@@ -76,6 +86,7 @@ export class OverlayTokenResolver {
       return cached.value;
     }
 
+    const asked = this.generation;
     let response: ResolveOverlayTokenResponse;
     try {
       response = await this.db.resolveOverlayToken({ token });
@@ -91,8 +102,35 @@ export class OverlayTokenResolver {
 
     const ok = response.status?.code === "OK" && !!response.sceneId;
     const value: ResolvedOverlayToken | null = ok ? { sceneId: response.sceneId } : null;
-    this.cache.set(token, { value, expiresAt: this.now() + this.ttlMs });
+    if (asked === this.generation) {
+      this.remember(token, { value, expiresAt: this.now() + this.ttlMs });
+    }
     return value;
+  }
+
+  /**
+   * Cache `entry`, newest last. Over the bound, expired entries go first and
+   * then the oldest, so the tokens of open overlays, looked up again every
+   * time their sessions re-verify, are the ones kept.
+   */
+  private remember(token: string, entry: CacheEntry): void {
+    this.cache.delete(token);
+    this.cache.set(token, entry);
+    if (this.cache.size <= OVERLAY_TOKEN_CACHE_MAX) {
+      return;
+    }
+    const now = this.now();
+    for (const [key, cached] of this.cache) {
+      if (cached.expiresAt <= now) {
+        this.cache.delete(key);
+      }
+    }
+    for (const key of this.cache.keys()) {
+      if (this.cache.size <= OVERLAY_TOKEN_CACHE_MAX) {
+        break;
+      }
+      this.cache.delete(key);
+    }
   }
 
   /**
@@ -102,6 +140,7 @@ export class OverlayTokenResolver {
    * a full poison is the correct (and cheap) response.
    */
   invalidateAll(): void {
+    this.generation += 1;
     this.cache.clear();
   }
 

@@ -136,6 +136,14 @@ export interface ModuleFileList {
   files: ModuleFileEntry[];
 }
 
+/**
+ * What module storage holds across every module: the size of the engine's
+ * module storage database, in bytes.
+ */
+export interface ModuleStorageUsage {
+  bytes: number;
+}
+
 /** The bytes a `getModuleFile` reads as text at most. */
 export const MODULE_FILE_TEXT_LIMIT_BYTES = 1024 * 1024;
 
@@ -858,6 +866,16 @@ export interface CompositionPreviewUrl {
   /** How long `url` may be loaded for; ask again to load the page after. */
   expiresInSeconds: number;
 }
+
+/**
+ * Returned by `repairScene`. `backups` counts what was set aside, 0 when the
+ * scene had nothing unreadable. `not_found`: no such scene. `unavailable`:
+ * sceneManager did not answer or is shutting down; asking again can work.
+ * `failed`: the backups or the write-back failed, and nothing was changed.
+ */
+export type SceneRepairResult =
+  | { ok: true; backups: number }
+  | { ok: false; reason: "not_found" | "unavailable" | "failed"; detail: string };
 
 /** Returned by `getSceneEditorSession`. */
 export interface SceneEditorSession {
@@ -1848,6 +1866,13 @@ export interface Woofx3EngineApi {
   getModuleFile(moduleId: string, path: string): Promise<ModuleFileContent>;
 
   /**
+   * How much module storage (`ctx.storage`) holds across every module. The
+   * engine never limits it; a hosted engine's plan may, and the dashboard
+   * compares this figure to that limit.
+   */
+  getModuleStorageUsage(): Promise<ModuleStorageUsage>;
+
+  /**
    * The installed themes made for one widget, for the picker behind a
    * `theme` settings field. `widgetCanonicalId` is `{moduleId}:widget:{id}`.
    * Themes come and go only with module installs, so a picker refreshes on
@@ -2401,6 +2426,15 @@ export interface Woofx3EngineApi {
    * `scenes.editorSync` capability (the socket speaks protocol 2).
    */
   getSceneEditorSession(sceneId: string): Promise<SceneEditorSession | null>;
+  /**
+   * Make a scene whose stored data sceneManager cannot read editable again:
+   * every stored column it cannot read, and every placement in a readable
+   * column that it cannot read, is copied into the db's `scene_backups` as
+   * stored, then the readable rest is written back in its place. Data a newer
+   * engine wrote can look unreadable to an older one, which is why nothing is
+   * dropped without a backup. Requires the `scenes.repair` capability.
+   */
+  repairScene(sceneId: string): Promise<SceneRepairResult>;
 
   /**
    * Finish connecting a module's OAuth integration (the manifest's `oauth[]`):

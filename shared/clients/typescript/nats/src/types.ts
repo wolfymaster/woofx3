@@ -8,9 +8,10 @@ export interface NATSConfig {
 }
 
 /**
- * Handler function for processing messages
+ * Handles one message. A thrown error or a rejected promise is logged with
+ * the subject and does not end the subscription.
  */
-export type Handler = (msg: Msg) => void;
+export type Handler = (msg: Msg) => void | Promise<void>;
 
 /**
  * Logger interface for custom logging implementations

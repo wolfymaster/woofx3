@@ -31,6 +31,10 @@ service StorageService {
   // a stream session ends; a module declares the key is session-scoped and the
   // engine acts on it, since the sandbox exposes no way to clear storage.
   rpc ClearSessionScoped(ClearSessionScopedRequest) returns (ClearSessionScopedResponse) {}
+
+  // Report how much module storage holds, so a hosted engine can be held to
+  // its plan's module storage limit.
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse) {}
 }
 
 // Storage item with metadata.
@@ -131,4 +135,13 @@ message ClearSessionScopedResponse {
   // each one as changed: a screen showing a session value has to learn that it
   // went back to nothing.
   repeated StorageItem cleared_items = 2;
+}
+
+message GetUsageRequest {}
+
+message GetUsageResponse {
+  // Size of the module storage database in bytes: its page count times its
+  // page size, as of the latest commit. Free pages count too, since they take
+  // the same room on disk and in the replica until a vacuum returns them.
+  int64 bytes = 1;
 }

@@ -62,7 +62,8 @@ export const CONFIG_FIELD_TYPES = [
 
 export type ConfigFieldType = (typeof CONFIG_FIELD_TYPES)[number];
 
-/** The settings key of the theme picker barkloader adds to a themeable widget. */
+/** The settings key of the theme picker barkloader adds to a themeable widget.
+ *  Must match `THEME_SETTING_ID` in barkloader's module_manifest.rs. */
 export const THEME_SETTING_ID = "theme";
 
 /**

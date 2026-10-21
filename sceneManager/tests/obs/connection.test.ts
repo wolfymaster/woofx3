@@ -357,6 +357,57 @@ describe("ObsConnection", () => {
     expect(closed).toEqual(["stale"]);
   });
 
+  it("gives up on an open that never finishes, retries, and closes the late session", async () => {
+    let release: () => void = () => {
+      throw new Error("the first attempt never started");
+    };
+    const closed: string[] = [];
+    const session = (name: string): ObsSession<ObsControlClient> => ({
+      client: { name } as unknown as ObsControlClient,
+      onClose: () => {},
+      close: async () => {
+        closed.push(name);
+      },
+    });
+    let calls = 0;
+    const timers = manualTimers();
+    const conn = new ObsConnection<ObsControlClient>({
+      // OBS accepted the socket and then stopped answering while the scenes loaded.
+      open: async () => {
+        calls += 1;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return session("late");
+        }
+        return session("fresh");
+      },
+      openTimeoutMs: 15_000,
+      logger: recordingLogger().logger,
+      random: () => 1,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    conn.start();
+    await settle();
+    expect(timers.delays()).toEqual([15_000]);
+
+    await timers.fire();
+    expect(conn.status()).toBe("retrying");
+    expect(conn.lastFailure()).toBe("unreachable");
+    expect(timers.delays()).toEqual([DEFAULT_OBS_BACKOFF.initialMs]);
+
+    release();
+    await settle();
+    expect(closed).toEqual(["late"]);
+    expect(conn.current()).toBeNull();
+
+    await timers.fire();
+    expect(conn.status()).toBe("connected");
+    expect((conn.current() as unknown as { name: string }).name).toBe("fresh");
+  });
+
   it("does nothing once stopped", async () => {
     const obs = fakeObs(0);
     const { conn } = connection(obs);

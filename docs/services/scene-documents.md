@@ -318,6 +318,40 @@ On shutdown, `close()` stops taking items (later ones are answered
 `unavailable`, so editors resend them to the next process), lets the queues
 finish, and writes every scene still waiting, trying each up to three times.
 
+## Stored data it cannot read
+
+A scene is written back whole, so anything left out on the way in would be
+deleted on the way out. The load therefore keeps track of what it could not
+read (`StoredUnread` in `scene-host.ts`):
+
+- **A placement that does not parse** is kept exactly as stored and written
+  back after the readable ones. It is never shown, and editing goes on around
+  it. An editor's welcome reports how many there are (`unread`).
+- **A column whose whole text is not what it must be** (a version's
+  `widgets`, `layout` or `behaviors`) loads as its empty value, and the scene
+  is never written back while it is held: editors are refused with
+  `not_found` and an `unread` report naming the columns, and changes are
+  refused. Overlays still show what could be read.
+
+Data a newer engine wrote can look unreadable to an older one, after a
+downgrade, so nothing is dropped for being unreadable without a copy.
+`repairScene` (capability `scenes.repair`) asks sceneManager, over
+`engine.scene.repair`, to make such a scene editable again. In the scene's
+serial queue it:
+
+1. copies each unreadable column's stored text, and each version's unreadable
+   placements as a JSON array, into the db's `scene_backups` table, every one
+   or none;
+2. writes the documents it holds over the row: the readable rest, with an
+   unreadable column empty and the unreadable placements left out;
+3. closes open editors with 1012, so they reconnect to a welcome that reports
+   nothing unread.
+
+When the backups cannot be stored nothing changes; when the write fails the
+scene stays as unreadable as it was (the stored backups do no harm). Nothing
+reads `scene_backups` in normal operation: its rows are there to inspect, or
+to restore by hand on an engine that can read them.
+
 ## Restarts
 
 Overlays: every event stream opens with a `hello` carrying the sequence

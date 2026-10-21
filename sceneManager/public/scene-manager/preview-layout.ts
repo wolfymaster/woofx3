@@ -15,7 +15,7 @@
 
 import { evenKeys, type NodeId } from "@woofx3/scene/model";
 import type { TransientOverrides } from "@woofx3/scene/runtime";
-import { themeOf } from "./scene-update";
+import { themeOf } from "../../contract/scene-config";
 
 export const PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
 

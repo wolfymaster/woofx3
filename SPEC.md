@@ -440,7 +440,7 @@ All NATS events follow CloudEvents 1.0 specification with these common fields:
 interface CloudEvent {
   specversion: '1.0';
   id: string;
-  source: string;        // Service origin (e.g., 'twitch', 'slobs')
+  source: string;        // Service origin (e.g., 'twitch', 'scene-manager')
   type: string;          // Event type (e.g., 'message.user.twitch')
   subject?: string;      // Resource identifier
   time: string;          // ISO 8601 timestamp
@@ -470,7 +470,6 @@ interface CloudEvent {
 ```
 {major}.{minor}.{source}
 twitch.message.user
-slobs.scene.changed
 workflow.started
 module.invoked
 ```

@@ -79,7 +79,6 @@ func TestSubjectsConsumedOutsideGoAreReserved(t *testing.T) {
 		"db.ack.>":                             "db/app/workers/ack_worker.go",
 		"setting.integration.token.updated":    "api/src/routes/commands.ts",
 		"barkloader.module.field_options":      "barkloader/app/src/services/field_options.rs",
-		"reward":                               "reward/src/index.ts",
 		"webhook.woofx3_throne.throne_webhook": "webhook trigger events the engine fires",
 	}
 	for subject, consumer := range subjects {
@@ -109,10 +108,8 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"stream.started.notification", ""},
 		{"widget.custom", ""},
 		{"custom.event", ""},
-		{"reward", "reward"},
-		{"rewards.granted", ""},
-		{"reward.granted", ""},
-		{"slobsx", ""},
+		{"message.sent", ""},
+		{"message.send.later", ""},
 	}
 	for _, tc := range cases {
 		match, reserved := ReservedSubjectMatch(tc.subject)

@@ -1,24 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { canUse, parseTime } from "./util";
+import { canUse } from "./util";
 import type { DatabaseClient } from "./services/database";
-
-describe("parseTime", () => {
-  test("converts mixed minute and second tokens to total seconds", () => {
-    expect(parseTime("2m 30s")).toBe(150);
-    expect(parseTime("1m")).toBe(60);
-    expect(parseTime("45s")).toBe(45);
-  });
-
-  test("sums multiple segments of the same unit", () => {
-    expect(parseTime("1m 2m")).toBe(180);
-    expect(parseTime("10s 5s")).toBe(15);
-  });
-
-  test("returns zero when no duration tokens are present", () => {
-    expect(parseTime("")).toBe(0);
-    expect(parseTime("no numbers here")).toBe(0);
-  });
-});
 
 describe("canUse", () => {
   test("allows the command when the database grants read permission on command/<cmd>", async () => {

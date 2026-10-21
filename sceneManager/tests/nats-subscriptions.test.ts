@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { CompositionPreviewTokenReply } from "@woofx3/common/cloudevents/Scene/composition-preview";
+import type { SceneRepairReply } from "@woofx3/common/cloudevents/Scene/editor";
 import { reportAlertNotPlayed } from "../src/events/alert-dispatch";
 import { initSubscriptions, notifySceneUpdated } from "../src/nats-subscriptions";
 
@@ -142,7 +143,8 @@ describe("alert queue control subjects", () => {
   async function wire(
     deliveryStore: Record<string, unknown>,
     db: Record<string, unknown> = {},
-    previewToken: () => Promise<CompositionPreviewTokenReply> = async () => ({ ok: false, reason: "unused" })
+    previewToken: () => Promise<CompositionPreviewTokenReply> = async () => ({ ok: false, reason: "unused" }),
+    repair: (sceneId: string) => Promise<SceneRepairReply> = async () => ({ ok: true, backups: 0 })
   ) {
     const { handlers, nats } = fakeNats();
     await initSubscriptions({
@@ -159,6 +161,7 @@ describe("alert queue control subjects", () => {
         refresh: async () => {},
         applyChange: async () => ({ ok: true as const }),
         published: async () => null,
+        repair,
       },
       editorToken: async () => ({ ok: false, reason: "unused" }),
       previewToken,
@@ -190,6 +193,25 @@ describe("alert queue control subjects", () => {
       waiting: [],
       reason: "no overlay is open",
     });
+  });
+
+  it("repairs the scene a request names, and answers a repair that threw as failed", async () => {
+    const repaired: string[] = [];
+    const handlers = await wire({}, {}, undefined, async (sceneId) => {
+      repaired.push(sceneId);
+      if (sceneId === "broken") {
+        throw new Error("load failed");
+      }
+      return { ok: true, backups: 2 };
+    });
+
+    expect(await request(handlers, "engine.scene.repair", { sceneId: "s1" })).toEqual({ ok: true, backups: 2 });
+    expect(await request(handlers, "engine.scene.repair", { sceneId: "broken" })).toMatchObject({
+      ok: false,
+      reason: "failed",
+    });
+    expect(await request(handlers, "engine.scene.repair", {})).toMatchObject({ ok: false, reason: "not_found" });
+    expect(repaired).toEqual(["s1", "broken"]);
   });
 
   it("answers a failure it did not expect instead of leaving the caller to time out", async () => {
@@ -279,6 +301,7 @@ describe("module setting changes", () => {
         refresh: async () => {},
         applyChange: async () => ({ ok: true as const }),
         published: async () => null,
+        repair: async () => ({ ok: true as const, backups: 0 }),
       },
       editorToken: async () => ({ ok: false, reason: "unused" }),
       previewToken: async () => ({ ok: false, reason: "unused" }),
@@ -356,6 +379,7 @@ describe("module setting changes", () => {
         refresh: async () => {},
         applyChange: async () => ({ ok: true as const }),
         published: async () => null,
+        repair: async () => ({ ok: true as const, backups: 0 }),
       },
       editorToken: async () => ({ ok: false, reason: "unused" }),
       previewToken: async () => ({ ok: false, reason: "unused" }),

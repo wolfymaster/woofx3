@@ -42,6 +42,15 @@ func newOverlayTokenTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE UNIQUE INDEX idx_scenes_kind_name ON scenes (kind, name)`,
+		`CREATE TABLE scene_backups (
+			id TEXT PRIMARY KEY,
+			scene_id TEXT NOT NULL,
+			version TEXT NOT NULL CHECK (version IN ('published', 'draft')),
+			source_column TEXT NOT NULL CHECK (source_column IN ('widgets', 'layout', 'behaviors')),
+			reason TEXT NOT NULL CHECK (reason IN ('unreadable_column', 'unreadable_placements')),
+			content TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE overlay_tokens (
 			id TEXT PRIMARY KEY,
 			token TEXT NOT NULL UNIQUE,

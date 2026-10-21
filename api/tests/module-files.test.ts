@@ -202,3 +202,12 @@ describe("getModuleFile", () => {
     await expect(getModuleFile(self, "nope", "manifest.json")).rejects.toThrow('no module found for moduleId "nope"');
   });
 });
+
+describe("getModuleStorageUsage", () => {
+  test("reports db-proxy's module storage size as a number", async () => {
+    const self = { db: { getModuleStorageUsage: async () => ({ bytes: 524_288_000n }) } };
+    const route = modulesRoutes.getModuleStorageUsage as unknown as () => Promise<{ bytes: number }>;
+
+    expect(await route.call(self)).toEqual({ bytes: 524_288_000 });
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { AckBatcher } from "../../public/scene-manager/ack-batcher";
+import { AckBatcher, postAck } from "../../public/scene-manager/ack-batcher";
 
 interface Call {
   url: string;
@@ -68,5 +68,51 @@ describe("AckBatcher", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("acks the server did not take", () => {
+  const fast = { initialMs: 1, maxMs: 2, attempts: 3 };
+
+  function answering(...statuses: Array<number | "network">) {
+    const calls: string[] = [];
+    const fetchFn = (async (url: unknown) => {
+      calls.push(String(url));
+      const next = statuses.shift() ?? 200;
+      if (next === "network") {
+        throw new TypeError("NetworkError when attempting to fetch resource.");
+      }
+      return new Response(null, { status: next });
+    }) as unknown as typeof fetch;
+    return { calls, fetchFn };
+  }
+
+  it("sends a batch again after the server fails it, until it is taken", async () => {
+    const { calls, fetchFn } = answering(503, 200);
+    const batcher = new AckBatcher(endpoint, { windowMs: 1, fetchFn, retry: fast });
+    batcher.add("e1", "w-1");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(calls).toEqual(["/scene/s1/events/e1/completed", "/scene/s1/events/e1/completed"]);
+  });
+
+  it("sends again after a network failure or an expired session", async () => {
+    const { calls, fetchFn } = answering("network", 401, 200);
+    postAck(fetchFn, "/ack", ["w-1"], fast);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(calls).toHaveLength(3);
+  });
+
+  it("does not resend an ack the server refused as malformed", async () => {
+    const { calls, fetchFn } = answering(400);
+    postAck(fetchFn, "/ack", ["w-1"], fast);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(calls).toHaveLength(1);
+  });
+
+  it("gives up after its attempts", async () => {
+    const { calls, fetchFn } = answering(503, 503, 503, 503, 503);
+    postAck(fetchFn, "/ack", ["w-1"], fast);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(calls).toHaveLength(3);
   });
 });

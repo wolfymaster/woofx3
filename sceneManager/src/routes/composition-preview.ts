@@ -2,9 +2,10 @@ import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/compo
 import { type DeclaredBehaviorKinds, NO_DECLARED_KINDS } from "@woofx3/scene/model";
 import type { HttpDeps } from "../http";
 import { renderCompositionPreviewShell } from "../scene/preview-shell";
-import { readCookie } from "../scene/session-cookie";
+import { BLANK_FRAME_DOC } from "../scene/frame-assembler";
+import { readCookie, serializeCookie } from "../scene/session-cookie";
 import { SESSION_TOKEN_TTL_SECONDS } from "../scene/session-token";
-import { MAX_DRAFT_BODY_BYTES } from "./scene";
+import { BODY_LIMITS, invalidSession, jsonError, jsonOk, NO_STORE, readJsonBody } from "./http-kit";
 
 // The composition preview: the page the dashboard's alert editor embeds to
 // play the composition being edited with the real runtime and widget frames
@@ -26,21 +27,6 @@ export const COMPOSITION_PREVIEW_REFRESH_PATH = `${COMPOSITION_PREVIEW_PATH}/ses
 /** One cookie for every preview page a browser has open: none of them names anything. */
 export const PREVIEW_SESSION_COOKIE = "sm_preview_session";
 
-/** As an overlay's session cookie (see session-cookie.ts). */
-export function serializePreviewSessionCookie(token: string, maxAgeSeconds: number): string {
-  return [
-    `${PREVIEW_SESSION_COOKIE}=${token}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Strict",
-    `Max-Age=${maxAgeSeconds}`,
-  ].join("; ");
-}
-
-const NOT_FOUND_HTML = "<!doctype html><html><head></head><body></body></html>";
-
-const NO_STORE = { "Cache-Control": "no-store" };
-
 async function previewSessionAllows(req: Request, deps: HttpDeps): Promise<boolean> {
   const cookie = readCookie(req, PREVIEW_SESSION_COOKIE);
   return cookie !== null && (await deps.sessionTokens.verifyPreviewSession(cookie));
@@ -48,7 +34,7 @@ async function previewSessionAllows(req: Request, deps: HttpDeps): Promise<boole
 
 async function withFreshSession(deps: HttpDeps, headers: Record<string, string>): Promise<Record<string, string>> {
   const session = await deps.sessionTokens.mintPreviewSession();
-  return { ...headers, "Set-Cookie": serializePreviewSessionCookie(session, SESSION_TOKEN_TTL_SECONDS) };
+  return { ...headers, "Set-Cookie": serializeCookie(PREVIEW_SESSION_COOKIE, session, SESSION_TOKEN_TTL_SECONDS) };
 }
 
 /**
@@ -59,7 +45,7 @@ async function withFreshSession(deps: HttpDeps, headers: Record<string, string>)
 export async function handleCompositionPreviewRoute(url: URL, deps: HttpDeps): Promise<Response> {
   const token = url.searchParams.get("token") ?? "";
   if (!(await deps.sessionTokens.verifyPreview(token))) {
-    return new Response(NOT_FOUND_HTML, {
+    return new Response(BLANK_FRAME_DOC, {
       status: 404,
       headers: { "Content-Type": "text/html; charset=utf-8", ...NO_STORE },
     });
@@ -77,9 +63,9 @@ export async function handleCompositionPreviewRoute(url: URL, deps: HttpDeps): P
 /** `POST /preview/composition/session/refresh`: the page's ~50 s refresh, as an overlay's. */
 export async function handleCompositionPreviewRefreshRoute(req: Request, deps: HttpDeps): Promise<Response> {
   if (!(await previewSessionAllows(req, deps))) {
-    return Response.json({ error: "invalid_session" }, { status: 401, headers: NO_STORE });
+    return invalidSession();
   }
-  return Response.json({ status: "ok" }, { headers: await withFreshSession(deps, NO_STORE) });
+  return jsonOk({ status: "ok" }, await withFreshSession(deps, {}));
 }
 
 /** One widget the page asks to frame. */
@@ -92,13 +78,7 @@ interface FramesRequestWidget {
 /** Most widgets one request may name; an alert holds a handful. */
 export const MAX_PREVIEW_WIDGETS = 256;
 
-function parseFramesRequest(text: string): FramesRequestWidget[] | null {
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    return null;
-  }
+function parseFramesRequest(body: unknown): FramesRequestWidget[] | null {
   const widgets = (body as { widgets?: unknown } | null)?.widgets;
   if (!Array.isArray(widgets) || widgets.length > MAX_PREVIEW_WIDGETS) {
     return null;
@@ -137,19 +117,15 @@ function parseFramesRequest(text: string): FramesRequestWidget[] | null {
  */
 export async function handleCompositionPreviewFramesRoute(req: Request, deps: HttpDeps): Promise<Response> {
   if (!(await previewSessionAllows(req, deps))) {
-    return Response.json({ error: "invalid_session" }, { status: 401, headers: NO_STORE });
+    return invalidSession();
   }
-  const declaredLength = Number(req.headers.get("Content-Length") ?? "0");
-  if (declaredLength > MAX_DRAFT_BODY_BYTES) {
-    return Response.json({ error: "too_large" }, { status: 413, headers: NO_STORE });
+  const body = await readJsonBody(req, BODY_LIMITS.placements);
+  if (!body.ok) {
+    return body.response;
   }
-  const text = await req.text();
-  if (text.length > MAX_DRAFT_BODY_BYTES) {
-    return Response.json({ error: "too_large" }, { status: 413, headers: NO_STORE });
-  }
-  const requested = parseFramesRequest(text);
+  const requested = parseFramesRequest(body.value);
   if (requested === null) {
-    return Response.json({ error: "invalid_body" }, { status: 400, headers: NO_STORE });
+    return jsonError(400, "invalid_body");
   }
 
   // The placement shape the scene host parses a stored scene's widgets in.
@@ -185,5 +161,5 @@ export async function handleCompositionPreviewFramesRoute(req: Request, deps: Ht
       behaviorKinds: instance.behaviorKinds ?? NO_DECLARED_KINDS,
     };
   }
-  return Response.json({ widgets, problems }, { headers: NO_STORE });
+  return jsonOk({ widgets, problems });
 }

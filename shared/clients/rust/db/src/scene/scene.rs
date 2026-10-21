@@ -190,6 +190,42 @@ pub struct ListScenesResponse {
     #[prost(int32, tag="5")]
     pub page_size: i32,
 }
+/// Stored scene data a repair is about to replace, kept as it was. A scene
+/// version whose stored text cannot be read (by this engine: a newer one may
+/// have written it) is set aside here before the repair writes the readable
+/// rest, so nothing is ever deleted for being unreadable. Nothing reads these
+/// in normal operation; they exist to inspect or restore by hand.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SceneBackup {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub scene_id: ::prost::alloc::string::String,
+    /// "published" or "draft".
+    #[prost(string, tag="3")]
+    pub version: ::prost::alloc::string::String,
+    /// "widgets", "layout" or "behaviors": the column the content came from.
+    #[prost(string, tag="4")]
+    pub column: ::prost::alloc::string::String,
+    /// "unreadable_column": `content` is the column's whole stored text.
+    /// "unreadable_placements": `content` is a JSON array of the placements
+    /// in the column that could not be read, exactly as stored.
+    #[prost(string, tag="5")]
+    pub reason: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub content: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="7")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+/// Backups for one scene, written together or not at all.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateSceneBackupsRequest {
+    #[prost(string, tag="1")]
+    pub scene_id: ::prost::alloc::string::String,
+    /// Each entry's `id`, `scene_id` and `created_at` are ignored.
+    #[prost(message, repeated, tag="2")]
+    pub backups: ::prost::alloc::vec::Vec<SceneBackup>,
+}
 include!("scene.serde.rs");
 include!("scene.tonic.rs");
 // @@protoc_insertion_point(module)

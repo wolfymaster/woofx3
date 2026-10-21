@@ -49,7 +49,7 @@ export function obsDialTarget(fallback: ObsFallback): DialTarget {
  */
 export async function openObsOverRoute(route: WebSocketRoute, logger: Logger): Promise<ObsSession<Manager>> {
   try {
-    return await openObsSession({ url: route.url, token: route.password }, logger);
+    return await openObsSession({ url: route.url, token: route.password });
   } catch (err) {
     if (route.route === "companion" && obsFailureKind(err) !== "authentication") {
       const message = err instanceof Error ? err.message : String(err);
