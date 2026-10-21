@@ -2,12 +2,15 @@ package services
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -15,6 +18,30 @@ import (
 )
 
 func newModuleSvc(t *testing.T) (*moduleService, *gorm.DB) {
+	t.Helper()
+	db := migratedModuleDB(t)
+	return moduleSvcOn(db, nil), db
+}
+
+// newPublishingModuleSvc writes its events to the outbox table of the same
+// database, so a test sees which events commit with a change.
+func newPublishingModuleSvc(t *testing.T) (*moduleService, *gorm.DB) {
+	t.Helper()
+	db := migratedModuleDB(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return moduleSvcOn(db, workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)), db
+}
+
+func moduleSvcOn(db *gorm.DB, publisher *workers.EventPublisher) *moduleService {
+	return NewModuleService(
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
+		repo.NewResourceReferenceRepository(db),
+		repo.NewModuleResourceInstanceRepository(db),
+		publisher,
+	)
+}
+
+func migratedModuleDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := openEmptySQLite(t)
 	sqlDB, err := db.DB()
@@ -26,13 +53,7 @@ func newModuleSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	svc := NewModuleService(
-		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
-		repo.NewResourceReferenceRepository(db),
-		repo.NewModuleResourceInstanceRepository(db),
-		nil,
-	)
-	return svc, db
+	return db
 }
 
 func moduleRequest(moduleID, name, version string, functions ...*client.CreateModuleFunctionRequest) *client.CreateModuleRequest {
@@ -223,6 +244,55 @@ func TestCreateModuleReplaceRollsBackWhenAFunctionWriteFails(t *testing.T) {
 	if len(functions) != 2 || functions["kept"].FileKey != "kept-v1" || functions["dropped"].FileKey != "dropped-v1" {
 		t.Fatalf("functions not rolled back to v1: %+v", functions)
 	}
+}
+
+func TestCreateModuleReplaceWritesItsEventInTheSameTransaction(t *testing.T) {
+	registeredEvents := func(t *testing.T, db *gorm.DB) int64 {
+		t.Helper()
+		var count int64
+		if err := db.Model(&models.WorkerEvent{}).
+			Where("entity_type = ? AND operation = ?", "module.function", "registered").
+			Count(&count).Error; err != nil {
+			t.Fatalf("count outbox: %v", err)
+		}
+		return count
+	}
+
+	t.Run("a failed event write rolls the replace back", func(t *testing.T) {
+		svc, db := newPublishingModuleSvc(t)
+		mustCreateModule(t, svc, moduleRequest("cozy", "Cozy", "1.0.0", moduleFunction("f1", "key-v1")))
+		before := registeredEvents(t, db)
+		// The outbox write is the last write of the replace.
+		if err := db.Exec(`CREATE TRIGGER refuse_outbox BEFORE INSERT ON worker_events
+			BEGIN SELECT RAISE(ABORT, 'injected failure'); END`).Error; err != nil {
+			t.Fatalf("create trigger: %v", err)
+		}
+
+		_, err := svc.CreateModule(context.Background(), moduleRequest("cozy", "Cozy", "2.0.0", moduleFunction("f1", "key-v2")))
+		if err == nil {
+			t.Fatal("CreateModule succeeded although its event could not be written")
+		}
+
+		row, functions := storedModule(t, db, "cozy")
+		if row.Version != "1.0.0" || functions["f1"].FileKey != "key-v1" {
+			t.Fatalf("replace not rolled back with its event: %+v %+v", row, functions)
+		}
+		if got := registeredEvents(t, db); got != before {
+			t.Fatalf("outbox has %d registered events, want %d", got, before)
+		}
+	})
+
+	t.Run("a successful replace commits exactly one event", func(t *testing.T) {
+		svc, db := newPublishingModuleSvc(t)
+		mustCreateModule(t, svc, moduleRequest("cozy", "Cozy", "1.0.0", moduleFunction("f1", "key-v1")))
+		before := registeredEvents(t, db)
+
+		mustCreateModule(t, svc, moduleRequest("cozy", "Cozy", "2.0.0", moduleFunction("f1", "key-v2")))
+
+		if got := registeredEvents(t, db); got != before+1 {
+			t.Fatalf("outbox has %d registered events, want %d", got, before+1)
+		}
+	})
 }
 
 func TestCreateModuleReplaceRestoresAnEarlierVersion(t *testing.T) {
