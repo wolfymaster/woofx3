@@ -4,17 +4,54 @@ use super::manifest_validate::InstallProvenance;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 
-/// Shared, pooled HTTP client for every Twirp call this module makes to
-/// db-proxy. `reqwest::Client` is cheap to clone (it's Arc-backed
-/// internally) but expensive to construct — a fresh `Client::new()` per
-/// call meant every RPC paid a cold connection-pool warmup (TCP, and TLS
-/// if db-proxy is behind https) instead of reusing a keep-alive
-/// connection. One process-lifetime client, cloned at each call site,
-/// mirrors the pattern `ReqwestHttpClient` (services/http_client.rs)
-/// already uses correctly for `ctx.http.request`.
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+/// Shared, pooled HTTP client for every call barkloader makes to db-proxy.
+/// `reqwest::Client` is cheap to clone (it's Arc-backed internally) but
+/// expensive to construct, so one process-lifetime client is cloned at each
+/// call site and keep-alive connections are reused. It carries db-proxy's
+/// service token as a default header, so no call can leave it out. Set once
+/// at startup by `configure_service_auth`.
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// Builds the shared db-proxy client with `Authorization: Bearer <token>` on
+/// every request. Called once at startup, after the token has passed the
+/// shared secret rule; a second call is an error rather than a silent swap.
+pub fn configure_service_auth(token: &str) -> Result<()> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err(anyhow!("db proxy service token is empty"));
+    }
+    let mut authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+        .map_err(|e| anyhow!("db proxy service token is not a valid header value: {}", e))?;
+    authorization.set_sensitive(true);
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(reqwest::header::AUTHORIZATION, authorization);
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .map_err(|e| anyhow!("build db proxy client: {}", e))?;
+    HTTP_CLIENT
+        .set(client)
+        .map_err(|_| anyhow!("db proxy service auth is already configured"))
+}
+
+/// The shared db-proxy client. Every caller that dials db-proxy goes through
+/// this (or `twirp_client`), so every request carries the service token.
+pub fn http_client() -> Result<reqwest::Client> {
+    HTTP_CLIENT
+        .get()
+        .cloned()
+        .ok_or_else(|| anyhow!("db proxy client used before configure_service_auth"))
+}
+
+/// A generated Twirp client for db-proxy at `base_url`, on the shared client.
+pub fn twirp_client(base_url: &str) -> Result<woofx3_twirp::TwirpClient> {
+    Ok(woofx3_twirp::TwirpClient::with_client(
+        http_client()?,
+        base_url,
+    ))
+}
 
 fn parse_module_response(text: &str) -> Result<Option<ModuleRecord>> {
     let body: ModuleResponseBody =
@@ -306,7 +343,7 @@ pub async fn register_triggers(
         version: version.to_string(),
         triggers,
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -373,7 +410,7 @@ pub async fn register_actions_with(
         created_by_type: created_by_type.to_string(),
         created_by_ref: created_by_ref.to_string(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -405,7 +442,7 @@ pub async fn delete_triggers_by_module_id(
         module_id: module_id.to_string(),
         module_key: module_key.to_string(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -440,7 +477,7 @@ pub async fn delete_actions_by_module_id(
         module_id: module_id.to_string(),
         module_key: module_key.to_string(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -591,7 +628,7 @@ pub async fn create_module(
         body["marketplace_edition"] = serde_json::json!(origin.edition);
     }
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -641,7 +678,7 @@ pub async fn create_command(
         created_by_ref: module_name.to_string(),
     };
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -677,7 +714,7 @@ pub async fn list_commands_by_module(
         "include_disabled": true
     });
 
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .post(&list_url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -723,7 +760,7 @@ pub async fn delete_command(db_proxy_url: &str, id: &str) -> Result<()> {
         "{}/twirp/command.CommandService/DeleteCommand",
         db_proxy_url
     );
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .post(&delete_url)
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({ "id": id }))
@@ -760,7 +797,7 @@ pub async fn delete_workflows_by_module(db_proxy_url: &str, module_name: &str) -
     );
     let body = serde_json::json!({});
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&list_url)
         .header("Content-Type", "application/json")
@@ -851,7 +888,7 @@ pub async fn create_module_resource(
         "version": version,
     });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -879,7 +916,7 @@ pub async fn delete_module_resources(db_proxy_url: &str, module_id: &str) -> Res
         "module_id": module_id,
     });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -922,7 +959,7 @@ pub async fn delete_resource_by_manifest_id(
         "manifest_id": manifest_id,
     });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -972,7 +1009,7 @@ pub async fn archive_resource_by_manifest_id(
         "manifest_id": manifest_id,
     });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1034,7 +1071,7 @@ pub async fn check_module_resource_usage(
         "module_id": module_id,
     });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1094,7 +1131,7 @@ pub async fn complete_module_delete(
         });
     }
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1118,7 +1155,7 @@ pub async fn delete_module(db_proxy_url: &str, module_name: &str) -> Result<()> 
     let url = format!("{}/twirp/module.ModuleService/DeleteModule", db_proxy_url);
     let body = serde_json::json!({ "name": module_name });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1164,7 +1201,7 @@ pub async fn complete_module_install(
         });
     }
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1198,7 +1235,7 @@ pub async fn get_trigger_event_by_canonical_id(
         db_proxy_url
     );
     let body = serde_json::json!({ "canonical_id": canonical_id });
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1251,7 +1288,7 @@ pub async fn get_action_ref_by_canonical_id(
         db_proxy_url
     );
     let body = serde_json::json!({ "canonical_id": canonical_id });
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1323,7 +1360,7 @@ async fn fetch_module_by_name_raw(db_proxy_url: &str, name: &str) -> Result<Opti
         name: name.to_string(),
     };
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1362,7 +1399,7 @@ pub async fn get_module_by_module_id(
     );
     let body = serde_json::json!({ "module_id": module_id });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1451,7 +1488,7 @@ pub async fn get_widget_entry(
     );
     let body = serde_json::json!({ "canonical_id": canonical_id });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1492,7 +1529,7 @@ pub async fn list_modules(db_proxy_url: &str, state: Option<&str>) -> Result<Vec
         "state": state.unwrap_or(""),
     });
 
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1537,7 +1574,7 @@ pub async fn register_widgets(
         created_by_type: String::new(),
         created_by_ref: String::new(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1568,7 +1605,7 @@ pub async fn delete_widgets_by_module_id(
         module_id: module_id.to_string(),
         module_key: module_key.to_string(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1610,7 +1647,7 @@ pub async fn register_assets(
         created_by_type: String::new(),
         created_by_ref: String::new(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1700,7 +1737,7 @@ pub async fn create_resource_instance(
         "settings_json": settings_json,
         "request_context": request_context,
     });
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1743,7 +1780,7 @@ pub async fn delete_resource_instance(
         "canonical_id": canonical_id,
         "request_context": request_context,
     });
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1775,7 +1812,7 @@ pub async fn get_resource_instance(
         db_proxy_url
     );
     let body = serde_json::json!({ "canonical_id": canonical_id });
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1833,7 +1870,7 @@ pub async fn compare_and_set_resource_instance_setting(
         "value_json": value_json,
         "request_context": request_context,
     });
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1869,7 +1906,7 @@ pub async fn list_resource_instances_by_kind(
         db_proxy_url
     );
     let body = serde_json::json!({ "kind": kind });
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1905,7 +1942,7 @@ pub async fn list_resource_instances_by_module(
         db_proxy_url
     );
     let body = serde_json::json!({ "module_id": module_id });
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1962,7 +1999,7 @@ pub struct StorageAddress<'a> {
 
 async fn post_storage(db_proxy_url: &str, method: &str, body: Value) -> Result<reqwest::Response> {
     let url = format!("{}/twirp/storage.StorageService/{}", db_proxy_url, method);
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -2070,7 +2107,7 @@ pub async fn register_background_tasks(
         version: version.to_string(),
         tasks,
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -2096,7 +2133,7 @@ pub async fn list_background_tasks(db_proxy_url: &str) -> Result<Vec<BackgroundT
         db_proxy_url
     );
     let body = serde_json::json!({ "createdByType": "", "createdByRef": "" });
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -2129,7 +2166,7 @@ pub async fn delete_background_tasks_by_module_id(
         module_id: module_id.to_string(),
         module_key: module_key.to_string(),
     };
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -2191,7 +2228,7 @@ pub async fn register_module_settings(
         "{}/twirp/module_setting.ModuleSettingService/RegisterModuleSettings",
         url
     );
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&endpoint)
         .json(&body)
@@ -2211,7 +2248,7 @@ pub async fn get_module_settings(url: &str, module_id: &str) -> Result<Vec<Modul
         "{}/twirp/module_setting.ModuleSettingService/ListModuleSettings",
         url
     );
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&endpoint)
         .json(&body)
@@ -2246,7 +2283,7 @@ pub async fn get_module_secret_values(
         "{}/twirp/module_setting.ModuleSettingService/GetModuleSecretValues",
         url
     );
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&endpoint)
         .json(&body)
@@ -2299,7 +2336,7 @@ pub async fn set_secret_module_setting(
         "{}/twirp/module_setting.ModuleSettingService/SetModuleSetting",
         url
     );
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&endpoint)
         .json(&body)
@@ -2341,7 +2378,7 @@ pub async fn compare_and_set_module_setting(
         "{}/twirp/module_setting.ModuleSettingService/CompareAndSetModuleSetting",
         url
     );
-    let response = HTTP_CLIENT
+    let response = http_client()?
         .clone()
         .post(&endpoint)
         .json(&body)
@@ -2378,7 +2415,7 @@ pub async fn set_module_setting(url: &str, module_id: &str, key: &str, value: &s
         "{}/twirp/module_setting.ModuleSettingService/SetModuleSetting",
         url
     );
-    let client = HTTP_CLIENT.clone();
+    let client = http_client()?;
     let response = client
         .post(&endpoint)
         .json(&body)

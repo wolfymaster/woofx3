@@ -511,7 +511,9 @@ impl ModuleDbProxy for HttpDbProxyClient {
         &self,
         request: woofx3::db::workflow::CreateWorkflowRequest,
     ) -> Result<()> {
-        let client = woofx3_twirp::WorkflowServiceClient::new(&self.base_url);
+        let client = woofx3_twirp::WorkflowServiceClient::with_client(db_proxy::twirp_client(
+            &self.base_url,
+        )?);
         let response = client
             .create_workflow(request)
             .await

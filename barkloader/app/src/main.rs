@@ -312,12 +312,17 @@ async fn boot_modules(
     .map_err(|e| anyhow::anyhow!("sandbox registry hydrate: {}", e))
 }
 
-/// The engine secret (`barkloaderKey`), read through `lookup(env_var,
-/// config_key)`. It authenticates the api and signs upload grants and media
-/// proxy URLs, so a blank, placeholder or short value stops startup.
-fn engine_secret(lookup: impl Fn(&str, &str) -> String) -> Result<String, SecretError> {
-    let secret = lookup("WOOFX3_BARKLOADER_KEY", "barkloaderKey");
-    validate_secret("barkloaderKey", &secret)?;
+/// An engine secret held by `config_key` (or its `env_var`), read through
+/// `lookup(env_var, config_key)`. `barkloaderKey` authenticates the api and
+/// signs upload grants and media proxy URLs; `dbProxyToken` authenticates
+/// barkloader to db-proxy. A blank, placeholder or short value stops startup.
+fn engine_secret(
+    env_var: &str,
+    config_key: &str,
+    lookup: impl Fn(&str, &str) -> String,
+) -> Result<String, SecretError> {
+    let secret = lookup(env_var, config_key);
+    validate_secret(config_key, &secret)?;
     Ok(secret)
 }
 
@@ -340,16 +345,28 @@ async fn main() -> std::io::Result<()> {
         drop(logging);
         std::process::exit(1);
     }
-    let barkloader_key = match engine_secret(|env_var, config_key| {
+    let config_lookup = |env_var: &str, config_key: &str| {
         get_env_or_default_with_key(env_var, Some(config_key), "")
-    }) {
-        Ok(secret) => secret,
-        Err(e) => {
-            tracing::error!("{}", e);
-            drop(logging);
-            std::process::exit(1);
-        }
     };
+    let barkloader_key =
+        match engine_secret("WOOFX3_BARKLOADER_KEY", "barkloaderKey", config_lookup) {
+            Ok(secret) => secret,
+            Err(e) => {
+                tracing::error!("{}", e);
+                drop(logging);
+                std::process::exit(1);
+            }
+        };
+    // Every db-proxy call goes through the client this configures, so it is
+    // set up before anything below can dial db-proxy.
+    let db_proxy_auth = engine_secret("WOOFX3_DB_PROXY_TOKEN", "dbProxyToken", config_lookup)
+        .map_err(anyhow::Error::from)
+        .and_then(|token| lib_module::db_proxy::configure_service_auth(&token));
+    if let Err(e) = db_proxy_auth {
+        tracing::error!("{}", e);
+        drop(logging);
+        std::process::exit(1);
+    }
     if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
@@ -440,12 +457,17 @@ fn stop_on_ctrl_break(server: actix_web::dev::ServerHandle) {
 mod tests {
     use super::*;
 
-    fn lookup_returning(value: &'static str) -> impl Fn(&str, &str) -> String {
+    const SECRETS: [(&str, &str); 2] = [
+        ("WOOFX3_BARKLOADER_KEY", "barkloaderKey"),
+        ("WOOFX3_DB_PROXY_TOKEN", "dbProxyToken"),
+    ];
+
+    fn lookup_returning(
+        expected: (&'static str, &'static str),
+        value: &'static str,
+    ) -> impl Fn(&str, &str) -> String {
         move |env_var, config_key| {
-            assert_eq!(
-                (env_var, config_key),
-                ("WOOFX3_BARKLOADER_KEY", "barkloaderKey")
-            );
+            assert_eq!((env_var, config_key), expected);
             value.to_string()
         }
     }
@@ -457,20 +479,35 @@ mod tests {
             ("CHANGE_ME", "placeholder"),
             ("short-key", "too short"),
         ];
-        for (value, label) in cases {
-            let error = engine_secret(lookup_returning(value)).expect_err(label);
-            assert!(
-                error
-                    .to_string()
-                    .contains("barkloaderKey (WOOFX3_BARKLOADER_KEY)"),
-                "{label}: {error}"
-            );
+        for (env_var, config_key) in SECRETS {
+            for (value, label) in cases {
+                let error = engine_secret(
+                    env_var,
+                    config_key,
+                    lookup_returning((env_var, config_key), value),
+                )
+                .expect_err(label);
+                assert!(
+                    error
+                        .to_string()
+                        .contains(&format!("{config_key} ({env_var})")),
+                    "{config_key} {label}: {error}"
+                );
+            }
         }
     }
 
     #[test]
     fn test_engine_secret_returns_a_valid_secret_unchanged() {
         let secret = "0123456789abcdef0123456789abcdef";
-        assert_eq!(engine_secret(lookup_returning(secret)).unwrap(), secret);
+        for (env_var, config_key) in SECRETS {
+            let value = engine_secret(
+                env_var,
+                config_key,
+                lookup_returning((env_var, config_key), secret),
+            )
+            .unwrap();
+            assert_eq!(value, secret);
+        }
     }
 }
