@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,22 +121,35 @@ func TestInvokeConcurrentCallsDoNotRaceOnWrite(t *testing.T) {
 // TestInvokeDoesNotDeadlockAgainstConnectCycles is a regression test for a
 // recursive RLock: Invoke held c.mu.RLock and called IsConnected, which took
 // it again. A Connect or Disconnect waiting on the write lock between the two
-// reads blocked the inner one forever, wedging the writer too. Run with
+// reads blocked the inner one forever, wedging the writer too. It also checks
+// that a handler outliving its connection schedules no reconnect. Run with
 // `go test -race`.
 //
-// An Invoke whose connection is torn down mid-flight waits out its full
-// timeout, so the invokers are not awaited: the test passes when the
-// Disconnect/Connect cycler completes, which it cannot do while a reader is
-// wedged.
+// The invokers are not awaited: the test passes when the Disconnect/Connect
+// cycler completes, which it cannot do while a reader is wedged.
 func TestInvokeDoesNotDeadlockAgainstConnectCycles(t *testing.T) {
 	wsURL, closeServer := newEchoServer(t)
 	defer closeServer()
 
-	client := New(Config{WSURL: wsURL})
+	var reconnectAttempts atomic.Int64
+	client := New(Config{
+		WSURL: wsURL,
+		OnReconnectAttempt: func(int, int) {
+			reconnectAttempts.Add(1)
+		},
+	})
 	if err := client.Connect(); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	defer client.Destroy()
+
+	// Destroy blocks behind a wedged reader, so a regression must fail the
+	// test without running it.
+	wedged := false
+	defer func() {
+		if !wedged {
+			client.Destroy()
+		}
+	}()
 
 	const invokers = 8
 	const cycles = 300
@@ -155,26 +169,91 @@ func TestInvokeDoesNotDeadlockAgainstConnectCycles(t *testing.T) {
 		}()
 	}
 
+	var connects atomic.Int64
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for i := 0; i < cycles; i++ {
 			client.Disconnect()
-			_ = client.Connect()
+			if err := client.Connect(); err == nil {
+				connects.Add(1)
+			}
 		}
 	}()
 
 	select {
 	case <-done:
 	case <-time.After(20 * time.Second):
+		wedged = true
 		t.Fatal("Disconnect/Connect cycles wedged behind Invoke")
+	}
+
+	if connects.Load() == 0 {
+		t.Fatal("no Connect succeeded, the cycles exercised nothing")
+	}
+	// Old handlers fail their reads after the cycle completes; give them time.
+	time.Sleep(100 * time.Millisecond)
+	if n := reconnectAttempts.Load(); n != 0 {
+		t.Fatalf("reconnect attempts = %d, want 0 from replaced connections", n)
 	}
 }
 
-func TestInvokeWhenDisconnectedReturnsErrNotConnected(t *testing.T) {
-	client := New(Config{WSURL: "ws://127.0.0.1:1"})
-	_, err := client.Invoke("test:function:echo", map[string]interface{}{}, "")
-	if !errors.Is(err, ErrNotConnected) {
-		t.Fatalf("Invoke() error = %v, want ErrNotConnected", err)
+func TestDisconnectedClientReturnsErrNotConnected(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(c *Client) error
+	}{
+		{"Send", func(c *Client) error { return c.Send("{}") }},
+		{"Invoke", func(c *Client) error {
+			_, err := c.Invoke("test:function:echo", map[string]interface{}{}, "")
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := New(Config{WSURL: "ws://127.0.0.1:1"})
+			if err := tt.call(client); !errors.Is(err, ErrNotConnected) {
+				t.Fatalf("error = %v, want ErrNotConnected", err)
+			}
+		})
+	}
+}
+
+// TestInvokeFailsFastWhenConnectionDrops is a regression test for an Invoke
+// waiting out its full timeout after the peer died.
+func TestInvokeFailsFastWhenConnectionDrops(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		_, _, _ = conn.ReadMessage()
+		conn.Close()
+	}))
+	defer server.Close()
+
+	client := New(Config{
+		WSURL:            "ws" + strings.TrimPrefix(server.URL, "http"),
+		ReconnectTimeout: time.Hour,
+	})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	defer client.Destroy()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := client.Invoke("test:function:echo", map[string]interface{}{}, "")
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrConnectionLost) {
+			t.Fatalf("Invoke() error = %v, want ErrConnectionLost", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Invoke() still waiting after the connection dropped")
 	}
 }

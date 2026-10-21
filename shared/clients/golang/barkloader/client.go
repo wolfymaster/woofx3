@@ -17,6 +17,15 @@ import (
 // websocket connection. Check it with errors.Is.
 var ErrNotConnected = errors.New("barkloader: not connected")
 
+// ErrConnectionLost is returned by Invoke when the connection drops while the
+// call is waiting for its result.
+var ErrConnectionLost = errors.New("barkloader: connection lost")
+
+// responseTypeConnectionLost marks a synthetic response the message handler
+// delivers to waiting invokes when their connection dies. It is never read
+// off the wire: the handler only accepts "result" and "error" frames.
+const responseTypeConnectionLost = "connection_lost"
+
 type ReconnectAttemptHandler func(attempt int, maxRetries int)
 
 type InvokeResponse struct {
@@ -278,6 +287,10 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}, workf
 	timeout := time.After(invokeTimeout)
 	select {
 	case response := <-responseChan:
+		if response.Type == responseTypeConnectionLost {
+			return nil, ErrConnectionLost
+		}
+
 		if response.Type == "error" {
 			return nil, fmt.Errorf("barkloader error: %s", response.ErrorMessage())
 		}
@@ -319,21 +332,20 @@ func (c *Client) messageHandler(conn *websocket.Conn) {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			// Any read error means this connection is dead — not just a
-			// clean WebSocket close frame (IsUnexpectedCloseError only
-			// recognizes *websocket.CloseError). An abrupt peer restart
-			// (e.g. barkloader exiting) tears down the TCP connection
-			// without a close handshake, surfacing as a plain network
-			// error here. Clear c.conn so IsConnected()/Send() stop
-			// believing this dead connection is usable, and always
-			// attempt reconnection — handleConnectionFailure() already
-			// no-ops for manual disconnects (isManualClose/shouldReconnect).
+			// Any read error means this connection is dead, not just a clean
+			// close frame: an abrupt peer restart surfaces as a plain network
+			// error. Only the handler of the live connection clears it and
+			// schedules a reconnect; a handler whose connection was already
+			// replaced or cleared (Disconnect, then Connect) returns quietly.
 			c.mu.Lock()
-			if c.conn == conn {
-				c.conn = nil
+			if c.conn != conn {
+				c.mu.Unlock()
+				return
 			}
+			c.conn = nil
+			c.handleConnectionFailureLocked()
 			c.mu.Unlock()
-			c.handleConnectionFailure()
+			c.failPendingInvokes()
 			return
 		}
 
@@ -355,13 +367,17 @@ func (c *Client) messageHandler(conn *websocket.Conn) {
 	}
 }
 
-// handleConnectionFailure acquires c.mu before scheduling a reconnect
-// attempt. Call this from contexts that don't already hold the lock (e.g.
-// messageHandler's read-error path).
-func (c *Client) handleConnectionFailure() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.handleConnectionFailureLocked()
+// failPendingInvokes wakes every waiting Invoke with ErrConnectionLost so
+// callers do not sit out invokeTimeout after the connection dies.
+func (c *Client) failPendingInvokes() {
+	c.pendingInvokesMu.Lock()
+	defer c.pendingInvokesMu.Unlock()
+	for _, responseChan := range c.pendingInvokes {
+		select {
+		case responseChan <- InvokeResponse{Type: responseTypeConnectionLost}:
+		default:
+		}
+	}
 }
 
 // handleConnectionFailureLocked schedules a reconnect attempt. Callers must
@@ -386,6 +402,7 @@ func (c *Client) handleConnectionFailureLocked() {
 		c.onReconnectAttempt(c.currentRetryCount, maxRetries)
 	}
 
+	c.clearReconnectTimer()
 	c.reconnectTimer = time.AfterFunc(c.reconnectTimeout, func() {
 		c.Connect()
 	})
