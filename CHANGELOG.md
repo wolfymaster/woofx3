@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.39.0](https://github.com/wolfymaster/woofx3/compare/v0.38.0...v0.39.0) (2026-10-21)
+
+### Features
+
+* **api:** getModuleStorageUsage ([9760bef](https://github.com/wolfymaster/woofx3/commit/9760befc4af59db1f5ec03d52b42211af1ad7e6e))
+* **db:** report module storage size ([0b24158](https://github.com/wolfymaster/woofx3/commit/0b24158c29780b1fcdb4d62d1a4eebd6b6fe5785))
+
+### Bug Fixes
+
+* **api:** keep stream and trigger subscription callbacks alive ([84bfcaf](https://github.com/wolfymaster/woofx3/commit/84bfcaf21609507c073b956ad0fbb1bd34b7bf28))
+
 ## [0.38.0](https://github.com/wolfymaster/woofx3/compare/v0.37.0...v0.38.0) (2026-10-21)
 
 ### ⚠ BREAKING CHANGES
