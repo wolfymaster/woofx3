@@ -5,6 +5,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use std::time::Duration;
+
+/// Connect limit for db-proxy calls; it is a local service, so a slow connect
+/// means it is down.
+const DB_PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Whole-request limit, just above db-proxy's 60s server write timeout so the
+/// server gives up first and the client sees its error.
+const DB_PROXY_REQUEST_TIMEOUT: Duration = Duration::from_secs(65);
 
 /// Shared, pooled HTTP client for every call barkloader makes to db-proxy.
 /// `reqwest::Client` is cheap to clone (it's Arc-backed internally) but
@@ -29,6 +38,8 @@ pub fn configure_service_auth(token: &str) -> Result<()> {
     headers.insert(reqwest::header::AUTHORIZATION, authorization);
     let client = reqwest::Client::builder()
         .default_headers(headers)
+        .connect_timeout(DB_PROXY_CONNECT_TIMEOUT)
+        .timeout(DB_PROXY_REQUEST_TIMEOUT)
         .build()
         .map_err(|e| anyhow!("build db proxy client: {}", e))?;
     HTTP_CLIENT
