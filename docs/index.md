@@ -26,6 +26,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Stream sessions](/services/stream-sessions)** - The logical span a broadcast belongs to: the partition key every event is stamped with
 - **[Marketplace installs](/services/marketplace-install)** - How the engine installs a marketplace listing by id: the buyer token it forwards, the download host allowlist, size and SHA-256 checks, the consent check and the install key
 - **[Marketplace catalog](/services/marketplace-catalog)** - Catalog reads through the engine: search, counts, a listing, an author page and a quote, answered with the marketplace's JSON unchanged, and the error format a caller parses
+- **[Connectors host](/services/connectors)** - The service that runs platform and local-app adapters while they are linked and enabled: adapter states, served subjects, the scoped bus, configuration and `/health`
 - **[Local endpoints and the companion bridge](/services/local-endpoints)** - How the engine reaches a module's `local[]` endpoints: straight to the address, or through the woofx3 companion's bridge for a cloud engine
 - **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that
