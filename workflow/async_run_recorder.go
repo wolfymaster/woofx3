@@ -66,8 +66,7 @@ func (c recorderConfig) validate() error {
 }
 
 var (
-	errRecorderNotStarted = errors.New("run recorder was never started")
-	errRecorderStopped    = errors.New("run recorder already stopped")
+	errRecorderStopped = errors.New("run recorder already stopped")
 )
 
 // asyncRunRecorder is the engine's RunRecorder: it captures each write while
@@ -81,7 +80,9 @@ var (
 //
 // One writer applies writes in the order they were queued, which keeps a
 // run's row ahead of its steps and its outcome. Run history therefore trails
-// the run by however long the queue takes to reach it.
+// the run by however long the queue takes to reach it. During a long db proxy
+// outage the queue fills and writes are dropped without regard to kind, so a
+// run whose row was written can stay "running" in history.
 type asyncRunRecorder struct {
 	db     *dbRunRecorder
 	cfg    recorderConfig
@@ -147,8 +148,11 @@ func (r *asyncRunRecorder) Start() {
 func (r *asyncRunRecorder) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	if !r.started {
+		// Nothing was ever queued for a writer, so there is nothing to drain.
+		r.closed = true
 		r.mu.Unlock()
-		return errRecorderNotStarted
+		r.cancel()
+		return nil
 	}
 	if r.closed {
 		r.mu.Unlock()
@@ -167,6 +171,11 @@ func (r *asyncRunRecorder) Stop(ctx context.Context) error {
 		<-r.done
 		return fmt.Errorf("run recorder drain cut short: %w", ctx.Err())
 	}
+}
+
+// DrainTimeout is the budget Stop should be given to flush the queue.
+func (r *asyncRunRecorder) DrainTimeout() time.Duration {
+	return r.cfg.DrainTimeout
 }
 
 // Dropped is how many writes were given up on because the queue was full or

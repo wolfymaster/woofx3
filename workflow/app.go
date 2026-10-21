@@ -349,7 +349,7 @@ func (a *WorkflowApp) Terminate(ctx context.Context) error {
 	if a.runRecorder == nil {
 		return engineErr
 	}
-	drainCtx, cancel := context.WithTimeout(context.Background(), a.runRecorder.cfg.DrainTimeout)
+	drainCtx, cancel := context.WithTimeout(context.Background(), a.runRecorder.DrainTimeout())
 	defer cancel()
 	return errors.Join(engineErr, a.runRecorder.Stop(drainCtx))
 }

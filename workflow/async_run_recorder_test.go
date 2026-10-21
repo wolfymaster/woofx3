@@ -306,9 +306,6 @@ func TestAsyncRecorderLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newAsyncRunRecorder: %v", err)
 	}
-	if err := recorder.Stop(context.Background()); !errors.Is(err, errRecorderNotStarted) {
-		t.Fatalf("Stop before Start = %v, want errRecorderNotStarted", err)
-	}
 	recorder.Start()
 	drain(t, recorder)
 	if err := recorder.Stop(context.Background()); !errors.Is(err, errRecorderStopped) {
@@ -318,6 +315,16 @@ func TestAsyncRecorderLifecycle(t *testing.T) {
 	recorder.RunStarted(runWith("twitch"))
 	if got := recorder.Dropped(); got != 1 {
 		t.Fatalf("a write after Stop was not counted as dropped: Dropped = %d", got)
+	}
+}
+
+func TestAsyncRecorderStopWithoutStartHasNothingToDrain(t *testing.T) {
+	recorder, err := newAsyncRunRecorder(&stubRunStore{}, defaultRecorderConfig(), quietLogger{}, time.Now)
+	if err != nil {
+		t.Fatalf("newAsyncRunRecorder: %v", err)
+	}
+	if err := recorder.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop before Start = %v, want nil", err)
 	}
 }
 
