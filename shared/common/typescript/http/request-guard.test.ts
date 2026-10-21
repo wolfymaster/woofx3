@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_ALLOWED_ORIGINS,
+  describeRequestGuardPolicy,
   isLoopbackHostname,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
@@ -287,5 +288,28 @@ describe("resolveExposure", () => {
     expect(isLoopbackHostname("LOCALHOST.")).toBe(true);
     expect(isLoopbackHostname("127.0.0.1.evil.example")).toBe(false);
     expect(isLoopbackHostname("::")).toBe(false);
+  });
+});
+
+describe("describeRequestGuardPolicy", () => {
+  test("lists the resolved loopback defaults", () => {
+    const policy = parseRequestGuardPolicy({
+      exposure: "loopback",
+      ownUrls: ["https://streamer.example"],
+      extraDefaultOrigins: ["null"],
+    });
+
+    expect(describeRequestGuardPolicy(policy)).toEqual({
+      allowedHosts: "localhost,127.0.0.1,[::1],streamer.example",
+      allowedOrigins:
+        "http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null,https://streamer.example",
+    });
+  });
+
+  test("shows an unchecked list as *", () => {
+    expect(describeRequestGuardPolicy(policyFor({ allowedOrigins: "*" }))).toEqual({
+      allowedHosts: "*",
+      allowedOrigins: "*",
+    });
   });
 });

@@ -1,3 +1,4 @@
+import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -131,7 +132,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const logger = ctx.logger as SharedLogger;
     const db = ctx.services.db.client;
 
-    logger.info("Starting API server", { port: config.port || 8080 });
+    logger.info("Starting API server", {
+      port: config.port || 8080,
+      ...describeRequestGuardPolicy(config.requestGuard),
+    });
 
     // NATS is best-effort and non-blocking — kept outside the runtime's
     // health-monitor-gated service connect so the API still serves traffic

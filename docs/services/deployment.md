@@ -156,7 +156,8 @@ When a setting is unset or blank, a default list applies:
 tells the services that the edge forwards to them. They bind loopback either
 way and cannot see the edge, which is public whether or not `PORT` is set, so
 the production image sets it to `true`; set it yourself only when you put your
-own proxy in front of services that bind loopback.
+own proxy in front of services that bind loopback. Both services log the Host
+and Origin lists they resolved at startup (`*` for an unchecked list).
 
 Set a list to `*` to turn that check off: every Host, or every Origin with
 CORS `Access-Control-Allow-Origin: *`. `*` must be the only entry.

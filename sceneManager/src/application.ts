@@ -1,3 +1,4 @@
+import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type {
   ApplicationContext,
   IApplication,
@@ -149,7 +150,12 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       mediaProxy,
       bootId,
     });
-    logger.info("sceneManager listening", { port: this.server.port, bindHost: runtimeConfig.bindHost, bootId });
+    logger.info("sceneManager listening", {
+      port: this.server.port,
+      bindHost: runtimeConfig.bindHost,
+      bootId,
+      ...describeRequestGuardPolicy(runtimeConfig.requestGuard),
+    });
 
     obs.start();
 

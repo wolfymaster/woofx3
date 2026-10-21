@@ -141,6 +141,37 @@ function comparableOrigin(url: URL): string | null {
   return `${url.protocol}//${url.host}`.toLowerCase();
 }
 
+/**
+ * The policy as two log-friendly strings, `*` for an unchecked list, so an
+ * operator can see at startup which Hosts and Origins the defaults resolved to.
+ */
+export function describeRequestGuardPolicy(policy: RequestGuardPolicy): {
+  allowedHosts: string;
+  allowedOrigins: string;
+} {
+  return {
+    allowedHosts:
+      policy.allowedHosts === null
+        ? ALLOW_ANY
+        : policy.allowedHosts
+            .map((rule) => (rule.port === null ? rule.hostname : `${rule.hostname}:${rule.port}`))
+            .join(","),
+    allowedOrigins:
+      policy.allowedOrigins === null ? ALLOW_ANY : policy.allowedOrigins.map(describeOriginRule).join(","),
+  };
+}
+
+function describeOriginRule(rule: OriginRule): string {
+  switch (rule.kind) {
+    case "exact":
+      return rule.origin;
+    case "anyPort":
+      return `${rule.protocol}//${rule.hostname}:*`;
+    case "opaque":
+      return OPAQUE_ORIGIN;
+  }
+}
+
 /** Allows every Host and Origin, with CORS `*`. */
 export const OPEN_REQUEST_GUARD_POLICY: RequestGuardPolicy = { allowedHosts: null, allowedOrigins: null };
 
