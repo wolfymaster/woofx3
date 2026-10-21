@@ -88,7 +88,7 @@ async fn setup() -> Result<AppContext> {
     let oauth_service: Option<Arc<OAuthService>>;
     // `ctx.resources.run` runs actions in a sandbox built from the very
     // context it is part of, so it is handed that context once it exists.
-    let action_runner = SandboxActionRunner::new(registry.clone(), sandbox_limits);
+    let action_runner = SandboxActionRunner::new(registry.clone(), sandbox_limits)?;
     let host_ctx = {
         let mut ctx = noop_host_context();
         ctx.schedule = scheduler.clone();
@@ -190,7 +190,7 @@ async fn setup() -> Result<AppContext> {
     };
 
     action_runner.bind(host_ctx.clone());
-    let sandbox = SandboxFactory::new(registry.clone(), host_ctx, sandbox_limits);
+    let sandbox = SandboxFactory::new(registry.clone(), host_ctx, sandbox_limits)?;
 
     scheduler.start(Arc::new(sandbox.clone()));
 

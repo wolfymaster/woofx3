@@ -684,7 +684,8 @@ async fn test_invocation_past_the_concurrency_cap_is_refused_as_busy() {
         registry_with("run.lua", "function run(ctx) while true do end end"),
         noop_host_context(),
         limits,
-    );
+    )
+    .expect("valid limits");
     let holders: Vec<_> = (0..slots)
         .map(|_| {
             let factory = busy.clone();
@@ -739,7 +740,8 @@ async fn test_invoke_blocking_runs_within_the_cap() {
         registry_with("run.js", "function run(ctx) { return { ok: true }; }"),
         noop_host_context(),
         SandboxLimits::default(),
-    );
+    )
+    .expect("valid limits");
     let results = futures_join(&factory, 4).await;
     for result in results {
         assert_eq!(result.expect("invocation runs"), json!({ "ok": true }));

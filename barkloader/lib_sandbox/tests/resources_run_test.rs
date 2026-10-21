@@ -162,7 +162,8 @@ fn world(linked: bool, provider_permissions: &[&str], consumer_permissions: &[&s
             HashMap::from([("timer".to_string(), json!(COUNTER))]),
         );
     }
-    let runner = SandboxActionRunner::new(registry.clone(), SandboxLimits::default());
+    let runner =
+        SandboxActionRunner::new(registry.clone(), SandboxLimits::default()).expect("valid limits");
     let mut host = noop_host_context();
     host.settings = Arc::new(Settings(settings));
     host.resources = Arc::new(Instances(vec![

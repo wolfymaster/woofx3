@@ -97,13 +97,11 @@ pub struct LuaAdapter {
 }
 
 impl LuaAdapter {
-    pub fn new(limits: SandboxLimits) -> Result<Self, Error> {
-        if limits.hook_interval == 0 {
-            return Err(Error::RuntimeError(
-                "Lua hook interval must be above zero".to_string(),
-            ));
-        }
-        Ok(Self { limits })
+    /// `limits` must already have passed [`SandboxLimits::validate`], as
+    /// every `Sandbox` checks on construction.
+    pub fn new(limits: SandboxLimits) -> Self {
+        debug_assert_eq!(limits.validate(), Ok(()));
+        Self { limits }
     }
 }
 
@@ -930,7 +928,7 @@ mod tests {
             url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let code = r#"
             function run(ctx)
                 return { env = type(ctx.env) }
@@ -956,7 +954,7 @@ mod tests {
             url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let code = r#"
             function run(ctx)
                 ctx.schedule.at("timer_end", "t1", 2000, { target = "t1" })
@@ -988,7 +986,7 @@ mod tests {
 
     #[test]
     fn lua_ctx_log_accepts_strings_and_objects() {
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1018,7 +1016,7 @@ mod tests {
 
     #[test]
     fn lua_ctx_response_builds_the_standard_shape() {
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1078,7 +1076,7 @@ mod tests {
             data: std::collections::HashMap::new(),
             writes: Default::default(),
         });
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1111,7 +1109,7 @@ mod tests {
             data,
             writes: Default::default(),
         });
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1151,7 +1149,7 @@ mod tests {
             data: std::collections::HashMap::new(),
             writes: writes.clone(),
         });
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1188,7 +1186,7 @@ mod tests {
     fn lua_ctx_module_id_name_version_still_direct_fields() {
         // Guards against the __index metatable hook accidentally shadowing
         // the plain fields set directly on module_tbl.
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1257,7 +1255,7 @@ mod tests {
         });
         let mut host = noop_host_context();
         host.settings = settings.clone();
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1294,7 +1292,7 @@ mod tests {
         ));
         let mut host = noop_host_context();
         host.resources = instance.clone();
-        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default());
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,

@@ -37,7 +37,7 @@ impl FunctionExecutor {
         if !self.adapters.contains_key(extension) {
             let adapter: Box<dyn RuntimeAdapter> = match extension {
                 "echo" => Box::new(EchoAdapter::new()),
-                "lua" => Box::new(LuaAdapter::new(self.limits)?),
+                "lua" => Box::new(LuaAdapter::new(self.limits)),
                 "js" => Box::new(QuickJSAdapter::new(self.limits)?),
                 other => return Err(Error::UnsupportedRuntime(other.to_string())),
             };

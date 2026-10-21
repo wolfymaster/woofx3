@@ -57,7 +57,7 @@ pub struct SandboxLimits {
     pub memory_bytes: usize,
     /// Lua only; QuickJS is bounded by `quickjs_max_interrupts`.
     pub max_instructions: u64,
-    /// Lua only. Must be above zero.
+    /// Lua only.
     pub hook_interval: u32,
     pub quickjs_max_interrupts: u64,
     pub max_concurrent_invocations: usize,
@@ -86,9 +86,64 @@ pub enum SandboxLimitsError {
         value: String,
         max: usize,
     },
+
+    #[error("sandbox limit {field} must be from {min} to {max}, not {value}")]
+    OutOfRange {
+        field: &'static str,
+        value: u64,
+        min: u64,
+        max: u64,
+    },
 }
 
 impl SandboxLimits {
+    /// Checks every bound is usable: no budget is zero, and the concurrency
+    /// cap fits Tokio's blocking pool. A zero `permit_wait` is allowed: it
+    /// refuses at once when every slot is taken. A zero hook interval would install no
+    /// Lua hook at all, so neither budget would be enforced.
+    pub fn validate(&self) -> Result<(), SandboxLimitsError> {
+        let checks: [(&'static str, u64, u64); 7] = [
+            (
+                "conversion.max_depth",
+                self.conversion.max_depth as u64,
+                u64::MAX,
+            ),
+            (
+                "conversion.max_nodes",
+                self.conversion.max_nodes as u64,
+                u64::MAX,
+            ),
+            ("memory_bytes", self.memory_bytes as u64, u64::MAX),
+            ("max_instructions", self.max_instructions, u64::MAX),
+            (
+                "hook_interval",
+                u64::from(self.hook_interval),
+                u64::from(u32::MAX),
+            ),
+            (
+                "quickjs_max_interrupts",
+                self.quickjs_max_interrupts,
+                u64::MAX,
+            ),
+            (
+                "max_concurrent_invocations",
+                self.max_concurrent_invocations as u64,
+                MAX_CONCURRENT_INVOCATIONS as u64,
+            ),
+        ];
+        for (field, value, max) in checks {
+            if !(1..=max).contains(&value) {
+                return Err(SandboxLimitsError::OutOfRange {
+                    field,
+                    value,
+                    min: 1,
+                    max,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Reads `WOOFX3_SANDBOX_MAX_CONCURRENT_INVOCATIONS` through `lookup`. A
     /// blank value keeps the default; anything but a whole number from 1 to
     /// [`MAX_CONCURRENT_INVOCATIONS`] is an error.
@@ -100,10 +155,14 @@ impl SandboxLimits {
             return Ok(defaults);
         }
         match value.parse::<usize>() {
-            Ok(parsed) if (1..=MAX_CONCURRENT_INVOCATIONS).contains(&parsed) => Ok(Self {
-                max_concurrent_invocations: parsed,
-                ..defaults
-            }),
+            Ok(parsed) if (1..=MAX_CONCURRENT_INVOCATIONS).contains(&parsed) => {
+                let limits = Self {
+                    max_concurrent_invocations: parsed,
+                    ..defaults
+                };
+                limits.validate()?;
+                Ok(limits)
+            }
             _ => Err(SandboxLimitsError::Invalid {
                 name: MAX_CONCURRENT_INVOCATIONS_ENV,
                 value: value.to_string(),
@@ -276,6 +335,88 @@ mod tests {
                     Err(SandboxLimitsError::Invalid { max: 512, .. })
                 ),
                 "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sandbox_limits_validate_accepts_defaults() {
+        assert_eq!(SandboxLimits::default().validate(), Ok(()));
+    }
+
+    #[test]
+    fn test_sandbox_limits_validate_refuses_unusable_bounds() {
+        let defaults = SandboxLimits::default();
+        for (field, limits) in [
+            (
+                "conversion.max_depth",
+                SandboxLimits {
+                    conversion: ConversionLimits {
+                        max_depth: 0,
+                        ..defaults.conversion
+                    },
+                    ..defaults
+                },
+            ),
+            (
+                "conversion.max_nodes",
+                SandboxLimits {
+                    conversion: ConversionLimits {
+                        max_nodes: 0,
+                        ..defaults.conversion
+                    },
+                    ..defaults
+                },
+            ),
+            (
+                "memory_bytes",
+                SandboxLimits {
+                    memory_bytes: 0,
+                    ..defaults
+                },
+            ),
+            (
+                "max_instructions",
+                SandboxLimits {
+                    max_instructions: 0,
+                    ..defaults
+                },
+            ),
+            (
+                "hook_interval",
+                SandboxLimits {
+                    hook_interval: 0,
+                    ..defaults
+                },
+            ),
+            (
+                "quickjs_max_interrupts",
+                SandboxLimits {
+                    quickjs_max_interrupts: 0,
+                    ..defaults
+                },
+            ),
+            (
+                "max_concurrent_invocations",
+                SandboxLimits {
+                    max_concurrent_invocations: 0,
+                    ..defaults
+                },
+            ),
+            (
+                "max_concurrent_invocations",
+                SandboxLimits {
+                    max_concurrent_invocations: MAX_CONCURRENT_INVOCATIONS + 1,
+                    ..defaults
+                },
+            ),
+        ] {
+            assert!(
+                matches!(
+                    limits.validate(),
+                    Err(SandboxLimitsError::OutOfRange { field: f, .. }) if f == field
+                ),
+                "{field}"
             );
         }
     }

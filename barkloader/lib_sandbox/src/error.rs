@@ -1,4 +1,4 @@
-use crate::runtime::limits::SizeLimit;
+use crate::runtime::limits::{SandboxLimitsError, SizeLimit};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -65,6 +65,9 @@ pub enum Error {
 
     #[error("entry point returned a Promise; async functions are not supported")]
     AsyncEntryUnsupported,
+
+    #[error("invalid sandbox limits: {0}")]
+    InvalidLimits(#[from] SandboxLimitsError),
 }
 
 /// Thread-safe error returned by [`crate::SandboxFactory::invoke_blocking`].

@@ -6,7 +6,7 @@ use crate::host::{
 };
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
-use crate::runtime::limits::SandboxLimits;
+use crate::runtime::limits::{SandboxLimits, SandboxLimitsError};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -28,13 +28,14 @@ impl SandboxFactory {
         registry: Arc<ModuleRegistry>,
         host_ctx: HostContext,
         limits: SandboxLimits,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SandboxLimitsError> {
+        limits.validate()?;
+        Ok(Self {
             registry,
             host_ctx,
             limits,
             permits: Arc::new(Semaphore::new(limits.max_concurrent_invocations)),
-        }
+        })
     }
 
     pub fn create(&self) -> Result<Sandbox, Error> {
@@ -131,6 +132,7 @@ impl Sandbox {
         host_ctx: HostContext,
         limits: SandboxLimits,
     ) -> Result<Self, Error> {
+        limits.validate()?;
         Ok(Self {
             registry,
             function_executor: FunctionExecutor::new(limits),
@@ -299,12 +301,16 @@ pub struct SandboxActionRunner {
 }
 
 impl SandboxActionRunner {
-    pub fn new(registry: Arc<ModuleRegistry>, limits: SandboxLimits) -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        limits: SandboxLimits,
+    ) -> Result<Arc<Self>, SandboxLimitsError> {
+        limits.validate()?;
+        Ok(Arc::new(Self {
             registry,
             limits,
             host: std::sync::OnceLock::new(),
-        })
+        }))
     }
 
     /// Hands the runner the context nested runs use. Only the first call
