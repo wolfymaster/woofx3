@@ -30,7 +30,16 @@ export function toHypeTrainBegin(event: EventSubChannelHypeTrainBeginV2Event): H
 
 export default function onChannelHypeTrainBegin(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelHypeTrainBeginV2(ctx.broadcaster.id, async (event: EventSubChannelHypeTrainBeginV2Event) => {
-    const [topic, data] = ctx.events.Twitch().hypeTrainBegin(toHypeTrainBegin(event));
-    ctx.messageBus.publish(topic, data);
+    // A mapping or guard failure drops this one event; it must not escape the
+    // async callback as an unhandled rejection.
+    try {
+      const [topic, data] = ctx.events.Twitch().hypeTrainBegin(toHypeTrainBegin(event));
+      ctx.messageBus.publish(topic, data);
+    } catch (error) {
+      ctx.logger.error("twitch: failed to publish hype train begin", {
+        hypeTrainId: event.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 }

@@ -46,9 +46,10 @@ function twurpleEvent(): EventSubChannelHypeTrainBeginV2Event {
 
 function harness() {
   const published: { topic: string; raw: string }[] = [];
+  const error = mock(() => {});
   const ctx = {
     broadcaster: { id: "broadcaster-1" } as HelixUser,
-    logger: { warn: mock(() => {}) } as unknown as Context["logger"],
+    logger: { warn: mock(() => {}), error } as unknown as Context["logger"],
     messageBus: {
       publish: mock((topic: string, bytes: Uint8Array) => {
         published.push({ topic, raw: new TextDecoder().decode(bytes) });
@@ -68,6 +69,7 @@ function harness() {
 
   return {
     published,
+    error,
     deliver: (event: EventSubChannelHypeTrainBeginV2Event) => {
       if (handler === undefined) {
         throw new Error("onChannelHypeTrainBegin did not subscribe");
@@ -104,5 +106,20 @@ describe("onChannelHypeTrainBegin", () => {
       startedAt: "2026-10-21T18:00:00.000Z",
       expiresAt: "2026-10-21T18:05:00.000Z",
     });
+  });
+
+  test("logs and drops an event it cannot map instead of rejecting", async () => {
+    const { published, error, deliver } = harness();
+    const broken = twurpleEvent();
+    Object.defineProperty(broken, "expiryDate", {
+      get: () => {
+        throw new Error("no expiry");
+      },
+    });
+
+    await deliver(broken);
+
+    expect(published).toHaveLength(0);
+    expect(error).toHaveBeenCalledTimes(1);
   });
 });
