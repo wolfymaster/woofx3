@@ -388,8 +388,10 @@ for the life of the process, and never give up on it:
   failure the library gives up on, such as a revoked credential). The client
   does not dial a replacement, which would silently carry none of the old
   subscriptions: every later call fails with "NATS connection is closed", the
-  Go client's `Healthy()` and the runtime `NATSService.Connected()` report
-  false, and the TypeScript client's `isClosed()` reports true.
+  Go client's `Healthy()` reports false, and the TypeScript client's
+  `isClosed()` reports true. The runtime notices a closed Go connection
+  because the NATS health monitor's liveness publish then fails with the
+  closed error.
 - **Connection events are logged.** Connect, disconnect, reconnect and close
   are logged through the injected logger. In Go, asynchronous errors are too:
   a slow consumer that is dropping messages logs its subject, the error, and

@@ -59,21 +59,6 @@ func (s *NATSService) Connect(ctx context.Context, appCtx *runtime.ApplicationCo
 	return s.BaseService.Connect(ctx, appCtx)
 }
 
-// Connected reports whether the service connected and its client can still
-// reach the bus. The client never replaces its connection, so once it is
-// closed the service stays down until the process restarts.
-func (s *NATSService) Connected() bool {
-	return s.BaseService.Connected() && s.Healthy()
-}
-
-// Healthy reports whether the service's client has a connection that is not
-// closed. A connection that is reconnecting is healthy.
-func (s *NATSService) Healthy() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.client != nil && s.client.Healthy()
-}
-
 func (s *NATSService) Disconnect(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
