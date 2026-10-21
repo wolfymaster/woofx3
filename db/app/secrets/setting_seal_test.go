@@ -51,7 +51,7 @@ func TestSettingSealSealsOnlyTheKeysItNames(t *testing.T) {
 			if IsSealed(stored) != tc.wantSealed {
 				t.Fatalf("stored = %q, sealed want %v", stored, tc.wantSealed)
 			}
-			if tc.wantSealed && strings.Contains(stored, "r1") {
+			if tc.wantSealed && strings.Contains(stored, `"refreshToken"`) {
 				t.Fatalf("stored value carries the plain text: %q", stored)
 			}
 			plain, err := seal.PlainValue(tc.key, stored)
