@@ -1,0 +1,17 @@
+{
+  "name": "connectors",
+  "private": true,
+  "dependencies": {
+    "zod": "^4.6.6"
+  },
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^26.4.1",
+    "typescript": "5.9.3"
+  }
+}
