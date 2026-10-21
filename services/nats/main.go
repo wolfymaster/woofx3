@@ -58,7 +58,7 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 	<-sigCh
-	gracefulShutdown(cfg, ns)
+	gracefulShutdown(ns)
 }
 
 func readFlags() string {
@@ -141,8 +141,7 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string) (*server
 	return ns, nil
 }
 
-func gracefulShutdown(_ *Configuration, ns *server.Server) {
-	// cleanupPIDFile(cfg.RootPath)
+func gracefulShutdown(ns *server.Server) {
 	ns.Shutdown()
 	os.Exit(0)
 }
