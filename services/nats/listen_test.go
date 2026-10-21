@@ -156,6 +156,8 @@ func TestValidateChecksTheAllowedOrigins(t *testing.T) {
 		{name: "another scheme", origins: []string{"ws://app.example"}, wantErr: ErrInvalidOrigin},
 		{name: "a query", origins: []string{"https://app.example?x=1"}, wantErr: ErrInvalidOrigin},
 		{name: "user info", origins: []string{"https://user@app.example"}, wantErr: ErrInvalidOrigin},
+		{name: "an empty port", origins: []string{"https://app.example:"}, wantErr: ErrInvalidOrigin},
+		{name: "an upper-case scheme", origins: []string{"HTTPS://app.example"}, wantErr: ErrInvalidOrigin},
 		{name: "a wildcard", origins: []string{"*"}, wantErr: ErrInvalidOrigin},
 		{name: "one bad among good", origins: []string{"https://app.example", "nope"}, wantErr: ErrInvalidOrigin},
 		{name: "a list with same-origin on", origins: []string{"https://app.example"}, sameOrigin: true, wantErr: ErrOriginsUnreachable},

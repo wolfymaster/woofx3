@@ -76,7 +76,7 @@ func DefaultConfiguration() *Configuration {
 var (
 	ErrNoToken            = errors.New("no message bus token is configured: set messagebusToken (WOOFX3_MESSAGEBUS_TOKEN) to a random value of at least 32 bytes, or set WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED=true to run the bus without authentication")
 	ErrPortsCollide       = errors.New("the TCP and WebSocket listeners are set to the same port")
-	ErrInvalidOrigin      = errors.New("is not an http(s) origin: write it as scheme://host[:port], with no path")
+	ErrInvalidOrigin      = errors.New("allowed origin is not an http(s) origin: write it as scheme://host[:port], with no path")
 	ErrOriginsUnreachable = errors.New("messagebusWebSocketAllowedOrigins admits only same-origin pages while messagebusWebSocketSameOrigin is on: set WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN=false to admit the listed origins")
 )
 
@@ -97,7 +97,7 @@ func (c *Configuration) Validate() error {
 	}
 	for _, origin := range c.WebSocketAllowedOrigins {
 		if !isHTTPOrigin(origin) {
-			return fmt.Errorf("messagebusWebSocketAllowedOrigins entry %q %w", origin, ErrInvalidOrigin)
+			return fmt.Errorf("messagebusWebSocketAllowedOrigins entry %q: %w", origin, ErrInvalidOrigin)
 		}
 	}
 	if c.WebSocketSameOrigin && len(c.WebSocketAllowedOrigins) > 0 {
@@ -124,6 +124,10 @@ func isHTTPOrigin(origin string) bool {
 		return false
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	// Browsers send the scheme lower-case and never an empty port.
+	if !strings.HasPrefix(origin, u.Scheme+"://") || strings.HasSuffix(u.Host, ":") {
 		return false
 	}
 	return u.Hostname() != "" && u.User == nil && u.Opaque == "" && u.Path == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
