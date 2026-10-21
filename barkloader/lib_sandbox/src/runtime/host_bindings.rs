@@ -622,7 +622,9 @@ mod tests {
     #[test]
     fn build_outcome_value_table() {
         let ok_envelope = |success: bool| json!({"proto":"woofx3.response","v":1,"success":success,"message":"m"});
-        let cases: Vec<(&str, bool, Option<Value>, Result<Value, &str>)> = vec![
+        // (name, success, fields, expected envelope or error substring)
+        type Case<'a> = (&'a str, bool, Option<Value>, Result<Value, &'a str>);
+        let cases: Vec<Case> = vec![
             ("no fields", true, None, Ok(ok_envelope(true))),
             (
                 "null fields",
