@@ -132,7 +132,23 @@ interface Follow {
 #### HypeTrainBegin
 
 ```typescript
-interface HypeTrainBegin {}  // no additional payload
+interface HypeTrainBegin {
+    id: string;
+    broadcasterId: string;
+    broadcasterName: string;   // display name
+    level: number;
+    total: number;             // points contributed to the whole train
+    progress: number;          // points towards the current level
+    goal: number;              // points the current level needs
+    topContributions: {
+        userId: string;
+        userName: string;      // display name
+        type: "bits" | "subscription" | "other";
+        total: number;
+    }[];
+    startedAt: string;         // ISO-8601
+    expiresAt: string;         // ISO-8601; extended when the train levels up
+}
 ```
 
 #### StreamOnline
