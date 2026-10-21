@@ -271,6 +271,9 @@ pub struct RunCaller<'a> {
     pub module_id: &'a str,
     /// The invocation's grants, which must cover the providing module's.
     pub permissions: &'a HashSet<String>,
+    /// The invocation's resource-link setting ids, the same set `get` and
+    /// `list` are judged against.
+    pub resource_link_settings: &'a HashSet<String>,
     /// When the caller stops waiting; the action runs within it.
     pub deadline: Instant,
 }

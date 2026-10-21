@@ -6,7 +6,7 @@ use crate::host::{
 };
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
-use crate::resource_access::{ResourceAccess, instance_owner};
+use crate::resource_access::{InstanceId, ResourceAccess, parse_instance_id};
 use crate::runtime::limits::{SandboxLimits, SandboxLimitsError};
 use serde_json::Value;
 use std::sync::Arc;
@@ -372,18 +372,20 @@ impl SandboxActionRunner {
             .host
             .get()
             .ok_or_else(|| "ctx.resources.run: the engine is still starting".to_string())?;
-        let Some(owner) = instance_owner(canonical_id) else {
+        let Some(InstanceId { owner, kind, .. }) = parse_instance_id(canonical_id) else {
             return Err(format!(
                 "ctx.resources.run: {canonical_id:?} is not a resource instance id"
             ));
         };
-        let kind = canonical_id.split(':').nth(1).unwrap_or_default();
         if verb.is_empty() || verb.contains(':') {
             return Err(format!("ctx.resources.run: {verb:?} is not an action name"));
         }
 
-        let link_settings = self.registry.resource_link_settings(caller.module_id);
-        let access = ResourceAccess::new(caller.module_id, &link_settings, host.settings.as_ref());
+        let access = ResourceAccess::new(
+            caller.module_id,
+            caller.resource_link_settings,
+            host.settings.as_ref(),
+        );
         if !access
             .may_read(canonical_id)
             .map_err(|e| format!("ctx.resources.run: {e}"))?

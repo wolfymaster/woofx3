@@ -664,6 +664,7 @@ fn build_resources_namespace<'js>(
     let host = invocation.host.clone();
     let module_id = invocation.module_id.clone();
     let permissions = invocation.permissions.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let deadline = invocation.deadline;
     let run_fn = JsFunction::new(
         ctx.clone(),
@@ -675,9 +676,12 @@ fn build_resources_namespace<'js>(
                 .transpose()?;
             match super::host_bindings::resources_run(
                 &host,
-                &module_id,
-                &permissions,
-                deadline,
+                &crate::host::RunCaller {
+                    module_id: &module_id,
+                    permissions: &permissions,
+                    resource_link_settings: &link_settings,
+                    deadline,
+                },
                 &canonical_id,
                 &verb,
                 json_params,

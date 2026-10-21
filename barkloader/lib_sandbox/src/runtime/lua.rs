@@ -578,6 +578,7 @@ fn build_lua_ctx(
         let host = invocation.host.clone();
         let module_id = invocation.module_id.clone();
         let permissions = invocation.permissions.clone();
+        let link_settings = invocation.resource_link_settings.clone();
         let deadline = invocation.deadline;
         let run_fn = lua.create_function(
             move |lua, (canonical_id, verb, params): (String, String, Option<LuaValue>)| {
@@ -585,9 +586,12 @@ fn build_lua_ctx(
                     params.map(|p| binding_arg(lua, &p, limits)).transpose()?;
                 match super::host_bindings::resources_run(
                     &host,
-                    &module_id,
-                    &permissions,
-                    deadline,
+                    &crate::host::RunCaller {
+                        module_id: &module_id,
+                        permissions: &permissions,
+                        resource_link_settings: &link_settings,
+                        deadline,
+                    },
                     &canonical_id,
                     &verb,
                     json_params,

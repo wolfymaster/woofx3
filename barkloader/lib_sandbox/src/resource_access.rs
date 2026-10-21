@@ -10,7 +10,9 @@
 //!   and the ones the streamer linked to it: the value of one of its
 //!   resource-link settings (`resource_ref` in the manifest). Module code
 //!   cannot write those settings (`host_bindings::set_module_setting`), so a
-//!   link is always the streamer's choice.
+//!   link is set either by the streamer or at install time by the module's
+//!   manifest `create` on a `resource_ref` setting, which may reuse an
+//!   existing instance.
 //!
 //! The caller is the module id the host bound to the invocation, never a value
 //! module code supplies.
@@ -18,14 +20,30 @@
 use crate::host::{ResourceInstance, SettingsClient};
 use std::collections::HashSet;
 
-/// The owner segment of a canonical instance id, `{owner}:{kind}:{instance}`;
-/// `None` when the id does not have three non-empty segments.
-pub fn instance_owner(canonical_id: &str) -> Option<&str> {
+/// The segments of a canonical instance id, `{owner}:{kind}:{instance}`.
+pub struct InstanceId<'a> {
+    pub owner: &'a str,
+    pub kind: &'a str,
+    pub instance: &'a str,
+}
+
+/// Splits a canonical instance id; `None` when it does not have three
+/// non-empty segments.
+pub fn parse_instance_id(canonical_id: &str) -> Option<InstanceId<'_>> {
     let mut parts = canonical_id.splitn(3, ':');
     let owner = parts.next().filter(|s| !s.is_empty())?;
-    parts.next().filter(|s| !s.is_empty())?;
-    parts.next().filter(|s| !s.is_empty())?;
-    Some(owner)
+    let kind = parts.next().filter(|s| !s.is_empty())?;
+    let instance = parts.next().filter(|s| !s.is_empty())?;
+    Some(InstanceId {
+        owner,
+        kind,
+        instance,
+    })
+}
+
+/// The owner segment of a canonical instance id.
+pub fn instance_owner(canonical_id: &str) -> Option<&str> {
+    parse_instance_id(canonical_id).map(|id| id.owner)
 }
 
 /// The access one invoking module has to resource instances.

@@ -219,20 +219,13 @@ pub fn resources_compare_and_set_setting(
 /// invocation, never from module code.
 pub fn resources_run(
     host: &HostContext,
-    module_id: &str,
-    permissions: &HashSet<String>,
-    deadline: std::time::Instant,
+    caller: &crate::host::RunCaller<'_>,
     canonical_id: &str,
     verb: &str,
     params: Option<Value>,
 ) -> Result<Value, String> {
-    let caller = crate::host::RunCaller {
-        module_id,
-        permissions,
-        deadline,
-    };
     host.actions
-        .run(&caller, canonical_id, verb, params.unwrap_or(Value::Null))
+        .run(caller, canonical_id, verb, params.unwrap_or(Value::Null))
 }
 
 /// `ctx.resources.list(kind)`: the instances of `kind` the invoking module may
