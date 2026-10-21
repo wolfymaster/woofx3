@@ -66,9 +66,9 @@ const (
 //  4. a new secret of MinSecretBytes bytes from random, hex-encoded and
 //     written to that file (mode 0600, in a 0700 directory).
 //
-// A value that is set but invalid, such as the CHANGE_ME the packaged
-// template used to ship, is logged and passed over rather than refused, so an
-// existing install replaces it on upgrade instead of failing to start.
+// A value that is set but invalid, such as a template placeholder, is logged
+// and passed over rather than refused, so an install that carries one starts
+// with a usable secret instead of failing.
 // Running again reads the file back, so the generated value is stable.
 func ResolveSecrets(specs []SecretSpec, sources woofx3config.Sources, stateDir string, random io.Reader, logger *slog.Logger) (map[string]string, error) {
 	if err := checkSecretSpecs(specs); err != nil {
@@ -123,13 +123,13 @@ func checkSecretSpecs(specs []SecretSpec) error {
 
 // usableSecret reports whether value, read from source, is a valid secret. A
 // blank value is simply absent; any other invalid one is logged, by key and
-// reason only, so the operator learns why their setting was replaced.
+// reason only, so the operator learns why their setting was passed over.
 func usableSecret(spec SecretSpec, value, source string, logger *slog.Logger) (string, bool) {
 	if strings.TrimSpace(value) == "" {
 		return "", false
 	}
 	if err := woofx3config.ValidateSecret(spec.ConfigKey, value); err != nil {
-		logger.Warn("Ignoring an engine secret that is not usable; a generated one is used instead",
+		logger.Warn("Ignoring an engine secret that is not usable; falling back to the next source",
 			"key", spec.EnvKey, "source", source, "reason", err)
 		return "", false
 	}
