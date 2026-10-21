@@ -72,7 +72,7 @@ interface PendingRequest {
  * is bounded: past `bufferLimit` the oldest frame is dropped, and `seq` tells
  * the subscriber it missed something. A push that rejects or outlasts
  * `pushTimeoutMs` drops the subscription, as does the session breaking
- * (`onRpcBroken`).
+ * (`onRpcBroken`) and the client being deleted (`dropClient`).
  *
  * `stop` closes every subscription and refuses new ones and new requests, so
  * nothing outlives the engine's shutdown: no request timer, no held stub.
@@ -135,6 +135,19 @@ export class EngineEventStream {
       this.drop(session, subscription, "session closed");
     });
     this.logger.info("EngineEventStream: subscribed", { clientId, types: types ?? "all" });
+  }
+
+  /**
+   * Drop every subscription of `clientId`, failing its requests in flight.
+   * For a client that no longer exists, so that it neither receives events
+   * nor is offered as one that can answer a request.
+   */
+  dropClient(clientId: string): void {
+    for (const [session, subscription] of this.subscriptions) {
+      if (subscription.clientId === clientId) {
+        this.drop(session, subscription, "client deleted");
+      }
+    }
   }
 
   /**

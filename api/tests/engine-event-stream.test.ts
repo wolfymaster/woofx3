@@ -240,6 +240,28 @@ describe("EngineEventStream", () => {
       expect.objectContaining({ clientId: "local", reason: "push timed out after 20ms" })
     );
   });
+
+  test("dropClient drops every subscription of that client alone", async () => {
+    const { stream } = newStream();
+    const first = collector();
+    const second = collector();
+    const other = collector();
+    stream.subscribe(first.subscriber, undefined, {}, "gone");
+    stream.subscribe(second.subscriber, undefined, {}, "gone");
+    stream.subscribe(other.subscriber, undefined, {}, "kept");
+    const answered = stream.request(tokenRequest(), "gone", 60_000);
+
+    stream.dropClient("gone");
+
+    await expect(answered).rejects.toThrow("the event stream subscription closed (client deleted)");
+    expect(stream.clientIds()).toEqual(["kept"]);
+    expect(stream.hasSubscriber("gone")).toBe(false);
+    expect(stream.publish(workflowDeleted("w1"))).toBe(1);
+    await settle();
+    expect(first.frames.filter((f) => f.kind === "event")).toHaveLength(0);
+    expect(second.frames.filter((f) => f.kind === "event")).toHaveLength(0);
+    expect(other.frames).toHaveLength(1);
+  });
 });
 
 describe("EngineEventStream.stop", () => {
