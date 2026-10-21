@@ -1,5 +1,6 @@
 import type { EngineHosting, UISetting } from "@woofx3/api";
 import type {
+  CallbackEvent,
   CommandCreatedEvent,
   CommandDeletedEvent,
   CommandUpdatedEvent,
@@ -171,78 +172,54 @@ export class ApiRouteHost extends RpcTarget {
     };
   }
 
-  protected async emitWorkflowWebhook(
-    event: WorkflowCreatedEvent | WorkflowUpdatedEvent | WorkflowDeletedEvent
-  ): Promise<void> {
+  /** Best effort: a failed or unconfigured send is logged, never thrown. */
+  protected async emitWebhook(event: CallbackEvent, context: Record<string, unknown>): Promise<void> {
     if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping workflow webhook", { type: event.type });
+      this.logger.warn("No webhook client set, skipping webhook", { type: event.type, ...context });
       return;
     }
     try {
       await this.webhookClient.send(event);
     } catch (err) {
-      this.logger.error("Failed to send workflow webhook", { type: event.type, err });
+      this.logger.error("Failed to send webhook", { type: event.type, ...context, err });
     }
+  }
+
+  protected async emitWorkflowWebhook(
+    event: WorkflowCreatedEvent | WorkflowUpdatedEvent | WorkflowDeletedEvent
+  ): Promise<void> {
+    await this.emitWebhook(event, {});
   }
 
   protected async emitCommandWebhook(
     event: CommandCreatedEvent | CommandUpdatedEvent | CommandDeletedEvent
   ): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping command webhook", { type: event.type });
-      return;
-    }
-    try {
-      await this.webhookClient.send(event);
-    } catch (err) {
-      this.logger.error("Failed to send command webhook", { type: event.type, err });
-    }
+    await this.emitWebhook(event, {});
   }
 
   protected async emitGroupWebhook(
     event: GroupCreatedEvent | GroupUpdatedEvent | GroupDeletedEvent | GroupMemberAddedEvent | GroupMemberRemovedEvent
   ): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping group webhook", { type: event.type });
-      return;
-    }
-    try {
-      await this.webhookClient.send(event);
-    } catch (err) {
-      this.logger.error("Failed to send group webhook", { type: event.type, err });
-    }
+    await this.emitWebhook(event, {});
   }
 
   protected async emitSceneWebhook(event: SceneCreatedEvent | SceneUpdatedEvent | SceneDeletedEvent): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping scene webhook", { type: event.type });
-      return;
-    }
-    try {
-      await this.webhookClient.send(event);
-    } catch (err) {
-      this.logger.error("Failed to send scene webhook", { type: event.type, err });
-    }
+    await this.emitWebhook(event, {});
   }
 
   /** Announces a local UI setting write. Best effort: a reader that missed it pages the changes. */
   protected async emitUISettingWebhook(setting: UISetting): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping ui setting webhook", { namespace: setting.namespace });
-      return;
-    }
-    try {
-      await this.webhookClient.send({
+    await this.emitWebhook(
+      {
         type: EngineEventType.UI_SETTING_CHANGED,
         namespace: setting.namespace,
         key: setting.key,
         revision: setting.revision,
         deleted: setting.deleted,
         value: setting.value,
-      });
-    } catch (err) {
-      this.logger.error("Failed to send ui setting webhook", { namespace: setting.namespace, err });
-    }
+      },
+      { namespace: setting.namespace, key: setting.key }
+    );
   }
 
   /**
