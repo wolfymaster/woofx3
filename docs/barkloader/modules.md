@@ -1637,7 +1637,11 @@ invoke a function it declares itself, named by its full canonical id
 (`my_module:function:greet`). The install fails when a workflow step or command
 action uses it with another module's function, with a `${...}` template (the
 target would only be known at run time), or with no literal canonical function
-id at all. Bundled system modules are exempt.
+id at all (including one with surrounding spaces). The same rule covers the
+module's own `type: "function"` actions: each must point at one of the module's
+own functions, so an action like
+`{ "id": "x", "type": "function", "function": "other_module:function:timeout" }`
+fails the install. Bundled system modules are exempt.
 
 ```json
 {

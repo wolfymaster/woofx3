@@ -1522,23 +1522,26 @@ async fn validate_cross_module_permissions(
 /// action in modules/woofx3/manifest.json.
 const FUNCTION_ACTION_ID: &str = "function";
 
-/// Where a step that uses the bundled function action sits in the manifest.
+/// Where the manifest invokes a function: a step that uses the bundled
+/// function action, or an action this manifest declares with `type: "function"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum StepRef {
+enum InvocationSite {
     Workflow { workflow: String, index: usize },
     Command { command: String, index: usize },
+    Action { action: String },
 }
 
-impl std::fmt::Display for StepRef {
+impl std::fmt::Display for InvocationSite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Workflow { workflow, index } => write!(f, "workflow '{workflow}' step #{index}"),
             Self::Command { command, index } => write!(f, "command '{command}' action #{index}"),
+            Self::Action { action } => write!(f, "action '{action}'"),
         }
     }
 }
 
-/// What a function-action step's `parameters.function` names.
+/// The function an invocation site names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FunctionTarget {
     /// A canonical function id, fixed in the manifest.
@@ -1549,25 +1552,27 @@ enum FunctionTarget {
     Invalid(String),
 }
 
-/// Every step, in workflows and command actions alike, that uses the bundled
-/// function action, paired with the function it invokes.
+/// Every place the manifest invokes a function, paired with the function it
+/// invokes: workflow steps and command actions that use the bundled function
+/// action, and the manifest's own `type: "function"` actions.
 fn function_action_targets(
     manifest: &ModuleManifest,
     resolved: &ResolvedManifest,
-) -> Vec<(StepRef, FunctionTarget)> {
+) -> Vec<(InvocationSite, FunctionTarget)> {
     let workflow_steps =
         manifest
             .workflows
             .iter()
             .zip(&resolved.workflows)
             .flat_map(|(wf, resolved_wf)| {
+                let workflow = resolved_wf.canonical_id.resource_id().to_string();
                 wf.steps
                     .iter()
                     .zip(&resolved_wf.step_actions)
                     .enumerate()
                     .map(move |(index, (step, action))| {
-                        let at = StepRef::Workflow {
-                            workflow: wf.id.clone(),
+                        let at = InvocationSite::Workflow {
+                            workflow: workflow.clone(),
                             index,
                         };
                         (at, step, action)
@@ -1579,32 +1584,49 @@ fn function_action_targets(
             .iter()
             .zip(&resolved.commands)
             .flat_map(|(cmd, resolved_cmd)| {
+                let command = resolved_cmd.canonical_id.resource_id().to_string();
                 cmd.actions
                     .iter()
                     .zip(&resolved_cmd.step_actions)
                     .enumerate()
                     .map(move |(index, (step, action))| {
-                        let at = StepRef::Command {
-                            command: cmd.id.clone(),
+                        let at = InvocationSite::Command {
+                            command: command.clone(),
                             index,
                         };
                         (at, step, action)
                     })
             });
-    workflow_steps
+    let step_targets = workflow_steps
         .chain(command_steps)
         // Step actions are resolved as action ids, so module and resource id
         // identify the bundled function action.
         .filter(|(_, _, action)| {
             action.module_id() == SYSTEM_MODULE_ID && action.resource_id() == FUNCTION_ACTION_ID
         })
-        .map(|(at, step, _)| (at, parse_function_target(&step.parameters)))
-        .collect()
+        .map(|(at, step, _)| (at, parse_function_target(&step.parameters)));
+    let declared_targets =
+        resolved
+            .actions
+            .iter()
+            .filter_map(|action| match &action.implementation {
+                ResolvedActionImpl::Function {
+                    canonical_function_id,
+                } => Some((
+                    InvocationSite::Action {
+                        action: action.canonical_id.resource_id().to_string(),
+                    },
+                    FunctionTarget::Static(canonical_function_id.clone()),
+                )),
+                ResolvedActionImpl::Native { .. } => None,
+            });
+    step_targets.chain(declared_targets).collect()
 }
 
 /// Read a step's `parameters.function`. The engine invokes the value verbatim
-/// and only understands a canonical id, so a bare local id is invalid here
-/// rather than resolved: it would install a step that can never run.
+/// and only understands a canonical id, so a bare local id or one with
+/// surrounding whitespace is invalid here rather than normalised: it would
+/// install a step that can never run.
 fn parse_function_target(parameters: &serde_json::Value) -> FunctionTarget {
     let Some(value) = parameters.get("function") else {
         return FunctionTarget::Invalid(
@@ -1616,9 +1638,13 @@ fn parse_function_target(parameters: &serde_json::Value) -> FunctionTarget {
             "`function` must be a canonical function id string, got {value}"
         ));
     };
-    let raw = raw.trim();
     if raw.contains("${") {
         return FunctionTarget::Expression(raw.to_string());
+    }
+    if raw.trim() != raw {
+        return FunctionTarget::Invalid(format!(
+            "`function` {raw:?} has surrounding whitespace, which the engine would pass on verbatim"
+        ));
     }
     let parts: Vec<&str> = raw.split(CANONICAL_ID_SEPARATOR).collect();
     if !looks_like_canonical_id(raw) || parts[1] != ResourceKind::Function.as_str() {
@@ -1632,15 +1658,17 @@ fn parse_function_target(parameters: &serde_json::Value) -> FunctionTarget {
     }
 }
 
-/// Refuse an upload whose steps use the bundled function action to invoke a
-/// function this module does not declare.
+/// Refuse an upload that invokes a function this module does not declare,
+/// whether through the bundled function action or through a
+/// `type: "function"` action of its own.
 ///
-/// The function action is owned by the system module, which declares no
-/// permissions, so `validate_cross_module_permissions` always passes it. The
-/// sandbox, however, runs the invoked function with its owner's permissions
-/// and OAuth tokens. Without this check an upload could run another module's
-/// function with that module's grants just by naming it, so an upload may
-/// invoke only its own functions, by a literal id install can check.
+/// The sandbox runs an invoked function with its owner's permissions and
+/// OAuth tokens, yet `validate_cross_module_permissions` passes both routes:
+/// the function action is owned by the system module, which declares no
+/// permissions, and a module's own actions are not checked at all. Without
+/// this check an upload could run another module's function with that
+/// module's grants just by naming it, so an upload may invoke only its own
+/// functions, by a literal id install can check.
 ///
 /// Bundled system modules are exempt: their steps are the engine's own wiring.
 fn refuse_cross_module_function_calls(

@@ -1,5 +1,5 @@
-//! Which functions an upload may invoke through the bundled
-//! `woofx3:action:function` action.
+//! Which functions an upload may invoke, through the bundled
+//! `woofx3:action:function` action or a `type: "function"` action of its own.
 
 use super::super::db_proxy::ModuleRecord;
 use super::super::db_proxy_client::FakeDbProxyClient;
@@ -63,6 +63,25 @@ fn calls_function(module_id: &str, site: Site, parameters: serde_json::Value) ->
     serde_json::from_value(manifest).expect("manifest parse")
 }
 
+/// A manifest with one function of its own, `greet`, and one action of its own
+/// with `type: "function"` invoking `function`, used by a workflow step.
+fn declares_function_action(module_id: &str, function: &str) -> ModuleManifest {
+    serde_json::from_value(serde_json::json!({
+        "id": module_id,
+        "name": "Caller",
+        "version": "1.0.0",
+        "functions": [{ "id": "greet", "name": "Greet", "runtime": "js", "path": "f.js" }],
+        "actions": [{ "id": "x", "name": "X", "type": "function", "function": function }],
+        "triggers": [
+            { "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }
+        ],
+        "workflows": [
+            { "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "id": "s1", "action": "x" }] }
+        ],
+    }))
+    .expect("manifest parse")
+}
+
 enum Expect {
     Installs,
     Refused(&'static str),
@@ -73,100 +92,147 @@ async fn test_function_action_targets_are_checked_at_install() {
     let cases = [
         (
             "an upload invoking its own function",
-            "caller",
             InstallProvenance::User,
-            Site::Workflow,
-            serde_json::json!({ "function": "caller:function:greet", "name": "x" }),
+            calls_function(
+                "caller",
+                Site::Workflow,
+                serde_json::json!({ "function": "caller:function:greet", "name": "x" }),
+            ),
             Expect::Installs,
         ),
         (
             "a workflow step invoking another module's function",
-            "caller",
             InstallProvenance::User,
-            Site::Workflow,
-            serde_json::json!({ "function": "woofx3_twitch:function:timeout" }),
+            calls_function(
+                "caller",
+                Site::Workflow,
+                serde_json::json!({ "function": "woofx3_twitch:function:timeout" }),
+            ),
             Expect::Refused(
                 "workflow 'w1' step #0 invokes 'woofx3_twitch:function:timeout', which belongs to another module",
             ),
         ),
         (
             "a command action invoking another module's function",
-            "caller",
             InstallProvenance::User,
-            Site::Command,
-            serde_json::json!({ "function": "woofx3_twitch:function:timeout" }),
+            calls_function(
+                "caller",
+                Site::Command,
+                serde_json::json!({ "function": "woofx3_twitch:function:timeout" }),
+            ),
             Expect::Refused(
                 "command 'c1' action #0 invokes 'woofx3_twitch:function:timeout', which belongs to another module",
             ),
         ),
         (
             "a target computed from a template",
-            "caller",
             InstallProvenance::User,
-            Site::Workflow,
-            serde_json::json!({ "function": "${trigger.data.target}" }),
+            calls_function(
+                "caller",
+                Site::Workflow,
+                serde_json::json!({ "function": "${trigger.data.target}" }),
+            ),
             Expect::Refused("computes the function to invoke from \"${trigger.data.target}\""),
         ),
         (
             "an own-module id the manifest does not declare",
-            "caller",
             InstallProvenance::User,
-            Site::Workflow,
-            serde_json::json!({ "function": "caller:function:missing" }),
+            calls_function(
+                "caller",
+                Site::Workflow,
+                serde_json::json!({ "function": "caller:function:missing" }),
+            ),
             Expect::Refused("which this manifest does not declare"),
         ),
         (
             "a bare local id, which the engine cannot invoke",
-            "caller",
             InstallProvenance::User,
-            Site::Workflow,
-            serde_json::json!({ "function": "greet" }),
+            calls_function(
+                "caller",
+                Site::Workflow,
+                serde_json::json!({ "function": "greet" }),
+            ),
             Expect::Refused("\"greet\" is not a canonical function id"),
         ),
         (
             "a canonical id of another kind",
-            "caller",
             InstallProvenance::User,
-            Site::Command,
-            serde_json::json!({ "function": "caller:action:greet" }),
+            calls_function(
+                "caller",
+                Site::Command,
+                serde_json::json!({ "function": "caller:action:greet" }),
+            ),
             Expect::Refused("\"caller:action:greet\" is not a canonical function id"),
         ),
         (
             "no function parameter",
-            "caller",
             InstallProvenance::User,
-            Site::Workflow,
-            serde_json::json!({ "name": "x" }),
+            calls_function("caller", Site::Workflow, serde_json::json!({ "name": "x" })),
             Expect::Refused("has no `function` parameter"),
         ),
         (
             "a function parameter that is not a string",
-            "caller",
             InstallProvenance::User,
-            Site::Command,
-            serde_json::json!({ "function": 7 }),
+            calls_function(
+                "caller",
+                Site::Command,
+                serde_json::json!({ "function": 7 }),
+            ),
             Expect::Refused("must be a canonical function id string, got 7"),
         ),
         (
-            "a system module invoking another module's function",
-            SYSTEM_MODULE_ID,
+            "a function id with surrounding whitespace, which the engine passes on verbatim",
+            InstallProvenance::User,
+            calls_function(
+                "caller",
+                Site::Workflow,
+                serde_json::json!({ "function": " caller:function:greet " }),
+            ),
+            Expect::Refused("has surrounding whitespace"),
+        ),
+        (
+            "an own action invoking its own function by local id",
+            InstallProvenance::User,
+            declares_function_action("caller", "greet"),
+            Expect::Installs,
+        ),
+        (
+            "an own action invoking another module's function",
+            InstallProvenance::User,
+            declares_function_action("caller", "woofx3_twitch:function:timeout"),
+            Expect::Refused(
+                "action 'x' invokes 'woofx3_twitch:function:timeout', which belongs to another module",
+            ),
+        ),
+        (
+            "a system module action invoking another module's function",
             InstallProvenance::System,
-            Site::Workflow,
-            serde_json::json!({ "function": "woofx3_twitch:function:timeout" }),
+            declares_function_action(SYSTEM_MODULE_ID, "woofx3_twitch:function:timeout"),
+            Expect::Installs,
+        ),
+        (
+            "a system module invoking another module's function",
+            InstallProvenance::System,
+            calls_function(
+                SYSTEM_MODULE_ID,
+                Site::Workflow,
+                serde_json::json!({ "function": "woofx3_twitch:function:timeout" }),
+            ),
             Expect::Installs,
         ),
         (
             "a system module computing its target",
-            SYSTEM_MODULE_ID,
             InstallProvenance::System,
-            Site::Command,
-            serde_json::json!({ "function": "${trigger.data.target}" }),
+            calls_function(
+                SYSTEM_MODULE_ID,
+                Site::Command,
+                serde_json::json!({ "function": "${trigger.data.target}" }),
+            ),
             Expect::Installs,
         ),
     ];
 
-    for (name, module_id, provenance, site, parameters, expect) in cases {
-        let manifest = calls_function(module_id, site, parameters);
+    for (name, provenance, manifest, expect) in cases {
         let resolved = validate_with_provenance(&manifest, provenance)
             .unwrap_or_else(|e| panic!("{name}: static validation passes: {e}"));
         let result = build_install_plan(&manifest, &resolved, &installed_system_module()).await;
@@ -208,14 +274,14 @@ fn test_function_action_targets_finds_steps_in_workflows_and_commands() {
         targets,
         vec![
             (
-                StepRef::Workflow {
+                InvocationSite::Workflow {
                     workflow: "w1".to_string(),
                     index: 0
                 },
                 FunctionTarget::Static(greet)
             ),
             (
-                StepRef::Command {
+                InvocationSite::Command {
                     command: "c1".to_string(),
                     index: 0
                 },
@@ -225,6 +291,27 @@ fn test_function_action_targets_finds_steps_in_workflows_and_commands() {
     );
 }
 
+#[test]
+fn test_function_action_targets_finds_declared_function_actions() {
+    let manifest = declares_function_action("caller", "woofx3_twitch:function:timeout");
+    let resolved = validate(&manifest).expect("validate ok");
+
+    let timeout =
+        CanonicalId::new("woofx3_twitch", ResourceKind::Function, "timeout").expect("canonical id");
+    assert_eq!(
+        function_action_targets(&manifest, &resolved),
+        vec![(
+            InvocationSite::Action {
+                action: "x".to_string()
+            },
+            FunctionTarget::Static(timeout)
+        )]
+    );
+}
+
+/// A step whose own module's action happens to be called `function`, or that
+/// passes a `function` parameter to some other action, is not a call through
+/// the bundled function action; only the declared action's target is found.
 #[test]
 fn test_function_action_targets_ignores_other_actions() {
     let manifest: ModuleManifest = serde_json::from_value(serde_json::json!({
@@ -239,7 +326,16 @@ fn test_function_action_targets_ignores_other_actions() {
     .expect("manifest parse");
     let resolved = validate(&manifest).expect("validate ok");
 
-    assert_eq!(function_action_targets(&manifest, &resolved), vec![]);
+    let greet = CanonicalId::new("caller", ResourceKind::Function, "greet").expect("canonical id");
+    assert_eq!(
+        function_action_targets(&manifest, &resolved),
+        vec![(
+            InvocationSite::Action {
+                action: "function".to_string()
+            },
+            FunctionTarget::Static(greet)
+        )]
+    );
 }
 
 /// Bundled modules are exempt, but none of them needs the exemption today:
