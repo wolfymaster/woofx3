@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+// ErrNotConnected is returned by Send and Invoke when there is no live
+// websocket connection. Check it with errors.Is.
+var ErrNotConnected = errors.New("barkloader: not connected")
 
 type ReconnectAttemptHandler func(attempt int, maxRetries int)
 
@@ -155,7 +160,7 @@ func (c *Client) Connect() error {
 	c.clearReconnectTimer()
 
 	// Start message handler goroutine
-	go c.messageHandler()
+	go c.messageHandler(conn)
 
 	if c.config.OnOpen != nil {
 		c.config.OnOpen()
@@ -182,19 +187,23 @@ func (c *Client) Disconnect() {
 	c.isConnecting = false
 }
 
-func (c *Client) IsConnected() bool {
+// currentConn snapshots the connection under a single RLock. Callers must not
+// hold c.mu: sync.RWMutex blocks a new reader behind a waiting writer, so a
+// nested RLock deadlocks against a concurrent Connect or Disconnect.
+func (c *Client) currentConn() *websocket.Conn {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.conn != nil
+	return c.conn
+}
+
+func (c *Client) IsConnected() bool {
+	return c.currentConn() != nil
 }
 
 func (c *Client) Send(data string) error {
-	c.mu.RLock()
-	conn := c.conn
-	c.mu.RUnlock()
-
+	conn := c.currentConn()
 	if conn == nil {
-		return fmt.Errorf("websocket is not connected")
+		return ErrNotConnected
 	}
 
 	// gorilla/websocket requires the caller to ensure at most one goroutine
@@ -221,12 +230,9 @@ func (c *Client) Send(data string) error {
 // every event the function announces, which is how the workflow engine sees a
 // loop that runs through a module function. Empty when no workflow is calling.
 func (c *Client) Invoke(functionName string, event map[string]interface{}, workflowChain string) (map[string]interface{}, error) {
-	c.mu.RLock()
 	if !c.IsConnected() {
-		c.mu.RUnlock()
-		return nil, fmt.Errorf("websocket is not connected")
+		return nil, ErrNotConnected
 	}
-	c.mu.RUnlock()
 
 	id, err := newInvokeID()
 	if err != nil {
@@ -306,16 +312,11 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}, workf
 	}
 }
 
-func (c *Client) messageHandler() {
+// messageHandler reads frames from the one connection it was started for. It
+// never re-reads c.conn: after a Disconnect and Connect cycle a second handler
+// owns the new connection, and two readers on one connection race.
+func (c *Client) messageHandler(conn *websocket.Conn) {
 	for {
-		c.mu.RLock()
-		conn := c.conn
-		c.mu.RUnlock()
-
-		if conn == nil {
-			return
-		}
-
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			// Any read error means this connection is dead — not just a

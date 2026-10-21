@@ -2,6 +2,7 @@ package barkloader
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,5 +114,67 @@ func TestInvokeConcurrentCallsDoNotRaceOnWrite(t *testing.T) {
 		if err != nil {
 			t.Errorf("Invoke() call %d error = %v", i, err)
 		}
+	}
+}
+
+// TestInvokeDoesNotDeadlockAgainstConnectCycles is a regression test for a
+// recursive RLock: Invoke held c.mu.RLock and called IsConnected, which took
+// it again. A Connect or Disconnect waiting on the write lock between the two
+// reads blocked the inner one forever, wedging the writer too. Run with
+// `go test -race`.
+//
+// An Invoke whose connection is torn down mid-flight waits out its full
+// timeout, so the invokers are not awaited: the test passes when the
+// Disconnect/Connect cycler completes, which it cannot do while a reader is
+// wedged.
+func TestInvokeDoesNotDeadlockAgainstConnectCycles(t *testing.T) {
+	wsURL, closeServer := newEchoServer(t)
+	defer closeServer()
+
+	client := New(Config{WSURL: wsURL})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	defer client.Destroy()
+
+	const invokers = 8
+	const cycles = 300
+	stop := make(chan struct{})
+	defer close(stop)
+
+	for i := 0; i < invokers; i++ {
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_, _ = client.Invoke("test:function:echo", map[string]interface{}{}, "")
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < cycles; i++ {
+			client.Disconnect()
+			_ = client.Connect()
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("Disconnect/Connect cycles wedged behind Invoke")
+	}
+}
+
+func TestInvokeWhenDisconnectedReturnsErrNotConnected(t *testing.T) {
+	client := New(Config{WSURL: "ws://127.0.0.1:1"})
+	_, err := client.Invoke("test:function:echo", map[string]interface{}{}, "")
+	if !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("Invoke() error = %v, want ErrNotConnected", err)
 	}
 }
