@@ -440,7 +440,7 @@ func (x *DeleteLocalUISettingRequest) GetExpectedRevision() int64 {
 	return 0
 }
 
-type WriteLocalUISettingResponse struct {
+type SetLocalUISettingResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	// Without `conflict`, the row as written, its revision the new one. With
@@ -452,20 +452,20 @@ type WriteLocalUISettingResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *WriteLocalUISettingResponse) Reset() {
-	*x = WriteLocalUISettingResponse{}
+func (x *SetLocalUISettingResponse) Reset() {
+	*x = SetLocalUISettingResponse{}
 	mi := &file_local_ui_setting_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *WriteLocalUISettingResponse) String() string {
+func (x *SetLocalUISettingResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*WriteLocalUISettingResponse) ProtoMessage() {}
+func (*SetLocalUISettingResponse) ProtoMessage() {}
 
-func (x *WriteLocalUISettingResponse) ProtoReflect() protoreflect.Message {
+func (x *SetLocalUISettingResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_local_ui_setting_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -477,26 +477,87 @@ func (x *WriteLocalUISettingResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use WriteLocalUISettingResponse.ProtoReflect.Descriptor instead.
-func (*WriteLocalUISettingResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetLocalUISettingResponse.ProtoReflect.Descriptor instead.
+func (*SetLocalUISettingResponse) Descriptor() ([]byte, []int) {
 	return file_local_ui_setting_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *WriteLocalUISettingResponse) GetStatus() *ResponseStatus {
+func (x *SetLocalUISettingResponse) GetStatus() *ResponseStatus {
 	if x != nil {
 		return x.Status
 	}
 	return nil
 }
 
-func (x *WriteLocalUISettingResponse) GetSetting() *LocalUISetting {
+func (x *SetLocalUISettingResponse) GetSetting() *LocalUISetting {
 	if x != nil {
 		return x.Setting
 	}
 	return nil
 }
 
-func (x *WriteLocalUISettingResponse) GetConflict() bool {
+func (x *SetLocalUISettingResponse) GetConflict() bool {
+	if x != nil {
+		return x.Conflict
+	}
+	return false
+}
+
+type DeleteLocalUISettingResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// As on SetLocalUISettingResponse; the row is the tombstone when written.
+	Setting       *LocalUISetting `protobuf:"bytes,2,opt,name=setting,proto3" json:"setting,omitempty"`
+	Conflict      bool            `protobuf:"varint,3,opt,name=conflict,proto3" json:"conflict,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteLocalUISettingResponse) Reset() {
+	*x = DeleteLocalUISettingResponse{}
+	mi := &file_local_ui_setting_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteLocalUISettingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteLocalUISettingResponse) ProtoMessage() {}
+
+func (x *DeleteLocalUISettingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_local_ui_setting_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteLocalUISettingResponse.ProtoReflect.Descriptor instead.
+func (*DeleteLocalUISettingResponse) Descriptor() ([]byte, []int) {
+	return file_local_ui_setting_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DeleteLocalUISettingResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *DeleteLocalUISettingResponse) GetSetting() *LocalUISetting {
+	if x != nil {
+		return x.Setting
+	}
+	return nil
+}
+
+func (x *DeleteLocalUISettingResponse) GetConflict() bool {
 	if x != nil {
 		return x.Conflict
 	}
@@ -516,7 +577,7 @@ type ListLocalUISettingChangesRequest struct {
 
 func (x *ListLocalUISettingChangesRequest) Reset() {
 	*x = ListLocalUISettingChangesRequest{}
-	mi := &file_local_ui_setting_proto_msgTypes[8]
+	mi := &file_local_ui_setting_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -528,7 +589,7 @@ func (x *ListLocalUISettingChangesRequest) String() string {
 func (*ListLocalUISettingChangesRequest) ProtoMessage() {}
 
 func (x *ListLocalUISettingChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_local_ui_setting_proto_msgTypes[8]
+	mi := &file_local_ui_setting_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,7 +602,7 @@ func (x *ListLocalUISettingChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLocalUISettingChangesRequest.ProtoReflect.Descriptor instead.
 func (*ListLocalUISettingChangesRequest) Descriptor() ([]byte, []int) {
-	return file_local_ui_setting_proto_rawDescGZIP(), []int{8}
+	return file_local_ui_setting_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListLocalUISettingChangesRequest) GetAfterRevision() int64 {
@@ -571,7 +632,7 @@ type ListLocalUISettingChangesResponse struct {
 
 func (x *ListLocalUISettingChangesResponse) Reset() {
 	*x = ListLocalUISettingChangesResponse{}
-	mi := &file_local_ui_setting_proto_msgTypes[9]
+	mi := &file_local_ui_setting_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +644,7 @@ func (x *ListLocalUISettingChangesResponse) String() string {
 func (*ListLocalUISettingChangesResponse) ProtoMessage() {}
 
 func (x *ListLocalUISettingChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_local_ui_setting_proto_msgTypes[9]
+	mi := &file_local_ui_setting_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +657,7 @@ func (x *ListLocalUISettingChangesResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListLocalUISettingChangesResponse.ProtoReflect.Descriptor instead.
 func (*ListLocalUISettingChangesResponse) Descriptor() ([]byte, []int) {
-	return file_local_ui_setting_proto_rawDescGZIP(), []int{9}
+	return file_local_ui_setting_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListLocalUISettingChangesResponse) GetStatus() *ResponseStatus {
@@ -656,8 +717,12 @@ const file_local_ui_setting_proto_rawDesc = "" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x120\n" +
 	"\x11expected_revision\x18\x03 \x01(\x03H\x00R\x10expectedRevision\x88\x01\x01B\x14\n" +
-	"\x12_expected_revision\"\xa5\x01\n" +
-	"\x1bWriteLocalUISettingResponse\x12.\n" +
+	"\x12_expected_revision\"\xa3\x01\n" +
+	"\x19SetLocalUISettingResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12:\n" +
+	"\asetting\x18\x02 \x01(\v2 .local_ui_setting.LocalUISettingR\asetting\x12\x1a\n" +
+	"\bconflict\x18\x03 \x01(\bR\bconflict\"\xa6\x01\n" +
+	"\x1cDeleteLocalUISettingResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12:\n" +
 	"\asetting\x18\x02 \x01(\v2 .local_ui_setting.LocalUISettingR\asetting\x12\x1a\n" +
 	"\bconflict\x18\x03 \x01(\bR\bconflict\"_\n" +
@@ -667,12 +732,12 @@ const file_local_ui_setting_proto_rawDesc = "" +
 	"!ListLocalUISettingChangesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12<\n" +
 	"\bsettings\x18\x02 \x03(\v2 .local_ui_setting.LocalUISettingR\bsettings\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\xe6\x04\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore2\xe5\x04\n" +
 	"\x15LocalUISettingService\x12r\n" +
 	"\x13ListLocalUISettings\x12,.local_ui_setting.ListLocalUISettingsRequest\x1a-.local_ui_setting.ListLocalUISettingsResponse\x12l\n" +
-	"\x11GetLocalUISetting\x12*.local_ui_setting.GetLocalUISettingRequest\x1a+.local_ui_setting.GetLocalUISettingResponse\x12n\n" +
-	"\x11SetLocalUISetting\x12*.local_ui_setting.SetLocalUISettingRequest\x1a-.local_ui_setting.WriteLocalUISettingResponse\x12t\n" +
-	"\x14DeleteLocalUISetting\x12-.local_ui_setting.DeleteLocalUISettingRequest\x1a-.local_ui_setting.WriteLocalUISettingResponse\x12\x84\x01\n" +
+	"\x11GetLocalUISetting\x12*.local_ui_setting.GetLocalUISettingRequest\x1a+.local_ui_setting.GetLocalUISettingResponse\x12l\n" +
+	"\x11SetLocalUISetting\x12*.local_ui_setting.SetLocalUISettingRequest\x1a+.local_ui_setting.SetLocalUISettingResponse\x12u\n" +
+	"\x14DeleteLocalUISetting\x12-.local_ui_setting.DeleteLocalUISettingRequest\x1a..local_ui_setting.DeleteLocalUISettingResponse\x12\x84\x01\n" +
 	"\x19ListLocalUISettingChanges\x122.local_ui_setting.ListLocalUISettingChangesRequest\x1a3.local_ui_setting.ListLocalUISettingChangesResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
@@ -687,7 +752,7 @@ func file_local_ui_setting_proto_rawDescGZIP() []byte {
 	return file_local_ui_setting_proto_rawDescData
 }
 
-var file_local_ui_setting_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_local_ui_setting_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_local_ui_setting_proto_goTypes = []any{
 	(*LocalUISetting)(nil),                    // 0: local_ui_setting.LocalUISetting
 	(*ListLocalUISettingsRequest)(nil),        // 1: local_ui_setting.ListLocalUISettingsRequest
@@ -696,37 +761,40 @@ var file_local_ui_setting_proto_goTypes = []any{
 	(*GetLocalUISettingResponse)(nil),         // 4: local_ui_setting.GetLocalUISettingResponse
 	(*SetLocalUISettingRequest)(nil),          // 5: local_ui_setting.SetLocalUISettingRequest
 	(*DeleteLocalUISettingRequest)(nil),       // 6: local_ui_setting.DeleteLocalUISettingRequest
-	(*WriteLocalUISettingResponse)(nil),       // 7: local_ui_setting.WriteLocalUISettingResponse
-	(*ListLocalUISettingChangesRequest)(nil),  // 8: local_ui_setting.ListLocalUISettingChangesRequest
-	(*ListLocalUISettingChangesResponse)(nil), // 9: local_ui_setting.ListLocalUISettingChangesResponse
-	(*timestamppb.Timestamp)(nil),             // 10: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),                    // 11: common.ResponseStatus
+	(*SetLocalUISettingResponse)(nil),         // 7: local_ui_setting.SetLocalUISettingResponse
+	(*DeleteLocalUISettingResponse)(nil),      // 8: local_ui_setting.DeleteLocalUISettingResponse
+	(*ListLocalUISettingChangesRequest)(nil),  // 9: local_ui_setting.ListLocalUISettingChangesRequest
+	(*ListLocalUISettingChangesResponse)(nil), // 10: local_ui_setting.ListLocalUISettingChangesResponse
+	(*timestamppb.Timestamp)(nil),             // 11: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                    // 12: common.ResponseStatus
 }
 var file_local_ui_setting_proto_depIdxs = []int32{
-	10, // 0: local_ui_setting.LocalUISetting.updated_at:type_name -> google.protobuf.Timestamp
-	11, // 1: local_ui_setting.ListLocalUISettingsResponse.status:type_name -> common.ResponseStatus
+	11, // 0: local_ui_setting.LocalUISetting.updated_at:type_name -> google.protobuf.Timestamp
+	12, // 1: local_ui_setting.ListLocalUISettingsResponse.status:type_name -> common.ResponseStatus
 	0,  // 2: local_ui_setting.ListLocalUISettingsResponse.settings:type_name -> local_ui_setting.LocalUISetting
-	11, // 3: local_ui_setting.GetLocalUISettingResponse.status:type_name -> common.ResponseStatus
+	12, // 3: local_ui_setting.GetLocalUISettingResponse.status:type_name -> common.ResponseStatus
 	0,  // 4: local_ui_setting.GetLocalUISettingResponse.setting:type_name -> local_ui_setting.LocalUISetting
-	11, // 5: local_ui_setting.WriteLocalUISettingResponse.status:type_name -> common.ResponseStatus
-	0,  // 6: local_ui_setting.WriteLocalUISettingResponse.setting:type_name -> local_ui_setting.LocalUISetting
-	11, // 7: local_ui_setting.ListLocalUISettingChangesResponse.status:type_name -> common.ResponseStatus
-	0,  // 8: local_ui_setting.ListLocalUISettingChangesResponse.settings:type_name -> local_ui_setting.LocalUISetting
-	1,  // 9: local_ui_setting.LocalUISettingService.ListLocalUISettings:input_type -> local_ui_setting.ListLocalUISettingsRequest
-	3,  // 10: local_ui_setting.LocalUISettingService.GetLocalUISetting:input_type -> local_ui_setting.GetLocalUISettingRequest
-	5,  // 11: local_ui_setting.LocalUISettingService.SetLocalUISetting:input_type -> local_ui_setting.SetLocalUISettingRequest
-	6,  // 12: local_ui_setting.LocalUISettingService.DeleteLocalUISetting:input_type -> local_ui_setting.DeleteLocalUISettingRequest
-	8,  // 13: local_ui_setting.LocalUISettingService.ListLocalUISettingChanges:input_type -> local_ui_setting.ListLocalUISettingChangesRequest
-	2,  // 14: local_ui_setting.LocalUISettingService.ListLocalUISettings:output_type -> local_ui_setting.ListLocalUISettingsResponse
-	4,  // 15: local_ui_setting.LocalUISettingService.GetLocalUISetting:output_type -> local_ui_setting.GetLocalUISettingResponse
-	7,  // 16: local_ui_setting.LocalUISettingService.SetLocalUISetting:output_type -> local_ui_setting.WriteLocalUISettingResponse
-	7,  // 17: local_ui_setting.LocalUISettingService.DeleteLocalUISetting:output_type -> local_ui_setting.WriteLocalUISettingResponse
-	9,  // 18: local_ui_setting.LocalUISettingService.ListLocalUISettingChanges:output_type -> local_ui_setting.ListLocalUISettingChangesResponse
-	14, // [14:19] is the sub-list for method output_type
-	9,  // [9:14] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	12, // 5: local_ui_setting.SetLocalUISettingResponse.status:type_name -> common.ResponseStatus
+	0,  // 6: local_ui_setting.SetLocalUISettingResponse.setting:type_name -> local_ui_setting.LocalUISetting
+	12, // 7: local_ui_setting.DeleteLocalUISettingResponse.status:type_name -> common.ResponseStatus
+	0,  // 8: local_ui_setting.DeleteLocalUISettingResponse.setting:type_name -> local_ui_setting.LocalUISetting
+	12, // 9: local_ui_setting.ListLocalUISettingChangesResponse.status:type_name -> common.ResponseStatus
+	0,  // 10: local_ui_setting.ListLocalUISettingChangesResponse.settings:type_name -> local_ui_setting.LocalUISetting
+	1,  // 11: local_ui_setting.LocalUISettingService.ListLocalUISettings:input_type -> local_ui_setting.ListLocalUISettingsRequest
+	3,  // 12: local_ui_setting.LocalUISettingService.GetLocalUISetting:input_type -> local_ui_setting.GetLocalUISettingRequest
+	5,  // 13: local_ui_setting.LocalUISettingService.SetLocalUISetting:input_type -> local_ui_setting.SetLocalUISettingRequest
+	6,  // 14: local_ui_setting.LocalUISettingService.DeleteLocalUISetting:input_type -> local_ui_setting.DeleteLocalUISettingRequest
+	9,  // 15: local_ui_setting.LocalUISettingService.ListLocalUISettingChanges:input_type -> local_ui_setting.ListLocalUISettingChangesRequest
+	2,  // 16: local_ui_setting.LocalUISettingService.ListLocalUISettings:output_type -> local_ui_setting.ListLocalUISettingsResponse
+	4,  // 17: local_ui_setting.LocalUISettingService.GetLocalUISetting:output_type -> local_ui_setting.GetLocalUISettingResponse
+	7,  // 18: local_ui_setting.LocalUISettingService.SetLocalUISetting:output_type -> local_ui_setting.SetLocalUISettingResponse
+	8,  // 19: local_ui_setting.LocalUISettingService.DeleteLocalUISetting:output_type -> local_ui_setting.DeleteLocalUISettingResponse
+	10, // 20: local_ui_setting.LocalUISettingService.ListLocalUISettingChanges:output_type -> local_ui_setting.ListLocalUISettingChangesResponse
+	16, // [16:21] is the sub-list for method output_type
+	11, // [11:16] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_local_ui_setting_proto_init() }
@@ -743,7 +811,7 @@ func file_local_ui_setting_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_local_ui_setting_proto_rawDesc), len(file_local_ui_setting_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

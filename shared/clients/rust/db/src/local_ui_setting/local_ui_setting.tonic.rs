@@ -152,7 +152,7 @@ pub mod local_ui_setting_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SetLocalUiSettingRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::WriteLocalUiSettingResponse>,
+            tonic::Response<super::SetLocalUiSettingResponse>,
             tonic::Status,
         > {
             self.inner
@@ -181,7 +181,7 @@ pub mod local_ui_setting_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteLocalUiSettingRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::WriteLocalUiSettingResponse>,
+            tonic::Response<super::DeleteLocalUiSettingResponse>,
             tonic::Status,
         > {
             self.inner
@@ -268,14 +268,14 @@ pub mod local_ui_setting_service_server {
             &self,
             request: tonic::Request<super::SetLocalUiSettingRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::WriteLocalUiSettingResponse>,
+            tonic::Response<super::SetLocalUiSettingResponse>,
             tonic::Status,
         >;
         async fn delete_local_ui_setting(
             &self,
             request: tonic::Request<super::DeleteLocalUiSettingRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::WriteLocalUiSettingResponse>,
+            tonic::Response<super::DeleteLocalUiSettingResponse>,
             tonic::Status,
         >;
         async fn list_local_ui_setting_changes(
@@ -468,7 +468,7 @@ pub mod local_ui_setting_service_server {
                         T: LocalUiSettingService,
                     > tonic::server::UnaryService<super::SetLocalUiSettingRequest>
                     for SetLocalUISettingSvc<T> {
-                        type Response = super::WriteLocalUiSettingResponse;
+                        type Response = super::SetLocalUiSettingResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -517,7 +517,7 @@ pub mod local_ui_setting_service_server {
                         T: LocalUiSettingService,
                     > tonic::server::UnaryService<super::DeleteLocalUiSettingRequest>
                     for DeleteLocalUISettingSvc<T> {
-                        type Response = super::WriteLocalUiSettingResponse;
+                        type Response = super::DeleteLocalUiSettingResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
