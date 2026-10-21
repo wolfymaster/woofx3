@@ -138,7 +138,7 @@ func TestTwitchTokenIsSealedAtRestAndReadAsWritten(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
-	if raw := storedSettingValue(t, db, TwitchTokenSettingKey); !secrets.IsSealed(raw) || strings.Contains(raw, "r1") {
+	if raw := storedSettingValue(t, db, TwitchTokenSettingKey); !secrets.IsSealed(raw) || strings.Contains(raw, `"refreshToken"`) {
 		t.Fatalf("stored value = %q, want it sealed", raw)
 	}
 
