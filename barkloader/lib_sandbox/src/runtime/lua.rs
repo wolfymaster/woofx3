@@ -521,6 +521,25 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     })?;
     ctx.set("response", response_fn)?;
 
+    // success/failure — response with extra fields; fields are converted to
+    // JSON and validated host-side so the reserved names cannot be overwritten.
+    for (name, success) in [("success", true), ("failure", false)] {
+        let outcome_fn =
+            lua.create_function(move |lua, (message, fields): (String, Option<LuaValue>)| {
+                let fields = match fields {
+                    Some(v) => Some(
+                        serde_json::to_value(&v)
+                            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?,
+                    ),
+                    None => None,
+                };
+                let value = super::host_bindings::build_outcome_value(success, message, fields)
+                    .map_err(mlua::Error::RuntimeError)?;
+                lua.to_value(&value)
+            })?;
+        ctx.set(name, outcome_fn)?;
+    }
+
     // result — a function's result together with events it asks the engine
     // to publish. Pure data constructor; the engine checks and publishes the
     // events once the function returns it (see function_result.rs).
@@ -757,6 +776,102 @@ mod tests {
         assert_eq!(result["v"], 1);
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "nope");
+    }
+
+    #[test]
+    fn lua_ctx_success_and_failure_build_the_response_with_fields() {
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        // (call, success, message, extra field name, extra field value)
+        let cases = [
+            ("ctx.success('ok')", true, "ok", "", serde_json::Value::Null),
+            ("ctx.success('ok', {})", true, "ok", "", serde_json::Value::Null),
+            (
+                "ctx.failure('bad', { code = 7 })",
+                false,
+                "bad",
+                "code",
+                serde_json::json!(7),
+            ),
+            (
+                "ctx.success('hi', { who = 'ann' })",
+                true,
+                "hi",
+                "who",
+                serde_json::json!("ann"),
+            ),
+        ];
+        for (call, success, message, extra, extra_value) in cases {
+            let code = format!("function run(ctx) return {call} end");
+            let result = adapter.execute(&code, "run", &invocation).unwrap();
+            assert_eq!(result["proto"], "woofx3.response", "{call}");
+            assert_eq!(result["v"], 1, "{call}");
+            assert_eq!(result["success"], success, "{call}");
+            assert_eq!(result["message"], message, "{call}");
+            if !extra.is_empty() {
+                assert_eq!(result[extra], extra_value, "{call}");
+            }
+        }
+    }
+
+    #[test]
+    fn lua_ctx_success_and_failure_refuse_reserved_field_names() {
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        for reserved in ["proto", "v", "success", "message"] {
+            for func in ["success", "failure"] {
+                let code =
+                    format!("function run(ctx) return ctx.{func}('x', {{ {reserved} = 1 }}) end");
+                let err = adapter.execute(&code, "run", &invocation).unwrap_err();
+                assert!(
+                    err.to_string()
+                        .contains(&format!("reserved name '{reserved}'")),
+                    "{func} {reserved}: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lua_ctx_success_refuses_non_object_fields() {
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        let code = "function run(ctx) return ctx.success('x', 5) end";
+        let err = adapter.execute(code, "run", &invocation).unwrap_err();
+        assert!(
+            err.to_string().contains("fields must be an object"),
+            "{err}"
+        );
     }
 
     struct CountingSettingsClient {

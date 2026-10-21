@@ -254,6 +254,36 @@ step refers to it; inserting a step otherwise changes what the reference points 
   this codebase, so a reader of the step output can tell a deliberate response from
   any other object a function might return.
 
+## `ctx.success` and `ctx.failure`
+
+Shorthand for `ctx.response` that also takes extra fields. Same bare-callable, pure
+data constructor shape; the builder is `build_outcome_value` in
+`barkloader/lib_sandbox/src/runtime/host_bindings.rs`, shared by both adapters.
+
+```js
+ctx.success(message, fields?)  // => { proto: "woofx3.response", v: 1, success: true,  message, ...fields }
+ctx.failure(message, fields?)  // => { proto: "woofx3.response", v: 1, success: false, message, ...fields }
+```
+
+```js
+function song_request(ctx) {
+  var song = findSong(ctx.event.data.query);
+  if (!song) {
+    return ctx.failure("Couldn't find that song.");
+  }
+  return ctx.success("Queued " + song.title, { song: song });
+}
+```
+
+The function returns a message; it never posts to chat. A "Send chat message" step
+(`chat.reply`) posts `${<stepId>.message}`, so the streamer decides whether, where and
+how the reply is worded. Extra fields are part of the step output (`${queue_song.song}`).
+
+- `fields` must be an object (or omitted). It may not set `proto`, `v`, `success` or
+  `message`: the call throws a sandbox error naming the reserved field, so a module
+  cannot forge the tag or the outcome.
+- `ctx.response(success, message)` stays available and behaves as before.
+
 ## `ctx.result`
 
 The shape a function returns when what it did is something workflows should be able

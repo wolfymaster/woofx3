@@ -403,10 +403,47 @@ pub fn build_response_value(success: bool, message: String) -> Value {
     })
 }
 
+/// Keys of the response envelope. `ctx.success`/`ctx.failure` refuse extra
+/// fields with these names so a module cannot forge or overwrite the tag
+/// or outcome that callers rely on.
+pub const RESERVED_RESPONSE_FIELDS: [&str; 4] = ["proto", "v", "success", "message"];
+
+/// `ctx.success(message, fields?)` / `ctx.failure(message, fields?)` — the
+/// response envelope plus extra fields the calling step can read as
+/// `${step.<field>}`. `fields` must be an object (or absent) and may not
+/// set any of [`RESERVED_RESPONSE_FIELDS`].
+pub fn build_outcome_value(
+    success: bool,
+    message: String,
+    fields: Option<Value>,
+) -> Result<Value, String> {
+    let extra = match fields {
+        None | Some(Value::Null) => serde_json::Map::new(),
+        Some(Value::Object(map)) => map,
+        Some(_) => return Err("ctx.success/ctx.failure: fields must be an object".to_string()),
+    };
+    if let Some(reserved) = RESERVED_RESPONSE_FIELDS
+        .iter()
+        .find(|name| extra.contains_key(**name))
+    {
+        return Err(format!(
+            "ctx.success/ctx.failure: fields may not set reserved name '{reserved}'"
+        ));
+    }
+    let mut envelope = serde_json::Map::new();
+    envelope.insert("proto".to_string(), Value::from("woofx3.response"));
+    envelope.insert("v".to_string(), Value::from(1));
+    envelope.insert("success".to_string(), Value::Bool(success));
+    envelope.insert("message".to_string(), Value::String(message));
+    envelope.extend(extra);
+    Ok(Value::Object(envelope))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::noop::noop_host_context;
+    use serde_json::json;
 
     use crate::host::{CompareAndSetOutcome, NatsPublisher, StorageClient};
     use std::sync::{Arc, Mutex};
@@ -582,6 +619,50 @@ mod tests {
             format_log_value(&serde_json::json!({"code": 42})),
             r#"{"code":42}"#
         );
+    }
+
+    #[test]
+    fn build_outcome_value_table() {
+        let cases: [(&str, Option<Value>, Result<Value, &str>); 7] = [
+            (
+                "no fields",
+                None,
+                Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m"})),
+            ),
+            (
+                "null fields",
+                Some(Value::Null),
+                Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m"})),
+            ),
+            (
+                "extra fields",
+                Some(json!({"a":1})),
+                Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m","a":1})),
+            ),
+            (
+                "reserved proto",
+                Some(json!({"proto":"x"})),
+                Err("reserved name 'proto'"),
+            ),
+            ("reserved v", Some(json!({"v":2})), Err("reserved name 'v'")),
+            (
+                "reserved success",
+                Some(json!({"success":false})),
+                Err("reserved name 'success'"),
+            ),
+            (
+                "array fields",
+                Some(json!([1])),
+                Err("fields must be an object"),
+            ),
+        ];
+        for (name, fields, want) in cases {
+            let got = build_outcome_value(true, "m".to_string(), fields);
+            match want {
+                Ok(v) => assert_eq!(got.unwrap(), v, "{name}"),
+                Err(substr) => assert!(got.unwrap_err().contains(substr), "{name}"),
+            }
+        }
     }
 
     #[test]

@@ -638,6 +638,16 @@ export interface Ctx extends CtxExtensions {
    */
   response(success: boolean, message: string): CtxResponse;
   /**
+   * Builds a successful `CtxResponse`, plus optional extra `fields` that later
+   * steps read as `${<stepId>.<field>}`. `fields` may not set `proto`, `v`,
+   * `success` or `message`; the call throws if it does. A chat command returns
+   * `ctx.success("text")` and follows the step with a "Send chat message" step
+   * posting `${<stepId>.message}`.
+   */
+  success(message: string, fields?: Record<string, unknown>): CtxResponse & Record<string, unknown>;
+  /** Like `success`, but `success` is `false`. */
+  failure(message: string, fields?: Record<string, unknown>): CtxResponse & Record<string, unknown>;
+  /**
    * Builds the shape to `return` when the function's work is something
    * workflows should be able to act on — a counter changed, a timer ended.
    * See `CtxResult`.
