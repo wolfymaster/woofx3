@@ -21,9 +21,9 @@ const ServiceTokenConfigKey = "dbProxyToken"
 
 const bearerPrefix = "bearer "
 
-// loopbackHostNames are the Host header names that always reach db-proxy on
+// loopbackHostName is the Host header name that always reaches db-proxy on
 // this machine. IP literals are checked with net.IP.IsLoopback instead.
-var loopbackHostNames = []string{"localhost"}
+const loopbackHostName = "localhost"
 
 // ServiceAuth admits a request only when it names an allowed host and carries
 // the engine's db-proxy service token.
@@ -97,10 +97,8 @@ func (a *ServiceAuth) hostAllowed(hostHeader string) bool {
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return true
 	}
-	for _, name := range loopbackHostNames {
-		if host == name {
-			return true
-		}
+	if host == loopbackHostName {
+		return true
 	}
 	_, ok := a.allowedHosts[host]
 	return ok

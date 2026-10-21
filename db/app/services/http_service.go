@@ -127,12 +127,18 @@ func limitBody(next http.Handler, maxBytes int64) http.Handler {
 	})
 }
 
+// twirpErrorBody is the JSON shape Twirp clients decode errors from.
+type twirpErrorBody struct {
+	Code string `json:"code"`
+	Msg  string `json:"msg"`
+}
+
 // writeBodyTooLarge answers in Twirp's JSON error shape so Twirp clients decode
 // it. Twirp has no error code for 413, so the status is written by hand.
 func writeBodyTooLarge(w http.ResponseWriter, maxBytes int64) {
-	body, err := json.Marshal(map[string]string{
-		"code": string(twirp.Malformed),
-		"msg":  fmt.Sprintf("request body exceeds %d bytes", maxBytes),
+	body, err := json.Marshal(twirpErrorBody{
+		Code: string(twirp.Malformed),
+		Msg:  fmt.Sprintf("request body exceeds %d bytes", maxBytes),
 	})
 	if err != nil {
 		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
