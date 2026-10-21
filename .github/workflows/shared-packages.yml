@@ -58,9 +58,9 @@ jobs:
         working-directory: ${{ matrix.package }}
         run: bun run typecheck
 
-      # `bun test` directly: the nats package's "test" script names jest, which
-      # it does not depend on, and shared/common/typescript's script is the
-      # same bun test over a narrower path list.
+      # `bun test` directly rather than each package's script:
+      # shared/common/typescript's script lists a narrower set of paths than
+      # the package has tests in.
       - name: Test
         working-directory: ${{ matrix.package }}
         run: bun test
