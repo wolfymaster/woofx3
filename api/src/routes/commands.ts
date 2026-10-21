@@ -384,7 +384,7 @@ export const commandsRoutes = routeModule({
    * cleanly without needing to handle a missing row.
    */
   async deleteTwitchToken(): Promise<{ ok: true }> {
-    await this.db.setSetting("twitch_token", "");
+    await this.twitchToken.clear();
     this.logger.info("Twitch token cleared from settings");
 
     // Same notification as setTwitchToken — the row changed, downstream

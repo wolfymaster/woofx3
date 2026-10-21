@@ -452,6 +452,13 @@ holds it decides how the token is renewed:
   token again; the twitch service then cannot connect and reports not ready.
   A refresh that cannot be stored is kept in memory and written again on the
   next ask, because the refresh token in the stored row is already spent.
+  Every write of `twitch_token` in the api service (a new link, a refresh,
+  unlinking) goes through `TwitchTokenSource`, one at a time. A refresh is
+  written only while the row still holds the refresh token it spent; when a
+  new link landed meanwhile the refresh is dropped and the new link's token
+  is served. An asker that read the row before a refresh finished is served
+  that refresh's token rather than starting a second one with the spent
+  refresh token.
 - **Any other token** is renewed by the engine itself, with its own
   confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID` and
   `WOOFX3_TWITCH_CLIENT_SECRET`), for an engine run without a dashboard. The

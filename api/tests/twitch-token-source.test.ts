@@ -152,6 +152,37 @@ test("no linked account gives no Helix credentials", async () => {
   expect(await tokenSource({ db, dashboard: () => null }).helix()).toBe("no twitch_token setting");
 });
 
+describe("writing the link", () => {
+  test("store writes the token scoped to the engine user, and clear leaves it empty", async () => {
+    const { db, state } = store(null);
+    const tokens = tokenSource({ db });
+
+    await tokens.store({ ...GRANT, dashboardClientId: "dash-client" }, "engine-user");
+    expect(db.setSetting).toHaveBeenLastCalledWith(
+      "twitch_token",
+      JSON.stringify({ ...GRANT, dashboardClientId: "dash-client" }),
+      "engine-user"
+    );
+    await tokens.clear();
+    expect(state.value).toBe("");
+  });
+
+  test("a dashboard renewal does not overwrite a link stored while the dashboard answered", async () => {
+    const { db, state } = store({ ...GRANT, dashboardClientId: "dash-client" });
+    const relinked = { ...GRANT, userId: "99", accessToken: "relinked", dashboardClientId: "other-dash" };
+    const ui = {
+      request: mock(async () => {
+        state.value = JSON.stringify(relinked);
+        return { token: { ...GRANT, accessToken: "access-2" } };
+      }),
+    };
+    const tokens = tokenSource({ db, dashboard: () => ui, now: () => NOW });
+
+    expect(await tokens.dashboardToken(true)).toMatchObject({ accessToken: "relinked", userId: "99" });
+    expect(JSON.parse(state.value ?? "")).toEqual(relinked);
+  });
+});
+
 describe("parseTokenResponse", () => {
   test("accepts a token or a known refusal", () => {
     expect(parseTokenResponse({ token: GRANT })).toEqual({ token: GRANT });
@@ -310,17 +341,72 @@ describe("a token from the engine's public Twitch app", () => {
     expect(twitch.refresh).toHaveBeenCalledTimes(1);
   });
 
-  test("a refresh does not overwrite a link made while it was in flight", async () => {
+  test("a refresh does not overwrite a link made while it was in flight, and serves the new link", async () => {
     const { db, state } = store(STORED);
-    const relinked = { ...STORED, accessToken: "relinked", refreshToken: "relinked-refresh" };
+    const relinked = { ...STORED, userId: "99", accessToken: "relinked", refreshToken: "relinked-refresh" };
     const refresh = mock(async (): Promise<PublicClientToken> => {
       state.value = JSON.stringify(relinked);
       return { ...STORED, accessToken: "access-2", refreshToken: "refresh-2" };
     });
     const tokens = source(db, { refresh }, NOW + 3_590_000);
 
-    expect((await tokens.servedToken(false)).accessToken).toBe("access-2");
+    expect(await tokens.servedToken(false)).toMatchObject({ accessToken: "relinked", userId: "99" });
     expect(JSON.parse(state.value ?? "")).toEqual(relinked);
+  });
+
+  test("a link stored between a refresh's check and its write is kept", async () => {
+    const { db, state } = store(STORED);
+    const relinked = { ...STORED, userId: "99", accessToken: "relinked", refreshToken: "relinked-refresh" };
+    let relinkOnNextRead = false;
+    const twitch = rotatingTwitch();
+    const refresh = mock(async (clientId: string, refreshToken: string) => {
+      const token = await twitch.refresh(clientId, refreshToken);
+      relinkOnNextRead = true;
+      return token;
+    });
+    const tokens = source(db, { refresh }, NOW + 3_590_000);
+    let relink: Promise<void> | null = null;
+    // The read after the refresh is the save's check. The device login lands
+    // right after it, before the save writes.
+    db.getSetting.mockImplementation(async () => {
+      const value = state.value;
+      if (relinkOnNextRead) {
+        relinkOnNextRead = false;
+        relink = tokens.store(relinked);
+      }
+      return value;
+    });
+
+    expect((await tokens.servedToken(false)).accessToken).toBe("access-2");
+    await relink;
+    expect(JSON.parse(state.value ?? "")).toEqual(relinked);
+  });
+
+  test("an asker that read the row before a refresh finished is served that refresh, not a second one", async () => {
+    const { db, state } = store(STORED);
+    const twitch = rotatingTwitch();
+    const tokens = source(db, twitch, NOW + 3_590_000);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holdNextRead = true;
+    db.getSetting.mockImplementation(async () => {
+      const value = state.value;
+      if (holdNextRead) {
+        holdNextRead = false;
+        await held;
+      }
+      return value;
+    });
+
+    const late = tokens.publicToken(false);
+    expect((await tokens.publicToken(false)).accessToken).toBe("access-2");
+    release();
+
+    expect((await late).accessToken).toBe("access-2");
+    expect(twitch.refresh).toHaveBeenCalledTimes(1);
+    expect(await tokens.helix()).toEqual({ clientId: "public-app", accessToken: "access-2", broadcasterId: "42" });
   });
 
   test("an incomplete one is refused", async () => {
