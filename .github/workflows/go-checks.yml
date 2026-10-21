@@ -28,6 +28,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     permissions:
       contents: read
     strategy:
@@ -63,9 +64,57 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go build ./...
 
-      - name: Test
+      - name: Vet
         working-directory: ${{ matrix.module }}
-        run: go test ./...
+        run: go vet ./...
+
+      # -race catches the data races the services' goroutine-heavy code is
+      # prone to; it needs cgo, which ubuntu-latest has.
+      - name: Test
+        if: matrix.module != 'db'
+        working-directory: ${{ matrix.module }}
+        run: go test -race ./...
+
+      # db/app/services migrates a fresh database for every case, and under
+      # the race detector it has not finished in 25 minutes (about 90 seconds
+      # without), so that one package runs without -race until its fixtures
+      # share a migrated database. Every other db package keeps -race.
+      - name: Test with the race detector
+        if: matrix.module == 'db'
+        working-directory: db
+        run: go test -race $(go list ./... | grep -v '/app/services$')
+
+      - name: Test db/app/services
+        if: matrix.module == 'db'
+        working-directory: db
+        run: go test ./app/services/
+
+  # Informational for now: it reports vulnerabilities in dependencies and in
+  # the standard library of the pinned Go version, which a PR cannot always
+  # fix. Flip continue-on-error off once the baseline is clean.
+  govulncheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - db
+          - workflow
+          - services/nats
+          - build/orchestrator
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan ${{ matrix.module }}
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.25"
+          go-package: ./...
+          work-dir: ${{ matrix.module }}
+          cache: false
 
   # The postgres migration tests skip without a database to run against, so
   # the check job above only proves them against sqlite. This one gives them a
