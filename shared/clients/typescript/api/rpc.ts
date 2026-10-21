@@ -43,6 +43,33 @@ export interface RegisterClientOptions {
 export const REGISTRATION_REFUSED = "RegistrationRefused";
 
 /**
+ * The error a refused `authenticate` rejects with: the engine does not
+ * accept these client credentials, so retrying them cannot succeed.
+ *
+ * capnweb sends an error's `name` and `message`, but the receiving side
+ * rebuilds any name it does not know as a plain `Error`, so the name is
+ * lost in transit. The refusal is therefore carried by the message, which
+ * starts with this marker; `isAuthenticationRefused` reads it.
+ */
+export const AUTHENTICATION_REFUSED = "AuthenticationRefused";
+
+const AUTHENTICATION_REFUSED_PREFIX = `${AUTHENTICATION_REFUSED}: `;
+
+/** The message of a refused `authenticate`, for the engine to throw. */
+export function authenticationRefusedMessage(reason: string): string {
+  return `${AUTHENTICATION_REFUSED_PREFIX}${reason}`;
+}
+
+/**
+ * Whether `err` is a refused `authenticate`, as opposed to a transport or
+ * transient failure. Holds both for the engine's own error and for the
+ * plain `Error` a capnweb client receives in its place.
+ */
+export function isAuthenticationRefused(err: unknown): err is Error {
+  return err instanceof Error && err.message.startsWith(AUTHENTICATION_REFUSED_PREFIX);
+}
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.
@@ -68,6 +95,9 @@ export interface ApiGatewayContract {
    * Exchange client credentials for an authenticated API stub. The returned
    * object is a capnweb stub — methods can be called and pipelined into the
    * same HTTP batch as the `authenticate` call itself.
+   *
+   * Rejects with an error `isAuthenticationRefused` recognises when the
+   * engine does not accept the credentials.
    */
   authenticate(clientId: string, clientSecret: string): Promise<ApiContract>;
 }

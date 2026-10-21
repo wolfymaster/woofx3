@@ -228,6 +228,16 @@ registration, so the lock survives restarts; removing every client opens
 registration again. Registrations are handled one at a time in this mode, so two
 callers racing on a new engine cannot both be first.
 
+### Refused credentials
+
+`authenticate` with credentials the engine does not accept rejects with a
+message starting with `AuthenticationRefused: `. Retrying the same credentials
+cannot succeed, so a client stops and asks for new ones instead of backing
+off. The marker is in the message because capnweb sends an error's name and
+message, but the receiving side rebuilds any name it does not know as a plain
+`Error`. `isAuthenticationRefused` from `@woofx3/api/rpc` tells the refusal
+apart from a transport or transient failure.
+
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's

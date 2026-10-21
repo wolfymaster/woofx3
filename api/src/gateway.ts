@@ -1,4 +1,10 @@
-import { type ApiGatewayContract, REGISTRATION_REFUSED, type RegisterClientOptions } from "@woofx3/api/rpc";
+import {
+  AUTHENTICATION_REFUSED,
+  type ApiGatewayContract,
+  authenticationRefusedMessage,
+  REGISTRATION_REFUSED,
+  type RegisterClientOptions,
+} from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
@@ -17,6 +23,18 @@ export class RegistrationRefused extends Error {
   constructor(message: string) {
     super(message);
     this.name = REGISTRATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine does not accept. Its message carries the
+ * AUTHENTICATION_REFUSED marker, so a capnweb client can tell the refusal
+ * from a transient failure and stop retrying.
+ */
+export class AuthenticationRefused extends Error {
+  constructor(reason: string) {
+    super(authenticationRefusedMessage(reason));
+    this.name = AUTHENTICATION_REFUSED;
   }
 }
 
@@ -63,7 +81,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
     const result = await this.auth.validate(clientId, clientSecret);
     if (!result.valid) {
-      throw new Error("Invalid client credentials");
+      throw new AuthenticationRefused("Invalid client credentials");
     }
     this.logger.info("Authenticated client", {
       clientId,

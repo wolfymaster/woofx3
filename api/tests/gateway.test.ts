@@ -1,6 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
-import { ApiGateway } from "../src/gateway";
+import { AUTHENTICATION_REFUSED, type ApiGatewayContract, isAuthenticationRefused } from "@woofx3/api/rpc";
+import { newMessagePortRpcSession } from "capnweb";
 import { Api } from "../src/api";
+import { ApiSession } from "../src/api-session";
+import { ApiGateway, AuthenticationRefused } from "../src/gateway";
 import { EngineEventStream } from "../src/engine-event-stream";
 import { WebhookClient } from "../src/webhook-client";
 
@@ -91,5 +94,54 @@ describe("ApiGateway.registerClient", () => {
     );
 
     await expect(gateway.registerClient("test", {})).rejects.toThrow("Failed to create client");
+  });
+});
+
+describe("ApiGateway.authenticate", () => {
+  function gatewayWith(valid: boolean) {
+    const db = {} as any;
+    const logger = fakeLogger();
+    const auth = { validate: mock(async () => ({ valid, description: "test-ui" })) } as any;
+    return new ApiGateway(newApi(db, logger), auth, db, logger, OPEN);
+  }
+
+  it("returns a session for accepted credentials", async () => {
+    const session = await gatewayWith(true).authenticate("c1", "s1");
+
+    expect(session).toBeInstanceOf(ApiSession);
+  });
+
+  it("rejects refused credentials with a named refusal", async () => {
+    const err = await gatewayWith(false)
+      .authenticate("c1", "wrong")
+      .then(
+        () => null,
+        (e: unknown) => e
+      );
+
+    expect(err).toBeInstanceOf(AuthenticationRefused);
+    expect((err as Error).name).toBe(AUTHENTICATION_REFUSED);
+    expect(isAuthenticationRefused(err)).toBe(true);
+  });
+
+  it("keeps the refusal recognisable across a capnweb session", async () => {
+    const channel = new MessageChannel();
+    const server = newMessagePortRpcSession(channel.port1, gatewayWith(false));
+    const client = newMessagePortRpcSession<ApiGatewayContract>(channel.port2);
+    try {
+      const err = await client.authenticate("c1", "wrong").then(
+        () => null,
+        (e: unknown) => e
+      );
+
+      // capnweb rebuilds the error as a plain Error, so only the message carries the refusal.
+      expect(err).toBeInstanceOf(Error);
+      expect(isAuthenticationRefused(err)).toBe(true);
+    } finally {
+      client[Symbol.dispose]();
+      server[Symbol.dispose]();
+      channel.port1.close();
+      channel.port2.close();
+    }
   });
 });
