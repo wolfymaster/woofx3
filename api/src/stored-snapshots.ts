@@ -31,6 +31,29 @@ export function rfc3339FromTimestamp(ts: Timestamp): string | undefined {
   return `${whole}.${String(nanos).padStart(9, "0")}Z`;
 }
 
+const RFC3339 = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * An RFC 3339 string in any offset and with any number of fractional digits
+ * (Go's encoding/json trims trailing zeros and keeps the row's zone) as the
+ * nine-digit UTC layout of rfc3339FromTimestamp. Parsed by hand because Date
+ * keeps only milliseconds.
+ */
+export function rfc3339FromString(value: string): string {
+  const match = RFC3339.exec(value);
+  const whole = match ? Date.parse(`${match[1]}${match[3]}`) : Number.NaN;
+  if (!match || Number.isNaN(whole)) {
+    throw new Error(`not an RFC 3339 timestamp: ${JSON.stringify(value)}`);
+  }
+  const seconds = new Date(whole).toISOString().slice(0, "YYYY-MM-DDTHH:MM:SS".length);
+  return `${seconds}.${(match[2] ?? "").padEnd(9, "0")}Z`;
+}
+
+/** A Date in the same nine-digit UTC layout. */
+export function rfc3339FromDate(date: Date): string {
+  return rfc3339FromString(date.toISOString());
+}
+
 /** A timestamp every stored row has; its absence means db-proxy sent a broken row. */
 function requiredTimestamp(ts: Timestamp, field: string, rowId: string): string {
   const value = rfc3339FromTimestamp(ts);

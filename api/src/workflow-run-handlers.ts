@@ -10,6 +10,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { asString, pickFirst, readRow } from "./outbox";
 import { subscribeProjections } from "./projection";
+import { rfc3339FromDate, rfc3339FromString } from "./stored-snapshots";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes run history on
@@ -80,6 +81,15 @@ interface RawStepRow {
   updated_at?: unknown;
 }
 
+/**
+ * A row timestamp in the layout stored reads use. db-proxy publishes the raw
+ * model, so the instant arrives in the row's zone with trailing zeros trimmed;
+ * clients merging callbacks with history need identical strings.
+ */
+function stamp(value: string): string {
+  return value === "" ? "" : rfc3339FromString(value);
+}
+
 /** A field as a number, or undefined when absent or not numeric. */
 function asNumber(...values: unknown[]): number | undefined {
   for (const value of values) {
@@ -97,12 +107,12 @@ function buildRunSnapshot(ce: Record<string, unknown>): WorkflowRunSnapshot | nu
     return null;
   }
 
-  const now = new Date().toISOString();
+  const now = rfc3339FromDate(new Date());
   const triggeredBy = pickFirst(row.TriggeredBy, row.triggered_by);
   const triggerEvent = pickFirst(row.TriggerEvent, row.trigger_event);
   const errorMsg = pickFirst(row.Error, row.error);
-  const startedAt = pickFirst(row.StartedAt, row.started_at);
-  const completedAt = pickFirst(row.CompletedAt, row.completed_at);
+  const startedAt = stamp(pickFirst(row.StartedAt, row.started_at));
+  const completedAt = stamp(pickFirst(row.CompletedAt, row.completed_at));
 
   return {
     id,
@@ -116,8 +126,8 @@ function buildRunSnapshot(ce: Record<string, unknown>): WorkflowRunSnapshot | nu
     ...(errorMsg ? { error: errorMsg } : {}),
     ...(startedAt ? { startedAt } : {}),
     ...(completedAt ? { completedAt } : {}),
-    createdAt: pickFirst(row.CreatedAt, row.created_at) || now,
-    updatedAt: pickFirst(row.UpdatedAt, row.updated_at) || now,
+    createdAt: stamp(pickFirst(row.CreatedAt, row.created_at)) || now,
+    updatedAt: stamp(pickFirst(row.UpdatedAt, row.updated_at)) || now,
   };
 }
 
@@ -132,13 +142,13 @@ function buildStepSnapshot(ce: Record<string, unknown>): WorkflowRunStepSnapshot
     return null;
   }
 
-  const now = new Date().toISOString();
+  const now = rfc3339FromDate(new Date());
   const name = pickFirst(row.Name, row.name);
   const inputs = pickFirst(row.Inputs, row.inputs);
   const outputs = pickFirst(row.Outputs, row.outputs);
   const errorMsg = pickFirst(row.Error, row.error);
-  const startedAt = pickFirst(row.StartedAt, row.started_at);
-  const completedAt = pickFirst(row.CompletedAt, row.completed_at);
+  const startedAt = stamp(pickFirst(row.StartedAt, row.started_at));
+  const completedAt = stamp(pickFirst(row.CompletedAt, row.completed_at));
   const durationMs = asNumber(row.DurationMs, row.duration_ms);
 
   return {
@@ -157,8 +167,8 @@ function buildStepSnapshot(ce: Record<string, unknown>): WorkflowRunStepSnapshot
     ...(startedAt ? { startedAt } : {}),
     ...(completedAt ? { completedAt } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
-    createdAt: pickFirst(row.CreatedAt, row.created_at) || now,
-    updatedAt: pickFirst(row.UpdatedAt, row.updated_at) || now,
+    createdAt: stamp(pickFirst(row.CreatedAt, row.created_at)) || now,
+    updatedAt: stamp(pickFirst(row.UpdatedAt, row.updated_at)) || now,
   };
 }
 
