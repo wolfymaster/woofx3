@@ -45,9 +45,6 @@ pub enum Error {
     #[error("Runtime execution error: {0}")]
     RuntimeError(String),
 
-    #[error("Execution timeout")]
-    ExecutionTimeout,
-
     #[error("Memory limit exceeded")]
     MemoryLimitExceeded,
 
