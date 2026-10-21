@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -80,4 +82,13 @@ func (r *SettingRepository) Update(settings *models.Setting) error {
 
 func (r *SettingRepository) Delete(settings *models.Setting) error {
 	return r.db.Delete(settings).Error
+}
+
+// CompareAndSetValue replaces the value of `key` only while it still holds
+// `expected`, and reports whether it did.
+func (r *SettingRepository) CompareAndSetValue(key, expected, value string) (bool, error) {
+	result := r.db.Model(&models.Setting{}).
+		Where("key = ? AND value = ?", key, expected).
+		Updates(map[string]any{"value": value, "updated_at": time.Now()})
+	return result.RowsAffected > 0, result.Error
 }

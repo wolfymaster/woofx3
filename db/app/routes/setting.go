@@ -11,7 +11,7 @@ import (
 
 func SettingsRoutes(mux *http.ServeMux, app *types.App) {
 	settingsRepository := repository.NewSettingRepository(app.Db)
-	settingService := services.NewSettingService(settingsRepository)
+	settingService := services.NewSettingService(settingsRepository, app.SettingSeal)
 	settingsHandler := client.NewSettingServiceServer(settingService)
 	mux.Handle(settingsHandler.PathPrefix(), settingsHandler)
 }

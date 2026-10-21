@@ -462,6 +462,18 @@ holds it decides how the token is renewed:
   and writing a refresh of the old token over it would silently undo the
   relink and its scopes.
 
+### Where the token is kept
+
+The `twitch_token` setting holds a credential: a device login's refresh token
+stays valid until it is used. db-proxy seals it at rest with the same
+AES-256-GCM key as `secret` module settings (`WOOFX3_SECRETS_KEY`), bound to
+the setting's key, and opens it on read, so every service reads and writes it
+in plain text through the ordinary settings RPCs. The sealed keys are listed
+in one place in db-proxy (`SealedSettingKeys`). A value stored in plain text
+before its key was sealed is sealed when db-proxy starts, before it serves
+requests; a sealed value that does not open (the secrets key changed) is
+refused rather than served, and linking Twitch again replaces it.
+
 ### Events
 
 All three carry `platform: "twitch"`, and all three are forwarded to browser

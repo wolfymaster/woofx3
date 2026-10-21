@@ -39,6 +39,7 @@ type DatabaseApp struct {
 	metricsWorker   *outbox.MetricsWorker
 	eventPublisher  *outbox.EventPublisher
 	secrets         *secrets.Box
+	settingSeal     *secrets.SettingSeal
 }
 
 func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
@@ -62,6 +63,7 @@ func (a *DatabaseApp) App() *types.App {
 		MetricsWorker:   a.metricsWorker,
 		EventPublisher:  a.eventPublisher,
 		Secrets:         a.secrets,
+		SettingSeal:     a.settingSeal,
 	}
 }
 
@@ -90,6 +92,11 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		return err
 	}
 	a.secrets = secretBox
+	settingSeal, err := secrets.NewSettingSeal(secretBox, svc.SealedSettingKeys())
+	if err != nil {
+		return err
+	}
+	a.settingSeal = settingSeal
 
 	services := a.Context().Services
 
@@ -136,6 +143,17 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		if err := svc.SeedBuiltInGroups(repository.NewGroupRepository(a.db)); err != nil {
 			a.logger.Error("Failed to seed built-in groups", "error", err)
 			return err
+		}
+
+		// Before serving, so no caller reads a credential setting that is
+		// still plain text from before its key was sealed.
+		sealed, err := svc.SealPlaintextSettings(repository.NewSettingRepository(a.db), a.settingSeal)
+		if err != nil {
+			a.logger.Error("Failed to seal stored credential settings", "error", err)
+			return err
+		}
+		if sealed > 0 {
+			a.logger.Info("Sealed stored credential settings", "count", sealed)
 		}
 
 		casbinEnforcer, err := a.initCasbin(a.db)
