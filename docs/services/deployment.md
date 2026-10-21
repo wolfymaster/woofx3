@@ -126,20 +126,45 @@ log file then live under it. Unset, it has no effect on any path. See
 
 ## Host and Origin checks
 
-The api and sceneManager can refuse requests by their `Host` and `Origin`
-headers. Both checks are off unless configured: the hosted dashboard reaches
-engines directly from several origins (the app domain, PR previews, local dev),
-so an engine that sets neither accepts every request and answers CORS with
-`Access-Control-Allow-Origin: *`.
+The api and sceneManager refuse requests by their `Host` and `Origin` headers.
+Both checks are on by default; nothing has to be set for an engine on your own
+machine to be protected from other web pages and from DNS rebinding.
 
-| Setting | When set |
+| Setting | What it does |
 |---|---|
 | `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
-| `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
+| `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin`. |
 
-Each is a comma-separated list, read by both services, and each works without
-the other. A malformed entry stops the service at startup, and so does a value
-that is not a list at all, such as `true`.
+When a setting is unset or blank, a default list applies:
+
+- **Origins**: `http://localhost:*`, `http://127.0.0.1:*`, `tauri://localhost`
+  and `http://tauri.localhost` (local dev servers on any port, and the desktop
+  app's webview), plus the origin of each URL the service is configured to be
+  reached at: the api adds `WOOFX3_API_URL` and `WOOFX3_SCENE_MANAGER_URL`,
+  sceneManager adds `WOOFX3_SCENE_MANAGER_URL`. sceneManager also adds `null`,
+  for widget frames (see below).
+- **Hosts**: only on a service reachable over loopback alone, meaning it binds
+  a loopback address and `PORT` is unset. Then `localhost`, `127.0.0.1` and
+  `[::1]` on any port, plus the hosts of the same configured URLs. A service
+  that binds another interface, or sits behind the edge (`PORT` is set), does
+  not check Host by default: the Host it sees is whatever the proxy in front of
+  it sends (behind the edge Worker, the hosting provider's own domain), which
+  only the operator knows. List it in `WOOFX3_ALLOWED_HOSTS` to turn the check
+  on.
+
+Set a list to `*` to turn that check off: every Host, or every Origin with
+CORS `Access-Control-Allow-Origin: *`. `*` must be the only entry.
+
+A dashboard that calls the engine from a browser on any other origin must be
+listed. That includes the hosted dashboard and its PR previews, for managed
+engines and for a local engine opened from the hosted dashboard, and a dev
+dashboard served from a custom name. The dashboard's server-side calls (the
+registration handshake, webhooks) send no `Origin` and need nothing.
+
+Each is a comma-separated list, read by both services, and an explicit list
+replaces its default rather than adding to it. A malformed entry stops the
+service at startup, and so does a value that is not a list at all, such as
+`true`.
 
 Matching rules:
 
@@ -149,7 +174,7 @@ Matching rules:
   `name:80` and `name:443` also match a `Host` with no port. List every name the services are reached by, internal
   ones included: barkloader posts job results to the api at `WOOFX3_API_URL`,
   and health checks usually use `127.0.0.1`. Behind the edge, the Host is the
-  public one, since Caddy passes it through.
+  one the edge was reached by, since Caddy passes it through.
 - **Origins** are `scheme://host[:port]`, compared as web origins, so
   `https://app.example` and `https://app.example:443` are the same entry.
   `scheme://host:*` matches that scheme and host on any port (for example
@@ -162,31 +187,35 @@ Matching rules:
 
 A browser sends no `Origin` on a top-level navigation or a same-origin `GET`,
 which is why an absent Origin is allowed; OBS, the CLI and peer services send
-none either. What an overlay sends when `WOOFX3_ALLOWED_ORIGINS` is set on
-sceneManager:
+none either. What an overlay sends to sceneManager:
 
 - An **OBS browser source** loads `/scene/{id}` as a navigation (no Origin), and
   its same-origin `GET`s, the `/events` SSE stream included, send none. Its
   `POST`s (delivery acknowledgements, widget status, session refresh) send the
-  page's own origin, so list sceneManager's public origin, as OBS reaches it.
+  page's own origin: sceneManager's public origin, as OBS reaches it. The
+  default covers it when that is `WOOFX3_SCENE_MANAGER_URL` or a loopback
+  address; an explicit list must include it.
 - **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
-  from sceneManager (web fonts, module scripts) send `Origin: null`, so list
-  `null` when widgets load anything from sceneManager. A listed `null` cannot
-  tell one sandboxed page from another; the Host check and the session tokens
-  remain the protection there. The api has no such caller, so give `null` to
-  sceneManager alone, through its own environment rather than the shared
-  `.woofx3.json`.
+  from sceneManager (web fonts, module scripts) send `Origin: null`, which
+  sceneManager's default allows; an explicit list must include `null` when
+  widgets load anything from sceneManager. A listed `null` cannot tell one
+  sandboxed page from another; the Host check and the session tokens remain
+  the protection there. The api has no such caller and does not allow `null`
+  by default, so give an explicit `null` to sceneManager alone, through its
+  own environment rather than the shared `.woofx3.json`.
 - The **scene editor** WebSocket sends the dashboard's origin.
 
-For a desktop engine on loopback, for example:
+A desktop engine on loopback needs none of this: the defaults are what it
+would list. A managed engine behind the edge, for example, lists the hosted
+dashboard (`https://dashboard.example` stands in for it) next to its own
+public origin, and the names its Host can carry, health checks included:
 
 ```bash
 # both services
-WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
-# api (the tauri origins admit the desktop app's webview)
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost
-# sceneManager
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
+WOOFX3_ALLOWED_HOSTS=eng-0a1b2c3d.up.railway.app,127.0.0.1
+WOOFX3_ALLOWED_ORIGINS=https://dashboard.example,https://streamer.example
+# sceneManager, through its own environment
+WOOFX3_ALLOWED_ORIGINS=https://dashboard.example,https://streamer.example,null
 ```
 
 ## Client registration
@@ -202,10 +231,17 @@ authenticates with from then on. Who may register is set by
 | `token` | Only a caller presenting the registration token. |
 | `first` | Anyone while the engine has no registered client (trust on first use). After that, only a caller presenting the token, or nobody when there is none. |
 
-Unset, the mode follows from the token: `token` when one is configured, `open`
+Unset, the mode follows from the token: `token` when one is configured, `first`
 when not. Managed engines are given `WOOFX3_REGISTRATION_TOKEN` by maintenance
-and no mode, so they require it; a bring-your-own engine given neither stays
-open.
+and no mode, so they require it. A bring-your-own engine given neither belongs
+to the first client that registers, normally the dashboard's one-time
+handshake; to register another client later (a second dashboard, or the same
+one after it lost its credentials), set `WOOFX3_REGISTRATION_TOKEN` or
+`WOOFX3_REGISTRATION_TOKEN_FILE` and present it.
+
+`open` is never a default, and it is only allowed on an engine reachable over
+loopback alone: the api refuses to start in `open` mode when it binds a
+non-loopback address or `PORT` is set (it sits behind the edge).
 
 The token comes from one of:
 
@@ -222,6 +258,15 @@ The token comes from one of:
 
 Setting both is a startup error, as are `open` with a token and `token`
 without one.
+
+A client may register a `callbackUrl`, where the engine POSTs every event with
+the client's callback token. It must be `https`, or plain `http` to a loopback
+address, with no user name, password or fragment; anything else is refused with
+`RegistrationRefused`. A stored callback URL that does not meet the rule (one
+registered before it existed) is skipped, with a warning naming the client,
+until the client registers again. The engine never follows a redirect from a
+callback URL, gives each POST 5 seconds including its response, and reads at
+most 64 KiB of a response.
 
 `first` decides by asking the db proxy whether any client exists, on every
 registration, so the lock survives restarts; removing every client opens
