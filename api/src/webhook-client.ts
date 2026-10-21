@@ -108,13 +108,21 @@ export class WebhookClient {
     this.logger.info("Webhook callback URLs refreshed", { count: this.instances.length });
   }
 
+  /**
+   * Deliver `event` to every client, or to `targetClientId` alone. An empty
+   * target id throws: it names no client, and broadcasting it instead would
+   * send one client's event to all of them.
+   */
   async send(event: CallbackEvent, targetClientId?: string): Promise<void> {
+    if (targetClientId === "") {
+      throw new Error(`WebhookClient.send(${event.type}): targetClientId is empty; omit it to broadcast`);
+    }
     const eventType = event.type;
     const envelope = makeCallbackEnvelope(event);
     const streamed = this.stream.publish(envelope, targetClientId);
 
     let targets = this.instances;
-    if (targetClientId) {
+    if (targetClientId !== undefined) {
       targets = this.instances.filter((i) => i.clientId === targetClientId);
     }
     if (targets.length === 0) {

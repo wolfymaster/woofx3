@@ -35,18 +35,18 @@ Then the transport is chosen for that client:
 2. **It has no callback URL but a live subscription:** the request is pushed on its newest subscription as a `request` frame. The client answers with `answerEngineRequest(envelope.id, answer)`, where `answer` is `{ ok: true, body }` (the body a callback URL would have answered with) or `{ ok: false, error }` to refuse.
 3. **Neither:** the request fails at once with "no registered dashboard", as it would with no client at all, and the caller handles that as it always has (a token renewal fails, a shoutout reports no queue).
 
-The engine waits 5 seconds for an answer on either transport. Over the stream, a request also fails at once when the subscription drops before it is answered, or when the frame is dropped unsent because the client fell behind. A request is never retried. `answerEngineRequest` rejects a request id that is not waiting for the calling client: one that timed out, was answered already, or was sent to someone else.
+The engine waits 5 seconds for an answer on either transport. Over the stream, a request also fails at once when the subscription drops before it is answered, or when the frame is dropped unsent because the client fell behind. A request whose caller has already stopped waiting is not pushed at all. A request is never retried. `answerEngineRequest` rejects a request id that is not waiting for the calling client: one that timed out, was answered already, or was sent to someone else.
 
 ## Subscribing
 
 ```ts
-subscribeEngineEvents(callback: EngineEventSubscriber, options?: { types?: string[] }): Promise<void>
+subscribeEngineEvents(callback: EngineEventSubscriber, options?: { types?: EngineEventType[] }): Promise<void>
 answerEngineRequest(requestId: string, answer: EngineRequestAnswer): Promise<void>
 ```
 
-The types are in `shared/clients/typescript/api/engine-events.ts`. The callback is a capnweb stub whose `onEngineEvent(frame)` receives an `EngineEventFrame`: `{ kind: "event", envelope, seq }` or `{ kind: "request", envelope, seq }`. With `types`, only those event types are pushed. Requests are pushed whatever `types` says, because a client with a subscription is the one the engine asks.
+The types are in `shared/clients/typescript/api/engine-events.ts`. The callback is a capnweb stub whose `onEngineEvent(frame)` receives an `EngineEventFrame`: `{ kind: "event", envelope, seq }` or `{ kind: "request", envelope, seq }`. With `types`, only those event types are pushed; a type the engine does not know fails the call, naming it, rather than matching nothing. Requests are pushed whatever `types` says, because a client with a subscription is the one the engine asks.
 
-A subscription belongs to the session and the client that made it. Calling again on the same session replaces it. It ends when the session's socket closes, and the engine releases the callback stub then. A client may hold subscriptions on several sessions at once (two windows, say): every one of them gets the client's events, and requests go to the newest.
+A subscription belongs to the session and the client that made it. Calling again on the same session replaces it. It ends when the session's socket closes, when the client is deleted, or when the engine shuts down, and the engine releases the callback stub then. Requests waiting on it fail at once. A client may hold subscriptions on several sessions at once (two windows, say): every one of them gets the client's events, and requests go to the newest.
 
 ## Delivery guarantees
 
@@ -54,6 +54,6 @@ Delivery on the stream is **not gapless**. It is at most once, in order per subs
 
 - A client misses whatever happened before it subscribed and while it was disconnected. It reads the state it shows after subscribing, and again after every reconnect.
 - Each subscription has its own queue, and the engine waits for each `onEngineEvent` call to return before pushing the next frame. Publishing never waits on a subscriber, and a slow subscriber holds up only itself. Its queue holds 256 frames; past that the oldest is dropped. `seq` starts at 1 and rises by one for every frame due to the subscription, delivered or not, so a jump of more than one tells the client it missed frames and should read its state again.
-- An `onEngineEvent` call that rejects ends the subscription, and the engine logs why. A handler catches its own errors.
+- An `onEngineEvent` call that rejects, or that has not settled within 10 seconds, ends the subscription, and the engine logs why. A handler catches its own errors, and a client whose subscription ends this way reconnects and subscribes again.
 
 Webhook delivery is also at most once: an event POST is retried once after a second on a network error or 5xx, and then dropped.
