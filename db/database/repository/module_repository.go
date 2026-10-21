@@ -66,6 +66,14 @@ func (r *ModuleRepository) GetByName(name string) (*models.Module, error) {
 	return &mod, err
 }
 
+// GetByDisplayName matches the name column only, unlike GetByName, which
+// also matches module_id.
+func (r *ModuleRepository) GetByDisplayName(name string) (*models.Module, error) {
+	var mod models.Module
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("name = ?", name).First(&mod).Error
+	return &mod, err
+}
+
 func (r *ModuleRepository) GetByModuleID(moduleID string) (*models.Module, error) {
 	var mod models.Module
 	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("module_id = ?", moduleID).First(&mod).Error
