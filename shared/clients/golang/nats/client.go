@@ -16,16 +16,16 @@ import (
 // seeing it is using a client that was shut down.
 var ErrConnectionClosed = errors.New("NATS connection is closed")
 
-// Defaults for ReconnectPolicy. They match the TypeScript client's.
+// Defaults for reconnectPolicy. They match the TypeScript client's.
 const (
 	DefaultReconnectWait   = time.Second
 	DefaultReconnectJitter = 500 * time.Millisecond
 )
 
-// ReconnectPolicy is how a client waits between attempts to reach the bus
+// reconnectPolicy is how a client waits between attempts to reach the bus
 // again. It retries forever: a service outlives any bus outage, and nats.go
 // restores every subscription on the connection it keeps reconnecting.
-type ReconnectPolicy struct {
+type reconnectPolicy struct {
 	// Wait is the pause before retrying a server that was just tried.
 	Wait time.Duration
 	// Jitter is the most added at random to Wait, so a fleet of clients does
@@ -33,14 +33,13 @@ type ReconnectPolicy struct {
 	Jitter time.Duration
 }
 
-// DefaultReconnectPolicy is the policy NewClient uses.
-func DefaultReconnectPolicy() ReconnectPolicy {
-	return ReconnectPolicy{Wait: DefaultReconnectWait, Jitter: DefaultReconnectJitter}
+func defaultReconnectPolicy() reconnectPolicy {
+	return reconnectPolicy{Wait: DefaultReconnectWait, Jitter: DefaultReconnectJitter}
 }
 
 type Client struct {
 	config     Config
-	reconnect  ReconnectPolicy
+	reconnect  reconnectPolicy
 	logger     *slog.Logger
 	connection *nats.Conn
 	closed     bool
@@ -53,7 +52,7 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 	}
 	return &Client{
 		config:    config,
-		reconnect: DefaultReconnectPolicy(),
+		reconnect: defaultReconnectPolicy(),
 		logger:    logger,
 	}
 }
