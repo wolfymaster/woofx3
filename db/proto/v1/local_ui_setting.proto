@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package local_ui_setting;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// The dashboard's own data (layouts, notes, counters, macros) for an engine
+// run without an account, stored as JSON values keyed by (namespace, key).
+// See docs/services/local-ui-settings.md.
+//
+// Every write, a set or a delete, takes the next value of one engine-wide
+// revision counter in the same transaction, so a revision is a cursor over
+// every change in every namespace. A delete keeps the row as a tombstone with
+// its new revision, so `ListLocalUISettingChanges` reports it.
+service LocalUISettingService {
+  // A namespace's live settings, by key. Tombstones are left out.
+  rpc ListLocalUISettings(ListLocalUISettingsRequest) returns (ListLocalUISettingsResponse);
+  // One live setting. Fails with `not_found` when the key was never written
+  // or is a tombstone.
+  rpc GetLocalUISetting(GetLocalUISettingRequest) returns (GetLocalUISettingResponse);
+  // Stores a value under the next revision. With `expected_revision`, the
+  // write is refused unless it matches the stored revision, and the response
+  // carries the stored row with `conflict` true.
+  rpc SetLocalUISetting(SetLocalUISettingRequest) returns (SetLocalUISettingResponse);
+  // Turns a setting into a tombstone under the next revision, conditional on
+  // `expected_revision` like a set. A key never written gets a tombstone too.
+  rpc DeleteLocalUISetting(DeleteLocalUISettingRequest) returns (DeleteLocalUISettingResponse);
+  // Every row, tombstones included, with a revision greater than
+  // `after_revision`, oldest revision first, one page at a time.
+  rpc ListLocalUISettingChanges(ListLocalUISettingChangesRequest) returns (ListLocalUISettingChangesResponse);
+}
+
+message LocalUISetting {
+  string namespace = 1;
+  string key = 2;
+  // JSON text. Empty when `deleted`.
+  string value_json = 3;
+  // The counter's value at this row's last write. Unique across namespaces.
+  int64 revision = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  bool deleted = 6;
+}
+
+message ListLocalUISettingsRequest {
+  string namespace = 1;
+}
+
+message ListLocalUISettingsResponse {
+  common.ResponseStatus status = 1;
+  repeated LocalUISetting settings = 2;
+}
+
+message GetLocalUISettingRequest {
+  string namespace = 1;
+  string key = 2;
+}
+
+message GetLocalUISettingResponse {
+  common.ResponseStatus status = 1;
+  LocalUISetting setting = 2;
+}
+
+message SetLocalUISettingRequest {
+  string namespace = 1;
+  string key = 2;
+  // JSON text, validated and size-capped by the service.
+  string value_json = 3;
+  // Absent: unconditional. Otherwise the stored row's revision, or 0 for a
+  // key with no live value (never written, or a tombstone).
+  optional int64 expected_revision = 4;
+}
+
+message DeleteLocalUISettingRequest {
+  string namespace = 1;
+  string key = 2;
+  // As on SetLocalUISettingRequest.
+  optional int64 expected_revision = 3;
+}
+
+message SetLocalUISettingResponse {
+  common.ResponseStatus status = 1;
+  // Without `conflict`, the row as written, its revision the new one. With
+  // it, the stored row that refused the write, a tombstone included; absent
+  // when the key was never written.
+  LocalUISetting setting = 2;
+  bool conflict = 3;
+}
+
+message DeleteLocalUISettingResponse {
+  common.ResponseStatus status = 1;
+  // As on SetLocalUISettingResponse; the row is the tombstone when written.
+  LocalUISetting setting = 2;
+  bool conflict = 3;
+}
+
+message ListLocalUISettingChangesRequest {
+  // Return rows with a greater revision; 0 starts from the beginning.
+  int64 after_revision = 1;
+  // Page size; 0 takes the service's default, and larger than its maximum is
+  // refused.
+  int32 limit = 2;
+}
+
+message ListLocalUISettingChangesResponse {
+  common.ResponseStatus status = 1;
+  repeated LocalUISetting settings = 2;
+  // True when rows past the last one returned exist; ask again with its
+  // revision as `after_revision`.
+  bool has_more = 3;
+}

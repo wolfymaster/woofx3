@@ -1,4 +1,5 @@
 import type { FieldOptionsDeclaration, FieldOptionsDescriptor, FieldOptionsReference } from "@woofx3/api";
+import type { StoredManifest } from "./stored-manifest";
 
 const DECLARATIONS: readonly FieldOptionsDeclaration[] = ["trigger", "action", "widget", "resource", "setting"];
 
@@ -10,21 +11,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-/** A module row's stored manifest as an object, or null when it is absent or does not parse. */
-export function parseStoredManifest(raw: string | undefined): Record<string, unknown> | null {
-  if (!raw) {
-    return null;
-  }
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -69,22 +55,19 @@ export function parseFieldOptionsReference(input: unknown): FieldOptionsReferenc
 }
 
 /** The declaration's list of field entries, or null when the manifest has no such declaration. */
-function declaredFields(manifest: Record<string, unknown>, reference: FieldOptionsReference): unknown[] | null {
-  if (reference.declaration === "setting") {
-    return Array.isArray(manifest.settings) ? manifest.settings : [];
+function declaredFields(manifest: StoredManifest, reference: FieldOptionsReference): unknown[] | null {
+  switch (reference.declaration) {
+    case "setting":
+      return manifest.settings;
+    case "resource":
+      return manifest.resources.find((r) => r.kind === reference.declarationId)?.schema ?? null;
+    case "trigger":
+      return manifest.triggers.find((d) => d.id === reference.declarationId)?.fields ?? null;
+    case "action":
+      return manifest.actions.find((d) => d.id === reference.declarationId)?.fields ?? null;
+    case "widget":
+      return manifest.widgets.find((d) => d.id === reference.declarationId)?.fields ?? null;
   }
-  const [listKey, idKey, fieldsKey] = {
-    trigger: ["triggers", "id", "schema"],
-    action: ["actions", "id", "schema"],
-    widget: ["widgets", "id", "settingsSchema"],
-    resource: ["resources", "kind", "schema"],
-  }[reference.declaration];
-  const entries = Array.isArray(manifest[listKey]) ? (manifest[listKey] as unknown[]) : [];
-  const entry = entries.map(asRecord).find((e) => e !== null && e[idKey] === reference.declarationId);
-  if (!entry) {
-    return null;
-  }
-  return Array.isArray(entry[fieldsKey]) ? (entry[fieldsKey] as unknown[]) : [];
 }
 
 function asInternalDescriptor(value: unknown): FieldOptionsDescriptor | null {
@@ -153,7 +136,7 @@ function describe(reference: FieldOptionsReference): string {
  * exactly what it declares keeps that check the only gate a request passes.
  */
 export function fieldOptionsDescriptorFor(
-  manifest: Record<string, unknown>,
+  manifest: StoredManifest,
   reference: FieldOptionsReference
 ): FieldOptionsDescriptor {
   const fields = declaredFields(manifest, reference);

@@ -17,10 +17,12 @@ import type { Msg } from "@woofx3/nats/src/types";
 import type { DbClient } from "./db";
 import {
   ALERT_CLEAR_SUBJECT,
+  ALERT_QUEUE_STATE_SUBJECT,
   ALERT_REPLAY_SUBJECT,
   ALERT_SKIP_SUBJECT,
   AlertReplays,
   clearQueuedAlerts,
+  readAlertQueue,
   skipCurrentAlerts,
 } from "./events/alert-controls";
 import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
@@ -121,8 +123,9 @@ interface WidgetEventEnvelope {
  *     dispatch timing is decided by each overlay's per-widget queue in the
  *     browser, so nothing here holds alerts back or re-publishes them.
  *   - The operator's alert queue controls (`widget.queue.skip`, `.clear`,
- *     `.replay`) are answered here, because the queues they act on live in
- *     the overlays this service streams to (see events/alert-controls.ts).
+ *     `.replay`) and the queue read (`.state`) are answered here, because
+ *     the queues they act on live in the overlays this service streams to
+ *     (see events/alert-controls.ts).
  *   - `module.storage.*.changed` is pushed only to scenes whose widgets
  *     asked for that key (see scene/module-state.ts), not broadcast.
  *   - Every `widget.event` status report is a uniform
@@ -188,7 +191,8 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, host, deliveryStore, logger }));
   await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, host, deliveryStore, logger }));
   await answer(ALERT_REPLAY_SUBJECT, (body) => replays.replay(typeof body.id === "string" ? body.id : ""));
-  logger.info("Answering widget.queue.{skip,clear,replay}");
+  await answer(ALERT_QUEUE_STATE_SUBJECT, () => readAlertQueue({ host, deliveryStore }));
+  logger.info("Answering widget.queue.{skip,clear,replay,state}");
 
   await subscribeJson<WidgetEventEnvelope>(nats, logger, "widget.event", async (envelope, msg) => {
     const data = envelope.data ?? {};

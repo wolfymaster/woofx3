@@ -195,7 +195,7 @@ func (s *workflowService) GetWorkflow(ctx context.Context, req *client.GetWorkfl
 
 	wf, err := s.workflowRepo.GetByID(id)
 	if err != nil {
-		return nil, twirp.NotFoundError("workflow not found")
+		return nil, lookupError("workflow", err)
 	}
 
 	return &client.WorkflowResponse{
@@ -429,7 +429,12 @@ func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *client.
 
 	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
 	if err != nil {
-		return nil, twirp.NotFoundError("workflow execution not found")
+		return nil, lookupError("workflow execution", err)
+	}
+
+	execProto, err := s.executionToProto(exec)
+	if err != nil {
+		return nil, err
 	}
 
 	return &client.WorkflowExecutionResponse{
@@ -437,7 +442,7 @@ func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *client.
 			Code:    client.ResponseStatus_OK,
 			Message: "Workflow execution retrieved successfully",
 		},
-		Execution: s.executionToProto(exec),
+		Execution: execProto,
 	}, nil
 }
 
@@ -450,7 +455,11 @@ func (s *workflowService) ListWorkflowExecutions(ctx context.Context, req *clien
 
 	protoExecutions := make([]*client.WorkflowExecution, len(executions))
 	for i, exec := range executions {
-		protoExecutions[i] = s.executionToProto(&exec)
+		protoExecution, err := s.executionToProto(&exec)
+		if err != nil {
+			return nil, err
+		}
+		protoExecutions[i] = protoExecution
 	}
 
 	return &client.ListWorkflowExecutionsResponse{
@@ -473,7 +482,7 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 
 	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
 	if err != nil {
-		return nil, twirp.NotFoundError("workflow execution not found")
+		return nil, lookupError("workflow execution", err)
 	}
 
 	err = exec.MarkAsCancelled(s.executionRepo)
@@ -538,12 +547,17 @@ func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.Rec
 
 	s.publishExecution(exec, "created")
 
+	execProto, err := s.executionToProto(exec)
+	if err != nil {
+		return nil, err
+	}
+
 	return &client.WorkflowExecutionResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Workflow run recorded",
 		},
-		Execution: s.executionToProto(exec),
+		Execution: execProto,
 	}, nil
 }
 
@@ -594,7 +608,12 @@ func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *clie
 
 	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
 	if err != nil {
-		return nil, twirp.NotFoundError("workflow execution not found")
+		return nil, lookupError("workflow execution", err)
+	}
+
+	execProto, err := s.executionToProto(exec)
+	if err != nil {
+		return nil, err
 	}
 
 	if result.RowsAffected == 0 {
@@ -607,7 +626,7 @@ func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *clie
 				Code:    client.ResponseStatus_OK,
 				Message: "Workflow run already " + string(exec.Status),
 			},
-			Execution: s.executionToProto(exec),
+			Execution: execProto,
 		}, nil
 	}
 
@@ -618,7 +637,7 @@ func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *clie
 			Code:    client.ResponseStatus_OK,
 			Message: "Workflow run updated",
 		},
-		Execution: s.executionToProto(exec),
+		Execution: execProto,
 	}, nil
 }
 
@@ -739,7 +758,12 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 	}
 }
 
-func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *client.WorkflowExecution {
+func (s *workflowService) executionToProto(exec *models.WorkflowExecution) (*client.WorkflowExecution, error) {
+	steps, err := s.executionSteps(exec.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Unmarshal inputs/outputs from JSON
 	var inputs, outputs map[string]string
 	if exec.Input != "" {
@@ -775,30 +799,38 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *clie
 		CompletedAt:      completedAt,
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
-		Steps:            s.executionSteps(exec.ID),
+		Steps:            steps,
 		TriggerEventJson: exec.TriggerEvent,
 		TriggeredBy:      exec.TriggeredBy,
 		DryRun:           exec.DryRun,
-	}
+	}, nil
 }
 
 // executionSteps returns a run's steps in the order it ran them.
 //
-// A read failure yields no steps rather than failing the lookup: the run itself
-// is what the caller asked for, and a timeline missing its detail is more
-// useful than an error page.
-func (s *workflowService) executionSteps(executionID uuid.UUID) []*client.ExecutionStep {
+// A read failure is an error, never an empty list: a run reported with no steps
+// is indistinguishable from a run that has not started any.
+func (s *workflowService) executionSteps(executionID uuid.UUID) ([]*client.ExecutionStep, error) {
 	steps, err := models.GetWorkflowExecutionSteps(s.executionRepo, executionID)
 	if err != nil {
-		log.Printf("workflow run steps unavailable for %s: %v", executionID, err)
-		return []*client.ExecutionStep{}
+		return nil, twirp.InternalErrorWith(fmt.Errorf("read steps of workflow run %s: %w", executionID, err))
 	}
 
 	out := make([]*client.ExecutionStep, len(steps))
 	for i := range steps {
 		out[i] = stepToProto(&steps[i])
 	}
-	return out
+	return out, nil
+}
+
+// lookupError maps a failed single-row read: only a missing row is NotFound,
+// anything else (connection loss, query failure) is an internal error so
+// callers can tell "no such row" from "could not look".
+func lookupError(what string, err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return twirp.NotFoundError(what + " not found")
+	}
+	return twirp.InternalErrorWith(fmt.Errorf("get %s: %w", what, err))
 }
 
 func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
@@ -811,6 +843,7 @@ func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
 	}
 
 	return &client.ExecutionStep{
+		Id:          step.ID.String(),
 		StepId:      step.TaskID,
 		Name:        step.Name,
 		Status:      step.Status,
@@ -822,6 +855,8 @@ func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
 		StartedAt:   startedAt,
 		CompletedAt: completedAt,
 		DurationMs:  step.DurationMs,
+		CreatedAt:   timestamppb.New(step.CreatedAt),
+		UpdatedAt:   timestamppb.New(step.UpdatedAt),
 	}
 }
 

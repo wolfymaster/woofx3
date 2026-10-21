@@ -145,6 +145,12 @@ export interface ExecutionStep {
    * is edited.
    */
   stepIndex: number;
+  /**
+   * The step row's own id: one row per (execution, step, attempt).
+   */
+  id: string;
+  createdAt: protoscript.Timestamp;
+  updatedAt: protoscript.Timestamp;
 }
 
 /**
@@ -1634,6 +1640,9 @@ export const ExecutionStep = {
       inputsJson: "",
       outputsJson: "",
       stepIndex: 0,
+      id: "",
+      createdAt: protoscript.Timestamp.initialize(),
+      updatedAt: protoscript.Timestamp.initialize(),
       ...msg,
     };
   },
@@ -1685,6 +1694,23 @@ export const ExecutionStep = {
     }
     if (msg.stepIndex) {
       writer.writeInt32(13, msg.stepIndex);
+    }
+    if (msg.id) {
+      writer.writeString(14, msg.id);
+    }
+    if (msg.createdAt) {
+      writer.writeMessage(
+        15,
+        msg.createdAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.updatedAt) {
+      writer.writeMessage(
+        16,
+        msg.updatedAt,
+        protoscript.Timestamp._writeMessage,
+      );
     }
     return writer;
   },
@@ -1744,6 +1770,18 @@ export const ExecutionStep = {
         }
         case 13: {
           msg.stepIndex = reader.readInt32();
+          break;
+        }
+        case 14: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 15: {
+          reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 16: {
+          reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
           break;
         }
         default: {
@@ -4333,6 +4371,9 @@ export const ExecutionStepJSON = {
       inputsJson: "",
       outputsJson: "",
       stepIndex: 0,
+      id: "",
+      createdAt: protoscript.TimestampJSON.initialize(),
+      updatedAt: protoscript.TimestampJSON.initialize(),
       ...msg,
     };
   },
@@ -4376,6 +4417,15 @@ export const ExecutionStepJSON = {
     }
     if (msg.stepIndex) {
       json["stepIndex"] = msg.stepIndex;
+    }
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
+      json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
+      json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
     }
     return json;
   },
@@ -4427,6 +4477,18 @@ export const ExecutionStepJSON = {
     const _stepIndex_ = json["stepIndex"] ?? json["step_index"];
     if (_stepIndex_) {
       msg.stepIndex = protoscript.parseNumber(_stepIndex_);
+    }
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _createdAt_ = json["createdAt"] ?? json["created_at"];
+    if (_createdAt_) {
+      msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
+    if (_updatedAt_) {
+      msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
     }
     return msg;
   },

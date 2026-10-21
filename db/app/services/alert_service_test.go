@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -854,4 +856,56 @@ func TestBuildAlertChangeDataFormatsEveryTimestampInUTCAtFullPrecision(t *testin
 	if data["version"] != int64(3) {
 		t.Fatalf("version = %v, want 3", data["version"])
 	}
+}
+
+func TestListAlertsFiltersByWorkflowRun(t *testing.T) {
+	forEachAlertDialect(t, func(t *testing.T, svc client.AlertService, db *gorm.DB) {
+		run := uuid.New()
+		other := uuid.New()
+		for i, workflowID := range []string{run.String(), other.String(), run.String(), ""} {
+			if _, err := svc.CreateAlert(context.Background(), &client.CreateAlertRequest{
+				Payload:    `{"id":"env"}`,
+				EnvelopeId: "env-" + strconv.Itoa(i),
+				WorkflowId: workflowID,
+			}); err != nil {
+				t.Fatalf("CreateAlert: %v", err)
+			}
+		}
+
+		tests := []struct {
+			name       string
+			workflowID string
+			wantCount  int
+			wantTotal  int64
+			wantCode   twirp.ErrorCode
+		}{
+			{name: "no filter lists every alert", workflowID: "", wantCount: 4, wantTotal: 4},
+			{name: "a run lists the alerts it fired", workflowID: run.String(), wantCount: 2, wantTotal: 2},
+			{name: "a run that fired none lists nothing", workflowID: uuid.NewString(), wantCount: 0, wantTotal: 0},
+			{name: "an id that is not a UUID is refused", workflowID: "run-1", wantCode: twirp.InvalidArgument},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				resp, err := svc.ListAlerts(context.Background(), &client.ListAlertsRequest{WorkflowId: tc.workflowID})
+				if tc.wantCode != "" {
+					var twerr twirp.Error
+					if !errors.As(err, &twerr) || twerr.Code() != tc.wantCode {
+						t.Fatalf("err = %v, want %s", err, tc.wantCode)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("ListAlerts: %v", err)
+				}
+				if len(resp.Alerts) != tc.wantCount || resp.TotalCount != tc.wantTotal {
+					t.Fatalf("got %d alerts of %d, want %d of %d", len(resp.Alerts), resp.TotalCount, tc.wantCount, tc.wantTotal)
+				}
+				for _, alert := range resp.Alerts {
+					if tc.workflowID != "" && alert.WorkflowId != tc.workflowID {
+						t.Fatalf("alert %s belongs to run %q, want %q", alert.Id, alert.WorkflowId, tc.workflowID)
+					}
+				}
+			})
+		}
+	})
 }

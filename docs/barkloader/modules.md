@@ -1103,6 +1103,12 @@ Declaring a kind is necessary but not sufficient — the module must also expose
 
 See `modules/utility/counter/manifest.json` in the **woofx3-modules** repository for the canonical example.
 
+A dashboard reads every declared kind with the engine's `listResourceKinds()` (capability
+`modules.resourceKinds`): one entry per `resources[]` entry of every installed module,
+ordered by module and then as the manifest lists them, each
+`{ moduleName, kind, name, description, icon?, schema, summaryPath? }`. `moduleName` is
+the declaring manifest's `id`, and `summaryPath` is its `display.summary`.
+
 #### Naming a kind
 
 Kind names are an open namespace: two modules may each declare a `wheel`. A kind

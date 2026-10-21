@@ -7,17 +7,25 @@ import (
 
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/app/secrets"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 )
 
+// settingService serves the engine's settings. The values of the keys `seal`
+// names are sealed at rest; every read and write here goes through it, so
+// callers only ever see plain text.
 type settingService struct {
 	repo *repository.SettingRepository
+	seal *secrets.SettingSeal
 }
 
-func NewSettingService(repo *repository.SettingRepository) *settingService {
-	return &settingService{repo: repo}
+func NewSettingService(repo *repository.SettingRepository, seal *secrets.SettingSeal) *settingService {
+	if seal == nil {
+		panic("the settings service needs its sealed settings: credentials must never be stored in plain text")
+	}
+	return &settingService{repo: repo, seal: seal}
 }
 
 func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingRequest) (*client.SettingResponse, error) {
@@ -29,7 +37,11 @@ func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingR
 		return nil, err
 	}
 
-	value, err := structpb.NewValue(setting.Value)
+	plain, err := s.seal.PlainValue(setting.Key, setting.Value)
+	if err != nil {
+		return nil, err
+	}
+	value, err := structpb.NewValue(plain)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +63,11 @@ func (s *settingService) GetSettings(ctx context.Context, req *client.GetSetting
 
 	var pbSettings []*client.Setting
 	for _, setting := range settings {
-		value, err := structpb.NewValue(setting.Value)
+		plain, err := s.seal.PlainValue(setting.Key, setting.Value)
+		if err != nil {
+			return nil, err
+		}
+		value, err := structpb.NewValue(plain)
 		if err != nil {
 			return nil, err
 		}
@@ -88,7 +104,11 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 		userID = &parsed
 	}
 
-	if err := s.repo.UpsertSetting(req.Key, valueStr, userID); err != nil {
+	stored, err := s.seal.StoredValue(req.Key, valueStr)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpsertSetting(req.Key, stored, userID); err != nil {
 		return nil, err
 	}
 
@@ -109,10 +129,13 @@ func (s *settingService) SetSettings(ctx context.Context, req *client.SetSetting
 			valueStr = update.Value.GetStringValue()
 		}
 
+		stored, err := s.seal.StoredValue(update.Key, valueStr)
+		if err != nil {
+			return nil, err
+		}
 		// SetSettings doesn't carry a per-update user scope on the proto
 		// today; pass nil to leave the column as-is on existing rows.
-		err := s.repo.UpsertSetting(update.Key, valueStr, nil)
-		if err != nil {
+		if err := s.repo.UpsertSetting(update.Key, stored, nil); err != nil {
 			return nil, err
 		}
 
@@ -144,7 +167,11 @@ func (s *settingService) ListSettingsByPrefix(ctx context.Context, req *client.L
 
 	result := make(map[string]string, len(settings))
 	for _, setting := range settings {
-		result[setting.Key] = setting.Value
+		plain, err := s.seal.PlainValue(setting.Key, setting.Value)
+		if err != nil {
+			return nil, err
+		}
+		result[setting.Key] = plain
 	}
 
 	return &client.ListSettingsResponse{

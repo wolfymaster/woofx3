@@ -296,7 +296,7 @@ describe("token relink", () => {
     await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
 
     state.value = JSON.stringify(RELINKED);
-    expect(await client.reloadToken()).toEqual({ userId: "42", userChanged: false });
+    expect(await client.reloadToken()).toEqual({ userId: "42", userChanged: false, providerChanged: false });
     expect(addUserForToken.mock.calls.at(-1)?.[0]).toEqual(RELINKED);
 
     // Refreshes of the relinked token are now the ones persisted.
@@ -312,7 +312,7 @@ describe("token relink", () => {
     state.value = JSON.stringify({ ...RELINKED, userId: "99" });
     addUserForToken.mockImplementationOnce(async () => "99");
 
-    expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true });
+    expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true, providerChanged: false });
   });
 });
 
@@ -351,7 +351,7 @@ describe("a token from a dashboard", () => {
     const provider = await client.init();
 
     state.value = JSON.stringify({ ...FROM_DASHBOARD, accessToken: "a2", userId: "99" });
-    expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true });
+    expect(await client.reloadToken()).toEqual({ userId: "99", userChanged: true, providerChanged: false });
     expect((await provider.getAnyAccessToken()).accessToken).toBe("a2");
   });
 });
@@ -360,5 +360,83 @@ describe("a token not from a dashboard", () => {
   test("needs Twitch app credentials to refresh it", async () => {
     const client = new TwitchClient({ getSetting: createGetSetting(TOKEN_JSON) });
     await expect(client.init()).rejects.toThrow("no Twitch app credentials");
+  });
+});
+
+describe("a token from the engine's public Twitch app", () => {
+  const FROM_DEVICE_LOGIN = {
+    accessToken: "a1",
+    refreshToken: "r1",
+    scope: ["chat:read"],
+    expiresIn: 3600,
+    obtainmentTimestamp: Date.now(),
+    userId: "42",
+    publicClientId: "public-app",
+  };
+
+  test("is served by a provider that asks the api service, never refreshed here", async () => {
+    const requestToken = mock(async () => ({ ...FROM_DEVICE_LOGIN, refreshToken: null, clientId: "public-app" }));
+    const client = new TwitchClient({ getSetting: createGetSetting(JSON.stringify(FROM_DEVICE_LOGIN)), requestToken });
+    const provider = await client.init({
+      clientId: "own-app",
+      clientSecret: "secret",
+      redirectUri: "http://localhost",
+    });
+
+    expect(provider.clientId).toBe("public-app");
+    expect(lastRefreshingAuthCredentials).toBeUndefined();
+    const served = await provider.getAnyAccessToken();
+    expect(served.accessToken).toBe("a1");
+    // The single-use refresh token stays with the api service.
+    expect(served.refreshToken).toBeNull();
+    expect(requestToken).not.toHaveBeenCalled();
+  });
+
+  test("needs a way to ask the api service", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(JSON.stringify(FROM_DEVICE_LOGIN)) });
+    await expect(client.init()).rejects.toThrow("no requestToken");
+  });
+});
+
+describe("a relink to a token renewed another way", () => {
+  const CONFIDENTIAL = {
+    accessToken: "a1",
+    refreshToken: "r1",
+    scope: ["chat:read"],
+    expiresIn: 3600,
+    obtainmentTimestamp: Date.now(),
+    userId: "42",
+  };
+  const FROM_DEVICE_LOGIN = { ...CONFIDENTIAL, refreshToken: "r2", publicClientId: "public-app" };
+  const FROM_DASHBOARD = { ...CONFIDENTIAL, refreshToken: undefined, clientId: "woofx3-app" };
+
+  test.each([
+    ["the confidential app's", "a device login's", CONFIDENTIAL, FROM_DEVICE_LOGIN],
+    ["the confidential app's", "a dashboard's", CONFIDENTIAL, FROM_DASHBOARD],
+    ["a device login's", "the confidential app's", FROM_DEVICE_LOGIN, CONFIDENTIAL],
+    ["a dashboard's", "the confidential app's", FROM_DASHBOARD, CONFIDENTIAL],
+  ])("from %s to %s reports a provider change and applies nothing", async (_, __, loaded, relinked) => {
+    const state = { value: JSON.stringify(loaded) };
+    const requestToken = mock(async () => ({ ...FROM_DASHBOARD, refreshToken: null }));
+    const client = new TwitchClient({ getSetting: mock(async () => state.value), requestToken });
+    await client.init({ clientId: "own-app", clientSecret: "secret", redirectUri: "http://localhost" });
+    const addedBefore = addUserForToken.mock.calls.length;
+
+    state.value = JSON.stringify(relinked);
+    expect(await client.reloadToken()).toEqual({ userId: "42", userChanged: false, providerChanged: true });
+    expect(addUserForToken.mock.calls.length).toBe(addedBefore);
+  });
+
+  test("between a device login's and a dashboard's is a token swap", async () => {
+    const state = { value: JSON.stringify(FROM_DEVICE_LOGIN) };
+    const client = new TwitchClient({
+      getSetting: mock(async () => state.value),
+      requestToken: mock(async () => ({ ...FROM_DASHBOARD, refreshToken: null })),
+    });
+    const provider = await client.init();
+
+    state.value = JSON.stringify({ ...FROM_DASHBOARD, accessToken: "a2" });
+    expect(await client.reloadToken()).toEqual({ userId: "42", userChanged: false, providerChanged: false });
+    expect((await provider.getAnyAccessToken()).accessToken).toBe("a2");
   });
 });

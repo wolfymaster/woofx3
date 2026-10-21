@@ -74,6 +74,7 @@ func TestSubjectsConsumedOutsideGoAreReserved(t *testing.T) {
 		"widget.queue.skip":                    "sceneManager alert queue controls",
 		"widget.queue.clear":                   "sceneManager alert queue controls",
 		"widget.queue.replay":                  "sceneManager alert queue controls",
+		"widget.queue.state":                   "sceneManager alert queue read",
 		"db.scene.updated.*":                   "sceneManager/src/nats-subscriptions.ts",
 		"db.ack.>":                             "db/app/workers/ack_worker.go",
 		"setting.integration.token.updated":    "api/src/routes/commands.ts",

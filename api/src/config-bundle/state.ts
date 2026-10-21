@@ -1,8 +1,10 @@
 import type { ActionStep, CommandVisibility, WorkflowDefinition } from "@woofx3/api";
 import type { TaskDefinition } from "@woofx3/api/workflow-definition";
 import type { DbClient } from "../db-client";
+import type { SharedLogger } from "@woofx3/common/logging";
 import { parseInstanceSettings } from "../module-event-handlers";
 import { parseActions, parseSteps } from "../routes/helpers";
+import { parseStoredManifestJson } from "../stored-manifest";
 
 /**
  * The engine's configuration as export and the import planner need it: every
@@ -120,39 +122,17 @@ interface ManifestFacts {
   systemOnlyActions: Set<string>;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 /**
  * The parts of an installed manifest the planner reads. Any of them may be
  * absent, since a manifest from an older engine never declared them.
  */
-function manifestFacts(rawManifest: string | undefined): ManifestFacts {
-  const manifest = parseJson<unknown>(rawManifest, {});
-  const facts: ManifestFacts = { resourceKinds: new Set(), permissions: [], systemOnlyActions: new Set() };
-  if (!isObject(manifest)) {
-    return facts;
-  }
-  if (Array.isArray(manifest.resources)) {
-    for (const entry of manifest.resources) {
-      if (isObject(entry) && typeof entry.kind === "string") {
-        facts.resourceKinds.add(entry.kind);
-      }
-    }
-  }
-  if (Array.isArray(manifest.permissions)) {
-    const permissions = manifest.permissions.filter((p): p is string => typeof p === "string" && p !== "");
-    facts.permissions = [...new Set(permissions)].sort();
-  }
-  if (Array.isArray(manifest.actions)) {
-    for (const entry of manifest.actions) {
-      if (isObject(entry) && typeof entry.id === "string" && entry.systemOnly === true) {
-        facts.systemOnlyActions.add(entry.id);
-      }
-    }
-  }
-  return facts;
+function manifestFacts(rawManifest: string | undefined, logger: SharedLogger, moduleId: string): ManifestFacts {
+  const manifest = parseStoredManifestJson(rawManifest, logger, moduleId);
+  return {
+    resourceKinds: new Set(manifest?.resources.map((r) => r.kind)),
+    permissions: manifest?.permissions ?? [],
+    systemOnlyActions: new Set(manifest?.actions.filter((a) => a.systemOnly).map((a) => a.id)),
+  };
 }
 
 async function readWorkflows(db: DbClient): Promise<EngineWorkflow[]> {
@@ -187,7 +167,11 @@ async function readWorkflows(db: DbClient): Promise<EngineWorkflow[]> {
  * Read everything a bundle can describe. Group members are a query per group,
  * so they are read only when the caller will use them.
  */
-export async function readEngineConfig(db: DbClient, options: { members: boolean }): Promise<EngineConfigState> {
+export async function readEngineConfig(
+  db: DbClient,
+  options: { members: boolean },
+  logger: SharedLogger
+): Promise<EngineConfigState> {
   const [workflows, commandRows, groupRows, instances, moduleRows, actionRows, triggerRows] = await Promise.all([
     readWorkflows(db),
     db.listCommands({ includeDisabled: true }),
@@ -216,7 +200,7 @@ export async function readEngineConfig(db: DbClient, options: { members: boolean
     modules.set(m.moduleId, {
       moduleId: m.moduleId,
       version: m.version ?? "",
-      ...manifestFacts(m.manifest),
+      ...manifestFacts(m.manifest, logger, m.moduleId),
     });
   }
 

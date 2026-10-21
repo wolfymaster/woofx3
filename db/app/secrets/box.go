@@ -53,6 +53,12 @@ func (b *Box) Seal(scope, name, plaintext string) (string, error) {
 	return sealedPrefix + base64.StdEncoding.EncodeToString(sealed), nil
 }
 
+// IsSealed reports whether value is in the format Seal writes, without
+// trying to open it.
+func IsSealed(value string) bool {
+	return strings.HasPrefix(value, sealedPrefix)
+}
+
 // Open decrypts a value Seal produced for the same (scope, name).
 func (b *Box) Open(scope, name, sealed string) (string, error) {
 	encoded, ok := strings.CutPrefix(sealed, sealedPrefix)

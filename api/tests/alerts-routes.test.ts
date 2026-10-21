@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { alertsRoutes } from "../src/routes/alerts";
+import { ALERT_QUEUE_TIMEOUT_MS, alertsRoutes } from "../src/routes/alerts";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
@@ -78,5 +78,161 @@ describe("alert queue controls", () => {
 
   test("throws when the api has no bus at all", async () => {
     await expect(call(null, "skipCurrentAlert")).rejects.toThrow("NATS client not available");
+  });
+});
+
+/** An alert row as db-proxy returns it, created and dispatched at noon on 2026-10-20. */
+function storedAlert(id: string, overrides: Record<string, unknown> = {}) {
+  const unset = { seconds: 0n, nanos: 0 };
+  const noon = { seconds: 1_792_497_600n, nanos: 0 };
+  return {
+    id,
+    payload: `{"id":"env-${id}"}`,
+    workflowId: "",
+    sourceEventId: "",
+    status: "completed",
+    createdAt: noon,
+    updatedAt: noon,
+    envelopeId: `env-${id}`,
+    dispatchedAt: noon,
+    playedAt: unset,
+    completedAt: unset,
+    error: "",
+    version: 2n,
+    ...overrides,
+  };
+}
+
+/** listAlerts touches only `db.listAlerts`; every request it makes is recorded. */
+function listAlerts(query: unknown, rows = [storedAlert("a"), storedAlert("b")], totalCount = 7) {
+  const requests: unknown[] = [];
+  const ctx = {
+    logger: fakeLogger(),
+    db: {
+      async listAlerts(req: unknown) {
+        requests.push(req);
+        return { alerts: rows, totalCount };
+      },
+    },
+  };
+  const route = alertsRoutes.listAlerts as unknown as (q: unknown) => Promise<Record<string, unknown>>;
+  return { requests, result: route.call(ctx, query) };
+}
+
+describe("listAlerts", () => {
+  test("pages newest first with the defaults, as the alert callbacks' snapshots", async () => {
+    const { requests, result } = listAlerts(undefined);
+    const page = await result;
+
+    expect(requests).toEqual([{ limit: 50, offset: 0, workflowId: "" }]);
+    expect(page).toMatchObject({ totalCount: 7, limit: 50, offset: 0 });
+    expect(page.alerts).toEqual([
+      {
+        id: "a",
+        payload: '{"id":"env-a"}',
+        workflowId: "",
+        sourceEventId: "",
+        status: "completed",
+        version: 2,
+        envelopeId: "env-a",
+        dispatchedAt: "2026-10-20T12:00:00.000000000Z",
+        createdAt: "2026-10-20T12:00:00.000000000Z",
+        updatedAt: "2026-10-20T12:00:00.000000000Z",
+      },
+      expect.objectContaining({ id: "b" }),
+    ]);
+  });
+
+  test("asks for one run's alerts and the page it was given", async () => {
+    const { requests, result } = listAlerts({ limit: 500, offset: 20, workflowId: "run-1" });
+    await result;
+
+    expect(requests).toEqual([{ limit: 500, offset: 20, workflowId: "run-1" }]);
+  });
+
+  const refused: Array<[string, unknown, string]> = [
+    ["a limit of 0", { limit: 0 }, "limit must be a whole number from 1 to 500"],
+    ["a limit over the most", { limit: 501 }, "limit must be a whole number from 1 to 500"],
+    ["a fractional limit", { limit: 1.5 }, "limit must be a whole number from 1 to 500"],
+    ["a negative offset", { offset: -1 }, "offset must be a whole number of 0 or more"],
+    ["a fractional offset", { offset: 0.5 }, "offset must be a whole number of 0 or more"],
+  ];
+  for (const [name, query, message] of refused) {
+    test(`refuses ${name} without asking db-proxy`, async () => {
+      const { requests, result } = listAlerts(query);
+
+      await expect(result).rejects.toThrow(message);
+      expect(requests).toEqual([]);
+    });
+  }
+
+  test("fails when db-proxy sends a row without its creation time", async () => {
+    const { result } = listAlerts({}, [storedAlert("a", { createdAt: { seconds: 0n, nanos: 0 } })]);
+
+    await expect(result).rejects.toThrow("stored row a has no createdAt");
+  });
+});
+
+describe("getAlertQueue", () => {
+  const playing = [{ alertId: "row-a", envelopeId: "env-a", startedAt: "2026-10-20T12:00:00.000Z" }];
+  const waiting = [{ alertId: "", envelopeId: "env-b" }];
+
+  const answers: Array<{ name: string; answer: unknown; expected: unknown }> = [
+    {
+      name: "returns the scene manager's queue",
+      answer: { ok: true, playing, waiting },
+      expected: { ok: true, playing, waiting },
+    },
+    {
+      name: "carries a refusal through with its reason",
+      answer: { ok: false, playing: [], waiting: [], reason: "no overlay is open" },
+      expected: { ok: false, playing: [], waiting: [], reason: "no overlay is open" },
+    },
+    {
+      name: "gives empty lists to a request the scene manager failed to handle",
+      answer: { ok: false, reason: "store unavailable" },
+      expected: { ok: false, playing: [], waiting: [], reason: "store unavailable" },
+    },
+  ];
+  for (const { name, answer, expected } of answers) {
+    test(name, async () => {
+      const { nats, requests } = answeringNats(() => answer);
+
+      expect(await call(nats, "getAlertQueue")).toEqual(expected);
+      expect(requests.map((r) => [r.subject, r.body])).toEqual([["widget.queue.state", {}]]);
+      expect(requests[0]!.timeout).toBe(ALERT_QUEUE_TIMEOUT_MS);
+    });
+  }
+
+  const unreadable: Array<[string, unknown]> = [
+    ["no lists", { ok: true }],
+    ["an entry without an envelope id", { ok: true, playing: [{ alertId: "row-a" }], waiting: [] }],
+    ["a null reply", null],
+    ["a refusal without a reason", { ok: false, playing: [], waiting: [] }],
+    ["a refusal whose reason is not text", { ok: false, reason: 5 }],
+    ["an ok that is not a boolean", { ok: "yes", playing: [], waiting: [] }],
+    ["a start that is not text", { ok: true, playing: [{ alertId: "", envelopeId: "e", startedAt: 5 }], waiting: [] }],
+  ];
+  for (const [name, answer] of unreadable) {
+    test(`fails on an answer with ${name}`, async () => {
+      const { nats } = answeringNats(() => answer);
+
+      await expect(call(nats, "getAlertQueue")).rejects.toThrow("unreadable queue");
+    });
+  }
+
+  test("reports a scene manager that does not answer as a refusal", async () => {
+    const nats = {
+      async request() {
+        throw new Error("503");
+      },
+    };
+
+    expect(await call(nats, "getAlertQueue")).toEqual({
+      ok: false,
+      playing: [],
+      waiting: [],
+      reason: "the scene manager did not answer: 503",
+    });
   });
 });

@@ -97,18 +97,25 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
 
 #### ExecutionStep
 
+One row per attempt at a task. `inputsJson` is the parameters as resolved at run time, and
+`outputsJson` the task's exports, both raw JSON.
+
 ```json
 {
+  "id": "string",
   "stepId": "string",
   "name": "string",
   "status": "pending | running | completed | failed | skipped",
   "attempt": 1,
+  "stepIndex": 0,
   "error": "string",
-  "inputs": { "key": "value" },
-  "outputs": { "key": "value" },
+  "inputsJson": "{\"text\":\"hi\"}",
+  "outputsJson": "{\"sent\":true}",
   "startedAt": "2026-01-15T10:30:00Z",
   "completedAt": "2026-01-15T10:30:05Z",
-  "durationMs": 5000
+  "durationMs": 5000,
+  "createdAt": "2026-01-15T10:30:05Z",
+  "updatedAt": "2026-01-15T10:30:05Z"
 }
 ```
 
@@ -499,6 +506,81 @@ Returns detailed execution status including per-step progress and a progress per
     { "name": "Show Alert", "status": "completed", "startedAt": "...", "completedAt": "..." },
     { "name": "Hide Alert", "status": "running", "startedAt": "..." }
   ]
+}
+```
+
+#### getWorkflowRun
+
+Returns one recorded run whole: the run, every step it recorded in the order it ran them,
+and the alerts it fired. Answers `null` when the engine holds no run with that id.
+Requires the `workflow.runDetail` capability.
+
+The run and its steps are the snapshots the `workflow.run.recorded`,
+`workflow.run.updated` and `workflow.run.step.recorded` callbacks carry
+(`WorkflowRunSnapshot`, `WorkflowRunStepSnapshot`), so a client can load a run with this
+read and keep it current from the callbacks. Each step carries its resolved `inputs`,
+its `outputs`, its `error`, `startedAt`, `completedAt`, `durationMs` and `attempt`, with
+a field the step never recorded left out. `alerts` are `AlertSnapshot`s, newest first, at
+most 50. `workflowName` is `""` for a run whose workflow has since been deleted. The run
+is kept as long as [getWorkflowHistory](#getworkflowhistory) keeps it.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `executionId` | string | yes | ID of the run |
+
+**Response:**
+
+```json
+{
+  "run": {
+    "id": "exec-001",
+    "workflowId": "wf-789",
+    "workflowName": "Welcome New Follower",
+    "status": "completed",
+    "triggeredBy": "twitch",
+    "triggerEvent": "{\"type\":\"channel.follow\",...}",
+    "startedAt": "2026-01-15T10:30:00.000000000Z",
+    "completedAt": "2026-01-15T10:30:06.000000000Z",
+    "createdAt": "2026-01-15T10:30:00.000000000Z",
+    "updatedAt": "2026-01-15T10:30:06.000000000Z"
+  },
+  "steps": [
+    {
+      "id": "step-1",
+      "executionId": "exec-001",
+      "taskId": "show-alert",
+      "status": "success",
+      "attempt": 1,
+      "stepIndex": 0,
+      "inputs": "{\"target\":\"default\",...}",
+      "outputs": "{}",
+      "startedAt": "2026-01-15T10:30:00.000000000Z",
+      "completedAt": "2026-01-15T10:30:06.000000000Z",
+      "durationMs": 6000,
+      "createdAt": "2026-01-15T10:30:06.000000000Z",
+      "updatedAt": "2026-01-15T10:30:06.000000000Z"
+    }
+  ],
+  "alerts": [{ "id": "alert-1", "workflowId": "exec-001", "status": "completed", "...": "..." }]
+}
+```
+
+#### getWorkflowCatalog
+
+Returns what the workflow builder composes from, in one read: `triggers` as
+`getTriggers()` lists them, `actions` as `getActions()` lists them, and `functions` as
+`listAvailableFunctions()` lists them. A trigger fired by inbound HTTP (`transport`
+`"webhook"`) is left out, because its module's handler fires it and nothing binds to it.
+The three are read together and the call fails whole if any read fails, so a client never
+holds a catalog with one part missing. Requires the `workflow.catalog` capability.
+
+```json
+{
+  "triggers": [TriggerDefinition],
+  "actions": [ActionDefinition],
+  "functions": [AvailableFunction]
 }
 ```
 

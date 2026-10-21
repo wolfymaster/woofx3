@@ -101,3 +101,53 @@ describe("message bus token", () => {
     expect(loadConfig().nats.token).toBeUndefined();
   });
 });
+
+describe("public Twitch app", () => {
+  test("is the client id WOOFX3_TWITCH_PUBLIC_CLIENT_ID gives, apart from the confidential app's", () => {
+    withEnv({ WOOFX3_TWITCH_PUBLIC_CLIENT_ID: "abc123publicapp", WOOFX3_TWITCH_CLIENT_ID: "confidential" });
+
+    expect(loadConfig().twitchPublicClientId).toBe("abc123publicapp");
+  });
+
+  test("keeps an all-digit client id as text", () => {
+    withEnv({ WOOFX3_TWITCH_PUBLIC_CLIENT_ID: "12345" });
+
+    expect(loadConfig().twitchPublicClientId).toBe("12345");
+  });
+
+  test("is null when unset or blank", () => {
+    delete process.env.WOOFX3_TWITCH_PUBLIC_CLIENT_ID;
+    withEnv({});
+    expect(loadConfig().twitchPublicClientId).toBeNull();
+
+    withEnv({ WOOFX3_TWITCH_PUBLIC_CLIENT_ID: " " });
+    expect(loadConfig().twitchPublicClientId).toBeNull();
+  });
+
+  test("refuses a value that is not a client id", () => {
+    withEnv({ WOOFX3_TWITCH_PUBLIC_CLIENT_ID: "abc&client_secret=x" });
+    expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_PUBLIC_CLIENT_ID");
+  });
+});
+
+describe("confidential Twitch app", () => {
+  test("is the client id WOOFX3_TWITCH_CLIENT_ID gives", () => {
+    withEnv({ WOOFX3_TWITCH_CLIENT_ID: "confidential", WOOFX3_TWITCH_PUBLIC_CLIENT_ID: "abc123publicapp" });
+
+    expect(loadConfig().twitchClientId).toBe("confidential");
+  });
+
+  test("is null when unset or blank", () => {
+    delete process.env.WOOFX3_TWITCH_CLIENT_ID;
+    withEnv({});
+    expect(loadConfig().twitchClientId).toBeNull();
+
+    withEnv({ WOOFX3_TWITCH_CLIENT_ID: " " });
+    expect(loadConfig().twitchClientId).toBeNull();
+  });
+
+  test("refuses a value that is not a client id", () => {
+    withEnv({ WOOFX3_TWITCH_CLIENT_ID: "abc def" });
+    expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_CLIENT_ID");
+  });
+});

@@ -185,6 +185,9 @@ export const engineRoutes = routeModule({
     if (this.authInvalidate) {
       this.authInvalidate();
     }
+    // A deleted client's open sessions must stop receiving its events, and
+    // must not be offered as a client that can answer a request.
+    this.engineEventStream?.dropClient(clientId);
     if (this.webhookClient) {
       await this.webhookClient.refreshCallbackUrls();
     }

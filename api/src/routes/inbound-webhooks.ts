@@ -1,10 +1,8 @@
 import type { InboundWebhookRequest, InboundWebhookResponse } from "@woofx3/api";
+import { EVENTBUS_TRANSPORT, WEBHOOK_TRANSPORT } from "@woofx3/api/webhooks";
 import { InvokeTimeoutError } from "@woofx3/barkloader";
 import { validateWebhookHandlerResult } from "../inbound-webhook-result";
 import { routeModule } from "./context";
-
-const WEBHOOK_TRANSPORT = "webhook";
-const EVENTBUS_TRANSPORT = "eventbus";
 
 function emptyResponse(status: number): InboundWebhookResponse {
   return { status, headers: {}, body: "" };

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { ApiGateway } from "../src/gateway";
 import { Api } from "../src/api";
+import { EngineEventStream } from "../src/engine-event-stream";
 import { WebhookClient } from "../src/webhook-client";
 
 const OPEN = { mode: "open", token: null } as const;
@@ -38,7 +39,7 @@ describe("ApiGateway.registerClient", () => {
     const db = { createClient, listClients } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger);
+    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ valid: true })) } as any;
     const gateway = new ApiGateway(api, auth, db, logger, OPEN);
@@ -67,7 +68,7 @@ describe("ApiGateway.registerClient", () => {
     } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger);
+    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, OPEN);
     gateway.setWebhookClient(webhook);

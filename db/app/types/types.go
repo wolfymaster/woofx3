@@ -30,4 +30,5 @@ type App struct {
 	MetricsWorker   *outbox.MetricsWorker
 	EventPublisher  *outbox.EventPublisher
 	Secrets         *secrets.Box
+	SettingSeal     *secrets.SettingSeal
 }

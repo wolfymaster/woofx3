@@ -135,6 +135,11 @@ export interface AlertResponse {
 export interface ListAlertsRequest {
   limit: number;
   offset: number;
+  /**
+   * When set, only the alerts that workflow execution fired (`Alert.workflow_id`).
+   * `total_count` then counts those alerts only. Not a UUID: INVALID_ARGUMENT.
+   */
+  workflowId: string;
 }
 
 export interface ListAlertsResponse {
@@ -1062,6 +1067,7 @@ export const ListAlertsRequest = {
     return {
       limit: 0,
       offset: 0,
+      workflowId: "",
       ...msg,
     };
   },
@@ -1078,6 +1084,9 @@ export const ListAlertsRequest = {
     }
     if (msg.offset) {
       writer.writeInt32(3, msg.offset);
+    }
+    if (msg.workflowId) {
+      writer.writeString(6, msg.workflowId);
     }
     return writer;
   },
@@ -1098,6 +1107,10 @@ export const ListAlertsRequest = {
         }
         case 3: {
           msg.offset = reader.readInt32();
+          break;
+        }
+        case 6: {
+          msg.workflowId = reader.readString();
           break;
         }
         default: {
@@ -1874,6 +1887,7 @@ export const ListAlertsRequestJSON = {
     return {
       limit: 0,
       offset: 0,
+      workflowId: "",
       ...msg,
     };
   },
@@ -1890,6 +1904,9 @@ export const ListAlertsRequestJSON = {
     }
     if (msg.offset) {
       json["offset"] = msg.offset;
+    }
+    if (msg.workflowId) {
+      json["workflowId"] = msg.workflowId;
     }
     return json;
   },
@@ -1908,6 +1925,10 @@ export const ListAlertsRequestJSON = {
     const _offset_ = json["offset"];
     if (_offset_) {
       msg.offset = protoscript.parseNumber(_offset_);
+    }
+    const _workflowId_ = json["workflowId"] ?? json["workflow_id"];
+    if (_workflowId_) {
+      msg.workflowId = _workflowId_;
     }
     return msg;
   },

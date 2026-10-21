@@ -9,6 +9,7 @@
   "exports": {
     ".": "./index.ts",
     "./capabilities": "./capabilities.ts",
+    "./engine-events": "./engine-events.ts",
     "./overlay-events": "./overlay-events.ts",
     "./rpc": "./rpc.ts",
     "./stream-events": "./stream-events.ts",

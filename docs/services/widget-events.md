@@ -226,6 +226,40 @@ same row while one is in flight, or within 30 s of one that succeeded, gets that
 answer and plays nothing, so an api retry after a timeout (15 s for replay) cannot play
 it twice. A refused replay is not remembered.
 
+#### Reading the alert log and queue
+
+Two reads let a dashboard show alerts without following the `alert.*` callbacks.
+
+`listAlerts({ limit?, offset?, workflowId? })` pages the alert log, newest first: every
+alert the engine dispatched, as the row db-proxy keeps for it, each in the snapshot shape
+the `alert.*` callbacks carry (`AlertSnapshot`, timestamps RFC 3339 with nine fractional
+digits). `limit` is 1 to 500 (default 50), and a value outside that is refused rather than
+clamped. `workflowId` narrows the log to the alerts one workflow run fired. `totalCount`
+counts every alert the query matches. The log is stored, not held in memory: it survives
+restarts, and it reaches back as far as db-proxy's cleanup keeps settled alerts (see
+[Analytics: retention](./analytics.md#retention)). A dashboard that needs counts by
+outcome or by hour builds them from these snapshots, as it would from the callbacks.
+
+`getAlertQueue()` answers what is on screen now. The api asks the scene manager with a
+`widget.queue.state` request, and it answers from the same open deliveries and page
+reports that skip and clear act on:
+
+| Request | Reply |
+|---------|-------|
+| `widget.queue.state` `{}` | `{ ok, playing, waiting, reason? }` |
+
+`playing` holds the alert each alert widget most recently reported starting (what Skip
+would end), and `waiting` the alerts delivered to a widget's queue that no page has
+started (what Clear would drop). Each entry is `{ alertId, envelopeId, startedAt? }`:
+`alertId` is the alert-log row, or `""` for a delivery recorded before deliveries carried
+`rowId`, and `startedAt` is the earliest start any page reported. An alert counts once
+however many alert widgets show it, and one playing on one widget while still queued on
+another is listed as playing. With no overlay open the answer is
+`{ ok: false, playing: [], waiting: [], reason: "no overlay is open" }`, and a scene
+manager that does not answer gives `ok: false` with `the scene manager did not answer:
+...`, as for the controls. The queue has no paused state: an alert widget plays its queue
+whenever a page holding it is open.
+
 ## Delivery acknowledgements
 
 Every event bound for a placement is an open delivery on the scene manager until a page

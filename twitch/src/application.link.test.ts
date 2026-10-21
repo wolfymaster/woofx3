@@ -48,7 +48,7 @@ let linked = false;
 let constructedWith: Array<{ channel?: string }> = [];
 let instances: MockTwitchClient[] = [];
 /** What the next `reloadToken` reports, as a relink in the UI would. */
-let nextReload = { userId: "42", userChanged: false };
+let nextReload = { userId: "42", userChanged: false, providerChanged: false };
 
 function linkTwitch() {
   linked = true;
@@ -126,7 +126,7 @@ function reset() {
   linked = false;
   constructedWith = [];
   instances = [];
-  nextReload = { userId: "42", userChanged: false };
+  nextReload = { userId: "42", userChanged: false, providerChanged: false };
 }
 
 describe("TwitchApi before Twitch is linked", () => {
@@ -276,12 +276,43 @@ describe("TwitchApi relinked while connected", () => {
     await app.init(ctx);
     const first = instances[0];
 
-    nextReload = { userId: "99", userChanged: true };
+    nextReload = { userId: "99", userChanged: true, providerChanged: false };
     await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
 
     expect(first?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);
     expect(ctx.twitchEventBus).toBeDefined();
     expect(app.isReady()).toBe(true);
+  });
+
+  test("reconnects from scratch when the relinked token is renewed another way", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context(CREDENTIALS);
+    const app = new TwitchApiApplication();
+    await app.init(ctx);
+    const first = instances[0];
+
+    nextReload = { userId: "42", userChanged: false, providerChanged: true };
+    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+
+    expect(first?.close).toHaveBeenCalledTimes(1);
+    expect(instances).toHaveLength(2);
+    expect(instances[1]?.init).toHaveBeenCalledTimes(1);
+    expect(ctx.twitchEventBus).toBeDefined();
+    expect(app.isReady()).toBe(true);
+  });
+
+  test("reconnects for a token renewed another way even with a channel configured", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context({ ...CREDENTIALS, woofx3TwitchChannelName: "stream" });
+    await new TwitchApiApplication().init(ctx);
+
+    nextReload = { userId: "42", userChanged: false, providerChanged: true };
+    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+
+    expect(instances[0]?.close).toHaveBeenCalledTimes(1);
+    expect(instances).toHaveLength(2);
   });
 });

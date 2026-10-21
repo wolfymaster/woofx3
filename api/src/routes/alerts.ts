@@ -1,13 +1,24 @@
-import type { AlertClearResult, AlertReplayResult, AlertSkipResult } from "@woofx3/api";
+import {
+  ALERT_LIST_DEFAULT_LIMIT,
+  ALERT_LIST_MAX_LIMIT,
+  type AlertClearResult,
+  type AlertListPage,
+  type AlertListQuery,
+  type AlertQueueEntry,
+  type AlertQueueState,
+  type AlertReplayResult,
+  type AlertSkipResult,
+} from "@woofx3/api";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { alertSnapshotFromRow } from "../stored-snapshots";
 import { routeModule } from "./context";
 
 /**
  * Short enough that an operator pressing Skip mid-raid hears back while the
  * raid is still on.
  */
-const ALERT_QUEUE_TIMEOUT_MS = 5_000;
+export const ALERT_QUEUE_TIMEOUT_MS = 5_000;
 
 /**
  * A replay makes several db round trips before it answers. The scene manager
@@ -30,7 +41,8 @@ async function requestAlertControl<T extends { ok: boolean; reason?: string }>(
   subject: string,
   body: Record<string, unknown>,
   unanswered: T,
-  timeout: number
+  timeout: number,
+  read: (reply: unknown) => T = readControlResult
 ): Promise<T> {
   if (!nats) {
     throw new Error("NATS client not available");
@@ -46,10 +58,101 @@ async function requestAlertControl<T extends { ok: boolean; reason?: string }>(
     logger.warn("alert control unanswered", { subject, reason });
     return { ...unanswered, reason };
   }
-  return JSON.parse(new TextDecoder().decode(data)) as T;
+  return read(JSON.parse(new TextDecoder().decode(data)));
+}
+
+/**
+ * A control's answer, checked down to the envelope every control shares. The
+ * result-specific counters are the scene manager's to get right; a reply that
+ * is not even an `{ ok }` object is refused here.
+ */
+function readControlResult<T extends { ok: boolean; reason?: string }>(reply: unknown): T {
+  if (typeof reply !== "object" || reply === null || typeof (reply as { ok?: unknown }).ok !== "boolean") {
+    throw new Error("the scene manager answered an alert control with an unreadable reply");
+  }
+  return reply as T;
+}
+
+/** `query.limit` checked against ALERT_LIST_MAX_LIMIT; a value out of range is a caller bug, not a request to clamp. */
+function listLimit(limit: number | undefined): number {
+  if (limit === undefined) {
+    return ALERT_LIST_DEFAULT_LIMIT;
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > ALERT_LIST_MAX_LIMIT) {
+    throw new Error(`limit must be a whole number from 1 to ${ALERT_LIST_MAX_LIMIT}`);
+  }
+  return limit;
+}
+
+function listOffset(offset: number | undefined): number {
+  if (offset === undefined) {
+    return 0;
+  }
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error("offset must be a whole number of 0 or more");
+  }
+  return offset;
+}
+
+function isQueueEntry(value: unknown): value is AlertQueueEntry {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const entry = value as Partial<AlertQueueEntry>;
+  return (
+    typeof entry.alertId === "string" &&
+    typeof entry.envelopeId === "string" &&
+    (entry.startedAt === undefined || typeof entry.startedAt === "string")
+  );
+}
+
+/**
+ * The scene manager's answer to `widget.queue.state`. A request it failed to
+ * handle is answered `{ ok: false, reason }` with no lists, the shape every
+ * control shares, so a refusal is given empty lists here; anything else
+ * without valid lists is an answer this api cannot read.
+ */
+function readQueueState(reply: unknown): AlertQueueState {
+  const unreadable = () => new Error("the scene manager answered widget.queue.state with an unreadable queue");
+  if (typeof reply !== "object" || reply === null) {
+    throw unreadable();
+  }
+  const { ok, reason, playing, waiting } = reply as Record<string, unknown>;
+  if (ok === false) {
+    if (typeof reason !== "string") {
+      throw unreadable();
+    }
+    return { ok: false, playing: [], waiting: [], reason };
+  }
+  if (ok !== true || !Array.isArray(playing) || !Array.isArray(waiting)) {
+    throw unreadable();
+  }
+  if (!playing.every(isQueueEntry) || !waiting.every(isQueueEntry)) {
+    throw unreadable();
+  }
+  return { ok: true, playing, waiting };
 }
 
 export const alertsRoutes = routeModule({
+  async listAlerts(query: AlertListQuery = {}): Promise<AlertListPage> {
+    const limit = listLimit(query.limit);
+    const offset = listOffset(query.offset);
+    const page = await this.db.listAlerts({ limit, offset, workflowId: query.workflowId ?? "" });
+    return { alerts: page.alerts.map(alertSnapshotFromRow), totalCount: page.totalCount, limit, offset };
+  },
+
+  async getAlertQueue(): Promise<AlertQueueState> {
+    return requestAlertControl<AlertQueueState>(
+      this.nats,
+      this.logger,
+      "widget.queue.state",
+      {},
+      { ok: false, playing: [], waiting: [] },
+      ALERT_QUEUE_TIMEOUT_MS,
+      readQueueState
+    );
+  },
+
   async replayAlert(id: string): Promise<AlertReplayResult> {
     if (!id) {
       throw new Error("alert id is required");

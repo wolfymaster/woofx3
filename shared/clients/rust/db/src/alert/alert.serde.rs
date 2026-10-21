@@ -847,12 +847,18 @@ impl serde::Serialize for ListAlertsRequest {
         if self.offset != 0 {
             len += 1;
         }
+        if !self.workflow_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.ListAlertsRequest", len)?;
         if self.limit != 0 {
             struct_ser.serialize_field("limit", &self.limit)?;
         }
         if self.offset != 0 {
             struct_ser.serialize_field("offset", &self.offset)?;
+        }
+        if !self.workflow_id.is_empty() {
+            struct_ser.serialize_field("workflowId", &self.workflow_id)?;
         }
         struct_ser.end()
     }
@@ -866,12 +872,15 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
         const FIELDS: &[&str] = &[
             "limit",
             "offset",
+            "workflow_id",
+            "workflowId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Limit,
             Offset,
+            WorkflowId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -895,6 +904,7 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
                         match value {
                             "limit" => Ok(GeneratedField::Limit),
                             "offset" => Ok(GeneratedField::Offset),
+                            "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -916,6 +926,7 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
             {
                 let mut limit__ = None;
                 let mut offset__ = None;
+                let mut workflow_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Limit => {
@@ -934,11 +945,18 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::WorkflowId => {
+                            if workflow_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("workflowId"));
+                            }
+                            workflow_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ListAlertsRequest {
                     limit: limit__.unwrap_or_default(),
                     offset: offset__.unwrap_or_default(),
+                    workflow_id: workflow_id__.unwrap_or_default(),
                 })
             }
         }

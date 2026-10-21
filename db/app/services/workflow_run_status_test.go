@@ -34,6 +34,26 @@ func newRunStatusSvc(t *testing.T) (client.WorkflowService, *gorm.DB) {
 	)`).Error; err != nil {
 		t.Fatalf("create workflow_executions: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE workflow_execution_steps (
+		id TEXT PRIMARY KEY,
+		execution_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL,
+		attempt INTEGER NOT NULL DEFAULT 1,
+		step_index INTEGER NOT NULL,
+		inputs TEXT,
+		outputs TEXT,
+		error TEXT,
+		started_at DATETIME,
+		completed_at DATETIME,
+		duration_ms INTEGER,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE (execution_id, task_id, attempt)
+	)`).Error; err != nil {
+		t.Fatalf("create workflow_execution_steps: %v", err)
+	}
 	return NewWorkflowService(nil, nil, db, nil, nil), db
 }
 

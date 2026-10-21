@@ -4,6 +4,7 @@ import { Api } from "../src/api";
 import { ApiGateway } from "../src/gateway";
 import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
+import { EngineEventStream } from "../src/engine-event-stream";
 import { WebhookClient } from "../src/webhook-client";
 
 /*
@@ -78,7 +79,7 @@ async function registerShell(callbackUrl: string) {
     logger,
   });
   const gateway = new ApiGateway(api, {} as never, db as never, logger, resolveRegistrationPolicy({}));
-  const webhooks = new WebhookClient(db as never, logger);
+  const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger));
   gateway.setWebhookClient(webhooks);
   const registered = await gateway.registerClient("desktop shell", { callbackUrl, callbackToken: "shell-token" });
   return { db, webhooks, registered };
@@ -121,7 +122,16 @@ describe("a dashboard client with a loopback callback URL", () => {
         stored = value;
       },
     };
-    const source = new TwitchTokenSource(settings, () => webhooks);
+    const source = new TwitchTokenSource({
+      db: settings,
+      dashboard: () => webhooks,
+      ownClientId: null,
+      publicClient: {
+        refresh: async () => {
+          throw new Error("this test has no public Twitch app");
+        },
+      },
+    });
 
     expect(await source.dashboardToken(true)).toEqual(renewed);
     expect(JSON.parse(stored ?? "null")).toEqual({ ...renewed, dashboardClientId: "shell" });

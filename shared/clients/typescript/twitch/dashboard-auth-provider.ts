@@ -25,6 +25,10 @@ const EXPIRY_MARGIN_MS = 60_000;
  * controls. So where `RefreshingAuthProvider` refreshes, this one asks the
  * dashboard for a current token instead. It serves one account, the one that
  * linked Twitch, for every user and intent Twurple asks about.
+ *
+ * A token from the engine's public Twitch app is served the same way, by the
+ * api service rather than a dashboard: its refresh tokens are single-use, so
+ * only one process may refresh it.
  */
 export class DashboardAuthProvider implements AuthProvider {
   private token: DashboardToken;
@@ -125,7 +129,8 @@ function userIdOf(user: UserIdResolvable): string {
 }
 
 /**
- * NATS subject the api service answers with the dashboard's token. Must match
+ * NATS subject the api service answers with the linked account's token when
+ * it renews it: a dashboard's, or the engine's public Twitch app's. Must match
  * `TWITCH_TOKEN_SUBJECT` in api/src/twitch-token-source.ts.
  */
 export const TWITCH_TOKEN_SUBJECT = "engine.twitch.token";

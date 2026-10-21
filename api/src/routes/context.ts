@@ -1,5 +1,6 @@
-import type { EngineHosting } from "@woofx3/api";
+import type { EngineHosting, UISetting } from "@woofx3/api";
 import type {
+  CallbackEvent,
   CommandCreatedEvent,
   CommandDeletedEvent,
   CommandUpdatedEvent,
@@ -15,6 +16,7 @@ import type {
   WorkflowDeletedEvent,
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
+import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import {
   RELAY_CONFIG_SETTING,
@@ -25,13 +27,16 @@ import {
 import { encode } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
+import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import type { MarketplaceClient } from "../marketplace-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
+import { TwitchDeviceLogins } from "../twitch-device-login";
 import { TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
 import type { WebhookClient } from "../webhook-client";
@@ -70,6 +75,12 @@ export interface ApiOptions {
   hosting?: EngineHosting | null;
   /** The marketplace to install and read the catalog from; null or absent when it is turned off. */
   marketplace?: MarketplaceClient | null;
+  /** The engine's public Twitch app (`WOOFX3_TWITCH_PUBLIC_CLIENT_ID`), for device logins; null or absent when it has none. */
+  twitchPublicClientId?: string | null;
+  /** The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`); null or absent when it has none. */
+  twitchClientId?: string | null;
+  /** Twitch's OAuth endpoints; Twitch itself when absent. */
+  twitchOAuth?: TwitchOAuthClient;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -86,6 +97,7 @@ export class ApiRouteHost extends RpcTarget {
   }>();
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
+  protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
   protected authInvalidate: (() => void) | null = null;
   /**
@@ -95,6 +107,8 @@ export class ApiRouteHost extends RpcTarget {
   readonly twitchToken: TwitchTokenSource;
   /** The companion bridge's credential. An instance property for the same reason as `twitchToken`. */
   readonly relayCredential: RelayCredentialSource;
+  /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
+  readonly twitchDeviceLogins: TwitchDeviceLogins;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -161,57 +175,69 @@ export class ApiRouteHost extends RpcTarget {
     };
   }
 
-  protected async emitWorkflowWebhook(
-    event: WorkflowCreatedEvent | WorkflowUpdatedEvent | WorkflowDeletedEvent
-  ): Promise<void> {
+  /** Best effort: a failed or unconfigured send is logged, never thrown. */
+  protected async emitWebhook(event: CallbackEvent, context: Record<string, unknown>): Promise<void> {
     if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping workflow webhook", { type: event.type });
+      this.logger.warn("No webhook client set, skipping webhook", { type: event.type, ...context });
       return;
     }
     try {
       await this.webhookClient.send(event);
     } catch (err) {
-      this.logger.error("Failed to send workflow webhook", { type: event.type, err });
+      this.logger.error("Failed to send webhook", { type: event.type, ...context, err });
     }
+  }
+
+  protected async emitWorkflowWebhook(
+    event: WorkflowCreatedEvent | WorkflowUpdatedEvent | WorkflowDeletedEvent
+  ): Promise<void> {
+    await this.emitWebhook(event, {});
   }
 
   protected async emitCommandWebhook(
     event: CommandCreatedEvent | CommandUpdatedEvent | CommandDeletedEvent
   ): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping command webhook", { type: event.type });
-      return;
-    }
-    try {
-      await this.webhookClient.send(event);
-    } catch (err) {
-      this.logger.error("Failed to send command webhook", { type: event.type, err });
-    }
+    await this.emitWebhook(event, {});
   }
 
   protected async emitGroupWebhook(
     event: GroupCreatedEvent | GroupUpdatedEvent | GroupDeletedEvent | GroupMemberAddedEvent | GroupMemberRemovedEvent
   ): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping group webhook", { type: event.type });
-      return;
-    }
-    try {
-      await this.webhookClient.send(event);
-    } catch (err) {
-      this.logger.error("Failed to send group webhook", { type: event.type, err });
-    }
+    await this.emitWebhook(event, {});
   }
 
   protected async emitSceneWebhook(event: SceneCreatedEvent | SceneUpdatedEvent | SceneDeletedEvent): Promise<void> {
-    if (!this.webhookClient) {
-      this.logger.warn("No webhook client set, skipping scene webhook", { type: event.type });
-      return;
-    }
+    await this.emitWebhook(event, {});
+  }
+
+  /** Announces a local UI setting write. Best effort: a reader that missed it pages the changes. */
+  protected async emitUISettingWebhook(setting: UISetting): Promise<void> {
+    await this.emitWebhook(
+      {
+        type: EngineEventType.UI_SETTING_CHANGED,
+        namespace: setting.namespace,
+        key: setting.key,
+        revision: setting.revision,
+        deleted: setting.deleted,
+        value: setting.value,
+      },
+      { namespace: setting.namespace, key: setting.key }
+    );
+  }
+
+  /**
+   * Write the linked Twitch account's token and tell the services that hold
+   * one to reload it (`setting.integration.token.updated`). `engineUserId`
+   * scopes the row to the engine user who linked it, when known.
+   */
+  protected async storeTwitchToken(stored: object, engineUserId?: string): Promise<void> {
+    await this.twitchToken.store(stored, engineUserId);
+    // Best effort: the row is already written, so a missed event only delays
+    // the pickup until the services next read it.
     try {
-      await this.webhookClient.send(event);
+      await this.publishEvent("setting.integration.token.updated", { integration: "twitch" });
     } catch (err) {
-      this.logger.error("Failed to send scene webhook", { type: event.type, err });
+      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
     }
   }
 
@@ -376,7 +402,19 @@ export class ApiRouteHost extends RpcTarget {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
     this.db = opts.db;
-    this.twitchToken = new TwitchTokenSource(this.db, () => this.webhookClient);
+    const twitchOAuth = opts.twitchOAuth ?? new TwitchOAuthClient();
+    this.twitchToken = new TwitchTokenSource({
+      db: this.db,
+      dashboard: () => this.webhookClient,
+      ownClientId: opts.twitchClientId ?? null,
+      publicClient: twitchOAuth,
+    });
+    this.twitchDeviceLogins = new TwitchDeviceLogins({
+      clientId: opts.twitchPublicClientId ?? null,
+      oauth: twitchOAuth,
+      storeToken: (token) => this.storeTwitchToken(token),
+      logger: opts.logger,
+    });
     this.relayCredential = new RelayCredentialSource({
       dashboard: () => this.webhookClient,
       readConfig: async () => readStoredRelayConfig(await this.db.getSetting(RELAY_CONFIG_SETTING)),

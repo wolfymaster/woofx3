@@ -1,8 +1,10 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
+import type { Api } from "./api";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { EngineEventStream } from "./engine-event-stream";
 import type { EventCatalog } from "./event-catalog";
 import type { EventLogSelectionSource } from "./event-log-selection";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
@@ -37,8 +39,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private gaugeSampler: StreamGaugeSampler | null = null;
+  private engineEventStream: EngineEventStream | null = null;
   private eventCatalog: EventCatalog | null = null;
   private eventLogSelection: EventLogSelectionSource | null = null;
+  private api: Api | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -52,6 +56,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { Api },
       { ClientAuth },
       { ConvexWebhookClient },
+      { EngineEventStream },
       { EventCatalog },
       { EventLogSelectionSource },
       { ApiGateway },
@@ -89,6 +94,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./api"),
       import("./auth"),
       import("./convex-webhook-client"),
+      import("./engine-event-stream"),
       import("./event-catalog"),
       import("./event-log-selection"),
       import("./gateway"),
@@ -173,7 +179,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       marketplace: config.marketplace
         ? new MarketplaceClient({ baseUrl: config.marketplace.url, downloadHosts: config.marketplace.downloadHosts })
         : null,
+      twitchPublicClientId: config.twitchPublicClientId,
+      twitchClientId: config.twitchClientId,
     });
+    this.api = api;
 
     // Barkloader readiness for GET /ready, from the heartbeats every service
     // publishes. Without NATS nothing arrives, and /ready stays not-ready.
@@ -188,7 +197,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       });
     }
 
-    const webhookClient = new WebhookClient(db, logger);
+    const engineEventStream = new EngineEventStream(logger);
+    this.engineEventStream = engineEventStream;
+    api.setEngineEventStream(engineEventStream);
+    const webhookClient = new WebhookClient(db, logger, engineEventStream);
     api.setWebhookClient(webhookClient);
     try {
       await webhookClient.refreshCallbackUrls();
@@ -325,12 +337,18 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   }
 
   async terminate(): Promise<void> {
+    this.api?.twitchDeviceLogins.stop();
+    this.api = null;
     this.gaugeSampler?.stop();
     this.gaugeSampler = null;
     this.eventCatalog?.stop();
     this.eventCatalog = null;
     this.eventLogSelection?.stop();
     this.eventLogSelection = null;
+    // Before the server, so subscribers' requests fail with a reason and
+    // their stubs are released while their sessions are still open.
+    this.engineEventStream?.stop();
+    this.engineEventStream = null;
     this.server?.stop();
     this.server = null;
   }

@@ -22,7 +22,7 @@ import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import { isPermissionDenied } from "../db-client";
 import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
 import { routeModule } from "./context";
-import { commandToSnapshot, parseActions } from "./helpers";
+import { availableFunctions, commandToSnapshot, parseActions } from "./helpers";
 
 // The factories hold nothing but the CloudEvent `source`, so one instance each
 // serves every call in this module.
@@ -369,25 +369,11 @@ export const commandsRoutes = routeModule({
       throw new Error("A Twitch token from a dashboard needs the session's client id to renew it");
     }
     const stored = fromDashboard ? { ...token, dashboardClientId: context?.clientId } : token;
-    await this.db.setSetting("twitch_token", JSON.stringify(stored), engineUserId);
+    await this.storeTwitchToken(stored, engineUserId);
     this.logger.info("Twitch token written to settings", {
       twitchUserId: token.userId,
       engineUserId: engineUserId ?? "(unscoped)",
     });
-
-    // Notify in-process consumers (woofwoofwoof, future bots) that the
-    // integration token was rewritten so they can reload their
-    // RefreshingAuthProvider and pick up new scopes without a service
-    // restart. Best-effort — the row is already persisted, so a missed
-    // event just means a delayed pickup.
-    try {
-      await this.publishEvent("setting.integration.token.updated", {
-        integration: "twitch",
-      });
-    } catch (err) {
-      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
-    }
-
     return { ok: true };
   },
 
@@ -398,7 +384,7 @@ export const commandsRoutes = routeModule({
    * cleanly without needing to handle a missing row.
    */
   async deleteTwitchToken(): Promise<{ ok: true }> {
-    await this.db.setSetting("twitch_token", "");
+    await this.twitchToken.clear();
     this.logger.info("Twitch token cleared from settings");
 
     // Same notification as setTwitchToken — the row changed, downstream
@@ -423,27 +409,7 @@ export const commandsRoutes = routeModule({
    * `typeValue`.
    */
   async listAvailableFunctions(): Promise<AvailableFunction[]> {
-    const modules = await this.db.listModules();
-    const out: AvailableFunction[] = [];
-    for (const m of modules) {
-      const moduleName = m.name ?? "";
-      const moduleId = m.id ?? "";
-      for (const fn of m.functions ?? []) {
-        if (!fn.manifestId) {
-          continue;
-        }
-        out.push({
-          id: fn.id,
-          moduleId,
-          moduleName,
-          manifestId: fn.manifestId,
-          name: fn.name ?? "",
-          qualifiedName: moduleName ? `${moduleName}/${fn.manifestId}` : fn.manifestId,
-          runtime: fn.runtime ?? "",
-        });
-      }
-    }
-    return out;
+    return availableFunctions(await this.db.listModules());
   },
 
   /**

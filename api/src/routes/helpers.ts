@@ -1,6 +1,7 @@
 import type {
   ActionStep,
   AlertComposition,
+  AvailableFunction,
   CommandSnapshot,
   CompositionKind,
   Scene,
@@ -9,6 +10,7 @@ import type {
 import type { SceneSnapshot } from "@woofx3/api/webhooks";
 import type { TaskDefinition } from "@woofx3/api/workflow-definition";
 import type * as command from "@woofx3/db/command.pb";
+import type * as module from "@woofx3/db/module.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
@@ -316,4 +318,28 @@ export function readModuleCatalogFields(rawManifest: string | undefined): {
     return fallback.taxonomy;
   })();
   return { author, taxonomy };
+}
+
+/** Every function the installed modules register, as `listAvailableFunctions` lists them. */
+export function availableFunctions(modules: module.Module[]): AvailableFunction[] {
+  const out: AvailableFunction[] = [];
+  for (const m of modules) {
+    const moduleName = m.name ?? "";
+    const moduleId = m.id ?? "";
+    for (const fn of m.functions ?? []) {
+      if (!fn.manifestId) {
+        continue;
+      }
+      out.push({
+        id: fn.id,
+        moduleId,
+        moduleName,
+        manifestId: fn.manifestId,
+        name: fn.name ?? "",
+        qualifiedName: moduleName ? `${moduleName}/${fn.manifestId}` : fn.manifestId,
+        runtime: fn.runtime ?? "",
+      });
+    }
+  }
+  return out;
 }
