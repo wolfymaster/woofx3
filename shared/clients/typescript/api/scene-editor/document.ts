@@ -254,8 +254,11 @@ export { isPlainObject, sameValue };
  * An entry in `to` with a field removed or added, or a different `type`, is
  * replaced whole, and a field of the wrong type is replaced as it is;
  * `invalidOps` refuses both, so such a change is turned down where it was
- * made. So is a change to `inputs` or `base`, which are not edited through
- * the scene editor.
+ * made. So is an entry id outside `isSafeKey`, or a freeform key (settings,
+ * extra, params, at any depth) that is empty, longer than `KEY_MAX_LENGTH`
+ * or reserved, which a document loaded through a tolerant registry can hold.
+ * So is a change to `inputs` or `base`, which are not edited through the
+ * scene editor.
  */
 export function diffDocuments(from: SceneDocument, to: SceneDocument, registry: TypeRegistry = STRICT_REGISTRY): Ops {
   const ops: Ops = [];
@@ -526,16 +529,19 @@ function isSafeFreeformKey(key: string): boolean {
  * The first key at any depth of `value` that may not be inserted, or null
  * when there is none. Walked with an explicit stack, since a value nested
  * deeper than the call stack would otherwise throw instead of being refused.
+ * Each object is visited once, so a cyclic value ends the walk.
  * `Object.keys` lists a `__proto__` that `JSON.parse` made an own property;
  * the `Object.hasOwn` check also catches one defined as non-enumerable.
  */
 function unsafeKeyIn(value: unknown): string | null {
   const pending: unknown[] = [value];
+  const visited = new WeakSet<object>();
   while (pending.length > 0) {
     const node = pending.pop();
-    if (node === null || typeof node !== "object") {
+    if (node === null || typeof node !== "object" || visited.has(node)) {
       continue;
     }
+    visited.add(node);
     if (Object.hasOwn(node, "__proto__")) {
       return "__proto__";
     }
@@ -554,7 +560,9 @@ function unsafeKeyIn(value: unknown): string | null {
 
 function invalidValueKeys(value: unknown): string | null {
   const unsafe = unsafeKeyIn(value);
-  return unsafe === null ? null : `a value may not hold the key ${JSON.stringify(unsafe)}`;
+  return unsafe === null
+    ? null
+    : `a key in a value is 1 to ${KEY_MAX_LENGTH} characters and not ${RESERVED_KEY_LIST}, found ${JSON.stringify(unsafe)}`;
 }
 
 export function isPlacement(value: unknown, registry: TypeRegistry = STRICT_REGISTRY): value is PlacementDocument {
