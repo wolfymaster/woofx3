@@ -528,6 +528,71 @@ pub struct CreateCommandJson {
     pub priority: i32,
     pub created_by_type: String,
     pub created_by_ref: String,
+    pub visibility: String,
+    pub group_ids: Vec<String>,
+}
+
+/// Who may invoke a command a module registers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandAccess {
+    /// Everyone in chat.
+    Public,
+    /// Members of these built-in groups, by name. Resolved to the groups'
+    /// ids when the command is created; a name with no built-in group fails
+    /// the registration rather than storing a command nobody can use.
+    Groups(&'static [&'static str]),
+}
+
+#[derive(Debug, Deserialize)]
+struct ListGroupsBody {
+    #[serde(default)]
+    groups: Vec<GroupJson>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GroupJson {
+    id: String,
+    name: String,
+    #[serde(default, alias = "isBuiltIn")]
+    is_built_in: bool,
+}
+
+/// The ids of the built-in groups named by `names`, in the same order.
+/// Fails when any of them is missing: db seeds every built-in group at
+/// start, so a missing one means the two disagree about which exist.
+async fn built_in_group_ids(db_proxy_url: &str, names: &[&str]) -> Result<Vec<String>> {
+    let url = format!("{}/twirp/group.GroupService/ListGroups", db_proxy_url);
+    let response = HTTP_CLIENT
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| anyhow!("ListGroups request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("ListGroups failed {}: {}", status, text));
+    }
+
+    let text = response.text().await.unwrap_or_default();
+    let body: ListGroupsBody =
+        serde_json::from_str(&text).map_err(|e| anyhow!("parse ListGroups response: {}", e))?;
+    resolve_built_in_group_ids(&body.groups, names)
+}
+
+fn resolve_built_in_group_ids(groups: &[GroupJson], names: &[&str]) -> Result<Vec<String>> {
+    names
+        .iter()
+        .map(|name| {
+            groups
+                .iter()
+                .find(|group| group.is_built_in && group.name == *name)
+                .map(|group| group.id.clone())
+                .ok_or_else(|| anyhow!("db has no built-in group named {:?}", name))
+        })
+        .collect()
 }
 
 /// The marketplace listing an install came from, and that listing's
@@ -626,11 +691,18 @@ pub async fn create_command(
     command: &str,
     actions_json: &str,
     module_name: &str,
+    access: CommandAccess,
 ) -> Result<()> {
     let url = format!(
         "{}/twirp/command.CommandService/CreateCommand",
         db_proxy_url
     );
+    let (visibility, group_ids) = match access {
+        CommandAccess::Public => ("public", Vec::new()),
+        CommandAccess::Groups(names) => {
+            ("restricted", built_in_group_ids(db_proxy_url, names).await?)
+        }
+    };
     let body = CreateCommandJson {
         command: command.to_string(),
         enabled: true,
@@ -639,6 +711,8 @@ pub async fn create_command(
         priority: 0,
         created_by_type: "MODULE".to_string(),
         created_by_ref: module_name.to_string(),
+        visibility: visibility.to_string(),
+        group_ids,
     };
 
     let client = HTTP_CLIENT.clone();
@@ -2390,4 +2464,48 @@ pub async fn set_module_setting(url: &str, module_id: &str, key: &str, value: &s
         return Err(anyhow!("set_module_setting failed: {}", text));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn group(id: &str, name: &str, is_built_in: bool) -> GroupJson {
+        GroupJson {
+            id: id.to_string(),
+            name: name.to_string(),
+            is_built_in,
+        }
+    }
+
+    #[test]
+    fn resolves_built_in_groups_by_name_in_order() {
+        let groups = [
+            group("g-mod", "moderator", true),
+            group("g-fake-broadcaster", "broadcaster", false),
+            group("g-broadcaster", "broadcaster", true),
+        ];
+        let ids = resolve_built_in_group_ids(&groups, &["broadcaster", "moderator"])
+            .expect("both groups exist");
+        assert_eq!(ids, vec!["g-broadcaster", "g-mod"]);
+    }
+
+    #[test]
+    fn a_missing_built_in_group_fails_the_lookup() {
+        let groups = [group("g-custom", "vip", false)];
+        let err = resolve_built_in_group_ids(&groups, &["vip"]).expect_err("vip is not built in");
+        assert!(err.to_string().contains("vip"), "{err}");
+    }
+
+    #[test]
+    fn reads_a_twirp_group_list() {
+        let body: ListGroupsBody = serde_json::from_str(
+            r#"{"status":{"code":"OK"},"groups":[{"id":"g1","name":"moderator","description":"","is_built_in":true}]}"#,
+        )
+        .expect("parse");
+        assert_eq!(
+            resolve_built_in_group_ids(&body.groups, &["moderator"]).expect("found"),
+            vec!["g1"]
+        );
+    }
 }
