@@ -301,10 +301,7 @@ export class DbClient {
   /** The workflow, or null when it does not exist. See findScene. */
   async findWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.Workflow | null> {
     const response = await nullWhenMissing("findWorkflow", () => workflow.GetWorkflow(req, this.config));
-    if (!response || response.status?.code !== "OK" || !response.workflow) {
-      return null;
-    }
-    return response.workflow;
+    return response ? unwrap("findWorkflow", response, response.workflow) : null;
   }
 
   async listWorkflows(
